@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   CalendarRange,
   ClipboardList,
-  FileText,
   Settings,
   Upload,
 } from "lucide-react";
@@ -26,7 +25,6 @@ const NAV_ITEMS = [
   { label: "Qualifications", href: "/qualifications", icon: ShieldCheck },
   { label: "Range & Training", href: "/range-days", icon: CalendarRange },
   { label: "Inspections", href: "/inspections", icon: ClipboardList },
-  { label: "Reports", href: "/reports", icon: FileText },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -38,7 +36,6 @@ export default function TracePointShell({
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
-          {/* Brand */}
           <div className="border-b border-slate-800 px-5 py-3.5">
             <Link href="/" className="block">
               <Image
@@ -52,7 +49,6 @@ export default function TracePointShell({
             </Link>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 space-y-1.5 px-3 py-5">
             <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-600">
               Navigation
@@ -62,7 +58,8 @@ export default function TracePointShell({
               const Icon = item.icon;
               const active =
                 activePage === item.label ||
-                (activePage === "Firearms Repository" && item.label === "Firearms");
+                (activePage === "Firearms Repository" &&
+                  item.label === "Firearms");
 
               return (
                 <Link
@@ -86,13 +83,13 @@ export default function TracePointShell({
                         : "text-slate-600 group-hover:text-slate-400"
                     }
                   />
+
                   <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
 
-          {/* Agency / patch placeholder */}
           <div className="border-t border-slate-800 p-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
               <div className="flex items-center gap-3">
