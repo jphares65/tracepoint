@@ -1,85 +1,309 @@
 "use client";
+
 import TracePointShell from "@/components/TracePointShell";
-import { useState, useMemo } from "react";
-import Link from "next/link";
+import { useMemo, useState, type ReactNode } from "react";
 import {
+  AlertTriangle,
+  ChevronDown,
+  ClipboardList,
+  Download,
+  History,
   Plus,
   Search,
-  Download,
-  ClipboardList,
-  History,
-  ChevronDown,
-  AlertTriangle,
-  LayoutDashboard,
-  Crosshair,
-  Shield,
-  ShieldCheck,
-  CalendarRange,
+  X,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Types — unchanged
+// Types
 // ---------------------------------------------------------------------------
 
 type FirearmStatus = "Armory" | "Issued" | "OOS" | "Maintenance" | "Missing/Lost";
-type FirearmType   = "Pistol" | "Shotgun" | "Rifle" | "Revolver";
+type FirearmType = "Pistol" | "Shotgun" | "Rifle" | "Revolver";
 
 interface Firearm {
-  serial:     string;
-  make:       string;
-  model:      string;
-  type:       FirearmType;
-  caliber:    string;
-  status:     FirearmStatus;
+  serial: string;
+  make: string;
+  model: string;
+  type: FirearmType;
+  caliber: string;
+  status: FirearmStatus;
   assignedTo: string | null;
 }
 
+interface AuditEntry {
+  id: string;
+  action: string;
+  detail: string;
+  actor: string;
+  timestamp: string;
+  tone: "green" | "blue" | "amber" | "orange" | "red" | "slate";
+}
+
+type StatusFilter = FirearmStatus | "";
+type TypeFilter = FirearmType | "";
+
+const FIREARM_STATUSES: FirearmStatus[] = [
+  "Armory",
+  "Issued",
+  "OOS",
+  "Maintenance",
+  "Missing/Lost",
+];
+
+const FIREARM_TYPES: FirearmType[] = ["Pistol", "Shotgun", "Rifle", "Revolver"];
+
 // ---------------------------------------------------------------------------
-// Mock data — unchanged
+// Mock data
 // ---------------------------------------------------------------------------
 
 const MOCK_FIREARMS: Firearm[] = [
-  { serial: "GBR4921", make: "Glock",      model: "17 Gen5",      type: "Pistol",   caliber: "9mm",   status: "Issued",       assignedTo: "Sgt. Rivera, M."   },
-  { serial: "GBR5503", make: "Glock",      model: "19 Gen4",      type: "Pistol",   caliber: "9mm",   status: "Issued",       assignedTo: "Off. Chen, D."     },
-  { serial: "GBR6102", make: "Glock",      model: "17 Gen5",      type: "Pistol",   caliber: "9mm",   status: "Armory",       assignedTo: null                 },
-  { serial: "SW22819", make: "S&W",        model: "M&P Shield",   type: "Pistol",   caliber: "9mm",   status: "Issued",       assignedTo: "Det. Patel, A."    },
-  { serial: "SW29401", make: "S&W",        model: "686 Plus",     type: "Revolver", caliber: ".357",  status: "Maintenance",  assignedTo: null                 },
-  { serial: "REM8834", make: "Remington",  model: "870 Express",  type: "Shotgun",  caliber: "12ga",  status: "Issued",       assignedTo: "Off. Torres, L."   },
-  { serial: "REM9012", make: "Remington",  model: "870 Tactical", type: "Shotgun",  caliber: "12ga",  status: "Armory",       assignedTo: null                 },
-  { serial: "SIG7731", make: "Sig Sauer",  model: "P320",         type: "Pistol",   caliber: "9mm",   status: "Issued",       assignedTo: "Lt. Brooks, C."    },
-  { serial: "SIG7890", make: "Sig Sauer",  model: "P226",         type: "Pistol",   caliber: "9mm",   status: "OOS",          assignedTo: "Off. Nguyen, T."   },
-  { serial: "AR15112", make: "Colt",       model: "LE6920",       type: "Rifle",    caliber: "5.56",  status: "Issued",       assignedTo: "Sgt. Rivera, M."   },
-  { serial: "AR15220", make: "Colt",       model: "LE6920",       type: "Rifle",    caliber: "5.56",  status: "Armory",       assignedTo: null                 },
-  { serial: "BER0041", make: "Beretta",    model: "92FS",         type: "Pistol",   caliber: "9mm",   status: "Missing/Lost", assignedTo: "Off. Walsh, R."    },
-  { serial: "GLK0080", make: "Glock",      model: "26 Gen5",      type: "Pistol",   caliber: "9mm",   status: "Issued",       assignedTo: "Off. Martinez, K." },
-  { serial: "WIN4490", make: "Winchester", model: "SXP Defender", type: "Shotgun",  caliber: "12ga",  status: "Maintenance",  assignedTo: null                 },
-  { serial: "SIG8821", make: "Sig Sauer",  model: "MCX Patrol",   type: "Rifle",    caliber: "5.56",  status: "Issued",       assignedTo: "Det. Okafor, B."   },
-  { serial: "GLK0221", make: "Glock",      model: "21 Gen4",      type: "Pistol",   caliber: ".45",   status: "OOS",          assignedTo: null                 },
-  { serial: "REM0055", make: "Remington",  model: "700P",         type: "Rifle",    caliber: ".308",  status: "Armory",       assignedTo: null                 },
+  {
+    serial: "GBR4921",
+    make: "Glock",
+    model: "17 Gen5",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Issued",
+    assignedTo: "Sgt. Rivera, M.",
+  },
+  {
+    serial: "GBR5503",
+    make: "Glock",
+    model: "19 Gen4",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Issued",
+    assignedTo: "Off. Chen, D.",
+  },
+  {
+    serial: "GBR6102",
+    make: "Glock",
+    model: "17 Gen5",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Armory",
+    assignedTo: null,
+  },
+  {
+    serial: "SW22819",
+    make: "S&W",
+    model: "M&P Shield",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Issued",
+    assignedTo: "Det. Patel, A.",
+  },
+  {
+    serial: "SW29401",
+    make: "S&W",
+    model: "686 Plus",
+    type: "Revolver",
+    caliber: ".357",
+    status: "Maintenance",
+    assignedTo: null,
+  },
+  {
+    serial: "REM8834",
+    make: "Remington",
+    model: "870 Express",
+    type: "Shotgun",
+    caliber: "12ga",
+    status: "Issued",
+    assignedTo: "Off. Torres, L.",
+  },
+  {
+    serial: "REM9012",
+    make: "Remington",
+    model: "870 Tactical",
+    type: "Shotgun",
+    caliber: "12ga",
+    status: "Armory",
+    assignedTo: null,
+  },
+  {
+    serial: "SIG7731",
+    make: "Sig Sauer",
+    model: "P320",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Issued",
+    assignedTo: "Lt. Brooks, C.",
+  },
+  {
+    serial: "SIG7890",
+    make: "Sig Sauer",
+    model: "P226",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "OOS",
+    assignedTo: "Off. Nguyen, T.",
+  },
+  {
+    serial: "AR15112",
+    make: "Colt",
+    model: "LE6920",
+    type: "Rifle",
+    caliber: "5.56",
+    status: "Issued",
+    assignedTo: "Sgt. Rivera, M.",
+  },
+  {
+    serial: "AR15220",
+    make: "Colt",
+    model: "LE6920",
+    type: "Rifle",
+    caliber: "5.56",
+    status: "Armory",
+    assignedTo: null,
+  },
+  {
+    serial: "BER0041",
+    make: "Beretta",
+    model: "92FS",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Missing/Lost",
+    assignedTo: "Off. Walsh, R.",
+  },
+  {
+    serial: "GLK0080",
+    make: "Glock",
+    model: "26 Gen5",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Issued",
+    assignedTo: "Off. Martinez, K.",
+  },
+  {
+    serial: "WIN4490",
+    make: "Winchester",
+    model: "SXP Defender",
+    type: "Shotgun",
+    caliber: "12ga",
+    status: "Maintenance",
+    assignedTo: null,
+  },
+  {
+    serial: "SIG8821",
+    make: "Sig Sauer",
+    model: "MCX Patrol",
+    type: "Rifle",
+    caliber: "5.56",
+    status: "Issued",
+    assignedTo: "Det. Okafor, B.",
+  },
+  {
+    serial: "GLK0221",
+    make: "Glock",
+    model: "21 Gen4",
+    type: "Pistol",
+    caliber: ".45",
+    status: "OOS",
+    assignedTo: null,
+  },
+  {
+    serial: "REM0055",
+    make: "Remington",
+    model: "700P",
+    type: "Rifle",
+    caliber: ".308",
+    status: "Armory",
+    assignedTo: null,
+  },
+];
+
+const INITIAL_AUDIT_LOG: AuditEntry[] = [
+  {
+    id: "audit-001",
+    action: "Inventory Reviewed",
+    detail: "Firearms repository opened and inventory status reviewed.",
+    actor: "System",
+    timestamp: "Today",
+    tone: "blue",
+  },
+  {
+    id: "audit-002",
+    action: "Firearm Marked OOS",
+    detail: "SIG7890 was marked out of service pending armorer review.",
+    actor: "Range Master",
+    timestamp: "Yesterday",
+    tone: "orange",
+  },
+  {
+    id: "audit-003",
+    action: "Maintenance Entry",
+    detail: "WIN4490 placed into maintenance queue.",
+    actor: "Armorer",
+    timestamp: "2 days ago",
+    tone: "amber",
+  },
+  {
+    id: "audit-004",
+    action: "Missing / Lost Flag",
+    detail: "BER0041 flagged as missing/lost and requires command review.",
+    actor: "Command Staff",
+    timestamp: "3 days ago",
+    tone: "red",
+  },
 ];
 
 // ---------------------------------------------------------------------------
-// Status config — unchanged
+// Status config
 // ---------------------------------------------------------------------------
 
-const STATUS_CONFIG: Record<FirearmStatus, { label: string; className: string }> = {
-  Armory:         { label: "Armory",       className: "bg-blue-500/10    text-blue-400   border-blue-500/20"   },
-  Issued:         { label: "Issued",       className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  OOS:            { label: "OOS",          className: "bg-orange-500/10  text-orange-400 border-orange-500/20" },
-  Maintenance:    { label: "Maintenance",  className: "bg-amber-500/10   text-amber-400  border-amber-500/20"  },
-  "Missing/Lost": { label: "Missing/Lost", className: "bg-red-500/15     text-red-300    border-red-500/30"    },
+const STATUS_CONFIG: Record<
+  FirearmStatus,
+  { label: string; className: string; dotClassName: string }
+> = {
+  Armory: {
+    label: "Armory",
+    className: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    dotClassName: "bg-blue-400",
+  },
+  Issued: {
+    label: "Issued",
+    className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    dotClassName: "bg-emerald-400",
+  },
+  OOS: {
+    label: "OOS",
+    className: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+    dotClassName: "bg-orange-400",
+  },
+  Maintenance: {
+    label: "Maintenance",
+    className: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    dotClassName: "bg-amber-400",
+  },
+  "Missing/Lost": {
+    label: "Missing/Lost",
+    className: "bg-red-500/15 text-red-300 border-red-500/30",
+    dotClassName: "bg-red-400",
+  },
 };
 
-const STATUS_DOT: Record<FirearmStatus, string> = {
-  Armory:         "bg-blue-400",
-  Issued:         "bg-emerald-400",
-  OOS:            "bg-orange-400",
-  Maintenance:    "bg-amber-400",
-  "Missing/Lost": "bg-red-400",
+const AUDIT_TONE_CLASS: Record<AuditEntry["tone"], string> = {
+  green: "bg-emerald-500",
+  blue: "bg-blue-500",
+  amber: "bg-amber-500",
+  orange: "bg-orange-500",
+  red: "bg-red-500",
+  slate: "bg-slate-500",
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  issue: "Issue Firearm",
+  return: "Return / RTS",
+  "mark-oos": "Mark Out of Service",
+  "send-maintenance": "Send to Maintenance",
+  "return-armory": "Return to Armory",
+  "log-inspection": "Log Inspection",
+  "file-report": "File Report",
+  "view-history": "View History",
 };
 
 // ---------------------------------------------------------------------------
-// Helpers — unchanged
+// Helpers
 // ---------------------------------------------------------------------------
 
 function getInitials(name: string): string {
@@ -89,100 +313,484 @@ function getInitials(name: string): string {
     .split(/[\s,]+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
+    .map((part) => part[0].toUpperCase())
     .join("");
 }
 
+function escapeCsvValue(value: string | number | null): string {
+  const text = String(value ?? "");
+
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  return text;
+}
+
+function exportFirearmsCsv(records: Firearm[]) {
+  const headers = [
+    "Serial",
+    "Make",
+    "Model",
+    "Type",
+    "Caliber",
+    "Status",
+    "Assigned To",
+  ];
+
+  const rows = records.map((f) => [
+    f.serial,
+    f.make,
+    f.model,
+    f.type,
+    f.caliber,
+    f.status,
+    f.assignedTo ?? "Armory",
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((row) => row.map(escapeCsvValue).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `tracepoint-firearms-${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+
 // ---------------------------------------------------------------------------
-// StatusBadge — unchanged
+// Shared UI
 // ---------------------------------------------------------------------------
 
 function StatusBadge({ status }: { status: FirearmStatus }) {
   const cfg = STATUS_CONFIG[status];
+
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cfg.className}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cfg.className}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dotClassName}`} />
       {cfg.label}
     </span>
   );
 }
 
-// ---------------------------------------------------------------------------
-// AssignedToCell — unchanged
-// ---------------------------------------------------------------------------
-
 function AssignedToCell({ assignedTo }: { assignedTo: string | null }) {
   if (!assignedTo) {
     return <span className="text-[11px] italic text-slate-600">— Armory</span>;
   }
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-[9px] font-semibold text-slate-400">
         {getInitials(assignedTo)}
       </div>
+
       <span className="truncate text-[12px] text-slate-400">{assignedTo}</span>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// RowActions — all status gates, action strings, variants, history btn unchanged
-// ---------------------------------------------------------------------------
+function ModalShell({
+  title,
+  eyebrow,
+  children,
+  onClose,
+  size = "md",
+}: {
+  title: string;
+  eyebrow?: string;
+  children: ReactNode;
+  onClose: () => void;
+  size?: "md" | "lg";
+}) {
+  const width = size === "lg" ? "max-w-3xl" : "max-w-md";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className={`relative max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6 ${width}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close modal"
+          className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-800 hover:text-white"
+        >
+          <X size={16} />
+        </button>
+
+        {eyebrow && (
+          <p className="mb-1 pr-8 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            {eyebrow}
+          </p>
+        )}
+
+        <h3 className="pr-8 text-xl font-bold text-white">{title}</h3>
+
+        <div className="mt-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function AddFirearmModal({
+  existingSerials,
+  onAdd,
+  onClose,
+}: {
+  existingSerials: Set<string>;
+  onAdd: (firearm: Firearm) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<{
+    serial: string;
+    make: string;
+    model: string;
+    type: FirearmType;
+    caliber: string;
+    status: FirearmStatus;
+    assignedTo: string;
+  }>({
+    serial: "",
+    make: "",
+    model: "",
+    type: "Pistol",
+    caliber: "9mm",
+    status: "Armory",
+    assignedTo: "",
+  });
+
+  const [error, setError] = useState("");
+
+  const inputClass =
+    "w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-700 focus:border-blue-500";
+  const labelClass =
+    "mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600";
+
+  const update = <K extends keyof typeof form>(
+    key: K,
+    value: (typeof form)[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const serial = form.serial.trim().toUpperCase();
+    const make = form.make.trim();
+    const model = form.model.trim();
+    const caliber = form.caliber.trim();
+    const assignedTo = form.assignedTo.trim();
+
+    if (!serial || !make || !model || !caliber) {
+      setError("Serial, make, model, and caliber are required.");
+      return;
+    }
+
+    if (existingSerials.has(serial)) {
+      setError("A firearm with that serial number already exists.");
+      return;
+    }
+
+    onAdd({
+      serial,
+      make,
+      model,
+      type: form.type,
+      caliber,
+      status: form.status,
+      assignedTo: assignedTo || null,
+    });
+  };
+
+  return (
+    <ModalShell title="Add Firearm" eyebrow="Firearms Repository" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Serial Number</label>
+            <input
+              value={form.serial}
+              onChange={(e) => update("serial", e.target.value)}
+              className={inputClass}
+              placeholder="Example: GLK1234"
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Make</label>
+            <input
+              value={form.make}
+              onChange={(e) => update("make", e.target.value)}
+              className={inputClass}
+              placeholder="Glock, Sig Sauer, Colt"
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Model</label>
+            <input
+              value={form.model}
+              onChange={(e) => update("model", e.target.value)}
+              className={inputClass}
+              placeholder="17 Gen5"
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Caliber</label>
+            <input
+              value={form.caliber}
+              onChange={(e) => update("caliber", e.target.value)}
+              className={inputClass}
+              placeholder="9mm"
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Type</label>
+            <select
+              value={form.type}
+              onChange={(e) => update("type", e.target.value as FirearmType)}
+              className={inputClass}
+            >
+              {FIREARM_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>Status</label>
+            <select
+              value={form.status}
+              onChange={(e) =>
+                update("status", e.target.value as FirearmStatus)
+              }
+              className={inputClass}
+            >
+              {FIREARM_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {STATUS_CONFIG[status].label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>Assigned To</label>
+          <input
+            value={form.assignedTo}
+            onChange={(e) => update("assignedTo", e.target.value)}
+            className={inputClass}
+            placeholder="Leave blank if stored in armory"
+          />
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-400 transition hover:border-slate-600 hover:bg-slate-800 hover:text-slate-200"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+          >
+            <Plus size={14} />
+            Save Firearm
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function AuditLogModal({
+  entries,
+  onClose,
+}: {
+  entries: AuditEntry[];
+  onClose: () => void;
+}) {
+  return (
+    <ModalShell
+      title="Audit Log"
+      eyebrow="System Activity"
+      size="lg"
+      onClose={onClose}
+    >
+      <div className="space-y-3">
+        {entries.map((entry) => (
+          <div
+            key={entry.id}
+            className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span
+                  className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
+                    AUDIT_TONE_CLASS[entry.tone]
+                  }`}
+                />
+
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white">
+                    {entry.action}
+                  </p>
+                  <p className="mt-1 text-sm leading-5 text-slate-400">
+                    {entry.detail}
+                  </p>
+                </div>
+              </div>
+
+              <span className="whitespace-nowrap text-xs text-slate-600">
+                {entry.timestamp}
+              </span>
+            </div>
+
+            <p className="mt-2 border-t border-slate-800 pt-2 text-[11px] text-slate-600">
+              Actor: {entry.actor}
+            </p>
+          </div>
+        ))}
+      </div>
+    </ModalShell>
+  );
+}
+
+function WorkflowModal({
+  title,
+  description,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  onClose: () => void;
+}) {
+  return (
+    <ModalShell title={title} eyebrow="Workflow" onClose={onClose}>
+      <p className="text-sm leading-6 text-slate-400">{description}</p>
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="mt-6 w-full rounded-xl bg-slate-800 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-slate-700"
+      >
+        Close
+      </button>
+    </ModalShell>
+  );
+}
 
 function RowActions({
   firearm,
   onAction,
+  align = "end",
 }: {
   firearm: Firearm;
   onAction: (action: string, serial: string) => void;
+  align?: "start" | "end";
 }) {
   const { serial, status } = firearm;
-  const primary: { label: string; variant?: "warn" | "danger"; action: string }[] = [];
+
+  const primary: {
+    label: string;
+    variant?: "warn" | "danger";
+    action: string;
+  }[] = [];
 
   if (status === "Armory") {
     primary.push({ label: "Issue", action: "issue" });
   }
+
   if (status === "Issued") {
     primary.push({ label: "Return / RTS", action: "return" });
     primary.push({ label: "Mark OOS", variant: "warn", action: "mark-oos" });
   }
+
   if (status === "OOS") {
     primary.push({ label: "Send to Maint.", action: "send-maintenance" });
     primary.push({ label: "Return to Armory", action: "return-armory" });
   }
+
   if (status === "Maintenance") {
-    // Log Inspection — record only, does NOT change status
     primary.push({ label: "Log Inspection", action: "log-inspection" });
-    // Return to Armory — explicit disposition after approval
     primary.push({ label: "Return to Armory", action: "return-armory" });
   }
+
   if (status === "Missing/Lost") {
-    primary.push({ label: "File Report", variant: "danger", action: "file-report" });
+    primary.push({
+      label: "File Report",
+      variant: "danger",
+      action: "file-report",
+    });
   }
 
-  const base    = "rounded px-2 py-1 text-[10px] font-medium border transition-colors duration-150 cursor-pointer whitespace-nowrap";
-  const def     = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/10`;
-  const warn    = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-orange-500/50 hover:text-orange-400 hover:bg-orange-500/10`;
-  const danger  = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10`;
-  const history = `${base} border-white/[0.08] bg-slate-800 text-slate-500 hover:border-blue-500/50 hover:text-blue-400 hover:bg-blue-500/10 opacity-60 hover:opacity-100`;
+  const base =
+    "rounded px-2 py-1 text-[10px] font-medium border transition-colors duration-150 cursor-pointer whitespace-nowrap";
+
+  const def = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-400`;
+  const warn = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-orange-500/50 hover:bg-orange-500/10 hover:text-orange-400`;
+  const danger = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400`;
+  const history = `${base} border-white/[0.08] bg-slate-800 text-slate-500 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-400`;
 
   return (
-    <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+    <div
+      className={`flex flex-wrap items-center gap-1 opacity-100 transition-opacity duration-150 lg:opacity-0 lg:group-hover:opacity-100 ${
+        align === "end" ? "justify-end" : "justify-start"
+      }`}
+    >
       {primary.map((p) => (
         <button
           key={p.action}
-          className={p.variant === "danger" ? danger : p.variant === "warn" ? warn : def}
+          type="button"
+          className={
+            p.variant === "danger" ? danger : p.variant === "warn" ? warn : def
+          }
           onClick={() => onAction(p.action, serial)}
         >
           {p.label}
         </button>
       ))}
+
       {primary.length > 0 && (
-        <div className="mx-0.5 h-3.5 w-px flex-shrink-0 bg-white/[0.08]" />
+        <div className="mx-0.5 hidden h-3.5 w-px flex-shrink-0 bg-white/[0.08] sm:block" />
       )}
+
       <button
+        type="button"
         className={history}
         title="View history"
+        aria-label={`View history for firearm ${serial}`}
         onClick={() => onAction("view-history", serial)}
       >
         <History size={11} />
@@ -192,434 +800,645 @@ function RowActions({
 }
 
 // ---------------------------------------------------------------------------
-// TracePoint icon mark — extracted so it renders in sidebar + mobile header
-// Matches the brand sheet: navy circle, white radar arcs, orange location pin
-// ---------------------------------------------------------------------------
-
-function TPMark({ size = 32 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 36 36"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className="flex-shrink-0"
-    >
-      <circle cx="18" cy="18" r="18" fill="#1B2B4B" />
-      <path d="M18 6 A12 12 0 0 0 6 18"  stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.9"/>
-      <path d="M18 10 A8 8 0 0 0 10 18"  stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.9"/>
-      <path d="M18 14 A4 4 0 0 0 14 18"  stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.9"/>
-      <path d="M18 6 A12 12 0 0 1 30 18" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.6"/>
-      <path d="M18 10 A8 8 0 0 1 26 18"  stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.6"/>
-      <line x1="9" y1="27" x2="25" y2="14" stroke="white" strokeWidth="1.6" strokeLinecap="round" opacity="0.7"/>
-      <circle cx="18" cy="18" r="1.5" fill="white" opacity="0.9"/>
-      <path d="M18 8.5 C15.5 8.5 13.5 10.5 13.5 13 C13.5 16.5 18 21.5 18 21.5 C18 21.5 22.5 16.5 22.5 13 C22.5 10.5 20.5 8.5 18 8.5Z" fill="#E8721C"/>
-      <circle cx="18" cy="13" r="2" fill="white"/>
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar — identical to dashboard (logo + nav + profile card)
-// Firearms Repository is marked active
-// ---------------------------------------------------------------------------
-
-const NAV_ITEMS = [
-  { label: "Dashboard",           href: "/",                  icon: LayoutDashboard, active: false },
-  { label: "Firearms Repository", href: "/firearms",          icon: Crosshair,       active: true  },
-  { label: "Off-Duty Firearms",   href: "/off-duty-firearms", icon: Shield,          active: false },
-  { label: "Qualifications",      href: "/qualifications",    icon: ShieldCheck,     active: false },
-  { label: "Range & Training",    href: "/range-days",        icon: CalendarRange,   active: false },
-  { label: "Inspections",         href: "/inspections",       icon: ClipboardList,   active: false },
-] as const;
-
-function Sidebar() {
-  return (
-    <aside className="hidden w-60 flex-col border-r border-slate-800 bg-slate-900 lg:flex">
-
-      {/* Logo + wordmark — matches dashboard exactly */}
-      <div className="border-b border-slate-800 px-4 py-4">
-        <div className="flex items-center gap-2.5">
-          <TPMark size={32} />
-          <div>
-            <div className="flex items-baseline">
-              <span className="text-[16px] font-extrabold leading-none tracking-tight text-white">Trace</span>
-              <span className="text-[16px] font-extrabold leading-none tracking-tight text-[#E8721C]">Point</span>
-            </div>
-            <p className="mt-0.5 text-[7.5px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-              Operational Accountability
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Nav — same active-indicator pattern as dashboard */}
-      <nav className="flex flex-col gap-0.5 p-3">
-        <p className="mb-1 px-3 pt-1 text-[9px] font-semibold uppercase tracking-widest text-slate-700">
-          Navigation
-        </p>
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-left text-[12.5px] font-medium transition-all duration-150 ${
-              item.active
-                ? "bg-blue-600/12 text-blue-300"
-                : "text-slate-500 hover:bg-slate-800/70 hover:text-slate-200"
-            }`}
-          >
-            {item.active && (
-              <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-full bg-blue-500" />
-            )}
-            <item.icon size={14} className={item.active ? "text-blue-400" : "text-slate-600"} />
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-
-      {/* Footer profile/status card — matches dashboard */}
-      <div className="mt-auto border-t border-slate-800 p-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 text-[11px] font-bold text-slate-300">
-              JM
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[12px] font-semibold leading-none text-slate-200">Readington PD</p>
-              <p className="mt-0.5 text-[10px] text-slate-600">Administrator</p>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center gap-1.5 border-t border-slate-800/60 pt-2">
-            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
-            <span className="text-[10px] font-medium text-slate-600">System Online</span>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main page component
+// Page
 // ---------------------------------------------------------------------------
 
 export default function FirearmsRepository() {
+  const [firearms, setFirearms] = useState<Firearm[]>(MOCK_FIREARMS);
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>(INITIAL_AUDIT_LOG);
 
-  // State — unchanged
-  const [search, setSearch]             = useState("");
-  const [statusFilter, setStatusFilter] = useState<FirearmStatus | "">("");
-  const [typeFilter, setTypeFilter]     = useState<FirearmType | "">("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
 
-  // Handler — unchanged (wire to router/modal in production)
-  const handleAction = (action: string, serial: string) => {
-    console.log(`[TracePoint] action="${action}" serial="${serial}"`);
-  };
+  const [addFirearmOpen, setAddFirearmOpen] = useState(false);
+  const [auditLogOpen, setAuditLogOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [workflowModal, setWorkflowModal] = useState<{
+    title: string;
+    description: string;
+  } | null>(null);
 
-  // Filtered list — unchanged logic
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return MOCK_FIREARMS.filter((f) => {
-      const haystack = [f.serial, f.make, f.model, f.type, f.status, f.assignedTo ?? ""]
+    const q = search.toLowerCase().trim();
+
+    return firearms.filter((f) => {
+      const haystack = [
+        f.serial,
+        f.make,
+        f.model,
+        f.type,
+        f.caliber,
+        f.status,
+        f.assignedTo ?? "",
+      ]
         .join(" ")
         .toLowerCase();
+
       return (
         (!q || haystack.includes(q)) &&
         (!statusFilter || f.status === statusFilter) &&
         (!typeFilter || f.type === typeFilter)
       );
     });
-  }, [search, statusFilter, typeFilter]);
+  }, [firearms, search, statusFilter, typeFilter]);
 
-  // Stats — unchanged logic
-  const stats = useMemo(() => ({
-    total:       MOCK_FIREARMS.length,
-    issued:      MOCK_FIREARMS.filter((f) => f.status === "Issued").length,
-    armory:      MOCK_FIREARMS.filter((f) => f.status === "Armory").length,
-    maintenance: MOCK_FIREARMS.filter((f) => f.status === "Maintenance").length,
-    oos:         MOCK_FIREARMS.filter((f) => f.status === "OOS").length,
-    missing:     MOCK_FIREARMS.filter((f) => f.status === "Missing/Lost").length,
-  }), []);
+  const stats = useMemo(
+    () => ({
+      total: firearms.length,
+      issued: firearms.filter((f) => f.status === "Issued").length,
+      armory: firearms.filter((f) => f.status === "Armory").length,
+      maintenance: firearms.filter((f) => f.status === "Maintenance").length,
+      oos: firearms.filter((f) => f.status === "OOS").length,
+      missing: firearms.filter((f) => f.status === "Missing/Lost").length,
+    }),
+    [firearms],
+  );
 
-  // Attention strip — derived from stats, each item filters the table on click
   const attention = [
-    stats.oos     > 0 && { text: `${stats.oos} out of service`,               dot: "bg-orange-500", filter: "OOS"          as FirearmStatus },
-    stats.missing > 0 && { text: `${stats.missing} missing / unaccounted`,    dot: "bg-red-500",    filter: "Missing/Lost" as FirearmStatus },
-    stats.maintenance > 0 && { text: `${stats.maintenance} in maintenance`,   dot: "bg-amber-500",  filter: "Maintenance"  as FirearmStatus },
-  ].filter(Boolean) as { text: string; dot: string; filter: FirearmStatus }[];
+    stats.oos > 0 && {
+      text: `${stats.oos} out of service`,
+      dot: "bg-orange-500",
+      filter: "OOS" as FirearmStatus,
+    },
+    stats.missing > 0 && {
+      text: `${stats.missing} missing / unaccounted`,
+      dot: "bg-red-500",
+      filter: "Missing/Lost" as FirearmStatus,
+    },
+    stats.maintenance > 0 && {
+      text: `${stats.maintenance} in maintenance`,
+      dot: "bg-amber-500",
+      filter: "Maintenance" as FirearmStatus,
+    },
+  ].filter(Boolean) as {
+    text: string;
+    dot: string;
+    filter: FirearmStatus;
+  }[];
 
-  // KPI card config — clicking sets statusFilter (same state as selects)
-  const KPI_CARDS = [
-    { label: "Total",          value: stats.total,       color: "text-slate-200",   sub: "All firearms",    filter: ""             as FirearmStatus | "" },
-    { label: "Issued",         value: stats.issued,      color: "text-emerald-400", sub: "Active carry",    filter: "Issued"       as FirearmStatus },
-    { label: "In Armory",      value: stats.armory,      color: "text-blue-400",    sub: "Available",       filter: "Armory"       as FirearmStatus },
-    { label: "Maintenance",    value: stats.maintenance, color: "text-amber-400",   sub: "Service queue",   filter: "Maintenance"  as FirearmStatus },
-    { label: "Out of Service", value: stats.oos,         color: "text-orange-400",  sub: "Non-operational", filter: "OOS"          as FirearmStatus },
-    { label: "Missing",        value: stats.missing,     color: "text-red-400",     sub: "Unaccounted",     filter: "Missing/Lost" as FirearmStatus },
+  const kpiCards = [
+    {
+      label: "Total",
+      value: stats.total,
+      color: "text-slate-200",
+      sub: "All firearms",
+      filter: "" as StatusFilter,
+    },
+    {
+      label: "Issued",
+      value: stats.issued,
+      color: "text-emerald-400",
+      sub: "Active carry",
+      filter: "Issued" as StatusFilter,
+    },
+    {
+      label: "In Armory",
+      value: stats.armory,
+      color: "text-blue-400",
+      sub: "Available",
+      filter: "Armory" as StatusFilter,
+    },
+    {
+      label: "Maintenance",
+      value: stats.maintenance,
+      color: "text-amber-400",
+      sub: "Service queue",
+      filter: "Maintenance" as StatusFilter,
+    },
+    {
+      label: "Out of Service",
+      value: stats.oos,
+      color: "text-orange-400",
+      sub: "Non-operational",
+      filter: "OOS" as StatusFilter,
+    },
+    {
+      label: "Missing",
+      value: stats.missing,
+      color: "text-red-400",
+      sub: "Unaccounted",
+      filter: "Missing/Lost" as StatusFilter,
+    },
   ];
+
+  const hasActiveFilters = Boolean(search || statusFilter || typeFilter);
+
+  function showNotice(message: string) {
+    setNotice(message);
+
+    window.setTimeout(() => {
+      setNotice(null);
+    }, 3500);
+  }
+
+  function recordAudit(
+    action: string,
+    detail: string,
+    tone: AuditEntry["tone"] = "blue",
+  ) {
+    setAuditLog((prev) => [
+      {
+        id: `audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        action,
+        detail,
+        actor: "Current User",
+        timestamp: "Just now",
+        tone,
+      },
+      ...prev,
+    ]);
+  }
+
+  function handleAddFirearm(firearm: Firearm) {
+    setFirearms((prev) => [firearm, ...prev]);
+
+    recordAudit(
+      "Firearm Added",
+      `${firearm.make} ${firearm.model} (${firearm.serial}) added to the repository.`,
+      "green",
+    );
+
+    setAddFirearmOpen(false);
+    showNotice(`${firearm.serial} added to repository.`);
+  }
+
+  const handleAction = (action: string, serial: string) => {
+    if (action === "export") {
+      exportFirearmsCsv(filtered);
+
+      recordAudit(
+        "Export Generated",
+        `${filtered.length} firearm record${
+          filtered.length === 1 ? "" : "s"
+        } exported to CSV.`,
+        "blue",
+      );
+
+      showNotice(
+        `Exported ${filtered.length} firearm record${
+          filtered.length === 1 ? "" : "s"
+        }.`,
+      );
+
+      return;
+    }
+
+    if (action === "audit-log") {
+      setAuditLogOpen(true);
+      return;
+    }
+
+    if (action === "add-firearm") {
+      setAddFirearmOpen(true);
+      return;
+    }
+
+    const firearm = firearms.find((f) => f.serial === serial);
+    const label = ACTION_LABELS[action] ?? action;
+
+    if (!firearm) {
+      return;
+    }
+
+    if (action === "view-history") {
+      recordAudit(
+        "History Viewed",
+        `History opened for ${firearm.make} ${firearm.model} (${serial}).`,
+        "slate",
+      );
+
+      setWorkflowModal({
+        title: `History: ${serial}`,
+        description: `This history view is ready to connect to the permanent firearm audit trail. For now, the action is captured in the in-page audit log for ${firearm.make} ${firearm.model}.`,
+      });
+
+      return;
+    }
+
+    recordAudit(
+      label,
+      `${label} workflow opened for ${firearm.make} ${firearm.model} (${serial}).`,
+      action === "file-report"
+        ? "red"
+        : action === "mark-oos"
+          ? "orange"
+          : "blue",
+    );
+
+    setWorkflowModal({
+      title: `${label}: ${serial}`,
+      description: `The ${label.toLowerCase()} workflow is now wired to open from this row. The next build step would be replacing this placeholder with the actual guided form, validations, and database write. Firearm: ${firearm.make} ${firearm.model}, ${firearm.caliber}.`,
+    });
+  };
 
   return (
     <TracePointShell activePage="Firearms">
-      <div className="space-y-5">
+      {notice && (
+        <div className="fixed right-4 top-4 z-[60] flex max-w-sm items-center gap-3 rounded-2xl border border-blue-500/30 bg-slate-900 px-4 py-3 text-sm text-slate-200 shadow-2xl">
+          <span className="h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+          <span className="min-w-0 flex-1">{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-white"
+            aria-label="Dismiss notice"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
-          {/* Page header — dashboard style */}
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/60 px-5 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+      {addFirearmOpen && (
+        <AddFirearmModal
+          existingSerials={
+            new Set(firearms.map((firearm) => firearm.serial.toUpperCase()))
+          }
+          onAdd={handleAddFirearm}
+          onClose={() => setAddFirearmOpen(false)}
+        />
+      )}
 
-              {/* Mobile logo — visible only when sidebar is hidden on small screens */}
-              <div className="flex items-center gap-2.5 lg:hidden">
-                <TPMark size={26} />
-                <span className="text-[15px] font-extrabold text-white">
-                  Trace<span className="text-[#E8721C]">Point</span>
+      {auditLogOpen && (
+        <AuditLogModal
+          entries={auditLog}
+          onClose={() => setAuditLogOpen(false)}
+        />
+      )}
+
+      {workflowModal && (
+        <WorkflowModal
+          title={workflowModal.title}
+          description={workflowModal.description}
+          onClose={() => setWorkflowModal(null)}
+        />
+      )}
+
+      <div className="w-full min-w-0 space-y-5">
+        {/* Page header */}
+        <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-[20px] font-bold leading-tight text-white sm:text-[22px]">
+                Firearms Repository
+              </h1>
+
+              <p className="mt-0.5 max-w-3xl text-[12px] leading-relaxed text-slate-500">
+                Inventory status, assignments, service exceptions, and weapon
+                accountability.
+              </p>
+
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-slate-700">
+                <span>{stats.total} tracked</span>
+                <span className="hidden text-slate-800 sm:inline">·</span>
+                <span>{stats.issued} issued</span>
+                <span className="hidden text-slate-800 sm:inline">·</span>
+                <span className={stats.oos > 0 ? "text-orange-500" : ""}>
+                  {stats.oos} OOS
+                </span>
+                <span className="hidden text-slate-800 sm:inline">·</span>
+                <span className={stats.missing > 0 ? "text-red-400" : ""}>
+                  {stats.missing} missing/lost
                 </span>
               </div>
+            </div>
 
-              <div>
-                <h1 className="text-[20px] font-bold leading-tight text-white">Firearms Repository</h1>
-                <p className="mt-0.5 text-[12px] text-slate-500">
-                  Inventory status, assignments, and accountability.
+            <span className="w-fit rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-[11px] font-medium text-slate-400">
+              Readington PD
+            </span>
+          </div>
+        </header>
+
+        {/* KPI strip */}
+        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          {kpiCards.map((card) => {
+            const isActive = statusFilter === card.filter;
+
+            return (
+              <button
+                key={card.label}
+                type="button"
+                onClick={() => setStatusFilter(card.filter)}
+                className={`group cursor-pointer rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-px hover:shadow-[0_2px_12px_rgba(0,0,0,0.3)] ${
+                  isActive
+                    ? "border-blue-500/35 bg-slate-800/80"
+                    : "border-slate-800 bg-slate-900 hover:border-blue-500/25 hover:bg-slate-800/70"
+                }`}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600 transition-colors group-hover:text-slate-500">
+                  {card.label}
                 </p>
-                <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-700">
-                  <span>{stats.total} tracked</span>
-                  <span className="text-slate-800">·</span>
-                  <span>{stats.issued} issued</span>
-                  <span className="text-slate-800">·</span>
-                  <span className={stats.oos > 0 ? "text-orange-600" : ""}>{stats.oos} OOS</span>
-                </div>
-              </div>
 
-              <span className="rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-[11px] font-medium text-slate-400">
-                Readington PD
+                <p className={`mt-1 text-2xl font-bold leading-none ${card.color}`}>
+                  {card.value}
+                </p>
+
+                <p className="mt-0.5 text-[10px] text-slate-600">{card.sub}</p>
+              </button>
+            );
+          })}
+        </section>
+
+        {/* Attention Required */}
+        {attention.length > 0 && (
+          <section className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 md:flex-row md:items-center md:gap-x-5">
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <AlertTriangle size={12} className="text-amber-500" />
+              <span className="text-[9.5px] font-semibold uppercase tracking-widest text-slate-500">
+                Attention Required
               </span>
             </div>
-          </div>
 
-          {/* Dashboard content */}
-          <div className="space-y-4">
-
-            {/* KPI strip — dashboard card style, clicking filters the table */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-              {KPI_CARDS.map((card) => {
-                const isActive = statusFilter === card.filter;
-                return (
-                  <button
-                    key={card.label}
-                    onClick={() => setStatusFilter(card.filter)}
-                    className={`group cursor-pointer rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-px hover:shadow-[0_2px_12px_rgba(0,0,0,0.3)] ${
-                      isActive
-                        ? "border-blue-500/35 bg-slate-800/80"
-                        : "border-slate-800 bg-slate-900 hover:border-blue-500/25 hover:bg-slate-800/70"
-                    }`}
-                  >
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600 transition-colors group-hover:text-slate-500">
-                      {card.label}
-                    </p>
-                    <p className={`mt-1 text-2xl font-bold leading-none ${card.color}`}>{card.value}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-600">{card.sub}</p>
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              {attention.map((item) => (
+                <button
+                  key={item.text}
+                  type="button"
+                  onClick={() => setStatusFilter(item.filter)}
+                  className="flex items-center gap-1.5 text-[11.5px] text-slate-400 transition-colors hover:text-slate-200"
+                >
+                  <span
+                    className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${item.dot}`}
+                  />
+                  {item.text}
+                </button>
+              ))}
             </div>
+          </section>
+        )}
 
-            {/* Attention Required — manage by exception, each item filters on click */}
-            {attention.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2.5">
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <AlertTriangle size={11} className="text-amber-500" />
-                  <span className="text-[9.5px] font-semibold uppercase tracking-widest text-slate-500">
-                    Attention Required
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                  {attention.map((item) => (
-                    <button
-                      key={item.text}
-                      onClick={() => setStatusFilter(item.filter)}
-                      className="flex items-center gap-1.5 text-[11.5px] text-slate-400 transition-colors hover:text-slate-200"
-                    >
-                      <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${item.dot}`} />
-                      {item.text}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+        {/* Toolbar */}
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+            <div className="flex flex-1 flex-col gap-2 md:flex-row md:items-center">
+              <div className="relative w-full md:max-w-[440px]">
+                <Search
+                  size={13}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
+                />
 
-            {/* Toolbar — search + filters left, utility actions + primary CTA right */}
-            <div className="flex flex-wrap items-center gap-2">
-
-              {/* Search — unchanged onChange */}
-              <div className="relative min-w-[220px] flex-1 max-w-[320px]">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search serial, make, model, assigned to…"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-900 py-2 pl-9 pr-3 text-[12px] text-white outline-none placeholder:text-slate-600 transition-colors focus:border-blue-500"
+                  placeholder="Search serial, make, model, caliber, assigned to..."
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-9 pr-3 text-[12px] text-white outline-none transition-colors placeholder:text-slate-600 focus:border-blue-500"
                 />
               </div>
 
-              {/* Status filter — unchanged onChange */}
-              <div className="relative">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as FirearmStatus | "")}
-                  className="appearance-none rounded-xl border border-slate-800 bg-slate-900 py-2 pl-3 pr-7 text-[12px] text-slate-400 outline-none transition-colors focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="">All statuses</option>
-                  <option value="Armory">Armory</option>
-                  <option value="Issued">Issued</option>
-                  <option value="OOS">OOS</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Missing/Lost">Missing / Lost</option>
-                </select>
-                <ChevronDown size={11} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:w-auto">
+                <div className="relative">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) =>
+                      setStatusFilter(e.target.value as StatusFilter)
+                    }
+                    className="w-full cursor-pointer appearance-none rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-3 pr-8 text-[12px] text-slate-400 outline-none transition-colors focus:border-blue-500 md:w-[150px]"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="Armory">Armory</option>
+                    <option value="Issued">Issued</option>
+                    <option value="OOS">OOS</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Missing/Lost">Missing / Lost</option>
+                  </select>
+
+                  <ChevronDown
+                    size={11}
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600"
+                  />
+                </div>
+
+                <div className="relative">
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+                    className="w-full cursor-pointer appearance-none rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-3 pr-8 text-[12px] text-slate-400 outline-none transition-colors focus:border-blue-500 md:w-[135px]"
+                  >
+                    <option value="">All types</option>
+                    <option value="Pistol">Pistol</option>
+                    <option value="Shotgun">Shotgun</option>
+                    <option value="Rifle">Rifle</option>
+                    <option value="Revolver">Revolver</option>
+                  </select>
+
+                  <ChevronDown
+                    size={11}
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600"
+                  />
+                </div>
               </div>
 
-              {/* Type filter — unchanged onChange */}
-              <div className="relative">
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value as FirearmType | "")}
-                  className="appearance-none rounded-xl border border-slate-800 bg-slate-900 py-2 pl-3 pr-7 text-[12px] text-slate-400 outline-none transition-colors focus:border-blue-500 cursor-pointer"
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("");
+                    setTypeFilter("");
+                  }}
+                  className="w-full rounded-xl border border-slate-800 px-3 py-2 text-[12px] text-slate-500 transition hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-300 md:w-auto"
                 >
-                  <option value="">All types</option>
-                  <option value="Pistol">Pistol</option>
-                  <option value="Shotgun">Shotgun</option>
-                  <option value="Rifle">Rifle</option>
-                  <option value="Revolver">Revolver</option>
-                </select>
-                <ChevronDown size={11} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
-              </div>
+                  Clear
+                </button>
+              )}
+            </div>
 
-              <div className="flex-1" />
-
-              {/* Right-side actions — unchanged onClick handlers */}
+            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 xl:flex xl:items-center xl:justify-end">
               <button
+                type="button"
                 onClick={() => handleAction("export", "")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-transparent px-3 py-2 text-[12px] text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-200"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-transparent px-3 py-2 text-[12px] text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-200"
               >
                 <Download size={12} />
                 Export
               </button>
+
               <button
+                type="button"
                 onClick={() => handleAction("audit-log", "")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-transparent px-3 py-2 text-[12px] text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-200"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-transparent px-3 py-2 text-[12px] text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-200"
               >
                 <ClipboardList size={12} />
                 Audit Log
               </button>
+
               <button
+                type="button"
                 onClick={() => handleAction("add-firearm", "")}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-[12px] font-semibold text-white transition-all hover:bg-blue-500"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-[12px] font-semibold text-white transition-all hover:bg-blue-500"
               >
                 <Plus size={13} />
                 Add Firearm
               </button>
             </div>
+          </div>
+        </section>
 
-            {/* Table — architecture, columns, responsive classes, filtering all unchanged */}
-            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead className="bg-slate-900/80">
-                    <tr>
-                      {[
-                        { label: "Serial No",   cls: "w-[12%]" },
-                        { label: "Make",        cls: "w-[10%]" },
-                        { label: "Model",       cls: "w-[14%]" },
-                        { label: "Type",        cls: "w-[9%] hidden sm:table-cell" },
-                        { label: "Caliber",     cls: "w-[7%] hidden md:table-cell" },
-                        { label: "Status",      cls: "w-[13%]" },
-                        { label: "Assigned To", cls: "w-[20%]" },
-                        { label: "",            cls: "w-[180px] text-right pr-4" },
-                      ].map((col) => (
-                        <th
-                          key={col.label}
-                          className={`border-b border-slate-800 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600 ${col.cls}`}
-                        >
-                          {col.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
+        {/* Mobile / tablet card list */}
+        <section className="space-y-2 lg:hidden">
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-10 text-center text-[13px] text-slate-600">
+              No firearms match your current filters.
+            </div>
+          ) : (
+            filtered.map((firearm) => (
+              <article
+                key={firearm.serial}
+                className={`group rounded-2xl border border-slate-800 bg-slate-900 p-4 ${
+                  firearm.status === "Missing/Lost"
+                    ? "border-red-500/20 bg-red-500/[0.03]"
+                    : ""
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[11px] tracking-wide text-slate-400">
+                      {firearm.serial}
+                    </p>
 
-                  <tbody className="divide-y divide-slate-800/60">
-                    {filtered.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-12 text-center text-[13px] text-slate-600">
-                          No firearms match your current filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filtered.map((firearm) => (
-                        <tr
-                          key={firearm.serial}
-                          className={`group cursor-pointer transition-colors duration-100 ${
-                            firearm.status === "Missing/Lost"
-                              ? "hover:bg-red-500/[0.05]"
-                              : "hover:bg-slate-800/50"
-                          }`}
-                        >
-                          <td className="px-4 py-3">
-                            <span className="font-mono text-[11px] tracking-wide text-slate-200">
-                              {firearm.serial}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-[12px] font-medium text-slate-200">
-                            {firearm.make}
-                          </td>
-                          <td className="px-4 py-3 text-[12px] text-slate-400">
-                            {firearm.model}
-                          </td>
-                          <td className="hidden px-4 py-3 text-[12px] text-slate-400 sm:table-cell">
-                            {firearm.type}
-                          </td>
-                          <td className="hidden px-4 py-3 text-[12px] text-slate-400 md:table-cell">
-                            {firearm.caliber}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={firearm.status} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <AssignedToCell assignedTo={firearm.assignedTo} />
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <RowActions firearm={firearm} onAction={handleAction} />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    <h3 className="mt-0.5 truncate text-[15px] font-semibold text-white">
+                      {firearm.make} {firearm.model}
+                    </h3>
 
-              {/* Table footer — pagination unchanged */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 bg-slate-900/60 px-4 py-2.5 text-[11px] text-slate-600">
-                <span>
-                  {filtered.length === MOCK_FIREARMS.length
-                    ? `Showing all ${MOCK_FIREARMS.length} records`
-                    : `${filtered.length} of ${MOCK_FIREARMS.length} records`}
-                </span>
-                <div className="flex items-center gap-1">
-                  {["‹", "1", "2", "›"].map((p, i) => (
-                    <button
-                      key={i}
-                      className={`flex h-[26px] w-[26px] items-center justify-center rounded-lg border text-[11px] transition-colors ${
-                        p === "1"
-                          ? "border-blue-500 bg-blue-500 text-white"
-                          : "border-slate-800 bg-transparent text-slate-600 hover:border-slate-700 hover:text-slate-300"
+                    <p className="mt-1 text-[11px] text-slate-600">
+                      {firearm.type} · {firearm.caliber}
+                    </p>
+                  </div>
+
+                  <StatusBadge status={firearm.status} />
+                </div>
+
+                <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2">
+                  <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-700">
+                    Assigned To
+                  </p>
+
+                  <AssignedToCell assignedTo={firearm.assignedTo} />
+                </div>
+
+                <div className="mt-3">
+                  <RowActions
+                    firearm={firearm}
+                    onAction={handleAction}
+                    align="start"
+                  />
+                </div>
+              </article>
+            ))
+          )}
+        </section>
+
+        {/* Desktop table */}
+        <section className="hidden overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 lg:block">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] border-collapse text-left">
+              <thead className="bg-slate-900/80">
+                <tr>
+                  {[
+                    { label: "Serial No.", cls: "w-[12%]" },
+                    { label: "Make", cls: "w-[10%]" },
+                    { label: "Model", cls: "w-[14%]" },
+                    { label: "Type", cls: "w-[9%]" },
+                    { label: "Caliber", cls: "w-[7%]" },
+                    { label: "Status", cls: "w-[13%]" },
+                    { label: "Assigned To", cls: "w-[20%]" },
+                    { label: "", cls: "w-[220px] pr-4 text-right" },
+                  ].map((col) => (
+                    <th
+                      key={col.label}
+                      className={`border-b border-slate-800 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600 ${col.cls}`}
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-800/60">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="py-12 text-center text-[13px] text-slate-600"
+                    >
+                      No firearms match your current filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((firearm) => (
+                    <tr
+                      key={firearm.serial}
+                      className={`group cursor-pointer transition-colors duration-100 ${
+                        firearm.status === "Missing/Lost"
+                          ? "hover:bg-red-500/[0.05]"
+                          : "hover:bg-slate-800/50"
                       }`}
                     >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-[11px] tracking-wide text-slate-200">
+                          {firearm.serial}
+                        </span>
+                      </td>
 
+                      <td className="px-4 py-3 text-[12px] font-medium text-slate-200">
+                        {firearm.make}
+                      </td>
+
+                      <td className="px-4 py-3 text-[12px] text-slate-400">
+                        {firearm.model}
+                      </td>
+
+                      <td className="px-4 py-3 text-[12px] text-slate-400">
+                        {firearm.type}
+                      </td>
+
+                      <td className="px-4 py-3 text-[12px] text-slate-400">
+                        {firearm.caliber}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <StatusBadge status={firearm.status} />
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <AssignedToCell assignedTo={firearm.assignedTo} />
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        <RowActions firearm={firearm} onAction={handleAction} />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 bg-slate-900/60 px-4 py-2.5 text-[11px] text-slate-600">
+            <span>
+              {filtered.length === firearms.length
+                ? `Showing all ${firearms.length} records`
+                : `${filtered.length} of ${firearms.length} records`}
+            </span>
+
+            <div className="flex items-center gap-1">
+              {["‹", "1", "2", "›"].map((p, i) => (
+                <button
+                  key={`${p}-${i}`}
+                  type="button"
+                  className={`flex h-[26px] w-[26px] items-center justify-center rounded-lg border text-[11px] transition-colors ${
+                    p === "1"
+                      ? "border-blue-500 bg-blue-500 text-white"
+                      : "border-slate-800 bg-transparent text-slate-600 hover:border-slate-700 hover:text-slate-300"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
       </div>
     </TracePointShell>
   );

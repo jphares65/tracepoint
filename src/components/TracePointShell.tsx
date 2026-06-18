@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { usePathname } from "next/navigation";
+import { useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
   Crosshair,
@@ -18,7 +19,7 @@ import {
 
 type TracePointShellProps = {
   activePage: string;
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 const NAV_ITEMS = [
@@ -34,33 +35,46 @@ const NAV_ITEMS = [
 function isActivePage(activePage: string, itemLabel: string) {
   return (
     activePage === itemLabel ||
-    (activePage === "Firearms Repository" && itemLabel === "Firearms")
+    (activePage === "Firearms Repository" && itemLabel === "Firearms") ||
+    (activePage === "Off-Duty" && itemLabel === "Off-Duty Firearms") ||
+    (activePage === "Range Days" && itemLabel === "Range & Training")
   );
+}
+
+function isActiveRoute(pathname: string, href: string) {
+  if (href === "/") return pathname === "/";
+
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function NavigationLinks({
   activePage,
+  pathname,
   onNavigate,
 }: {
   activePage: string;
+  pathname: string;
   onNavigate?: () => void;
 }) {
   return (
-    <nav className="flex-1 space-y-1.5 px-3 py-5">
+    <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-5">
       <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-600">
         Navigation
       </p>
 
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
-        const active = isActivePage(activePage, item.label);
+        const active =
+          isActivePage(activePage, item.label) ||
+          isActiveRoute(pathname, item.href);
 
         return (
           <Link
             key={item.label}
             href={item.href}
             onClick={onNavigate}
-            className={`group relative flex items-center gap-3 rounded-xl px-4 py-2 text-[14px] transition-all duration-200 ${
+            aria-current={active ? "page" : undefined}
+            className={`group relative flex items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] transition-all duration-200 ${
               active
                 ? "bg-blue-600/20 text-blue-200"
                 : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
@@ -79,7 +93,7 @@ function NavigationLinks({
               }
             />
 
-            <span>{item.label}</span>
+            <span className="truncate">{item.label}</span>
           </Link>
         );
       })}
@@ -104,6 +118,7 @@ function AgencyCard() {
             <p className="truncate text-[13px] font-semibold text-slate-100">
               Readington PD
             </p>
+
             <p className="text-[11px] text-slate-500">Administrator</p>
           </div>
         </div>
@@ -119,14 +134,16 @@ function AgencyCard() {
 
 function BrandHeader({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/" className="block">
+    <Link href="/" className="block min-w-0">
       <Image
         src="/tracepoint-logo-dark.png"
         alt="TracePoint"
-        width={compact ? 150 : 165}
-        height={compact ? 36 : 40}
+        width={compact ? 155 : 205}
+        height={compact ? 38 : 50}
         priority
-        className={compact ? "h-auto w-[160px] object-contain" : "h-auto w-[205px] object-contain"}
+        className={`h-auto object-contain ${
+          compact ? "w-[150px] sm:w-[160px]" : "w-[205px]"
+        }`}
       />
     </Link>
   );
@@ -136,18 +153,19 @@ export default function TracePointShell({
   activePage,
   children,
 }: TracePointShellProps) {
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="flex min-h-screen">
         {/* Desktop sidebar */}
-        <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
+        <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
           <div className="border-b border-slate-800 px-5 py-3.5">
             <BrandHeader />
           </div>
 
-          <NavigationLinks activePage={activePage} />
+          <NavigationLinks activePage={activePage} pathname={pathname} />
 
           <AgencyCard />
         </aside>
@@ -162,9 +180,10 @@ export default function TracePointShell({
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             />
 
-            <aside className="absolute inset-y-0 left-0 flex w-[82vw] max-w-[320px] flex-col border-r border-slate-800 bg-slate-950 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3.5">
+            <aside className="absolute inset-y-0 left-0 flex w-[86vw] max-w-[340px] flex-col border-r border-slate-800 bg-slate-950 shadow-2xl">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3.5">
                 <BrandHeader compact />
+
                 <button
                   type="button"
                   aria-label="Close navigation"
@@ -177,6 +196,7 @@ export default function TracePointShell({
 
               <NavigationLinks
                 activePage={activePage}
+                pathname={pathname}
                 onNavigate={() => setMobileOpen(false)}
               />
 
@@ -186,9 +206,9 @@ export default function TracePointShell({
         )}
 
         {/* Main area */}
-        <main className="min-h-screen flex-1 lg:pl-72">
+        <main className="min-h-screen min-w-0 flex-1 lg:pl-72">
           {/* Mobile top bar */}
-          <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden">
+          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden">
             <BrandHeader compact />
 
             <button
@@ -201,7 +221,12 @@ export default function TracePointShell({
             </button>
           </header>
 
-          <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
+          {/* 
+            Important:
+            Do NOT cap this wrapper with max-w-7xl.
+            Individual pages now control their own max width, usually max-w-[1600px].
+          */}
+          <div className="w-full px-3 py-4 sm:px-5 sm:py-5 lg:px-6 xl:px-8 2xl:px-10">
             {children}
           </div>
         </main>

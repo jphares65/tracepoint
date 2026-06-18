@@ -12,17 +12,11 @@ import {
   UserPlus,
   Upload,
   CheckCircle2,
-  AlertTriangle,
   FileText,
   Settings,
 } from "lucide-react";
 
-type TabId =
-  | "agency"
-  | "users"
-  | "rules"
-  | "branding"
-  | "audit";
+type TabId = "agency" | "users" | "rules" | "branding" | "audit";
 
 const tabs = [
   { id: "agency", label: "Agency Profile", icon: Building2 },
@@ -66,7 +60,7 @@ function SettingsCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-white">{title}</h3>
         {description && (
@@ -80,19 +74,15 @@ function SettingsCard({
   );
 }
 
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
+function Field({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
         {label}
       </p>
-      <p className="mt-1 text-sm font-medium text-slate-200">{value}</p>
+      <p className="mt-1 break-words text-sm font-medium text-slate-200">
+        {value}
+      </p>
     </div>
   );
 }
@@ -161,16 +151,17 @@ export default function AdminSettingsPage() {
 
   return (
     <TracePointShell activePage="Settings">
-      <div className="space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-800 bg-slate-900/60 px-5 py-4">
-          <div>
+      <div className="w-full min-w-0 space-y-6">
+        <header className="flex flex-col gap-4 rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
             <h1 className="text-[22px] font-bold leading-tight text-white">
               Admin Settings
             </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Agency configuration, user access, rules, branding, and system controls.
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+              Agency configuration, user access, rules, branding, and system
+              controls.
             </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
               <span>Updated 2 min ago</span>
               <span>·</span>
               <span>Agency profile active</span>
@@ -182,14 +173,14 @@ export default function AdminSettingsPage() {
             </div>
           </div>
 
-          <button className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500">
+          <button className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 sm:w-auto">
             <Save size={15} />
             Save Settings
           </button>
         </header>
 
         <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-1.5">
-          <div className="grid gap-1 md:grid-cols-5">
+          <div className="grid grid-cols-5 gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -198,14 +189,16 @@ export default function AdminSettingsPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-medium transition ${
+                  className={`flex min-w-0 items-center justify-center gap-2 rounded-2xl px-2 py-3 text-sm font-medium transition sm:px-3 ${
                     active
                       ? "bg-blue-600/20 text-blue-300"
                       : "text-slate-500 hover:bg-slate-800 hover:text-slate-300"
                   }`}
                 >
-                  <Icon size={15} />
-                  <span className="hidden lg:inline">{tab.label}</span>
+                  <Icon size={15} className="shrink-0" />
+                  <span className="hidden truncate sm:inline">
+                    {tab.label}
+                  </span>
                 </button>
               );
             })}
@@ -213,8 +206,8 @@ export default function AdminSettingsPage() {
         </div>
 
         {activeTab === "agency" && (
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
               <SettingsCard
                 title="Agency Profile"
                 description="Current agency configuration. These values should remain configurable for future jurisdiction support."
@@ -223,14 +216,17 @@ export default function AdminSettingsPage() {
                   <Field label="Agency Name" value="Readington PD" />
                   <Field label="State" value="New Jersey" />
                   <Field label="County" value="Hunterdon" />
-                  <Field label="Agency Type" value="Municipal Police Department" />
+                  <Field
+                    label="Agency Type"
+                    value="Municipal Police Department"
+                  />
                   <Field label="Sworn Officers" value="34" />
                   <Field label="Civilian Staff" value="2" />
                   <Field label="Time Zone" value="Eastern" />
                   <Field label="Primary Contact" value="Administrator" />
                 </div>
 
-                <button className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">
+                <button className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 sm:w-auto">
                   <Save size={15} />
                   Save Agency Profile
                 </button>
@@ -250,7 +246,7 @@ export default function AdminSettingsPage() {
                 ].map(([label, status]) => (
                   <div
                     key={label}
-                    className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3"
                   >
                     <span className="text-sm text-slate-400">{label}</span>
                     <StatusPill label={status} />
@@ -262,8 +258,8 @@ export default function AdminSettingsPage() {
         )}
 
         {activeTab === "users" && (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="min-w-0 space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
               {[
                 "System Admin",
                 "Command Staff",
@@ -288,14 +284,14 @@ export default function AdminSettingsPage() {
 
             <SettingsCard title="Users & Roles">
               <div className="mb-4 flex justify-end">
-                <button className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                <button className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 sm:w-auto">
                   <UserPlus size={15} />
                   Invite User
                 </button>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-800">
-                <table className="w-full border-collapse text-left text-sm">
+              <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                <table className="min-w-[720px] w-full border-collapse text-left text-sm">
                   <thead className="bg-slate-950/70 text-[10px] uppercase tracking-widest text-slate-600">
                     <tr>
                       <th className="px-4 py-3">User</th>
@@ -314,7 +310,9 @@ export default function AdminSettingsPage() {
                         <td className="px-4 py-3 font-medium text-white">
                           {user.name}
                         </td>
-                        <td className="px-4 py-3 text-slate-400">{user.role}</td>
+                        <td className="px-4 py-3 text-slate-400">
+                          {user.role}
+                        </td>
                         <td className="px-4 py-3">
                           <StatusPill
                             label={user.status}
@@ -340,11 +338,13 @@ export default function AdminSettingsPage() {
         )}
 
         {activeTab === "rules" && (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             {rules.map((rule) => (
               <SettingsCard key={rule.title} title={rule.title}>
-                <p className="text-sm leading-6 text-slate-400">{rule.detail}</p>
-                <div className="mt-4 flex items-center justify-between">
+                <p className="text-sm leading-6 text-slate-400">
+                  {rule.detail}
+                </p>
+                <div className="mt-4 flex items-center justify-between gap-3">
                   <StatusPill label={rule.status} />
                   <button className="rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-blue-500/50 hover:text-white">
                     Edit Rule
@@ -356,7 +356,7 @@ export default function AdminSettingsPage() {
         )}
 
         {activeTab === "branding" && (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
             <SettingsCard
               title="TracePoint Branding"
               description="Platform branding and agency display settings."
@@ -391,8 +391,8 @@ export default function AdminSettingsPage() {
         )}
 
         {activeTab === "audit" && (
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
               <SettingsCard title="Audit & Security Controls">
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
@@ -405,7 +405,7 @@ export default function AdminSettingsPage() {
                   ].map(([label, value]) => (
                     <div
                       key={label}
-                      className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3"
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3"
                     >
                       <span className="text-sm text-slate-400">{label}</span>
                       <StatusPill
@@ -416,12 +416,12 @@ export default function AdminSettingsPage() {
                   ))}
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <button className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-400 hover:border-blue-500/50 hover:text-white">
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-400 hover:border-blue-500/50 hover:text-white">
                     <FileText size={15} />
                     Export Audit Log
                   </button>
-                  <button className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
+                  <button className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">
                     <ShieldCheck size={15} />
                     Review Security Settings
                   </button>
@@ -441,10 +441,10 @@ export default function AdminSettingsPage() {
                     key={activity}
                     className="flex items-start justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3"
                   >
-                    <div className="flex items-start gap-2">
+                    <div className="flex min-w-0 items-start gap-2">
                       <CheckCircle2
                         size={14}
-                        className="mt-0.5 flex-shrink-0 text-blue-400"
+                        className="mt-0.5 shrink-0 text-blue-400"
                       />
                       <p className="text-sm leading-5 text-slate-300">
                         {activity}
