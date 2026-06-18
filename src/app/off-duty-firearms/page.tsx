@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ComponentType } from "react";
-import TracePointShell from "@/components/TracePointShell";
+import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
   CircleDot,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import TracePointShell from "@/components/TracePointShell";
+import TracePointShell from "@/app/components/TracePointShell";
 import {
   ArrowRightLeft,
   RotateCcw,

@@ -1,7 +1,7 @@
 "use client";
 
-import TracePointShell from "@/components/TracePointShell";
-import { useMemo, useState, type ReactNode } from "react";
+import TracePointShell from "@/app/components/TracePointShell";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -51,6 +51,9 @@ const FIREARM_STATUSES: FirearmStatus[] = [
 ];
 
 const FIREARM_TYPES: FirearmType[] = ["Pistol", "Shotgun", "Rifle", "Revolver"];
+
+const FIREARMS_STORAGE_KEY = "tracepoint.firearms.repository.v1";
+const AUDIT_LOG_STORAGE_KEY = "tracepoint.firearms.auditLog.v1";
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -806,6 +809,7 @@ function RowActions({
 export default function FirearmsRepository() {
   const [firearms, setFirearms] = useState<Firearm[]>(MOCK_FIREARMS);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>(INITIAL_AUDIT_LOG);
+  const [storageReady, setStorageReady] = useState(false);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
@@ -818,6 +822,59 @@ export default function FirearmsRepository() {
     title: string;
     description: string;
   } | null>(null);
+
+  useEffect(() => {
+    try {
+      const savedFirearms = window.localStorage.getItem(FIREARMS_STORAGE_KEY);
+      const savedAuditLog = window.localStorage.getItem(AUDIT_LOG_STORAGE_KEY);
+
+      if (savedFirearms) {
+        const parsedFirearms = JSON.parse(savedFirearms);
+
+        if (Array.isArray(parsedFirearms)) {
+          setFirearms(parsedFirearms);
+        }
+      }
+
+      if (savedAuditLog) {
+        const parsedAuditLog = JSON.parse(savedAuditLog);
+
+        if (Array.isArray(parsedAuditLog)) {
+          setAuditLog(parsedAuditLog);
+        }
+      }
+    } catch (error) {
+      console.error("[TracePoint] Failed to load saved firearms data.", error);
+    } finally {
+      setStorageReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) return;
+
+    try {
+      window.localStorage.setItem(
+        FIREARMS_STORAGE_KEY,
+        JSON.stringify(firearms),
+      );
+    } catch (error) {
+      console.error("[TracePoint] Failed to save firearms data.", error);
+    }
+  }, [firearms, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+
+    try {
+      window.localStorage.setItem(
+        AUDIT_LOG_STORAGE_KEY,
+        JSON.stringify(auditLog),
+      );
+    } catch (error) {
+      console.error("[TracePoint] Failed to save audit log data.", error);
+    }
+  }, [auditLog, storageReady]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();

@@ -1,6 +1,6 @@
 "use client";
 
-import TracePointShell from "@/components/TracePointShell";
+import TracePointShell from "@/app/components/TracePointShell";
 import Link from "next/link";
 import {
   useMemo,
