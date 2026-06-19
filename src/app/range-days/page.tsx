@@ -30,7 +30,9 @@ import type {
 } from "@/app/lib/tracepoint/range-day-types";
 
 import {
+  addLibraryDrillToRangeDay,
   createDrillFromTemplate,
+  createDrillLibraryTemplate,
   createRangePacket,
   getAttendanceCount,
   getAttendanceRate,
@@ -50,11 +52,22 @@ const DRILL_TEMPLATES: DrillTemplate[] = [
     name: "Handgun Qualification Course",
     category: "Qualification",
     description: "Formal handgun qualification course.",
+    instructions:
+      "Run the department-approved handgun qualification course. Record score, pass/fail status, firearm used, and instructor notes.",
+    firearmType: "Handgun",
+    roundCount: 50,
+    estimatedMinutes: 30,
+    difficulty: "Intermediate",
     defaultScoringMode: "Scored",
     defaultPassingScore: 80,
     defaultMaxScore: 100,
     defaultRunCount: 1,
-    active: true,
+    defaultRequired: true,
+    tags: ["qualification", "handgun", "annual"],
+    status: "Active",
+    createdByUserId: CURRENT_USER.id,
+    createdAt: "2026-06-18T12:00:00Z",
+    notes: "Primary handgun qualification template.",
   },
   {
     id: "template-drill-1",
@@ -62,9 +75,20 @@ const DRILL_TEMPLATES: DrillTemplate[] = [
     name: "Failure Drill",
     category: "Marksmanship",
     description: "Two rounds to body, one round to head.",
+    instructions:
+      "Officer begins from the holster or ready position based on range master direction. Record pass/fail and any observed deficiencies.",
+    firearmType: "Handgun",
+    roundCount: 3,
+    estimatedMinutes: 10,
+    difficulty: "Intermediate",
     defaultScoringMode: "Pass/Fail",
     defaultRunCount: 3,
-    active: true,
+    defaultRequired: false,
+    tags: ["handgun", "marksmanship", "failure drill"],
+    status: "Active",
+    createdByUserId: CURRENT_USER.id,
+    createdAt: "2026-06-18T12:00:00Z",
+    notes: "Useful as a supplemental performance drill.",
   },
   {
     id: "template-drill-2",
@@ -72,9 +96,20 @@ const DRILL_TEMPLATES: DrillTemplate[] = [
     name: "Malfunction Clearance",
     category: "Malfunction Clearance",
     description: "Immediate action and remedial action drill.",
+    instructions:
+      "Use only expected/training-induced malfunctions for the drill. Separately mark any unanticipated malfunction that may indicate a firearm issue.",
+    firearmType: "Any",
+    roundCount: 6,
+    estimatedMinutes: 15,
+    difficulty: "Basic",
     defaultScoringMode: "Completion Only",
     defaultRunCount: 3,
-    active: true,
+    defaultRequired: false,
+    tags: ["malfunction", "weapon handling", "remedial action"],
+    status: "Active",
+    createdByUserId: CURRENT_USER.id,
+    createdAt: "2026-06-18T12:00:00Z",
+    notes: "Training malfunctions should not automatically create armorer alerts unless marked as unanticipated.",
   },
   {
     id: "template-drill-3",
@@ -82,9 +117,20 @@ const DRILL_TEMPLATES: DrillTemplate[] = [
     name: "Low Light Decision Making",
     category: "Low Light",
     description: "Low-light threat identification and engagement.",
+    instructions:
+      "Instructor documents decision-making, target identification, light discipline, and safety observations.",
+    firearmType: "Handgun",
+    roundCount: 10,
+    estimatedMinutes: 20,
+    difficulty: "Advanced",
     defaultScoringMode: "Notes Only",
     defaultRunCount: 2,
-    active: true,
+    defaultRequired: false,
+    tags: ["low light", "decision making", "judgment"],
+    status: "Active",
+    createdByUserId: CURRENT_USER.id,
+    createdAt: "2026-06-18T12:00:00Z",
+    notes: "Designed for qualitative instructor observations rather than numeric scoring.",
   },
 ];
 
@@ -120,9 +166,64 @@ const RANGE_ROSTER: RangeRosterEntry[] = [
   },
 ];
 
-const RANGE_DRILLS: RangeDayDrill[] = DRILL_TEMPLATES.map((template) =>
-  createDrillFromTemplate(template, "range-1"),
-);
+const RANGE_DRILLS: RangeDayDrill[] = [
+  ...DRILL_TEMPLATES.map((template) =>
+    createDrillFromTemplate(template, "range-1"),
+  ),
+
+  createDrillFromTemplate(
+    {
+      id: "template-rifle-1",
+      departmentId: DEMO_DEPARTMENT.id,
+      name: "50-Yard Zero Confirmation",
+      category: "Rifle",
+      description: "Rifle zero confirmation and grouping.",
+      instructions:
+        "Confirm zero from a supported position. Record completion, notes, and any firearm concerns.",
+      firearmType: "Rifle",
+      roundCount: 20,
+      estimatedMinutes: 20,
+      difficulty: "Basic",
+      defaultScoringMode: "Completion Only",
+      defaultRunCount: 2,
+      defaultRequired: true,
+      tags: ["rifle", "zero", "familiarization"],
+      status: "Active",
+      createdByUserId: CURRENT_USER.id,
+      createdAt: "2026-06-18T12:00:00Z",
+      notes: "Rifle familiarization / zero confirmation template.",
+    },
+    "range-2",
+  ),
+
+  createDrillFromTemplate(
+    {
+      id: "template-rifle-2",
+      departmentId: DEMO_DEPARTMENT.id,
+      name: "Rifle to Pistol Transition",
+      category: "Transition",
+      description: "Transition from rifle to handgun under instructor direction.",
+      instructions:
+        "Officer safely transitions from rifle to handgun. Instructor records pass/fail and any weapon-handling concerns.",
+      firearmType: "Any",
+      roundCount: 10,
+      estimatedMinutes: 15,
+      difficulty: "Advanced",
+      defaultScoringMode: "Pass/Fail",
+      defaultRunCount: 3,
+      defaultRequired: false,
+      tags: ["rifle", "handgun", "transition"],
+      status: "Active",
+      createdByUserId: CURRENT_USER.id,
+      createdAt: "2026-06-18T12:00:00Z",
+      notes: "Advanced transition drill.",
+    },
+    "range-2",
+  ),
+
+  createDrillFromTemplate(DRILL_TEMPLATES[3], "range-3"),
+  createDrillFromTemplate(DRILL_TEMPLATES[2], "range-3"),
+];
 
 const MALFUNCTION_TYPES: MalfunctionType[] = [
   "Failure to Feed",
@@ -136,6 +237,54 @@ const MALFUNCTION_TYPES: MalfunctionType[] = [
   "Catastrophic Failure",
   "Other",
 ];
+const DRILL_CATEGORIES: DrillTemplate["category"][] = [
+  "Qualification",
+  "Marksmanship",
+  "Movement",
+  "Low Light",
+  "Decision Making",
+  "Rifle",
+  "Shotgun",
+  "Transition",
+  "Malfunction Clearance",
+  "Active Shooter",
+  "Administrative",
+  "Remedial",
+  "Other",
+];
+
+const SCORING_MODES: DrillTemplate["defaultScoringMode"][] = [
+  "Scored",
+  "Pass/Fail",
+  "Completion Only",
+  "Notes Only",
+];
+
+const FIREARM_TYPES: Array<NonNullable<DrillTemplate["firearmType"]>> = [
+  "Any",
+  "Handgun",
+  "Rifle",
+  "Shotgun",
+  "Less Lethal",
+  "Other",
+];
+
+const DRILL_DIFFICULTIES: Array<NonNullable<DrillTemplate["difficulty"]>> = [
+  "Basic",
+  "Intermediate",
+  "Advanced",
+  "Instructor Discretion",
+];
+
+function parseOptionalNumber(value: string) {
+  if (!value.trim()) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
 
 function getUserName(userId: string) {
   return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
@@ -181,22 +330,61 @@ function StatCard({
 
 export default function RangeDaysPage() {
   const [selectedRangeDayId] = useState("range-1");
-  const [selectedOfficerId, setSelectedOfficerId] = useState(RANGE_ROSTER[0]?.officerId ?? "");
-  const [selectedDrillId, setSelectedDrillId] = useState(RANGE_DRILLS[0]?.id ?? "");
-  const [selectedRunNumber, setSelectedRunNumber] = useState(1);
-  const [score, setScore] = useState("");
-  const [passed, setPassed] = useState<boolean | undefined>(undefined);
-  const [completed, setCompleted] = useState(true);
-  const [notes, setNotes] = useState("");
-  const [malfunctionOccurred, setMalfunctionOccurred] = useState(false);
-  const [malfunctionType, setMalfunctionType] = useState<MalfunctionType>("Failure to Feed");
-  const [malfunctionNotes, setMalfunctionNotes] = useState("");
-  const [results, setResults] = useState<DrillRunResult[]>([]);
-  const [malfunctions, setMalfunctions] = useState<FirearmMalfunction[]>([]);
 
+const [drillLibrary, setDrillLibrary] =
+  useState<DrillTemplate[]>(DRILL_TEMPLATES);
+
+const [rangeDayDrills, setRangeDayDrills] =
+  useState<RangeDayDrill[]>(RANGE_DRILLS);
+
+const [showCreateDrillForm, setShowCreateDrillForm] = useState(false);
+
+const [newDrillName, setNewDrillName] = useState("");
+const [newDrillCategory, setNewDrillCategory] =
+  useState<DrillTemplate["category"]>("Marksmanship");
+const [newDrillDescription, setNewDrillDescription] = useState("");
+const [newDrillInstructions, setNewDrillInstructions] = useState("");
+const [newDrillFirearmType, setNewDrillFirearmType] =
+  useState<NonNullable<DrillTemplate["firearmType"]>>("Any");
+const [newDrillRoundCount, setNewDrillRoundCount] = useState("");
+const [newDrillEstimatedMinutes, setNewDrillEstimatedMinutes] = useState("");
+const [newDrillDifficulty, setNewDrillDifficulty] =
+  useState<NonNullable<DrillTemplate["difficulty"]>>("Basic");
+const [newDrillScoringMode, setNewDrillScoringMode] =
+  useState<DrillTemplate["defaultScoringMode"]>("Pass/Fail");
+const [newDrillPassingScore, setNewDrillPassingScore] = useState("");
+const [newDrillMaxScore, setNewDrillMaxScore] = useState("");
+const [newDrillRunCount, setNewDrillRunCount] = useState("1");
+const [newDrillDefaultRequired, setNewDrillDefaultRequired] = useState(false);
+const [newDrillTags, setNewDrillTags] = useState("");
+const [newDrillNotes, setNewDrillNotes] = useState("");
+
+const [selectedOfficerId, setSelectedOfficerId] = useState(
+  RANGE_ROSTER[0]?.officerId ?? "",
+);
+
+const [selectedDrillId, setSelectedDrillId] = useState(
+  RANGE_DRILLS[0]?.id ?? "",
+);
+
+const [selectedRunNumber, setSelectedRunNumber] = useState(1);
+const [score, setScore] = useState("");
+const [passed, setPassed] = useState<boolean | undefined>(undefined);
+const [completed, setCompleted] = useState(true);
+const [notes, setNotes] = useState("");
+const [malfunctionOccurred, setMalfunctionOccurred] = useState(false);
+
+const [malfunctionType, setMalfunctionType] =
+  useState<MalfunctionType>("Failure to Feed");
+
+const [malfunctionNotes, setMalfunctionNotes] = useState("");
+const [results, setResults] = useState<DrillRunResult[]>([]);
+const [malfunctions, setMalfunctions] = useState<FirearmMalfunction[]>([]);
   const rangeDay = RANGE_DAYS.find((item) => item.id === selectedRangeDayId) ?? RANGE_DAYS[0];
   const roster = RANGE_ROSTER.filter((entry) => entry.rangeDayId === rangeDay.id);
-  const drills = RANGE_DRILLS.filter((drill) => drill.rangeDayId === rangeDay.id);
+  const drills = rangeDayDrills.filter(
+  (drill) => drill.rangeDayId === rangeDay.id,
+);
   const selectedDrill = drills.find((drill) => drill.id === selectedDrillId) ?? drills[0];
   const selectedRosterEntry = roster.find((entry) => entry.officerId === selectedOfficerId);
   const selectedFirearmId = selectedRosterEntry?.assignedFirearmIds[0];
@@ -294,6 +482,80 @@ export default function RangeDaysPage() {
     window.print();
   }
 
+function resetNewDrillForm() {
+  setNewDrillName("");
+  setNewDrillCategory("Marksmanship");
+  setNewDrillDescription("");
+  setNewDrillInstructions("");
+  setNewDrillFirearmType("Any");
+  setNewDrillRoundCount("");
+  setNewDrillEstimatedMinutes("");
+  setNewDrillDifficulty("Basic");
+  setNewDrillScoringMode("Pass/Fail");
+  setNewDrillPassingScore("");
+  setNewDrillMaxScore("");
+  setNewDrillRunCount("1");
+  setNewDrillDefaultRequired(false);
+  setNewDrillTags("");
+  setNewDrillNotes("");
+}
+
+function handleCreateDrillTemplate() {
+  if (!newDrillName.trim()) {
+    return;
+  }
+
+  const createdTemplate = createDrillLibraryTemplate({
+    departmentId: DEMO_DEPARTMENT.id,
+    name: newDrillName.trim(),
+    category: newDrillCategory,
+    description: newDrillDescription.trim() || undefined,
+    instructions: newDrillInstructions.trim() || undefined,
+    firearmType: newDrillFirearmType,
+    roundCount: parseOptionalNumber(newDrillRoundCount),
+    estimatedMinutes: parseOptionalNumber(newDrillEstimatedMinutes),
+    difficulty: newDrillDifficulty,
+    defaultScoringMode: newDrillScoringMode,
+    defaultPassingScore:
+      newDrillScoringMode === "Scored"
+        ? parseOptionalNumber(newDrillPassingScore)
+        : undefined,
+    defaultMaxScore:
+      newDrillScoringMode === "Scored"
+        ? parseOptionalNumber(newDrillMaxScore)
+        : undefined,
+    defaultRunCount: Math.max(Number(newDrillRunCount) || 1, 1),
+    defaultRequired: newDrillDefaultRequired,
+    tags: newDrillTags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    createdByUserId: CURRENT_USER.id,
+    notes: newDrillNotes.trim() || undefined,
+  });
+
+  setDrillLibrary((current) => [createdTemplate, ...current]);
+  resetNewDrillForm();
+  setShowCreateDrillForm(false);
+}
+
+function handleAddTemplateToCurrentRangeDay(templateId: string) {
+  const copiedDrill = addLibraryDrillToRangeDay(
+    {
+      rangeDayId: rangeDay.id,
+      templateId,
+    },
+    drillLibrary,
+  );
+
+  if (!copiedDrill) {
+    return;
+  }
+
+  setRangeDayDrills((current) => [...current, copiedDrill]);
+  setSelectedDrillId(copiedDrill.id);
+  resetEntryForm(1);
+}
   return (
     <TracePointShell activePage="Range & Training">
       <div className="mx-auto w-full max-w-[1600px] space-y-5">
@@ -335,7 +597,355 @@ export default function RangeDaysPage() {
           <StatCard label="Completion" value={`${completionSummary.completionRate}%`} sub={`${completionSummary.completedRuns}/${completionSummary.expectedRuns} runs`} />
           <StatCard label="Malfunctions" value={getMalfunctionCountForRangeDay(results)} sub="Linked to firearms" />
         </section>
+<section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 className="text-[18px] font-bold text-white">Drill Library</h2>
+      <p className="mt-1 text-[12px] text-slate-500">
+        Create reusable drill templates and add them to the current range day.
+        Each added drill is copied into the range day as a historical snapshot.
+      </p>
+    </div>
 
+    <button
+      type="button"
+      onClick={() => setShowCreateDrillForm((current) => !current)}
+      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+    >
+      <Plus size={14} />
+      {showCreateDrillForm ? "Close Form" : "Create Drill"}
+    </button>
+  </div>
+
+  {showCreateDrillForm && (
+    <div className="mt-5 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4">
+      <h3 className="mb-4 text-[15px] font-bold text-white">
+        Create New Drill Template
+      </h3>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Drill Name
+          </label>
+          <input
+            type="text"
+            value={newDrillName}
+            onChange={(event) => setNewDrillName(event.target.value)}
+            placeholder="Example: 7 Yard Failure Drill"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Category
+          </label>
+          <select
+            value={newDrillCategory}
+            onChange={(event) =>
+              setNewDrillCategory(
+                event.target.value as DrillTemplate["category"],
+              )
+            }
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          >
+            {DRILL_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Firearm Type
+          </label>
+          <select
+            value={newDrillFirearmType}
+            onChange={(event) =>
+              setNewDrillFirearmType(
+                event.target.value as NonNullable<DrillTemplate["firearmType"]>,
+              )
+            }
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          >
+            {FIREARM_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Difficulty
+          </label>
+          <select
+            value={newDrillDifficulty}
+            onChange={(event) =>
+              setNewDrillDifficulty(
+                event.target.value as NonNullable<DrillTemplate["difficulty"]>,
+              )
+            }
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          >
+            {DRILL_DIFFICULTIES.map((difficulty) => (
+              <option key={difficulty} value={difficulty}>
+                {difficulty}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Scoring Mode
+          </label>
+          <select
+            value={newDrillScoringMode}
+            onChange={(event) =>
+              setNewDrillScoringMode(
+                event.target.value as DrillTemplate["defaultScoringMode"],
+              )
+            }
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          >
+            {SCORING_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Default Run Count
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={newDrillRunCount}
+            onChange={(event) => setNewDrillRunCount(event.target.value)}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Round Count
+          </label>
+          <input
+            type="number"
+            value={newDrillRoundCount}
+            onChange={(event) => setNewDrillRoundCount(event.target.value)}
+            placeholder="Optional"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Estimated Minutes
+          </label>
+          <input
+            type="number"
+            value={newDrillEstimatedMinutes}
+            onChange={(event) =>
+              setNewDrillEstimatedMinutes(event.target.value)
+            }
+            placeholder="Optional"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        {newDrillScoringMode === "Scored" && (
+          <>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                Passing Score
+              </label>
+              <input
+                type="number"
+                value={newDrillPassingScore}
+                onChange={(event) =>
+                  setNewDrillPassingScore(event.target.value)
+                }
+                placeholder="Example: 80"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                Max Score
+              </label>
+              <input
+                type="number"
+                value={newDrillMaxScore}
+                onChange={(event) => setNewDrillMaxScore(event.target.value)}
+                placeholder="Example: 100"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+              />
+            </div>
+          </>
+        )}
+
+        <div className="lg:col-span-2">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Description
+          </label>
+          <textarea
+            value={newDrillDescription}
+            onChange={(event) => setNewDrillDescription(event.target.value)}
+            placeholder="Short description of the drill..."
+            rows={2}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div className="lg:col-span-2">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Instructions
+          </label>
+          <textarea
+            value={newDrillInstructions}
+            onChange={(event) => setNewDrillInstructions(event.target.value)}
+            placeholder="Detailed range master instructions..."
+            rows={3}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Tags
+          </label>
+          <input
+            type="text"
+            value={newDrillTags}
+            onChange={(event) => setNewDrillTags(event.target.value)}
+            placeholder="handgun, low light, remedial"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Notes
+          </label>
+          <input
+            type="text"
+            value={newDrillNotes}
+            onChange={(event) => setNewDrillNotes(event.target.value)}
+            placeholder="Optional internal note"
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={() => setNewDrillDefaultRequired((current) => !current)}
+          className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+            newDrillDefaultRequired
+              ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
+              : "border-slate-700 text-slate-400"
+          }`}
+        >
+          {newDrillDefaultRequired ? "Default: Required" : "Default: Optional"}
+        </button>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              resetNewDrillForm();
+              setShowCreateDrillForm(false);
+            }}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCreateDrillTemplate}
+            className="rounded-xl bg-blue-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-500"
+          >
+            Save Drill Template
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+    {drillLibrary.map((template) => (
+      <div
+        key={template.id}
+        className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4"
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-bold text-white">
+              {template.name}
+            </h3>
+            <p className="mt-1 text-[12px] text-slate-500">
+              {template.description ?? "No description entered."}
+            </p>
+          </div>
+
+          <Target size={16} className="text-blue-400" />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <StatusPill label={template.category} />
+          <StatusPill label={template.defaultScoringMode} />
+          <StatusPill
+            label={`${template.defaultRunCount} run${
+              template.defaultRunCount !== 1 ? "s" : ""
+            }`}
+          />
+          <StatusPill
+            label={template.defaultRequired ? "Required" : "Optional"}
+          />
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500">
+          <p>Firearm: {template.firearmType ?? "Any"}</p>
+          <p>Difficulty: {template.difficulty ?? "—"}</p>
+          <p>Rounds: {template.roundCount ?? "—"}</p>
+          <p>Time: {template.estimatedMinutes ?? "—"} min</p>
+        </div>
+
+        {template.instructions && (
+          <p className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-[11px] leading-relaxed text-slate-500">
+            {template.instructions}
+          </p>
+        )}
+
+        <button
+          type="button"
+          disabled={template.status !== "Active"}
+          onClick={() => handleAddTemplateToCurrentRangeDay(template.id)}
+          className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
+            template.status === "Active"
+              ? "bg-blue-600 text-white hover:bg-blue-500"
+              : "cursor-not-allowed bg-slate-800 text-slate-600"
+          }`}
+        >
+          <Plus size={14} />
+          Add to Current Range Day
+        </button>
+      </div>
+    ))}
+  </div>
+</section>
         <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
           <div className="space-y-5">
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">

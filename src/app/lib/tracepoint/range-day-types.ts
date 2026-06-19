@@ -1,4 +1,4 @@
-import type { ScoringMode } from "./types";
+import type { Firearm, ScoringMode } from "./types";
 
 export type RangeDayStatus =
   | "Planned"
@@ -18,7 +18,68 @@ export type DrillCategory =
   | "Transition"
   | "Malfunction Clearance"
   | "Active Shooter"
+  | "Administrative"
+  | "Remedial"
   | "Other";
+
+export type DrillDifficulty =
+  | "Basic"
+  | "Intermediate"
+  | "Advanced"
+  | "Instructor Discretion";
+
+export type DrillLibraryStatus = "Active" | "Inactive" | "Archived";
+
+export type DrillLibraryTemplate = {
+  id: string;
+  departmentId: string;
+  name: string;
+  category: DrillCategory;
+  description?: string;
+  instructions?: string;
+  firearmType?: Firearm["type"] | "Any";
+  roundCount?: number;
+  estimatedMinutes?: number;
+  difficulty?: DrillDifficulty;
+  defaultScoringMode: ScoringMode;
+  defaultPassingScore?: number;
+  defaultMaxScore?: number;
+  defaultRunCount: number;
+  defaultRequired: boolean;
+  tags?: string[];
+  status: DrillLibraryStatus;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt?: string;
+  notes?: string;
+};
+
+/**
+ * Backward-compatible alias.
+ * Existing Range Day code may still import DrillTemplate.
+ * Going forward, DrillLibraryTemplate is the better name.
+ */
+export type DrillTemplate = DrillLibraryTemplate;
+
+export type CreateDrillLibraryTemplateInput = {
+  departmentId: string;
+  name: string;
+  category: DrillCategory;
+  description?: string;
+  instructions?: string;
+  firearmType?: Firearm["type"] | "Any";
+  roundCount?: number;
+  estimatedMinutes?: number;
+  difficulty?: DrillDifficulty;
+  defaultScoringMode: ScoringMode;
+  defaultPassingScore?: number;
+  defaultMaxScore?: number;
+  defaultRunCount: number;
+  defaultRequired: boolean;
+  tags?: string[];
+  createdByUserId: string;
+  notes?: string;
+};
 
 export type RangeDay = {
   id: string;
@@ -49,12 +110,39 @@ export type RangeDayDrill = {
   name: string;
   category: DrillCategory;
   description?: string;
+  instructions?: string;
   scoringMode: ScoringMode;
   passingScore?: number;
   maxScore?: number;
   runCount: number;
   required: boolean;
+  firearmType?: Firearm["type"] | "Any";
+  roundCount?: number;
+  estimatedMinutes?: number;
+  difficulty?: DrillDifficulty;
+
+  /**
+   * Snapshot relationship back to the Drill Library.
+   * The Range Day drill should keep its own copied values so historical
+   * range records do not change if the library template is later edited.
+   */
+  sourceTemplateId?: string;
+  sourceTemplateName?: string;
+  copiedFromLibraryAt?: string;
+
   notes?: string;
+};
+
+export type AddLibraryDrillToRangeDayInput = {
+  rangeDayId: string;
+  templateId: string;
+  overrideName?: string;
+  overrideScoringMode?: ScoringMode;
+  overridePassingScore?: number;
+  overrideMaxScore?: number;
+  overrideRunCount?: number;
+  overrideRequired?: boolean;
+  overrideNotes?: string;
 };
 
 export type DrillRunResult = {
@@ -63,21 +151,14 @@ export type DrillRunResult = {
   drillId: string;
   officerId: string;
   firearmId?: string;
-
   runNumber: number;
-
   completed: boolean;
-
   score?: number;
   passed?: boolean;
-
   instructorId: string;
-
   notes?: string;
-
   deficiencyObserved?: boolean;
   remedialTrainingRecommended?: boolean;
-
   malfunctionIds?: string[];
 };
 
@@ -86,7 +167,6 @@ export type InstructorObservation = {
   rangeDayId: string;
   officerId: string;
   instructorId: string;
-
   category:
     | "Safety"
     | "Marksmanship"
@@ -94,90 +174,44 @@ export type InstructorObservation = {
     | "Decision Making"
     | "Weapon Handling"
     | "Other";
-
   observation: string;
-
   positiveObservation: boolean;
-
   remedialTrainingRecommended: boolean;
-
   createdAt: string;
 };
 
 export type RemedialTrainingRecommendation = {
   id: string;
-
   officerId: string;
-
   rangeDayId: string;
-
   createdByInstructorId: string;
-
   reason: string;
-
   assignedDate: string;
-
   completed: boolean;
-
   completedDate?: string;
-
   notes?: string;
 };
 
 export type RangePacket = {
   id: string;
-
   rangeDayId: string;
-
   generatedByUserId: string;
-
   generatedAt: string;
-
   includesRoster: boolean;
-
   includesQualificationSheets: boolean;
-
   includesDrillSheets: boolean;
-
   includesRemedialSection: boolean;
-
   includesInstructorNotes: boolean;
-};
-
-export type DrillTemplate = {
-  id: string;
-
-  departmentId: string;
-
-  name: string;
-
-  category: DrillCategory;
-
-  description?: string;
-
-  defaultScoringMode: ScoringMode;
-
-  defaultPassingScore?: number;
-
-  defaultMaxScore?: number;
-
-  defaultRunCount: number;
-
-  active: boolean;
 };
 
 export type OfficerPerformanceMetric = {
   officerId: string;
-
   category: DrillCategory;
-
   averageScore?: number;
-
   passRate?: number;
-
   totalRuns: number;
-
   trend: "Improving" | "Stable" | "Declining";
-
   lastUpdated: string;
 };
+
+export {};
