@@ -634,6 +634,38 @@ export default function RangeDaysPage() {
     resetEntryForm(1);
   }
 
+  function handleCreateRangeDay() {
+    const today = new Date().toISOString().slice(0, 10);
+    const newRangeDayId = `range-${Date.now()}`;
+
+    const newRangeDay: PlannedRangeDay = {
+      id: newRangeDayId,
+      departmentId: DEMO_DEPARTMENT.id,
+      title: "New Range Day",
+      date: today,
+      startTime: "0800",
+      endTime: "1200",
+      location: "",
+      status: "Planned",
+      rangeType: "Training",
+      packetStatus: "Needs Setup",
+      leadInstructorId: CURRENT_USER.id,
+      instructorIds: [CURRENT_USER.id],
+      weather: "",
+      staffingNotes: "",
+      outline: [],
+      notes: "",
+    };
+
+    setRangeDays((current) => [newRangeDay, ...current]);
+    setSelectedRangeDayId(newRangeDayId);
+    setSelectedOfficerId("");
+    setSelectedDrillId("");
+    setShowLibraryPanel(false);
+    setShowCreateDrillForm(false);
+    resetEntryForm(1);
+  }
+
   function updateSelectedRangeDay<Key extends keyof PlannedRangeDay>(
     key: Key,
     value: PlannedRangeDay[Key],
@@ -811,6 +843,7 @@ export default function RangeDaysPage() {
 
               <button
                 type="button"
+                onClick={handleCreateRangeDay}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
               >
                 <Plus size={14} />
