@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
@@ -399,6 +399,72 @@ const DRILL_DIFFICULTIES: Array<NonNullable<DrillTemplate["difficulty"]>> = [
   "Instructor Discretion",
 ];
 
+const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
+
+type StoredRangeDayWorkspace = {
+  rangeDays: PlannedRangeDay[];
+  drillLibrary: DrillTemplate[];
+  rangeDayDrills: RangeDayDrill[];
+  rangeRoster: RangeRosterEntry[];
+  results: DrillRunResult[];
+  malfunctions: FirearmMalfunction[];
+};
+
+function loadStoredRangeDayWorkspace(): Partial<StoredRangeDayWorkspace> | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storedWorkspace = window.localStorage.getItem(
+      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+    );
+
+    if (!storedWorkspace) return null;
+
+    return JSON.parse(storedWorkspace) as Partial<StoredRangeDayWorkspace>;
+  } catch (error) {
+    console.warn("Could not load saved range day workspace.", error);
+    return null;
+  }
+}
+
+function writeStoredRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+      JSON.stringify(workspace),
+    );
+  } catch (error) {
+    console.warn("Could not save range day workspace.", error);
+  }
+}
+
+function normalizeRangeDaysForWorkspace(
+  storedRangeDays: PlannedRangeDay[],
+): PlannedRangeDay[] {
+  return storedRangeDays.map((rangeDay) => {
+    const storedInstructorIds = Array.isArray(rangeDay.instructorIds)
+      ? rangeDay.instructorIds
+      : [];
+
+    const fallbackLeadInstructorId =
+      rangeDay.leadInstructorId || storedInstructorIds[0] || CURRENT_USER.id;
+
+    const instructorIds = storedInstructorIds.includes(fallbackLeadInstructorId)
+      ? storedInstructorIds
+      : [fallbackLeadInstructorId, ...storedInstructorIds];
+
+    return {
+      ...rangeDay,
+      leadInstructorId: fallbackLeadInstructorId,
+      instructorIds,
+      staffingNotes: rangeDay.staffingNotes ?? "",
+      outline: Array.isArray(rangeDay.outline) ? rangeDay.outline : [],
+    };
+  });
+}
+
 function parseOptionalNumber(value: string) {
   if (!value.trim()) return undefined;
 
@@ -488,7 +554,12 @@ export default function RangeDaysPage() {
   const [rangeDayDrills, setRangeDayDrills] =
     useState<RangeDayDrill[]>(INITIAL_RANGE_DRILLS);
 
-  const [rangeRoster] = useState<RangeRosterEntry[]>(INITIAL_RANGE_ROSTER);
+  const [rangeRoster, setRangeRoster] =
+    useState<RangeRosterEntry[]>(INITIAL_RANGE_ROSTER);
+
+  const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
+    useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
 
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [showCreateDrillForm, setShowCreateDrillForm] = useState(false);
@@ -512,6 +583,8 @@ export default function RangeDaysPage() {
   const [newDrillDefaultRequired, setNewDrillDefaultRequired] = useState(false);
   const [newDrillTags, setNewDrillTags] = useState("");
   const [newDrillNotes, setNewDrillNotes] = useState("");
+  const [newRosterOfficerId, setNewRosterOfficerId] = useState("");
+  const [newInstructorUserId, setNewInstructorUserId] = useState("");
 
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedDrillId, setSelectedDrillId] = useState("");
@@ -538,6 +611,24 @@ export default function RangeDaysPage() {
       (entry) => entry.rangeDayId === selectedRangeDay.id,
     );
   }, [rangeRoster, selectedRangeDay]);
+
+  const availableRosterOfficers = useMemo(() => {
+    if (!selectedRangeDay) return [];
+
+    const rosteredOfficerIds = new Set(
+      selectedRoster.map((entry) => entry.officerId),
+    );
+
+    return MOCK_USERS.filter((user) => !rosteredOfficerIds.has(user.id));
+  }, [selectedRangeDay, selectedRoster]);
+
+  const availableInstructorUsers = useMemo(() => {
+    if (!selectedRangeDay) return [];
+
+    const assignedInstructorIds = new Set(selectedRangeDay.instructorIds ?? []);
+
+    return MOCK_USERS.filter((user) => !assignedInstructorIds.has(user.id));
+  }, [selectedRangeDay]);
 
   const selectedDrills = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -580,6 +671,91 @@ export default function RangeDaysPage() {
       ),
     [selectedRoster, selectedDrills, selectedRangeResults],
   );
+
+  useEffect(() => {
+    const storedWorkspace = loadStoredRangeDayWorkspace();
+
+    if (Array.isArray(storedWorkspace?.rangeDays)) {
+      setRangeDays(normalizeRangeDaysForWorkspace(storedWorkspace.rangeDays));
+    }
+
+    if (Array.isArray(storedWorkspace?.drillLibrary)) {
+      setDrillLibrary(storedWorkspace.drillLibrary);
+    }
+
+    if (Array.isArray(storedWorkspace?.rangeDayDrills)) {
+      setRangeDayDrills(storedWorkspace.rangeDayDrills);
+    }
+
+    if (Array.isArray(storedWorkspace?.rangeRoster)) {
+      setRangeRoster(storedWorkspace.rangeRoster);
+    }
+
+    if (Array.isArray(storedWorkspace?.results)) {
+      setResults(storedWorkspace.results);
+    }
+
+    if (Array.isArray(storedWorkspace?.malfunctions)) {
+      setMalfunctions(storedWorkspace.malfunctions);
+    }
+
+    setHasLoadedStoredWorkspace(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedStoredWorkspace) return;
+
+    writeStoredRangeDayWorkspace({
+      rangeDays,
+      drillLibrary,
+      rangeDayDrills,
+      rangeRoster,
+      results,
+      malfunctions,
+    });
+  }, [
+    drillLibrary,
+    hasLoadedStoredWorkspace,
+    malfunctions,
+    rangeDayDrills,
+    rangeDays,
+    rangeRoster,
+    results,
+  ]);
+
+  useEffect(() => {
+    if (!selectedRangeDay) return;
+
+    if (availableRosterOfficers.length === 0) {
+      setNewRosterOfficerId("");
+      return;
+    }
+
+    const selectedOfficerIsAvailable = availableRosterOfficers.some(
+      (user) => user.id === newRosterOfficerId,
+    );
+
+    if (!selectedOfficerIsAvailable) {
+      setNewRosterOfficerId(availableRosterOfficers[0].id);
+    }
+  }, [availableRosterOfficers, newRosterOfficerId, selectedRangeDay]);
+
+  useEffect(() => {
+    if (!selectedRangeDay) return;
+
+    if (availableInstructorUsers.length === 0) {
+      setNewInstructorUserId("");
+      return;
+    }
+
+    const selectedInstructorIsAvailable = availableInstructorUsers.some(
+      (user) => user.id === newInstructorUserId,
+    );
+
+    if (!selectedInstructorIsAvailable) {
+      setNewInstructorUserId(availableInstructorUsers[0].id);
+    }
+  }, [availableInstructorUsers, newInstructorUserId, selectedRangeDay]);
 
   function resetEntryForm(nextRun?: number) {
     setScore("");
@@ -680,6 +856,174 @@ export default function RangeDaysPage() {
               [key]: value,
             }
           : rangeDay,
+      ),
+    );
+  }
+
+  function handleSaveRangeDayWorkspace() {
+    writeStoredRangeDayWorkspace({
+      rangeDays,
+      drillLibrary,
+      rangeDayDrills,
+      rangeRoster,
+      results,
+      malfunctions,
+    });
+
+    setSaveMessage("Saved locally");
+
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => setSaveMessage(""), 2000);
+    }
+  }
+
+  function handleSetLeadInstructor(userId: string) {
+    if (!selectedRangeDay || !userId) return;
+
+    const currentInstructorIds = selectedRangeDay.instructorIds ?? [];
+
+    const instructorIds = currentInstructorIds.includes(userId)
+      ? currentInstructorIds
+      : [...currentInstructorIds, userId];
+
+    setRangeDays((current) =>
+      current.map((rangeDay) =>
+        rangeDay.id === selectedRangeDay.id
+          ? {
+              ...rangeDay,
+              leadInstructorId: userId,
+              instructorIds,
+            }
+          : rangeDay,
+      ),
+    );
+  }
+
+  function handleAddInstructorToRangeDay() {
+    if (!selectedRangeDay || !newInstructorUserId) return;
+
+    const currentInstructorIds = selectedRangeDay.instructorIds ?? [];
+
+    if (currentInstructorIds.includes(newInstructorUserId)) return;
+
+    setRangeDays((current) =>
+      current.map((rangeDay) =>
+        rangeDay.id === selectedRangeDay.id
+          ? {
+              ...rangeDay,
+              instructorIds: [...currentInstructorIds, newInstructorUserId],
+            }
+          : rangeDay,
+      ),
+    );
+  }
+
+  function handleRemoveInstructorFromRangeDay(userId: string) {
+    if (!selectedRangeDay) return;
+
+    const remainingInstructorIds = (selectedRangeDay.instructorIds ?? []).filter(
+      (instructorId) => instructorId !== userId,
+    );
+
+    const nextLeadInstructorId =
+      selectedRangeDay.leadInstructorId === userId
+        ? remainingInstructorIds[0] ?? CURRENT_USER.id
+        : selectedRangeDay.leadInstructorId;
+
+    const nextInstructorIds = remainingInstructorIds.includes(
+      nextLeadInstructorId,
+    )
+      ? remainingInstructorIds
+      : [nextLeadInstructorId, ...remainingInstructorIds];
+
+    setRangeDays((current) =>
+      current.map((rangeDay) =>
+        rangeDay.id === selectedRangeDay.id
+          ? {
+              ...rangeDay,
+              leadInstructorId: nextLeadInstructorId,
+              instructorIds: nextInstructorIds,
+            }
+          : rangeDay,
+      ),
+    );
+  }
+
+  function handleAddOfficerToRoster() {
+    if (!selectedRangeDay || !newRosterOfficerId) return;
+
+    const alreadyRostered = selectedRoster.some(
+      (entry) => entry.officerId === newRosterOfficerId,
+    );
+
+    if (alreadyRostered) return;
+
+    const defaultFirearmId = MOCK_FIREARMS[0]?.id;
+
+    const newRosterEntry: RangeRosterEntry = {
+      id: `roster-${Date.now()}`,
+      rangeDayId: selectedRangeDay.id,
+      officerId: newRosterOfficerId,
+      assignedFirearmIds: defaultFirearmId ? [defaultFirearmId] : [],
+      attended: false,
+    };
+
+    setRangeRoster((current) => [...current, newRosterEntry]);
+    setSelectedOfficerId(newRosterOfficerId);
+    resetEntryForm(1);
+  }
+
+  function handleRemoveOfficerFromRoster(rosterEntryId: string) {
+    const entryToRemove = rangeRoster.find((entry) => entry.id === rosterEntryId);
+
+    setRangeRoster((current) =>
+      current.filter((entry) => entry.id !== rosterEntryId),
+    );
+
+    if (selectedRangeDay && entryToRemove) {
+      setResults((current) =>
+        current.filter(
+          (result) =>
+            !(
+              result.rangeDayId === selectedRangeDay.id &&
+              result.officerId === entryToRemove.officerId
+            ),
+        ),
+      );
+    }
+
+    if (entryToRemove?.officerId === selectedOfficerId) {
+      const nextRosterEntry = selectedRoster.find(
+        (entry) => entry.id !== rosterEntryId,
+      );
+
+      setSelectedOfficerId(nextRosterEntry?.officerId ?? "");
+      resetEntryForm(1);
+    }
+  }
+
+  function handleToggleRosterAttendance(rosterEntryId: string) {
+    setRangeRoster((current) =>
+      current.map((entry) =>
+        entry.id === rosterEntryId
+          ? {
+              ...entry,
+              attended: !entry.attended,
+            }
+          : entry,
+      ),
+    );
+  }
+
+  function handleChangeRosterFirearm(rosterEntryId: string, firearmId: string) {
+    setRangeRoster((current) =>
+      current.map((entry) =>
+        entry.id === rosterEntryId
+          ? {
+              ...entry,
+              assignedFirearmIds: firearmId ? [firearmId] : [],
+            }
+          : entry,
       ),
     );
   }
@@ -1081,10 +1425,11 @@ export default function RangeDaysPage() {
 
               <button
                 type="button"
+                onClick={handleSaveRangeDayWorkspace}
                 className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
               >
                 <Save size={14} />
-                Save Range Day
+                {saveMessage || "Save Range Day"}
               </button>
             </div>
           </div>
@@ -1298,13 +1643,112 @@ export default function RangeDaysPage() {
                 Staffing
               </h3>
 
-              <div className="space-y-2 text-[12px] text-slate-400">
-                <p>Lead Instructor: {getUserName(selectedRangeDay.leadInstructorId)}</p>
-                <p>
-                  Assigned Instructors:{" "}
-                  {selectedRangeDay.instructorIds.map(getUserName).join(", ")}
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                    Lead Instructor
+                  </label>
+                  <select
+                    value={selectedRangeDay.leadInstructorId}
+                    onChange={(event) => handleSetLeadInstructor(event.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                  >
+                    {MOCK_USERS.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                    Add Instructor
+                  </label>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <select
+                      value={newInstructorUserId}
+                      onChange={(event) =>
+                        setNewInstructorUserId(event.target.value)
+                      }
+                      disabled={availableInstructorUsers.length === 0}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                    >
+                      {availableInstructorUsers.length === 0 ? (
+                        <option value="">All users are assigned</option>
+                      ) : (
+                        availableInstructorUsers.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={handleAddInstructorToRangeDay}
+                      disabled={availableInstructorUsers.length === 0}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                    >
+                      <Plus size={14} />
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {(selectedRangeDay.instructorIds ?? []).map((instructorId) => {
+                    const isLead = instructorId === selectedRangeDay.leadInstructorId;
+
+                    return (
+                      <div
+                        key={instructorId}
+                        className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[13px] font-semibold text-white">
+                              {getUserName(instructorId)}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {isLead ? "Lead instructor" : "Assigned instructor"}
+                            </p>
+                          </div>
+
+                          {isLead && <StatusPill label="Lead" tone="green" />}
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSetLeadInstructor(instructorId)}
+                            disabled={isLead}
+                            className="rounded-xl border border-slate-700 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+                          >
+                            {isLead ? "Current Lead" : "Make Lead"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleRemoveInstructorFromRangeDay(instructorId)
+                            }
+                            disabled={(selectedRangeDay.instructorIds ?? []).length <= 1}
+                            className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[12px] text-slate-500">
+                  {selectedRangeDay.staffingNotes ||
+                    "Use the staffing notes field above for range safety, armorer, or coverage notes."}
                 </p>
-                <p>{selectedRangeDay.staffingNotes}</p>
               </div>
             </div>
 
@@ -1314,34 +1758,113 @@ export default function RangeDaysPage() {
                 Roster
               </h3>
 
+              <div className="mb-3 grid gap-2">
+                <select
+                  value={newRosterOfficerId}
+                  onChange={(event) => setNewRosterOfficerId(event.target.value)}
+                  disabled={availableRosterOfficers.length === 0}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                >
+                  {availableRosterOfficers.length === 0 ? (
+                    <option value="">All officers are rostered</option>
+                  ) : (
+                    availableRosterOfficers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleAddOfficerToRoster}
+                  disabled={availableRosterOfficers.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                >
+                  <Plus size={14} />
+                  Add Officer
+                </button>
+              </div>
+
               <div className="space-y-2">
+                {selectedRoster.length === 0 && (
+                  <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
+                    No officers assigned yet. Add officers above to build the
+                    range day roster.
+                  </p>
+                )}
+
                 {selectedRoster.map((entry) => (
-                  <button
+                  <div
                     key={entry.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedOfficerId(entry.officerId);
-                      resetEntryForm(1);
-                    }}
-                    className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                    className={`rounded-2xl border px-3 py-3 transition ${
                       selectedOfficerId === entry.officerId
                         ? "border-blue-500/50 bg-blue-500/10"
-                        : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
+                        : "border-slate-800 bg-slate-950/40"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[13px] font-semibold text-white">
-                        {getUserName(entry.officerId)}
-                      </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedOfficerId(entry.officerId);
+                        resetEntryForm(1);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 text-left"
+                    >
+                      <div>
+                        <p className="text-[13px] font-semibold text-white">
+                          {getUserName(entry.officerId)}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {entry.attended ? "Marked present" : "Not marked present"}
+                        </p>
+                      </div>
+
                       {entry.attended && (
                         <CheckCircle2 size={14} className="text-emerald-400" />
                       )}
-                    </div>
+                    </button>
 
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      {entry.assignedFirearmIds.map(getFirearmName).join(", ")}
-                    </p>
-                  </button>
+                    <div className="mt-3 space-y-2">
+                      <select
+                        value={entry.assignedFirearmIds[0] ?? ""}
+                        onChange={(event) =>
+                          handleChangeRosterFirearm(entry.id, event.target.value)
+                        }
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                      >
+                        <option value="">No firearm selected</option>
+                        {MOCK_FIREARMS.map((firearm) => (
+                          <option key={firearm.id} value={firearm.id}>
+                            {getFirearmName(firearm.id)}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRosterAttendance(entry.id)}
+                          className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                            entry.attended
+                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                              : "border-slate-700 text-slate-400 hover:border-slate-600"
+                          }`}
+                        >
+                          {entry.attended ? "Present" : "Mark Present"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOfficerFromRoster(entry.id)}
+                          className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
