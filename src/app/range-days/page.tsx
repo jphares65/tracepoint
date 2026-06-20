@@ -91,7 +91,7 @@ const DRILL_TEMPLATES: DrillTemplate[] = [
     defaultScoringMode: "Scored",
     defaultPassingScore: 80,
     defaultMaxScore: 100,
-    defaultRunCount: 1,
+    defaultRunCount: 2,
     defaultRequired: true,
     tags: ["qualification", "handgun", "annual"],
     status: "Active",
@@ -440,6 +440,122 @@ function writeStoredRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 }
 
+function isQualificationNameOrCategory(name?: string, category?: string) {
+  return (
+    category === "Qualification" ||
+    Boolean(name?.toLowerCase().includes("qualification"))
+  );
+}
+
+function isQualificationDrill(drill?: RangeDayDrill | null) {
+  if (!drill) return false;
+
+  return isQualificationNameOrCategory(drill.name, drill.category);
+}
+
+function getEffectiveRunCount(drill?: RangeDayDrill | null) {
+  if (!drill) return 1;
+
+  return isQualificationDrill(drill)
+    ? Math.max(drill.runCount ?? 1, 2)
+    : drill.runCount ?? 1;
+}
+
+function getRunLabel(drill: RangeDayDrill | undefined, runNumber: number) {
+  if (isQualificationDrill(drill)) {
+    if (runNumber === 1) return "Day Qualification";
+    if (runNumber === 2) return "Night Qualification";
+  }
+
+  return `Run ${runNumber}`;
+}
+
+function getDefaultOutlineForRangeType(rangeType: RangeDayType) {
+  const outlines: Record<RangeDayType, string[]> = {
+    Qualification: [
+      "Safety briefing and attendance confirmation",
+      "Day handgun qualification course",
+      "Night handgun qualification course",
+      "Remedial instruction / make-up plan if needed",
+    ],
+    Rifle: [
+      "Rifle safety briefing",
+      "Zero confirmation",
+      "Rifle familiarization / transition drills",
+      "Instructor notes and deficiencies",
+    ],
+    "Low Light": [
+      "Low-light safety briefing",
+      "Threat identification",
+      "Light discipline",
+      "Decision-making observations",
+    ],
+    Remedial: [
+      "Safety briefing",
+      "Review prior deficiency",
+      "Remedial drill repetitions",
+      "Instructor evaluation and follow-up notes",
+    ],
+    "Make-Up": [
+      "Safety briefing and attendance confirmation",
+      "Required qualification / training events",
+      "Instructor notes",
+      "Documentation review",
+    ],
+    Training: [
+      "Safety briefing and attendance confirmation",
+      "Planned training drills",
+      "Instructor observations",
+      "Deficiency / remedial notes if needed",
+    ],
+  };
+
+  return outlines[rangeType];
+}
+
+function getRangeDayOutlineForDisplay(rangeDay: PlannedRangeDay) {
+  return Array.isArray(rangeDay.outline) && rangeDay.outline.length > 0
+    ? rangeDay.outline
+    : getDefaultOutlineForRangeType(rangeDay.rangeType);
+}
+
+function formatOutlineText(outline: string[]) {
+  return outline.join("\n");
+}
+
+function parseOutlineText(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeDrillLibraryForWorkspace(
+  storedDrillLibrary: DrillTemplate[],
+): DrillTemplate[] {
+  return storedDrillLibrary.map((template) =>
+    isQualificationNameOrCategory(template.name, template.category)
+      ? {
+          ...template,
+          defaultRunCount: Math.max(template.defaultRunCount ?? 1, 2),
+        }
+      : template,
+  );
+}
+
+function normalizeRangeDayDrillsForWorkspace(
+  storedRangeDayDrills: RangeDayDrill[],
+): RangeDayDrill[] {
+  return storedRangeDayDrills.map((drill) =>
+    isQualificationNameOrCategory(drill.name, drill.category)
+      ? {
+          ...drill,
+          runCount: Math.max(drill.runCount ?? 1, 2),
+        }
+      : drill,
+  );
+}
+
 function normalizeRangeDaysForWorkspace(
   storedRangeDays: PlannedRangeDay[],
 ): PlannedRangeDay[] {
@@ -460,7 +576,10 @@ function normalizeRangeDaysForWorkspace(
       leadInstructorId: fallbackLeadInstructorId,
       instructorIds,
       staffingNotes: rangeDay.staffingNotes ?? "",
-      outline: Array.isArray(rangeDay.outline) ? rangeDay.outline : [],
+      outline:
+        Array.isArray(rangeDay.outline) && rangeDay.outline.length > 0
+          ? rangeDay.outline
+          : getDefaultOutlineForRangeType(rangeDay.rangeType),
     };
   });
 }
@@ -648,6 +767,8 @@ export default function RangeDaysPage() {
     selectedDrills.find((drill) => drill.id === selectedDrillId) ??
     selectedDrills[0];
 
+  const selectedEffectiveRunCount = getEffectiveRunCount(selectedDrill);
+
   const selectedRosterEntry = selectedRoster.find(
     (entry) => entry.officerId === selectedOfficerId,
   );
@@ -680,11 +801,15 @@ export default function RangeDaysPage() {
     }
 
     if (Array.isArray(storedWorkspace?.drillLibrary)) {
-      setDrillLibrary(storedWorkspace.drillLibrary);
+      setDrillLibrary(
+        normalizeDrillLibraryForWorkspace(storedWorkspace.drillLibrary),
+      );
     }
 
     if (Array.isArray(storedWorkspace?.rangeDayDrills)) {
-      setRangeDayDrills(storedWorkspace.rangeDayDrills);
+      setRangeDayDrills(
+        normalizeRangeDayDrillsForWorkspace(storedWorkspace.rangeDayDrills),
+      );
     }
 
     if (Array.isArray(storedWorkspace?.rangeRoster)) {
@@ -756,6 +881,12 @@ export default function RangeDaysPage() {
       setNewInstructorUserId(availableInstructorUsers[0].id);
     }
   }, [availableInstructorUsers, newInstructorUserId, selectedRangeDay]);
+
+  useEffect(() => {
+    if (selectedRunNumber > selectedEffectiveRunCount) {
+      setSelectedRunNumber(selectedEffectiveRunCount);
+    }
+  }, [selectedEffectiveRunCount, selectedRunNumber]);
 
   function resetEntryForm(nextRun?: number) {
     setScore("");
@@ -829,7 +960,7 @@ export default function RangeDaysPage() {
       instructorIds: [CURRENT_USER.id],
       weather: "",
       staffingNotes: "",
-      outline: [],
+      outline: getDefaultOutlineForRangeType("Training"),
       notes: "",
     };
 
@@ -854,6 +985,25 @@ export default function RangeDaysPage() {
           ? {
               ...rangeDay,
               [key]: value,
+            }
+          : rangeDay,
+      ),
+    );
+  }
+
+  function handleChangeRangeDayType(nextRangeType: RangeDayType) {
+    if (!selectedRangeDay) return;
+
+    setRangeDays((current) =>
+      current.map((rangeDay) =>
+        rangeDay.id === selectedRangeDay.id
+          ? {
+              ...rangeDay,
+              rangeType: nextRangeType,
+              outline:
+                rangeDay.outline.length > 0
+                  ? rangeDay.outline
+                  : getDefaultOutlineForRangeType(nextRangeType),
             }
           : rangeDay,
       ),
@@ -1036,6 +1186,11 @@ export default function RangeDaysPage() {
         ? `malfunction-${Date.now()}`
         : undefined;
 
+    const runLabel = getRunLabel(selectedDrill, selectedRunNumber);
+    const resultNotes = isQualificationDrill(selectedDrill)
+      ? [runLabel, notes].filter(Boolean).join(" — ")
+      : notes;
+
     const newResult: DrillRunResult = {
       id: `result-${Date.now()}`,
       rangeDayId: selectedRangeDay.id,
@@ -1054,7 +1209,7 @@ export default function RangeDaysPage() {
           ? passed
           : undefined,
       instructorId: CURRENT_USER.id,
-      notes,
+      notes: resultNotes,
       deficiencyObserved: passed === false,
       remedialTrainingRecommended: passed === false,
       malfunctionIds: malfunctionId ? [malfunctionId] : [],
@@ -1064,6 +1219,7 @@ export default function RangeDaysPage() {
       ...current.filter(
         (result) =>
           !(
+            result.rangeDayId === selectedRangeDay.id &&
             result.officerId === selectedOfficerId &&
             result.drillId === selectedDrill.id &&
             result.runNumber === selectedRunNumber
@@ -1093,7 +1249,7 @@ export default function RangeDaysPage() {
     }
 
     const nextRun =
-      selectedRunNumber < selectedDrill.runCount
+      selectedRunNumber < selectedEffectiveRunCount
         ? selectedRunNumber + 1
         : selectedRunNumber;
 
@@ -1130,7 +1286,10 @@ export default function RangeDaysPage() {
         newDrillScoringMode === "Scored"
           ? parseOptionalNumber(newDrillMaxScore)
           : undefined,
-      defaultRunCount: Math.max(Number(newDrillRunCount) || 1, 1),
+      defaultRunCount:
+        newDrillCategory === "Qualification"
+          ? Math.max(Number(newDrillRunCount) || 1, 2)
+          : Math.max(Number(newDrillRunCount) || 1, 1),
       defaultRequired: newDrillDefaultRequired,
       tags: newDrillTags
         .split(",")
@@ -1158,8 +1317,15 @@ export default function RangeDaysPage() {
 
     if (!copiedDrill) return;
 
-    setRangeDayDrills((current) => [...current, copiedDrill]);
-    setSelectedDrillId(copiedDrill.id);
+    const normalizedCopiedDrill = isQualificationDrill(copiedDrill)
+      ? {
+          ...copiedDrill,
+          runCount: Math.max(copiedDrill.runCount ?? 1, 2),
+        }
+      : copiedDrill;
+
+    setRangeDayDrills((current) => [...current, normalizedCopiedDrill]);
+    setSelectedDrillId(normalizedCopiedDrill.id);
     resetEntryForm(1);
   }
 
@@ -1302,7 +1468,7 @@ export default function RangeDaysPage() {
                       Day Outline
                     </p>
                     <ul className="space-y-1 text-[11px] text-slate-400">
-                      {rangeDay.outline.slice(0, 4).map((item) => (
+                      {getRangeDayOutlineForDisplay(rangeDay).slice(0, 4).map((item) => (
                         <li key={item} className="flex gap-2">
                           <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-400" />
                           <span>{item}</span>
@@ -1570,10 +1736,7 @@ export default function RangeDaysPage() {
                   <select
                     value={selectedRangeDay.rangeType}
                     onChange={(event) =>
-                      updateSelectedRangeDay(
-                        "rangeType",
-                        event.target.value as RangeDayType,
-                      )
+                      handleChangeRangeDayType(event.target.value as RangeDayType)
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                   >
@@ -1605,6 +1768,29 @@ export default function RangeDaysPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                    Syllabus / Day Outline
+                  </label>
+                  <textarea
+                    value={formatOutlineText(
+                      getRangeDayOutlineForDisplay(selectedRangeDay),
+                    )}
+                    onChange={(event) =>
+                      updateSelectedRangeDay(
+                        "outline",
+                        parseOutlineText(event.target.value),
+                      )
+                    }
+                    rows={5}
+                    placeholder="Enter one syllabus item per line"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    These lines appear on the range-day overview card and print packet.
+                  </p>
                 </div>
 
                 <div>
@@ -1910,7 +2096,8 @@ export default function RangeDaysPage() {
                         </p>
                       </div>
                       <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
-                        {drill.runCount} run{drill.runCount !== 1 ? "s" : ""}
+                        {getEffectiveRunCount(drill)} run
+                        {getEffectiveRunCount(drill) !== 1 ? "s" : ""}
                       </span>
                     </div>
 
@@ -2361,11 +2548,11 @@ export default function RangeDaysPage() {
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                   >
                     {Array.from(
-                      { length: selectedDrill?.runCount ?? 1 },
+                      { length: selectedEffectiveRunCount },
                       (_, index) => index + 1,
                     ).map((run) => (
                       <option key={run} value={run}>
-                        Run {run}
+                        {getRunLabel(selectedDrill, run)}
                       </option>
                     ))}
                   </select>
@@ -2390,13 +2577,19 @@ export default function RangeDaysPage() {
                     label={selectedDrill?.category ?? "Category"}
                     tone="slate"
                   />
+                  <StatusPill
+                    label={getRunLabel(selectedDrill, selectedRunNumber)}
+                    tone="green"
+                  />
                 </div>
 
                 {selectedDrill?.scoringMode === "Scored" && (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
                       <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                        Score
+                        {isQualificationDrill(selectedDrill)
+                          ? getRunLabel(selectedDrill, selectedRunNumber)
+                          : "Score"}
                       </label>
                       <input
                         type="number"
@@ -2545,7 +2738,7 @@ export default function RangeDaysPage() {
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500"
                 >
                   <Save size={14} />
-                  Save Drill Run
+                  Save {getRunLabel(selectedDrill, selectedRunNumber)}
                 </button>
               </div>
             </div>
