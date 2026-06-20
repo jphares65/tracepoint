@@ -360,6 +360,19 @@ const RANGE_DAY_TYPES: RangeDayType[] = [
   "Training",
 ];
 
+type RangeDayStatusFilter = "All Active" | PlannedRangeDay["status"];
+type RangeDayTypeFilter = "All Types" | RangeDayType;
+
+const RANGE_DAY_STATUS_FILTERS: RangeDayStatusFilter[] = [
+  "All Active",
+  ...RANGE_STATUSES,
+];
+
+const RANGE_DAY_TYPE_FILTERS: RangeDayTypeFilter[] = [
+  "All Types",
+  ...RANGE_DAY_TYPES,
+];
+
 const DRILL_CATEGORIES: DrillTemplate["category"][] = [
   "Qualification",
   "Marksmanship",
@@ -679,6 +692,11 @@ export default function RangeDaysPage() {
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [rangeDaySearchQuery, setRangeDaySearchQuery] = useState("");
+  const [rangeDayStatusFilter, setRangeDayStatusFilter] =
+    useState<RangeDayStatusFilter>("All Active");
+  const [rangeDayTypeFilter, setRangeDayTypeFilter] =
+    useState<RangeDayTypeFilter>("All Types");
 
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [showCreateDrillForm, setShowCreateDrillForm] = useState(false);
@@ -792,6 +810,80 @@ export default function RangeDaysPage() {
       ),
     [selectedRoster, selectedDrills, selectedRangeResults],
   );
+
+  const activeRangeDayCount = useMemo(
+    () => rangeDays.filter((rangeDay) => rangeDay.status !== "Archived").length,
+    [rangeDays],
+  );
+
+  const archivedRangeDayCount = useMemo(
+    () => rangeDays.filter((rangeDay) => rangeDay.status === "Archived").length,
+    [rangeDays],
+  );
+
+  const filteredRangeDays = useMemo(() => {
+    const normalizedSearch = rangeDaySearchQuery.trim().toLowerCase();
+
+    return rangeDays.filter((rangeDay) => {
+      if (
+        rangeDayStatusFilter === "All Active" &&
+        rangeDay.status === "Archived"
+      ) {
+        return false;
+      }
+
+      if (
+        rangeDayStatusFilter !== "All Active" &&
+        rangeDay.status !== rangeDayStatusFilter
+      ) {
+        return false;
+      }
+
+      if (
+        rangeDayTypeFilter !== "All Types" &&
+        rangeDay.rangeType !== rangeDayTypeFilter
+      ) {
+        return false;
+      }
+
+      if (!normalizedSearch) return true;
+
+      const dayRoster = rangeRoster.filter(
+        (entry) => entry.rangeDayId === rangeDay.id,
+      );
+
+      const searchableText = [
+        rangeDay.title,
+        rangeDay.date,
+        rangeDay.startTime,
+        rangeDay.endTime,
+        rangeDay.location,
+        rangeDay.status,
+        rangeDay.rangeType,
+        rangeDay.packetStatus,
+        rangeDay.staffingNotes,
+        rangeDay.notes ?? "",
+        rangeDay.weather ?? "",
+        getUserName(rangeDay.leadInstructorId),
+        ...(rangeDay.instructorIds ?? []).map(getUserName),
+        ...getRangeDayOutlineForDisplay(rangeDay),
+        ...dayRoster.map((entry) => getUserName(entry.officerId)),
+        ...dayRoster.flatMap((entry) =>
+          entry.assignedFirearmIds.map(getFirearmName),
+        ),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(normalizedSearch);
+    });
+  }, [
+    rangeDaySearchQuery,
+    rangeDayStatusFilter,
+    rangeDayTypeFilter,
+    rangeDays,
+    rangeRoster,
+  ]);
 
   useEffect(() => {
     const storedWorkspace = loadStoredRangeDayWorkspace();
@@ -1004,6 +1096,22 @@ export default function RangeDaysPage() {
                 rangeDay.outline.length > 0
                   ? rangeDay.outline
                   : getDefaultOutlineForRangeType(nextRangeType),
+            }
+          : rangeDay,
+      ),
+    );
+  }
+
+  function handleChangeRangeDayStatus(
+    rangeDayId: string,
+    nextStatus: PlannedRangeDay["status"],
+  ) {
+    setRangeDays((current) =>
+      current.map((rangeDay) =>
+        rangeDay.id === rangeDayId
+          ? {
+              ...rangeDay,
+              status: nextStatus,
             }
           : rangeDay,
       ),
@@ -1330,9 +1438,19 @@ export default function RangeDaysPage() {
   }
 
   if (!selectedRangeDay) {
-    const totalDrills = rangeDayDrills.length;
-    const totalRoster = rangeRoster.length;
-    const readyPackets = rangeDays.filter(
+    const visibleRangeDayIds = new Set(
+      filteredRangeDays.map((rangeDay) => rangeDay.id),
+    );
+
+    const totalDrills = rangeDayDrills.filter((drill) =>
+      visibleRangeDayIds.has(drill.rangeDayId),
+    ).length;
+
+    const totalRoster = rangeRoster.filter((entry) =>
+      visibleRangeDayIds.has(entry.rangeDayId),
+    ).length;
+
+    const readyPackets = filteredRangeDays.filter(
       (rangeDay) => rangeDay.packetStatus === "Ready",
     ).length;
 
@@ -1365,8 +1483,8 @@ export default function RangeDaysPage() {
           <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatCard
               label="Scheduled"
-              value={rangeDays.length}
-              sub="Range days"
+              value={filteredRangeDays.length}
+              sub={`${activeRangeDayCount} active · ${archivedRangeDayCount} archived`}
             />
             <StatCard
               label="Roster Slots"
@@ -1385,8 +1503,89 @@ export default function RangeDaysPage() {
             />
           </section>
 
+          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px]">
+              <div>
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                  Search Range Days
+                </label>
+                <input
+                  type="search"
+                  value={rangeDaySearchQuery}
+                  onChange={(event) => setRangeDaySearchQuery(event.target.value)}
+                  placeholder="Search title, location, instructor, officer, firearm, type..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                  Status
+                </label>
+                <select
+                  value={rangeDayStatusFilter}
+                  onChange={(event) =>
+                    setRangeDayStatusFilter(
+                      event.target.value as RangeDayStatusFilter,
+                    )
+                  }
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                >
+                  {RANGE_DAY_STATUS_FILTERS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                  Type
+                </label>
+                <select
+                  value={rangeDayTypeFilter}
+                  onChange={(event) =>
+                    setRangeDayTypeFilter(event.target.value as RangeDayTypeFilter)
+                  }
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                >
+                  {RANGE_DAY_TYPE_FILTERS.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-col gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                Showing {filteredRangeDays.length} of {rangeDays.length} range day
+                {rangeDays.length !== 1 ? "s" : ""}. Archived range days are
+                hidden by default.
+              </p>
+
+              {(rangeDaySearchQuery ||
+                rangeDayStatusFilter !== "All Active" ||
+                rangeDayTypeFilter !== "All Types") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRangeDaySearchQuery("");
+                    setRangeDayStatusFilter("All Active");
+                    setRangeDayTypeFilter("All Types");
+                  }}
+                  className="self-start rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-400 hover:border-blue-500/40 hover:text-white sm:self-auto"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </section>
+
           <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-            {rangeDays.map((rangeDay) => {
+            {filteredRangeDays.map((rangeDay) => {
               const dayRoster = rangeRoster.filter(
                 (entry) => entry.rangeDayId === rangeDay.id,
               );
@@ -1408,11 +1607,18 @@ export default function RangeDaysPage() {
               const malfunctionCount = getMalfunctionCountForRangeDay(dayResults);
 
               return (
-                <button
+                <div
                   key={rangeDay.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => openRangeDay(rangeDay.id)}
-                  className="group flex h-full flex-col rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left transition hover:-translate-y-[1px] hover:border-blue-500/40 hover:bg-slate-800/70"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openRangeDay(rangeDay.id);
+                    }
+                  }}
+                  className="group flex h-full cursor-pointer flex-col rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left transition hover:-translate-y-[1px] hover:border-blue-500/40 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
@@ -1439,10 +1645,30 @@ export default function RangeDaysPage() {
                       </p>
                     </div>
 
-                    <ChevronRight
-                      size={18}
-                      className="mt-1 text-slate-600 transition group-hover:text-blue-300"
-                    />
+                    <div className="flex flex-col items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleChangeRangeDayStatus(
+                            rangeDay.id,
+                            rangeDay.status === "Archived" ? "Planned" : "Archived",
+                          );
+                        }}
+                        className={`rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition ${
+                          rangeDay.status === "Archived"
+                            ? "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:border-blue-400/60"
+                            : "border-slate-700 bg-slate-950/50 text-slate-500 hover:border-amber-500/40 hover:text-amber-300"
+                        }`}
+                      >
+                        {rangeDay.status === "Archived" ? "Restore" : "Archive"}
+                      </button>
+
+                      <ChevronRight
+                        size={18}
+                        className="text-slate-600 transition group-hover:text-blue-300"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2 text-[12px] text-slate-400">
@@ -1580,9 +1806,21 @@ export default function RangeDaysPage() {
                       {malfunctionCount !== 1 ? "s" : ""}
                     </div>
                   )}
-                </button>
+                </div>
               );
             })}
+
+            {filteredRangeDays.length === 0 && (
+              <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/60 p-8 text-center lg:col-span-2 2xl:col-span-3">
+                <p className="text-[15px] font-semibold text-white">
+                  No range days match those filters.
+                </p>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Clear the search, change the status/type filter, or create a new
+                  range day.
+                </p>
+              </div>
+            )}
           </section>
         </div>
       </TracePointShell>
