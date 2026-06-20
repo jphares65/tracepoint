@@ -1478,12 +1478,61 @@ export default function RangeDaysPage() {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       Staffing
                     </p>
-                    <p className="text-[11px] text-slate-400">
-                      {rangeDay.staffingNotes}
+                    <div className="space-y-1 text-[11px] text-slate-400">
+                      <p>
+                        <span className="font-semibold text-slate-300">Lead:</span>{" "}
+                        {getUserName(rangeDay.leadInstructorId)}
+                      </p>
+                      <p>
+                        <span className="font-semibold text-slate-300">Instructors:</span>{" "}
+                        {rangeDay.instructorIds.length > 0
+                          ? rangeDay.instructorIds.map(getUserName).join(", ")
+                          : "None assigned"}
+                      </p>
+                      {rangeDay.staffingNotes && (
+                        <p className="pt-1 text-slate-500">{rangeDay.staffingNotes}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Assigned Officers
                     </p>
+                    {dayRoster.length > 0 ? (
+                      <div className="space-y-1.5 text-[11px] text-slate-400">
+                        {dayRoster.slice(0, 5).map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-start justify-between gap-2"
+                          >
+                            <span className="font-semibold text-slate-300">
+                              {getUserName(entry.officerId)}
+                            </span>
+                            <span className="text-right text-slate-500">
+                              {entry.assignedFirearmIds.length > 0
+                                ? entry.assignedFirearmIds
+                                    .map(getFirearmName)
+                                    .join(", ")
+                                : "No firearm"}
+                            </span>
+                          </div>
+                        ))}
+                        {dayRoster.length > 5 && (
+                          <p className="pt-1 text-slate-500">
+                            +{dayRoster.length - 5} more officer
+                            {dayRoster.length - 5 !== 1 ? "s" : ""}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-500">
+                        No officers assigned yet.
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-4 grid grid-cols-4 gap-2 border-t border-slate-800 pt-3">
