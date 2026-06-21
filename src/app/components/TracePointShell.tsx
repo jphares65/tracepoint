@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
+  BarChart3,
   Crosshair,
   Shield,
   ShieldCheck,
@@ -24,6 +25,7 @@ type TracePointShellProps = {
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Firearms", href: "/firearms", icon: Crosshair },
   { label: "Off-Duty Firearms", href: "/off-duty-firearms", icon: Shield },
   { label: "Qualifications", href: "/qualifications", icon: ShieldCheck },
