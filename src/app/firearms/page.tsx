@@ -1,1500 +1,1359 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
-  ChevronDown,
   ClipboardList,
-  Download,
+  Crosshair,
+  Filter,
   History,
-  Plus,
   Search,
+  Shield,
+  ShieldAlert,
+  Target,
+  User,
+  Wrench,
   X,
 } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
 
-type FirearmStatus = "Armory" | "Issued" | "OOS" | "Maintenance" | "Missing/Lost";
-type FirearmType = "Pistol" | "Shotgun" | "Rifle" | "Revolver";
+import type {
+  DrillRunResult,
+  DrillTemplate,
+  RangeDay,
+  RangeDayDrill,
+  RangeRosterEntry,
+} from "@/app/lib/tracepoint/range-day-types";
 
-interface Firearm {
-  serial: string;
-  make: string;
-  model: string;
-  type: FirearmType;
-  caliber: string;
-  status: FirearmStatus;
-  assignedTo: string | null;
-}
+import {
+  MOCK_FIREARMS,
+  MOCK_USERS,
+} from "@/app/lib/tracepoint/mock-data";
 
-interface AuditEntry {
+type MockFirearm = (typeof MOCK_FIREARMS)[number];
+
+type FirearmHistoryStatus =
+  | "Qualified"
+  | "Missing Night"
+  | "Attention"
+  | "No Qual"
+  | "Out of Service";
+
+type FirearmStatusFilter = "All" | FirearmHistoryStatus;
+
+type StoredRangeDay = RangeDay & {
+  rangeType?: string;
+  startTime?: string;
+  endTime?: string;
+  packetStatus?: string;
+  staffingNotes?: string;
+  outline?: string[];
+};
+
+type StoredRangeDayWorkspace = {
+  rangeDays: StoredRangeDay[];
+  drillLibrary: DrillTemplate[];
+  rangeDayDrills: RangeDayDrill[];
+  rangeRoster: RangeRosterEntry[];
+  results: DrillRunResult[];
+  malfunctions: FirearmMalfunction[];
+};
+
+type FirearmUseEvent = {
   id: string;
-  action: string;
-  detail: string;
-  actor: string;
-  timestamp: string;
-  tone: "green" | "blue" | "amber" | "orange" | "red" | "slate";
+  rangeDayId: string;
+  rangeDayTitle: string;
+  rangeDayStatus: string;
+  date: string;
+  location: string;
+  officerId: string;
+  drillName: string;
+  drillCategory: string;
+  runNumber: number;
+  runLabel: string;
+  score?: number;
+  passed?: boolean;
+  completed: boolean;
+  instructorId?: string;
+  notes?: string;
+  deficiencyObserved?: boolean;
+  remedialTrainingRecommended?: boolean;
+  malfunctionCount: number;
+  isQualification: boolean;
+  isRifle: boolean;
+};
+
+type FirearmHistoryRecord = {
+  firearm: MockFirearm;
+  firearmId: string;
+  name: string;
+  shortName: string;
+  serialNumber: string;
+  typeLabel: string;
+  statusLabel: string;
+  assignedOfficerIds: string[];
+  lastRosteredOfficerIds: string[];
+  useEvents: FirearmUseEvent[];
+  qualificationEvents: FirearmUseEvent[];
+  lastDayQualification?: FirearmUseEvent;
+  lastNightQualification?: FirearmUseEvent;
+  lastRifleQualification?: FirearmUseEvent;
+  failedEvents: FirearmUseEvent[];
+  malfunctions: FirearmMalfunction[];
+  unresolvedMalfunctions: FirearmMalfunction[];
+  removedFromServiceCount: number;
+  inspectionRequiredCount: number;
+  status: FirearmHistoryStatus;
+  statusReason: string;
+};
+
+const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
+
+const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
+  rangeDays: [],
+  drillLibrary: [],
+  rangeDayDrills: [],
+  rangeRoster: [],
+  results: [],
+  malfunctions: [],
+};
+
+const STATUS_FILTERS: FirearmStatusFilter[] = [
+  "All",
+  "Qualified",
+  "Missing Night",
+  "Attention",
+  "No Qual",
+  "Out of Service",
+];
+
+const TYPE_FILTERS = ["All", "Handgun", "Rifle", "Shotgun", "Less Lethal", "Other"];
+
+function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storedWorkspace = window.localStorage.getItem(
+      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+    );
+
+    if (!storedWorkspace) return null;
+
+    const parsed = JSON.parse(
+      storedWorkspace,
+    ) as Partial<StoredRangeDayWorkspace>;
+
+    return {
+      rangeDays: Array.isArray(parsed.rangeDays) ? parsed.rangeDays : [],
+      drillLibrary: Array.isArray(parsed.drillLibrary) ? parsed.drillLibrary : [],
+      rangeDayDrills: Array.isArray(parsed.rangeDayDrills)
+        ? parsed.rangeDayDrills
+        : [],
+      rangeRoster: Array.isArray(parsed.rangeRoster) ? parsed.rangeRoster : [],
+      results: Array.isArray(parsed.results) ? parsed.results : [],
+      malfunctions: Array.isArray(parsed.malfunctions)
+        ? parsed.malfunctions
+        : [],
+    };
+  } catch (error) {
+    console.warn("Could not load saved range day workspace.", error);
+    return null;
+  }
 }
 
-type StatusFilter = FirearmStatus | "";
-type TypeFilter = FirearmType | "";
+function getRecordValue(item: unknown, keys: string[]) {
+  const record = item as Record<string, unknown>;
 
-const FIREARM_STATUSES: FirearmStatus[] = [
-  "Armory",
-  "Issued",
-  "OOS",
-  "Maintenance",
-  "Missing/Lost",
-];
+  for (const key of keys) {
+    const value = record[key];
 
-const FIREARM_TYPES: FirearmType[] = ["Pistol", "Shotgun", "Rifle", "Revolver"];
-
-const FIREARMS_STORAGE_KEY = "tracepoint.firearms.repository.v1";
-const AUDIT_LOG_STORAGE_KEY = "tracepoint.firearms.auditLog.v1";
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const MOCK_FIREARMS: Firearm[] = [
-  {
-    serial: "GBR4921",
-    make: "Glock",
-    model: "17 Gen5",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Issued",
-    assignedTo: "Sgt. Rivera, M.",
-  },
-  {
-    serial: "GBR5503",
-    make: "Glock",
-    model: "19 Gen4",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Issued",
-    assignedTo: "Off. Chen, D.",
-  },
-  {
-    serial: "GBR6102",
-    make: "Glock",
-    model: "17 Gen5",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Armory",
-    assignedTo: null,
-  },
-  {
-    serial: "SW22819",
-    make: "S&W",
-    model: "M&P Shield",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Issued",
-    assignedTo: "Det. Patel, A.",
-  },
-  {
-    serial: "SW29401",
-    make: "S&W",
-    model: "686 Plus",
-    type: "Revolver",
-    caliber: ".357",
-    status: "Maintenance",
-    assignedTo: null,
-  },
-  {
-    serial: "REM8834",
-    make: "Remington",
-    model: "870 Express",
-    type: "Shotgun",
-    caliber: "12ga",
-    status: "Issued",
-    assignedTo: "Off. Torres, L.",
-  },
-  {
-    serial: "REM9012",
-    make: "Remington",
-    model: "870 Tactical",
-    type: "Shotgun",
-    caliber: "12ga",
-    status: "Armory",
-    assignedTo: null,
-  },
-  {
-    serial: "SIG7731",
-    make: "Sig Sauer",
-    model: "P320",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Issued",
-    assignedTo: "Lt. Brooks, C.",
-  },
-  {
-    serial: "SIG7890",
-    make: "Sig Sauer",
-    model: "P226",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "OOS",
-    assignedTo: "Off. Nguyen, T.",
-  },
-  {
-    serial: "AR15112",
-    make: "Colt",
-    model: "LE6920",
-    type: "Rifle",
-    caliber: "5.56",
-    status: "Issued",
-    assignedTo: "Sgt. Rivera, M.",
-  },
-  {
-    serial: "AR15220",
-    make: "Colt",
-    model: "LE6920",
-    type: "Rifle",
-    caliber: "5.56",
-    status: "Armory",
-    assignedTo: null,
-  },
-  {
-    serial: "BER0041",
-    make: "Beretta",
-    model: "92FS",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Missing/Lost",
-    assignedTo: "Off. Walsh, R.",
-  },
-  {
-    serial: "GLK0080",
-    make: "Glock",
-    model: "26 Gen5",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Issued",
-    assignedTo: "Off. Martinez, K.",
-  },
-  {
-    serial: "WIN4490",
-    make: "Winchester",
-    model: "SXP Defender",
-    type: "Shotgun",
-    caliber: "12ga",
-    status: "Maintenance",
-    assignedTo: null,
-  },
-  {
-    serial: "SIG8821",
-    make: "Sig Sauer",
-    model: "MCX Patrol",
-    type: "Rifle",
-    caliber: "5.56",
-    status: "Issued",
-    assignedTo: "Det. Okafor, B.",
-  },
-  {
-    serial: "GLK0221",
-    make: "Glock",
-    model: "21 Gen4",
-    type: "Pistol",
-    caliber: ".45",
-    status: "OOS",
-    assignedTo: null,
-  },
-  {
-    serial: "REM0055",
-    make: "Remington",
-    model: "700P",
-    type: "Rifle",
-    caliber: ".308",
-    status: "Armory",
-    assignedTo: null,
-  },
-];
-
-const INITIAL_AUDIT_LOG: AuditEntry[] = [
-  {
-    id: "audit-001",
-    action: "Inventory Reviewed",
-    detail: "Firearms repository opened and inventory status reviewed.",
-    actor: "System",
-    timestamp: "Today",
-    tone: "blue",
-  },
-  {
-    id: "audit-002",
-    action: "Firearm Marked OOS",
-    detail: "SIG7890 was marked out of service pending armorer review.",
-    actor: "Range Master",
-    timestamp: "Yesterday",
-    tone: "orange",
-  },
-  {
-    id: "audit-003",
-    action: "Maintenance Entry",
-    detail: "WIN4490 placed into maintenance queue.",
-    actor: "Armorer",
-    timestamp: "2 days ago",
-    tone: "amber",
-  },
-  {
-    id: "audit-004",
-    action: "Missing / Lost Flag",
-    detail: "BER0041 flagged as missing/lost and requires command review.",
-    actor: "Command Staff",
-    timestamp: "3 days ago",
-    tone: "red",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Status config
-// ---------------------------------------------------------------------------
-
-const STATUS_CONFIG: Record<
-  FirearmStatus,
-  { label: string; className: string; dotClassName: string }
-> = {
-  Armory: {
-    label: "Armory",
-    className: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    dotClassName: "bg-blue-400",
-  },
-  Issued: {
-    label: "Issued",
-    className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    dotClassName: "bg-emerald-400",
-  },
-  OOS: {
-    label: "OOS",
-    className: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-    dotClassName: "bg-orange-400",
-  },
-  Maintenance: {
-    label: "Maintenance",
-    className: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-    dotClassName: "bg-amber-400",
-  },
-  "Missing/Lost": {
-    label: "Missing/Lost",
-    className: "bg-red-500/15 text-red-300 border-red-500/30",
-    dotClassName: "bg-red-400",
-  },
-};
-
-const AUDIT_TONE_CLASS: Record<AuditEntry["tone"], string> = {
-  green: "bg-emerald-500",
-  blue: "bg-blue-500",
-  amber: "bg-amber-500",
-  orange: "bg-orange-500",
-  red: "bg-red-500",
-  slate: "bg-slate-500",
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  issue: "Issue Firearm",
-  return: "Return / RTS",
-  "mark-oos": "Mark Out of Service",
-  "send-maintenance": "Send to Maintenance",
-  "return-armory": "Return to Armory",
-  "log-inspection": "Log Inspection",
-  "file-report": "File Report",
-  "view-history": "View History",
-};
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getInitials(name: string): string {
-  return name
-    .replace(/Sgt\.|Off\.|Det\.|Lt\./g, "")
-    .trim()
-    .split(/[\s,]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join("");
-}
-
-function escapeCsvValue(value: string | number | null): string {
-  const text = String(value ?? "");
-
-  if (/[",\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number") return String(value);
+    if (typeof value === "boolean") return value ? "Yes" : "No";
   }
 
-  return text;
+  return undefined;
 }
 
-function exportFirearmsCsv(records: Firearm[]) {
-  const headers = [
-    "Serial",
-    "Make",
-    "Model",
-    "Type",
-    "Caliber",
-    "Status",
-    "Assigned To",
-  ];
+function formatDate(date?: string) {
+  if (!date) return "No date";
 
-  const rows = records.map((f) => [
-    f.serial,
-    f.make,
-    f.model,
-    f.type,
-    f.caliber,
-    f.status,
-    f.assignedTo ?? "Armory",
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(date?: string) {
+  if (!date) return "No date";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return formatDate(date.slice(0, 10));
+
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getDateValue(date?: string) {
+  if (!date) return 0;
+
+  const value = date.includes("T")
+    ? new Date(date).getTime()
+    : new Date(`${date}T00:00:00`).getTime();
+
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function getUserName(userId?: string) {
+  if (!userId) return "Unassigned";
+
+  return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
+}
+
+function getFirearmName(firearm?: MockFirearm) {
+  if (!firearm) return "Unknown firearm";
+
+  return `${firearm.make} ${firearm.model} (${firearm.serialNumber})`;
+}
+
+function getFirearmShortName(firearm?: MockFirearm) {
+  if (!firearm) return "Unknown firearm";
+
+  return `${firearm.model} · ${firearm.serialNumber}`;
+}
+
+function getFirearmTypeLabel(firearm: MockFirearm) {
+  return (
+    getRecordValue(firearm, [
+      "type",
+      "firearmType",
+      "category",
+      "weaponType",
+      "classification",
+    ]) ?? "Firearm"
+  );
+}
+
+function getFirearmStatusLabel(firearm: MockFirearm) {
+  return (
+    getRecordValue(firearm, [
+      "status",
+      "condition",
+      "inventoryStatus",
+      "serviceStatus",
+      "operationalStatus",
+    ]) ?? "Active"
+  );
+}
+
+function getDirectAssignedOfficerId(firearm: MockFirearm) {
+  return getRecordValue(firearm, [
+    "assignedOfficerId",
+    "assignedToOfficerId",
+    "assignedUserId",
+    "assignedToUserId",
+    "issuedToUserId",
+    "currentOfficerId",
   ]);
-
-  const csv = [headers, ...rows]
-    .map((row) => row.map(escapeCsvValue).join(","))
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = `tracepoint-firearms-${new Date()
-    .toISOString()
-    .slice(0, 10)}.csv`;
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
 }
 
-// ---------------------------------------------------------------------------
-// Shared UI
-// ---------------------------------------------------------------------------
+function isOutOfServiceStatus(statusLabel: string) {
+  const normalized = statusLabel.toLowerCase();
 
-function StatusBadge({ status }: { status: FirearmStatus }) {
-  const cfg = STATUS_CONFIG[status];
+  return (
+    normalized.includes("out") ||
+    normalized.includes("oos") ||
+    normalized.includes("maintenance") ||
+    normalized.includes("repair") ||
+    normalized.includes("inactive")
+  );
+}
+
+function isQualificationText(value?: string) {
+  return Boolean(value?.toLowerCase().includes("qualification"));
+}
+
+function isQualificationDrill(drill?: RangeDayDrill) {
+  if (!drill) return false;
+
+  return drill.category === "Qualification" || isQualificationText(drill.name);
+}
+
+function isRifleDrill(drill?: RangeDayDrill) {
+  if (!drill) return false;
+
+  const name = drill.name.toLowerCase();
+  const category = drill.category.toLowerCase();
+  const firearmType = drill.firearmType?.toLowerCase() ?? "";
+
+  return (
+    name.includes("rifle") ||
+    category.includes("rifle") ||
+    firearmType.includes("rifle")
+  );
+}
+
+function getRunLabel(drill?: RangeDayDrill, runNumber?: number) {
+  if (isQualificationDrill(drill)) {
+    if (runNumber === 1) return "Day Qualification";
+    if (runNumber === 2) return "Night Qualification";
+  }
+
+  return `Run ${runNumber ?? 1}`;
+}
+
+function getStatusTone(status: FirearmHistoryStatus) {
+  if (status === "Qualified") return "green";
+  if (status === "Missing Night") return "blue";
+  if (status === "Attention") return "amber";
+  if (status === "Out of Service") return "red";
+
+  return "slate";
+}
+
+function StatusPill({
+  label,
+  tone = "blue",
+}: {
+  label: string;
+  tone?: "blue" | "green" | "amber" | "red" | "slate";
+}) {
+  const styles = {
+    blue: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+    green: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    amber: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    red: "border-red-500/30 bg-red-500/10 text-red-300",
+    slate: "border-slate-700 bg-slate-800/60 text-slate-300",
+  };
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cfg.className}`}
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${styles[tone]}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dotClassName}`} />
-      {cfg.label}
+      {label}
     </span>
   );
 }
 
-function AssignedToCell({ assignedTo }: { assignedTo: string | null }) {
-  if (!assignedTo) {
-    return <span className="text-[11px] italic text-slate-600">— Armory</span>;
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string | number;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-bold text-white">{value}</p>
+      <p className="mt-1 text-[11px] text-slate-500">{sub}</p>
+    </div>
+  );
+}
+
+function evaluateFirearmStatus({
+  statusLabel,
+  lastDayQualification,
+  lastNightQualification,
+  failedEvents,
+  unresolvedMalfunctions,
+  removedFromServiceCount,
+  inspectionRequiredCount,
+}: {
+  statusLabel: string;
+  lastDayQualification?: FirearmUseEvent;
+  lastNightQualification?: FirearmUseEvent;
+  failedEvents: FirearmUseEvent[];
+  unresolvedMalfunctions: FirearmMalfunction[];
+  removedFromServiceCount: number;
+  inspectionRequiredCount: number;
+}): { status: FirearmHistoryStatus; statusReason: string } {
+  if (isOutOfServiceStatus(statusLabel) || removedFromServiceCount > 0) {
+    return {
+      status: "Out of Service",
+      statusReason:
+        removedFromServiceCount > 0
+          ? `${removedFromServiceCount} malfunction record(s) removed this firearm from service.`
+          : `Inventory status is ${statusLabel}.`,
+    };
   }
 
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-[9px] font-semibold text-slate-400">
-        {getInitials(assignedTo)}
-      </div>
+  if (unresolvedMalfunctions.length > 0 || inspectionRequiredCount > 0) {
+    return {
+      status: "Attention",
+      statusReason: `${unresolvedMalfunctions.length} unresolved malfunction(s); ${inspectionRequiredCount} inspection-required record(s).`,
+    };
+  }
 
-      <span className="truncate text-[12px] text-slate-400">{assignedTo}</span>
-    </div>
-  );
+  if (failedEvents.length > 0) {
+    return {
+      status: "Attention",
+      statusReason: `${failedEvents.length} failed qualification/drill record(s) are linked to this firearm.`,
+    };
+  }
+
+  if (!lastDayQualification && !lastNightQualification) {
+    return {
+      status: "No Qual",
+      statusReason: "No day or night qualification result is linked to this firearm yet.",
+    };
+  }
+
+  if (!lastDayQualification || !lastNightQualification) {
+    return {
+      status: "Missing Night",
+      statusReason:
+        "Qualification history is incomplete because day and night records are not both present.",
+    };
+  }
+
+  return {
+    status: "Qualified",
+    statusReason:
+      "Day and night qualification records are both linked to this firearm.",
+  };
 }
 
-function ModalShell({
-  title,
-  eyebrow,
-  children,
-  onClose,
-  size = "md",
-}: {
-  title: string;
-  eyebrow?: string;
-  children: ReactNode;
-  onClose: () => void;
-  size?: "md" | "lg";
-}) {
-  const width = size === "lg" ? "max-w-3xl" : "max-w-md";
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className={`relative max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6 ${width}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close modal"
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-800 hover:text-white"
-        >
-          <X size={16} />
-        </button>
-
-        {eyebrow && (
-          <p className="mb-1 pr-8 text-xs font-semibold uppercase tracking-widest text-slate-500">
-            {eyebrow}
-          </p>
-        )}
-
-        <h3 className="pr-8 text-xl font-bold text-white">{title}</h3>
-
-        <div className="mt-5">{children}</div>
-      </div>
-    </div>
+function buildFirearmHistories(workspace: StoredRangeDayWorkspace) {
+  const rangeDayById = new Map(
+    workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
   );
-}
 
-function AddFirearmModal({
-  existingSerials,
-  onAdd,
-  onClose,
-}: {
-  existingSerials: Set<string>;
-  onAdd: (firearm: Firearm) => void;
-  onClose: () => void;
-}) {
-  const [form, setForm] = useState<{
-    serial: string;
-    make: string;
-    model: string;
-    type: FirearmType;
-    caliber: string;
-    status: FirearmStatus;
-    assignedTo: string;
-  }>({
-    serial: "",
-    make: "",
-    model: "",
-    type: "Pistol",
-    caliber: "9mm",
-    status: "Armory",
-    assignedTo: "",
+  const drillById = new Map(
+    workspace.rangeDayDrills.map((drill) => [drill.id, drill]),
+  );
+
+  const resultsByFirearmId = new Map<string, DrillRunResult[]>();
+  const rosterByFirearmId = new Map<string, RangeRosterEntry[]>();
+  const malfunctionsByFirearmId = new Map<string, FirearmMalfunction[]>();
+
+  workspace.results.forEach((result) => {
+    if (!result.firearmId) return;
+
+    const current = resultsByFirearmId.get(result.firearmId) ?? [];
+    current.push(result);
+    resultsByFirearmId.set(result.firearmId, current);
   });
 
-  const [error, setError] = useState("");
-
-  const inputClass =
-    "w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-700 focus:border-blue-500";
-  const labelClass =
-    "mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600";
-
-  const update = <K extends keyof typeof form>(
-    key: K,
-    value: (typeof form)[K],
-  ) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const submit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    const serial = form.serial.trim().toUpperCase();
-    const make = form.make.trim();
-    const model = form.model.trim();
-    const caliber = form.caliber.trim();
-    const assignedTo = form.assignedTo.trim();
-
-    if (!serial || !make || !model || !caliber) {
-      setError("Serial, make, model, and caliber are required.");
-      return;
-    }
-
-    if (existingSerials.has(serial)) {
-      setError("A firearm with that serial number already exists.");
-      return;
-    }
-
-    onAdd({
-      serial,
-      make,
-      model,
-      type: form.type,
-      caliber,
-      status: form.status,
-      assignedTo: assignedTo || null,
+  workspace.rangeRoster.forEach((entry) => {
+    (entry.assignedFirearmIds ?? []).forEach((firearmId) => {
+      const current = rosterByFirearmId.get(firearmId) ?? [];
+      current.push(entry);
+      rosterByFirearmId.set(firearmId, current);
     });
-  };
+  });
 
-  return (
-    <ModalShell title="Add Firearm" eyebrow="Firearms Repository" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-            {error}
-          </div>
-        )}
+  workspace.malfunctions.forEach((malfunction) => {
+    if (!malfunction.firearmId) return;
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={labelClass}>Serial Number</label>
-            <input
-              value={form.serial}
-              onChange={(e) => update("serial", e.target.value)}
-              className={inputClass}
-              placeholder="Example: GLK1234"
-            />
-          </div>
+    const current = malfunctionsByFirearmId.get(malfunction.firearmId) ?? [];
+    current.push(malfunction);
+    malfunctionsByFirearmId.set(malfunction.firearmId, current);
+  });
 
-          <div>
-            <label className={labelClass}>Make</label>
-            <input
-              value={form.make}
-              onChange={(e) => update("make", e.target.value)}
-              className={inputClass}
-              placeholder="Glock, Sig Sauer, Colt"
-            />
-          </div>
+  return MOCK_FIREARMS.map<FirearmHistoryRecord>((firearm) => {
+    const firearmResults = resultsByFirearmId.get(firearm.id) ?? [];
+    const rosterEntries = rosterByFirearmId.get(firearm.id) ?? [];
+    const firearmMalfunctions = (malfunctionsByFirearmId.get(firearm.id) ?? [])
+      .slice()
+      .sort((a, b) => getDateValue(b.date) - getDateValue(a.date));
 
-          <div>
-            <label className={labelClass}>Model</label>
-            <input
-              value={form.model}
-              onChange={(e) => update("model", e.target.value)}
-              className={inputClass}
-              placeholder="17 Gen5"
-            />
-          </div>
+    const directAssignedOfficerId = getDirectAssignedOfficerId(firearm);
+    const rosterOfficerIds = rosterEntries.map((entry) => entry.officerId);
+    const assignedOfficerIds = Array.from(
+      new Set(
+        [directAssignedOfficerId, ...rosterOfficerIds].filter(
+          (officerId): officerId is string => Boolean(officerId),
+        ),
+      ),
+    );
 
-          <div>
-            <label className={labelClass}>Caliber</label>
-            <input
-              value={form.caliber}
-              onChange={(e) => update("caliber", e.target.value)}
-              className={inputClass}
-              placeholder="9mm"
-            />
-          </div>
+    const latestRosterDate = rosterEntries.reduce((latest, entry) => {
+      const rangeDay = rangeDayById.get(entry.rangeDayId);
+      const dateValue = getDateValue(rangeDay?.date);
+      return Math.max(latest, dateValue);
+    }, 0);
 
-          <div>
-            <label className={labelClass}>Type</label>
-            <select
-              value={form.type}
-              onChange={(e) => update("type", e.target.value as FirearmType)}
-              className={inputClass}
-            >
-              {FIREARM_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </div>
+    const lastRosteredOfficerIds = Array.from(
+      new Set(
+        rosterEntries
+          .filter((entry) => {
+            const rangeDay = rangeDayById.get(entry.rangeDayId);
+            return getDateValue(rangeDay?.date) === latestRosterDate;
+          })
+          .map((entry) => entry.officerId),
+      ),
+    );
 
-          <div>
-            <label className={labelClass}>Status</label>
-            <select
-              value={form.status}
-              onChange={(e) =>
-                update("status", e.target.value as FirearmStatus)
-              }
-              className={inputClass}
-            >
-              {FIREARM_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {STATUS_CONFIG[status].label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+    const useEvents = firearmResults
+      .map<FirearmUseEvent>((result) => {
+        const drill = drillById.get(result.drillId);
+        const rangeDay = rangeDayById.get(result.rangeDayId);
+        const linkedMalfunctionCount = workspace.malfunctions.filter(
+          (malfunction) =>
+            malfunction.firearmId === firearm.id &&
+            (malfunction.drillRunId === result.id ||
+              result.malfunctionIds?.includes(malfunction.id)),
+        ).length;
 
-        <div>
-          <label className={labelClass}>Assigned To</label>
-          <input
-            value={form.assignedTo}
-            onChange={(e) => update("assignedTo", e.target.value)}
-            className={inputClass}
-            placeholder="Leave blank if stored in armory"
-          />
-        </div>
+        const isQualification = isQualificationDrill(drill);
+        const isRifle = isRifleDrill(drill);
 
-        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-400 transition hover:border-slate-600 hover:bg-slate-800 hover:text-slate-200"
-          >
-            Cancel
-          </button>
+        return {
+          id: result.id,
+          rangeDayId: result.rangeDayId,
+          rangeDayTitle: rangeDay?.title ?? "Unknown Range Day",
+          rangeDayStatus: rangeDay?.status ?? "Unknown",
+          date: rangeDay?.date ?? "",
+          location: rangeDay?.location ?? "No location recorded",
+          officerId: result.officerId,
+          drillName: drill?.name ?? "Unknown Drill",
+          drillCategory: drill?.category ?? "Unknown",
+          runNumber: result.runNumber,
+          runLabel: getRunLabel(drill, result.runNumber),
+          score: result.score,
+          passed: result.passed,
+          completed: result.completed,
+          instructorId: result.instructorId,
+          notes: result.notes,
+          deficiencyObserved: result.deficiencyObserved,
+          remedialTrainingRecommended: result.remedialTrainingRecommended,
+          malfunctionCount: linkedMalfunctionCount,
+          isQualification,
+          isRifle,
+        };
+      })
+      .sort((a, b) => getDateValue(b.date) - getDateValue(a.date));
 
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
-          >
-            <Plus size={14} />
-            Save Firearm
-          </button>
-        </div>
-      </form>
-    </ModalShell>
-  );
-}
+    const qualificationEvents = useEvents.filter(
+      (event) => event.isQualification || event.isRifle,
+    );
 
-function AuditLogModal({
-  entries,
-  onClose,
-}: {
-  entries: AuditEntry[];
-  onClose: () => void;
-}) {
-  return (
-    <ModalShell
-      title="Audit Log"
-      eyebrow="System Activity"
-      size="lg"
-      onClose={onClose}
-    >
-      <div className="space-y-3">
-        {entries.map((entry) => (
-          <div
-            key={entry.id}
-            className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <span
-                  className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
-                    AUDIT_TONE_CLASS[entry.tone]
-                  }`}
-                />
+    const passedQualificationEvents = qualificationEvents.filter(
+      (event) => event.passed === true || event.completed === true,
+    );
 
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white">
-                    {entry.action}
-                  </p>
-                  <p className="mt-1 text-sm leading-5 text-slate-400">
-                    {entry.detail}
-                  </p>
-                </div>
-              </div>
+    const lastDayQualification = passedQualificationEvents.find(
+      (event) =>
+        event.isQualification &&
+        !event.isRifle &&
+        event.runNumber === 1 &&
+        event.runLabel.toLowerCase().includes("day"),
+    );
 
-              <span className="whitespace-nowrap text-xs text-slate-600">
-                {entry.timestamp}
-              </span>
-            </div>
+    const lastNightQualification = passedQualificationEvents.find(
+      (event) =>
+        event.isQualification &&
+        !event.isRifle &&
+        event.runNumber === 2 &&
+        event.runLabel.toLowerCase().includes("night"),
+    );
 
-            <p className="mt-2 border-t border-slate-800 pt-2 text-[11px] text-slate-600">
-              Actor: {entry.actor}
-            </p>
-          </div>
-        ))}
-      </div>
-    </ModalShell>
-  );
-}
+    const lastRifleQualification = passedQualificationEvents.find(
+      (event) => event.isRifle,
+    );
 
-function WorkflowModal({
-  title,
-  description,
-  onClose,
-}: {
-  title: string;
-  description: string;
-  onClose: () => void;
-}) {
-  return (
-    <ModalShell title={title} eyebrow="Workflow" onClose={onClose}>
-      <p className="text-sm leading-6 text-slate-400">{description}</p>
+    const failedEvents = qualificationEvents.filter(
+      (event) => event.passed === false || event.deficiencyObserved,
+    );
 
-      <button
-        type="button"
-        onClick={onClose}
-        className="mt-6 w-full rounded-xl bg-slate-800 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-slate-700"
-      >
-        Close
-      </button>
-    </ModalShell>
-  );
-}
+    const unresolvedMalfunctions = firearmMalfunctions.filter(
+      (malfunction) => !malfunction.resolvedOnRange,
+    );
 
-function RowActions({
-  firearm,
-  onAction,
-  align = "end",
-}: {
-  firearm: Firearm;
-  onAction: (action: string, serial: string) => void;
-  align?: "start" | "end";
-}) {
-  const { serial, status } = firearm;
+    const removedFromServiceCount = firearmMalfunctions.filter(
+      (malfunction) => malfunction.removedFromService,
+    ).length;
 
-  const primary: {
-    label: string;
-    variant?: "warn" | "danger";
-    action: string;
-  }[] = [];
+    const inspectionRequiredCount = firearmMalfunctions.filter(
+      (malfunction) => malfunction.inspectionRequired,
+    ).length;
 
-  if (status === "Armory") {
-    primary.push({ label: "Issue", action: "issue" });
-  }
+    const typeLabel = getFirearmTypeLabel(firearm);
+    const statusLabel = getFirearmStatusLabel(firearm);
 
-  if (status === "Issued") {
-    primary.push({ label: "Return / RTS", action: "return" });
-    primary.push({ label: "Mark OOS", variant: "warn", action: "mark-oos" });
-  }
-
-  if (status === "OOS") {
-    primary.push({ label: "Send to Maint.", action: "send-maintenance" });
-    primary.push({ label: "Return to Armory", action: "return-armory" });
-  }
-
-  if (status === "Maintenance") {
-    primary.push({ label: "Log Inspection", action: "log-inspection" });
-    primary.push({ label: "Return to Armory", action: "return-armory" });
-  }
-
-  if (status === "Missing/Lost") {
-    primary.push({
-      label: "File Report",
-      variant: "danger",
-      action: "file-report",
+    const evaluatedStatus = evaluateFirearmStatus({
+      statusLabel,
+      lastDayQualification,
+      lastNightQualification,
+      failedEvents,
+      unresolvedMalfunctions,
+      removedFromServiceCount,
+      inspectionRequiredCount,
     });
-  }
 
-  const base =
-    "rounded px-2 py-1 text-[10px] font-medium border transition-colors duration-150 cursor-pointer whitespace-nowrap";
+    return {
+      firearm,
+      firearmId: firearm.id,
+      name: getFirearmName(firearm),
+      shortName: getFirearmShortName(firearm),
+      serialNumber: firearm.serialNumber,
+      typeLabel,
+      statusLabel,
+      assignedOfficerIds,
+      lastRosteredOfficerIds,
+      useEvents,
+      qualificationEvents,
+      lastDayQualification,
+      lastNightQualification,
+      lastRifleQualification,
+      failedEvents,
+      malfunctions: firearmMalfunctions,
+      unresolvedMalfunctions,
+      removedFromServiceCount,
+      inspectionRequiredCount,
+      ...evaluatedStatus,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
 
-  const def = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-400`;
-  const warn = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-orange-500/50 hover:bg-orange-500/10 hover:text-orange-400`;
-  const danger = `${base} border-white/[0.08] bg-slate-800 text-slate-400 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400`;
-  const history = `${base} border-white/[0.08] bg-slate-800 text-slate-500 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-400`;
-
+function FirearmSummaryCard({
+  history,
+  selected,
+  onClick,
+}: {
+  history: FirearmHistoryRecord;
+  selected: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div
-      className={`flex flex-wrap items-center gap-1 opacity-100 transition-opacity duration-150 lg:opacity-0 lg:group-hover:opacity-100 ${
-        align === "end" ? "justify-end" : "justify-start"
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-3xl border p-4 text-left transition hover:-translate-y-[1px] hover:border-blue-500/40 hover:bg-slate-800/70 ${
+        selected
+          ? "border-blue-500/50 bg-blue-500/10"
+          : "border-slate-800 bg-slate-900"
       }`}
     >
-      {primary.map((p) => (
-        <button
-          key={p.action}
-          type="button"
-          className={
-            p.variant === "danger" ? danger : p.variant === "warn" ? warn : def
-          }
-          onClick={() => onAction(p.action, serial)}
-        >
-          {p.label}
-        </button>
-      ))}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <StatusPill
+              label={history.status}
+              tone={getStatusTone(history.status)}
+            />
+            <StatusPill label={history.typeLabel} tone="slate" />
+            {history.malfunctions.length > 0 && (
+              <StatusPill label="Malfunction" tone="amber" />
+            )}
+          </div>
 
-      {primary.length > 0 && (
-        <div className="mx-0.5 hidden h-3.5 w-px flex-shrink-0 bg-white/[0.08] sm:block" />
+          <h3 className="text-[15px] font-bold text-white">{history.name}</h3>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {history.statusReason}
+          </p>
+        </div>
+
+        <Crosshair size={17} className="mt-1 text-slate-600" />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="text-[10px] uppercase tracking-widest text-slate-600">
+            Day Qual
+          </p>
+          <p className="mt-1 font-semibold text-white">
+            {history.lastDayQualification
+              ? formatDate(history.lastDayQualification.date)
+              : "Missing"}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="text-[10px] uppercase tracking-widest text-slate-600">
+            Night Qual
+          </p>
+          <p className="mt-1 font-semibold text-white">
+            {history.lastNightQualification
+              ? formatDate(history.lastNightQualification.date)
+              : "Missing"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 text-[11px] text-slate-500">
+        <p>
+          Last rostered: {" "}
+          {history.lastRosteredOfficerIds.length > 0
+            ? history.lastRosteredOfficerIds.map(getUserName).join(", ")
+            : history.assignedOfficerIds.length > 0
+              ? history.assignedOfficerIds.map(getUserName).join(", ")
+              : "No officer assignment found"}
+        </p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest text-slate-600">
+        <span>{history.useEvents.length} uses</span>
+        <span>·</span>
+        <span>{history.qualificationEvents.length} qual refs</span>
+        {history.malfunctions.length > 0 && (
+          <>
+            <span>·</span>
+            <span className="text-amber-300">
+              {history.malfunctions.length} malfunction
+              {history.malfunctions.length !== 1 ? "s" : ""}
+            </span>
+          </>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function UseEventRow({ event }: { event: FirearmUseEvent }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <StatusPill label={event.runLabel} tone="slate" />
+            {event.passed === true && <StatusPill label="Pass" tone="green" />}
+            {event.passed === false && <StatusPill label="Fail" tone="red" />}
+            {event.passed === undefined && event.completed && (
+              <StatusPill label="Completed" tone="green" />
+            )}
+            {event.deficiencyObserved && (
+              <StatusPill label="Deficiency" tone="red" />
+            )}
+            {event.malfunctionCount > 0 && (
+              <StatusPill label="Malfunction" tone="amber" />
+            )}
+          </div>
+
+          <h4 className="text-[13px] font-bold text-white">
+            {event.drillName}
+          </h4>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {event.rangeDayTitle} · {event.location}
+          </p>
+        </div>
+
+        <div className="text-left text-[11px] text-slate-400 sm:text-right">
+          <p>{formatDate(event.date)}</p>
+          <p>Officer: {getUserName(event.officerId)}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-[11px] text-slate-400 sm:grid-cols-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-widest text-slate-600">
+            Score
+          </p>
+          <p className="mt-1 font-semibold text-white">
+            {event.score ?? "—"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-widest text-slate-600">
+            Category
+          </p>
+          <p className="mt-1 font-semibold text-white">
+            {event.drillCategory}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-widest text-slate-600">
+            Instructor
+          </p>
+          <p className="mt-1 font-semibold text-white">
+            {getUserName(event.instructorId)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-widest text-slate-600">
+            Remedial
+          </p>
+          <p className="mt-1 font-semibold text-white">
+            {event.remedialTrainingRecommended ? "Yes" : "No"}
+          </p>
+        </div>
+      </div>
+
+      {event.notes && (
+        <p className="mt-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[11px] text-slate-400">
+          {event.notes}
+        </p>
       )}
-
-      <button
-        type="button"
-        className={history}
-        title="View history"
-        aria-label={`View history for firearm ${serial}`}
-        onClick={() => onAction("view-history", serial)}
-      >
-        <History size={11} />
-      </button>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
+function MalfunctionRow({
+  malfunction,
+}: {
+  malfunction: FirearmMalfunction;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <StatusPill label={malfunction.type} tone="amber" />
+            {malfunction.removedFromService && (
+              <StatusPill label="Removed From Service" tone="red" />
+            )}
+            {malfunction.inspectionRequired && (
+              <StatusPill label="Inspection Required" tone="red" />
+            )}
+            {malfunction.resolvedOnRange && (
+              <StatusPill label="Resolved On Range" tone="green" />
+            )}
+          </div>
 
-export default function FirearmsRepository() {
-  const [firearms, setFirearms] = useState<Firearm[]>(MOCK_FIREARMS);
-  const [auditLog, setAuditLog] = useState<AuditEntry[]>(INITIAL_AUDIT_LOG);
-  const [storageReady, setStorageReady] = useState(false);
+          <h4 className="text-[13px] font-bold text-white">
+            {malfunction.type}
+          </h4>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Officer: {getUserName(malfunction.officerId)} · Reported by: {" "}
+            {getUserName(malfunction.reportedByUserId)}
+          </p>
+        </div>
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
+        <div className="text-left text-[11px] text-slate-400 sm:text-right">
+          <p>{formatDateTime(malfunction.date)}</p>
+          <p>{malfunction.rangeDayId ? "Range-linked" : "Inventory-linked"}</p>
+        </div>
+      </div>
 
-  const [addFirearmOpen, setAddFirearmOpen] = useState(false);
-  const [auditLogOpen, setAuditLogOpen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [workflowModal, setWorkflowModal] = useState<{
-    title: string;
-    description: string;
-  } | null>(null);
+      {malfunction.notes && (
+        <p className="mt-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[11px] text-slate-400">
+          {malfunction.notes}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default function FirearmsPage() {
+  const [workspace, setWorkspace] =
+    useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
+  const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<FirearmStatusFilter>("All");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [selectedFirearmId, setSelectedFirearmId] = useState<string>(
+    MOCK_FIREARMS[0]?.id ?? "",
+  );
 
   useEffect(() => {
-    try {
-      const savedFirearms = window.localStorage.getItem(FIREARMS_STORAGE_KEY);
-      const savedAuditLog = window.localStorage.getItem(AUDIT_LOG_STORAGE_KEY);
+    const storedWorkspace = loadStoredRangeDayWorkspace();
 
-      if (savedFirearms) {
-        const parsedFirearms = JSON.parse(savedFirearms);
+    if (!storedWorkspace) return;
 
-        if (Array.isArray(parsedFirearms)) {
-          setFirearms(parsedFirearms);
-        }
-      }
-
-      if (savedAuditLog) {
-        const parsedAuditLog = JSON.parse(savedAuditLog);
-
-        if (Array.isArray(parsedAuditLog)) {
-          setAuditLog(parsedAuditLog);
-        }
-      }
-    } catch (error) {
-      console.error("[TracePoint] Failed to load saved firearms data.", error);
-    } finally {
-      setStorageReady(true);
-    }
+    setWorkspace(storedWorkspace);
+    setHasStoredWorkspace(true);
   }, []);
 
-  useEffect(() => {
-    if (!storageReady) return;
+  const firearmHistories = useMemo(
+    () => buildFirearmHistories(workspace),
+    [workspace],
+  );
 
-    try {
-      window.localStorage.setItem(
-        FIREARMS_STORAGE_KEY,
-        JSON.stringify(firearms),
-      );
-    } catch (error) {
-      console.error("[TracePoint] Failed to save firearms data.", error);
-    }
-  }, [firearms, storageReady]);
+  const selectedHistory =
+    firearmHistories.find(
+      (history) => history.firearmId === selectedFirearmId,
+    ) ?? firearmHistories[0];
 
-  useEffect(() => {
-    if (!storageReady) return;
+  const filteredHistories = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase();
 
-    try {
-      window.localStorage.setItem(
-        AUDIT_LOG_STORAGE_KEY,
-        JSON.stringify(auditLog),
-      );
-    } catch (error) {
-      console.error("[TracePoint] Failed to save audit log data.", error);
-    }
-  }, [auditLog, storageReady]);
+    return firearmHistories.filter((history) => {
+      const statusMatches =
+        statusFilter === "All" || history.status === statusFilter;
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
+      const typeMatches =
+        typeFilter === "All" ||
+        history.typeLabel.toLowerCase().includes(typeFilter.toLowerCase()) ||
+        history.qualificationEvents.some((event) =>
+          event.drillName.toLowerCase().includes(typeFilter.toLowerCase()),
+        );
 
-    return firearms.filter((f) => {
-      const haystack = [
-        f.serial,
-        f.make,
-        f.model,
-        f.type,
-        f.caliber,
-        f.status,
-        f.assignedTo ?? "",
+      const searchableText = [
+        history.name,
+        history.shortName,
+        history.serialNumber,
+        history.typeLabel,
+        history.statusLabel,
+        history.status,
+        history.statusReason,
+        ...history.assignedOfficerIds.map(getUserName),
+        ...history.useEvents.flatMap((event) => [
+          event.rangeDayTitle,
+          event.drillName,
+          event.runLabel,
+          event.location,
+          event.notes ?? "",
+          getUserName(event.officerId),
+          getUserName(event.instructorId),
+        ]),
+        ...history.malfunctions.flatMap((malfunction) => [
+          malfunction.type,
+          malfunction.notes ?? "",
+          getUserName(malfunction.officerId),
+        ]),
       ]
         .join(" ")
         .toLowerCase();
 
-      return (
-        (!q || haystack.includes(q)) &&
-        (!statusFilter || f.status === statusFilter) &&
-        (!typeFilter || f.type === typeFilter)
-      );
-    });
-  }, [firearms, search, statusFilter, typeFilter]);
+      const searchMatches =
+        !normalizedSearch || searchableText.includes(normalizedSearch);
 
-  const stats = useMemo(
-    () => ({
-      total: firearms.length,
-      issued: firearms.filter((f) => f.status === "Issued").length,
-      armory: firearms.filter((f) => f.status === "Armory").length,
-      maintenance: firearms.filter((f) => f.status === "Maintenance").length,
-      oos: firearms.filter((f) => f.status === "OOS").length,
-      missing: firearms.filter((f) => f.status === "Missing/Lost").length,
-    }),
-    [firearms],
+      return statusMatches && typeMatches && searchMatches;
+    });
+  }, [firearmHistories, searchText, statusFilter, typeFilter]);
+
+  const qualifiedCount = firearmHistories.filter(
+    (history) => history.status === "Qualified",
+  ).length;
+
+  const attentionCount = firearmHistories.filter((history) =>
+    ["Attention", "Missing Night", "Out of Service"].includes(history.status),
+  ).length;
+
+  const malfunctionCount = firearmHistories.reduce(
+    (total, history) => total + history.malfunctions.length,
+    0,
   );
 
-  const attention = [
-    stats.oos > 0 && {
-      text: `${stats.oos} out of service`,
-      dot: "bg-orange-500",
-      filter: "OOS" as FirearmStatus,
-    },
-    stats.missing > 0 && {
-      text: `${stats.missing} missing / unaccounted`,
-      dot: "bg-red-500",
-      filter: "Missing/Lost" as FirearmStatus,
-    },
-    stats.maintenance > 0 && {
-      text: `${stats.maintenance} in maintenance`,
-      dot: "bg-amber-500",
-      filter: "Maintenance" as FirearmStatus,
-    },
-  ].filter(Boolean) as {
-    text: string;
-    dot: string;
-    filter: FirearmStatus;
-  }[];
-
-  const kpiCards = [
-    {
-      label: "Total",
-      value: stats.total,
-      color: "text-slate-200",
-      sub: "All firearms",
-      filter: "" as StatusFilter,
-    },
-    {
-      label: "Issued",
-      value: stats.issued,
-      color: "text-emerald-400",
-      sub: "Active carry",
-      filter: "Issued" as StatusFilter,
-    },
-    {
-      label: "In Armory",
-      value: stats.armory,
-      color: "text-blue-400",
-      sub: "Available",
-      filter: "Armory" as StatusFilter,
-    },
-    {
-      label: "Maintenance",
-      value: stats.maintenance,
-      color: "text-amber-400",
-      sub: "Service queue",
-      filter: "Maintenance" as StatusFilter,
-    },
-    {
-      label: "Out of Service",
-      value: stats.oos,
-      color: "text-orange-400",
-      sub: "Non-operational",
-      filter: "OOS" as StatusFilter,
-    },
-    {
-      label: "Missing",
-      value: stats.missing,
-      color: "text-red-400",
-      sub: "Unaccounted",
-      filter: "Missing/Lost" as StatusFilter,
-    },
-  ];
-
-  const hasActiveFilters = Boolean(search || statusFilter || typeFilter);
-
-  function showNotice(message: string) {
-    setNotice(message);
-
-    window.setTimeout(() => {
-      setNotice(null);
-    }, 3500);
-  }
-
-  function recordAudit(
-    action: string,
-    detail: string,
-    tone: AuditEntry["tone"] = "blue",
-  ) {
-    setAuditLog((prev) => [
-      {
-        id: `audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        action,
-        detail,
-        actor: "Current User",
-        timestamp: "Just now",
-        tone,
-      },
-      ...prev,
-    ]);
-  }
-
-  function handleAddFirearm(firearm: Firearm) {
-    setFirearms((prev) => [firearm, ...prev]);
-
-    recordAudit(
-      "Firearm Added",
-      `${firearm.make} ${firearm.model} (${firearm.serial}) added to the repository.`,
-      "green",
-    );
-
-    setAddFirearmOpen(false);
-    showNotice(`${firearm.serial} added to repository.`);
-  }
-
-  const handleAction = (action: string, serial: string) => {
-    if (action === "export") {
-      exportFirearmsCsv(filtered);
-
-      recordAudit(
-        "Export Generated",
-        `${filtered.length} firearm record${
-          filtered.length === 1 ? "" : "s"
-        } exported to CSV.`,
-        "blue",
-      );
-
-      showNotice(
-        `Exported ${filtered.length} firearm record${
-          filtered.length === 1 ? "" : "s"
-        }.`,
-      );
-
-      return;
-    }
-
-    if (action === "audit-log") {
-      setAuditLogOpen(true);
-      return;
-    }
-
-    if (action === "add-firearm") {
-      setAddFirearmOpen(true);
-      return;
-    }
-
-    const firearm = firearms.find((f) => f.serial === serial);
-    const label = ACTION_LABELS[action] ?? action;
-
-    if (!firearm) {
-      return;
-    }
-
-    if (action === "view-history") {
-      recordAudit(
-        "History Viewed",
-        `History opened for ${firearm.make} ${firearm.model} (${serial}).`,
-        "slate",
-      );
-
-      setWorkflowModal({
-        title: `History: ${serial}`,
-        description: `This history view is ready to connect to the permanent firearm audit trail. For now, the action is captured in the in-page audit log for ${firearm.make} ${firearm.model}.`,
-      });
-
-      return;
-    }
-
-    recordAudit(
-      label,
-      `${label} workflow opened for ${firearm.make} ${firearm.model} (${serial}).`,
-      action === "file-report"
-        ? "red"
-        : action === "mark-oos"
-          ? "orange"
-          : "blue",
-    );
-
-    setWorkflowModal({
-      title: `${label}: ${serial}`,
-      description: `The ${label.toLowerCase()} workflow is now wired to open from this row. The next build step would be replacing this placeholder with the actual guided form, validations, and database write. Firearm: ${firearm.make} ${firearm.model}, ${firearm.caliber}.`,
-    });
-  };
+  const noQualCount = firearmHistories.filter(
+    (history) => history.status === "No Qual",
+  ).length;
 
   return (
     <TracePointShell activePage="Firearms">
-      {notice && (
-        <div className="fixed right-4 top-4 z-[60] flex max-w-sm items-center gap-3 rounded-2xl border border-blue-500/30 bg-slate-900 px-4 py-3 text-sm text-slate-200 shadow-2xl">
-          <span className="h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
-          <span className="min-w-0 flex-1">{notice}</span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-white"
-            aria-label="Dismiss notice"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {addFirearmOpen && (
-        <AddFirearmModal
-          existingSerials={
-            new Set(firearms.map((firearm) => firearm.serial.toUpperCase()))
-          }
-          onAdd={handleAddFirearm}
-          onClose={() => setAddFirearmOpen(false)}
-        />
-      )}
-
-      {auditLogOpen && (
-        <AuditLogModal
-          entries={auditLog}
-          onClose={() => setAuditLogOpen(false)}
-        />
-      )}
-
-      {workflowModal && (
-        <WorkflowModal
-          title={workflowModal.title}
-          description={workflowModal.description}
-          onClose={() => setWorkflowModal(null)}
-        />
-      )}
-
-      <div className="w-full min-w-0 space-y-5">
-        {/* Page header */}
+      <div className="mx-auto w-full max-w-[1600px] space-y-5">
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <h1 className="text-[20px] font-bold leading-tight text-white sm:text-[22px]">
-                Firearms Repository
+            <div>
+              <h1 className="text-[22px] font-bold text-white">
+                Firearm History
               </h1>
-
-              <p className="mt-0.5 max-w-3xl text-[12px] leading-relaxed text-slate-500">
-                Inventory status, assignments, service exceptions, and weapon
-                accountability.
+              <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
+                Review each firearm's assignment references, day/night qualification
+                history, range usage, malfunctions, and inspection concerns from
+                saved TracePoint range records.
               </p>
-
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-slate-700">
-                <span>{stats.total} tracked</span>
-                <span className="hidden text-slate-800 sm:inline">·</span>
-                <span>{stats.issued} issued</span>
-                <span className="hidden text-slate-800 sm:inline">·</span>
-                <span className={stats.oos > 0 ? "text-orange-500" : ""}>
-                  {stats.oos} OOS
-                </span>
-                <span className="hidden text-slate-800 sm:inline">·</span>
-                <span className={stats.missing > 0 ? "text-red-400" : ""}>
-                  {stats.missing} missing/lost
-                </span>
-              </div>
             </div>
 
-            <span className="w-fit rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-[11px] font-medium text-slate-400">
-              Readington PD
-            </span>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
+              <Shield size={14} className="text-blue-400" />
+              {hasStoredWorkspace
+                ? "Connected to saved range data"
+                : "No saved range data yet"}
+            </div>
           </div>
         </header>
 
-        {/* KPI strip */}
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-          {kpiCards.map((card) => {
-            const isActive = statusFilter === card.filter;
-
-            return (
-              <button
-                key={card.label}
-                type="button"
-                onClick={() => setStatusFilter(card.filter)}
-                className={`group cursor-pointer rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-px hover:shadow-[0_2px_12px_rgba(0,0,0,0.3)] ${
-                  isActive
-                    ? "border-blue-500/35 bg-slate-800/80"
-                    : "border-slate-800 bg-slate-900 hover:border-blue-500/25 hover:bg-slate-800/70"
-                }`}
-              >
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600 transition-colors group-hover:text-slate-500">
-                  {card.label}
-                </p>
-
-                <p className={`mt-1 text-2xl font-bold leading-none ${card.color}`}>
-                  {card.value}
-                </p>
-
-                <p className="mt-0.5 text-[10px] text-slate-600">{card.sub}</p>
-              </button>
-            );
-          })}
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <StatCard
+            label="Inventory"
+            value={firearmHistories.length}
+            sub="Firearms tracked"
+          />
+          <StatCard
+            label="Qualified"
+            value={qualifiedCount}
+            sub="Day/night records linked"
+          />
+          <StatCard
+            label="Needs Review"
+            value={attentionCount}
+            sub="Attention/missing/OOS"
+          />
+          <StatCard
+            label="Malfunctions"
+            value={malfunctionCount}
+            sub="Range-linked records"
+          />
+          <StatCard
+            label="No Qual"
+            value={noQualCount}
+            sub="No linked qual result"
+          />
         </section>
 
-        {/* Attention Required */}
-        {attention.length > 0 && (
-          <section className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 md:flex-row md:items-center md:gap-x-5">
-            <div className="flex flex-shrink-0 items-center gap-1.5">
-              <AlertTriangle size={12} className="text-amber-500" />
-              <span className="text-[9.5px] font-semibold uppercase tracking-widest text-slate-500">
-                Attention Required
-              </span>
+        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px_auto] lg:items-end">
+            <div>
+              <label className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                <Search size={12} />
+                Search
+              </label>
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search firearm, serial, officer, range day, malfunction, drill..."
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+              />
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              {attention.map((item) => (
-                <button
-                  key={item.text}
-                  type="button"
-                  onClick={() => setStatusFilter(item.filter)}
-                  className="flex items-center gap-1.5 text-[11.5px] text-slate-400 transition-colors hover:text-slate-200"
-                >
-                  <span
-                    className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${item.dot}`}
-                  />
-                  {item.text}
-                </button>
-              ))}
+            <div>
+              <label className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                <Filter size={12} />
+                Status
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as FirearmStatusFilter)
+                }
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+              >
+                {STATUS_FILTERS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                <Target size={12} />
+                Type
+              </label>
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+              >
+                {TYPE_FILTERS.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearchText("");
+                setStatusFilter("All");
+                setTypeFilter("All");
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+            >
+              <X size={14} />
+              Clear
+            </button>
+          </div>
+        </section>
+
+        {!hasStoredWorkspace && (
+          <section className="rounded-3xl border border-blue-500/20 bg-blue-500/[0.06] p-4 text-[12px] text-blue-200">
+            <div className="flex gap-3">
+              <ClipboardList size={17} className="mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-blue-100">
+                  This page will become more useful after range data is saved.
+                </p>
+                <p className="mt-1 text-blue-200/80">
+                  Create a range day, assign firearms, enter day/night scores,
+                  log malfunctions, and click Save Range Day. This page will then
+                  build firearm histories from that saved local workspace.
+                </p>
+              </div>
             </div>
           </section>
         )}
 
-        {/* Toolbar */}
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
-            <div className="flex flex-1 flex-col gap-2 md:flex-row md:items-center">
-              <div className="relative w-full md:max-w-[440px]">
-                <Search
-                  size={13}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
+        <section className="grid gap-5 xl:grid-cols-[440px_1fr]">
+          <div className="space-y-3">
+            {filteredHistories.length > 0 ? (
+              filteredHistories.map((history) => (
+                <FirearmSummaryCard
+                  key={history.firearmId}
+                  history={history}
+                  selected={selectedHistory?.firearmId === history.firearmId}
+                  onClick={() => setSelectedFirearmId(history.firearmId)}
                 />
-
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search serial, make, model, caliber, assigned to..."
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-9 pr-3 text-[12px] text-white outline-none transition-colors placeholder:text-slate-600 focus:border-blue-500"
-                />
+              ))
+            ) : (
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 text-center">
+                <Search size={22} className="mx-auto text-slate-600" />
+                <p className="mt-3 text-[14px] font-semibold text-white">
+                  No firearms match those filters.
+                </p>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Clear the search or broaden the status/type filter.
+                </p>
               </div>
-
-              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:w-auto">
-                <div className="relative">
-                  <select
-                    value={statusFilter}
-                    onChange={(e) =>
-                      setStatusFilter(e.target.value as StatusFilter)
-                    }
-                    className="w-full cursor-pointer appearance-none rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-3 pr-8 text-[12px] text-slate-400 outline-none transition-colors focus:border-blue-500 md:w-[150px]"
-                  >
-                    <option value="">All statuses</option>
-                    <option value="Armory">Armory</option>
-                    <option value="Issued">Issued</option>
-                    <option value="OOS">OOS</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Missing/Lost">Missing / Lost</option>
-                  </select>
-
-                  <ChevronDown
-                    size={11}
-                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600"
-                  />
-                </div>
-
-                <div className="relative">
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
-                    className="w-full cursor-pointer appearance-none rounded-xl border border-slate-800 bg-slate-950/60 py-2 pl-3 pr-8 text-[12px] text-slate-400 outline-none transition-colors focus:border-blue-500 md:w-[135px]"
-                  >
-                    <option value="">All types</option>
-                    <option value="Pistol">Pistol</option>
-                    <option value="Shotgun">Shotgun</option>
-                    <option value="Rifle">Rifle</option>
-                    <option value="Revolver">Revolver</option>
-                  </select>
-
-                  <ChevronDown
-                    size={11}
-                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600"
-                  />
-                </div>
-              </div>
-
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearch("");
-                    setStatusFilter("");
-                    setTypeFilter("");
-                  }}
-                  className="w-full rounded-xl border border-slate-800 px-3 py-2 text-[12px] text-slate-500 transition hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-300 md:w-auto"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 xl:flex xl:items-center xl:justify-end">
-              <button
-                type="button"
-                onClick={() => handleAction("export", "")}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-transparent px-3 py-2 text-[12px] text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-200"
-              >
-                <Download size={12} />
-                Export
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAction("audit-log", "")}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-transparent px-3 py-2 text-[12px] text-slate-400 transition-all hover:border-slate-700 hover:bg-slate-800/60 hover:text-slate-200"
-              >
-                <ClipboardList size={12} />
-                Audit Log
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAction("add-firearm", "")}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-[12px] font-semibold text-white transition-all hover:bg-blue-500"
-              >
-                <Plus size={13} />
-                Add Firearm
-              </button>
-            </div>
+            )}
           </div>
-        </section>
 
-        {/* Mobile / tablet card list */}
-        <section className="space-y-2 lg:hidden">
-          {filtered.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-10 text-center text-[13px] text-slate-600">
-              No firearms match your current filters.
-            </div>
-          ) : (
-            filtered.map((firearm) => (
-              <article
-                key={firearm.serial}
-                className={`group rounded-2xl border border-slate-800 bg-slate-900 p-4 ${
-                  firearm.status === "Missing/Lost"
-                    ? "border-red-500/20 bg-red-500/[0.03]"
-                    : ""
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-mono text-[11px] tracking-wide text-slate-400">
-                      {firearm.serial}
-                    </p>
+          {selectedHistory && (
+            <div className="space-y-5">
+              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <StatusPill
+                        label={selectedHistory.status}
+                        tone={getStatusTone(selectedHistory.status)}
+                      />
+                      <StatusPill
+                        label={selectedHistory.typeLabel}
+                        tone="slate"
+                      />
+                      <StatusPill
+                        label={selectedHistory.statusLabel}
+                        tone="slate"
+                      />
+                    </div>
 
-                    <h3 className="mt-0.5 truncate text-[15px] font-semibold text-white">
-                      {firearm.make} {firearm.model}
-                    </h3>
-
-                    <p className="mt-1 text-[11px] text-slate-600">
-                      {firearm.type} · {firearm.caliber}
+                    <h2 className="text-[21px] font-bold text-white">
+                      {selectedHistory.name}
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      {selectedHistory.statusReason}
                     </p>
                   </div>
 
-                  <StatusBadge status={firearm.status} />
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-[12px] text-slate-400">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Serial Number
+                    </p>
+                    <p className="mt-1 font-semibold text-white">
+                      {selectedHistory.serialNumber}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-3 lg:grid-cols-4">
+                <StatCard
+                  label="Day Qual"
+                  value={
+                    selectedHistory.lastDayQualification
+                      ? formatDate(selectedHistory.lastDayQualification.date)
+                      : "Missing"
+                  }
+                  sub={
+                    selectedHistory.lastDayQualification
+                      ? getUserName(selectedHistory.lastDayQualification.officerId)
+                      : "No linked record"
+                  }
+                />
+                <StatCard
+                  label="Night Qual"
+                  value={
+                    selectedHistory.lastNightQualification
+                      ? formatDate(selectedHistory.lastNightQualification.date)
+                      : "Missing"
+                  }
+                  sub={
+                    selectedHistory.lastNightQualification
+                      ? getUserName(selectedHistory.lastNightQualification.officerId)
+                      : "No linked record"
+                  }
+                />
+                <StatCard
+                  label="Rifle"
+                  value={
+                    selectedHistory.lastRifleQualification
+                      ? formatDate(selectedHistory.lastRifleQualification.date)
+                      : "—"
+                  }
+                  sub={
+                    selectedHistory.lastRifleQualification
+                      ? selectedHistory.lastRifleQualification.drillName
+                      : "No rifle record"
+                  }
+                />
+                <StatCard
+                  label="Malfunctions"
+                  value={selectedHistory.malfunctions.length}
+                  sub={`${selectedHistory.unresolvedMalfunctions.length} unresolved`}
+                />
+              </section>
+
+              <section className="grid gap-5 lg:grid-cols-2">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+                  <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
+                    <User size={15} className="text-blue-400" />
+                    Assignment References
+                  </h3>
+
+                  <div className="space-y-3 text-[12px] text-slate-400">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        Last Rostered Officer
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {selectedHistory.lastRosteredOfficerIds.length > 0
+                          ? selectedHistory.lastRosteredOfficerIds
+                              .map(getUserName)
+                              .join(", ")
+                          : "No range roster reference"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        All Officer References
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {selectedHistory.assignedOfficerIds.length > 0
+                          ? selectedHistory.assignedOfficerIds
+                              .map(getUserName)
+                              .join(", ")
+                          : "No officer references found"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2">
-                  <p className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-700">
-                    Assigned To
-                  </p>
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+                  <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
+                    <ShieldAlert size={15} className="text-blue-400" />
+                    Reliability Flags
+                  </h3>
 
-                  <AssignedToCell assignedTo={firearm.assignedTo} />
+                  <div className="grid grid-cols-2 gap-3 text-[12px] text-slate-400">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-slate-600">
+                        Failed Records
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-white">
+                        {selectedHistory.failedEvents.length}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-slate-600">
+                        Inspection Req.
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-white">
+                        {selectedHistory.inspectionRequiredCount}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-slate-600">
+                        OOS Events
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-white">
+                        {selectedHistory.removedFromServiceCount}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-slate-600">
+                        Total Uses
+                      </p>
+                      <p className="mt-1 text-xl font-bold text-white">
+                        {selectedHistory.useEvents.length}
+                      </p>
+                    </div>
+                  </div>
                 </div>
+              </section>
 
-                <div className="mt-3">
-                  <RowActions
-                    firearm={firearm}
-                    onAction={handleAction}
-                    align="start"
+              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-[16px] font-bold text-white">
+                      <History size={16} className="text-blue-400" />
+                      Range / Qualification Timeline
+                    </h3>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      All saved scoring records linked to this firearm.
+                    </p>
+                  </div>
+                  <StatusPill
+                    label={`${selectedHistory.useEvents.length} records`}
+                    tone="slate"
                   />
                 </div>
-              </article>
-            ))
-          )}
-        </section>
 
-        {/* Desktop table */}
-        <section className="hidden overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 lg:block">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-left">
-              <thead className="bg-slate-900/80">
-                <tr>
-                  {[
-                    { label: "Serial No.", cls: "w-[12%]" },
-                    { label: "Make", cls: "w-[10%]" },
-                    { label: "Model", cls: "w-[14%]" },
-                    { label: "Type", cls: "w-[9%]" },
-                    { label: "Caliber", cls: "w-[7%]" },
-                    { label: "Status", cls: "w-[13%]" },
-                    { label: "Assigned To", cls: "w-[20%]" },
-                    { label: "", cls: "w-[220px] pr-4 text-right" },
-                  ].map((col) => (
-                    <th
-                      key={col.label}
-                      className={`border-b border-slate-800 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600 ${col.cls}`}
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+                <div className="space-y-3">
+                  {selectedHistory.useEvents.length > 0 ? (
+                    selectedHistory.useEvents.map((event) => (
+                      <UseEventRow key={event.id} event={event} />
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-[12px] text-slate-500">
+                      No range scoring records are linked to this firearm yet.
+                    </div>
+                  )}
+                </div>
+              </section>
 
-              <tbody className="divide-y divide-slate-800/60">
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="py-12 text-center text-[13px] text-slate-600"
-                    >
-                      No firearms match your current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((firearm) => (
-                    <tr
-                      key={firearm.serial}
-                      className={`group cursor-pointer transition-colors duration-100 ${
-                        firearm.status === "Missing/Lost"
-                          ? "hover:bg-red-500/[0.05]"
-                          : "hover:bg-slate-800/50"
-                      }`}
-                    >
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-[11px] tracking-wide text-slate-200">
-                          {firearm.serial}
-                        </span>
-                      </td>
+              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-[16px] font-bold text-white">
+                      <Wrench size={16} className="text-blue-400" />
+                      Malfunctions / Inspection History
+                    </h3>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Malfunctions captured from range-day scoring and linked to
+                      this firearm record.
+                    </p>
+                  </div>
+                  {selectedHistory.malfunctions.length > 0 ? (
+                    <StatusPill
+                      label={`${selectedHistory.malfunctions.length} records`}
+                      tone="amber"
+                    />
+                  ) : (
+                    <StatusPill label="No records" tone="green" />
+                  )}
+                </div>
 
-                      <td className="px-4 py-3 text-[12px] font-medium text-slate-200">
-                        {firearm.make}
-                      </td>
+                <div className="space-y-3">
+                  {selectedHistory.malfunctions.length > 0 ? (
+                    selectedHistory.malfunctions.map((malfunction) => (
+                      <MalfunctionRow
+                        key={malfunction.id}
+                        malfunction={malfunction}
+                      />
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-[12px] text-slate-500">
+                      No malfunction or inspection records are linked to this
+                      firearm.
+                    </div>
+                  )}
+                </div>
+              </section>
 
-                      <td className="px-4 py-3 text-[12px] text-slate-400">
-                        {firearm.model}
-                      </td>
-
-                      <td className="px-4 py-3 text-[12px] text-slate-400">
-                        {firearm.type}
-                      </td>
-
-                      <td className="px-4 py-3 text-[12px] text-slate-400">
-                        {firearm.caliber}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <StatusBadge status={firearm.status} />
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <AssignedToCell assignedTo={firearm.assignedTo} />
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        <RowActions firearm={firearm} onAction={handleAction} />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 bg-slate-900/60 px-4 py-2.5 text-[11px] text-slate-600">
-            <span>
-              {filtered.length === firearms.length
-                ? `Showing all ${firearms.length} records`
-                : `${filtered.length} of ${firearms.length} records`}
-            </span>
-
-            <div className="flex items-center gap-1">
-              {["‹", "1", "2", "›"].map((p, i) => (
-                <button
-                  key={`${p}-${i}`}
-                  type="button"
-                  className={`flex h-[26px] w-[26px] items-center justify-center rounded-lg border text-[11px] transition-colors ${
-                    p === "1"
-                      ? "border-blue-500 bg-blue-500 text-white"
-                      : "border-slate-800 bg-transparent text-slate-600 hover:border-slate-700 hover:text-slate-300"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+              {selectedHistory.status !== "Qualified" && (
+                <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
+                  <div className="flex gap-3">
+                    <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-amber-100">
+                        Firearm review recommended
+                      </p>
+                      <p className="mt-1 text-amber-200/80">
+                        {selectedHistory.statusReason} Review the timeline,
+                        malfunction records, and assignment history before using
+                        this firearm as a compliance-ready record.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              )}
             </div>
-          </div>
+          )}
         </section>
       </div>
     </TracePointShell>
