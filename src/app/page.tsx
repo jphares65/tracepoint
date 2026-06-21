@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
+  Activity,
   AlertTriangle,
   BarChart3,
-  Bell,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -20,8 +20,6 @@ import {
   Target,
   TrendingDown,
   TrendingUp,
-  UserCheck,
-  Users,
   Wrench,
 } from "lucide-react";
 
@@ -59,7 +57,7 @@ type StoredRangeDayWorkspace = {
   malfunctions: FirearmMalfunction[];
 };
 
-type OfficerReadinessStatus =
+type ReadinessStatus =
   | "Current"
   | "Needs Day"
   | "Needs Night"
@@ -67,33 +65,20 @@ type OfficerReadinessStatus =
   | "Overdue"
   | "No Record";
 
-type Priority = "High" | "Medium" | "Low";
+type Priority = "Critical" | "High" | "Medium" | "Low";
+type Tone = "blue" | "green" | "amber" | "red" | "slate";
 
 type OfficerSummary = {
   officerId: string;
   officerName: string;
-  status: OfficerReadinessStatus;
+  status: ReadinessStatus;
   statusReason: string;
   lastDayQualification?: DrillRunResult;
   lastNightQualification?: DrillRunResult;
   lastQualificationDate?: string;
   failedQualificationCount: number;
-  assignedFirearmIds: string[];
-  upcomingRangeDays: StoredRangeDay[];
-  instructorRangeDays: StoredRangeDay[];
   scoreTrend: "Improving" | "Declining" | "Stable" | "Insufficient Data";
   trendDelta?: number;
-};
-
-type InboxItem = {
-  id: string;
-  title: string;
-  detail: string;
-  module: "Qualifications" | "Range" | "Firearms" | "Analytics";
-  href: string;
-  priority: Priority;
-  icon: typeof Shield;
-  officerId?: string;
 };
 
 type DrillAnalyticsSummary = {
@@ -103,6 +88,16 @@ type DrillAnalyticsSummary = {
   passRate: number;
   averageScore?: number;
   failedCount: number;
+};
+
+type CriticalItem = {
+  id: string;
+  title: string;
+  detail: string;
+  module: "Qualifications" | "Range" | "Firearms" | "Analytics" | "Records";
+  href: string;
+  priority: Priority;
+  icon: typeof Shield;
 };
 
 const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
@@ -206,18 +201,16 @@ function getUserName(userId?: string) {
   return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
 }
 
-function getFirearmById(firearmId?: string) {
-  if (!firearmId) return undefined;
-
-  return MOCK_FIREARMS.find((firearm) => firearm.id === firearmId);
-}
-
-function getFirearmName(firearmId?: string) {
-  const firearm = getFirearmById(firearmId);
-
-  if (!firearm) return "No firearm recorded";
-
-  return `${firearm.make} ${firearm.model} (${firearm.serialNumber})`;
+function getFirearmStatusLabel(firearm: (typeof MOCK_FIREARMS)[number]) {
+  return (
+    getRecordValue(firearm, [
+      "status",
+      "condition",
+      "inventoryStatus",
+      "serviceStatus",
+      "operationalStatus",
+    ]) ?? "Active"
+  );
 }
 
 function getFirearmTypeLabel(firearm: (typeof MOCK_FIREARMS)[number]) {
@@ -229,18 +222,6 @@ function getFirearmTypeLabel(firearm: (typeof MOCK_FIREARMS)[number]) {
       "weaponType",
       "classification",
     ]) ?? "Firearm"
-  );
-}
-
-function getFirearmStatusLabel(firearm: (typeof MOCK_FIREARMS)[number]) {
-  return (
-    getRecordValue(firearm, [
-      "status",
-      "condition",
-      "inventoryStatus",
-      "serviceStatus",
-      "operationalStatus",
-    ]) ?? "Active"
   );
 }
 
@@ -328,73 +309,82 @@ function getTrendDelta(
   return lastScore - firstScore;
 }
 
-function getPriorityTone(priority: Priority) {
-  if (priority === "High") return "red";
+function getPriorityValue(priority: Priority) {
+  const order: Record<Priority, number> = {
+    Critical: 0,
+    High: 1,
+    Medium: 2,
+    Low: 3,
+  };
+
+  return order[priority];
+}
+
+function getPriorityTone(priority: Priority): Tone {
+  if (priority === "Critical" || priority === "High") return "red";
   if (priority === "Medium") return "amber";
 
   return "blue";
 }
 
-function StatusPill({
-  label,
-  tone = "blue",
-}: {
-  label: string;
-  tone?: "blue" | "green" | "amber" | "red" | "slate";
-}) {
+function getToneClasses(tone: Tone) {
   const styles = {
-    blue: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-    green: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-    amber: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-    red: "border-red-500/30 bg-red-500/10 text-red-300",
+    blue: "border-blue-500/25 bg-blue-500/[0.08] text-blue-300",
+    green: "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-300",
+    amber: "border-amber-500/25 bg-amber-500/[0.08] text-amber-300",
+    red: "border-red-500/25 bg-red-500/[0.08] text-red-300",
     slate: "border-slate-700 bg-slate-800/60 text-slate-300",
   };
 
+  return styles[tone];
+}
+
+function StatusPill({ label, tone = "blue" }: { label: string; tone?: Tone }) {
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${styles[tone]}`}
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${getToneClasses(tone)}`}
     >
       {label}
     </span>
   );
 }
 
-function MetricCard({
-  label,
+function PulseCard({
+  title,
   value,
-  sub,
+  label,
+  detail,
   icon: Icon,
-  tone = "blue",
+  tone,
 }: {
-  label: string;
+  title: string;
   value: string | number;
-  sub: string;
+  label: string;
+  detail: string;
   icon: typeof Shield;
-  tone?: "blue" | "green" | "amber" | "red" | "slate";
+  tone: Tone;
 }) {
-  const tones = {
-    blue: "border-blue-500/20 bg-blue-500/10 text-blue-300",
-    green: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    amber: "border-amber-500/20 bg-amber-500/10 text-amber-300",
-    red: "border-red-500/20 bg-red-500/10 text-red-300",
-    slate: "border-slate-700 bg-slate-800/60 text-slate-300",
-  };
-
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-            {label}
+            {title}
           </p>
           <p className="mt-1 text-3xl font-bold text-white">{value}</p>
-          <p className="mt-1 text-[11px] leading-5 text-slate-500">{sub}</p>
+          <p className="mt-1 text-[12px] font-semibold text-slate-300">
+            {label}
+          </p>
         </div>
 
-        <div className={`rounded-2xl border p-2.5 ${tones[tone]}`}>
+        <div className={`rounded-2xl border p-2.5 ${getToneClasses(tone)}`}>
           <Icon size={18} />
         </div>
       </div>
+
+      <p className="mt-3 border-t border-slate-800 pt-3 text-[11px] leading-5 text-slate-500">
+        {detail}
+      </p>
     </div>
   );
 }
@@ -407,73 +397,27 @@ function EmptyPanel({ message }: { message: string }) {
   );
 }
 
-function ModuleSnapshotCard({
-  title,
-  href,
-  icon: Icon,
-  primary,
-  secondary,
-  tone = "blue",
-}: {
-  title: string;
-  href: string;
-  icon: typeof Shield;
-  primary: string;
-  secondary: string;
-  tone?: "blue" | "green" | "amber" | "red" | "slate";
-}) {
-  const tones = {
-    blue: "text-blue-300 bg-blue-500/10 border-blue-500/20",
-    green: "text-emerald-300 bg-emerald-500/10 border-emerald-500/20",
-    amber: "text-amber-300 bg-amber-500/10 border-amber-500/20",
-    red: "text-red-300 bg-red-500/10 border-red-500/20",
-    slate: "text-slate-300 bg-slate-800/60 border-slate-700",
-  };
-
-  return (
-    <Link
-      href={href}
-      className="group block rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40 hover:bg-slate-800/70"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-bold text-white">{title}</p>
-          <p className="mt-1 text-[11px] text-slate-500">{primary}</p>
-          <p className="mt-1 text-[11px] text-slate-600">{secondary}</p>
-        </div>
-
-        <div className={`rounded-xl border p-2 ${tones[tone]}`}>
-          <Icon size={15} />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function InboxRow({ item }: { item: InboxItem }) {
+function CriticalItemRow({ item }: { item: CriticalItem }) {
   const Icon = item.icon;
   const tone = getPriorityTone(item.priority);
-  const tones = {
-    blue: "border-blue-500/20 bg-blue-500/[0.06] text-blue-300",
-    amber: "border-amber-500/20 bg-amber-500/[0.06] text-amber-300",
-    red: "border-red-500/20 bg-red-500/[0.06] text-red-300",
-  };
 
   return (
     <Link
       href={item.href}
-      className={`group flex items-start justify-between gap-3 rounded-2xl border p-3 transition hover:border-blue-500/40 ${tones[tone]}`}
+      className={`group flex items-start justify-between gap-3 rounded-2xl border p-3 transition hover:border-blue-500/40 ${getToneClasses(tone)}`}
     >
       <div className="flex min-w-0 gap-3">
-        <div className={`rounded-xl border p-2 ${tones[tone]}`}>
+        <div className={`h-fit rounded-xl border p-2 ${getToneClasses(tone)}`}>
           <Icon size={15} />
         </div>
 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[13px] font-bold text-white">{item.title}</p>
+            <StatusPill label={item.priority} tone={tone} />
             <StatusPill label={item.module} tone="slate" />
           </div>
+
+          <p className="mt-2 text-[13px] font-bold text-white">{item.title}</p>
           <p className="mt-1 text-[11px] leading-5 text-slate-400">
             {item.detail}
           </p>
@@ -488,11 +432,45 @@ function InboxRow({ item }: { item: InboxItem }) {
   );
 }
 
+function SnapshotLink({
+  title,
+  href,
+  icon: Icon,
+  primary,
+  secondary,
+  tone,
+}: {
+  title: string;
+  href: string;
+  icon: typeof Shield;
+  primary: string;
+  secondary: string;
+  tone: Tone;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group block rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40 hover:bg-slate-800/70"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-bold text-white">{title}</p>
+          <p className="mt-1 text-[11px] text-slate-400">{primary}</p>
+          <p className="mt-1 text-[11px] text-slate-600">{secondary}</p>
+        </div>
+
+        <div className={`rounded-xl border p-2 ${getToneClasses(tone)}`}>
+          <Icon size={15} />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 export default function DashboardPage() {
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
-  const [selectedOfficerId, setSelectedOfficerId] = useState("all");
 
   useEffect(() => {
     setWorkspace(loadStoredRangeDayWorkspace() ?? EMPTY_WORKSPACE);
@@ -500,7 +478,9 @@ export default function DashboardPage() {
   }, []);
 
   const rangeDaysById = useMemo(() => {
-    return new Map(workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]));
+    return new Map(
+      workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
+    );
   }, [workspace.rangeDays]);
 
   const drillsById = useMemo(() => {
@@ -508,7 +488,10 @@ export default function DashboardPage() {
   }, [workspace.rangeDayDrills]);
 
   const activeRangeDays = useMemo(
-    () => workspace.rangeDays.filter((rangeDay) => rangeDay.status !== "Archived"),
+    () =>
+      workspace.rangeDays.filter(
+        (rangeDay) => rangeDay.status !== "Archived",
+      ),
     [workspace.rangeDays],
   );
 
@@ -545,56 +528,28 @@ export default function DashboardPage() {
       const failedResults = officerResults.filter(
         (result) => result.passed === false,
       );
-
       const dayResults = passedResults.filter((result) => result.runNumber === 1);
       const nightResults = passedResults.filter((result) => result.runNumber === 2);
 
       const lastDayQualification = dayResults[0];
       const lastNightQualification = nightResults[0];
       const lastQualification = passedResults[0];
-      const lastQualificationDate = getResultDate(lastQualification, rangeDaysById);
+      const lastQualificationDate = getResultDate(
+        lastQualification,
+        rangeDaysById,
+      );
       const daysSinceLastQualification = getDaysSince(lastQualificationDate);
-
-      const rosterEntries = workspace.rangeRoster.filter(
-        (entry) => entry.officerId === user.id,
-      );
-
-      const assignedFirearmIds = Array.from(
-        new Set(rosterEntries.flatMap((entry) => entry.assignedFirearmIds ?? [])),
-      );
-
-      const upcomingOfficerRangeDays = rosterEntries
-        .map((entry) => rangeDaysById.get(entry.rangeDayId))
-        .filter((rangeDay): rangeDay is StoredRangeDay => {
-          if (!rangeDay) return false;
-
-          return (
-            rangeDay.status !== "Archived" &&
-            getDateValue(rangeDay.date) >= getTodayValue()
-          );
-        })
-        .sort((a, b) => getDateValue(a.date) - getDateValue(b.date));
-
-      const instructorRangeDays = activeRangeDays
-        .filter(
-          (rangeDay) =>
-            rangeDay.leadInstructorId === user.id ||
-            (rangeDay.instructorIds ?? []).includes(user.id),
-        )
-        .filter((rangeDay) => getDateValue(rangeDay.date) >= getTodayValue())
-        .sort((a, b) => getDateValue(a.date) - getDateValue(b.date));
-
-      let status: OfficerReadinessStatus = "No Record";
-      let statusReason = "No qualification record found.";
-
       const mostRecentResult = officerResults[0];
+
+      let status: ReadinessStatus = "No Record";
+      let statusReason = "No passing qualification record is recorded.";
 
       if (mostRecentResult?.passed === false) {
         status = "Failed";
         statusReason = "Most recent qualification result is marked failed.";
       } else if (passedResults.length === 0) {
         status = "No Record";
-        statusReason = "No passing qualification result is recorded.";
+        statusReason = "No passing qualification record is recorded.";
       } else if (!lastDayQualification) {
         status = "Needs Day";
         statusReason = "No passing day qualification is recorded.";
@@ -621,14 +576,11 @@ export default function DashboardPage() {
         lastNightQualification,
         lastQualificationDate,
         failedQualificationCount: failedResults.length,
-        assignedFirearmIds,
-        upcomingRangeDays: upcomingOfficerRangeDays,
-        instructorRangeDays,
         scoreTrend: getScoreTrend(officerResults, rangeDaysById),
         trendDelta: getTrendDelta(officerResults, rangeDaysById),
       };
     });
-  }, [activeRangeDays, qualificationResults, rangeDaysById, workspace.rangeRoster]);
+  }, [qualificationResults, rangeDaysById]);
 
   const firearmAlerts = useMemo(() => {
     return MOCK_FIREARMS.map((firearm) => {
@@ -647,7 +599,9 @@ export default function DashboardPage() {
       const outOfService =
         normalizedStatus.includes("out") ||
         normalizedStatus.includes("maintenance") ||
-        unresolvedMalfunctions.some((malfunction) => malfunction.removedFromService);
+        unresolvedMalfunctions.some(
+          (malfunction) => malfunction.removedFromService,
+        );
 
       return {
         firearmId: firearm.id,
@@ -686,8 +640,10 @@ export default function DashboardPage() {
           : 0;
       const averageScore = scoredResults.length
         ? Math.round(
-            scoredResults.reduce((total, result) => total + (result.score ?? 0), 0) /
-              scoredResults.length,
+            scoredResults.reduce(
+              (total, result) => total + (result.score ?? 0),
+              0,
+            ) / scoredResults.length,
           )
         : undefined;
 
@@ -707,145 +663,6 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [workspace.rangeDayDrills, workspace.results]);
 
-  const selectedOfficer = useMemo(() => {
-    if (selectedOfficerId === "all") return undefined;
-
-    return officerSummaries.find(
-      (officer) => officer.officerId === selectedOfficerId,
-    );
-  }, [officerSummaries, selectedOfficerId]);
-
-  const officerInboxItems = useMemo<InboxItem[]>(() => {
-    const items: InboxItem[] = [];
-
-    for (const officer of officerSummaries) {
-      if (officer.status !== "Current") {
-        items.push({
-          id: `qual-${officer.officerId}`,
-          title: `${officer.officerName} · ${officer.status}`,
-          detail: officer.statusReason,
-          module: "Qualifications",
-          href: "/qualifications",
-          priority:
-            officer.status === "Failed" ||
-            officer.status === "Overdue" ||
-            officer.status === "No Record"
-              ? "High"
-              : "Medium",
-          icon:
-            officer.status === "Needs Night"
-              ? Moon
-              : officer.status === "Needs Day"
-                ? Sun
-                : ShieldAlert,
-          officerId: officer.officerId,
-        });
-      }
-
-      for (const rangeDay of officer.upcomingRangeDays.slice(0, 2)) {
-        items.push({
-          id: `roster-${officer.officerId}-${rangeDay.id}`,
-          title: `${officer.officerName} · Upcoming range day`,
-          detail: `${rangeDay.title} on ${formatDate(rangeDay.date)} at ${rangeDay.location || "no location entered"}.`,
-          module: "Range",
-          href: "/range-days",
-          priority: "Low",
-          icon: CalendarDays,
-          officerId: officer.officerId,
-        });
-      }
-
-      for (const rangeDay of officer.instructorRangeDays.slice(0, 2)) {
-        if (rangeDay.packetStatus === "Ready") continue;
-
-        items.push({
-          id: `instructor-${officer.officerId}-${rangeDay.id}`,
-          title: `${officer.officerName} · Packet needs review`,
-          detail: `${rangeDay.title} is assigned to this instructor and packet status is ${rangeDay.packetStatus ?? "Needs Setup"}.`,
-          module: "Range",
-          href: "/range-days",
-          priority: "Medium",
-          icon: FileText,
-          officerId: officer.officerId,
-        });
-      }
-
-      if (officer.scoreTrend === "Declining") {
-        items.push({
-          id: `trend-${officer.officerId}`,
-          title: `${officer.officerName} · Declining score trend`,
-          detail: `Recorded scores are trending down${typeof officer.trendDelta === "number" ? ` by ${Math.abs(officer.trendDelta)} points` : ""}.`,
-          module: "Analytics",
-          href: "/analytics",
-          priority: "Medium",
-          icon: TrendingDown,
-          officerId: officer.officerId,
-        });
-      }
-    }
-
-    for (const firearm of firearmAlerts.slice(0, 8)) {
-      const assignedRosterEntries = workspace.rangeRoster.filter((entry) =>
-        (entry.assignedFirearmIds ?? []).includes(firearm.firearmId),
-      );
-      const assignedOfficerIds = Array.from(
-        new Set(assignedRosterEntries.map((entry) => entry.officerId)),
-      );
-
-      for (const officerId of assignedOfficerIds.length ? assignedOfficerIds : [undefined]) {
-        items.push({
-          id: `firearm-${firearm.firearmId}-${officerId ?? "global"}`,
-          title: `${firearm.name} · ${firearm.serialNumber}`,
-          detail: firearm.outOfService
-            ? "Firearm is marked or inferred as out of service."
-            : `${firearm.unresolvedCount} malfunction/inspection item${firearm.unresolvedCount === 1 ? "" : "s"} require review.`,
-          module: "Firearms",
-          href: "/firearms",
-          priority: firearm.outOfService ? "High" : "Medium",
-          icon: Wrench,
-          officerId,
-        });
-      }
-    }
-
-    for (const rangeDay of incompletePackets.slice(0, 8)) {
-      const instructorIds = Array.from(
-        new Set([rangeDay.leadInstructorId, ...(rangeDay.instructorIds ?? [])].filter(Boolean)),
-      ) as string[];
-
-      for (const instructorId of instructorIds.length ? instructorIds : [undefined]) {
-        items.push({
-          id: `packet-${rangeDay.id}-${instructorId ?? "global"}`,
-          title: `Packet not ready · ${rangeDay.title}`,
-          detail: `${formatDate(rangeDay.date)} · Packet status: ${rangeDay.packetStatus ?? "Needs Setup"}.`,
-          module: "Range",
-          href: "/range-days",
-          priority: "Medium",
-          icon: ClipboardList,
-          officerId: instructorId,
-        });
-      }
-    }
-
-    const priorityOrder: Record<Priority, number> = {
-      High: 0,
-      Medium: 1,
-      Low: 2,
-    };
-
-    return items.sort(
-      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority],
-    );
-  }, [firearmAlerts, incompletePackets, officerSummaries, workspace.rangeRoster]);
-
-  const visibleInboxItems = useMemo(() => {
-    if (selectedOfficerId === "all") return officerInboxItems.slice(0, 10);
-
-    return officerInboxItems
-      .filter((item) => item.officerId === selectedOfficerId)
-      .slice(0, 10);
-  }, [officerInboxItems, selectedOfficerId]);
-
   const currentOfficerCount = officerSummaries.filter(
     (officer) => officer.status === "Current",
   ).length;
@@ -858,12 +675,13 @@ export default function DashboardPage() {
   const failedOrOverdueCount = officerSummaries.filter(
     (officer) => officer.status === "Failed" || officer.status === "Overdue",
   ).length;
-  const decliningOfficerCount = officerSummaries.filter(
+  const decliningOfficers = officerSummaries.filter(
     (officer) => officer.scoreTrend === "Declining",
-  ).length;
+  );
   const improvingOfficerCount = officerSummaries.filter(
     (officer) => officer.scoreTrend === "Improving",
   ).length;
+
   const scoredResults = workspace.results.filter(
     (result) => typeof result.score === "number",
   );
@@ -872,7 +690,111 @@ export default function DashboardPage() {
         scoredResults.reduce((total, result) => total + (result.score ?? 0), 0) /
           scoredResults.length,
       )
-    : "—";
+    : undefined;
+  const completedRangeDays = activeRangeDays.filter(
+    (rangeDay) =>
+      rangeDay.status === "Completed" || rangeDay.status === "Locked",
+  ).length;
+  const readyPackets = activeRangeDays.filter(
+    (rangeDay) => rangeDay.packetStatus === "Ready",
+  ).length;
+  const rosterAssignments = workspace.rangeRoster.length;
+  const plannedDrills = workspace.rangeDayDrills.length;
+
+  const criticalItems = useMemo<CriticalItem[]>(() => {
+    const items: CriticalItem[] = [];
+
+    for (const officer of officerSummaries) {
+      if (officer.status === "Failed" || officer.status === "Overdue") {
+        items.push({
+          id: `critical-qual-${officer.officerId}`,
+          title: `${officer.officerName} · ${officer.status}`,
+          detail: officer.statusReason,
+          module: "Qualifications",
+          href: "/qualifications",
+          priority: "Critical",
+          icon: ShieldAlert,
+        });
+      }
+    }
+
+    for (const firearm of firearmAlerts) {
+      items.push({
+        id: `firearm-${firearm.firearmId}`,
+        title: `${firearm.name} · ${firearm.serialNumber}`,
+        detail: firearm.outOfService
+          ? "Firearm is marked or inferred as out of service."
+          : `${firearm.unresolvedCount} malfunction/inspection item${firearm.unresolvedCount === 1 ? "" : "s"} require review.`,
+        module: "Firearms",
+        href: "/firearms",
+        priority: firearm.outOfService ? "Critical" : "High",
+        icon: Wrench,
+      });
+    }
+
+    for (const rangeDay of incompletePackets.slice(0, 6)) {
+      items.push({
+        id: `packet-${rangeDay.id}`,
+        title: `Packet not ready · ${rangeDay.title}`,
+        detail: `${formatDate(rangeDay.date)} · Packet status: ${rangeDay.packetStatus ?? "Needs Setup"}.`,
+        module: "Range",
+        href: "/range-days",
+        priority: "Medium",
+        icon: ClipboardList,
+      });
+    }
+
+    for (const officer of officerSummaries) {
+      if (officer.status === "Needs Day" || officer.status === "No Record") {
+        items.push({
+          id: `day-${officer.officerId}`,
+          title: `${officer.officerName} · Day qualification gap`,
+          detail: officer.statusReason,
+          module: "Qualifications",
+          href: "/qualifications",
+          priority: "High",
+          icon: Sun,
+        });
+      } else if (officer.status === "Needs Night") {
+        items.push({
+          id: `night-${officer.officerId}`,
+          title: `${officer.officerName} · Night qualification gap`,
+          detail: officer.statusReason,
+          module: "Qualifications",
+          href: "/qualifications",
+          priority: "High",
+          icon: Moon,
+        });
+      }
+    }
+
+    for (const officer of decliningOfficers) {
+      items.push({
+        id: `trend-${officer.officerId}`,
+        title: `${officer.officerName} · Declining score trend`,
+        detail: `Scores are trending down${typeof officer.trendDelta === "number" ? ` by ${Math.abs(officer.trendDelta)} points` : ""}.`,
+        module: "Analytics",
+        href: "/analytics",
+        priority: "Medium",
+        icon: TrendingDown,
+      });
+    }
+
+    return items
+      .sort((a, b) => getPriorityValue(a.priority) - getPriorityValue(b.priority))
+      .slice(0, 8);
+  }, [decliningOfficers, firearmAlerts, incompletePackets, officerSummaries]);
+
+  const qualificationTone: Tone =
+    failedOrOverdueCount > 0 || needsDayCount > 0
+      ? "red"
+      : needsNightCount > 0
+        ? "amber"
+        : "green";
+  const rangeTone: Tone = incompletePackets.length > 0 ? "amber" : "green";
+  const firearmTone: Tone = firearmAlerts.length > 0 ? "red" : "green";
+  const trendTone: Tone = decliningOfficers.length > 0 ? "amber" : "blue";
+  const recordTone: Tone = incompletePackets.length > 0 ? "amber" : "green";
 
   return (
     <TracePointShell activePage="Dashboard">
@@ -886,14 +808,16 @@ export default function DashboardPage() {
                   tone={workspaceLoaded ? "green" : "slate"}
                 />
                 <StatusPill label={DEMO_DEPARTMENT.name} tone="slate" />
+                <StatusPill label="Command View" tone="blue" />
               </div>
 
               <h1 className="text-[24px] font-bold text-white">
-                TracePoint Command Dashboard
+                TracePoint Command Pulse
               </h1>
               <p className="mt-1 max-w-4xl text-[12px] leading-5 text-slate-500">
-                A cleaner command view: one snapshot, one officer-focused inbox,
-                and quick links into the Range, Qualification, Firearm, and Analytics modules.
+                A command-level pulse check for firearms readiness, qualification
+                gaps, range-day records, firearm reliability, and emerging training
+                trends.
               </p>
             </div>
 
@@ -917,113 +841,75 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <MetricCard
-            label="Officer Readiness"
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <PulseCard
+            title="Qualification Readiness"
             value={`${currentOfficerCount}/${MOCK_USERS.length}`}
-            sub="Officers with day and night qualification records."
-            icon={UserCheck}
-            tone={currentOfficerCount === MOCK_USERS.length ? "green" : "amber"}
+            label="Officers current"
+            detail={`${needsDayCount} need day/no record · ${needsNightCount} need night · ${failedOrOverdueCount} failed/overdue.`}
+            icon={Shield}
+            tone={qualificationTone}
           />
-          <MetricCard
-            label="Qualification Gaps"
-            value={needsDayCount + needsNightCount + failedOrOverdueCount}
-            sub={`${needsDayCount} need day/no record · ${needsNightCount} need night · ${failedOrOverdueCount} failed/overdue`}
-            icon={ShieldAlert}
-            tone={needsDayCount + needsNightCount + failedOrOverdueCount > 0 ? "red" : "green"}
-          />
-          <MetricCard
-            label="Range Readiness"
-            value={`${upcomingRangeDays.length}`}
-            sub={`${incompletePackets.length} active packet${incompletePackets.length === 1 ? "" : "s"} need review.`}
+          <PulseCard
+            title="Range Readiness"
+            value={upcomingRangeDays.length}
+            label="Upcoming range days"
+            detail={`${incompletePackets.length} active packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
             icon={CalendarDays}
-            tone={incompletePackets.length > 0 ? "amber" : "green"}
+            tone={rangeTone}
           />
-          <MetricCard
-            label="Analytics Signal"
-            value={averageScore}
-            sub={`${decliningOfficerCount} declining · ${improvingOfficerCount} improving · average score`}
+          <PulseCard
+            title="Firearm Reliability"
+            value={firearmAlerts.length}
+            label="Weapons flagged"
+            detail={`${workspace.malfunctions.length} malfunction record${workspace.malfunctions.length === 1 ? "" : "s"} in the workspace.`}
+            icon={Crosshair}
+            tone={firearmTone}
+          />
+          <PulseCard
+            title="Records Health"
+            value={readyPackets}
+            label="Packets ready"
+            detail={`${completedRangeDays} completed/locked range day${completedRangeDays === 1 ? "" : "s"} · ${workspace.rangeDays.length} total saved.`}
+            icon={FileText}
+            tone={recordTone}
+          />
+          <PulseCard
+            title="Performance Signal"
+            value={averageScore ?? "—"}
+            label="Average score"
+            detail={`${decliningOfficers.length} declining · ${improvingOfficerCount} improving · ${drillAnalytics.length} drill signal${drillAnalytics.length === 1 ? "" : "s"}.`}
             icon={TrendingUp}
-            tone={decliningOfficerCount > 0 ? "amber" : "blue"}
+            tone={trendTone}
           />
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+        <section className="grid gap-5 xl:grid-cols-[1fr_430px]">
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-[18px] font-bold text-white">
-                  <Bell size={18} className="text-blue-400" />
-                  Officer Duty Inbox
+                  <Activity size={18} className="text-blue-400" />
+                  Critical Attention
                 </h2>
                 <p className="mt-1 text-[12px] leading-5 text-slate-500">
-                  Critical notifications and tasks filtered by officer. Use All Officers for command view.
+                  The highest-priority qualification, firearm, range packet, and
+                  performance items requiring command or training staff review.
                 </p>
               </div>
 
-              <select
-                value={selectedOfficerId}
-                onChange={(event) => setSelectedOfficerId(event.target.value)}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500 lg:w-[280px]"
-              >
-                <option value="all">All Officers</option>
-                {officerSummaries.map((officer) => (
-                  <option key={officer.officerId} value={officer.officerId}>
-                    {officer.officerName}
-                  </option>
-                ))}
-              </select>
+              <StatusPill
+                label={`${criticalItems.length} active item${criticalItems.length === 1 ? "" : "s"}`}
+                tone={criticalItems.length > 0 ? "amber" : "green"}
+              />
             </div>
 
-            {selectedOfficer && (
-              <div className="mb-4 grid gap-3 md:grid-cols-4">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Status
-                  </p>
-                  <p className="mt-1 text-[13px] font-bold text-white">
-                    {selectedOfficer.status}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Day Qual
-                  </p>
-                  <p className="mt-1 text-[13px] font-bold text-white">
-                    {formatDate(getResultDate(selectedOfficer.lastDayQualification, rangeDaysById))}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Night Qual
-                  </p>
-                  <p className="mt-1 text-[13px] font-bold text-white">
-                    {formatDate(getResultDate(selectedOfficer.lastNightQualification, rangeDaysById))}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Trend
-                  </p>
-                  <p className="mt-1 text-[13px] font-bold text-white">
-                    {selectedOfficer.scoreTrend}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {visibleInboxItems.length === 0 ? (
-              <EmptyPanel
-                message={
-                  selectedOfficer
-                    ? "No active notifications for this officer."
-                    : "No active command notifications found in the saved workspace."
-                }
-              />
+            {criticalItems.length === 0 ? (
+              <EmptyPanel message="No critical command attention items are currently identified from the saved workspace." />
             ) : (
               <div className="space-y-3">
-                {visibleInboxItems.map((item) => (
-                  <InboxRow key={item.id} item={item} />
+                {criticalItems.map((item) => (
+                  <CriticalItemRow key={item.id} item={item} />
                 ))}
               </div>
             )}
@@ -1033,41 +919,42 @@ export default function DashboardPage() {
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="text-[17px] font-bold text-white">Module Snapshot</h2>
               <p className="mt-1 text-[12px] text-slate-500">
-                Critical data from each TracePoint area without flooding the dashboard.
+                Fast access to each TracePoint operating area without turning the
+                dashboard into a full report.
               </p>
 
               <div className="mt-4 space-y-3">
-                <ModuleSnapshotCard
+                <SnapshotLink
                   title="Range & Training"
                   href="/range-days"
                   icon={CalendarDays}
                   primary={`${activeRangeDays.length} active range day${activeRangeDays.length === 1 ? "" : "s"}`}
-                  secondary={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills`}
-                  tone={incompletePackets.length > 0 ? "amber" : "green"}
+                  secondary={`${rosterAssignments} roster assignments · ${plannedDrills} planned drills`}
+                  tone={rangeTone}
                 />
-                <ModuleSnapshotCard
+                <SnapshotLink
                   title="Qualifications"
                   href="/qualifications"
                   icon={Shield}
-                  primary={`${currentOfficerCount} current · ${needsDayCount + needsNightCount} incomplete`}
-                  secondary={`${workspace.results.length} saved score/result records`}
-                  tone={needsDayCount + needsNightCount + failedOrOverdueCount > 0 ? "amber" : "green"}
+                  primary={`${currentOfficerCount} current · ${needsDayCount + needsNightCount + failedOrOverdueCount} gap${needsDayCount + needsNightCount + failedOrOverdueCount === 1 ? "" : "s"}`}
+                  secondary={`${qualificationResults.length} qualification result${qualificationResults.length === 1 ? "" : "s"} saved`}
+                  tone={qualificationTone}
                 />
-                <ModuleSnapshotCard
+                <SnapshotLink
                   title="Firearms"
                   href="/firearms"
                   icon={Crosshair}
                   primary={`${firearmAlerts.length} firearm alert${firearmAlerts.length === 1 ? "" : "s"}`}
-                  secondary={`${workspace.malfunctions.length} malfunction records · ${MOCK_FIREARMS.length} firearms loaded`}
-                  tone={firearmAlerts.length > 0 ? "amber" : "green"}
+                  secondary={`${MOCK_FIREARMS.length} firearms loaded · ${workspace.malfunctions.length} malfunction records`}
+                  tone={firearmTone}
                 />
-                <ModuleSnapshotCard
+                <SnapshotLink
                   title="Analytics"
                   href="/analytics"
                   icon={BarChart3}
-                  primary={`${decliningOfficerCount} declining · ${improvingOfficerCount} improving`}
-                  secondary={`${drillAnalytics.length} drill trend signal${drillAnalytics.length === 1 ? "" : "s"} available`}
-                  tone={decliningOfficerCount > 0 ? "amber" : "blue"}
+                  primary={`${decliningOfficers.length} declining · ${improvingOfficerCount} improving`}
+                  secondary={`${drillAnalytics.length} drill/course signal${drillAnalytics.length === 1 ? "" : "s"}`}
+                  tone={trendTone}
                 />
               </div>
             </div>
@@ -1075,7 +962,7 @@ export default function DashboardPage() {
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="text-[17px] font-bold text-white">Qualification Snapshot</h2>
               <p className="mt-1 text-[12px] text-slate-500">
-                Day and night records shown together so the status is clear.
+                Day and night are shown together so the readiness picture stays balanced.
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
@@ -1083,25 +970,33 @@ export default function DashboardPage() {
                   <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-emerald-300">
                     <CheckCircle2 size={13} /> Current
                   </p>
-                  <p className="mt-1 text-2xl font-bold text-white">{currentOfficerCount}</p>
+                  <p className="mt-1 text-2xl font-bold text-white">
+                    {currentOfficerCount}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.06] p-3">
                   <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-blue-300">
                     <Sun size={13} /> Need Day
                   </p>
-                  <p className="mt-1 text-2xl font-bold text-white">{needsDayCount}</p>
+                  <p className="mt-1 text-2xl font-bold text-white">
+                    {needsDayCount}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
                   <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-amber-300">
                     <Moon size={13} /> Need Night
                   </p>
-                  <p className="mt-1 text-2xl font-bold text-white">{needsNightCount}</p>
+                  <p className="mt-1 text-2xl font-bold text-white">
+                    {needsNightCount}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.06] p-3">
                   <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-red-300">
                     <AlertTriangle size={13} /> Failed/Overdue
                   </p>
-                  <p className="mt-1 text-2xl font-bold text-white">{failedOrOverdueCount}</p>
+                  <p className="mt-1 text-2xl font-bold text-white">
+                    {failedOrOverdueCount}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1112,9 +1007,11 @@ export default function DashboardPage() {
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[17px] font-bold text-white">Upcoming Range Days</h2>
+                <h2 className="text-[17px] font-bold text-white">
+                  Upcoming Range Days
+                </h2>
                 <p className="mt-1 text-[12px] text-slate-500">
-                  Only the next few events, not every saved range-day card.
+                  The next few scheduled events and their packet readiness.
                 </p>
               </div>
               <StatusPill label={`${upcomingRangeDays.length} upcoming`} />
@@ -1144,10 +1041,16 @@ export default function DashboardPage() {
                             <StatusPill label={rangeDay.status} />
                             <StatusPill
                               label={rangeDay.packetStatus ?? "Needs Setup"}
-                              tone={rangeDay.packetStatus === "Ready" ? "green" : "amber"}
+                              tone={
+                                rangeDay.packetStatus === "Ready"
+                                  ? "green"
+                                  : "amber"
+                              }
                             />
                           </div>
-                          <p className="text-[14px] font-bold text-white">{rangeDay.title}</p>
+                          <p className="text-[14px] font-bold text-white">
+                            {rangeDay.title}
+                          </p>
                           <p className="mt-1 text-[11px] text-slate-500">
                             {formatDate(rangeDay.date)} · {rangeDay.startTime ?? ""}
                             {rangeDay.endTime ? `-${rangeDay.endTime}` : ""} · {rangeDay.location}
@@ -1175,9 +1078,11 @@ export default function DashboardPage() {
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[17px] font-bold text-white">Analytics Watchlist</h2>
+                <h2 className="text-[17px] font-bold text-white">
+                  Analytics Watchlist
+                </h2>
                 <p className="mt-1 text-[12px] text-slate-500">
-                  Score trends and weaker drill/course areas from saved results.
+                  Trend signals and weaker drills from saved scores.
                 </p>
               </div>
               <Link
@@ -1188,35 +1093,35 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            {drillAnalytics.length === 0 && decliningOfficerCount === 0 ? (
+            {drillAnalytics.length === 0 && decliningOfficers.length === 0 ? (
               <EmptyPanel message="Enter more scored qualifications and drills to generate trend signals." />
             ) : (
               <div className="space-y-3">
-                {officerSummaries
-                  .filter((officer) => officer.scoreTrend === "Declining")
-                  .slice(0, 3)
-                  .map((officer) => (
-                    <Link
-                      key={`decline-${officer.officerId}`}
-                      href="/analytics"
-                      className="group flex items-start justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 transition hover:border-amber-500/40"
-                    >
-                      <div className="flex gap-3">
-                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2 text-amber-300">
-                          <TrendingDown size={15} />
-                        </div>
-                        <div>
-                          <p className="text-[13px] font-bold text-white">
-                            {officer.officerName} · Declining Trend
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            Scores are trending down{typeof officer.trendDelta === "number" ? ` by ${Math.abs(officer.trendDelta)} points` : ""}.
-                          </p>
-                        </div>
+                {decliningOfficers.slice(0, 3).map((officer) => (
+                  <Link
+                    key={`decline-${officer.officerId}`}
+                    href="/analytics"
+                    className="group flex items-start justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 transition hover:border-amber-500/40"
+                  >
+                    <div className="flex gap-3">
+                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2 text-amber-300">
+                        <TrendingDown size={15} />
                       </div>
-                      <ChevronRight size={15} className="mt-1 text-slate-600 group-hover:text-amber-200" />
-                    </Link>
-                  ))}
+                      <div>
+                        <p className="text-[13px] font-bold text-white">
+                          {officer.officerName} · Declining Trend
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          Scores are trending down{typeof officer.trendDelta === "number" ? ` by ${Math.abs(officer.trendDelta)} points` : ""}.
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight
+                      size={15}
+                      className="mt-1 text-slate-600 group-hover:text-amber-200"
+                    />
+                  </Link>
+                ))}
 
                 {drillAnalytics.slice(0, 4).map((drill) => (
                   <Link
@@ -1229,14 +1134,19 @@ export default function DashboardPage() {
                         <Target size={15} />
                       </div>
                       <div>
-                        <p className="text-[13px] font-bold text-white">{drill.drillName}</p>
+                        <p className="text-[13px] font-bold text-white">
+                          {drill.drillName}
+                        </p>
                         <p className="mt-1 text-[11px] text-slate-500">
                           {drill.resultCount} result{drill.resultCount === 1 ? "" : "s"} · {drill.passRate}% pass rate
                           {typeof drill.averageScore === "number" ? ` · ${drill.averageScore} avg score` : ""}
                         </p>
                       </div>
                     </div>
-                    <ChevronRight size={15} className="mt-1 text-slate-600 group-hover:text-blue-300" />
+                    <ChevronRight
+                      size={15}
+                      className="mt-1 text-slate-600 group-hover:text-blue-300"
+                    />
                   </Link>
                 ))}
               </div>
