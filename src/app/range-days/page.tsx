@@ -672,6 +672,287 @@ function StatCard({
   );
 }
 
+
+type PrintableRangePacketProps = {
+  rangeDay: PlannedRangeDay;
+  roster: RangeRosterEntry[];
+  drills: RangeDayDrill[];
+  results: DrillRunResult[];
+  malfunctions: FirearmMalfunction[];
+};
+
+function formatPacketStatus(value: boolean | undefined) {
+  if (typeof value !== "boolean") return "";
+
+  return value ? "Pass" : "Fail";
+}
+
+function PrintableRangePacket({
+  rangeDay,
+  roster,
+  drills,
+  results,
+  malfunctions,
+}: PrintableRangePacketProps) {
+  const outline = getRangeDayOutlineForDisplay(rangeDay);
+  const rangeMalfunctions = malfunctions.filter(
+    (malfunction) => malfunction.rangeDayId === rangeDay.id,
+  );
+
+  function getResultForRun(
+    officerId: string,
+    drillId: string,
+    runNumber: number,
+  ) {
+    return results.find(
+      (result) =>
+        result.officerId === officerId &&
+        result.drillId === drillId &&
+        result.runNumber === runNumber,
+    );
+  }
+
+  const scoreRows = roster.flatMap((entry) =>
+    drills.flatMap((drill) =>
+      Array.from({ length: getEffectiveRunCount(drill) }, (_, index) => {
+        const runNumber = index + 1;
+        const result = getResultForRun(entry.officerId, drill.id, runNumber);
+
+        return {
+          id: `${entry.id}-${drill.id}-${runNumber}`,
+          entry,
+          drill,
+          runNumber,
+          result,
+        };
+      }),
+    ),
+  );
+
+  return (
+    <section className="printable-range-packet">
+      <div className="packet-page">
+        <div className="packet-header">
+          <div>
+            <p className="packet-eyebrow">TracePoint Range Packet</p>
+            <h1>{rangeDay.title}</h1>
+            <p className="packet-subtitle">{(DEMO_DEPARTMENT as { name?: string }).name ?? "Demo Department"}</p>
+          </div>
+          <div className="packet-meta-box">
+            <p>Packet Status</p>
+            <strong>{rangeDay.packetStatus}</strong>
+          </div>
+        </div>
+
+        <div className="packet-grid packet-summary-grid">
+          <div>
+            <p className="packet-label">Date</p>
+            <p>{formatDate(rangeDay.date)}</p>
+          </div>
+          <div>
+            <p className="packet-label">Time</p>
+            <p>
+              {rangeDay.startTime}-{rangeDay.endTime}
+            </p>
+          </div>
+          <div>
+            <p className="packet-label">Location</p>
+            <p>{rangeDay.location || "Not entered"}</p>
+          </div>
+          <div>
+            <p className="packet-label">Type</p>
+            <p>{rangeDay.rangeType}</p>
+          </div>
+        </div>
+
+        <div className="packet-section packet-two-column">
+          <div>
+            <h2>Staffing</h2>
+            <p>
+              <strong>Lead Instructor:</strong>{" "}
+              {getUserName(rangeDay.leadInstructorId)}
+            </p>
+            <p>
+              <strong>Assigned Instructors:</strong>{" "}
+              {rangeDay.instructorIds.length > 0
+                ? rangeDay.instructorIds.map(getUserName).join(", ")
+                : "None assigned"}
+            </p>
+            <p>
+              <strong>Staffing Notes:</strong>{" "}
+              {rangeDay.staffingNotes || "None entered"}
+            </p>
+          </div>
+
+          <div>
+            <h2>Day Syllabus</h2>
+            <ol className="packet-outline">
+              {outline.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
+
+        <div className="packet-section">
+          <h2>Officer Roster / Firearm Assignment</h2>
+          <table className="packet-table">
+            <thead>
+              <tr>
+                <th>Officer</th>
+                <th>Attendance</th>
+                <th>Assigned Firearm</th>
+                <th>Officer Initials</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>No officers assigned.</td>
+                </tr>
+              ) : (
+                roster.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{getUserName(entry.officerId)}</td>
+                    <td>{entry.attended ? "Present" : "Not marked"}</td>
+                    <td>{getFirearmName(entry.assignedFirearmIds[0])}</td>
+                    <td />
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="packet-section">
+          <h2>Planned Drills</h2>
+          <table className="packet-table">
+            <thead>
+              <tr>
+                <th>Drill</th>
+                <th>Category</th>
+                <th>Scoring</th>
+                <th>Runs</th>
+                <th>Rounds</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drills.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>No drills assigned.</td>
+                </tr>
+              ) : (
+                drills.map((drill) => (
+                  <tr key={drill.id}>
+                    <td>
+                      <strong>{drill.name}</strong>
+                      {drill.description ? <span> — {drill.description}</span> : null}
+                    </td>
+                    <td>{drill.category}</td>
+                    <td>{drill.scoringMode}</td>
+                    <td>{getEffectiveRunCount(drill)}</td>
+                    <td>{drill.roundCount ?? "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="packet-section packet-page-break-safe">
+          <h2>Score Sheet / Results</h2>
+          <table className="packet-table packet-score-table">
+            <thead>
+              <tr>
+                <th>Officer</th>
+                <th>Firearm</th>
+                <th>Drill</th>
+                <th>Run</th>
+                <th>Score</th>
+                <th>Status</th>
+                <th>Notes</th>
+                <th>Instructor Initials</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scoreRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    Add officers and drills to generate score-sheet rows.
+                  </td>
+                </tr>
+              ) : (
+                scoreRows.map(({ id, entry, drill, runNumber, result }) => (
+                  <tr key={id}>
+                    <td>{getUserName(entry.officerId)}</td>
+                    <td>{getFirearmName(entry.assignedFirearmIds[0])}</td>
+                    <td>{drill.name}</td>
+                    <td>{getRunLabel(drill, runNumber)}</td>
+                    <td>{result?.score ?? ""}</td>
+                    <td>
+                      {formatPacketStatus(result?.passed) ||
+                        (result?.completed ? "Completed" : "")}
+                    </td>
+                    <td>{result?.notes ?? ""}</td>
+                    <td />
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="packet-section">
+          <h2>Firearm Malfunctions / Deficiencies</h2>
+          <table className="packet-table">
+            <thead>
+              <tr>
+                <th>Officer</th>
+                <th>Firearm</th>
+                <th>Type</th>
+                <th>Inspection Required</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rangeMalfunctions.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>No firearm malfunctions logged.</td>
+                </tr>
+              ) : (
+                rangeMalfunctions.map((malfunction) => (
+                  <tr key={malfunction.id}>
+                    <td>{getUserName(malfunction.officerId ?? "")}</td>
+                    <td>{getFirearmName(malfunction.firearmId)}</td>
+                    <td>{malfunction.type}</td>
+                    <td>{malfunction.inspectionRequired ? "Yes" : "No"}</td>
+                    <td>{malfunction.notes ?? ""}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="packet-section packet-signatures">
+          <div>
+            <p className="packet-label">Lead Instructor Signature</p>
+            <div className="packet-signature-line" />
+          </div>
+          <div>
+            <p className="packet-label">Date</p>
+            <div className="packet-signature-line" />
+          </div>
+          <div>
+            <p className="packet-label">Command / Training Review</p>
+            <div className="packet-signature-line" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function RangeDaysPage() {
   const [rangeDays, setRangeDays] =
     useState<PlannedRangeDay[]>(INITIAL_RANGE_DAYS);
@@ -1369,7 +1650,17 @@ export default function RangeDaysPage() {
 
     const packet = createRangePacket(selectedRangeDay, CURRENT_USER.id);
     console.log("Generated range packet:", packet);
-    window.print();
+
+    writeStoredRangeDayWorkspace({
+      rangeDays,
+      drillLibrary,
+      rangeDayDrills,
+      rangeRoster,
+      results,
+      malfunctions,
+    });
+
+    window.requestAnimationFrame(() => window.print());
   }
 
   function handleCreateDrillTemplate() {
@@ -1828,8 +2119,202 @@ export default function RangeDaysPage() {
   }
 
   return (
-    <TracePointShell activePage="Range & Training">
-      <div className="mx-auto w-full max-w-[1600px] space-y-5">
+    <>
+      <style>{`
+        .printable-range-packet {
+          display: none;
+        }
+
+        @media print {
+          @page {
+            size: letter;
+            margin: 0.4in;
+          }
+
+          html,
+          body {
+            background: white !important;
+          }
+
+          .range-day-screen {
+            display: none !important;
+          }
+
+          .printable-range-packet {
+            display: block !important;
+            color: #0f172a;
+            background: white;
+          }
+
+          .packet-page {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            line-height: 1.35;
+          }
+
+          .packet-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 12px;
+            margin-bottom: 14px;
+          }
+
+          .packet-eyebrow {
+            margin: 0 0 3px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: #334155;
+          }
+
+          .packet-header h1 {
+            margin: 0;
+            font-size: 22px;
+            line-height: 1.1;
+          }
+
+          .packet-subtitle {
+            margin: 4px 0 0;
+            font-size: 11px;
+            color: #475569;
+          }
+
+          .packet-meta-box {
+            min-width: 130px;
+            border: 1px solid #0f172a;
+            padding: 8px;
+            text-align: center;
+          }
+
+          .packet-meta-box p {
+            margin: 0;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+          }
+
+          .packet-meta-box strong {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+          }
+
+          .packet-grid {
+            display: grid;
+            gap: 8px;
+          }
+
+          .packet-summary-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            margin-bottom: 14px;
+          }
+
+          .packet-summary-grid > div,
+          .packet-section {
+            border: 1px solid #cbd5e1;
+            padding: 8px;
+          }
+
+          .packet-two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            border: 0;
+            padding: 0;
+            margin-bottom: 14px;
+          }
+
+          .packet-two-column > div {
+            border: 1px solid #cbd5e1;
+            padding: 8px;
+          }
+
+          .packet-section {
+            margin-bottom: 14px;
+            page-break-inside: avoid;
+          }
+
+          .packet-page-break-safe {
+            page-break-inside: auto;
+          }
+
+          .packet-section h2 {
+            margin: 0 0 8px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+
+          .packet-section p {
+            margin: 3px 0;
+          }
+
+          .packet-label {
+            margin: 0 0 3px !important;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #475569;
+          }
+
+          .packet-outline {
+            margin: 0;
+            padding-left: 18px;
+          }
+
+          .packet-outline li {
+            margin-bottom: 3px;
+          }
+
+          .packet-table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          .packet-table th,
+          .packet-table td {
+            border: 1px solid #cbd5e1;
+            padding: 5px;
+            vertical-align: top;
+            text-align: left;
+          }
+
+          .packet-table th {
+            background: #e2e8f0;
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+          }
+
+          .packet-score-table td {
+            min-height: 22px;
+          }
+
+          .packet-signatures {
+            display: grid;
+            grid-template-columns: 1fr 120px 1fr;
+            gap: 18px;
+            border: 0;
+            padding: 0;
+            margin-top: 22px;
+          }
+
+          .packet-signature-line {
+            height: 28px;
+            border-bottom: 1px solid #0f172a;
+          }
+        }
+      `}</style>
+
+      <div className="range-day-screen">
+        <TracePointShell activePage="Range & Training">
+          <div className="mx-auto w-full max-w-[1600px] space-y-5">
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -3082,7 +3567,7 @@ export default function RangeDaysPage() {
                                 {getUserName(result.officerId)}
                               </p>
                               <p className="text-[11px] text-slate-500">
-                                {drill?.name} · Run {result.runNumber}
+                                {drill?.name} · {getRunLabel(drill, result.runNumber)}
                               </p>
                             </div>
 
@@ -3155,6 +3640,16 @@ export default function RangeDaysPage() {
           </div>
         </section>
       </div>
-    </TracePointShell>
+        </TracePointShell>
+      </div>
+
+      <PrintableRangePacket
+        rangeDay={selectedRangeDay}
+        roster={selectedRoster}
+        drills={selectedDrills}
+        results={selectedRangeResults}
+        malfunctions={malfunctions}
+      />
+    </>
   );
 }
