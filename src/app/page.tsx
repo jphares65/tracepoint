@@ -268,9 +268,11 @@ function isPassed(result: DrillRunResult) {
 }
 
 function getResultDate(
-  result: DrillRunResult,
+  result: DrillRunResult | undefined,
   rangeDaysById: Map<string, StoredRangeDay>,
 ) {
+  if (!result) return undefined;
+
   return rangeDaysById.get(result.rangeDayId)?.date;
 }
 
