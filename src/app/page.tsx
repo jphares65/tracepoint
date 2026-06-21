@@ -565,12 +565,14 @@ export default function DashboardPage() {
 
       const upcomingOfficerRangeDays = rosterEntries
         .map((entry) => rangeDaysById.get(entry.rangeDayId))
-        .filter(
-          (rangeDay): rangeDay is StoredRangeDay =>
-            Boolean(rangeDay) &&
+        .filter((rangeDay): rangeDay is StoredRangeDay => {
+          if (!rangeDay) return false;
+
+          return (
             rangeDay.status !== "Archived" &&
-            getDateValue(rangeDay.date) >= getTodayValue(),
-        )
+            getDateValue(rangeDay.date) >= getTodayValue()
+          );
+        })
         .sort((a, b) => getDateValue(a.date) - getDateValue(b.date));
 
       const instructorRangeDays = activeRangeDays
