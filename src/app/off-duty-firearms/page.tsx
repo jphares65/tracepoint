@@ -10,7 +10,6 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
-  Bell,
   CheckCircle2,
   ChevronRight,
   CircleDot,
@@ -19,14 +18,12 @@ import {
   Crosshair,
   FileCheck,
   History,
-  Inbox,
   Plus,
   RotateCcw,
   Search,
   Send,
   ShieldAlert,
   ShieldCheck,
-  User,
   UserCheck,
   X,
   XCircle,
@@ -1171,25 +1168,6 @@ export default function OffDutyFirearmsPage() {
     ? records.find((record) => record.id === selectedRecordId) ?? null
     : null;
 
-  const openChiefInbox = inboxItems
-    .filter((item) => item.audience === "Chief" && item.status === "Open")
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
-  const officerInbox = inboxItems
-    .filter(
-      (item) =>
-        item.audience === "Officer" &&
-        item.officerId === CURRENT_OFFICER.id &&
-        item.status === "Open",
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
   const kpis =
     portalMode === "Chief Review"
       ? [
@@ -1497,13 +1475,6 @@ export default function OffDutyFirearmsPage() {
     setRequestDrawerOpen(true);
   }
 
-  function markInboxResolved(itemId: string) {
-    setInboxItems((current) =>
-      current.map((item) =>
-        item.id === itemId ? { ...item, status: "Resolved" } : item,
-      ),
-    );
-  }
 
   return (
     <TracePointShell activePage="Off-Duty Firearms">
@@ -1591,104 +1562,14 @@ export default function OffDutyFirearmsPage() {
           ))}
         </section>
 
-        {portalMode === "Chief Review" && (
-          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-[16px] font-bold text-white">
-                  <Inbox size={17} className="text-blue-400" />
-                  Chief TracePoint Inbox
-                </h2>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  New off-duty firearm authorization requests requiring command
-                  action.
-                </p>
-              </div>
-              <StatusBadge value={`${openChiefInbox.length} Open`} />
-            </div>
-
-            {openChiefInbox.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-8 text-center text-[12px] text-slate-600">
-                No pending off-duty firearm approvals.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {openChiefInbox.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setSelectedRecordId(item.relatedRequestId)}
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-3 text-left hover:border-blue-500/40"
-                  >
-                    <div className="flex min-w-0 items-start gap-3">
-                      <Bell size={15} className="mt-0.5 flex-shrink-0 text-amber-300" />
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-white">
-                          {item.title}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          {item.message}
-                        </p>
-                        <p className="mt-1 text-[10px] text-slate-600">
-                          {formatDateTime(item.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight size={16} className="flex-shrink-0 text-slate-600" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {portalMode === "Officer Portal" && (
-          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="flex items-center gap-2 text-[16px] font-bold text-white">
-                  <Bell size={17} className="text-blue-400" />
-                  My TracePoint Inbox
-                </h2>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Approval decisions and requests requiring your attention.
-                </p>
-              </div>
-              <StatusBadge value={`${officerInbox.length} Open`} />
-            </div>
-
-            {officerInbox.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-7 text-center text-[12px] text-slate-600">
-                No new off-duty firearm notifications.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {officerInbox.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="text-[13px] font-semibold text-white">
-                        {item.title}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        {item.message}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => markInboxResolved(item.id)}
-                      className="rounded-xl border border-slate-700 px-3 py-2 text-[11px] font-semibold text-slate-300 hover:text-white"
-                    >
-                      Mark Read
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            Notifications generated by submissions and command decisions are saved
+            for the future unified TracePoint home inbox. This page remains the
+            module workspace for requests, approvals, corrections, and authorization
+            history.
+          </p>
+        </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-1.5">
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-5">
