@@ -75,7 +75,47 @@ type PlannedRangeDay = RangeDay & {
   outline: string[];
 };
 
-const DRILL_TEMPLATES: DrillTemplate[] = [
+
+type ScoringFormat =
+  | "Qualification"
+  | "Points"
+  | "Time"
+  | "Pass/Fail"
+  | "Completion"
+  | "Hit Count"
+  | "Notes Only";
+
+type ExtendedDrillTemplate = DrillTemplate & {
+  scoringFormat?: ScoringFormat;
+  defaultPassingTimeSeconds?: number;
+  defaultMinimumHits?: number;
+};
+
+type ExtendedRangeDayDrill = RangeDayDrill & {
+  scoringFormat?: ScoringFormat;
+  passingTimeSeconds?: number;
+  minimumHits?: number;
+};
+
+type ExtendedDrillRunResult = DrillRunResult & {
+  scoringFormatSnapshot?: ScoringFormat;
+  timeSeconds?: number;
+  hitCount?: number;
+  finalPassed?: boolean;
+};
+
+type BatchScoreRow = {
+  officerId: string;
+  metricValue: string;
+  passed?: boolean;
+  completed?: boolean;
+  notes: string;
+  malfunctionOccurred: boolean;
+  malfunctionType: MalfunctionType;
+  malfunctionNotes: string;
+};
+
+const DRILL_TEMPLATES: ExtendedDrillTemplate[] = [
   {
     id: "template-qual-1",
     departmentId: DEMO_DEPARTMENT.id,
@@ -318,7 +358,7 @@ const INITIAL_RANGE_ROSTER: RangeRosterEntry[] = [
   },
 ];
 
-const INITIAL_RANGE_DRILLS: RangeDayDrill[] = [
+const INITIAL_RANGE_DRILLS: ExtendedRangeDayDrill[] = [
   createDrillFromTemplate(DRILL_TEMPLATES[0], "range-1"),
   createDrillFromTemplate(DRILL_TEMPLATES[1], "range-1"),
   createDrillFromTemplate(DRILL_TEMPLATES[2], "range-1"),
@@ -389,10 +429,13 @@ const DRILL_CATEGORIES: DrillTemplate["category"][] = [
   "Other",
 ];
 
-const SCORING_MODES: DrillTemplate["defaultScoringMode"][] = [
-  "Scored",
+const SCORING_FORMATS: ScoringFormat[] = [
+  "Qualification",
+  "Points",
+  "Time",
   "Pass/Fail",
-  "Completion Only",
+  "Completion",
+  "Hit Count",
   "Notes Only",
 ];
 
@@ -464,6 +507,124 @@ function isQualificationDrill(drill?: RangeDayDrill | null) {
   if (!drill) return false;
 
   return isQualificationNameOrCategory(drill.name, drill.category);
+}
+
+function getScoringFormat(
+  drill?: ExtendedRangeDayDrill | ExtendedDrillTemplate | null,
+): ScoringFormat {
+  if (!drill) return "Pass/Fail";
+
+  if (drill.scoringFormat) return drill.scoringFormat;
+
+  if (isQualificationNameOrCategory(drill.name, drill.category)) {
+    return "Qualification";
+  }
+
+  const legacyMode =
+    "scoringMode" in drill ? drill.scoringMode : drill.defaultScoringMode;
+
+  if (legacyMode === "Scored") return "Points";
+  if (legacyMode === "Completion Only") return "Completion";
+  if (legacyMode === "Notes Only") return "Notes Only";
+
+  return "Pass/Fail";
+}
+
+function getLegacyScoringMode(
+  scoringFormat: ScoringFormat,
+): DrillTemplate["defaultScoringMode"] {
+  if (
+    scoringFormat === "Qualification" ||
+    scoringFormat === "Points" ||
+    scoringFormat === "Time" ||
+    scoringFormat === "Hit Count"
+  ) {
+    return "Scored";
+  }
+
+  if (scoringFormat === "Completion") return "Completion Only";
+  if (scoringFormat === "Notes Only") return "Notes Only";
+
+  return "Pass/Fail";
+}
+
+function getAutomaticPassValue(
+  drill: ExtendedRangeDayDrill,
+  scoringFormat: ScoringFormat,
+  metricValue: string,
+  completed?: boolean,
+) {
+  const numericValue = Number(metricValue);
+
+  if (
+    (scoringFormat === "Qualification" || scoringFormat === "Points") &&
+    metricValue.trim() &&
+    typeof drill.passingScore === "number"
+  ) {
+    return numericValue >= drill.passingScore;
+  }
+
+  if (
+    scoringFormat === "Time" &&
+    metricValue.trim() &&
+    typeof drill.passingTimeSeconds === "number"
+  ) {
+    return numericValue <= drill.passingTimeSeconds;
+  }
+
+  if (
+    scoringFormat === "Hit Count" &&
+    metricValue.trim() &&
+    typeof drill.minimumHits === "number"
+  ) {
+    return numericValue >= drill.minimumHits;
+  }
+
+  if (scoringFormat === "Completion" && typeof completed === "boolean") {
+    return completed;
+  }
+
+  return undefined;
+}
+
+function formatResultMetric(
+  result?: ExtendedDrillRunResult,
+  drill?: ExtendedRangeDayDrill,
+) {
+  if (!result) return "";
+
+  const scoringFormat =
+    result.scoringFormatSnapshot ?? getScoringFormat(drill);
+
+  if (scoringFormat === "Time") {
+    return typeof result.timeSeconds === "number"
+      ? `${result.timeSeconds} sec`
+      : "";
+  }
+
+  if (scoringFormat === "Hit Count") {
+    return typeof result.hitCount === "number"
+      ? `${result.hitCount} hits`
+      : "";
+  }
+
+  if (scoringFormat === "Completion") {
+    return typeof result.completed === "boolean"
+      ? result.completed
+        ? "Completed"
+        : "Incomplete"
+      : "";
+  }
+
+  if (scoringFormat === "Pass/Fail") {
+    return typeof result.passed === "boolean"
+      ? result.passed
+        ? "Pass"
+        : "Fail"
+      : "";
+  }
+
+  return typeof result.score === "number" ? String(result.score) : "";
 }
 
 function getEffectiveRunCount(drill?: RangeDayDrill | null) {
@@ -676,8 +837,8 @@ function StatCard({
 type PrintableRangePacketProps = {
   rangeDay: PlannedRangeDay;
   roster: RangeRosterEntry[];
-  drills: RangeDayDrill[];
-  results: DrillRunResult[];
+  drills: ExtendedRangeDayDrill[];
+  results: ExtendedDrillRunResult[];
   malfunctions: FirearmMalfunction[];
 };
 
@@ -849,7 +1010,7 @@ function PrintableRangePacket({
                       {drill.description ? <span> — {drill.description}</span> : null}
                     </td>
                     <td>{drill.category}</td>
-                    <td>{drill.scoringMode}</td>
+                    <td>{getScoringFormat(drill)}</td>
                     <td>{getEffectiveRunCount(drill)}</td>
                     <td>{drill.roundCount ?? "—"}</td>
                   </tr>
@@ -888,7 +1049,7 @@ function PrintableRangePacket({
                     <td>{getFirearmName(entry.assignedFirearmIds[0])}</td>
                     <td>{drill.name}</td>
                     <td>{getRunLabel(drill, runNumber)}</td>
-                    <td>{result?.score ?? ""}</td>
+                    <td>{formatResultMetric(result, drill)}</td>
                     <td>
                       {formatPacketStatus(result?.passed) ||
                         (result?.completed ? "Completed" : "")}
@@ -962,10 +1123,10 @@ export default function RangeDaysPage() {
   );
 
   const [drillLibrary, setDrillLibrary] =
-    useState<DrillTemplate[]>(DRILL_TEMPLATES);
+    useState<ExtendedDrillTemplate[]>(DRILL_TEMPLATES);
 
   const [rangeDayDrills, setRangeDayDrills] =
-    useState<RangeDayDrill[]>(INITIAL_RANGE_DRILLS);
+    useState<ExtendedRangeDayDrill[]>(INITIAL_RANGE_DRILLS);
 
   const [rangeRoster, setRangeRoster] =
     useState<RangeRosterEntry[]>(INITIAL_RANGE_ROSTER);
@@ -994,9 +1155,11 @@ export default function RangeDaysPage() {
   const [newDrillDifficulty, setNewDrillDifficulty] =
     useState<NonNullable<DrillTemplate["difficulty"]>>("Basic");
   const [newDrillScoringMode, setNewDrillScoringMode] =
-    useState<DrillTemplate["defaultScoringMode"]>("Pass/Fail");
+    useState<ScoringFormat>("Pass/Fail");
   const [newDrillPassingScore, setNewDrillPassingScore] = useState("");
   const [newDrillMaxScore, setNewDrillMaxScore] = useState("");
+  const [newDrillPassingTimeSeconds, setNewDrillPassingTimeSeconds] = useState("");
+  const [newDrillMinimumHits, setNewDrillMinimumHits] = useState("");
   const [newDrillRunCount, setNewDrillRunCount] = useState("1");
   const [newDrillDefaultRequired, setNewDrillDefaultRequired] = useState(false);
   const [newDrillTags, setNewDrillTags] = useState("");
@@ -1015,7 +1178,8 @@ export default function RangeDaysPage() {
   const [malfunctionType, setMalfunctionType] =
     useState<MalfunctionType>("Failure to Feed");
   const [malfunctionNotes, setMalfunctionNotes] = useState("");
-  const [results, setResults] = useState<DrillRunResult[]>([]);
+  const [results, setResults] = useState<ExtendedDrillRunResult[]>([]);
+  const [batchScoreRows, setBatchScoreRows] = useState<Record<string, BatchScoreRow>>({});
   const [malfunctions, setMalfunctions] = useState<FirearmMalfunction[]>([]);
 
   const selectedRangeDay = selectedRangeDayId
@@ -1029,6 +1193,11 @@ export default function RangeDaysPage() {
       (entry) => entry.rangeDayId === selectedRangeDay.id,
     );
   }, [rangeRoster, selectedRangeDay]);
+
+  const attendingRoster = useMemo(
+    () => selectedRoster.filter((entry) => entry.attended),
+    [selectedRoster],
+  );
 
   const availableRosterOfficers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -1256,6 +1425,72 @@ export default function RangeDaysPage() {
   }, [availableInstructorUsers, newInstructorUserId, selectedRangeDay]);
 
   useEffect(() => {
+    if (!selectedRangeDay || !selectedDrill) {
+      setBatchScoreRows({});
+      return;
+    }
+
+    const scoringFormat = getScoringFormat(selectedDrill);
+    const nextRows: Record<string, BatchScoreRow> = {};
+
+    attendingRoster.forEach((entry) => {
+      const existingResult = selectedRangeResults.find(
+        (result) =>
+          result.officerId === entry.officerId &&
+          result.drillId === selectedDrill.id &&
+          result.runNumber === selectedRunNumber,
+      );
+
+      let metricValue = "";
+
+      if (existingResult) {
+        if (scoringFormat === "Time") {
+          metricValue =
+            typeof existingResult.timeSeconds === "number"
+              ? String(existingResult.timeSeconds)
+              : "";
+        } else if (scoringFormat === "Hit Count") {
+          metricValue =
+            typeof existingResult.hitCount === "number"
+              ? String(existingResult.hitCount)
+              : "";
+        } else if (
+          scoringFormat === "Qualification" ||
+          scoringFormat === "Points"
+        ) {
+          metricValue =
+            typeof existingResult.score === "number"
+              ? String(existingResult.score)
+              : "";
+        }
+      }
+
+      nextRows[entry.officerId] = {
+        officerId: entry.officerId,
+        metricValue,
+        passed:
+          existingResult?.finalPassed ?? existingResult?.passed ?? undefined,
+        completed:
+          typeof existingResult?.completed === "boolean"
+            ? existingResult.completed
+            : undefined,
+        notes: existingResult?.notes ?? "",
+        malfunctionOccurred: Boolean(existingResult?.malfunctionIds?.length),
+        malfunctionType: "Failure to Feed",
+        malfunctionNotes: "",
+      };
+    });
+
+    setBatchScoreRows(nextRows);
+  }, [
+    attendingRoster,
+    selectedDrill,
+    selectedRangeDay,
+    selectedRangeResults,
+    selectedRunNumber,
+  ]);
+
+  useEffect(() => {
     if (selectedRunNumber > selectedEffectiveRunCount) {
       setSelectedRunNumber(selectedEffectiveRunCount);
     }
@@ -1284,6 +1519,8 @@ export default function RangeDaysPage() {
     setNewDrillScoringMode("Pass/Fail");
     setNewDrillPassingScore("");
     setNewDrillMaxScore("");
+    setNewDrillPassingTimeSeconds("");
+    setNewDrillMinimumHits("");
     setNewDrillRunCount("1");
     setNewDrillDefaultRequired(false);
     setNewDrillTags("");
@@ -1567,82 +1804,197 @@ export default function RangeDaysPage() {
     );
   }
 
-  function handleSaveResult() {
-    if (!selectedRangeDay || !selectedDrill || !selectedOfficerId) return;
+  function updateBatchScoreRow(
+    officerId: string,
+    patch: Partial<BatchScoreRow>,
+  ) {
+    setBatchScoreRows((current) => {
+      const existing = current[officerId] ?? {
+        officerId,
+        metricValue: "",
+        notes: "",
+        malfunctionOccurred: false,
+        malfunctionType: "Failure to Feed" as MalfunctionType,
+        malfunctionNotes: "",
+      };
 
-    const malfunctionId =
-      malfunctionOccurred && selectedFirearmId
-        ? `malfunction-${Date.now()}`
-        : undefined;
+      return {
+        ...current,
+        [officerId]: {
+          ...existing,
+          ...patch,
+        },
+      };
+    });
+  }
 
-    const runLabel = getRunLabel(selectedDrill, selectedRunNumber);
-    const resultNotes = isQualificationDrill(selectedDrill)
-      ? [runLabel, notes].filter(Boolean).join(" — ")
-      : notes;
+  function handleMetricChange(officerId: string, value: string) {
+    if (!selectedDrill) return;
 
-    const newResult: DrillRunResult = {
-      id: `result-${Date.now()}`,
-      rangeDayId: selectedRangeDay.id,
-      drillId: selectedDrill.id,
-      officerId: selectedOfficerId,
-      firearmId: selectedFirearmId,
-      runNumber: selectedRunNumber,
-      completed,
-      score:
-        selectedDrill.scoringMode === "Scored" && score
-          ? Number(score)
-          : undefined,
-      passed:
-        selectedDrill.scoringMode === "Pass/Fail" ||
-        selectedDrill.scoringMode === "Scored"
-          ? passed
-          : undefined,
-      instructorId: CURRENT_USER.id,
-      notes: resultNotes,
-      deficiencyObserved: passed === false,
-      remedialTrainingRecommended: passed === false,
-      malfunctionIds: malfunctionId ? [malfunctionId] : [],
-    };
+    const currentRow = batchScoreRows[officerId];
+    const automaticPass = getAutomaticPassValue(
+      selectedDrill,
+      getScoringFormat(selectedDrill),
+      value,
+      currentRow?.completed,
+    );
+
+    updateBatchScoreRow(officerId, {
+      metricValue: value,
+      ...(typeof automaticPass === "boolean"
+        ? { passed: automaticPass }
+        : {}),
+    });
+  }
+
+  function handleSaveBatchResults() {
+    if (!selectedRangeDay || !selectedDrill) return;
+
+    const scoringFormat = getScoringFormat(selectedDrill);
+    const rosterToScore = attendingRoster;
+
+    if (rosterToScore.length === 0) {
+      setSaveMessage("Mark at least one rostered officer present before scoring.");
+      return;
+    }
+
+    const existingResultsBeingReplaced = results.filter(
+      (result) =>
+        result.rangeDayId === selectedRangeDay.id &&
+        result.drillId === selectedDrill.id &&
+        result.runNumber === selectedRunNumber &&
+        rosterToScore.some((entry) => entry.officerId === result.officerId),
+    );
+
+    const replacedResultIds = new Set(
+      existingResultsBeingReplaced.map((result) => result.id),
+    );
+
+    const newMalfunctions: FirearmMalfunction[] = [];
+    const now = Date.now();
+
+    const savedResults = rosterToScore.flatMap((entry, index) => {
+      const row = batchScoreRows[entry.officerId];
+      if (!row) return [];
+
+      const metricEntered = row.metricValue.trim().length > 0;
+      const hasEntry =
+        metricEntered ||
+        typeof row.passed === "boolean" ||
+        typeof row.completed === "boolean" ||
+        Boolean(row.notes.trim()) ||
+        row.malfunctionOccurred;
+
+      if (!hasEntry) return [];
+
+      const firearmId = entry.assignedFirearmIds[0];
+      const resultId = `result-${now}-${index}`;
+      const automaticPass = getAutomaticPassValue(
+        selectedDrill,
+        scoringFormat,
+        row.metricValue,
+        row.completed,
+      );
+      const finalPassed =
+        typeof row.passed === "boolean" ? row.passed : automaticPass;
+      const malfunctionId =
+        row.malfunctionOccurred && firearmId
+          ? `malfunction-${now}-${index}`
+          : undefined;
+
+      const numericMetric = metricEntered ? Number(row.metricValue) : undefined;
+
+      const result: ExtendedDrillRunResult = {
+        id: resultId,
+        rangeDayId: selectedRangeDay.id,
+        drillId: selectedDrill.id,
+        officerId: entry.officerId,
+        firearmId,
+        runNumber: selectedRunNumber,
+        completed:
+          scoringFormat === "Completion"
+            ? row.completed ?? false
+            : true,
+        score:
+          (scoringFormat === "Qualification" || scoringFormat === "Points") &&
+          typeof numericMetric === "number" &&
+          !Number.isNaN(numericMetric)
+            ? numericMetric
+            : undefined,
+        timeSeconds:
+          scoringFormat === "Time" &&
+          typeof numericMetric === "number" &&
+          !Number.isNaN(numericMetric)
+            ? numericMetric
+            : undefined,
+        hitCount:
+          scoringFormat === "Hit Count" &&
+          typeof numericMetric === "number" &&
+          !Number.isNaN(numericMetric)
+            ? numericMetric
+            : undefined,
+        scoringFormatSnapshot: scoringFormat,
+        passed:
+          scoringFormat === "Notes Only" ? undefined : finalPassed,
+        finalPassed:
+          scoringFormat === "Notes Only" ? undefined : finalPassed,
+        instructorId: CURRENT_USER.id,
+        notes: row.notes.trim(),
+        deficiencyObserved: finalPassed === false,
+        remedialTrainingRecommended: finalPassed === false,
+        malfunctionIds: malfunctionId ? [malfunctionId] : [],
+      };
+
+      if (malfunctionId && firearmId) {
+        newMalfunctions.push({
+          id: malfunctionId,
+          departmentId: DEMO_DEPARTMENT.id,
+          firearmId,
+          officerId: entry.officerId,
+          rangeDayId: selectedRangeDay.id,
+          drillRunId: resultId,
+          type: row.malfunctionType,
+          date: new Date().toISOString(),
+          resolvedOnRange: false,
+          removedFromService: row.malfunctionType === "Catastrophic Failure",
+          inspectionRequired: true,
+          notes: row.malfunctionNotes.trim(),
+          reportedByUserId: CURRENT_USER.id,
+        });
+      }
+
+      return [result];
+    });
 
     setResults((current) => [
       ...current.filter(
         (result) =>
           !(
             result.rangeDayId === selectedRangeDay.id &&
-            result.officerId === selectedOfficerId &&
             result.drillId === selectedDrill.id &&
-            result.runNumber === selectedRunNumber
+            result.runNumber === selectedRunNumber &&
+            rosterToScore.some(
+              (entry) => entry.officerId === result.officerId,
+            )
           ),
       ),
-      newResult,
+      ...savedResults,
     ]);
 
-    if (malfunctionId && selectedFirearmId) {
-      const newMalfunction: FirearmMalfunction = {
-        id: malfunctionId,
-        departmentId: DEMO_DEPARTMENT.id,
-        firearmId: selectedFirearmId,
-        officerId: selectedOfficerId,
-        rangeDayId: selectedRangeDay.id,
-        drillRunId: newResult.id,
-        type: malfunctionType,
-        date: new Date().toISOString(),
-        resolvedOnRange: false,
-        removedFromService: malfunctionType === "Catastrophic Failure",
-        inspectionRequired: true,
-        notes: malfunctionNotes,
-        reportedByUserId: CURRENT_USER.id,
-      };
+    setMalfunctions((current) => [
+      ...current.filter(
+        (malfunction) =>
+          !malfunction.drillRunId ||
+          !replacedResultIds.has(malfunction.drillRunId),
+      ),
+      ...newMalfunctions,
+    ]);
 
-      setMalfunctions((current) => [...current, newMalfunction]);
-    }
-
-    const nextRun =
-      selectedRunNumber < selectedEffectiveRunCount
-        ? selectedRunNumber + 1
-        : selectedRunNumber;
-
-    resetEntryForm(nextRun);
+    setSaveMessage(
+      `${savedResults.length} officer result${
+        savedResults.length === 1 ? "" : "s"
+      } saved for ${getRunLabel(selectedDrill, selectedRunNumber)}.`,
+    );
   }
 
   function handleGeneratePacket() {
@@ -1666,7 +2018,7 @@ export default function RangeDaysPage() {
   function handleCreateDrillTemplate() {
     if (!newDrillName.trim()) return;
 
-    const createdTemplate = createDrillLibraryTemplate({
+    const baseTemplate = createDrillLibraryTemplate({
       departmentId: DEMO_DEPARTMENT.id,
       name: newDrillName.trim(),
       category: newDrillCategory,
@@ -1676,16 +2028,19 @@ export default function RangeDaysPage() {
       roundCount: parseOptionalNumber(newDrillRoundCount),
       estimatedMinutes: parseOptionalNumber(newDrillEstimatedMinutes),
       difficulty: newDrillDifficulty,
-      defaultScoringMode: newDrillScoringMode,
+      defaultScoringMode: getLegacyScoringMode(newDrillScoringMode),
       defaultPassingScore:
-        newDrillScoringMode === "Scored"
+        newDrillScoringMode === "Qualification" ||
+        newDrillScoringMode === "Points"
           ? parseOptionalNumber(newDrillPassingScore)
           : undefined,
       defaultMaxScore:
-        newDrillScoringMode === "Scored"
+        newDrillScoringMode === "Qualification" ||
+        newDrillScoringMode === "Points"
           ? parseOptionalNumber(newDrillMaxScore)
           : undefined,
       defaultRunCount:
+        newDrillScoringMode === "Qualification" ||
         newDrillCategory === "Qualification"
           ? Math.max(Number(newDrillRunCount) || 1, 2)
           : Math.max(Number(newDrillRunCount) || 1, 1),
@@ -1697,6 +2052,19 @@ export default function RangeDaysPage() {
       createdByUserId: CURRENT_USER.id,
       notes: newDrillNotes.trim() || undefined,
     });
+
+    const createdTemplate: ExtendedDrillTemplate = {
+      ...baseTemplate,
+      scoringFormat: newDrillScoringMode,
+      defaultPassingTimeSeconds:
+        newDrillScoringMode === "Time"
+          ? parseOptionalNumber(newDrillPassingTimeSeconds)
+          : undefined,
+      defaultMinimumHits:
+        newDrillScoringMode === "Hit Count"
+          ? parseOptionalNumber(newDrillMinimumHits)
+          : undefined,
+    };
 
     setDrillLibrary((current) => [createdTemplate, ...current]);
     resetNewDrillForm();
@@ -1716,12 +2084,21 @@ export default function RangeDaysPage() {
 
     if (!copiedDrill) return;
 
-    const normalizedCopiedDrill = isQualificationDrill(copiedDrill)
-      ? {
-          ...copiedDrill,
-          runCount: Math.max(copiedDrill.runCount ?? 1, 2),
-        }
-      : copiedDrill;
+    const sourceTemplate = drillLibrary.find(
+      (template) => template.id === templateId,
+    );
+
+    const normalizedCopiedDrill: ExtendedRangeDayDrill = {
+      ...copiedDrill,
+      runCount: isQualificationDrill(copiedDrill)
+        ? Math.max(copiedDrill.runCount ?? 1, 2)
+        : copiedDrill.runCount,
+      scoringFormat: sourceTemplate
+        ? getScoringFormat(sourceTemplate)
+        : getScoringFormat(copiedDrill),
+      passingTimeSeconds: sourceTemplate?.defaultPassingTimeSeconds,
+      minimumHits: sourceTemplate?.defaultMinimumHits,
+    };
 
     setRangeDayDrills((current) => [...current, normalizedCopiedDrill]);
     setSelectedDrillId(normalizedCopiedDrill.id);
@@ -3004,13 +3381,12 @@ export default function RangeDaysPage() {
                           value={newDrillScoringMode}
                           onChange={(event) =>
                             setNewDrillScoringMode(
-                              event.target
-                                .value as DrillTemplate["defaultScoringMode"],
+                              event.target.value as ScoringFormat,
                             )
                           }
                           className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                         >
-                          {SCORING_MODES.map((mode) => (
+                          {SCORING_FORMATS.map((mode) => (
                             <option key={mode} value={mode}>
                               {mode}
                             </option>
@@ -3033,7 +3409,8 @@ export default function RangeDaysPage() {
                         />
                       </div>
 
-                      {newDrillScoringMode === "Scored" && (
+                      {(newDrillScoringMode === "Qualification" ||
+                        newDrillScoringMode === "Points") && (
                         <>
                           <div>
                             <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
@@ -3065,6 +3442,43 @@ export default function RangeDaysPage() {
                             />
                           </div>
                         </>
+                      )}
+
+                      {newDrillScoringMode === "Time" && (
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Maximum Passing Time (Seconds)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={newDrillPassingTimeSeconds}
+                            onChange={(event) =>
+                              setNewDrillPassingTimeSeconds(event.target.value)
+                            }
+                            placeholder="Example: 8.5"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      )}
+
+                      {newDrillScoringMode === "Hit Count" && (
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Minimum Passing Hits
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={newDrillMinimumHits}
+                            onChange={(event) =>
+                              setNewDrillMinimumHits(event.target.value)
+                            }
+                            placeholder="Example: 8"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
                       )}
 
                       <div>
@@ -3250,44 +3664,25 @@ export default function RangeDaysPage() {
             )}
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h3 className="text-[16px] font-bold text-white">
-                    Live Drill Scoring
+                    Range-Day Scoring Board
                   </h3>
-                  <p className="mt-1 text-[12px] text-slate-500">
-                    Score live on a device or enter handwritten packet results
-                    later.
+                  <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
+                    Keep every attending officer on one screen. Select the drill
+                    and run once, enter the full line, then save the group.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
                   <UserCheck size={14} className="text-blue-400" />
-                  {getUserName(CURRENT_USER.id)}
+                  {attendingRoster.length} attending officer
+                  {attendingRoster.length === 1 ? "" : "s"}
                 </div>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Officer
-                  </label>
-                  <select
-                    value={selectedOfficerId}
-                    onChange={(event) => {
-                      setSelectedOfficerId(event.target.value);
-                      resetEntryForm(1);
-                    }}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  >
-                    {selectedRoster.map((entry) => (
-                      <option key={entry.officerId} value={entry.officerId}>
-                        {getUserName(entry.officerId)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
+              <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
                 <div>
                   <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                     Drill
@@ -3296,7 +3691,7 @@ export default function RangeDaysPage() {
                     value={selectedDrill?.id ?? ""}
                     onChange={(event) => {
                       setSelectedDrillId(event.target.value);
-                      resetEntryForm(1);
+                      setSelectedRunNumber(1);
                     }}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                   >
@@ -3310,7 +3705,7 @@ export default function RangeDaysPage() {
 
                 <div>
                   <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Run Number
+                    Run / Course
                   </label>
                   <select
                     value={selectedRunNumber}
@@ -3329,188 +3724,298 @@ export default function RangeDaysPage() {
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Firearm
-                  </label>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-300">
-                    {getFirearmName(selectedFirearmId)}
-                  </div>
-                </div>
               </div>
 
-              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-                <div className="mb-3 flex flex-wrap gap-2">
-                  <StatusPill
-                    label={selectedDrill?.scoringMode ?? "Scoring"}
-                  />
-                  <StatusPill
-                    label={selectedDrill?.category ?? "Category"}
-                    tone="slate"
-                  />
+              {selectedDrill && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <StatusPill label={getScoringFormat(selectedDrill)} />
+                  <StatusPill label={selectedDrill.category} tone="slate" />
                   <StatusPill
                     label={getRunLabel(selectedDrill, selectedRunNumber)}
                     tone="green"
                   />
-                </div>
-
-                {selectedDrill?.scoringMode === "Scored" && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                        {isQualificationDrill(selectedDrill)
-                          ? getRunLabel(selectedDrill, selectedRunNumber)
-                          : "Score"}
-                      </label>
-                      <input
-                        type="number"
-                        value={score}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setScore(value);
-
-                          if (selectedDrill.passingScore && value) {
-                            setPassed(
-                              Number(value) >= selectedDrill.passingScore,
-                            );
-                          }
-                        }}
-                        placeholder="Enter score"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[12px] text-slate-400">
-                      Passing: {selectedDrill.passingScore ?? "—"} / Max:{" "}
-                      {selectedDrill.maxScore ?? "—"}
-                    </div>
-                  </div>
-                )}
-
-                {(selectedDrill?.scoringMode === "Pass/Fail" ||
-                  selectedDrill?.scoringMode === "Scored") && (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPassed(true)}
-                      className={`rounded-xl border px-3 py-2 text-[13px] font-semibold ${
-                        passed === true
-                          ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                          : "border-slate-700 text-slate-400"
+                  {(getScoringFormat(selectedDrill) === "Qualification" ||
+                    getScoringFormat(selectedDrill) === "Points") && (
+                    <StatusPill
+                      label={`Pass ${selectedDrill.passingScore ?? "—"} / Max ${
+                        selectedDrill.maxScore ?? "—"
                       }`}
-                    >
-                      Pass
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPassed(false)}
-                      className={`rounded-xl border px-3 py-2 text-[13px] font-semibold ${
-                        passed === false
-                          ? "border-red-500/50 bg-red-500/10 text-red-300"
-                          : "border-slate-700 text-slate-400"
-                      }`}
-                    >
-                      Fail
-                    </button>
-                  </div>
-                )}
-
-                {(selectedDrill?.scoringMode === "Completion Only" ||
-                  selectedDrill?.scoringMode === "Notes Only") && (
-                  <button
-                    type="button"
-                    onClick={() => setCompleted((current) => !current)}
-                    className={`mt-3 w-full rounded-xl border px-3 py-2 text-[13px] font-semibold ${
-                      completed
-                        ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                        : "border-slate-700 text-slate-400"
-                    }`}
-                  >
-                    {completed ? "Completed" : "Not Completed"}
-                  </button>
-                )}
-
-                <div className="mt-3">
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Notes
-                  </label>
-                  <textarea
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                    placeholder="Instructor notes, observed deficiencies, corrections, or comments..."
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900 p-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setMalfunctionOccurred((current) => !current)
-                    }
-                    className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-[13px] font-semibold ${
-                      malfunctionOccurred
-                        ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                        : "border-slate-700 text-slate-400"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Wrench size={14} />
-                      Unanticipated Malfunction
-                    </span>
-                    {malfunctionOccurred ? "Yes" : "No"}
-                  </button>
-
-                  {malfunctionOccurred && (
-                    <div className="mt-3 grid gap-3">
-                      <select
-                        value={malfunctionType}
-                        onChange={(event) =>
-                          setMalfunctionType(
-                            event.target.value as MalfunctionType,
-                          )
-                        }
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                      >
-                        {MALFUNCTION_TYPES.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
-
-                      <textarea
-                        value={malfunctionNotes}
-                        onChange={(event) =>
-                          setMalfunctionNotes(event.target.value)
-                        }
-                        placeholder="Describe malfunction and any range-level correction..."
-                        rows={2}
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                      />
-
-                      <p className="flex items-start gap-2 text-[11px] text-amber-300">
-                        <AlertTriangle
-                          size={13}
-                          className="mt-0.5 flex-shrink-0"
-                        />
-                        This will link the malfunction to the firearm record for
-                        armorer review, even if resolved on the range.
-                      </p>
-                    </div>
+                      tone="slate"
+                    />
+                  )}
+                  {getScoringFormat(selectedDrill) === "Time" && (
+                    <StatusPill
+                      label={`Pass ≤ ${selectedDrill.passingTimeSeconds ?? "—"} sec`}
+                      tone="slate"
+                    />
+                  )}
+                  {getScoringFormat(selectedDrill) === "Hit Count" && (
+                    <StatusPill
+                      label={`Pass ≥ ${selectedDrill.minimumHits ?? "—"} hits`}
+                      tone="slate"
+                    />
                   )}
                 </div>
+              )}
+
+              {attendingRoster.length === 0 ? (
+                <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-4 text-[12px] text-amber-300">
+                  Mark officers present in the roster before opening the scoring
+                  line. Only attending officers appear here.
+                </div>
+              ) : !selectedDrill ? (
+                <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-[12px] text-slate-500">
+                  Add a drill to this range day before entering scores.
+                </div>
+              ) : (
+                <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-800">
+                  <div className="min-w-[1180px]">
+                    <div className="grid grid-cols-[190px_220px_170px_170px_250px_260px] gap-3 border-b border-slate-800 bg-slate-950/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      <span>Officer</span>
+                      <span>Firearm</span>
+                      <span>Measurement</span>
+                      <span>Final Result</span>
+                      <span>Instructor Notes</span>
+                      <span>Malfunction</span>
+                    </div>
+
+                    {attendingRoster.map((entry) => {
+                      const row = batchScoreRows[entry.officerId] ?? {
+                        officerId: entry.officerId,
+                        metricValue: "",
+                        notes: "",
+                        malfunctionOccurred: false,
+                        malfunctionType: "Failure to Feed" as MalfunctionType,
+                        malfunctionNotes: "",
+                      };
+                      const scoringFormat = getScoringFormat(selectedDrill);
+
+                      return (
+                        <div
+                          key={entry.id}
+                          onClick={() => setSelectedOfficerId(entry.officerId)}
+                          className="grid grid-cols-[190px_220px_170px_170px_250px_260px] gap-3 border-b border-slate-800 px-3 py-3 last:border-b-0"
+                        >
+                          <div>
+                            <p className="text-[13px] font-semibold text-white">
+                              {getUserName(entry.officerId)}
+                            </p>
+                            <p className="mt-1 text-[10px] text-emerald-400">
+                              Present
+                            </p>
+                          </div>
+
+                          <div className="text-[11px] leading-5 text-slate-400">
+                            {getFirearmName(entry.assignedFirearmIds[0])}
+                          </div>
+
+                          <div>
+                            {(scoringFormat === "Qualification" ||
+                              scoringFormat === "Points" ||
+                              scoringFormat === "Time" ||
+                              scoringFormat === "Hit Count") && (
+                              <input
+                                type="number"
+                                min={0}
+                                step={scoringFormat === "Time" ? "0.01" : "1"}
+                                value={row.metricValue}
+                                onChange={(event) =>
+                                  handleMetricChange(
+                                    entry.officerId,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={
+                                  scoringFormat === "Time"
+                                    ? "Seconds"
+                                    : scoringFormat === "Hit Count"
+                                      ? "Hits"
+                                      : "Score"
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                              />
+                            )}
+
+                            {scoringFormat === "Completion" && (
+                              <div className="grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateBatchScoreRow(entry.officerId, {
+                                      completed: true,
+                                      passed: true,
+                                    });
+                                  }}
+                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
+                                    row.completed === true
+                                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                                      : "border-slate-700 text-slate-500"
+                                  }`}
+                                >
+                                  Complete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateBatchScoreRow(entry.officerId, {
+                                      completed: false,
+                                      passed: false,
+                                    });
+                                  }}
+                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
+                                    row.completed === false
+                                      ? "border-red-500/50 bg-red-500/10 text-red-300"
+                                      : "border-slate-700 text-slate-500"
+                                  }`}
+                                >
+                                  Incomplete
+                                </button>
+                              </div>
+                            )}
+
+                            {scoringFormat === "Pass/Fail" && (
+                              <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
+                                Select final result
+                              </p>
+                            )}
+
+                            {scoringFormat === "Notes Only" && (
+                              <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
+                                Notes-based entry
+                              </p>
+                            )}
+                          </div>
+
+                          <div>
+                            {scoringFormat === "Notes Only" ? (
+                              <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-center text-[11px] text-slate-500">
+                                Not scored
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateBatchScoreRow(entry.officerId, {
+                                      passed: true,
+                                    });
+                                  }}
+                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
+                                    row.passed === true
+                                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                                      : "border-slate-700 text-slate-500"
+                                  }`}
+                                >
+                                  Pass
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateBatchScoreRow(entry.officerId, {
+                                      passed: false,
+                                    });
+                                  }}
+                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
+                                    row.passed === false
+                                      ? "border-red-500/50 bg-red-500/10 text-red-300"
+                                      : "border-slate-700 text-slate-500"
+                                  }`}
+                                >
+                                  Fail
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <textarea
+                            value={row.notes}
+                            onChange={(event) =>
+                              updateBatchScoreRow(entry.officerId, {
+                                notes: event.target.value,
+                              })
+                            }
+                            placeholder="Deficiencies, corrections, observations..."
+                            rows={3}
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[11px] text-white outline-none focus:border-blue-500"
+                          />
+
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                updateBatchScoreRow(entry.officerId, {
+                                  malfunctionOccurred: !row.malfunctionOccurred,
+                                });
+                              }}
+                              className={`w-full rounded-xl border px-3 py-2 text-[10px] font-semibold ${
+                                row.malfunctionOccurred
+                                  ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                  : "border-slate-700 text-slate-500"
+                              }`}
+                            >
+                              {row.malfunctionOccurred
+                                ? "Malfunction: Yes"
+                                : "No Malfunction"}
+                            </button>
+
+                            {row.malfunctionOccurred && (
+                              <>
+                                <select
+                                  value={row.malfunctionType}
+                                  onChange={(event) =>
+                                    updateBatchScoreRow(entry.officerId, {
+                                      malfunctionType:
+                                        event.target.value as MalfunctionType,
+                                    })
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[10px] text-white outline-none focus:border-blue-500"
+                                >
+                                  {MALFUNCTION_TYPES.map((type) => (
+                                    <option key={type} value={type}>
+                                      {type}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  value={row.malfunctionNotes}
+                                  onChange={(event) =>
+                                    updateBatchScoreRow(entry.officerId, {
+                                      malfunctionNotes: event.target.value,
+                                    })
+                                  }
+                                  placeholder="Malfunction notes"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[10px] text-white outline-none focus:border-blue-500"
+                                />
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[11px] text-slate-500">
+                  Scores are saved as one drill/run batch, while each officer
+                  retains an individual result, firearm link, notes, and final
+                  pass/fail outcome.
+                </p>
 
                 <button
                   type="button"
-                  onClick={handleSaveResult}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500"
+                  onClick={handleSaveBatchResults}
+                  disabled={!selectedDrill || attendingRoster.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                 >
                   <Save size={14} />
-                  Save {getRunLabel(selectedDrill, selectedRunNumber)}
+                  Save All — {getRunLabel(selectedDrill, selectedRunNumber)}
                 </button>
               </div>
             </div>
@@ -3579,7 +4084,7 @@ export default function RangeDaysPage() {
                           </div>
 
                           <p className="mt-2 text-[11px] text-slate-400">
-                            Score: {result.score ?? "—"} · Passed:{" "}
+                            Result: {formatResultMetric(result, drill) || "—"} · Passed:{" "}
                             {typeof result.passed === "boolean"
                               ? result.passed
                                 ? "Yes"
