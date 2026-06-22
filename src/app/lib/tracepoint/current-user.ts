@@ -1,3 +1,5 @@
+"use client";
+
 import { CURRENT_USER } from "./mock-data";
 
 export type TracePointRole =
@@ -49,6 +51,12 @@ function readString(
 
 const rawCurrentUser = CURRENT_USER as unknown as Record<string, unknown>;
 
+/**
+ * Temporary prototype session.
+ *
+ * Authentication will replace this file later. Every module should import this
+ * normalized profile instead of declaring its own hard-coded "current user."
+ */
 export const CURRENT_USER_PROFILE: TracePointUserProfile = {
   id: CURRENT_USER.id,
   name: readString(rawCurrentUser, ["name", "displayName"], "Current User"),
@@ -89,8 +97,6 @@ export const CHIEF_PROFILE: TracePointUserProfile = {
   ],
 };
 
-export function hasPermission(
-  permission: TracePointPermission,
-): boolean {
+export function hasPermission(permission: TracePointPermission) {
   return CURRENT_USER_PROFILE.permissions.includes(permission);
 }
