@@ -9,6 +9,10 @@ import {
 } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
+  CHIEF_PROFILE,
+  CURRENT_USER_PROFILE,
+} from "@/app/lib/tracepoint/current-user";
+import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
@@ -156,16 +160,16 @@ const STORAGE_KEY = "tracepoint-off-duty-workflow-v1";
 const INBOX_KEY = "tracepoint-inbox-v1";
 
 const CURRENT_OFFICER = {
-  id: "officer-martinez",
-  name: "Off. Martinez, Karen",
-  badge: "#3091",
-  unit: "Patrol C",
+  id: CURRENT_USER_PROFILE.id,
+  name: CURRENT_USER_PROFILE.name,
+  badge: CURRENT_USER_PROFILE.badge,
+  unit: CURRENT_USER_PROFILE.unit,
 };
 
 const CHIEF_USER = {
-  id: "chief-1",
-  name: "Chief Thomas",
-  role: "Chief of Police",
+  id: CHIEF_PROFILE.id,
+  name: CHIEF_PROFILE.name,
+  role: CHIEF_PROFILE.role,
 };
 
 const TABS: OffDutyTab[] = [

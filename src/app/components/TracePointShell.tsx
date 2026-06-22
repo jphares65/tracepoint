@@ -1,21 +1,15 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   LayoutDashboard,
-  BarChart3,
   Crosshair,
   Shield,
   ShieldCheck,
   CalendarRange,
   ClipboardList,
-  Settings,
   Upload,
-  Menu,
-  X,
 } from "lucide-react";
 
 type TracePointShellProps = {
@@ -25,210 +19,105 @@ type TracePointShellProps = {
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Firearms", href: "/firearms", icon: Crosshair },
+  { label: "Firearms Repository", href: "/firearms", icon: Crosshair },
   { label: "Off-Duty Firearms", href: "/off-duty-firearms", icon: Shield },
   { label: "Qualifications", href: "/qualifications", icon: ShieldCheck },
   { label: "Range & Training", href: "/range-days", icon: CalendarRange },
   { label: "Inspections", href: "/inspections", icon: ClipboardList },
-  { label: "Settings", href: "/settings", icon: Settings },
-];
+] as const;
 
-function isActivePage(activePage: string, itemLabel: string) {
+function TPMark({ size = 32 }: { size?: number }) {
   return (
-    activePage === itemLabel ||
-    (activePage === "Firearms Repository" && itemLabel === "Firearms") ||
-    (activePage === "Off-Duty" && itemLabel === "Off-Duty Firearms") ||
-    (activePage === "Range Days" && itemLabel === "Range & Training")
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 36 36"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="flex-shrink-0"
+    >
+      <circle cx="18" cy="18" r="18" fill="#1B2B4B" />
+      <path d="M18 6 A12 12 0 0 0 6 18" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.9" />
+      <path d="M18 10 A8 8 0 0 0 10 18" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.9" />
+      <path d="M18 14 A4 4 0 0 0 14 18" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.9" />
+      <path d="M18 6 A12 12 0 0 1 30 18" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.6" />
+      <path d="M18 10 A8 8 0 0 1 26 18" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.6" />
+      <line x1="9" y1="27" x2="25" y2="14" stroke="white" strokeWidth="1.6" strokeLinecap="round" opacity="0.7" />
+      <circle cx="18" cy="18" r="1.5" fill="white" opacity="0.9" />
+      <path d="M18 8.5 C15.5 8.5 13.5 10.5 13.5 13 C13.5 16.5 18 21.5 18 21.5 C18 21.5 22.5 16.5 22.5 13 C22.5 10.5 20.5 8.5 18 8.5Z" fill="#E8721C" />
+      <circle cx="18" cy="13" r="2" fill="white" />
+    </svg>
   );
 }
 
-function isActiveRoute(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
-
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function NavigationLinks({
-  activePage,
-  pathname,
-  onNavigate,
-}: {
-  activePage: string;
-  pathname: string;
-  onNavigate?: () => void;
-}) {
+export default function TracePointShell({ activePage, children }: TracePointShellProps) {
   return (
-    <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-5">
-      <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-600">
-        Navigation
-      </p>
+    <div className="min-h-screen bg-slate-950 text-white" style={{ fontFamily: "system-ui, sans-serif" }}>
+      <div className="flex min-h-screen">
+        <aside className="fixed inset-y-0 left-0 hidden w-72 flex-col border-r border-slate-800 bg-slate-950 p-5 lg:flex">
+          <div className="mb-6">
+            <div className="flex items-center gap-3">
+              <TPMark size={36} />
+              <div>
+                <div className="flex items-baseline">
+                  <span className="text-[20px] font-extrabold leading-none tracking-tight text-white">Trace</span>
+                  <span className="text-[20px] font-extrabold leading-none tracking-tight text-[#E8721C]">Point</span>
+                </div>
+                <p className="mt-1 text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Operational Accountability
+                </p>
+              </div>
+            </div>
+          </div>
 
-      {NAV_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const active =
-          isActivePage(activePage, item.label) ||
-          isActiveRoute(pathname, item.href);
-
-        return (
-          <Link
-            key={item.label}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={`group relative flex items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] transition-all duration-200 ${
-              active
-                ? "bg-blue-600/20 text-blue-200"
-                : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
-            }`}
-          >
-            {active && (
-              <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-blue-500" />
-            )}
-
-            <Icon
-              size={17}
-              className={
-                active
-                  ? "text-blue-400"
-                  : "text-slate-600 group-hover:text-slate-400"
-              }
-            />
-
-            <span className="truncate">{item.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-function AgencyCard() {
-  return (
-    <div className="border-t border-slate-800 p-4">
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            title="Department patch upload placeholder"
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-500 transition hover:border-blue-500/40 hover:text-blue-400"
-          >
-            <Upload size={15} />
-          </button>
-
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-semibold text-slate-100">
-              Readington PD
+          <nav className="flex flex-1 flex-col gap-1.5">
+            <p className="mb-1 px-3 text-[9px] font-semibold uppercase tracking-widest text-slate-700">
+              Navigation
             </p>
 
-            <p className="text-[11px] text-slate-500">Administrator</p>
+            {NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const isActive = activePage === item.label;
+
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`group relative flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? "bg-blue-600 text-white shadow-lg shadow-blue-950/30"
+                      : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                  }`}
+                >
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-blue-300" />
+                  )}
+                  <Icon size={17} className={isActive ? "text-white" : "text-slate-500 group-hover:text-slate-300"} />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-slate-400">
+                <Upload size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-200">Readington PD</p>
+                <p className="mt-0.5 text-xs text-slate-500">Administrator</p>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2 border-t border-slate-800/60 pt-3 text-xs text-slate-500">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              System Online
+            </div>
           </div>
-        </div>
-
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-500">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          System Online
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BrandHeader({ compact = false }: { compact?: boolean }) {
-  return (
-    <Link href="/" className="block min-w-0">
-      <Image
-        src="/tracepoint-logo-dark.png"
-        alt="TracePoint"
-        width={compact ? 155 : 205}
-        height={compact ? 38 : 50}
-        priority
-        className={`h-auto object-contain ${
-          compact ? "w-[150px] sm:w-[160px]" : "w-[205px]"
-        }`}
-      />
-    </Link>
-  );
-}
-
-export default function TracePointShell({
-  activePage,
-  children,
-}: TracePointShellProps) {
-  const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="flex min-h-screen">
-        {/* Desktop sidebar */}
-        <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
-          <div className="border-b border-slate-800 px-5 py-3.5">
-            <BrandHeader />
-          </div>
-
-          <NavigationLinks activePage={activePage} pathname={pathname} />
-
-          <AgencyCard />
         </aside>
 
-        {/* Mobile drawer overlay */}
-        {mobileOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden">
-            <button
-              type="button"
-              aria-label="Close navigation backdrop"
-              onClick={() => setMobileOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-
-            <aside className="absolute inset-y-0 left-0 flex w-[86vw] max-w-[340px] flex-col border-r border-slate-800 bg-slate-950 shadow-2xl">
-              <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3.5">
-                <BrandHeader compact />
-
-                <button
-                  type="button"
-                  aria-label="Close navigation"
-                  onClick={() => setMobileOpen(false)}
-                  className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 transition hover:border-blue-500/40 hover:text-white"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <NavigationLinks
-                activePage={activePage}
-                pathname={pathname}
-                onNavigate={() => setMobileOpen(false)}
-              />
-
-              <AgencyCard />
-            </aside>
-          </div>
-        )}
-
-        {/* Main area */}
-        <main className="min-h-screen min-w-0 flex-1 lg:pl-72">
-          {/* Mobile top bar */}
-          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden">
-            <BrandHeader compact />
-
-            <button
-              type="button"
-              aria-label="Open navigation"
-              onClick={() => setMobileOpen(true)}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-300 transition hover:border-blue-500/40 hover:text-white"
-            >
-              <Menu size={20} />
-            </button>
-          </header>
-
-          {/* 
-            Important:
-            Do NOT cap this wrapper with max-w-7xl.
-            Individual pages now control their own max width, usually max-w-[1600px].
-          */}
-          <div className="w-full px-3 py-4 sm:px-5 sm:py-5 lg:px-6 xl:px-8 2xl:px-10">
+        <main className="min-h-screen flex-1 lg:pl-72">
+          <div className="mx-auto w-full max-w-7xl px-6 py-6">
             {children}
           </div>
         </main>

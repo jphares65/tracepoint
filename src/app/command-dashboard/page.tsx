@@ -797,7 +797,7 @@ export default function DashboardPage() {
   const recordTone: Tone = incompletePackets.length > 0 ? "amber" : "green";
 
   return (
-    <TracePointShell activePage="Dashboard">
+    <TracePointShell activePage="Command Dashboard">
       <div className="mx-auto w-full max-w-[1600px] space-y-5">
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
