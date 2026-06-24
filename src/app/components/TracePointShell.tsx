@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Crosshair,
   House,
+  LogOut,
   Menu,
   Settings,
   Shield,
@@ -146,9 +147,22 @@ function AgencyCard() {
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-500">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          System Online
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800 pt-3">
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            System Online
+          </div>
+
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              title="Sign out of TracePoint"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-900 hover:text-red-300"
+            >
+              <LogOut size={13} />
+              Logout
+            </button>
+          </form>
         </div>
       </div>
     </div>
