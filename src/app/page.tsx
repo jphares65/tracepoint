@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
+import { createClient } from "@/lib/supabase/client";
 import {
   AlertTriangle,
   Bell,
@@ -90,6 +91,92 @@ type HomeItem = {
     | "System";
   createdAt?: string;
 };
+
+type AuthenticatedHomeProfile = {
+  id: string;
+  name: string;
+  role: string;
+  rankTitle: string;
+  unit: string;
+  badge: string;
+};
+
+type ProfileRow = {
+  full_name?: string | null;
+};
+
+type MembershipRow = {
+  department_id?: string | null;
+  badge_number?: string | null;
+  rank_title?: string | null;
+  unit_name?: string | null;
+};
+
+type MembershipRoleRow = {
+  role_code?: string | null;
+};
+
+const ROLE_PRIORITY = [
+  "administrator",
+  "chief",
+  "command_staff",
+  "supervisor",
+  "range_master",
+  "armorer",
+  "instructor",
+  "officer",
+] as const;
+
+const ROLE_LABELS: Record<string, string> = {
+  administrator: "Administrator",
+  chief: "Chief",
+  command_staff: "Command Staff",
+  supervisor: "Supervisor",
+  range_master: "Range Master",
+  armorer: "Armorer",
+  instructor: "Instructor",
+  officer: "Officer",
+};
+
+function getRoleLabel(rows: MembershipRoleRow[]) {
+  const roleCode = ROLE_PRIORITY.find((code) =>
+    rows.some((row) => row.role_code === code),
+  );
+
+  return roleCode ? ROLE_LABELS[roleCode] : "Member";
+}
+
+const RANK_ABBREVIATIONS: Record<string, string> = {
+  "Chief of Police": "Chief",
+  Chief: "Chief",
+  "Deputy Chief": "D/C",
+  Captain: "Capt.",
+  Lieutenant: "Lt.",
+  Sergeant: "Sgt.",
+  Corporal: "Cpl.",
+  Detective: "Det.",
+  Officer: "Ofc.",
+  "Patrol Officer": "Ofc.",
+};
+
+function getProfessionalGreeting(profile: AuthenticatedHomeProfile) {
+  const nameParts = profile.name.trim().split(/\s+/).filter(Boolean);
+
+  if (nameParts.length === 0) {
+    return "";
+  }
+
+  if (nameParts.length === 1) {
+    return nameParts[0];
+  }
+
+  const lastName = nameParts[nameParts.length - 1];
+  const rankTitle = profile.rankTitle.trim();
+  const rankLabel =
+    RANK_ABBREVIATIONS[rankTitle] || rankTitle;
+
+  return rankLabel ? `${rankLabel} ${lastName}` : nameParts[0];
+}
 
 const RANGE_WORKSPACE_KEY = "tracepoint.rangeDays.workspace.v1";
 const INBOX_KEY = "tracepoint-inbox-v1";
@@ -265,6 +352,15 @@ export default function MyTracePointHomePage() {
   const [storedInbox, setStoredInbox] = useState<InboxItem[]>([]);
   const [offDutyRecords, setOffDutyRecords] = useState<OffDutyRecord[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [homeProfile, setHomeProfile] =
+    useState<AuthenticatedHomeProfile>({
+      id: "",
+      name: "",
+      role: "Member",
+      rankTitle: "",
+      unit: "Department",
+      badge: "",
+    });
 
   useEffect(() => {
     const parsedWorkspace = loadJson<Partial<StoredRangeDayWorkspace> | null>(
@@ -278,6 +374,83 @@ export default function MyTracePointHomePage() {
     setHydrated(true);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadAuthenticatedProfile() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || !active) return;
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const { data: membershipData } = await supabase
+        .from("department_memberships")
+        .select(
+          "department_id,badge_number,rank_title,unit_name",
+        )
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      const profile = profileData as ProfileRow | null;
+      const membership = membershipData as MembershipRow | null;
+
+      let roleRows: MembershipRoleRow[] = [];
+
+      if (membership?.department_id) {
+        const { data: roleData } = await supabase
+          .from("department_membership_roles")
+          .select("role_code")
+          .eq("department_id", membership.department_id)
+          .eq("user_id", user.id);
+
+        roleRows = (roleData ?? []) as MembershipRoleRow[];
+      }
+
+      if (!active) return;
+
+      const metadataName =
+        typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name.trim()
+          : "";
+
+      const emailHandle =
+        user.email?.split("@")[0]?.trim().toLowerCase() || "";
+      const storedProfileName = profile?.full_name?.trim() || "";
+      const resolvedName =
+        storedProfileName.toLowerCase() === emailHandle
+          ? metadataName
+          : storedProfileName || metadataName;
+
+      setHomeProfile({
+        id: user.id,
+        name: resolvedName,
+        role: getRoleLabel(roleRows),
+        rankTitle: membership?.rank_title?.trim() || "",
+        unit: membership?.unit_name?.trim() || "Department",
+        badge: membership?.badge_number?.trim() || "",
+      });
+    }
+
+    void loadAuthenticatedProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Prototype localStorage records still use the mock officer IDs.
+  // This will change to the authenticated UUID when Range & Training
+  // is migrated to Supabase.
   const currentUserId = CURRENT_USER_PROFILE.id;
 
   const myRosterEntries = useMemo(
@@ -561,6 +734,16 @@ export default function MyTracePointHomePage() {
           : "No record";
 
   const primaryFirearmId = assignedFirearmIds[0];
+  const greetingName = getProfessionalGreeting(homeProfile);
+
+  const profileDetails = [
+    homeProfile.role,
+    homeProfile.rankTitle,
+    homeProfile.unit,
+    homeProfile.badge ? `Badge ${homeProfile.badge}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <TracePointShell activePage="My Home">
@@ -572,12 +755,12 @@ export default function MyTracePointHomePage() {
                 My TracePoint
               </p>
               <h1 className="mt-1 text-[22px] font-bold text-white">
-                Welcome, {CURRENT_USER_PROFILE.name}
+                {greetingName
+                  ? `Welcome, ${greetingName}`
+                  : "Welcome to TracePoint"}
               </h1>
               <p className="mt-1 text-[12px] text-slate-500">
-                {CURRENT_USER_PROFILE.role} ·{" "}
-                {CURRENT_USER_PROFILE.unit} ·{" "}
-                {CURRENT_USER_PROFILE.badge}
+                {profileDetails || "Authenticated department member"}
               </p>
             </div>
 
