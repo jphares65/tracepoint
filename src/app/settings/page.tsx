@@ -1099,6 +1099,9 @@ export default function AdminSettingsPage() {
       if (error) throw error;
 
       await refreshAccess();
+      window.dispatchEvent(
+        new CustomEvent("tracepoint:department-updated"),
+      );
       showNotice("success", "Agency profile saved to Supabase.");
     } catch (error) {
       showNotice(
@@ -1164,6 +1167,9 @@ export default function AdminSettingsPage() {
       if (error) throw error;
 
       await refreshAccess();
+      window.dispatchEvent(
+        new CustomEvent("tracepoint:department-updated"),
+      );
       showNotice("success", "Department branding saved to Supabase.");
     } catch (error) {
       showNotice(
@@ -1484,6 +1490,9 @@ export default function AdminSettingsPage() {
         ...current,
         patch_url: patchUrl,
       }));
+      window.dispatchEvent(
+        new CustomEvent("tracepoint:department-updated"),
+      );
       showNotice("success", "Department patch uploaded and saved.");
     } catch (error) {
       showNotice(

@@ -16,7 +16,6 @@ import {
   Settings,
   Shield,
   ShieldCheck,
-  Upload,
   X,
 } from "lucide-react";
 
@@ -214,10 +213,12 @@ function NavigationLinks({
 
 function AgencyCard({
   departmentName,
+  departmentPatchUrl,
   roleLabel,
   loading,
 }: {
   departmentName: string;
+  departmentPatchUrl: string;
   roleLabel: string;
   loading: boolean;
 }) {
@@ -225,13 +226,25 @@ function AgencyCard({
     <div className="border-t border-slate-800 p-4">
       <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            title="Department patch upload placeholder"
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-500 transition hover:border-blue-500/40 hover:text-blue-400"
+          <Link
+            href="/settings"
+            title="Open department branding settings"
+            className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 transition hover:border-blue-500/50"
           >
-            <Upload size={15} />
-          </button>
+            {departmentPatchUrl ? (
+              <img
+                src={departmentPatchUrl}
+                alt={`${departmentName} patch`}
+                className="h-full w-full object-contain p-1"
+              />
+            ) : (
+              <Shield
+                size={20}
+                className="text-slate-500"
+                aria-hidden="true"
+              />
+            )}
+          </Link>
 
           <div className="min-w-0">
             <p className="truncate text-[13px] font-semibold text-slate-100">
@@ -297,6 +310,7 @@ export default function TracePointShell({
   const {
     loading,
     departmentShortName,
+    departmentPatchUrl,
     primaryRoleLabel,
     permissions,
   } = useTracePointAccess();
@@ -317,6 +331,7 @@ export default function TracePointShell({
 
           <AgencyCard
             departmentName={departmentShortName || "TracePoint"}
+            departmentPatchUrl={departmentPatchUrl}
             roleLabel={primaryRoleLabel}
             loading={loading}
           />
@@ -354,6 +369,7 @@ export default function TracePointShell({
 
               <AgencyCard
                 departmentName={departmentShortName || "TracePoint"}
+                departmentPatchUrl={departmentPatchUrl}
                 roleLabel={primaryRoleLabel}
                 loading={loading}
               />

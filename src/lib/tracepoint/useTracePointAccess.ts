@@ -25,6 +25,7 @@ type MembershipRow = {
 type DepartmentRow = {
   name?: string | null;
   short_name?: string | null;
+  patch_url?: string | null;
 };
 
 type MembershipRoleRow = {
@@ -71,6 +72,7 @@ export type TracePointAccess = {
   departmentId: string;
   departmentName: string;
   departmentShortName: string;
+  departmentPatchUrl: string;
   badgeNumber: string;
   rankTitle: string;
   unitName: string;
@@ -92,6 +94,7 @@ const EMPTY_ACCESS = {
   departmentId: "",
   departmentName: "",
   departmentShortName: "",
+  departmentPatchUrl: "",
   badgeNumber: "",
   rankTitle: "",
   unitName: "",
@@ -163,7 +166,7 @@ export function useTracePointAccess(): TracePointAccess {
     if (departmentId) {
       const { data: departmentData } = await supabase
         .from("departments")
-        .select("name,short_name")
+        .select("name,short_name,patch_url")
         .eq("id", departmentId)
         .maybeSingle();
 
@@ -265,6 +268,7 @@ export function useTracePointAccess(): TracePointAccess {
         department?.short_name?.trim() ||
         department?.name?.trim() ||
         "TracePoint",
+      departmentPatchUrl: department?.patch_url?.trim() || "",
       badgeNumber: membership?.badge_number?.trim() || "",
       rankTitle: membership?.rank_title?.trim() || "",
       unitName: membership?.unit_name?.trim() || "",
@@ -279,6 +283,24 @@ export function useTracePointAccess(): TracePointAccess {
 
   useEffect(() => {
     void loadAccess();
+  }, [loadAccess]);
+
+  useEffect(() => {
+    const handleDepartmentUpdated = () => {
+      void loadAccess();
+    };
+
+    window.addEventListener(
+      "tracepoint:department-updated",
+      handleDepartmentUpdated,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "tracepoint:department-updated",
+        handleDepartmentUpdated,
+      );
+    };
   }, [loadAccess]);
 
   const permissionSet = useMemo(
