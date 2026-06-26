@@ -190,8 +190,9 @@ export function useTracePointAccess(): TracePointAccess {
               .select("code,display_name")
               .in("code", roleCodes),
             supabase
-              .from("role_permissions")
+              .from("department_role_permissions")
               .select("permission_code")
+              .eq("department_id", departmentId)
               .in("role_code", roleCodes),
           ]);
 

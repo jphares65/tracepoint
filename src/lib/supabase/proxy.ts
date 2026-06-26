@@ -202,8 +202,9 @@ export async function updateSession(request: NextRequest) {
 
   const { data: permissionData, error: permissionError } =
     await supabase
-      .from("role_permissions")
+      .from("department_role_permissions")
       .select("permission_code")
+      .eq("department_id", departmentId)
       .in("role_code", roleCodes);
 
   if (permissionError) {

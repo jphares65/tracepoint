@@ -39,6 +39,9 @@ export type Database = {
       role_permissions: GenericTable;
       department_memberships: GenericTable;
       department_membership_roles: GenericTable;
+      department_rules: GenericTable;
+      department_security_settings: GenericTable;
+      department_role_permissions: GenericTable;
       firearms: GenericTable;
       firearm_assignments: GenericTable;
       firearm_inspections: GenericTable;
@@ -68,6 +71,59 @@ export type Database = {
       v_latest_qualification_results: GenericView;
     };
     Functions: {
+      get_department_members: {
+        Args: {
+          p_department_id: string;
+        };
+        Returns: Array<{
+          user_id: string;
+          full_name: string;
+          email: string | null;
+          badge_number: string | null;
+          rank_title: string | null;
+          unit_name: string | null;
+          employee_number: string | null;
+          is_active: boolean;
+          joined_at: string;
+          role_codes: string[];
+          effective_permissions: string[];
+        }>;
+      };
+      set_department_member_roles: {
+        Args: {
+          p_department_id: string;
+          p_user_id: string;
+          p_role_codes: string[];
+        };
+        Returns: undefined;
+      };
+      update_department_member: {
+        Args: {
+          p_department_id: string;
+          p_user_id: string;
+          p_badge_number: string;
+          p_rank_title: string;
+          p_unit_name: string;
+          p_employee_number: string;
+          p_is_active: boolean;
+        };
+        Returns: undefined;
+      };
+      set_department_role_permissions: {
+        Args: {
+          p_department_id: string;
+          p_role_code: string;
+          p_permission_codes: string[];
+        };
+        Returns: undefined;
+      };
+      can_manage_department_member: {
+        Args: {
+          p_department_id: string;
+          p_target_user_id: string;
+        };
+        Returns: boolean;
+      };
       create_department_with_owner: {
         Args: {
           p_name: string;
