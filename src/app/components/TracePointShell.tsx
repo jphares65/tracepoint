@@ -19,66 +19,153 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { hasPermission } from "@/app/lib/tracepoint/current-user";
+
+import {
+  meetsPermissionRequirement,
+  type PermissionRequirement,
+  type TracePointPermission,
+} from "@/lib/tracepoint/permissions";
+import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type TracePointShellProps = {
   activePage: string;
   children: ReactNode;
 };
 
-const BASE_NAV_ITEMS = [
+type NavigationItem = {
+  label: string;
+  href: string;
+  icon: typeof House;
+  requirement?: PermissionRequirement;
+};
+
+const NAV_ITEMS: NavigationItem[] = [
   { label: "My Home", href: "/", icon: House },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Firearms", href: "/firearms", icon: Crosshair },
-  { label: "Off-Duty Firearms", href: "/off-duty-firearms", icon: Shield },
-  { label: "Qualifications", href: "/qualifications", icon: ShieldCheck },
-  { label: "Range & Training", href: "/range-days", icon: CalendarRange },
-  { label: "Inspections", href: "/inspections", icon: ClipboardList },
-  { label: "Settings", href: "/settings", icon: Settings },
+  {
+    label: "Command Dashboard",
+    href: "/command-dashboard",
+    icon: Activity,
+    requirement: { anyOf: ["view_command_dashboard"] },
+  },
+  {
+    label: "Analytics",
+    href: "/Analytics",
+    icon: BarChart3,
+    requirement: { anyOf: ["view_analytics"] },
+  },
+  {
+    label: "Firearms",
+    href: "/firearms",
+    icon: Crosshair,
+    requirement: {
+      anyOf: [
+        "manage_firearms",
+        "manage_inspections",
+        "view_command_dashboard",
+      ],
+    },
+  },
+  {
+    label: "Off-Duty Firearms",
+    href: "/off-duty-firearms",
+    icon: Shield,
+    requirement: {
+      anyOf: [
+        "submit_off_duty_requests",
+        "review_off_duty_requests",
+      ],
+    },
+  },
+  {
+    label: "Qualifications",
+    href: "/qualifications",
+    icon: ShieldCheck,
+    requirement: {
+      anyOf: [
+        "manage_qualifications",
+        "score_range_days",
+        "view_analytics",
+      ],
+    },
+  },
+  {
+    label: "Range & Training",
+    href: "/range-days",
+    icon: CalendarRange,
+    requirement: {
+      anyOf: [
+        "manage_range_days",
+        "score_range_days",
+        "view_command_dashboard",
+      ],
+    },
+  },
+  {
+    label: "Inspections",
+    href: "/inspections",
+    icon: ClipboardList,
+    requirement: {
+      anyOf: [
+        "manage_inspections",
+        "manage_firearms",
+        "view_command_dashboard",
+      ],
+    },
+  },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: Settings,
+    requirement: {
+      anyOf: ["manage_users", "administer_department"],
+    },
+  },
 ];
 
-function getNavItems() {
-  if (!hasPermission("view_command_dashboard")) {
-    return BASE_NAV_ITEMS;
-  }
-
-  return [
-    BASE_NAV_ITEMS[0],
-    {
-      label: "Command Dashboard",
-      href: "/command-dashboard",
-      icon: Activity,
-    },
-    ...BASE_NAV_ITEMS.slice(1),
-  ];
+function getNavItems(permissions: TracePointPermission[]) {
+  return NAV_ITEMS.filter((item) =>
+    meetsPermissionRequirement(permissions, item.requirement),
+  );
 }
 
 function isActivePage(activePage: string, itemLabel: string) {
   return (
     activePage === itemLabel ||
-    (activePage === "Dashboard" && itemLabel === "Command Dashboard") ||
-    (activePage === "Firearms Repository" && itemLabel === "Firearms") ||
-    (activePage === "Off-Duty" && itemLabel === "Off-Duty Firearms") ||
-    (activePage === "Range Days" && itemLabel === "Range & Training")
+    (activePage === "Dashboard" &&
+      itemLabel === "Command Dashboard") ||
+    (activePage === "Firearms Repository" &&
+      itemLabel === "Firearms") ||
+    (activePage === "Off-Duty" &&
+      itemLabel === "Off-Duty Firearms") ||
+    (activePage === "Range Days" &&
+      itemLabel === "Range & Training")
   );
 }
 
 function isActiveRoute(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
+  const normalizedPath = pathname.toLowerCase();
+  const normalizedHref = href.toLowerCase();
 
-  return pathname === href || pathname.startsWith(`${href}/`);
+  if (normalizedHref === "/") return normalizedPath === "/";
+
+  return (
+    normalizedPath === normalizedHref ||
+    normalizedPath.startsWith(`${normalizedHref}/`)
+  );
 }
 
 function NavigationLinks({
   activePage,
   pathname,
+  permissions,
   onNavigate,
 }: {
   activePage: string;
   pathname: string;
+  permissions: TracePointPermission[];
   onNavigate?: () => void;
 }) {
-  const navItems = getNavItems();
+  const navItems = getNavItems(permissions);
 
   return (
     <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-5">
@@ -125,7 +212,15 @@ function NavigationLinks({
   );
 }
 
-function AgencyCard() {
+function AgencyCard({
+  departmentName,
+  roleLabel,
+  loading,
+}: {
+  departmentName: string;
+  roleLabel: string;
+  loading: boolean;
+}) {
   return (
     <div className="border-t border-slate-800 p-4">
       <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
@@ -140,17 +235,23 @@ function AgencyCard() {
 
           <div className="min-w-0">
             <p className="truncate text-[13px] font-semibold text-slate-100">
-              Readington PD
+              {departmentName}
             </p>
 
-            <p className="text-[11px] text-slate-500">Administrator</p>
+            <p className="text-[11px] text-slate-500">
+              {loading ? "Verifying access..." : roleLabel}
+            </p>
           </div>
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800 pt-3">
           <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            System Online
+            <span
+              className={`h-2 w-2 rounded-full ${
+                loading ? "bg-amber-400" : "bg-emerald-500"
+              }`}
+            />
+            {loading ? "Loading permissions" : "Access verified"}
           </div>
 
           <form action="/auth/signout" method="post">
@@ -193,6 +294,13 @@ export default function TracePointShell({
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const {
+    loading,
+    departmentShortName,
+    primaryRoleLabel,
+    permissions,
+  } = useTracePointAccess();
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="flex min-h-screen">
@@ -201,9 +309,17 @@ export default function TracePointShell({
             <BrandHeader />
           </div>
 
-          <NavigationLinks activePage={activePage} pathname={pathname} />
+          <NavigationLinks
+            activePage={activePage}
+            pathname={pathname}
+            permissions={permissions}
+          />
 
-          <AgencyCard />
+          <AgencyCard
+            departmentName={departmentShortName || "TracePoint"}
+            roleLabel={primaryRoleLabel}
+            loading={loading}
+          />
         </aside>
 
         {mobileOpen && (
@@ -232,10 +348,15 @@ export default function TracePointShell({
               <NavigationLinks
                 activePage={activePage}
                 pathname={pathname}
+                permissions={permissions}
                 onNavigate={() => setMobileOpen(false)}
               />
 
-              <AgencyCard />
+              <AgencyCard
+                departmentName={departmentShortName || "TracePoint"}
+                roleLabel={primaryRoleLabel}
+                loading={loading}
+              />
             </aside>
           </div>
         )}

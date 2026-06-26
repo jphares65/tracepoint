@@ -33,8 +33,8 @@ import type {
 
 import {
   CURRENT_USER_PROFILE,
-  hasPermission,
 } from "@/app/lib/tracepoint/current-user";
+import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { MOCK_FIREARMS } from "@/app/lib/tracepoint/mock-data";
 
 type StoredRangeDay = RangeDay & {
@@ -347,6 +347,10 @@ function SnapshotCard({
 }
 
 export default function MyTracePointHomePage() {
+  const {
+    hasPermission: userHasPermission,
+  } = useTracePointAccess();
+
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
   const [storedInbox, setStoredInbox] = useState<InboxItem[]>([]);
@@ -561,7 +565,7 @@ export default function MyTracePointHomePage() {
 
     if (
       item.audience === "Chief" &&
-      hasPermission("approve_off_duty_firearms")
+      userHasPermission("review_off_duty_requests")
     ) {
       return true;
     }
@@ -764,7 +768,7 @@ export default function MyTracePointHomePage() {
               </p>
             </div>
 
-            {hasPermission("view_command_dashboard") && (
+            {userHasPermission("view_command_dashboard") && (
               <Link
                 href="/command-dashboard"
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-[12px] font-semibold text-blue-200 hover:bg-blue-500/20"
