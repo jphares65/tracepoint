@@ -3,10 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   BarChart3,
+  BellRing,
   CalendarRange,
   ClipboardList,
   Crosshair,
@@ -18,6 +19,15 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+
+import { createClient } from "@/lib/supabase/client";
+import {
+  applyAppearanceToDocument,
+  buildAppearancePreferences,
+  getStoredAppearancePreferences,
+  TRACEPOINT_APPEARANCE_EVENT,
+  type TracePointAppearancePreferences,
+} from "@/lib/tracepoint/appearance";
 
 import {
   meetsPermissionRequirement,
@@ -38,6 +48,11 @@ type NavigationItem = {
   requirement?: PermissionRequirement;
 };
 
+type DepartmentAppearanceRow = {
+  accent_color?: string | null;
+  login_theme?: string | null;
+};
+
 const NAV_ITEMS: NavigationItem[] = [
   { label: "My Home", href: "/", icon: House },
   {
@@ -48,12 +63,25 @@ const NAV_ITEMS: NavigationItem[] = [
   },
   {
     label: "Analytics",
-    href: "/Analytics",
+    href: "/analytics",
     icon: BarChart3,
     requirement: { anyOf: ["view_analytics"] },
   },
   {
-    label: "Firearms",
+    label: "Training Alerts",
+    href: "/training-alerts",
+    icon: BellRing,
+    requirement: {
+      anyOf: [
+        "view_analytics",
+        "manage_qualifications",
+        "score_range_days",
+        "view_command_dashboard",
+      ],
+    },
+  },
+  {
+    label: "Armory",
     href: "/firearms",
     icon: Crosshair,
     requirement: {
@@ -76,7 +104,7 @@ const NAV_ITEMS: NavigationItem[] = [
     },
   },
   {
-    label: "Qualifications",
+    label: "Qualification History",
     href: "/qualifications",
     icon: ShieldCheck,
     requirement: {
@@ -132,10 +160,17 @@ function isActivePage(activePage: string, itemLabel: string) {
     activePage === itemLabel ||
     (activePage === "Dashboard" &&
       itemLabel === "Command Dashboard") ||
-    (activePage === "Firearms Repository" &&
-      itemLabel === "Firearms") ||
+    ((activePage === "Firearms Repository" ||
+      activePage === "Firearms" ||
+      activePage === "Armory") &&
+      itemLabel === "Armory") ||
     (activePage === "Off-Duty" &&
       itemLabel === "Off-Duty Firearms") ||
+    (activePage === "Training Alerts" &&
+      itemLabel === "Training Alerts") ||
+    ((activePage === "Qualifications" ||
+      activePage === "Qualification History") &&
+      itemLabel === "Qualification History") ||
     (activePage === "Range Days" &&
       itemLabel === "Range & Training")
   );
@@ -283,6 +318,48 @@ function AgencyCard({
   );
 }
 
+function AppearanceStyleOverrides() {
+  return (
+    <style>{`
+      .tracepoint-accent-indigo [class*="text-blue-"] { color: rgb(129 140 248) !important; }
+      .tracepoint-accent-indigo [class*="bg-blue-600"] { background-color: rgb(79 70 229) !important; }
+      .tracepoint-accent-indigo [class*="bg-blue-500"] { background-color: rgb(99 102 241) !important; }
+      .tracepoint-accent-indigo [class*="bg-blue-500/"] { background-color: rgb(99 102 241 / 0.14) !important; }
+      .tracepoint-accent-indigo [class*="bg-blue-600/"] { background-color: rgb(79 70 229 / 0.20) !important; }
+      .tracepoint-accent-indigo [class*="border-blue-"] { border-color: rgb(129 140 248 / 0.45) !important; }
+      .tracepoint-accent-indigo [class*="ring-blue-"] { --tw-ring-color: rgb(129 140 248 / 0.16) !important; }
+
+      .tracepoint-accent-emerald [class*="text-blue-"] { color: rgb(52 211 153) !important; }
+      .tracepoint-accent-emerald [class*="bg-blue-600"] { background-color: rgb(5 150 105) !important; }
+      .tracepoint-accent-emerald [class*="bg-blue-500"] { background-color: rgb(16 185 129) !important; }
+      .tracepoint-accent-emerald [class*="bg-blue-500/"] { background-color: rgb(16 185 129 / 0.14) !important; }
+      .tracepoint-accent-emerald [class*="bg-blue-600/"] { background-color: rgb(5 150 105 / 0.20) !important; }
+      .tracepoint-accent-emerald [class*="border-blue-"] { border-color: rgb(52 211 153 / 0.45) !important; }
+      .tracepoint-accent-emerald [class*="ring-blue-"] { --tw-ring-color: rgb(52 211 153 / 0.16) !important; }
+
+      .tracepoint-accent-slate [class*="text-blue-"] { color: rgb(203 213 225) !important; }
+      .tracepoint-accent-slate [class*="bg-blue-600"] { background-color: rgb(71 85 105) !important; }
+      .tracepoint-accent-slate [class*="bg-blue-500"] { background-color: rgb(100 116 139) !important; }
+      .tracepoint-accent-slate [class*="bg-blue-500/"] { background-color: rgb(100 116 139 / 0.14) !important; }
+      .tracepoint-accent-slate [class*="bg-blue-600/"] { background-color: rgb(71 85 105 / 0.20) !important; }
+      .tracepoint-accent-slate [class*="border-blue-"] { border-color: rgb(148 163 184 / 0.45) !important; }
+      .tracepoint-accent-slate [class*="ring-blue-"] { --tw-ring-color: rgb(148 163 184 / 0.16) !important; }
+
+      .tracepoint-brightness-balanced [class*="bg-slate-950"] { background-color: rgb(15 23 42 / var(--tw-bg-opacity, 1)) !important; }
+      .tracepoint-brightness-balanced [class*="bg-slate-900"] { background-color: rgb(30 41 59 / var(--tw-bg-opacity, 1)) !important; }
+      .tracepoint-brightness-balanced [class*="bg-slate-800"] { background-color: rgb(51 65 85 / var(--tw-bg-opacity, 1)) !important; }
+      .tracepoint-brightness-balanced [class*="text-slate-600"] { color: rgb(148 163 184) !important; }
+      .tracepoint-brightness-balanced [class*="text-slate-500"] { color: rgb(148 163 184) !important; }
+
+      .tracepoint-brightness-high-contrast [class*="bg-slate-950"] { background-color: rgb(2 6 23 / var(--tw-bg-opacity, 1)) !important; }
+      .tracepoint-brightness-high-contrast [class*="bg-slate-900"] { background-color: rgb(15 23 42 / var(--tw-bg-opacity, 1)) !important; }
+      .tracepoint-brightness-high-contrast [class*="border-slate-800"] { border-color: rgb(71 85 105) !important; }
+      .tracepoint-brightness-high-contrast [class*="text-slate-500"] { color: rgb(148 163 184) !important; }
+      .tracepoint-brightness-high-contrast [class*="text-slate-400"] { color: rgb(203 213 225) !important; }
+    `}</style>
+  );
+}
+
 function BrandHeader({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className="block min-w-0">
@@ -306,17 +383,91 @@ export default function TracePointShell({
 }: TracePointShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [appearance, setAppearance] =
+    useState<TracePointAppearancePreferences>(
+      getStoredAppearancePreferences,
+    );
 
   const {
     loading,
+    departmentId,
     departmentShortName,
     departmentPatchUrl,
     primaryRoleLabel,
     permissions,
   } = useTracePointAccess();
 
+  useEffect(() => {
+    applyAppearanceToDocument(appearance);
+  }, [appearance]);
+
+  useEffect(() => {
+    function handleAppearanceUpdated(event: Event) {
+      const next =
+        (event as CustomEvent<TracePointAppearancePreferences>).detail ??
+        getStoredAppearancePreferences();
+
+      setAppearance(next);
+      applyAppearanceToDocument(next);
+    }
+
+    window.addEventListener(
+      TRACEPOINT_APPEARANCE_EVENT,
+      handleAppearanceUpdated,
+    );
+
+    return () => {
+      window.removeEventListener(
+        TRACEPOINT_APPEARANCE_EVENT,
+        handleAppearanceUpdated,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!departmentId) return;
+
+    let active = true;
+
+    async function loadDepartmentAppearance() {
+      const supabase = createClient();
+
+      const { data } = await supabase
+        .from("departments")
+        .select("accent_color,login_theme")
+        .eq("id", departmentId)
+        .maybeSingle();
+
+      if (!active || !data) return;
+
+      const departmentAppearance =
+        data as DepartmentAppearanceRow | null;
+
+      const next = buildAppearancePreferences(
+        departmentAppearance?.accent_color,
+        departmentAppearance?.login_theme,
+      );
+
+      setAppearance(next);
+      applyAppearanceToDocument(next);
+      window.localStorage.setItem(
+        "tracepoint.appearance.v1",
+        JSON.stringify(next),
+      );
+    }
+
+    void loadDepartmentAppearance();
+
+    return () => {
+      active = false;
+    };
+  }, [departmentId]);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div
+      className={`tracepoint-app tracepoint-accent-${appearance.accentColor} tracepoint-brightness-${appearance.brightness} min-h-screen bg-slate-950 text-white`}
+    >
+      <AppearanceStyleOverrides />
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
           <div className="border-b border-slate-800 px-5 py-3.5">

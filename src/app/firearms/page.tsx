@@ -936,18 +936,18 @@ export default function FirearmsPage() {
   ).length;
 
   return (
-    <TracePointShell activePage="Firearms">
+    <TracePointShell activePage="Armory">
       <div className="mx-auto w-full max-w-[1600px] space-y-5">
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-[22px] font-bold text-white">
-                Firearm History
+                Firearms Inventory
               </h1>
               <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
-                Review each firearm's assignment references, day/night qualification
-                history, range usage, malfunctions, and inspection concerns from
-                saved TracePoint range records.
+                Manage the department armory view: custody history, assigned
+                firearms, range usage, malfunctions, maintenance concerns, and
+                supporting qualification references.
               </p>
             </div>
 

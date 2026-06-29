@@ -162,8 +162,9 @@ export async function POST(request: NextRequest) {
       const { data, error } =
         await admin.auth.admin.inviteUserByEmail(email, {
           data: { full_name: fullName },
-          redirectTo: `${siteUrl}/auth/callback?next=/`,
-        });
+redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(
+  "/auth/setup",
+)}`,        });
 
       if (error) throw error;
       targetUser = data.user;

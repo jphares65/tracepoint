@@ -34,6 +34,12 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import { createClient } from "@/lib/supabase/client";
+import {
+  buildAppearancePreferences,
+  normalizeAccentColor,
+  normalizeBrightness,
+  persistAndApplyAppearance,
+} from "@/lib/tracepoint/appearance";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
@@ -184,6 +190,12 @@ const ACCENT_OPTIONS = [
   { value: "indigo", label: "Indigo" },
   { value: "emerald", label: "Emerald" },
   { value: "slate", label: "Slate" },
+];
+
+const BRIGHTNESS_OPTIONS = [
+  { value: "dark", label: "Standard Dark" },
+  { value: "balanced", label: "Brighter Interface" },
+  { value: "high-contrast", label: "High Contrast" },
 ];
 
 const TIMEZONE_OPTIONS = [
@@ -873,8 +885,12 @@ export default function AdminSettingsPage() {
           departmentData.primary_contact_user_id ?? "",
         ),
         patch_url: String(departmentData.patch_url ?? ""),
-        accent_color: String(departmentData.accent_color ?? "blue"),
-        login_theme: String(departmentData.login_theme ?? "dark"),
+        accent_color: normalizeAccentColor(
+          departmentData.accent_color,
+        ),
+        login_theme: normalizeBrightness(
+          departmentData.login_theme,
+        ),
       });
 
       const rulesData = rulesResult.data as unknown as
@@ -1063,13 +1079,13 @@ export default function AdminSettingsPage() {
   }, [accessLoading, departmentId, loadSettings]);
 
   useEffect(() => {
-    if (
-      availableTabs.length > 0 &&
-      !availableTabs.some((tab) => tab.id === activeTab)
-    ) {
-      setActiveTab(availableTabs[0].id);
-    }
-  }, [activeTab, availableTabs]);
+    const nextAppearance = buildAppearancePreferences(
+      department.accent_color,
+      department.login_theme,
+    );
+
+    persistAndApplyAppearance(nextAppearance);
+  }, [department.accent_color, department.login_theme]);
 
   async function saveAgency() {
     if (!canAdminister || !departmentId) return;
@@ -1165,6 +1181,13 @@ export default function AdminSettingsPage() {
         .eq("id", departmentId);
 
       if (error) throw error;
+
+      persistAndApplyAppearance(
+        buildAppearancePreferences(
+          department.accent_color,
+          department.login_theme,
+        ),
+      );
 
       await refreshAccess();
       window.dispatchEvent(
@@ -2196,7 +2219,7 @@ export default function AdminSettingsPage() {
           <div className="grid gap-4 xl:grid-cols-2">
             <SettingsCard
               title="Department Branding"
-              description="Configure the department identity displayed throughout TracePoint."
+              description="Configure the department identity and app appearance displayed throughout TracePoint."
             >
               <div className="space-y-4">
                 <TextInput
@@ -2213,28 +2236,26 @@ export default function AdminSettingsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <SelectInput
-                    label="Primary accent"
-                    value={department.accent_color}
+                    label="Color palette"
+                    value={normalizeAccentColor(department.accent_color)}
                     options={ACCENT_OPTIONS}
+                    hint="Applies immediately to navigation, buttons, highlights, and key interface accents."
                     onChange={(value) =>
                       setDepartment((current) => ({
                         ...current,
-                        accent_color: value,
+                        accent_color: normalizeAccentColor(value),
                       }))
                     }
                   />
                   <SelectInput
-                    label="Login theme"
-                    value={department.login_theme}
-                    options={[
-                      { value: "dark", label: "Dark" },
-                      { value: "light", label: "Light" },
-                      { value: "system", label: "System Default" },
-                    ]}
+                    label="Screen brightness"
+                    value={normalizeBrightness(department.login_theme)}
+                    options={BRIGHTNESS_OPTIONS}
+                    hint="Applies immediately and persists for this browser after save."
                     onChange={(value) =>
                       setDepartment((current) => ({
                         ...current,
-                        login_theme: value,
+                        login_theme: normalizeBrightness(value),
                       }))
                     }
                   />
