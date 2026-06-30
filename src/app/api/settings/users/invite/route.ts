@@ -18,6 +18,23 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getRequestOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+
+  if (origin) {
+    return origin.replace(/\/$/, "");
+  }
+
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, "");
+  }
+
+  return request.nextUrl.origin.replace(/\/$/, "");
+}
+
 function uniqueRoleCodes(value: unknown) {
   if (!Array.isArray(value)) return [];
 
@@ -80,6 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     const server = await createServerClient();
+
     const {
       data: { user: actor },
       error: actorError,
@@ -155,18 +173,17 @@ export async function POST(request: NextRequest) {
     let invitationSent = false;
 
     if (!targetUser) {
-      const siteUrl =
-        process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-        request.nextUrl.origin;
+      const siteUrl = getRequestOrigin(request);
 
-      const { data, error } =
-        await admin.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: fullName },
-redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(
-  "/auth/setup",
-)}`,        });
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+        data: { full_name: fullName },
+        redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(
+          "/auth/setup",
+        )}`,
+      });
 
       if (error) throw error;
+
       targetUser = data.user;
       invitationSent = true;
     }
