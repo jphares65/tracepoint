@@ -12,6 +12,23 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getRequestOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+
+  if (origin) {
+    return origin.replace(/\/$/, "");
+  }
+
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, "");
+  }
+
+  return request.nextUrl.origin.replace(/\/$/, "");
+}
+
 async function findUserByEmail(
   admin: ReturnType<typeof createAdminClient>,
   email: string,
@@ -138,9 +155,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-      request.nextUrl.origin;
+    const siteUrl = getRequestOrigin(request);
 
     const { error: resetError } = await admin.auth.resetPasswordForEmail(email, {
       redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(
