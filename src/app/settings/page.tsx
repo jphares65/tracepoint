@@ -706,7 +706,9 @@ export default function AdminSettingsPage() {
     TracePointPermission[]
   >([]);
   const [uploadingPatch, setUploadingPatch] = useState(false);
-
+  const [passwordResetEmail, setPasswordResetEmail] = useState<string | null>(
+    null,
+  );
   const availableTabs = useMemo(() => {
     const items: Array<{
       id: TabId;
@@ -1454,6 +1456,55 @@ export default function AdminSettingsPage() {
     }
   }
 
+  async function handleSendPasswordReset(userEmail: string) {
+    if (!departmentId || !canManageUsers || !userEmail) return;
+
+    const confirmed = window.confirm(
+      `Send a password reset email to ${userEmail}?`,
+    );
+
+    if (!confirmed) return;
+
+    setPasswordResetEmail(userEmail);
+
+    try {
+      const response = await fetch("/api/settings/users/password-reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          departmentId,
+          email: userEmail,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error ?? "Password reset could not be sent.");
+      }
+
+      showNotice(
+        "success",
+        result.message ?? `Password reset sent to ${userEmail}.`,
+      );
+    } catch (error) {
+      showNotice(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Password reset could not be sent.",
+      );
+    } finally {
+      setPasswordResetEmail(null);
+    }
+  }
+
   async function uploadPatch(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -1974,7 +2025,7 @@ export default function AdminSettingsPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center justify-end gap-3">
                         <div className="hidden text-right sm:block">
                           <p className="text-xs font-medium text-slate-400">
                             {member.effective_permissions.length} effective
@@ -1984,6 +2035,31 @@ export default function AdminSettingsPage() {
                             Joined {formatDateTime(member.joined_at)}
                           </p>
                         </div>
+
+                        {member.email ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleSendPasswordReset(member.email ?? "")
+                            }
+                            disabled={
+                              !canManageUsers ||
+                              passwordResetEmail === member.email ||
+                              (member.role_codes.includes("administrator") &&
+                                !canAdminister)
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-3.5 py-2 text-sm font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {passwordResetEmail === member.email ? (
+                              <LoaderCircle size={14} className="animate-spin" />
+                            ) : (
+                              <Mail size={14} />
+                            )}
+                            {passwordResetEmail === member.email
+                              ? "Sending..."
+                              : "Send Password Reset"}
+                          </button>
+                        ) : null}
 
                         {member.role_codes.includes("administrator") &&
                         !canAdminister ? (
