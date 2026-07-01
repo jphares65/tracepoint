@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
   ClipboardList,
   Crosshair,
+  ExternalLink,
   Filter,
   History,
   Search,
@@ -34,12 +36,19 @@ import {
 
 type MockFirearm = (typeof MOCK_FIREARMS)[number];
 
+type CurrentFirearmStatus =
+  | "In Service"
+  | "Assigned"
+  | "Out of Service"
+  | "Maintenance"
+  | "Inspection Required"
+  | "Retired";
+
 type FirearmHistoryStatus =
-  | "Qualified"
-  | "Missing Night"
+  | "Ready"
   | "Attention"
-  | "No Qual"
-  | "Out of Service";
+  | "Out of Service"
+  | "No Linked Qualification";
 
 type FirearmStatusFilter = "All" | FirearmHistoryStatus;
 
@@ -92,7 +101,8 @@ type FirearmHistoryRecord = {
   shortName: string;
   serialNumber: string;
   typeLabel: string;
-  statusLabel: string;
+  sourceStatusLabel: string;
+  currentStatus: CurrentFirearmStatus;
   assignedOfficerIds: string[];
   lastRosteredOfficerIds: string[];
   useEvents: FirearmUseEvent[];
@@ -105,11 +115,14 @@ type FirearmHistoryRecord = {
   unresolvedMalfunctions: FirearmMalfunction[];
   removedFromServiceCount: number;
   inspectionRequiredCount: number;
-  status: FirearmHistoryStatus;
+  operationalStatus: FirearmHistoryStatus;
   statusReason: string;
 };
 
+type StatusOverrides = Record<string, CurrentFirearmStatus>;
+
 const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
+const FIREARM_STATUS_STORAGE_KEY = "tracepoint.armory.statusOverrides.v1";
 
 const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   rangeDays: [],
@@ -120,13 +133,21 @@ const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   malfunctions: [],
 };
 
+const CURRENT_STATUS_OPTIONS: CurrentFirearmStatus[] = [
+  "In Service",
+  "Assigned",
+  "Out of Service",
+  "Maintenance",
+  "Inspection Required",
+  "Retired",
+];
+
 const STATUS_FILTERS: FirearmStatusFilter[] = [
   "All",
-  "Qualified",
-  "Missing Night",
+  "Ready",
   "Attention",
-  "No Qual",
   "Out of Service",
+  "No Linked Qualification",
 ];
 
 const TYPE_FILTERS = [
@@ -172,6 +193,40 @@ function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
     console.warn("Could not load saved range day workspace.", error);
     return null;
   }
+}
+
+function loadStatusOverrides(): StatusOverrides {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const storedOverrides = window.localStorage.getItem(
+      FIREARM_STATUS_STORAGE_KEY,
+    );
+
+    if (!storedOverrides) return {};
+
+    const parsed = JSON.parse(storedOverrides) as Record<string, unknown>;
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, CurrentFirearmStatus] =>
+          typeof entry[1] === "string" &&
+          CURRENT_STATUS_OPTIONS.includes(entry[1] as CurrentFirearmStatus),
+      ),
+    );
+  } catch (error) {
+    console.warn("Could not load saved firearm status overrides.", error);
+    return {};
+  }
+}
+
+function persistStatusOverrides(overrides: StatusOverrides) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(
+    FIREARM_STATUS_STORAGE_KEY,
+    JSON.stringify(overrides),
+  );
 }
 
 function getRecordValue(item: unknown, keys: string[]) {
@@ -260,8 +315,38 @@ function getFirearmStatusLabel(firearm: MockFirearm) {
       "inventoryStatus",
       "serviceStatus",
       "operationalStatus",
-    ]) ?? "Active"
+    ]) ?? "In Service"
   );
+}
+
+function normalizeCurrentStatus(value?: string): CurrentFirearmStatus {
+  const normalized = value?.toLowerCase() ?? "";
+
+  if (normalized.includes("assigned") || normalized.includes("issued")) {
+    return "Assigned";
+  }
+
+  if (
+    normalized.includes("out") ||
+    normalized.includes("oos") ||
+    normalized.includes("inactive")
+  ) {
+    return "Out of Service";
+  }
+
+  if (normalized.includes("maintenance") || normalized.includes("repair")) {
+    return "Maintenance";
+  }
+
+  if (normalized.includes("inspection")) {
+    return "Inspection Required";
+  }
+
+  if (normalized.includes("retired")) {
+    return "Retired";
+  }
+
+  return "In Service";
 }
 
 function getDirectAssignedOfficerId(firearm: MockFirearm) {
@@ -275,15 +360,12 @@ function getDirectAssignedOfficerId(firearm: MockFirearm) {
   ]);
 }
 
-function isOutOfServiceStatus(statusLabel: string) {
-  const normalized = statusLabel.toLowerCase();
-
+function isOutOfServiceStatus(status: CurrentFirearmStatus) {
   return (
-    normalized.includes("out") ||
-    normalized.includes("oos") ||
-    normalized.includes("maintenance") ||
-    normalized.includes("repair") ||
-    normalized.includes("inactive")
+    status === "Out of Service" ||
+    status === "Maintenance" ||
+    status === "Inspection Required" ||
+    status === "Retired"
   );
 }
 
@@ -320,21 +402,22 @@ function getRunLabel(drill?: RangeDayDrill, runNumber?: number) {
   return `Run ${runNumber ?? 1}`;
 }
 
-function getStatusTone(status: FirearmHistoryStatus) {
-  if (status === "Qualified") return "green";
-  if (status === "Missing Night") return "blue";
+function getOperationalStatusTone(status: FirearmHistoryStatus) {
+  if (status === "Ready") return "green";
   if (status === "Attention") return "amber";
   if (status === "Out of Service") return "red";
 
   return "slate";
 }
 
-function getQualificationLinkLabel(status: FirearmHistoryStatus) {
-  if (status === "No Qual") return "Not Linked";
-  if (status === "Missing Night") return "Incomplete";
-  if (status === "Qualified") return "Linked";
-  if (status === "Out of Service") return "Review";
-  return "Review";
+function getCurrentStatusTone(status: CurrentFirearmStatus) {
+  if (status === "In Service" || status === "Assigned") return "green";
+  if (status === "Maintenance" || status === "Inspection Required") {
+    return "amber";
+  }
+  if (status === "Out of Service" || status === "Retired") return "red";
+
+  return "slate";
 }
 
 function getPrimaryOfficerLabel(history: FirearmHistoryRecord) {
@@ -394,7 +477,7 @@ function StatCard({
 }
 
 function evaluateFirearmStatus({
-  statusLabel,
+  currentStatus,
   lastDayQualification,
   lastNightQualification,
   failedEvents,
@@ -402,62 +485,54 @@ function evaluateFirearmStatus({
   removedFromServiceCount,
   inspectionRequiredCount,
 }: {
-  statusLabel: string;
+  currentStatus: CurrentFirearmStatus;
   lastDayQualification?: FirearmUseEvent;
   lastNightQualification?: FirearmUseEvent;
   failedEvents: FirearmUseEvent[];
   unresolvedMalfunctions: FirearmMalfunction[];
   removedFromServiceCount: number;
   inspectionRequiredCount: number;
-}): { status: FirearmHistoryStatus; statusReason: string } {
-  if (isOutOfServiceStatus(statusLabel) || removedFromServiceCount > 0) {
+}): { operationalStatus: FirearmHistoryStatus; statusReason: string } {
+  if (isOutOfServiceStatus(currentStatus) || removedFromServiceCount > 0) {
     return {
-      status: "Out of Service",
+      operationalStatus: "Out of Service",
       statusReason:
         removedFromServiceCount > 0
           ? `${removedFromServiceCount} malfunction record(s) removed this firearm from service.`
-          : `Inventory status is ${statusLabel}.`,
+          : `Current firearm status is ${currentStatus}.`,
     };
   }
 
-  if (unresolvedMalfunctions.length > 0 || inspectionRequiredCount > 0) {
+  if (
+    unresolvedMalfunctions.length > 0 ||
+    inspectionRequiredCount > 0 ||
+    failedEvents.length > 0
+  ) {
     return {
-      status: "Attention",
-      statusReason: `${unresolvedMalfunctions.length} unresolved malfunction(s); ${inspectionRequiredCount} inspection-required record(s).`,
-    };
-  }
-
-  if (failedEvents.length > 0) {
-    return {
-      status: "Attention",
-      statusReason: `${failedEvents.length} failed qualification/drill record(s) are linked to this firearm.`,
+      operationalStatus: "Attention",
+      statusReason: `${unresolvedMalfunctions.length} unresolved malfunction(s), ${inspectionRequiredCount} inspection-required record(s), and ${failedEvents.length} failed record(s) are linked to this firearm.`,
     };
   }
 
   if (!lastDayQualification && !lastNightQualification) {
     return {
-      status: "No Qual",
+      operationalStatus: "No Linked Qualification",
       statusReason:
         "No day or night qualification record is currently linked to this firearm.",
     };
   }
 
-  if (!lastDayQualification || !lastNightQualification) {
-    return {
-      status: "Missing Night",
-      statusReason:
-        "Qualification references are incomplete because day and night records are not both present.",
-    };
-  }
-
   return {
-    status: "Qualified",
+    operationalStatus: "Ready",
     statusReason:
-      "Day and night qualification records are both linked to this firearm.",
+      "No open reliability flags are linked to this firearm record.",
   };
 }
 
-function buildFirearmHistories(workspace: StoredRangeDayWorkspace) {
+function buildFirearmHistories(
+  workspace: StoredRangeDayWorkspace,
+  statusOverrides: StatusOverrides,
+) {
   const rangeDayById = new Map(
     workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
   );
@@ -613,10 +688,12 @@ function buildFirearmHistories(workspace: StoredRangeDayWorkspace) {
     ).length;
 
     const typeLabel = getFirearmTypeLabel(firearm);
-    const statusLabel = getFirearmStatusLabel(firearm);
+    const sourceStatusLabel = getFirearmStatusLabel(firearm);
+    const currentStatus =
+      statusOverrides[firearm.id] ?? normalizeCurrentStatus(sourceStatusLabel);
 
     const evaluatedStatus = evaluateFirearmStatus({
-      statusLabel,
+      currentStatus,
       lastDayQualification,
       lastNightQualification,
       failedEvents,
@@ -632,7 +709,8 @@ function buildFirearmHistories(workspace: StoredRangeDayWorkspace) {
       shortName: getFirearmShortName(firearm),
       serialNumber: firearm.serialNumber,
       typeLabel,
-      statusLabel,
+      sourceStatusLabel,
+      currentStatus,
       assignedOfficerIds,
       lastRosteredOfficerIds,
       useEvents,
@@ -670,6 +748,24 @@ function DetailMetric({
   );
 }
 
+function ModuleLink({
+  href,
+  label,
+}: {
+  href: string;
+  label: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-blue-500/40 hover:text-white"
+    >
+      {label}
+      <ExternalLink size={12} />
+    </Link>
+  );
+}
+
 function FirearmInventoryTable({
   histories,
   selectedFirearmId,
@@ -682,15 +778,15 @@ function FirearmInventoryTable({
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
       <div className="hidden overflow-x-auto xl:block">
-        <table className="w-full min-w-[920px] text-left">
+        <table className="w-full min-w-[940px] text-left">
           <thead className="border-b border-slate-800 bg-slate-950/60">
             <tr className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
               <th className="px-4 py-3">Firearm</th>
               <th className="px-4 py-3">Serial</th>
               <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Assignment</th>
-              <th className="px-4 py-3">Inventory Status</th>
-              <th className="px-4 py-3">Qual Link</th>
+              <th className="px-4 py-3">Assigned / Reference</th>
+              <th className="px-4 py-3">Current Status</th>
+              <th className="px-4 py-3">Record Status</th>
               <th className="px-4 py-3 text-right">Open Issues</th>
             </tr>
           </thead>
@@ -723,7 +819,7 @@ function FirearmInventoryTable({
                         <p className="text-[13px] font-bold text-white">
                           {history.name}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
+                        <p className="mt-0.5 max-w-md truncate text-[11px] text-slate-500">
                           {history.statusReason}
                         </p>
                       </div>
@@ -744,19 +840,17 @@ function FirearmInventoryTable({
 
                   <td className="px-4 py-3">
                     <StatusPill
-                      label={history.statusLabel}
-                      tone={
-                        isOutOfServiceStatus(history.statusLabel)
-                          ? "red"
-                          : "green"
-                      }
+                      label={history.currentStatus}
+                      tone={getCurrentStatusTone(history.currentStatus)}
                     />
                   </td>
 
                   <td className="px-4 py-3">
                     <StatusPill
-                      label={getQualificationLinkLabel(history.status)}
-                      tone={getStatusTone(history.status)}
+                      label={history.operationalStatus}
+                      tone={getOperationalStatusTone(
+                        history.operationalStatus,
+                      )}
                     />
                   </td>
 
@@ -805,14 +899,17 @@ function FirearmInventoryTable({
                 </div>
 
                 <StatusPill
-                  label={getQualificationLinkLabel(history.status)}
-                  tone={getStatusTone(history.status)}
+                  label={history.currentStatus}
+                  tone={getCurrentStatusTone(history.currentStatus)}
                 />
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <StatusPill label={history.typeLabel} tone="slate" />
-                <StatusPill label={history.statusLabel} tone="slate" />
+                <StatusPill
+                  label={history.operationalStatus}
+                  tone={getOperationalStatusTone(history.operationalStatus)}
+                />
                 {issueCount > 0 ? (
                   <StatusPill label={`${issueCount} Issues`} tone="amber" />
                 ) : null}
@@ -836,17 +933,21 @@ function UseEventRow({ event }: { event: FirearmUseEvent }) {
         <div>
           <div className="mb-2 flex flex-wrap gap-2">
             <StatusPill label={event.runLabel} tone="slate" />
-            {event.passed === true && <StatusPill label="Pass" tone="green" />}
-            {event.passed === false && <StatusPill label="Fail" tone="red" />}
-            {event.passed === undefined && event.completed && (
+            {event.passed === true ? (
+              <StatusPill label="Pass" tone="green" />
+            ) : null}
+            {event.passed === false ? (
+              <StatusPill label="Fail" tone="red" />
+            ) : null}
+            {event.passed === undefined && event.completed ? (
               <StatusPill label="Completed" tone="green" />
-            )}
-            {event.deficiencyObserved && (
+            ) : null}
+            {event.deficiencyObserved ? (
               <StatusPill label="Deficiency" tone="red" />
-            )}
-            {event.malfunctionCount > 0 && (
+            ) : null}
+            {event.malfunctionCount > 0 ? (
               <StatusPill label="Malfunction" tone="amber" />
-            )}
+            ) : null}
           </div>
 
           <h4 className="text-[13px] font-bold text-white">
@@ -862,50 +963,6 @@ function UseEventRow({ event }: { event: FirearmUseEvent }) {
           <p>Officer: {getUserName(event.officerId)}</p>
         </div>
       </div>
-
-      <div className="mt-3 grid gap-2 text-[11px] text-slate-400 sm:grid-cols-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Score
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {event.score ?? "—"}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Category
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {event.drillCategory}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Instructor
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {getUserName(event.instructorId)}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Remedial
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {event.remedialTrainingRecommended ? "Yes" : "No"}
-          </p>
-        </div>
-      </div>
-
-      {event.notes ? (
-        <p className="mt-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[11px] text-slate-400">
-          {event.notes}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -958,9 +1015,14 @@ function MalfunctionRow({
 
 function SelectedFirearmPanel({
   history,
+  onStatusChange,
 }: {
   history: FirearmHistoryRecord;
+  onStatusChange: (firearmId: string, status: CurrentFirearmStatus) => void;
 }) {
+  const latestUse = history.useEvents[0];
+  const latestMalfunction = history.malfunctions[0];
+
   return (
     <aside className="space-y-4 xl:sticky xl:top-6">
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
@@ -968,11 +1030,10 @@ function SelectedFirearmPanel({
           <div>
             <div className="mb-2 flex flex-wrap gap-2">
               <StatusPill
-                label={getQualificationLinkLabel(history.status)}
-                tone={getStatusTone(history.status)}
+                label={history.currentStatus}
+                tone={getCurrentStatusTone(history.currentStatus)}
               />
               <StatusPill label={history.typeLabel} tone="slate" />
-              <StatusPill label={history.statusLabel} tone="slate" />
             </div>
 
             <h2 className="text-[20px] font-bold leading-tight text-white">
@@ -988,37 +1049,44 @@ function SelectedFirearmPanel({
           </div>
         </div>
 
-        <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-3 text-[12px] leading-5 text-slate-400">
-          {history.statusReason}
-        </p>
+        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+            Update Firearm Status
+          </label>
+          <select
+            value={history.currentStatus}
+            onChange={(event) =>
+              onStatusChange(
+                history.firearmId,
+                event.target.value as CurrentFirearmStatus,
+              )
+            }
+            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] font-semibold text-white outline-none transition focus:border-blue-500"
+          >
+            {CURRENT_STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-[11px] leading-4 text-slate-500">
+            Armory controls the current firearm status. Inspection,
+            maintenance, and qualification details are managed in their own
+            modules and surfaced here as linked history.
+          </p>
+        </div>
       </section>
 
       <section className="grid grid-cols-2 gap-3">
         <DetailMetric
-          label="Day Qual"
-          value={
-            history.lastDayQualification
-              ? formatDate(history.lastDayQualification.date)
-              : "Missing"
-          }
-          sub={
-            history.lastDayQualification
-              ? getUserName(history.lastDayQualification.officerId)
-              : "No linked record"
-          }
+          label="Assignment"
+          value={getPrimaryOfficerLabel(history)}
+          sub="Current or latest reference"
         />
         <DetailMetric
-          label="Night Qual"
-          value={
-            history.lastNightQualification
-              ? formatDate(history.lastNightQualification.date)
-              : "Missing"
-          }
-          sub={
-            history.lastNightQualification
-              ? getUserName(history.lastNightQualification.officerId)
-              : "No linked record"
-          }
+          label="Record Status"
+          value={history.operationalStatus}
+          sub="Computed from linked history"
         />
         <DetailMetric
           label="Open Issues"
@@ -1038,20 +1106,26 @@ function SelectedFirearmPanel({
       </section>
 
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-          <User size={15} className="text-blue-400" />
-          Assignment
-        </h3>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 text-[14px] font-bold text-white">
+            <User size={15} className="text-blue-400" />
+            Firearm Record
+          </h3>
+        </div>
 
         <div className="space-y-3">
           <DetailMetric
-            label="Current / Last Reference"
-            value={getPrimaryOfficerLabel(history)}
-            sub="Assignment or latest range roster"
+            label="Make / Model"
+            value={history.shortName}
+            sub={history.typeLabel}
           />
-
           <DetailMetric
-            label="All Officer References"
+            label="Serial Number"
+            value={history.serialNumber}
+            sub={`Original status: ${history.sourceStatusLabel}`}
+          />
+          <DetailMetric
+            label="Officer References"
             value={
               history.assignedOfficerIds.length > 0
                 ? history.assignedOfficerIds.map(getUserName).join(", ")
@@ -1063,21 +1137,19 @@ function SelectedFirearmPanel({
       </section>
 
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-          <ShieldAlert size={15} className="text-blue-400" />
-          Reliability Flags
-        </h3>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 text-[14px] font-bold text-white">
+            <ClipboardList size={15} className="text-blue-400" />
+            Linked Inspection / Maintenance
+          </h3>
+          <ModuleLink href="/inspections" label="Open Module" />
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <DetailMetric
-            label="Failed"
-            value={history.failedEvents.length}
-            sub="Linked records"
-          />
-          <DetailMetric
-            label="Inspections"
+            label="Inspection Req."
             value={history.inspectionRequiredCount}
-            sub="Required"
+            sub="From linked records"
           />
           <DetailMetric
             label="OOS Events"
@@ -1089,10 +1161,79 @@ function SelectedFirearmPanel({
             value={history.malfunctions.length}
             sub={`${history.unresolvedMalfunctions.length} unresolved`}
           />
+          <DetailMetric
+            label="Latest Issue"
+            value={latestMalfunction ? latestMalfunction.type : "None"}
+            sub={
+              latestMalfunction
+                ? formatDateTime(latestMalfunction.date)
+                : "No linked issue"
+            }
+          />
         </div>
       </section>
 
-      {history.status !== "Qualified" ? (
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 text-[14px] font-bold text-white">
+            <History size={15} className="text-blue-400" />
+            Linked Range / Qualification
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            <ModuleLink href="/range-days" label="Range" />
+            <ModuleLink href="/qualifications" label="Quals" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <DetailMetric
+            label="Day Qual"
+            value={
+              history.lastDayQualification
+                ? formatDate(history.lastDayQualification.date)
+                : "Missing"
+            }
+            sub={
+              history.lastDayQualification
+                ? getUserName(history.lastDayQualification.officerId)
+                : "No linked record"
+            }
+          />
+          <DetailMetric
+            label="Night Qual"
+            value={
+              history.lastNightQualification
+                ? formatDate(history.lastNightQualification.date)
+                : "Missing"
+            }
+            sub={
+              history.lastNightQualification
+                ? getUserName(history.lastNightQualification.officerId)
+                : "No linked record"
+            }
+          />
+          <DetailMetric
+            label="Rifle"
+            value={
+              history.lastRifleQualification
+                ? formatDate(history.lastRifleQualification.date)
+                : "—"
+            }
+            sub={
+              history.lastRifleQualification
+                ? history.lastRifleQualification.drillName
+                : "No rifle record"
+            }
+          />
+          <DetailMetric
+            label="Latest Use"
+            value={latestUse ? formatDate(latestUse.date) : "None"}
+            sub={latestUse ? latestUse.drillName : "No linked use"}
+          />
+        </div>
+      </section>
+
+      {history.operationalStatus !== "Ready" ? (
         <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
           <div className="flex gap-3">
             <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
@@ -1101,8 +1242,7 @@ function SelectedFirearmPanel({
                 Firearm review recommended
               </p>
               <p className="mt-1 text-amber-200/80">
-                Review this firearm&apos;s assignment, qualification references,
-                and reliability history before treating it as compliance-ready.
+                {history.statusReason}
               </p>
             </div>
           </div>
@@ -1116,6 +1256,8 @@ export default function FirearmsPage() {
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
   const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
+  const [statusOverrides, setStatusOverrides] =
+    useState<StatusOverrides>({});
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<FirearmStatusFilter>("All");
@@ -1127,15 +1269,32 @@ export default function FirearmsPage() {
   useEffect(() => {
     const storedWorkspace = loadStoredRangeDayWorkspace();
 
-    if (!storedWorkspace) return;
+    if (storedWorkspace) {
+      setWorkspace(storedWorkspace);
+      setHasStoredWorkspace(true);
+    }
 
-    setWorkspace(storedWorkspace);
-    setHasStoredWorkspace(true);
+    setStatusOverrides(loadStatusOverrides());
   }, []);
 
+  function handleStatusChange(
+    firearmId: string,
+    status: CurrentFirearmStatus,
+  ) {
+    setStatusOverrides((current) => {
+      const next = {
+        ...current,
+        [firearmId]: status,
+      };
+
+      persistStatusOverrides(next);
+      return next;
+    });
+  }
+
   const firearmHistories = useMemo(
-    () => buildFirearmHistories(workspace),
-    [workspace],
+    () => buildFirearmHistories(workspace, statusOverrides),
+    [workspace, statusOverrides],
   );
 
   const selectedHistory =
@@ -1148,7 +1307,8 @@ export default function FirearmsPage() {
 
     return firearmHistories.filter((history) => {
       const statusMatches =
-        statusFilter === "All" || history.status === statusFilter;
+        statusFilter === "All" ||
+        history.operationalStatus === statusFilter;
 
       const typeMatches =
         typeFilter === "All" ||
@@ -1162,8 +1322,9 @@ export default function FirearmsPage() {
         history.shortName,
         history.serialNumber,
         history.typeLabel,
-        history.statusLabel,
-        history.status,
+        history.currentStatus,
+        history.sourceStatusLabel,
+        history.operationalStatus,
         history.statusReason,
         ...history.assignedOfficerIds.map(getUserName),
         ...history.useEvents.flatMap((event) => [
@@ -1195,8 +1356,8 @@ export default function FirearmsPage() {
     (history) => history.assignedOfficerIds.length > 0,
   ).length;
 
-  const outOfServiceCount = firearmHistories.filter(
-    (history) => history.status === "Out of Service",
+  const outOfServiceCount = firearmHistories.filter((history) =>
+    isOutOfServiceStatus(history.currentStatus),
   ).length;
 
   const openIssueCount = firearmHistories.reduce(
@@ -1210,7 +1371,7 @@ export default function FirearmsPage() {
   );
 
   const missingQualificationLinkCount = firearmHistories.filter(
-    (history) => history.status === "No Qual",
+    (history) => history.operationalStatus === "No Linked Qualification",
   ).length;
 
   return (
@@ -1226,8 +1387,9 @@ export default function FirearmsPage() {
                 Firearms Inventory
               </h1>
               <p className="mt-1 max-w-3xl text-[12px] leading-5 text-slate-500">
-                Manage firearm custody, assignment references, operational
-                status, reliability flags, and supporting qualification links.
+                Update firearm status and view the consolidated firearm record:
+                assignment references, inspection/maintenance flags,
+                malfunctions, range use, and qualification links.
               </p>
             </div>
 
@@ -1254,12 +1416,12 @@ export default function FirearmsPage() {
           <StatCard
             label="Out of Service"
             value={outOfServiceCount}
-            sub="Inventory or malfunction flag"
+            sub="Status control"
           />
           <StatCard
             label="Open Issues"
             value={openIssueCount}
-            sub="Failures, OOS, inspections"
+            sub="Linked flags"
           />
           <StatCard
             label="Qual Link Missing"
@@ -1269,7 +1431,7 @@ export default function FirearmsPage() {
         </section>
 
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px_auto] lg:items-end">
+          <div className="grid gap-3 lg:grid-cols-[1fr_240px_220px_auto] lg:items-end">
             <div>
               <label className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                 <Search size={12} />
@@ -1286,7 +1448,7 @@ export default function FirearmsPage() {
             <div>
               <label className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                 <Filter size={12} />
-                Operational Status
+                Record Status
               </label>
               <select
                 value={statusFilter}
@@ -1342,19 +1504,19 @@ export default function FirearmsPage() {
               <ClipboardList size={17} className="mt-0.5 flex-shrink-0" />
               <div>
                 <p className="font-semibold text-blue-100">
-                  Range-linked firearm history is not populated yet.
+                  Linked firearm history is not populated yet.
                 </p>
                 <p className="mt-1 text-blue-200/80">
-                  Once range days, rosters, drill results, and malfunctions are
-                  saved, this page will automatically show firearm use history
-                  and qualification references.
+                  Armory can still control firearm status. Range, inspection,
+                  maintenance, and qualification records will appear here once
+                  those modules save linked data.
                 </p>
               </div>
             </div>
           </section>
         ) : null}
 
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3 px-1">
               <div>
@@ -1392,10 +1554,10 @@ export default function FirearmsPage() {
                   <div>
                     <h3 className="flex items-center gap-2 text-[16px] font-bold text-white">
                       <History size={16} className="text-blue-400" />
-                      Range / Qualification Timeline
+                      Recent Range / Qualification References
                     </h3>
                     <p className="mt-1 text-[12px] text-slate-500">
-                      Saved scoring records linked to the selected firearm.
+                      Read-only linked records for the selected firearm.
                     </p>
                   </div>
                   <StatusPill
@@ -1406,9 +1568,11 @@ export default function FirearmsPage() {
 
                 <div className="space-y-3">
                   {selectedHistory.useEvents.length > 0 ? (
-                    selectedHistory.useEvents.map((event) => (
-                      <UseEventRow key={event.id} event={event} />
-                    ))
+                    selectedHistory.useEvents
+                      .slice(0, 6)
+                      .map((event) => (
+                        <UseEventRow key={event.id} event={event} />
+                      ))
                   ) : (
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-[12px] text-slate-500">
                       No range scoring records are linked to this firearm yet.
@@ -1424,11 +1588,11 @@ export default function FirearmsPage() {
                   <div>
                     <h3 className="flex items-center gap-2 text-[16px] font-bold text-white">
                       <Wrench size={16} className="text-blue-400" />
-                      Malfunctions / Inspection History
+                      Recent Malfunctions / Inspection Flags
                     </h3>
                     <p className="mt-1 text-[12px] text-slate-500">
-                      Reliability and inspection-related records for the
-                      selected firearm.
+                      Read-only reliability records linked from range and
+                      inspection workflows.
                     </p>
                   </div>
                   {selectedHistory.malfunctions.length > 0 ? (
@@ -1443,12 +1607,14 @@ export default function FirearmsPage() {
 
                 <div className="space-y-3">
                   {selectedHistory.malfunctions.length > 0 ? (
-                    selectedHistory.malfunctions.map((malfunction) => (
-                      <MalfunctionRow
-                        key={malfunction.id}
-                        malfunction={malfunction}
-                      />
-                    ))
+                    selectedHistory.malfunctions
+                      .slice(0, 6)
+                      .map((malfunction) => (
+                        <MalfunctionRow
+                          key={malfunction.id}
+                          malfunction={malfunction}
+                        />
+                      ))
                   ) : (
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-[12px] text-slate-500">
                       No malfunction or inspection records are linked to this
@@ -1461,7 +1627,10 @@ export default function FirearmsPage() {
           </div>
 
           {selectedHistory ? (
-            <SelectedFirearmPanel history={selectedHistory} />
+            <SelectedFirearmPanel
+              history={selectedHistory}
+              onStatusChange={handleStatusChange}
+            />
           ) : null}
         </section>
       </div>
