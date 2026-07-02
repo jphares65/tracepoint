@@ -66,6 +66,45 @@ type RangeDayType =
 
 type PacketStatus = "Needs Setup" | "In Progress" | "Ready";
 
+type DepartmentStandardScoringBasis =
+  | "Points"
+  | "Percentage"
+  | "Time"
+  | "Pass/Fail"
+  | "Hit Count"
+  | "Completion";
+
+type DepartmentStandardConfig = {
+  isDepartmentStandard?: boolean;
+  departmentStandardName?: string;
+  departmentStandardScoringBasis?: DepartmentStandardScoringBasis;
+  departmentStandardMinimumScore?: number;
+  departmentStandardPassingTimeSeconds?: number;
+  departmentStandardMinimumHits?: number;
+  departmentStandardAppliesTo?: string;
+  departmentStandardRemediationRequired?: boolean;
+  departmentStandardRetestRequired?: boolean;
+  departmentStandardEffectiveDate?: string;
+  departmentStandardRetirementDate?: string;
+};
+
+type RangeEquipmentItem = {
+  id: string;
+  label: string;
+  required: boolean;
+  packed: boolean;
+};
+
+type RangeDayAAR = {
+  overallRating?: string;
+  objectivesAchieved?: "Yes" | "Partial" | "No" | "";
+  wentWell?: string;
+  improveNextTime?: string;
+  safetyConcerns?: string;
+  trainingObservations?: string;
+  followUpActions?: string;
+};
+
 type PlannedRangeDay = RangeDay & {
   rangeType: RangeDayType;
   startTime: string;
@@ -73,6 +112,8 @@ type PlannedRangeDay = RangeDay & {
   packetStatus: PacketStatus;
   staffingNotes: string;
   outline: string[];
+  equipmentChecklist?: RangeEquipmentItem[];
+  aar?: RangeDayAAR;
 };
 
 
@@ -85,13 +126,13 @@ type ScoringFormat =
   | "Hit Count"
   | "Notes Only";
 
-type ExtendedDrillTemplate = DrillTemplate & {
+type ExtendedDrillTemplate = DrillTemplate & DepartmentStandardConfig & {
   scoringFormat?: ScoringFormat;
   defaultPassingTimeSeconds?: number;
   defaultMinimumHits?: number;
 };
 
-type ExtendedRangeDayDrill = RangeDayDrill & {
+type ExtendedRangeDayDrill = RangeDayDrill & DepartmentStandardConfig & {
   scoringFormat?: ScoringFormat;
   passingTimeSeconds?: number;
   minimumHits?: number;
@@ -102,6 +143,8 @@ type ExtendedDrillRunResult = DrillRunResult & {
   timeSeconds?: number;
   hitCount?: number;
   finalPassed?: boolean;
+  departmentStandardSnapshot?: DepartmentStandardConfig;
+  departmentStandardPassed?: boolean;
 };
 
 type BatchScoreRow = {
@@ -130,6 +173,21 @@ type DrillTemplateWithLifecycle = ExtendedDrillTemplate & {
 
 const DRILL_RECOMMENDATION_STALE_DAYS = 90;
 
+const DEFAULT_EQUIPMENT_CHECKLIST: RangeEquipmentItem[] = [
+  { id: "equipment-ammo", label: "Ammunition staged", required: true, packed: false },
+  { id: "equipment-targets", label: "Targets / backers", required: true, packed: false },
+  { id: "equipment-timers", label: "Shot timers", required: true, packed: false },
+  { id: "equipment-medical", label: "Medical kit / trauma bag", required: true, packed: false },
+  { id: "equipment-eye-ear", label: "Spare eye and ear protection", required: false, packed: false },
+  { id: "equipment-tools", label: "Range tools / staplers / tape", required: false, packed: false },
+];
+
+type ReadinessItem = {
+  label: string;
+  detail: string;
+  status: "ready" | "warning" | "critical";
+};
+
 const DRILL_TEMPLATES: ExtendedDrillTemplate[] = [
   {
     id: "template-qual-1",
@@ -152,6 +210,14 @@ const DRILL_TEMPLATES: ExtendedDrillTemplate[] = [
     status: "Active",
     createdByUserId: CURRENT_USER.id,
     createdAt: "2026-06-18T12:00:00Z",
+    isDepartmentStandard: true,
+    departmentStandardName: "Annual Handgun Standard",
+    departmentStandardScoringBasis: "Percentage",
+    departmentStandardMinimumScore: 80,
+    departmentStandardAppliesTo: "All sworn officers",
+    departmentStandardRemediationRequired: true,
+    departmentStandardRetestRequired: true,
+    departmentStandardEffectiveDate: "2026-01-01",
     notes: "Primary handgun qualification template.",
   },
   {
@@ -286,6 +352,7 @@ const INITIAL_RANGE_DAYS: PlannedRangeDay[] = [
       "Malfunction clearance drill",
     ],
     notes: "Qualification plus supplemental drills.",
+    equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
   },
   {
     id: "range-2",
@@ -309,6 +376,7 @@ const INITIAL_RANGE_DAYS: PlannedRangeDay[] = [
       "Instructor notes and deficiencies",
     ],
     notes: "Rifle zero confirmation, transitions, and barricade work.",
+    equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
   },
   {
     id: "range-3",
@@ -332,6 +400,7 @@ const INITIAL_RANGE_DAYS: PlannedRangeDay[] = [
       "Decision-making observations",
     ],
     notes: "Low-light identification, movement, and decision-making drills.",
+    equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
   },
 ];
 
@@ -418,7 +487,15 @@ const RANGE_DAY_TYPES: RangeDayType[] = [
 type RangeDayStatusFilter = "All Active" | PlannedRangeDay["status"];
 type RangeDayTypeFilter = "All Types" | RangeDayType;
 
-type RangeDayDetailTab = "overview" | "roster" | "drills" | "scoring" | "results";
+type RangeDayDetailTab =
+  | "overview"
+  | "readiness"
+  | "roster"
+  | "drills"
+  | "equipment"
+  | "scoring"
+  | "results"
+  | "aar";
 
 const RANGE_DAY_DETAIL_TABS: Array<{
   id: RangeDayDetailTab;
@@ -426,10 +503,13 @@ const RANGE_DAY_DETAIL_TABS: Array<{
   description: string;
 }> = [
   { id: "overview", label: "Overview", description: "Day details and staffing" },
+  { id: "readiness", label: "Readiness", description: "Pre-range checks" },
   { id: "roster", label: "Roster", description: "Officers and firearms" },
   { id: "drills", label: "Drills", description: "Planned drill library" },
+  { id: "equipment", label: "Equipment", description: "Range checklist" },
   { id: "scoring", label: "Scoring", description: "Live entry board" },
   { id: "results", label: "Results", description: "Saved runs and issues" },
+  { id: "aar", label: "AAR", description: "Lessons learned" },
 ];
 
 const RANGE_DAY_STATUS_FILTERS: RangeDayStatusFilter[] = [
@@ -616,6 +696,114 @@ function getAutomaticPassValue(
   return undefined;
 }
 
+function getDepartmentStandardConfig(
+  drill?: ExtendedRangeDayDrill | ExtendedDrillTemplate | null,
+): DepartmentStandardConfig | null {
+  if (!drill?.isDepartmentStandard) return null;
+
+  return {
+    isDepartmentStandard: true,
+    departmentStandardName: drill.departmentStandardName || drill.name,
+    departmentStandardScoringBasis: drill.departmentStandardScoringBasis,
+    departmentStandardMinimumScore: drill.departmentStandardMinimumScore,
+    departmentStandardPassingTimeSeconds: drill.departmentStandardPassingTimeSeconds,
+    departmentStandardMinimumHits: drill.departmentStandardMinimumHits,
+    departmentStandardAppliesTo: drill.departmentStandardAppliesTo,
+    departmentStandardRemediationRequired: drill.departmentStandardRemediationRequired,
+    departmentStandardRetestRequired: drill.departmentStandardRetestRequired,
+    departmentStandardEffectiveDate: drill.departmentStandardEffectiveDate,
+    departmentStandardRetirementDate: drill.departmentStandardRetirementDate,
+  };
+}
+
+function getDepartmentStandardStatus({
+  drill,
+  scoringFormat,
+  metricValue,
+  completed,
+  passed,
+}: {
+  drill: ExtendedRangeDayDrill;
+  scoringFormat: ScoringFormat;
+  metricValue: string;
+  completed?: boolean;
+  passed?: boolean;
+}) {
+  const standard = getDepartmentStandardConfig(drill);
+
+  if (!standard) return undefined;
+
+  const numericValue = Number(metricValue);
+
+  if (
+    (scoringFormat === "Qualification" || scoringFormat === "Points") &&
+    metricValue.trim() &&
+    typeof standard.departmentStandardMinimumScore === "number" &&
+    !Number.isNaN(numericValue)
+  ) {
+    return numericValue >= standard.departmentStandardMinimumScore;
+  }
+
+  if (
+    scoringFormat === "Time" &&
+    metricValue.trim() &&
+    typeof standard.departmentStandardPassingTimeSeconds === "number" &&
+    !Number.isNaN(numericValue)
+  ) {
+    return numericValue <= standard.departmentStandardPassingTimeSeconds;
+  }
+
+  if (
+    scoringFormat === "Hit Count" &&
+    metricValue.trim() &&
+    typeof standard.departmentStandardMinimumHits === "number" &&
+    !Number.isNaN(numericValue)
+  ) {
+    return numericValue >= standard.departmentStandardMinimumHits;
+  }
+
+  if (scoringFormat === "Completion" && typeof completed === "boolean") {
+    return completed;
+  }
+
+  if (scoringFormat === "Pass/Fail" && typeof passed === "boolean") {
+    return passed;
+  }
+
+  return undefined;
+}
+
+function getDepartmentStandardRequirementLabel(
+  drill?: ExtendedRangeDayDrill | ExtendedDrillTemplate | null,
+) {
+  const standard = getDepartmentStandardConfig(drill);
+  if (!standard) return "Not a standard";
+
+  if (typeof standard.departmentStandardMinimumScore === "number") {
+    return `Minimum ${standard.departmentStandardMinimumScore}`;
+  }
+
+  if (typeof standard.departmentStandardPassingTimeSeconds === "number") {
+    return `Max ${standard.departmentStandardPassingTimeSeconds} sec`;
+  }
+
+  if (typeof standard.departmentStandardMinimumHits === "number") {
+    return `Minimum ${standard.departmentStandardMinimumHits} hits`;
+  }
+
+  return "Configured standard";
+}
+
+function getRangeDayEquipment(rangeDay: PlannedRangeDay) {
+  return rangeDay.equipmentChecklist?.length
+    ? rangeDay.equipmentChecklist
+    : DEFAULT_EQUIPMENT_CHECKLIST;
+}
+
+function getRangeDayAar(rangeDay: PlannedRangeDay): RangeDayAAR {
+  return rangeDay.aar ?? { objectivesAchieved: "" };
+}
+
 function formatResultMetric(
   result?: ExtendedDrillRunResult,
   drill?: ExtendedRangeDayDrill,
@@ -783,6 +971,12 @@ function normalizeRangeDaysForWorkspace(
         Array.isArray(rangeDay.outline) && rangeDay.outline.length > 0
           ? rangeDay.outline
           : getDefaultOutlineForRangeType(rangeDay.rangeType),
+      equipmentChecklist:
+        Array.isArray(rangeDay.equipmentChecklist) &&
+        rangeDay.equipmentChecklist.length > 0
+          ? rangeDay.equipmentChecklist
+          : DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
+      aar: rangeDay.aar ?? { objectivesAchieved: "" },
     };
   });
 }
@@ -1178,12 +1372,13 @@ function PrintableRangePacket({
                 <th>Scoring</th>
                 <th>Runs</th>
                 <th>Rounds</th>
+                <th>Standard</th>
               </tr>
             </thead>
             <tbody>
               {drills.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>No drills assigned.</td>
+                  <td colSpan={6}>No drills assigned.</td>
                 </tr>
               ) : (
                 drills.map((drill) => (
@@ -1196,6 +1391,7 @@ function PrintableRangePacket({
                     <td>{getScoringFormat(drill)}</td>
                     <td>{getEffectiveRunCount(drill)}</td>
                     <td>{drill.roundCount ?? "—"}</td>
+                    <td>{drill.isDepartmentStandard ? getDepartmentStandardRequirementLabel(drill) : "—"}</td>
                   </tr>
                 ))
               )}
@@ -1348,10 +1544,30 @@ export default function RangeDaysPage() {
   const [newDrillMinimumHits, setNewDrillMinimumHits] = useState("");
   const [newDrillRunCount, setNewDrillRunCount] = useState("1");
   const [newDrillDefaultRequired, setNewDrillDefaultRequired] = useState(false);
+  const [newDrillIsDepartmentStandard, setNewDrillIsDepartmentStandard] =
+    useState(false);
+  const [newDrillStandardName, setNewDrillStandardName] = useState("");
+  const [newDrillStandardMinimumScore, setNewDrillStandardMinimumScore] =
+    useState("");
+  const [newDrillStandardPassingTimeSeconds, setNewDrillStandardPassingTimeSeconds] =
+    useState("");
+  const [newDrillStandardMinimumHits, setNewDrillStandardMinimumHits] =
+    useState("");
+  const [newDrillStandardAppliesTo, setNewDrillStandardAppliesTo] =
+    useState("All sworn officers");
+  const [newDrillStandardRemediationRequired, setNewDrillStandardRemediationRequired] =
+    useState(true);
+  const [newDrillStandardRetestRequired, setNewDrillStandardRetestRequired] =
+    useState(true);
+  const [newDrillStandardEffectiveDate, setNewDrillStandardEffectiveDate] =
+    useState("");
+  const [newDrillStandardRetirementDate, setNewDrillStandardRetirementDate] =
+    useState("");
   const [newDrillTags, setNewDrillTags] = useState("");
   const [newDrillNotes, setNewDrillNotes] = useState("");
   const [newRosterOfficerId, setNewRosterOfficerId] = useState("");
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
+  const [newEquipmentLabel, setNewEquipmentLabel] = useState("");
 
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedDrillId, setSelectedDrillId] = useState("");
@@ -1446,6 +1662,123 @@ export default function RangeDaysPage() {
       ),
     [selectedRoster, selectedDrills, selectedRangeResults],
   );
+
+  const selectedDepartmentStandardDrills = useMemo(
+    () => selectedDrills.filter((drill) => drill.isDepartmentStandard),
+    [selectedDrills],
+  );
+
+  const selectedEquipmentChecklist = useMemo(
+    () => (selectedRangeDay ? getRangeDayEquipment(selectedRangeDay) : []),
+    [selectedRangeDay],
+  );
+
+  const selectedAar = useMemo(
+    () => (selectedRangeDay ? getRangeDayAar(selectedRangeDay) : {}),
+    [selectedRangeDay],
+  );
+
+  const preRangeReadinessItems = useMemo<ReadinessItem[]>(() => {
+    if (!selectedRangeDay) return [];
+
+    const officersWithoutFirearms = selectedRoster.filter(
+      (entry) => !entry.assignedFirearmIds[0],
+    ).length;
+
+    const unpackedRequiredEquipment = getRangeDayEquipment(selectedRangeDay).filter(
+      (item) => item.required && !item.packed,
+    ).length;
+
+    const dayMalfunctions = malfunctions.filter(
+      (malfunction) => malfunction.rangeDayId === selectedRangeDay.id,
+    ).length;
+
+    return [
+      {
+        label: "Lead instructor",
+        detail: selectedRangeDay.leadInstructorId
+          ? getUserName(selectedRangeDay.leadInstructorId)
+          : "No lead instructor assigned",
+        status: selectedRangeDay.leadInstructorId ? "ready" : "critical",
+      },
+      {
+        label: "Roster",
+        detail:
+          selectedRoster.length > 0
+            ? `${selectedRoster.length} officer${selectedRoster.length === 1 ? "" : "s"} assigned`
+            : "No officers assigned",
+        status: selectedRoster.length > 0 ? "ready" : "critical",
+      },
+      {
+        label: "Attendance",
+        detail:
+          attendingRoster.length > 0
+            ? `${attendingRoster.length} marked present`
+            : "No officers marked present yet",
+        status: attendingRoster.length > 0 ? "ready" : "warning",
+      },
+      {
+        label: "Firearm assignment",
+        detail:
+          officersWithoutFirearms === 0
+            ? "Each rostered officer has a firearm assignment"
+            : `${officersWithoutFirearms} officer${officersWithoutFirearms === 1 ? "" : "s"} missing firearm assignment`,
+        status: officersWithoutFirearms === 0 ? "ready" : "critical",
+      },
+      {
+        label: "Planned drills",
+        detail:
+          selectedDrills.length > 0
+            ? `${selectedDrills.length} planned drill${selectedDrills.length === 1 ? "" : "s"}`
+            : "No drills selected",
+        status: selectedDrills.length > 0 ? "ready" : "critical",
+      },
+      {
+        label: "Department standards",
+        detail:
+          selectedDepartmentStandardDrills.length > 0
+            ? `${selectedDepartmentStandardDrills.length} standard${selectedDepartmentStandardDrills.length === 1 ? "" : "s"} included`
+            : "No department standards included",
+        status: selectedDepartmentStandardDrills.length > 0 ? "ready" : "warning",
+      },
+      {
+        label: "Required equipment",
+        detail:
+          unpackedRequiredEquipment === 0
+            ? "Required checklist items are marked ready"
+            : `${unpackedRequiredEquipment} required item${unpackedRequiredEquipment === 1 ? "" : "s"} not marked ready`,
+        status: unpackedRequiredEquipment === 0 ? "ready" : "warning",
+      },
+      {
+        label: "Packet",
+        detail: `Packet status: ${selectedRangeDay.packetStatus}`,
+        status: selectedRangeDay.packetStatus === "Ready" ? "ready" : "warning",
+      },
+      {
+        label: "Firearm issues",
+        detail:
+          dayMalfunctions === 0
+            ? "No malfunctions logged for this range day"
+            : `${dayMalfunctions} malfunction${dayMalfunctions === 1 ? "" : "s"} logged`,
+        status: dayMalfunctions === 0 ? "ready" : "warning",
+      },
+    ];
+  }, [
+    attendingRoster.length,
+    malfunctions,
+    selectedDepartmentStandardDrills.length,
+    selectedDrills.length,
+    selectedRangeDay,
+    selectedRoster,
+  ]);
+
+  const readinessCriticalCount = preRangeReadinessItems.filter(
+    (item) => item.status === "critical",
+  ).length;
+
+  const readinessWarningCount = preRangeReadinessItems.filter(
+    (item) => item.status === "warning",
+  ).length;
 
   const drillLibraryWithLifecycle = useMemo(
     () =>
@@ -1721,6 +2054,16 @@ export default function RangeDaysPage() {
     setNewDrillMinimumHits("");
     setNewDrillRunCount("1");
     setNewDrillDefaultRequired(false);
+    setNewDrillIsDepartmentStandard(false);
+    setNewDrillStandardName("");
+    setNewDrillStandardMinimumScore("");
+    setNewDrillStandardPassingTimeSeconds("");
+    setNewDrillStandardMinimumHits("");
+    setNewDrillStandardAppliesTo("All sworn officers");
+    setNewDrillStandardRemediationRequired(true);
+    setNewDrillStandardRetestRequired(true);
+    setNewDrillStandardEffectiveDate("");
+    setNewDrillStandardRetirementDate("");
     setNewDrillTags("");
     setNewDrillNotes("");
   }
@@ -1772,6 +2115,8 @@ export default function RangeDaysPage() {
       staffingNotes: "",
       outline: getDefaultOutlineForRangeType("Training"),
       notes: "",
+      equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
+      aar: { objectivesAchieved: "" },
     };
 
     setRangeDays((current) => [newRangeDay, ...current]);
@@ -1800,6 +2145,63 @@ export default function RangeDaysPage() {
           : rangeDay,
       ),
     );
+  }
+
+  function updateSelectedEquipmentChecklist(nextChecklist: RangeEquipmentItem[]) {
+    if (!selectedRangeDay) return;
+
+    updateSelectedRangeDay("equipmentChecklist", nextChecklist);
+  }
+
+  function handleToggleEquipmentItem(itemId: string) {
+    if (!selectedRangeDay) return;
+
+    updateSelectedEquipmentChecklist(
+      getRangeDayEquipment(selectedRangeDay).map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              packed: !item.packed,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function handleAddEquipmentItem() {
+    if (!selectedRangeDay || !newEquipmentLabel.trim()) return;
+
+    updateSelectedEquipmentChecklist([
+      ...getRangeDayEquipment(selectedRangeDay),
+      {
+        id: `equipment-${Date.now()}`,
+        label: newEquipmentLabel.trim(),
+        required: false,
+        packed: false,
+      },
+    ]);
+
+    setNewEquipmentLabel("");
+  }
+
+  function handleRemoveEquipmentItem(itemId: string) {
+    if (!selectedRangeDay) return;
+
+    updateSelectedEquipmentChecklist(
+      getRangeDayEquipment(selectedRangeDay).filter((item) => item.id !== itemId),
+    );
+  }
+
+  function handleUpdateAar<Key extends keyof RangeDayAAR>(
+    key: Key,
+    value: RangeDayAAR[Key],
+  ) {
+    if (!selectedRangeDay) return;
+
+    updateSelectedRangeDay("aar", {
+      ...getRangeDayAar(selectedRangeDay),
+      [key]: value,
+    });
   }
 
   function handleChangeRangeDayType(nextRangeType: RangeDayType) {
@@ -2103,6 +2505,15 @@ export default function RangeDaysPage() {
           ? `malfunction-${now}-${index}`
           : undefined;
 
+      const departmentStandardSnapshot = getDepartmentStandardConfig(selectedDrill);
+      const departmentStandardPassed = getDepartmentStandardStatus({
+        drill: selectedDrill,
+        scoringFormat,
+        metricValue: row.metricValue,
+        completed: row.completed,
+        passed: finalPassed,
+      });
+
       const numericMetric = metricEntered ? Number(row.metricValue) : undefined;
 
       const result: ExtendedDrillRunResult = {
@@ -2139,10 +2550,15 @@ export default function RangeDaysPage() {
           scoringFormat === "Notes Only" ? undefined : finalPassed,
         finalPassed:
           scoringFormat === "Notes Only" ? undefined : finalPassed,
+        departmentStandardSnapshot: departmentStandardSnapshot ?? undefined,
+        departmentStandardPassed,
         instructorId: CURRENT_USER.id,
         notes: row.notes.trim(),
-        deficiencyObserved: finalPassed === false,
-        remedialTrainingRecommended: finalPassed === false,
+        deficiencyObserved: finalPassed === false || departmentStandardPassed === false,
+        remedialTrainingRecommended:
+          finalPassed === false ||
+          (departmentStandardPassed === false &&
+            departmentStandardSnapshot?.departmentStandardRemediationRequired === true),
         malfunctionIds: malfunctionId ? [malfunctionId] : [],
       };
 
@@ -2265,6 +2681,47 @@ export default function RangeDaysPage() {
         newDrillScoringMode === "Hit Count"
           ? parseOptionalNumber(newDrillMinimumHits)
           : undefined,
+      isDepartmentStandard: newDrillIsDepartmentStandard,
+      departmentStandardName: newDrillIsDepartmentStandard
+        ? newDrillStandardName.trim() || newDrillName.trim()
+        : undefined,
+      departmentStandardScoringBasis: newDrillIsDepartmentStandard
+        ? newDrillScoringMode === "Qualification"
+          ? "Percentage"
+          : newDrillScoringMode === "Points"
+            ? "Points"
+            : newDrillScoringMode === "Time"
+              ? "Time"
+              : newDrillScoringMode === "Hit Count"
+                ? "Hit Count"
+                : newDrillScoringMode === "Completion"
+                  ? "Completion"
+                  : "Pass/Fail"
+        : undefined,
+      departmentStandardMinimumScore: newDrillIsDepartmentStandard
+        ? parseOptionalNumber(newDrillStandardMinimumScore)
+        : undefined,
+      departmentStandardPassingTimeSeconds: newDrillIsDepartmentStandard
+        ? parseOptionalNumber(newDrillStandardPassingTimeSeconds)
+        : undefined,
+      departmentStandardMinimumHits: newDrillIsDepartmentStandard
+        ? parseOptionalNumber(newDrillStandardMinimumHits)
+        : undefined,
+      departmentStandardAppliesTo: newDrillIsDepartmentStandard
+        ? newDrillStandardAppliesTo.trim() || "All sworn officers"
+        : undefined,
+      departmentStandardRemediationRequired: newDrillIsDepartmentStandard
+        ? newDrillStandardRemediationRequired
+        : undefined,
+      departmentStandardRetestRequired: newDrillIsDepartmentStandard
+        ? newDrillStandardRetestRequired
+        : undefined,
+      departmentStandardEffectiveDate: newDrillIsDepartmentStandard
+        ? newDrillStandardEffectiveDate || undefined
+        : undefined,
+      departmentStandardRetirementDate: newDrillIsDepartmentStandard
+        ? newDrillStandardRetirementDate || undefined
+        : undefined,
     };
 
     setDrillLibrary((current) => [createdTemplate, ...current]);
@@ -2299,6 +2756,18 @@ export default function RangeDaysPage() {
         : getScoringFormat(copiedDrill),
       passingTimeSeconds: sourceTemplate?.defaultPassingTimeSeconds,
       minimumHits: sourceTemplate?.defaultMinimumHits,
+      isDepartmentStandard: sourceTemplate?.isDepartmentStandard,
+      departmentStandardName: sourceTemplate?.departmentStandardName,
+      departmentStandardScoringBasis: sourceTemplate?.departmentStandardScoringBasis,
+      departmentStandardMinimumScore: sourceTemplate?.departmentStandardMinimumScore,
+      departmentStandardPassingTimeSeconds: sourceTemplate?.departmentStandardPassingTimeSeconds,
+      departmentStandardMinimumHits: sourceTemplate?.departmentStandardMinimumHits,
+      departmentStandardAppliesTo: sourceTemplate?.departmentStandardAppliesTo,
+      departmentStandardRemediationRequired:
+        sourceTemplate?.departmentStandardRemediationRequired,
+      departmentStandardRetestRequired: sourceTemplate?.departmentStandardRetestRequired,
+      departmentStandardEffectiveDate: sourceTemplate?.departmentStandardEffectiveDate,
+      departmentStandardRetirementDate: sourceTemplate?.departmentStandardRetirementDate,
     };
 
     setRangeDayDrills((current) => [...current, normalizedCopiedDrill]);
@@ -2951,7 +3420,7 @@ export default function RangeDaysPage() {
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-6">
           <StatCard
             label="Roster"
             value={selectedRoster.length}
@@ -2973,6 +3442,11 @@ export default function RangeDaysPage() {
             sub={`${completionSummary.completedRuns}/${completionSummary.expectedRuns} runs`}
           />
           <StatCard
+            label="Standards"
+            value={selectedDepartmentStandardDrills.length}
+            sub="Department standards"
+          />
+          <StatCard
             label="Malfunctions"
             value={getMalfunctionCountForRangeDay(selectedRangeResults)}
             sub="Linked to firearms"
@@ -2981,7 +3455,7 @@ export default function RangeDaysPage() {
 
         <section className="space-y-5">
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-2">
-            <div className="grid gap-2 md:grid-cols-5">
+            <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
               {RANGE_DAY_DETAIL_TABS.map((tab) => {
                 const active = activeRangeDayTab === tab.id;
 
@@ -3326,6 +3800,13 @@ export default function RangeDaysPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setActiveRangeDayTab("readiness")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Review pre-range readiness
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setActiveRangeDayTab("drills")}
                       className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
                     >
@@ -3339,6 +3820,119 @@ export default function RangeDaysPage() {
                       Open scoring board
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeRangeDayTab === "readiness" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-[17px] font-bold text-white">
+                      Pre-Range Readiness
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Surface setup gaps before the range staff discovers them on the line.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill
+                      label={`${readinessCriticalCount} critical`}
+                      tone={readinessCriticalCount > 0 ? "red" : "green"}
+                    />
+                    <StatusPill
+                      label={`${readinessWarningCount} warning`}
+                      tone={readinessWarningCount > 0 ? "amber" : "green"}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {preRangeReadinessItems.map((item) => (
+                    <div
+                      key={item.label}
+                      className={`rounded-2xl border px-3 py-3 ${
+                        item.status === "ready"
+                          ? "border-emerald-500/20 bg-emerald-500/[0.04]"
+                          : item.status === "warning"
+                            ? "border-amber-500/20 bg-amber-500/[0.06]"
+                            : "border-red-500/20 bg-red-500/[0.06]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-semibold text-white">
+                            {item.label}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.detail}
+                          </p>
+                        </div>
+                        {item.status === "ready" ? (
+                          <CheckCircle2 size={16} className="text-emerald-400" />
+                        ) : (
+                          <AlertTriangle
+                            size={16}
+                            className={
+                              item.status === "warning"
+                                ? "text-amber-300"
+                                : "text-red-300"
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Shield size={15} className="text-blue-400" />
+                    Department Standards Included
+                  </h3>
+
+                  <div className="space-y-2">
+                    {selectedDepartmentStandardDrills.length === 0 ? (
+                      <p className="text-[12px] text-slate-500">
+                        No department-standard drills are attached to this range day.
+                      </p>
+                    ) : (
+                      selectedDepartmentStandardDrills.map((drill) => (
+                        <div
+                          key={drill.id}
+                          className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.06] px-3 py-3"
+                        >
+                          <p className="text-[12px] font-semibold text-white">
+                            {drill.departmentStandardName || drill.name}
+                          </p>
+                          <p className="mt-1 text-[11px] text-blue-200">
+                            {getDepartmentStandardRequirementLabel(drill)} · {drill.departmentStandardAppliesTo || "Agency configured"}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Wrench size={15} className="text-blue-400" />
+                    Equipment Snapshot
+                  </h3>
+                  <p className="text-[12px] text-slate-500">
+                    {selectedEquipmentChecklist.filter((item) => item.packed).length}/{selectedEquipmentChecklist.length} checklist items marked ready.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveRangeDayTab("equipment")}
+                    className="mt-3 rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                  >
+                    Open equipment checklist
+                  </button>
                 </div>
               </div>
             </div>
@@ -3528,6 +4122,9 @@ export default function RangeDaysPage() {
                         <div className="mt-2 flex flex-wrap gap-2">
                           <StatusPill label={drill.category} />
                           <StatusPill label={getScoringFormat(drill)} tone="slate" />
+                          {drill.isDepartmentStandard ? (
+                            <StatusPill label="Department Standard" tone="green" />
+                          ) : null}
                         </div>
                       </button>
                     ))
@@ -3702,6 +4299,153 @@ export default function RangeDaysPage() {
                             className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                           />
                         </div>
+
+                        {newDrillIsDepartmentStandard ? (
+                          <div className="lg:col-span-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[13px] font-bold text-white">
+                                  Department Standard Settings
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  This drill remains a normal drill, but results also count against the agency standard.
+                                </p>
+                              </div>
+                              <StatusPill label="Optional" tone="green" />
+                            </div>
+
+                            <div className="grid gap-3 lg:grid-cols-4">
+                              <div className="lg:col-span-2">
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Standard Name
+                                </label>
+                                <input
+                                  value={newDrillStandardName}
+                                  onChange={(event) =>
+                                    setNewDrillStandardName(event.target.value)
+                                  }
+                                  placeholder="Defaults to drill name"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Minimum Score
+                                </label>
+                                <input
+                                  type="number"
+                                  value={newDrillStandardMinimumScore}
+                                  onChange={(event) =>
+                                    setNewDrillStandardMinimumScore(event.target.value)
+                                  }
+                                  placeholder="Example: 80"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Passing Time Sec.
+                                </label>
+                                <input
+                                  type="number"
+                                  value={newDrillStandardPassingTimeSeconds}
+                                  onChange={(event) =>
+                                    setNewDrillStandardPassingTimeSeconds(event.target.value)
+                                  }
+                                  placeholder="Timed drills"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Minimum Hits
+                                </label>
+                                <input
+                                  type="number"
+                                  value={newDrillStandardMinimumHits}
+                                  onChange={(event) =>
+                                    setNewDrillStandardMinimumHits(event.target.value)
+                                  }
+                                  placeholder="Hit-count drills"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Applies To
+                                </label>
+                                <input
+                                  value={newDrillStandardAppliesTo}
+                                  onChange={(event) =>
+                                    setNewDrillStandardAppliesTo(event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Effective Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={newDrillStandardEffectiveDate}
+                                  onChange={(event) =>
+                                    setNewDrillStandardEffectiveDate(event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Retire Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={newDrillStandardRetirementDate}
+                                  onChange={(event) =>
+                                    setNewDrillStandardRetirementDate(event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewDrillStandardRemediationRequired((current) => !current)
+                                }
+                                className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                                  newDrillStandardRemediationRequired
+                                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                    : "border-slate-700 text-slate-400"
+                                }`}
+                              >
+                                Remediation {newDrillStandardRemediationRequired ? "Required" : "Optional"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewDrillStandardRetestRequired((current) => !current)
+                                }
+                                className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                                  newDrillStandardRetestRequired
+                                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                    : "border-slate-700 text-slate-400"
+                                }`}
+                              >
+                                Retest {newDrillStandardRetestRequired ? "Required" : "Optional"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -3719,6 +4463,22 @@ export default function RangeDaysPage() {
                           {newDrillDefaultRequired
                             ? "Default: Required"
                             : "Default: Optional"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewDrillIsDepartmentStandard((current) => !current)
+                          }
+                          className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                            newDrillIsDepartmentStandard
+                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                              : "border-slate-700 text-slate-400"
+                          }`}
+                        >
+                          {newDrillIsDepartmentStandard
+                            ? "Department Standard: On"
+                            : "Department Standard: Off"}
                         </button>
 
                         <div className="flex gap-2">
@@ -3820,6 +4580,107 @@ export default function RangeDaysPage() {
             </div>
           )}
 
+          {activeRangeDayTab === "equipment" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-[17px] font-bold text-white">
+                      Range Equipment Checklist
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Track the operational items that must be ready before this range day starts.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-[260px_auto]">
+                    <input
+                      value={newEquipmentLabel}
+                      onChange={(event) => setNewEquipmentLabel(event.target.value)}
+                      placeholder="Add equipment item"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddEquipmentItem}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                    >
+                      <Plus size={14} />
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {selectedEquipmentChecklist.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`rounded-2xl border px-3 py-3 ${
+                        item.packed
+                          ? "border-emerald-500/30 bg-emerald-500/[0.06]"
+                          : item.required
+                            ? "border-amber-500/20 bg-amber-500/[0.05]"
+                            : "border-slate-800 bg-slate-950/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-semibold text-white">
+                            {item.label}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.required ? "Required" : "Optional"}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEquipmentItem(item.id)}
+                            className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                              item.packed
+                                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                                : "border-slate-700 text-slate-400 hover:border-slate-600"
+                            }`}
+                          >
+                            {item.packed ? "Ready" : "Mark Ready"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEquipmentItem(item.id)}
+                            className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                  <ClipboardList size={15} className="text-blue-400" />
+                  Equipment Readiness
+                </h3>
+                <div className="space-y-2 text-[12px] text-slate-400">
+                  <p>Ready: {selectedEquipmentChecklist.filter((item) => item.packed).length}</p>
+                  <p>Required outstanding: {selectedEquipmentChecklist.filter((item) => item.required && !item.packed).length}</p>
+                  <p>Total checklist items: {selectedEquipmentChecklist.length}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveRangeDayTab("readiness")}
+                  className="mt-4 rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                >
+                  Return to pre-range readiness
+                </button>
+              </div>
+            </div>
+          )}
+
           {activeRangeDayTab === "scoring" && (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -3892,12 +4753,13 @@ export default function RangeDaysPage() {
 
               {selectedDrill && (
                 <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-800">
-                  <div className="min-w-[920px] divide-y divide-slate-800">
-                    <div className="grid grid-cols-[210px_130px_120px_120px_1fr_150px] gap-3 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                  <div className="min-w-[1040px] divide-y divide-slate-800">
+                    <div className="grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       <span>Officer</span>
                       <span>Metric</span>
                       <span>Status</span>
                       <span>Completed</span>
+                      <span>Standard</span>
                       <span>Notes</span>
                       <span>Malfunction</span>
                     </div>
@@ -3918,11 +4780,18 @@ export default function RangeDaysPage() {
                         };
 
                         const scoringFormat = getScoringFormat(selectedDrill);
+                        const departmentStandardStatus = getDepartmentStandardStatus({
+                          drill: selectedDrill,
+                          scoringFormat,
+                          metricValue: row.metricValue,
+                          completed: row.completed,
+                          passed: row.passed,
+                        });
 
                         return (
                           <div
                             key={entry.officerId}
-                            className="grid grid-cols-[210px_130px_120px_120px_1fr_150px] gap-3 px-3 py-3 text-[12px]"
+                            className="grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 px-3 py-3 text-[12px]"
                           >
                             <div>
                               <p className="font-semibold text-white">
@@ -3997,6 +4866,28 @@ export default function RangeDaysPage() {
                               {row.completed ?? true ? "Complete" : "Incomplete"}
                             </button>
 
+                            <div>
+                              {selectedDrill.isDepartmentStandard ? (
+                                <span
+                                  className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                                    departmentStandardStatus === true
+                                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                      : departmentStandardStatus === false
+                                        ? "border-red-500/30 bg-red-500/10 text-red-300"
+                                        : "border-slate-700 bg-slate-800/60 text-slate-400"
+                                  }`}
+                                >
+                                  {departmentStandardStatus === true
+                                    ? "Met"
+                                    : departmentStandardStatus === false
+                                      ? "Failed"
+                                      : "Pending"}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-600">—</span>
+                              )}
+                            </div>
+
                             <input
                               value={row.notes}
                               onChange={(event) =>
@@ -4025,7 +4916,7 @@ export default function RangeDaysPage() {
                             </button>
 
                             {row.malfunctionOccurred ? (
-                              <div className="col-span-6 grid gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 sm:grid-cols-[220px_1fr]">
+                              <div className="col-span-7 grid gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 sm:grid-cols-[220px_1fr]">
                                 <select
                                   value={row.malfunctionType}
                                   onChange={(event) =>
@@ -4183,7 +5074,7 @@ export default function RangeDaysPage() {
                           </div>
 
                           <p className="mt-2 text-[11px] text-slate-400">
-                            Result: {formatResultMetric(result, drill) || "—"} · Passed: {typeof result.passed === "boolean" ? result.passed ? "Yes" : "No" : "—"} · Completed: {result.completed ? "Yes" : "No"}
+                            Result: {formatResultMetric(result, drill) || "—"} · Passed: {typeof result.passed === "boolean" ? result.passed ? "Yes" : "No" : "—"} · Completed: {result.completed ? "Yes" : "No"} · Standard: {typeof result.departmentStandardPassed === "boolean" ? result.departmentStandardPassed ? "Met" : "Failed" : "—"}
                           </p>
 
                           {result.notes && (
@@ -4195,6 +5086,109 @@ export default function RangeDaysPage() {
                       );
                     })
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          {activeRangeDayTab === "aar" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4">
+                  <h2 className="text-[17px] font-bold text-white">
+                    After Action Review
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Capture lessons learned while they are still fresh and turn them into future training intelligence.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Overall Rating
+                    </label>
+                    <select
+                      value={selectedAar.overallRating ?? ""}
+                      onChange={(event) => handleUpdateAar("overallRating", event.target.value)}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="">Not rated</option>
+                      <option value="Excellent">Excellent</option>
+                      <option value="Good">Good</option>
+                      <option value="Needs Improvement">Needs Improvement</option>
+                      <option value="Serious Concerns">Serious Concerns</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Objectives Achieved
+                    </label>
+                    <select
+                      value={selectedAar.objectivesAchieved ?? ""}
+                      onChange={(event) =>
+                        handleUpdateAar(
+                          "objectivesAchieved",
+                          event.target.value as RangeDayAAR["objectivesAchieved"],
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="">Not selected</option>
+                      <option value="Yes">Yes</option>
+                      <option value="Partial">Partial</option>
+                      <option value="No">No</option>
+                    </select>
+                  </div>
+
+                  {[
+                    ["wentWell", "What Went Well"],
+                    ["improveNextTime", "Improve Next Time"],
+                    ["safetyConcerns", "Safety Concerns"],
+                    ["trainingObservations", "Training Observations"],
+                    ["followUpActions", "Follow-Up Actions"],
+                  ].map(([key, label]) => (
+                    <div key={key} className="lg:col-span-2">
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        {label}
+                      </label>
+                      <textarea
+                        value={String(selectedAar[key as keyof RangeDayAAR] ?? "")}
+                        onChange={(event) =>
+                          handleUpdateAar(
+                            key as keyof RangeDayAAR,
+                            event.target.value as never,
+                          )
+                        }
+                        rows={3}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Target size={15} className="text-blue-400" />
+                    Training Intelligence
+                  </h3>
+                  <p className="text-[12px] leading-5 text-slate-500">
+                    Later, TracePoint can mine AARs for repeated deficiencies, facility problems, equipment issues, and drills that should be scheduled again.
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <ClipboardList size={15} className="text-blue-400" />
+                    Follow-Up Preview
+                  </h3>
+                  <p className="whitespace-pre-line text-[12px] leading-5 text-slate-400">
+                    {selectedAar.followUpActions || "No follow-up actions entered yet."}
+                  </p>
                 </div>
               </div>
             </div>
