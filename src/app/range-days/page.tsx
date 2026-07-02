@@ -115,6 +115,21 @@ type BatchScoreRow = {
   malfunctionNotes: string;
 };
 
+type DrillLifecycleSummary = {
+  timesPerformed: number;
+  lastPerformedDate?: string;
+  lastPerformedDateLabel: string;
+  daysSinceLastPerformed?: number;
+  recommended: boolean;
+  recommendationReason?: string;
+};
+
+type DrillTemplateWithLifecycle = ExtendedDrillTemplate & {
+  lifecycle: DrillLifecycleSummary;
+};
+
+const DRILL_RECOMMENDATION_STALE_DAYS = 90;
+
 const DRILL_TEMPLATES: ExtendedDrillTemplate[] = [
   {
     id: "template-qual-1",
@@ -402,6 +417,20 @@ const RANGE_DAY_TYPES: RangeDayType[] = [
 
 type RangeDayStatusFilter = "All Active" | PlannedRangeDay["status"];
 type RangeDayTypeFilter = "All Types" | RangeDayType;
+
+type RangeDayDetailTab = "overview" | "roster" | "drills" | "scoring" | "results";
+
+const RANGE_DAY_DETAIL_TABS: Array<{
+  id: RangeDayDetailTab;
+  label: string;
+  description: string;
+}> = [
+  { id: "overview", label: "Overview", description: "Day details and staffing" },
+  { id: "roster", label: "Roster", description: "Officers and firearms" },
+  { id: "drills", label: "Drills", description: "Planned drill library" },
+  { id: "scoring", label: "Scoring", description: "Live entry board" },
+  { id: "results", label: "Results", description: "Saved runs and issues" },
+];
 
 const RANGE_DAY_STATUS_FILTERS: RangeDayStatusFilter[] = [
   "All Active",
@@ -775,6 +804,160 @@ function formatDate(date: string) {
   });
 }
 
+function getRangeDateValue(date?: string) {
+  if (!date) return 0;
+
+  const parsed = new Date(`${date}T00:00:00`).getTime();
+
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getShortDateLabel(date?: string) {
+  if (!date) return "Never";
+
+  const parsed = new Date(`${date}T00:00:00`);
+
+  if (Number.isNaN(parsed.getTime())) return "Never";
+
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getDrillTemplateReferenceId(drill: RangeDayDrill) {
+  const record = drill as Record<string, unknown>;
+
+  const possibleReference =
+    record.templateId ??
+    record.drillTemplateId ??
+    record.sourceTemplateId ??
+    record.libraryTemplateId;
+
+  return typeof possibleReference === "string" ? possibleReference : undefined;
+}
+
+function getNormalizedText(value?: string) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function doesRangeDayDrillMatchTemplate(
+  drill: RangeDayDrill,
+  template: DrillTemplate,
+) {
+  const templateReferenceId = getDrillTemplateReferenceId(drill);
+
+  if (templateReferenceId && templateReferenceId === template.id) {
+    return true;
+  }
+
+  return (
+    getNormalizedText(drill.name) === getNormalizedText(template.name) &&
+    getNormalizedText(drill.category) === getNormalizedText(template.category)
+  );
+}
+
+function buildDrillLifecycleLibrary({
+  drillLibrary,
+  rangeDayDrills,
+  rangeDays,
+  results,
+  referenceDate,
+}: {
+  drillLibrary: ExtendedDrillTemplate[];
+  rangeDayDrills: ExtendedRangeDayDrill[];
+  rangeDays: PlannedRangeDay[];
+  results: ExtendedDrillRunResult[];
+  referenceDate?: string;
+}): DrillTemplateWithLifecycle[] {
+  const rangeDayById = new Map(
+    rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
+  );
+
+  const referenceDateValue =
+    getRangeDateValue(referenceDate) || new Date().getTime();
+
+  return drillLibrary
+    .map<DrillTemplateWithLifecycle>((template) => {
+      const matchingDrills = rangeDayDrills.filter((drill) =>
+        doesRangeDayDrillMatchTemplate(drill, template),
+      );
+
+      const matchingDrillIds = new Set(
+        matchingDrills.map((drill) => drill.id),
+      );
+
+      const performedRunKeys = new Set<string>();
+      let lastPerformedDate = "";
+      let lastPerformedDateValue = 0;
+
+      results.forEach((result) => {
+        if (!matchingDrillIds.has(result.drillId)) return;
+
+        const rangeDay = rangeDayById.get(result.rangeDayId);
+        const dateValue = getRangeDateValue(rangeDay?.date);
+
+        if (!dateValue) return;
+
+        performedRunKeys.add(
+          `${result.rangeDayId}:${result.drillId}:${result.runNumber ?? 1}`,
+        );
+
+        if (dateValue > lastPerformedDateValue) {
+          lastPerformedDateValue = dateValue;
+          lastPerformedDate = rangeDay?.date ?? "";
+        }
+      });
+
+      const timesPerformed = performedRunKeys.size;
+      const daysSinceLastPerformed =
+        lastPerformedDateValue > 0
+          ? Math.max(
+              0,
+              Math.floor(
+                (referenceDateValue - lastPerformedDateValue) /
+                  (1000 * 60 * 60 * 24),
+              ),
+            )
+          : undefined;
+
+      const recommendationReason =
+        timesPerformed === 0
+          ? "Never performed"
+          : typeof daysSinceLastPerformed === "number" &&
+              daysSinceLastPerformed >= DRILL_RECOMMENDATION_STALE_DAYS
+            ? `Not used in ${daysSinceLastPerformed} days`
+            : undefined;
+
+      return {
+        ...template,
+        lifecycle: {
+          timesPerformed,
+          lastPerformedDate: lastPerformedDate || undefined,
+          lastPerformedDateLabel: getShortDateLabel(lastPerformedDate),
+          daysSinceLastPerformed,
+          recommended: Boolean(recommendationReason),
+          recommendationReason,
+        },
+      };
+    })
+    .sort((left, right) => {
+      if (left.lifecycle.recommended !== right.lifecycle.recommended) {
+        return left.lifecycle.recommended ? -1 : 1;
+      }
+
+      if (left.lifecycle.recommended && right.lifecycle.recommended) {
+        const leftDate = getRangeDateValue(left.lifecycle.lastPerformedDate);
+        const rightDate = getRangeDateValue(right.lifecycle.lastPerformedDate);
+
+        if (leftDate !== rightDate) return leftDate - rightDate;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+}
+
 function getUserName(userId: string) {
   return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
 }
@@ -1122,6 +1305,9 @@ export default function RangeDaysPage() {
     null,
   );
 
+  const [activeRangeDayTab, setActiveRangeDayTab] =
+    useState<RangeDayDetailTab>("overview");
+
   const [drillLibrary, setDrillLibrary] =
     useState<ExtendedDrillTemplate[]>(DRILL_TEMPLATES);
 
@@ -1259,6 +1445,18 @@ export default function RangeDaysPage() {
         selectedRangeResults,
       ),
     [selectedRoster, selectedDrills, selectedRangeResults],
+  );
+
+  const drillLibraryWithLifecycle = useMemo(
+    () =>
+      buildDrillLifecycleLibrary({
+        drillLibrary,
+        rangeDayDrills,
+        rangeDays,
+        results,
+        referenceDate: selectedRangeDay?.date,
+      }),
+    [drillLibrary, rangeDayDrills, rangeDays, results, selectedRangeDay?.date],
   );
 
   const activeRangeDayCount = useMemo(
@@ -1537,6 +1735,7 @@ export default function RangeDaysPage() {
     );
 
     setSelectedRangeDayId(rangeDayId);
+    setActiveRangeDayTab("overview");
     setSelectedOfficerId(firstRoster?.officerId ?? "");
     setSelectedDrillId(firstDrill?.id ?? "");
     setShowLibraryPanel(false);
@@ -1546,6 +1745,7 @@ export default function RangeDaysPage() {
 
   function goBackToOverview() {
     setSelectedRangeDayId(null);
+    setActiveRangeDayTab("overview");
     setShowLibraryPanel(false);
     setShowCreateDrillForm(false);
     resetEntryForm(1);
@@ -1576,6 +1776,7 @@ export default function RangeDaysPage() {
 
     setRangeDays((current) => [newRangeDay, ...current]);
     setSelectedRangeDayId(newRangeDayId);
+    setActiveRangeDayTab("overview");
     setSelectedOfficerId("");
     setSelectedDrillId("");
     setShowLibraryPanel(false);
@@ -2778,28 +2979,62 @@ export default function RangeDaysPage() {
           />
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
-          <div className="space-y-5">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-              <h2 className="mb-4 text-[15px] font-bold text-white">
-                Editable Range Day Card
-              </h2>
+        <section className="space-y-5">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-2">
+            <div className="grid gap-2 md:grid-cols-5">
+              {RANGE_DAY_DETAIL_TABS.map((tab) => {
+                const active = activeRangeDayTab === tab.id;
 
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Title
-                  </label>
-                  <input
-                    value={selectedRangeDay.title}
-                    onChange={(event) =>
-                      updateSelectedRangeDay("title", event.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  />
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveRangeDayTab(tab.id)}
+                    className={`rounded-2xl px-3 py-3 text-left transition ${
+                      active
+                        ? "border border-blue-500/40 bg-blue-500/10 text-white"
+                        : "border border-transparent text-slate-500 hover:border-slate-800 hover:bg-slate-950/40 hover:text-slate-300"
+                    }`}
+                  >
+                    <p className="text-[12px] font-bold">{tab.label}</p>
+                    <p className="mt-0.5 hidden text-[10px] leading-4 md:block">
+                      {tab.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {activeRangeDayTab === "overview" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)]">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-[16px] font-bold text-white">
+                      Range Day Details
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Core details shown on the overview card and printed packet.
+                    </p>
+                  </div>
+                  <StatusPill label={selectedRangeDay.packetStatus} tone={selectedRangeDay.packetStatus === "Ready" ? "green" : selectedRangeDay.packetStatus === "In Progress" ? "amber" : "red"} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="lg:col-span-2">
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Title
+                    </label>
+                    <input
+                      value={selectedRangeDay.title}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("title", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+
                   <div>
                     <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       Date
@@ -2835,9 +3070,7 @@ export default function RangeDaysPage() {
                       ))}
                     </select>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       Start
@@ -2863,270 +3096,300 @@ export default function RangeDaysPage() {
                       className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Location
-                  </label>
-                  <input
-                    value={selectedRangeDay.location}
-                    onChange={(event) =>
-                      updateSelectedRangeDay("location", event.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  />
-                </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Location
+                    </label>
+                    <input
+                      value={selectedRangeDay.location}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("location", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Type
-                  </label>
-                  <select
-                    value={selectedRangeDay.rangeType}
-                    onChange={(event) =>
-                      handleChangeRangeDayType(event.target.value as RangeDayType)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  >
-                    {RANGE_DAY_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Type
+                    </label>
+                    <select
+                      value={selectedRangeDay.rangeType}
+                      onChange={(event) =>
+                        handleChangeRangeDayType(event.target.value as RangeDayType)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {RANGE_DAY_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Packet Status
-                  </label>
-                  <select
-                    value={selectedRangeDay.packetStatus}
-                    onChange={(event) =>
-                      updateSelectedRangeDay(
-                        "packetStatus",
-                        event.target.value as PacketStatus,
-                      )
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  >
-                    {PACKET_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Packet Status
+                    </label>
+                    <select
+                      value={selectedRangeDay.packetStatus}
+                      onChange={(event) =>
+                        updateSelectedRangeDay(
+                          "packetStatus",
+                          event.target.value as PacketStatus,
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {PACKET_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Syllabus / Day Outline
-                  </label>
-                  <textarea
-                    value={formatOutlineText(
-                      getRangeDayOutlineForDisplay(selectedRangeDay),
-                    )}
-                    onChange={(event) =>
-                      updateSelectedRangeDay(
-                        "outline",
-                        parseOutlineText(event.target.value),
-                      )
-                    }
-                    rows={5}
-                    placeholder="Enter one syllabus item per line"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  />
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    These lines appear on the range-day overview card and print packet.
-                  </p>
-                </div>
+                  <div className="lg:col-span-2">
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Syllabus / Day Outline
+                    </label>
+                    <textarea
+                      value={formatOutlineText(
+                        getRangeDayOutlineForDisplay(selectedRangeDay),
+                      )}
+                      onChange={(event) =>
+                        updateSelectedRangeDay(
+                          "outline",
+                          parseOutlineText(event.target.value),
+                        )
+                      }
+                      rows={5}
+                      placeholder="Enter one syllabus item per line"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Staffing Notes
-                  </label>
-                  <textarea
-                    value={selectedRangeDay.staffingNotes}
-                    onChange={(event) =>
-                      updateSelectedRangeDay("staffingNotes", event.target.value)
-                    }
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  />
-                </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Staffing Notes
+                    </label>
+                    <textarea
+                      value={selectedRangeDay.staffingNotes}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("staffingNotes", event.target.value)
+                      }
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Notes
-                  </label>
-                  <textarea
-                    value={selectedRangeDay.notes ?? ""}
-                    onChange={(event) =>
-                      updateSelectedRangeDay("notes", event.target.value)
-                    }
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  />
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Notes
+                    </label>
+                    <textarea
+                      value={selectedRangeDay.notes ?? ""}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("notes", event.target.value)
+                      }
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-              <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                <Users size={15} className="text-blue-400" />
-                Staffing
-              </h3>
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Users size={15} className="text-blue-400" />
+                    Staffing
+                  </h3>
 
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Lead Instructor
-                  </label>
-                  <select
-                    value={selectedRangeDay.leadInstructorId}
-                    onChange={(event) => handleSetLeadInstructor(event.target.value)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                  >
-                    {MOCK_USERS.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                    Add Instructor
-                  </label>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <select
-                      value={newInstructorUserId}
-                      onChange={(event) =>
-                        setNewInstructorUserId(event.target.value)
-                      }
-                      disabled={availableInstructorUsers.length === 0}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                    >
-                      {availableInstructorUsers.length === 0 ? (
-                        <option value="">All users are assigned</option>
-                      ) : (
-                        availableInstructorUsers.map((user) => (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        Lead Instructor
+                      </label>
+                      <select
+                        value={selectedRangeDay.leadInstructorId}
+                        onChange={(event) => handleSetLeadInstructor(event.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                      >
+                        {MOCK_USERS.map((user) => (
                           <option key={user.id} value={user.id}>
                             {user.name}
                           </option>
-                        ))
-                      )}
-                    </select>
+                        ))}
+                      </select>
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={handleAddInstructorToRangeDay}
-                      disabled={availableInstructorUsers.length === 0}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
-                    >
-                      <Plus size={14} />
-                      Add
-                    </button>
+                    <div>
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        Add Instructor
+                      </label>
+                      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                        <select
+                          value={newInstructorUserId}
+                          onChange={(event) =>
+                            setNewInstructorUserId(event.target.value)
+                          }
+                          disabled={availableInstructorUsers.length === 0}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                        >
+                          {availableInstructorUsers.length === 0 ? (
+                            <option value="">All users are assigned</option>
+                          ) : (
+                            availableInstructorUsers.map((user) => (
+                              <option key={user.id} value={user.id}>
+                                {user.name}
+                              </option>
+                            ))
+                          )}
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={handleAddInstructorToRangeDay}
+                          disabled={availableInstructorUsers.length === 0}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                        >
+                          <Plus size={14} />
+                          Add
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {(selectedRangeDay.instructorIds ?? []).map((instructorId) => {
+                        const isLead = instructorId === selectedRangeDay.leadInstructorId;
+
+                        return (
+                          <div
+                            key={instructorId}
+                            className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[13px] font-semibold text-white">
+                                  {getUserName(instructorId)}
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  {isLead ? "Lead instructor" : "Assigned instructor"}
+                                </p>
+                              </div>
+
+                              {isLead && <StatusPill label="Lead" tone="green" />}
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleSetLeadInstructor(instructorId)}
+                                disabled={isLead}
+                                className="rounded-xl border border-slate-700 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
+                              >
+                                {isLead ? "Current Lead" : "Make Lead"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRemoveInstructorFromRangeDay(instructorId)
+                                }
+                                disabled={(selectedRangeDay.instructorIds ?? []).length <= 1}
+                                className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  {(selectedRangeDay.instructorIds ?? []).map((instructorId) => {
-                    const isLead = instructorId === selectedRangeDay.leadInstructorId;
-
-                    return (
-                      <div
-                        key={instructorId}
-                        className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-[13px] font-semibold text-white">
-                              {getUserName(instructorId)}
-                            </p>
-                            <p className="mt-1 text-[11px] text-slate-500">
-                              {isLead ? "Lead instructor" : "Assigned instructor"}
-                            </p>
-                          </div>
-
-                          {isLead && <StatusPill label="Lead" tone="green" />}
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSetLeadInstructor(instructorId)}
-                            disabled={isLead}
-                            className="rounded-xl border border-slate-700 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
-                          >
-                            {isLead ? "Current Lead" : "Make Lead"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleRemoveInstructorFromRangeDay(instructorId)
-                            }
-                            disabled={(selectedRangeDay.instructorIds ?? []).length <= 1}
-                            className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 text-[14px] font-bold text-white">
+                    Quick Actions
+                  </h3>
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveRangeDayTab("roster")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Manage roster and firearm assignments
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveRangeDayTab("drills")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Add or review planned drills
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveRangeDayTab("scoring")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Open scoring board
+                    </button>
+                  </div>
                 </div>
-
-                <p className="text-[12px] text-slate-500">
-                  {selectedRangeDay.staffingNotes ||
-                    "Use the staffing notes field above for range safety, armorer, or coverage notes."}
-                </p>
               </div>
             </div>
+          )}
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-              <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                <Users size={15} className="text-blue-400" />
-                Roster
-              </h3>
+          {activeRangeDayTab === "roster" && (
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-[17px] font-bold text-white">
+                    Roster & Firearms
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Add officers, mark attendance, and assign firearms without scrolling through the entire range day.
+                  </p>
+                </div>
 
-              <div className="mb-3 grid gap-2">
-                <select
-                  value={newRosterOfficerId}
-                  onChange={(event) => setNewRosterOfficerId(event.target.value)}
-                  disabled={availableRosterOfficers.length === 0}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                >
-                  {availableRosterOfficers.length === 0 ? (
-                    <option value="">All officers are rostered</option>
-                  ) : (
-                    availableRosterOfficers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))
-                  )}
-                </select>
+                <div className="grid gap-2 sm:grid-cols-[260px_auto]">
+                  <select
+                    value={newRosterOfficerId}
+                    onChange={(event) => setNewRosterOfficerId(event.target.value)}
+                    disabled={availableRosterOfficers.length === 0}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                  >
+                    {availableRosterOfficers.length === 0 ? (
+                      <option value="">All officers are rostered</option>
+                    ) : (
+                      availableRosterOfficers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
 
-                <button
-                  type="button"
-                  onClick={handleAddOfficerToRoster}
-                  disabled={availableRosterOfficers.length === 0}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
-                >
-                  <Plus size={14} />
-                  Add Officer
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleAddOfficerToRoster}
+                    disabled={availableRosterOfficers.length === 0}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                  >
+                    <Plus size={14} />
+                    Add Officer
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                 {selectedRoster.length === 0 && (
                   <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
-                    No officers assigned yet. Add officers above to build the
-                    range day roster.
+                    No officers assigned yet. Add officers above to build the range day roster.
                   </p>
                 )}
 
@@ -3145,23 +3408,25 @@ export default function RangeDaysPage() {
                         setSelectedOfficerId(entry.officerId);
                         resetEntryForm(1);
                       }}
-                      className="flex w-full items-center justify-between gap-2 text-left"
+                      className="flex w-full items-center justify-between gap-3 text-left"
                     >
                       <div>
                         <p className="text-[13px] font-semibold text-white">
                           {getUserName(entry.officerId)}
                         </p>
                         <p className="mt-1 text-[11px] text-slate-500">
-                          {entry.attended ? "Marked present" : "Not marked present"}
+                          {getFirearmName(entry.assignedFirearmIds[0])}
                         </p>
                       </div>
 
-                      {entry.attended && (
+                      {entry.attended ? (
                         <CheckCircle2 size={14} className="text-emerald-400" />
+                      ) : (
+                        <StatusPill label="Not Present" tone="slate" />
                       )}
                     </button>
 
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                       <select
                         value={entry.assignedFirearmIds[0] ?? ""}
                         onChange={(event) =>
@@ -3177,508 +3442,399 @@ export default function RangeDaysPage() {
                         ))}
                       </select>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleRosterAttendance(entry.id)}
-                          className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
-                            entry.attended
-                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                              : "border-slate-700 text-slate-400 hover:border-slate-600"
-                          }`}
-                        >
-                          {entry.attended ? "Present" : "Mark Present"}
-                        </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleRosterAttendance(entry.id)}
+                        className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                          entry.attended
+                            ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                            : "border-slate-700 text-slate-400 hover:border-slate-600"
+                        }`}
+                      >
+                        {entry.attended ? "Present" : "Mark Present"}
+                      </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveOfficerFromRoster(entry.id)}
-                          className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
-                        >
-                          Remove
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOfficerFromRoster(entry.id)}
+                        className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+          )}
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="flex items-center gap-2 text-[14px] font-bold text-white">
-                  <Target size={15} className="text-blue-400" />
-                  Planned Drills
-                </h3>
-
-                <button
-                  type="button"
-                  onClick={() => setShowLibraryPanel((current) => !current)}
-                  className="rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                >
-                  {showLibraryPanel ? "Hide Library" : "Add Drill"}
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {selectedDrills.map((drill) => (
-                  <button
-                    key={drill.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDrillId(drill.id);
-                      resetEntryForm(1);
-                    }}
-                    className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
-                      selectedDrill?.id === drill.id
-                        ? "border-blue-500/50 bg-blue-500/10"
-                        : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-[13px] font-semibold text-white">
-                          {drill.name}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {drill.description}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
-                        {getEffectiveRunCount(drill)} run
-                        {getEffectiveRunCount(drill) !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <StatusPill label={drill.category} />
-                      <StatusPill label={drill.scoringMode} tone="slate" />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            {showLibraryPanel && (
-              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {activeRangeDayTab === "drills" && (
+            <div className="space-y-5">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-[17px] font-bold text-white">
-                      Add Drill From Library
+                      Planned Drills
                     </h2>
                     <p className="mt-1 text-[12px] text-slate-500">
-                      Add reusable library drills to this range day. Each added
-                      drill is copied as a snapshot.
+                      Select the drills that make up this range day. Drill library recommendations are based on recent use.
                     </p>
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => setShowCreateDrillForm((current) => !current)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                    onClick={() => setShowLibraryPanel((current) => !current)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
                   >
                     <Plus size={14} />
-                    {showCreateDrillForm ? "Close Form" : "Create Drill"}
+                    {showLibraryPanel ? "Hide Library" : "Add Drill"}
                   </button>
                 </div>
 
-                {showCreateDrillForm && (
-                  <div className="mt-5 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4">
-                    <h3 className="mb-4 text-[15px] font-bold text-white">
-                      Create New Drill Template
-                    </h3>
-
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Drill Name
-                        </label>
-                        <input
-                          type="text"
-                          value={newDrillName}
-                          onChange={(event) =>
-                            setNewDrillName(event.target.value)
-                          }
-                          placeholder="Example: 7 Yard Failure Drill"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Category
-                        </label>
-                        <select
-                          value={newDrillCategory}
-                          onChange={(event) =>
-                            setNewDrillCategory(
-                              event.target.value as DrillTemplate["category"],
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {DRILL_CATEGORIES.map((category) => (
-                            <option key={category} value={category}>
-                              {category}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Firearm Type
-                        </label>
-                        <select
-                          value={newDrillFirearmType}
-                          onChange={(event) =>
-                            setNewDrillFirearmType(
-                              event.target.value as NonNullable<
-                                DrillTemplate["firearmType"]
-                              >,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {FIREARM_TYPES.map((type) => (
-                            <option key={type} value={type}>
-                              {type}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Difficulty
-                        </label>
-                        <select
-                          value={newDrillDifficulty}
-                          onChange={(event) =>
-                            setNewDrillDifficulty(
-                              event.target.value as NonNullable<
-                                DrillTemplate["difficulty"]
-                              >,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {DRILL_DIFFICULTIES.map((difficulty) => (
-                            <option key={difficulty} value={difficulty}>
-                              {difficulty}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Scoring Mode
-                        </label>
-                        <select
-                          value={newDrillScoringMode}
-                          onChange={(event) =>
-                            setNewDrillScoringMode(
-                              event.target.value as ScoringFormat,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {SCORING_FORMATS.map((mode) => (
-                            <option key={mode} value={mode}>
-                              {mode}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Default Run Count
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={newDrillRunCount}
-                          onChange={(event) =>
-                            setNewDrillRunCount(event.target.value)
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      {(newDrillScoringMode === "Qualification" ||
-                        newDrillScoringMode === "Points") && (
-                        <>
-                          <div>
-                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                              Passing Score
-                            </label>
-                            <input
-                              type="number"
-                              value={newDrillPassingScore}
-                              onChange={(event) =>
-                                setNewDrillPassingScore(event.target.value)
-                              }
-                              placeholder="Example: 80"
-                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                              Max Score
-                            </label>
-                            <input
-                              type="number"
-                              value={newDrillMaxScore}
-                              onChange={(event) =>
-                                setNewDrillMaxScore(event.target.value)
-                              }
-                              placeholder="Example: 100"
-                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      {newDrillScoringMode === "Time" && (
-                        <div>
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                            Maximum Passing Time (Seconds)
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={newDrillPassingTimeSeconds}
-                            onChange={(event) =>
-                              setNewDrillPassingTimeSeconds(event.target.value)
-                            }
-                            placeholder="Example: 8.5"
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                          />
-                        </div>
-                      )}
-
-                      {newDrillScoringMode === "Hit Count" && (
-                        <div>
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                            Minimum Passing Hits
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={newDrillMinimumHits}
-                            onChange={(event) =>
-                              setNewDrillMinimumHits(event.target.value)
-                            }
-                            placeholder="Example: 8"
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Round Count
-                        </label>
-                        <input
-                          type="number"
-                          value={newDrillRoundCount}
-                          onChange={(event) =>
-                            setNewDrillRoundCount(event.target.value)
-                          }
-                          placeholder="Optional"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Estimated Minutes
-                        </label>
-                        <input
-                          type="number"
-                          value={newDrillEstimatedMinutes}
-                          onChange={(event) =>
-                            setNewDrillEstimatedMinutes(event.target.value)
-                          }
-                          placeholder="Optional"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div className="lg:col-span-2">
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Description
-                        </label>
-                        <textarea
-                          value={newDrillDescription}
-                          onChange={(event) =>
-                            setNewDrillDescription(event.target.value)
-                          }
-                          rows={2}
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div className="lg:col-span-2">
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Instructions
-                        </label>
-                        <textarea
-                          value={newDrillInstructions}
-                          onChange={(event) =>
-                            setNewDrillInstructions(event.target.value)
-                          }
-                          rows={3}
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Tags
-                        </label>
-                        <input
-                          value={newDrillTags}
-                          onChange={(event) =>
-                            setNewDrillTags(event.target.value)
-                          }
-                          placeholder="handgun, low light, remedial"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                          Notes
-                        </label>
-                        <input
-                          value={newDrillNotes}
-                          onChange={(event) =>
-                            setNewDrillNotes(event.target.value)
-                          }
-                          placeholder="Optional internal note"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                  {selectedDrills.length === 0 ? (
+                    <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
+                      No drills added yet. Use Add Drill to build the range day.
+                    </p>
+                  ) : (
+                    selectedDrills.map((drill) => (
                       <button
+                        key={drill.id}
                         type="button"
-                        onClick={() =>
-                          setNewDrillDefaultRequired((current) => !current)
-                        }
-                        className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
-                          newDrillDefaultRequired
-                            ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
-                            : "border-slate-700 text-slate-400"
+                        onClick={() => {
+                          setSelectedDrillId(drill.id);
+                          resetEntryForm(1);
+                        }}
+                        className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                          selectedDrill?.id === drill.id
+                            ? "border-blue-500/50 bg-blue-500/10"
+                            : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
                         }`}
                       >
-                        {newDrillDefaultRequired
-                          ? "Default: Required"
-                          : "Default: Optional"}
-                      </button>
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetNewDrillForm();
-                            setShowCreateDrillForm(false);
-                          }}
-                          className="rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        >
-                          Cancel
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleCreateDrillTemplate}
-                          className="rounded-xl bg-blue-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-500"
-                        >
-                          Save Drill Template
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-5 grid gap-3 md:grid-cols-2">
-                  {drillLibrary.map((template) => (
-                    <div
-                      key={template.id}
-                      className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4"
-                    >
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-[14px] font-bold text-white">
-                            {template.name}
-                          </h3>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {template.description ?? "No description entered."}
-                          </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[13px] font-semibold text-white">
+                              {drill.name}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {drill.description}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
+                            {getEffectiveRunCount(drill)} run{getEffectiveRunCount(drill) !== 1 ? "s" : ""}
+                          </span>
                         </div>
 
-                        <Target size={15} className="text-blue-400" />
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <StatusPill label={template.category} />
-                        <StatusPill
-                          label={template.defaultScoringMode}
-                          tone="slate"
-                        />
-                        <StatusPill
-                          label={`${template.defaultRunCount} run${
-                            template.defaultRunCount !== 1 ? "s" : ""
-                          }`}
-                          tone="slate"
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={template.status !== "Active"}
-                        onClick={() =>
-                          handleAddTemplateToSelectedRangeDay(template.id)
-                        }
-                        className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
-                          template.status === "Active"
-                            ? "bg-blue-600 text-white hover:bg-blue-500"
-                            : "cursor-not-allowed bg-slate-800 text-slate-600"
-                        }`}
-                      >
-                        <Plus size={14} />
-                        Add to This Range Day
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <StatusPill label={drill.category} />
+                          <StatusPill label={getScoringFormat(drill)} tone="slate" />
+                        </div>
                       </button>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
-              </section>
-            )}
+              </div>
 
+              {showLibraryPanel && (
+                <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-[17px] font-bold text-white">
+                        Add Drill From Library
+                      </h2>
+                      <p className="mt-1 text-[12px] text-slate-500">
+                        Recommended drills appear first based on usage history and staleness.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateDrillForm((current) => !current)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                    >
+                      <Plus size={14} />
+                      {showCreateDrillForm ? "Close Form" : "Create Drill"}
+                    </button>
+                  </div>
+
+                  {showCreateDrillForm && (
+                    <div className="mt-5 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4">
+                      <h3 className="mb-4 text-[15px] font-bold text-white">
+                        Create New Drill Template
+                      </h3>
+
+                      <div className="grid gap-4 lg:grid-cols-4">
+                        <div className="lg:col-span-2">
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Drill Name
+                          </label>
+                          <input
+                            type="text"
+                            value={newDrillName}
+                            onChange={(event) =>
+                              setNewDrillName(event.target.value)
+                            }
+                            placeholder="Example: 7 Yard Failure Drill"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Category
+                          </label>
+                          <select
+                            value={newDrillCategory}
+                            onChange={(event) =>
+                              setNewDrillCategory(
+                                event.target.value as DrillTemplate["category"],
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          >
+                            {DRILL_CATEGORIES.map((category) => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Scoring
+                          </label>
+                          <select
+                            value={newDrillScoringMode}
+                            onChange={(event) =>
+                              setNewDrillScoringMode(
+                                event.target.value as ScoringFormat,
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          >
+                            {SCORING_FORMATS.map((format) => (
+                              <option key={format} value={format}>
+                                {format}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Firearm Type
+                          </label>
+                          <select
+                            value={newDrillFirearmType}
+                            onChange={(event) =>
+                              setNewDrillFirearmType(
+                                event.target.value as NonNullable<
+                                  DrillTemplate["firearmType"]
+                                >,
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          >
+                            {FIREARM_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {type}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Runs
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={newDrillRunCount}
+                            onChange={(event) =>
+                              setNewDrillRunCount(event.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Round Count
+                          </label>
+                          <input
+                            type="number"
+                            value={newDrillRoundCount}
+                            onChange={(event) =>
+                              setNewDrillRoundCount(event.target.value)
+                            }
+                            placeholder="Optional"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Estimated Minutes
+                          </label>
+                          <input
+                            type="number"
+                            value={newDrillEstimatedMinutes}
+                            onChange={(event) =>
+                              setNewDrillEstimatedMinutes(event.target.value)
+                            }
+                            placeholder="Optional"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="lg:col-span-4">
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Description
+                          </label>
+                          <textarea
+                            value={newDrillDescription}
+                            onChange={(event) =>
+                              setNewDrillDescription(event.target.value)
+                            }
+                            rows={2}
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewDrillDefaultRequired((current) => !current)
+                          }
+                          className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                            newDrillDefaultRequired
+                              ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
+                              : "border-slate-700 text-slate-400"
+                          }`}
+                        >
+                          {newDrillDefaultRequired
+                            ? "Default: Required"
+                            : "Default: Optional"}
+                        </button>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetNewDrillForm();
+                              setShowCreateDrillForm(false);
+                            }}
+                            className="rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                          >
+                            Cancel
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleCreateDrillTemplate}
+                            className="rounded-xl bg-blue-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-500"
+                          >
+                            Save Drill Template
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {drillLibraryWithLifecycle.map((template) => (
+                      <div
+                        key={template.id}
+                        className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4"
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-[14px] font-bold text-white">
+                              {template.name}
+                            </h3>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {template.description ?? "No description entered."}
+                            </p>
+                          </div>
+
+                          <Target size={15} className="text-blue-400" />
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {template.lifecycle.recommended ? (
+                            <StatusPill label="Recommended" tone="amber" />
+                          ) : null}
+                          <StatusPill label={template.category} />
+                          <StatusPill
+                            label={template.defaultScoringMode}
+                            tone="slate"
+                          />
+                          <StatusPill
+                            label={`Used ${template.lifecycle.timesPerformed}x`}
+                            tone="slate"
+                          />
+                          <StatusPill
+                            label={`Last: ${template.lifecycle.lastPerformedDateLabel}`}
+                            tone={
+                              template.lifecycle.recommended ? "amber" : "slate"
+                            }
+                          />
+                        </div>
+
+                        {template.lifecycle.recommendationReason ? (
+                          <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200">
+                            <AlertTriangle
+                              size={13}
+                              className="mt-0.5 flex-shrink-0"
+                            />
+                            <span>
+                              Recommended: {template.lifecycle.recommendationReason}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          disabled={template.status !== "Active"}
+                          onClick={() =>
+                            handleAddTemplateToSelectedRangeDay(template.id)
+                          }
+                          className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
+                            template.status === "Active"
+                              ? "bg-blue-600 text-white hover:bg-blue-500"
+                              : "cursor-not-allowed bg-slate-800 text-slate-600"
+                          }`}
+                        >
+                          <Plus size={14} />
+                          Add to This Range Day
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {activeRangeDayTab === "scoring" && (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h3 className="text-[16px] font-bold text-white">
+                  <h2 className="text-[17px] font-bold text-white">
                     Range-Day Scoring Board
-                  </h3>
+                  </h2>
                   <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
-                    Keep every attending officer on one screen. Select the drill
-                    and run once, enter the full line, then save the group.
+                    Keep every attending officer on one screen. Select the drill and run once, enter the full line, then save the group.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
                   <UserCheck size={14} className="text-blue-400" />
-                  {attendingRoster.length} attending officer
-                  {attendingRoster.length === 1 ? "" : "s"}
+                  {attendingRoster.length} attending officer{attendingRoster.length === 1 ? "" : "s"}
                 </div>
               </div>
 
@@ -3730,241 +3886,146 @@ export default function RangeDaysPage() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <StatusPill label={getScoringFormat(selectedDrill)} />
                   <StatusPill label={selectedDrill.category} tone="slate" />
-                  <StatusPill
-                    label={getRunLabel(selectedDrill, selectedRunNumber)}
-                    tone="green"
-                  />
-                  {(getScoringFormat(selectedDrill) === "Qualification" ||
-                    getScoringFormat(selectedDrill) === "Points") && (
-                    <StatusPill
-                      label={`Pass ${selectedDrill.passingScore ?? "—"} / Max ${
-                        selectedDrill.maxScore ?? "—"
-                      }`}
-                      tone="slate"
-                    />
-                  )}
-                  {getScoringFormat(selectedDrill) === "Time" && (
-                    <StatusPill
-                      label={`Pass ≤ ${selectedDrill.passingTimeSeconds ?? "—"} sec`}
-                      tone="slate"
-                    />
-                  )}
-                  {getScoringFormat(selectedDrill) === "Hit Count" && (
-                    <StatusPill
-                      label={`Pass ≥ ${selectedDrill.minimumHits ?? "—"} hits`}
-                      tone="slate"
-                    />
-                  )}
+                  <StatusPill label={getRunLabel(selectedDrill, selectedRunNumber)} tone="green" />
                 </div>
               )}
 
-              {attendingRoster.length === 0 ? (
-                <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-4 text-[12px] text-amber-300">
-                  Mark officers present in the roster before opening the scoring
-                  line. Only attending officers appear here.
-                </div>
-              ) : !selectedDrill ? (
-                <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-[12px] text-slate-500">
-                  Add a drill to this range day before entering scores.
-                </div>
-              ) : (
-                <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-800">
-                  <div className="min-w-[1180px]">
-                    <div className="grid grid-cols-[190px_220px_170px_170px_250px_260px] gap-3 border-b border-slate-800 bg-slate-950/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+              {selectedDrill && (
+                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-800">
+                  <div className="min-w-[920px] divide-y divide-slate-800">
+                    <div className="grid grid-cols-[210px_130px_120px_120px_1fr_150px] gap-3 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       <span>Officer</span>
-                      <span>Firearm</span>
-                      <span>Measurement</span>
-                      <span>Final Result</span>
-                      <span>Instructor Notes</span>
+                      <span>Metric</span>
+                      <span>Status</span>
+                      <span>Completed</span>
+                      <span>Notes</span>
                       <span>Malfunction</span>
                     </div>
 
-                    {attendingRoster.map((entry) => {
-                      const row = batchScoreRows[entry.officerId] ?? {
-                        officerId: entry.officerId,
-                        metricValue: "",
-                        notes: "",
-                        malfunctionOccurred: false,
-                        malfunctionType: "Failure to Feed" as MalfunctionType,
-                        malfunctionNotes: "",
-                      };
-                      const scoringFormat = getScoringFormat(selectedDrill);
+                    {attendingRoster.length === 0 ? (
+                      <div className="px-3 py-6 text-center text-[12px] text-slate-500">
+                        Mark at least one rostered officer present before scoring.
+                      </div>
+                    ) : (
+                      attendingRoster.map((entry) => {
+                        const row = batchScoreRows[entry.officerId] ?? {
+                          officerId: entry.officerId,
+                          metricValue: "",
+                          notes: "",
+                          malfunctionOccurred: false,
+                          malfunctionType: "Failure to Feed" as MalfunctionType,
+                          malfunctionNotes: "",
+                        };
 
-                      return (
-                        <div
-                          key={entry.id}
-                          onClick={() => setSelectedOfficerId(entry.officerId)}
-                          className="grid grid-cols-[190px_220px_170px_170px_250px_260px] gap-3 border-b border-slate-800 px-3 py-3 last:border-b-0"
-                        >
-                          <div>
-                            <p className="text-[13px] font-semibold text-white">
-                              {getUserName(entry.officerId)}
-                            </p>
-                            <p className="mt-1 text-[10px] text-emerald-400">
-                              Present
-                            </p>
-                          </div>
+                        const scoringFormat = getScoringFormat(selectedDrill);
 
-                          <div className="text-[11px] leading-5 text-slate-400">
-                            {getFirearmName(entry.assignedFirearmIds[0])}
-                          </div>
+                        return (
+                          <div
+                            key={entry.officerId}
+                            className="grid grid-cols-[210px_130px_120px_120px_1fr_150px] gap-3 px-3 py-3 text-[12px]"
+                          >
+                            <div>
+                              <p className="font-semibold text-white">
+                                {getUserName(entry.officerId)}
+                              </p>
+                              <p className="mt-0.5 text-[10px] text-slate-500">
+                                {getFirearmName(entry.assignedFirearmIds[0])}
+                              </p>
+                            </div>
 
-                          <div>
-                            {(scoringFormat === "Qualification" ||
-                              scoringFormat === "Points" ||
-                              scoringFormat === "Time" ||
-                              scoringFormat === "Hit Count") && (
-                              <input
-                                type="number"
-                                min={0}
-                                step={scoringFormat === "Time" ? "0.01" : "1"}
-                                value={row.metricValue}
-                                onChange={(event) =>
-                                  handleMetricChange(
-                                    entry.officerId,
-                                    event.target.value,
-                                  )
-                                }
-                                placeholder={
-                                  scoringFormat === "Time"
-                                    ? "Seconds"
-                                    : scoringFormat === "Hit Count"
-                                      ? "Hits"
+                            <input
+                              value={row.metricValue}
+                              onChange={(event) =>
+                                handleMetricChange(entry.officerId, event.target.value)
+                              }
+                              placeholder={
+                                scoringFormat === "Time"
+                                  ? "Seconds"
+                                  : scoringFormat === "Hit Count"
+                                    ? "Hits"
+                                    : scoringFormat === "Completion" ||
+                                        scoringFormat === "Pass/Fail" ||
+                                        scoringFormat === "Notes Only"
+                                      ? "—"
                                       : "Score"
-                                }
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                              />
-                            )}
+                              }
+                              disabled={
+                                scoringFormat === "Completion" ||
+                                scoringFormat === "Pass/Fail" ||
+                                scoringFormat === "Notes Only"
+                              }
+                              className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                            />
 
-                            {scoringFormat === "Completion" && (
-                              <div className="grid grid-cols-2 gap-1">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    updateBatchScoreRow(entry.officerId, {
-                                      completed: true,
-                                      passed: true,
-                                    });
-                                  }}
-                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
-                                    row.completed === true
-                                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                                      : "border-slate-700 text-slate-500"
-                                  }`}
-                                >
-                                  Complete
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    updateBatchScoreRow(entry.officerId, {
-                                      completed: false,
-                                      passed: false,
-                                    });
-                                  }}
-                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
-                                    row.completed === false
-                                      ? "border-red-500/50 bg-red-500/10 text-red-300"
-                                      : "border-slate-700 text-slate-500"
-                                  }`}
-                                >
-                                  Incomplete
-                                </button>
-                              </div>
-                            )}
+                            <select
+                              value={
+                                typeof row.passed === "boolean"
+                                  ? row.passed
+                                    ? "pass"
+                                    : "fail"
+                                  : ""
+                              }
+                              onChange={(event) =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  passed:
+                                    event.target.value === ""
+                                      ? undefined
+                                      : event.target.value === "pass",
+                                })
+                              }
+                              disabled={scoringFormat === "Notes Only"}
+                              className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                            >
+                              <option value="">Auto</option>
+                              <option value="pass">Pass</option>
+                              <option value="fail">Fail</option>
+                            </select>
 
-                            {scoringFormat === "Pass/Fail" && (
-                              <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
-                                Select final result
-                              </p>
-                            )}
-
-                            {scoringFormat === "Notes Only" && (
-                              <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
-                                Notes-based entry
-                              </p>
-                            )}
-                          </div>
-
-                          <div>
-                            {scoringFormat === "Notes Only" ? (
-                              <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-center text-[11px] text-slate-500">
-                                Not scored
-                              </p>
-                            ) : (
-                              <div className="grid grid-cols-2 gap-1">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    updateBatchScoreRow(entry.officerId, {
-                                      passed: true,
-                                    });
-                                  }}
-                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
-                                    row.passed === true
-                                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                                      : "border-slate-700 text-slate-500"
-                                  }`}
-                                >
-                                  Pass
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    updateBatchScoreRow(entry.officerId, {
-                                      passed: false,
-                                    });
-                                  }}
-                                  className={`rounded-lg border px-2 py-2 text-[10px] font-semibold ${
-                                    row.passed === false
-                                      ? "border-red-500/50 bg-red-500/10 text-red-300"
-                                      : "border-slate-700 text-slate-500"
-                                  }`}
-                                >
-                                  Fail
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          <textarea
-                            value={row.notes}
-                            onChange={(event) =>
-                              updateBatchScoreRow(entry.officerId, {
-                                notes: event.target.value,
-                              })
-                            }
-                            placeholder="Deficiencies, corrections, observations..."
-                            rows={3}
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[11px] text-white outline-none focus:border-blue-500"
-                          />
-
-                          <div className="space-y-2">
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
+                              onClick={() =>
                                 updateBatchScoreRow(entry.officerId, {
-                                  malfunctionOccurred: !row.malfunctionOccurred,
-                                });
-                              }}
-                              className={`w-full rounded-xl border px-3 py-2 text-[10px] font-semibold ${
-                                row.malfunctionOccurred
-                                  ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                                  : "border-slate-700 text-slate-500"
+                                  completed: !(row.completed ?? true),
+                                })
+                              }
+                              className={`rounded-xl border px-2 py-2 text-[11px] font-semibold ${
+                                row.completed ?? true
+                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                  : "border-slate-700 text-slate-400"
                               }`}
                             >
-                              {row.malfunctionOccurred
-                                ? "Malfunction: Yes"
-                                : "No Malfunction"}
+                              {row.completed ?? true ? "Complete" : "Incomplete"}
                             </button>
 
-                            {row.malfunctionOccurred && (
-                              <>
+                            <input
+                              value={row.notes}
+                              onChange={(event) =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  notes: event.target.value,
+                                })
+                              }
+                              placeholder="Instructor notes"
+                              className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  malfunctionOccurred: !row.malfunctionOccurred,
+                                })
+                              }
+                              className={`rounded-xl border px-2 py-2 text-[11px] font-semibold ${
+                                row.malfunctionOccurred
+                                  ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                  : "border-slate-700 text-slate-400"
+                              }`}
+                            >
+                              {row.malfunctionOccurred ? "Logged" : "No"}
+                            </button>
+
+                            {row.malfunctionOccurred ? (
+                              <div className="col-span-6 grid gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 sm:grid-cols-[220px_1fr]">
                                 <select
                                   value={row.malfunctionType}
                                   onChange={(event) =>
@@ -3973,7 +4034,7 @@ export default function RangeDaysPage() {
                                         event.target.value as MalfunctionType,
                                     })
                                   }
-                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[10px] text-white outline-none focus:border-blue-500"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
                                 >
                                   {MALFUNCTION_TYPES.map((type) => (
                                     <option key={type} value={type}>
@@ -3989,23 +4050,21 @@ export default function RangeDaysPage() {
                                     })
                                   }
                                   placeholder="Malfunction notes"
-                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[10px] text-white outline-none focus:border-blue-500"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
                                 />
-                              </>
-                            )}
+                              </div>
+                            ) : null}
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-[11px] text-slate-500">
-                  Scores are saved as one drill/run batch, while each officer
-                  retains an individual result, firearm link, notes, and final
-                  pass/fail outcome.
+                  Scores are saved as one drill/run batch while retaining individual officer records.
                 </p>
 
                 <button
@@ -4019,38 +4078,78 @@ export default function RangeDaysPage() {
                 </button>
               </div>
             </div>
+          )}
 
-            <div className="grid gap-5 xl:grid-cols-2">
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                  <ClipboardList size={15} className="text-blue-400" />
-                  Officer Performance Summary
-                </h3>
+          {activeRangeDayTab === "results" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <ClipboardList size={15} className="text-blue-400" />
+                    Officer Performance Summary
+                  </h3>
 
-                <div className="space-y-2 text-[12px] text-slate-400">
-                  <p>Officer: {getUserName(selectedOfficerId)}</p>
-                  <p>
-                    Average Score:{" "}
-                    {getAverageScore(selectedOfficerResults) ??
-                      "No scored runs"}
-                  </p>
-                  <p>
-                    Pass Rate:{" "}
-                    {typeof getPassRate(selectedOfficerResults) === "number"
-                      ? `${getPassRate(selectedOfficerResults)}%`
-                      : "No pass/fail runs"}
-                  </p>
-                  <p>Trend: {getPerformanceTrend(selectedOfficerResults)}</p>
+                  <div className="space-y-2 text-[12px] text-slate-400">
+                    <p>Officer: {getUserName(selectedOfficerId)}</p>
+                    <p>
+                      Average Score: {getAverageScore(selectedOfficerResults) ?? "No scored runs"}
+                    </p>
+                    <p>
+                      Pass Rate: {typeof getPassRate(selectedOfficerResults) === "number" ? `${getPassRate(selectedOfficerResults)}%` : "No pass/fail runs"}
+                    </p>
+                    <p>Trend: {getPerformanceTrend(selectedOfficerResults)}</p>
+                  </div>
                 </div>
+
+                {malfunctions.filter(
+                  (malfunction) => malfunction.rangeDayId === selectedRangeDay.id,
+                ).length > 0 ? (
+                  <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
+                    <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-amber-300">
+                      <Wrench size={15} />
+                      Firearm Malfunctions Logged
+                    </h3>
+
+                    <div className="space-y-2">
+                      {malfunctions
+                        .filter(
+                          (malfunction) =>
+                            malfunction.rangeDayId === selectedRangeDay.id,
+                        )
+                        .map((malfunction) => (
+                          <div
+                            key={malfunction.id}
+                            className="rounded-2xl border border-amber-500/20 bg-slate-950/40 px-3 py-3"
+                          >
+                            <p className="text-[12px] font-semibold text-white">
+                              {getFirearmName(malfunction.firearmId)}
+                            </p>
+                            <p className="text-[11px] text-amber-300">
+                              {malfunction.type} · Armorer inspection required
+                            </p>
+                            {malfunction.notes && (
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                {malfunction.notes}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 text-[12px] text-slate-500">
+                    No firearm malfunctions logged for this range day.
+                  </div>
+                )}
               </div>
 
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
                 <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
                   <FileText size={15} className="text-blue-400" />
                   Saved Drill Runs
                 </h3>
 
-                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
                   {selectedRangeResults.length === 0 ? (
                     <p className="text-[12px] text-slate-500">
                       No drill runs entered yet.
@@ -4084,13 +4183,7 @@ export default function RangeDaysPage() {
                           </div>
 
                           <p className="mt-2 text-[11px] text-slate-400">
-                            Result: {formatResultMetric(result, drill) || "—"} · Passed:{" "}
-                            {typeof result.passed === "boolean"
-                              ? result.passed
-                                ? "Yes"
-                                : "No"
-                              : "—"}{" "}
-                            · Completed: {result.completed ? "Yes" : "No"}
+                            Result: {formatResultMetric(result, drill) || "—"} · Passed: {typeof result.passed === "boolean" ? result.passed ? "Yes" : "No" : "—"} · Completed: {result.completed ? "Yes" : "No"}
                           </p>
 
                           {result.notes && (
@@ -4105,44 +4198,7 @@ export default function RangeDaysPage() {
                 </div>
               </div>
             </div>
-
-            {malfunctions.filter(
-              (malfunction) => malfunction.rangeDayId === selectedRangeDay.id,
-            ).length > 0 && (
-              <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
-                <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-amber-300">
-                  <Wrench size={15} />
-                  Firearm Malfunctions Logged
-                </h3>
-
-                <div className="space-y-2">
-                  {malfunctions
-                    .filter(
-                      (malfunction) =>
-                        malfunction.rangeDayId === selectedRangeDay.id,
-                    )
-                    .map((malfunction) => (
-                      <div
-                        key={malfunction.id}
-                        className="rounded-2xl border border-amber-500/20 bg-slate-950/40 px-3 py-3"
-                      >
-                        <p className="text-[12px] font-semibold text-white">
-                          {getFirearmName(malfunction.firearmId)}
-                        </p>
-                        <p className="text-[11px] text-amber-300">
-                          {malfunction.type} · Armorer inspection required
-                        </p>
-                        {malfunction.notes && (
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            {malfunction.notes}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </section>
       </div>
         </TracePointShell>
