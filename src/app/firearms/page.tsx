@@ -67,6 +67,7 @@ type FirearmRecord = {
   name: string;
   serialNumber: string;
   typeLabel: string;
+  caliberLabel: string;
   sourceStatusLabel: string;
   currentStatus: CurrentFirearmStatus;
   assignedOfficerId?: string;
@@ -85,14 +86,10 @@ type FirearmRecord = {
 type StatusOverrides = Record<string, CurrentFirearmStatus>;
 type AssignmentOverrides = Record<string, string | null>;
 
-type AssignmentDialog =
+type DetailModalState =
   | {
-      mode: "assign";
       firearmId: string;
-    }
-  | {
-      mode: "return";
-      firearmId: string;
+      assignmentMode?: "assign" | "return";
     }
   | null;
 
@@ -304,6 +301,18 @@ function getFirearmTypeLabel(firearm: MockFirearm) {
   );
 }
 
+function getFirearmCaliberLabel(firearm: MockFirearm) {
+  return (
+    getRecordValue(firearm, [
+      "caliber",
+      "calibre",
+      "chambering",
+      "gauge",
+      "ammunition",
+    ]) ?? "Not recorded"
+  );
+}
+
 function getFirearmStatusLabel(firearm: MockFirearm) {
   return (
     getRecordValue(firearm, [
@@ -486,7 +495,6 @@ function buildFirearmRecords({
   );
 
   const resultsByFirearmId = new Map<string, DrillRunResult[]>();
-  const rosterByFirearmId = new Map<string, RangeRosterEntry[]>();
   const malfunctionsByFirearmId = new Map<string, FirearmMalfunction[]>();
 
   for (const result of workspace.results) {
@@ -495,14 +503,6 @@ function buildFirearmRecords({
     const current = resultsByFirearmId.get(result.firearmId) ?? [];
     current.push(result);
     resultsByFirearmId.set(result.firearmId, current);
-  }
-
-  for (const entry of workspace.rangeRoster) {
-    for (const firearmId of entry.assignedFirearmIds ?? []) {
-      const current = rosterByFirearmId.get(firearmId) ?? [];
-      current.push(entry);
-      rosterByFirearmId.set(firearmId, current);
-    }
   }
 
   for (const malfunction of workspace.malfunctions) {
@@ -545,7 +545,6 @@ function buildFirearmRecords({
       },
     );
 
-    const rosterEntries = rosterByFirearmId.get(firearm.id) ?? [];
     const malfunctions = (malfunctionsByFirearmId.get(firearm.id) ?? [])
       .slice()
       .sort((left, right) => getDateValue(right.date) - getDateValue(left.date));
@@ -593,15 +592,12 @@ function buildFirearmRecords({
       name: getFirearmName(firearm),
       serialNumber: firearm.serialNumber,
       typeLabel: getFirearmTypeLabel(firearm),
+      caliberLabel: getFirearmCaliberLabel(firearm),
       sourceStatusLabel,
       currentStatus,
       assignedOfficerId,
       assignedOfficerName,
-      assignmentLabel: assignedOfficerId
-        ? assignedOfficerName
-        : rosterEntries.length > 0
-          ? "Range reference only"
-          : "Unassigned",
+      assignmentLabel: assignedOfficerId ? assignedOfficerName : "Unassigned",
       rangeUseCount: results.length,
       qualificationReferenceCount,
       malfunctionCount: malfunctions.length,
@@ -615,23 +611,17 @@ function buildFirearmRecords({
   }).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function FirearmInventoryTable({
+function FirearmList({
   records,
-  selectedFirearmId,
-  onSelect,
-  onAssign,
-  onReturn,
+  onOpen,
 }: {
   records: FirearmRecord[];
-  selectedFirearmId: string;
-  onSelect: (firearmId: string) => void;
-  onAssign: (firearmId: string) => void;
-  onReturn: (firearmId: string) => void;
+  onOpen: (firearmId: string) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
-      <div className="hidden overflow-x-auto xl:block">
-        <table className="w-full min-w-[900px] text-left">
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="w-full min-w-[760px] text-left">
           <thead className="border-b border-slate-800 bg-slate-950/60">
             <tr className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
               <th className="px-4 py-3">Firearm</th>
@@ -640,516 +630,426 @@ function FirearmInventoryTable({
               <th className="px-4 py-3">Assigned To</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Issues</th>
-              <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-800">
-            {records.map((record) => {
-              const selected = selectedFirearmId === record.id;
-              const canAssign =
-                !record.assignedOfficerId &&
-                !isUnavailableStatus(record.currentStatus);
-              const canReturn = Boolean(record.assignedOfficerId);
-
-              return (
-                <tr
-                  key={record.id}
-                  onClick={() => onSelect(record.id)}
-                  className={`cursor-pointer transition ${
-                    selected ? "bg-blue-500/10" : "hover:bg-slate-800/60"
-                  }`}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-slate-500">
-                        <Crosshair size={15} />
-                      </div>
-                      <div>
-                        <p className="text-[13px] font-bold text-white">
-                          {record.name}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          Last activity: {record.latestActivityLabel}
-                        </p>
-                      </div>
+            {records.map((record) => (
+              <tr
+                key={record.id}
+                onClick={() => onOpen(record.id)}
+                className="cursor-pointer transition hover:bg-slate-800/60"
+              >
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-slate-500">
+                      <Crosshair size={15} />
                     </div>
-                  </td>
-
-                  <td className="px-4 py-3 text-[12px] font-semibold text-slate-300">
-                    {record.serialNumber}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <StatusPill label={record.typeLabel} tone="slate" />
-                  </td>
-
-                  <td className="px-4 py-3 text-[12px] text-slate-400">
-                    {record.assignmentLabel}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <StatusPill
-                      label={record.currentStatus}
-                      tone={getCurrentStatusTone(record.currentStatus)}
-                    />
-                  </td>
-
-                  <td className="px-4 py-3 text-right">
-                    <span
-                      className={`text-[13px] font-bold ${
-                        record.openIssueCount > 0
-                          ? "text-amber-300"
-                          : "text-slate-500"
-                      }`}
-                    >
-                      {record.openIssueCount}
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      {canReturn ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onReturn(record.id);
-                          }}
-                          className="rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-amber-500/40 hover:text-amber-200"
-                        >
-                          Return
-                        </button>
-                      ) : canAssign ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onAssign(record.id);
-                          }}
-                          className="rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-[11px] font-semibold text-blue-200 transition hover:bg-blue-500/20"
-                        >
-                          Assign
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onSelect(record.id);
-                          }}
-                          className="rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-blue-500/40 hover:text-white"
-                        >
-                          View
-                        </button>
-                      )}
+                    <div>
+                      <p className="text-[13px] font-bold text-white">
+                        {record.name}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Click to open firearm record
+                      </p>
                     </div>
-                  </td>
-                </tr>
-              );
-            })}
+                  </div>
+                </td>
+
+                <td className="px-4 py-3 text-[12px] font-semibold text-slate-300">
+                  {record.serialNumber}
+                </td>
+
+                <td className="px-4 py-3">
+                  <StatusPill label={record.typeLabel} tone="slate" />
+                </td>
+
+                <td className="px-4 py-3 text-[12px] text-slate-400">
+                  {record.assignmentLabel}
+                </td>
+
+                <td className="px-4 py-3">
+                  <StatusPill
+                    label={record.currentStatus}
+                    tone={getCurrentStatusTone(record.currentStatus)}
+                  />
+                </td>
+
+                <td className="px-4 py-3 text-right">
+                  <span
+                    className={`text-[13px] font-bold ${
+                      record.openIssueCount > 0
+                        ? "text-amber-300"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {record.openIssueCount}
+                  </span>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      <div className="divide-y divide-slate-800 xl:hidden">
-        {records.map((record) => {
-          const selected = selectedFirearmId === record.id;
-          const canAssign =
-            !record.assignedOfficerId &&
-            !isUnavailableStatus(record.currentStatus);
-          const canReturn = Boolean(record.assignedOfficerId);
-
-          return (
-            <div
-              key={record.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(record.id)}
-              className={`block w-full p-4 text-left transition ${
-                selected ? "bg-blue-500/10" : "hover:bg-slate-800/60"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-[14px] font-bold text-white">
-                    {record.name}
-                  </h3>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Serial {record.serialNumber}
-                  </p>
-                </div>
-
-                <StatusPill
-                  label={record.currentStatus}
-                  tone={getCurrentStatusTone(record.currentStatus)}
-                />
+      <div className="divide-y divide-slate-800 lg:hidden">
+        {records.map((record) => (
+          <button
+            key={record.id}
+            type="button"
+            onClick={() => onOpen(record.id)}
+            className="block w-full p-4 text-left transition hover:bg-slate-800/60"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[14px] font-bold text-white">
+                  {record.name}
+                </h3>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Serial {record.serialNumber}
+                </p>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <StatusPill label={record.typeLabel} tone="slate" />
-                {record.openIssueCount > 0 ? (
-                  <StatusPill
-                    label={`${record.openIssueCount} Issues`}
-                    tone="amber"
-                  />
-                ) : null}
-              </div>
-
-              <p className="mt-3 text-[11px] text-slate-500">
-                Assigned to: {record.assignmentLabel}
-              </p>
-
-              <div className="mt-3 flex gap-2">
-                {canReturn ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onReturn(record.id);
-                    }}
-                    className="rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300"
-                  >
-                    Return
-                  </button>
-                ) : canAssign ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onAssign(record.id);
-                    }}
-                    className="rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-[11px] font-semibold text-blue-200"
-                  >
-                    Assign
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelect(record.id);
-                    }}
-                    className="rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300"
-                  >
-                    View
-                  </button>
-                )}
-              </div>
+              <StatusPill
+                label={record.currentStatus}
+                tone={getCurrentStatusTone(record.currentStatus)}
+              />
             </div>
-          );
-        })}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <StatusPill label={record.typeLabel} tone="slate" />
+              {record.openIssueCount > 0 ? (
+                <StatusPill
+                  label={`${record.openIssueCount} Issues`}
+                  tone="amber"
+                />
+              ) : null}
+            </div>
+
+            <p className="mt-3 text-[11px] text-slate-500">
+              Assigned to: {record.assignmentLabel}
+            </p>
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-function SelectedFirearmRecord({
+function FirearmDetailModal({
   record,
+  selectedOfficerId,
+  onSelectedOfficerChange,
+  onClose,
   onStatusChange,
-  onAssign,
-  onReturn,
+  onBeginAssign,
+  onBeginReturn,
+  onConfirmAssign,
+  onConfirmReturn,
+  onCancelAssignmentMode,
+  assignmentMode,
 }: {
   record: FirearmRecord;
+  selectedOfficerId: string;
+  onSelectedOfficerChange: (officerId: string) => void;
+  onClose: () => void;
   onStatusChange: (firearmId: string, status: CurrentFirearmStatus) => void;
-  onAssign: (firearmId: string) => void;
-  onReturn: (firearmId: string) => void;
+  onBeginAssign: () => void;
+  onBeginReturn: () => void;
+  onConfirmAssign: () => void;
+  onConfirmReturn: () => void;
+  onCancelAssignmentMode: () => void;
+  assignmentMode?: "assign" | "return";
 }) {
   const canAssign =
     !record.assignedOfficerId && !isUnavailableStatus(record.currentStatus);
   const canReturn = Boolean(record.assignedOfficerId);
 
   return (
-    <aside className="space-y-4 xl:sticky xl:top-6">
-      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-400">
-          Selected Firearm
-        </p>
-
-        <div className="mt-3 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-[20px] font-bold leading-tight text-white">
-              {record.name}
-            </h2>
-            <p className="mt-1 text-[12px] text-slate-500">
-              Serial {record.serialNumber} · {record.typeLabel}
-            </p>
-          </div>
-
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-blue-400">
-            <Crosshair size={18} />
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3">
-          <DetailItem
-            label="Assigned To"
-            value={record.assignmentLabel}
-            sub={
-              record.assignedOfficerId
-                ? "Current firearm assignment"
-                : "No active assignment"
-            }
-          />
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-              Firearm Status
-            </label>
-            <select
-              value={record.currentStatus}
-              onChange={(event) =>
-                onStatusChange(
-                  record.id,
-                  event.target.value as CurrentFirearmStatus,
-                )
-              }
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] font-semibold text-white outline-none transition focus:border-blue-500"
-            >
-              {CURRENT_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-
-            <p className="mt-2 text-[11px] leading-4 text-slate-500">
-              Armory controls the firearm&apos;s current status. Detailed
-              inspection, maintenance, and range records are entered in their
-              own modules.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {canReturn ? (
-              <button
-                type="button"
-                onClick={() => onReturn(record.id)}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
-              >
-                <User size={14} />
-                Return This Firearm
-              </button>
-            ) : canAssign ? (
-              <button
-                type="button"
-                onClick={() => onAssign(record.id)}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-[12px] font-semibold text-blue-200 transition hover:bg-blue-500/20"
-              >
-                <User size={14} />
-                Assign This Firearm
-              </button>
-            ) : (
-              <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-500">
-                Assignment disabled while firearm status is {record.currentStatus}.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="mb-3 text-[14px] font-bold text-white">
-          Record Summary
-        </h3>
-
-        <div className="grid grid-cols-2 gap-3">
-          <DetailItem
-            label="Open Issues"
-            value={record.openIssueCount}
-            sub="Maintenance/inspection flags"
-          />
-          <DetailItem
-            label="Malfunctions"
-            value={record.malfunctionCount}
-            sub={`${record.openMalfunctionCount} open`}
-          />
-          <DetailItem
-            label="Qual Links"
-            value={record.qualificationReferenceCount}
-            sub="Range/qualification records"
-          />
-          <DetailItem
-            label="Range Uses"
-            value={record.rangeUseCount}
-            sub="Linked range events"
-          />
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="mb-3 text-[14px] font-bold text-white">
-          Linked Modules
-        </h3>
-
-        <p className="mb-3 text-[12px] leading-5 text-slate-500">
-          Armory shows the firearm record. Use the related modules to enter
-          inspections, maintenance, malfunctions, and range/qualification
-          details.
-        </p>
-
-        <div className="flex flex-wrap gap-2">
-          <ModuleLink href="/inspections" label="Inspections" />
-          <ModuleLink href="/range-days" label="Range Days" />
-          <ModuleLink href="/qualifications" label="Qualifications" />
-        </div>
-      </section>
-
-      {record.openIssueCount > 0 ? (
-        <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
-          <div className="flex gap-3">
-            <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-amber-100">
-                Review recommended
-              </p>
-              <p className="mt-1 text-amber-200/80">
-                This firearm has linked issue flags. Review inspection,
-                maintenance, or malfunction history before treating it as ready
-                for use.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4 text-[12px] text-emerald-200">
-          <div className="flex gap-3">
-            <CheckCircle2 size={17} className="mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-emerald-100">
-                No linked issues
-              </p>
-              <p className="mt-1 text-emerald-200/80">
-                No open malfunction, inspection, or out-of-service flags are
-                currently linked to this firearm record.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
-    </aside>
-  );
-}
-
-function AssignmentModal({
-  dialog,
-  records,
-  selectedOfficerId,
-  onSelectedOfficerChange,
-  onClose,
-  onConfirmAssign,
-  onConfirmReturn,
-}: {
-  dialog: AssignmentDialog;
-  records: FirearmRecord[];
-  selectedOfficerId: string;
-  onSelectedOfficerChange: (officerId: string) => void;
-  onClose: () => void;
-  onConfirmAssign: () => void;
-  onConfirmReturn: () => void;
-}) {
-  if (!dialog) return null;
-
-  const record = records.find((item) => item.id === dialog.firearmId);
-
-  if (!record) return null;
-
-  const isAssign = dialog.mode === "assign";
-
-  return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
       <button
         type="button"
-        aria-label="Close dialog"
+        aria-label="Close firearm record"
         onClick={onClose}
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
       />
 
-      <section className="relative z-10 w-full max-w-lg rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl shadow-black/50">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-400">
-              {isAssign ? "Assign Firearm" : "Return Firearm"}
-            </p>
-            <h2 className="mt-2 text-xl font-bold text-white">
-              {record.name}
-            </h2>
-            <p className="mt-1 text-[12px] text-slate-500">
-              Serial {record.serialNumber}
-            </p>
-          </div>
+      <section className="relative z-10 max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50">
+        <div className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 p-5 backdrop-blur">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
+                Firearm Record
+              </p>
+              <h2 className="mt-2 text-2xl font-bold text-white">
+                {record.name}
+              </h2>
+              <p className="mt-1 text-[12px] text-slate-500">
+                Serial {record.serialNumber} · {record.typeLabel}
+              </p>
+            </div>
 
-          <button
-            type="button"
-            aria-label="Close dialog"
-            onClick={onClose}
-            className="rounded-xl border border-slate-800 p-2 text-slate-500 transition hover:text-white"
-          >
-            <X size={17} />
-          </button>
+            <button
+              type="button"
+              aria-label="Close firearm record"
+              onClick={onClose}
+              className="rounded-xl border border-slate-800 p-2 text-slate-500 transition hover:text-white"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        {isAssign ? (
-          <div className="mt-5 space-y-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                Assign this firearm to
-              </label>
-              <select
-                value={selectedOfficerId}
-                onChange={(event) =>
-                  onSelectedOfficerChange(event.target.value)
-                }
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
-              >
-                <option value="">Select officer</option>
-                {MOCK_USERS.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
+        <div className="space-y-5 p-5">
+          <section className="grid gap-3 md:grid-cols-4">
+            <DetailItem
+              label="Status"
+              value={record.currentStatus}
+              sub="Current armory status"
+            />
+            <DetailItem
+              label="Assigned To"
+              value={record.assignmentLabel}
+              sub={
+                record.assignedOfficerId
+                  ? "Current assignment"
+                  : "No active assignment"
+              }
+            />
+            <DetailItem
+              label="Open Issues"
+              value={record.openIssueCount}
+              sub="Linked flags"
+            />
+            <DetailItem
+              label="Last Activity"
+              value={record.latestActivityLabel}
+              sub="Linked records"
+            />
+          </section>
 
-              <p className="mt-2 text-[11px] leading-4 text-slate-500">
-                This will assign {record.name} to the selected officer and
-                update the firearm status to Assigned.
-              </p>
+          <section className="grid gap-5 lg:grid-cols-[1fr_320px]">
+            <div className="space-y-5">
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
+                <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
+                  <Crosshair size={16} className="text-blue-400" />
+                  Firearm Details
+                </h3>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DetailItem label="Make / Model" value={record.name} />
+                  <DetailItem label="Serial Number" value={record.serialNumber} />
+                  <DetailItem label="Type" value={record.typeLabel} />
+                  <DetailItem label="Caliber / Gauge" value={record.caliberLabel} />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
+                <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
+                  <ClipboardList size={16} className="text-blue-400" />
+                  Linked Record Summary
+                </h3>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DetailItem
+                    label="Malfunctions"
+                    value={record.malfunctionCount}
+                    sub={`${record.openMalfunctionCount} open`}
+                  />
+                  <DetailItem
+                    label="Inspection Required"
+                    value={record.inspectionRequiredCount}
+                    sub="Linked inspection flags"
+                  />
+                  <DetailItem
+                    label="Range Uses"
+                    value={record.rangeUseCount}
+                    sub="Linked range records"
+                  />
+                  <DetailItem
+                    label="Qualification Links"
+                    value={record.qualificationReferenceCount}
+                    sub="Linked qual records"
+                  />
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <ModuleLink href="/inspections" label="Inspections" />
+                  <ModuleLink href="/range-days" label="Range Days" />
+                  <ModuleLink href="/qualifications" label="Qualifications" />
+                </div>
+              </div>
+
+              {record.openIssueCount > 0 ? (
+                <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
+                  <div className="flex gap-3">
+                    <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-amber-100">
+                        Review recommended
+                      </p>
+                      <p className="mt-1 text-amber-200/80">
+                        This firearm has linked issue flags. Review the related
+                        inspection, maintenance, or malfunction records before
+                        treating it as ready for use.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4 text-[12px] text-emerald-200">
+                  <div className="flex gap-3">
+                    <CheckCircle2 size={17} className="mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-emerald-100">
+                        No linked issues
+                      </p>
+                      <p className="mt-1 text-emerald-200/80">
+                        No open malfunction, inspection, or out-of-service flags
+                        are currently linked to this firearm record.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <button
-              type="button"
-              onClick={onConfirmAssign}
-              disabled={!selectedOfficerId}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Assign {record.name}
-            </button>
-          </div>
-        ) : (
-          <div className="mt-5 space-y-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-[13px] leading-5 text-slate-300">
-              Return{" "}
-              <span className="font-semibold text-white">{record.name}</span>{" "}
-              from{" "}
-              <span className="font-semibold text-white">
-                {record.assignedOfficerName}
-              </span>
-              ?
-              <p className="mt-2 text-[11px] text-slate-500">
-                This will clear the current assignment and return the firearm to
-                In Service unless a different status is selected later.
-              </p>
-            </div>
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
+                <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
+                  <Shield size={16} className="text-blue-400" />
+                  Status
+                </h3>
 
-            <button
-              type="button"
-              onClick={onConfirmReturn}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20"
-            >
-              Return {record.name}
-            </button>
-          </div>
-        )}
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                  Current Status
+                </label>
+                <select
+                  value={record.currentStatus}
+                  onChange={(event) =>
+                    onStatusChange(
+                      record.id,
+                      event.target.value as CurrentFirearmStatus,
+                    )
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] font-semibold text-white outline-none transition focus:border-blue-500"
+                >
+                  {CURRENT_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+
+                <p className="mt-2 text-[11px] leading-4 text-slate-500">
+                  This controls the firearm&apos;s current armory status. Detailed
+                  inspections and maintenance are entered in their own modules.
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
+                <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
+                  <User size={16} className="text-blue-400" />
+                  Assignment
+                </h3>
+
+                <DetailItem
+                  label="Assigned To"
+                  value={record.assignmentLabel}
+                  sub={
+                    record.assignedOfficerId
+                      ? "Current firearm assignment"
+                      : "No active assignment"
+                  }
+                />
+
+                {assignmentMode === "assign" ? (
+                  <div className="mt-3 rounded-2xl border border-blue-500/20 bg-blue-500/[0.06] p-3">
+                    <label className="text-[10px] font-semibold uppercase tracking-widest text-blue-300">
+                      Assign this firearm to
+                    </label>
+                    <select
+                      value={selectedOfficerId}
+                      onChange={(event) =>
+                        onSelectedOfficerChange(event.target.value)
+                      }
+                      className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+                    >
+                      <option value="">Select officer</option>
+                      {MOCK_USERS.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={onConfirmAssign}
+                        disabled={!selectedOfficerId}
+                        className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Confirm Assign
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onCancelAssignmentMode}
+                        className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : assignmentMode === "return" ? (
+                  <div className="mt-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 text-[12px] text-amber-100">
+                    Return this firearm from {record.assignedOfficerName}?
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={onConfirmReturn}
+                        className="flex-1 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
+                      >
+                        Confirm Return
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onCancelAssignmentMode}
+                        className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    {canReturn ? (
+                      <button
+                        type="button"
+                        onClick={onBeginReturn}
+                        className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
+                      >
+                        Return This Firearm
+                      </button>
+                    ) : canAssign ? (
+                      <button
+                        type="button"
+                        onClick={onBeginAssign}
+                        className="w-full rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-[12px] font-semibold text-blue-200 transition hover:bg-blue-500/20"
+                      >
+                        Assign This Firearm
+                      </button>
+                    ) : (
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-500">
+                        Assignment is disabled while this firearm is {record.currentStatus}.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
       </section>
     </div>
   );
@@ -1167,11 +1067,7 @@ export default function FirearmsPage() {
   const [statusFilter, setStatusFilter] =
     useState<CurrentStatusFilter>("All");
   const [typeFilter, setTypeFilter] = useState("All");
-  const [selectedFirearmId, setSelectedFirearmId] = useState<string>(
-    MOCK_FIREARMS[0]?.id ?? "",
-  );
-  const [assignmentDialog, setAssignmentDialog] =
-    useState<AssignmentDialog>(null);
+  const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
 
   useEffect(() => {
@@ -1186,94 +1082,6 @@ export default function FirearmsPage() {
     setAssignmentOverrides(loadAssignmentOverrides());
   }, []);
 
-  function handleStatusChange(
-    firearmId: string,
-    status: CurrentFirearmStatus,
-  ) {
-    setStatusOverrides((current) => {
-      const next = {
-        ...current,
-        [firearmId]: status,
-      };
-
-      persistStatusOverrides(next);
-      return next;
-    });
-  }
-
-  function beginAssign(firearmId: string) {
-    setSelectedFirearmId(firearmId);
-    setSelectedOfficerId("");
-    setAssignmentDialog({ mode: "assign", firearmId });
-  }
-
-  function beginReturn(firearmId: string) {
-    setSelectedFirearmId(firearmId);
-    setAssignmentDialog({ mode: "return", firearmId });
-  }
-
-  function closeAssignmentDialog() {
-    setAssignmentDialog(null);
-    setSelectedOfficerId("");
-  }
-
-  function confirmAssign() {
-    if (!assignmentDialog || assignmentDialog.mode !== "assign") return;
-    if (!selectedOfficerId) return;
-
-    const firearmId = assignmentDialog.firearmId;
-
-    setAssignmentOverrides((current) => {
-      const next = {
-        ...current,
-        [firearmId]: selectedOfficerId,
-      };
-
-      persistAssignmentOverrides(next);
-      return next;
-    });
-
-    setStatusOverrides((current) => {
-      const next = {
-        ...current,
-        [firearmId]: "Assigned" as CurrentFirearmStatus,
-      };
-
-      persistStatusOverrides(next);
-      return next;
-    });
-
-    closeAssignmentDialog();
-  }
-
-  function confirmReturn() {
-    if (!assignmentDialog || assignmentDialog.mode !== "return") return;
-
-    const firearmId = assignmentDialog.firearmId;
-
-    setAssignmentOverrides((current) => {
-      const next = {
-        ...current,
-        [firearmId]: null,
-      };
-
-      persistAssignmentOverrides(next);
-      return next;
-    });
-
-    setStatusOverrides((current) => {
-      const next = {
-        ...current,
-        [firearmId]: "In Service" as CurrentFirearmStatus,
-      };
-
-      persistStatusOverrides(next);
-      return next;
-    });
-
-    closeAssignmentDialog();
-  }
-
   const firearmRecords = useMemo(
     () =>
       buildFirearmRecords({
@@ -1284,9 +1092,9 @@ export default function FirearmsPage() {
     [workspace, statusOverrides, assignmentOverrides],
   );
 
-  const selectedRecord =
-    firearmRecords.find((record) => record.id === selectedFirearmId) ??
-    firearmRecords[0];
+  const selectedRecord = detailModal
+    ? firearmRecords.find((record) => record.id === detailModal.firearmId)
+    : undefined;
 
   const filteredRecords = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase();
@@ -1303,6 +1111,7 @@ export default function FirearmsPage() {
         record.name,
         record.serialNumber,
         record.typeLabel,
+        record.caliberLabel,
         record.sourceStatusLabel,
         record.currentStatus,
         record.assignmentLabel,
@@ -1322,10 +1131,6 @@ export default function FirearmsPage() {
     (record) => record.assignedOfficerId,
   ).length;
 
-  const unassignedCount = firearmRecords.filter(
-    (record) => !record.assignedOfficerId,
-  ).length;
-
   const unavailableCount = firearmRecords.filter((record) =>
     isUnavailableStatus(record.currentStatus),
   ).length;
@@ -1335,9 +1140,109 @@ export default function FirearmsPage() {
     0,
   );
 
+  function openFirearmRecord(firearmId: string) {
+    setSelectedOfficerId("");
+    setDetailModal({ firearmId });
+  }
+
+  function closeFirearmRecord() {
+    setSelectedOfficerId("");
+    setDetailModal(null);
+  }
+
+  function setAssignmentMode(mode: "assign" | "return") {
+    if (!detailModal) return;
+
+    setSelectedOfficerId("");
+    setDetailModal({
+      firearmId: detailModal.firearmId,
+      assignmentMode: mode,
+    });
+  }
+
+  function clearAssignmentMode() {
+    if (!detailModal) return;
+
+    setSelectedOfficerId("");
+    setDetailModal({ firearmId: detailModal.firearmId });
+  }
+
+  function handleStatusChange(
+    firearmId: string,
+    status: CurrentFirearmStatus,
+  ) {
+    setStatusOverrides((current) => {
+      const next: StatusOverrides = {
+        ...current,
+        [firearmId]: status,
+      };
+
+      persistStatusOverrides(next);
+      return next;
+    });
+  }
+
+  function confirmAssign() {
+    if (!detailModal || !selectedOfficerId) return;
+
+    const firearmId = detailModal.firearmId;
+
+    setAssignmentOverrides((current) => {
+      const next: AssignmentOverrides = {
+        ...current,
+        [firearmId]: selectedOfficerId,
+      };
+
+      persistAssignmentOverrides(next);
+      return next;
+    });
+
+    setStatusOverrides((current) => {
+      const next: StatusOverrides = {
+        ...current,
+        [firearmId]: "Assigned",
+      };
+
+      persistStatusOverrides(next);
+      return next;
+    });
+
+    setSelectedOfficerId("");
+    setDetailModal({ firearmId });
+  }
+
+  function confirmReturn() {
+    if (!detailModal) return;
+
+    const firearmId = detailModal.firearmId;
+
+    setAssignmentOverrides((current) => {
+      const next: AssignmentOverrides = {
+        ...current,
+        [firearmId]: null,
+      };
+
+      persistAssignmentOverrides(next);
+      return next;
+    });
+
+    setStatusOverrides((current) => {
+      const next: StatusOverrides = {
+        ...current,
+        [firearmId]: "In Service",
+      };
+
+      persistStatusOverrides(next);
+      return next;
+    });
+
+    setSelectedOfficerId("");
+    setDetailModal({ firearmId });
+  }
+
   return (
     <TracePointShell activePage="Armory">
-      <div className="mx-auto w-full max-w-[1600px] space-y-5">
+      <div className="mx-auto w-full max-w-[1450px] space-y-5">
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -1348,21 +1253,19 @@ export default function FirearmsPage() {
                 Firearms Inventory
               </h1>
               <p className="mt-1 max-w-3xl text-[12px] leading-5 text-slate-500">
-                View firearms, see who has them, update current status, and
-                open a simple firearm record.
+                Select a firearm from the inventory list to view its full record,
+                assignment, current status, and linked history summary.
               </p>
             </div>
 
             <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
               <Shield size={14} className="text-blue-400" />
-              {hasStoredWorkspace
-                ? "Linked data available"
-                : "Inventory view only"}
+              {hasStoredWorkspace ? "Linked data available" : "Inventory view"}
             </div>
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
             label="Total Firearms"
             value={firearmRecords.length}
@@ -1372,11 +1275,6 @@ export default function FirearmsPage() {
             label="Assigned"
             value={assignedCount}
             sub="Issued to personnel"
-          />
-          <StatCard
-            label="Unassigned"
-            value={unassignedCount}
-            sub="Available or inactive"
           />
           <StatCard
             label="Unavailable"
@@ -1458,79 +1356,47 @@ export default function FirearmsPage() {
           </div>
         </section>
 
-        {!hasStoredWorkspace ? (
-          <section className="rounded-3xl border border-blue-500/20 bg-blue-500/[0.06] p-4 text-[12px] text-blue-200">
-            <div className="flex gap-3">
-              <ClipboardList size={17} className="mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-semibold text-blue-100">
-                  This page is focused on the current armory inventory.
-                </p>
-                <p className="mt-1 text-blue-200/80">
-                  Inspection, maintenance, range, and qualification details will
-                  appear as simple linked summaries once those modules save
-                  firearm-related records.
-                </p>
-              </div>
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="text-[15px] font-bold text-white">Inventory</h2>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                {filteredRecords.length} of {firearmRecords.length} firearms shown
+              </p>
             </div>
-          </section>
-        ) : null}
-
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_410px]">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 px-1">
-              <div>
-                <h2 className="text-[15px] font-bold text-white">
-                  Inventory
-                </h2>
-                <p className="mt-0.5 text-[12px] text-slate-500">
-                  {filteredRecords.length} of {firearmRecords.length} firearms
-                  shown
-                </p>
-              </div>
-            </div>
-
-            {filteredRecords.length > 0 ? (
-              <FirearmInventoryTable
-                records={filteredRecords}
-                selectedFirearmId={selectedRecord?.id ?? ""}
-                onSelect={setSelectedFirearmId}
-                onAssign={beginAssign}
-                onReturn={beginReturn}
-              />
-            ) : (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center">
-                <Search size={22} className="mx-auto text-slate-600" />
-                <p className="mt-3 text-[14px] font-semibold text-white">
-                  No firearms match those filters.
-                </p>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  Clear the search or broaden the status/type filter.
-                </p>
-              </div>
-            )}
           </div>
 
-          {selectedRecord ? (
-            <SelectedFirearmRecord
-              record={selectedRecord}
-              onStatusChange={handleStatusChange}
-              onAssign={beginAssign}
-              onReturn={beginReturn}
-            />
-          ) : null}
+          {filteredRecords.length > 0 ? (
+            <FirearmList records={filteredRecords} onOpen={openFirearmRecord} />
+          ) : (
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center">
+              <Search size={22} className="mx-auto text-slate-600" />
+              <p className="mt-3 text-[14px] font-semibold text-white">
+                No firearms match those filters.
+              </p>
+              <p className="mt-1 text-[12px] text-slate-500">
+                Clear the search or broaden the status/type filter.
+              </p>
+            </div>
+          )}
         </section>
       </div>
 
-      <AssignmentModal
-        dialog={assignmentDialog}
-        records={firearmRecords}
-        selectedOfficerId={selectedOfficerId}
-        onSelectedOfficerChange={setSelectedOfficerId}
-        onClose={closeAssignmentDialog}
-        onConfirmAssign={confirmAssign}
-        onConfirmReturn={confirmReturn}
-      />
+      {selectedRecord ? (
+        <FirearmDetailModal
+          record={selectedRecord}
+          selectedOfficerId={selectedOfficerId}
+          onSelectedOfficerChange={setSelectedOfficerId}
+          onClose={closeFirearmRecord}
+          onStatusChange={handleStatusChange}
+          onBeginAssign={() => setAssignmentMode("assign")}
+          onBeginReturn={() => setAssignmentMode("return")}
+          onConfirmAssign={confirmAssign}
+          onConfirmReturn={confirmReturn}
+          onCancelAssignmentMode={clearAssignmentMode}
+          assignmentMode={detailModal?.assignmentMode}
+        />
+      ) : null}
     </TracePointShell>
   );
 }
