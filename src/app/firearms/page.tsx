@@ -35,7 +35,6 @@ type MockFirearm = (typeof MOCK_FIREARMS)[number];
 
 type CurrentFirearmStatus =
   | "In Service"
-  | "Assigned"
   | "Out of Service"
   | "Maintenance"
   | "Inspection Required"
@@ -109,7 +108,6 @@ const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
 
 const CURRENT_STATUS_OPTIONS: CurrentFirearmStatus[] = [
   "In Service",
-  "Assigned",
   "Out of Service",
   "Maintenance",
   "Inspection Required",
@@ -339,8 +337,9 @@ function getDirectAssignedOfficerId(firearm: MockFirearm) {
 function normalizeCurrentStatus(value?: string): CurrentFirearmStatus {
   const normalized = value?.toLowerCase() ?? "";
 
+  // Assignment/custody is tracked separately from service status.
   if (normalized.includes("assigned") || normalized.includes("issued")) {
-    return "Assigned";
+    return "In Service";
   }
 
   if (
@@ -386,7 +385,7 @@ function isQualificationDrill(drill?: RangeDayDrill) {
 }
 
 function getCurrentStatusTone(status: CurrentFirearmStatus) {
-  if (status === "In Service" || status === "Assigned") return "green";
+  if (status === "In Service") return "green";
   if (status === "Maintenance" || status === "Inspection Required") {
     return "amber";
   }
@@ -527,11 +526,7 @@ function buildFirearmRecords({
       ? assignmentOverrides[firearm.id] ?? undefined
       : directAssignedOfficerId;
 
-    const currentStatus =
-      statusOverrides[firearm.id] ??
-      (assignedOfficerId && sourceStatus === "In Service"
-        ? "Assigned"
-        : sourceStatus);
+    const currentStatus = statusOverrides[firearm.id] ?? sourceStatus;
 
     const results = (resultsByFirearmId.get(firearm.id) ?? []).slice().sort(
       (left, right) => {
@@ -942,8 +937,8 @@ function FirearmDetailModal({
                 </select>
 
                 <p className="mt-2 text-[11px] leading-4 text-slate-500">
-                  This controls the firearm&apos;s current armory status. Detailed
-                  inspections and maintenance are entered in their own modules.
+                  This controls service condition only. Assignment is handled separately
+                  through Assign / Return.
                 </p>
               </div>
 
@@ -1197,15 +1192,6 @@ export default function FirearmsPage() {
       return next;
     });
 
-    setStatusOverrides((current) => {
-      const next: StatusOverrides = {
-        ...current,
-        [firearmId]: "Assigned",
-      };
-
-      persistStatusOverrides(next);
-      return next;
-    });
 
     setSelectedOfficerId("");
     setDetailModal({ firearmId });
@@ -1226,15 +1212,6 @@ export default function FirearmsPage() {
       return next;
     });
 
-    setStatusOverrides((current) => {
-      const next: StatusOverrides = {
-        ...current,
-        [firearmId]: "In Service",
-      };
-
-      persistStatusOverrides(next);
-      return next;
-    });
 
     setSelectedOfficerId("");
     setDetailModal({ firearmId });
