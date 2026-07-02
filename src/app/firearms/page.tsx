@@ -1,37 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
   CheckCircle2,
-  ClipboardList,
   Crosshair,
-  ExternalLink,
   Filter,
   Search,
   Shield,
   User,
   X,
 } from "lucide-react";
-
-import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
-
-import type {
-  DrillRunResult,
-  DrillTemplate,
-  RangeDay,
-  RangeDayDrill,
-  RangeRosterEntry,
-} from "@/app/lib/tracepoint/range-day-types";
-
-import {
-  MOCK_FIREARMS,
-  MOCK_USERS,
-} from "@/app/lib/tracepoint/mock-data";
-
-type MockFirearm = (typeof MOCK_FIREARMS)[number];
 
 type CurrentFirearmStatus =
   | "In Service"
@@ -42,48 +22,51 @@ type CurrentFirearmStatus =
 
 type CurrentStatusFilter = "All" | CurrentFirearmStatus;
 
-type StoredRangeDay = RangeDay & {
-  rangeType?: string;
-  startTime?: string;
-  endTime?: string;
-  packetStatus?: string;
-  staffingNotes?: string;
-  outline?: string[];
+type FirearmTypeFilter =
+  | "All"
+  | "handgun"
+  | "rifle"
+  | "shotgun"
+  | "less_lethal"
+  | "other";
+
+type ArmoryMember = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  rank_title?: string | null;
+  badge_number?: string | null;
 };
 
-type StoredRangeDayWorkspace = {
-  rangeDays: StoredRangeDay[];
-  drillLibrary: DrillTemplate[];
-  rangeDayDrills: RangeDayDrill[];
-  rangeRoster: RangeRosterEntry[];
-  results: DrillRunResult[];
-  malfunctions: FirearmMalfunction[];
-};
-
-type FirearmRecord = {
-  firearm: MockFirearm;
+type ActiveAssignment = {
   id: string;
-  name: string;
-  serialNumber: string;
-  typeLabel: string;
-  caliberLabel: string;
-  sourceStatusLabel: string;
-  currentStatus: CurrentFirearmStatus;
-  assignedOfficerId?: string;
-  assignedOfficerName: string;
-  assignmentLabel: string;
-  rangeUseCount: number;
-  qualificationReferenceCount: number;
-  malfunctionCount: number;
-  openMalfunctionCount: number;
-  inspectionRequiredCount: number;
-  removedFromServiceCount: number;
-  openIssueCount: number;
-  latestActivityLabel: string;
+  assigned_to_user_id: string;
+  assigned_to_name: string;
+  assigned_at: string;
 };
 
-type StatusOverrides = Record<string, CurrentFirearmStatus>;
-type AssignmentOverrides = Record<string, string | null>;
+type ArmoryFirearm = {
+  id: string;
+  department_id: string;
+  make: string | null;
+  model: string | null;
+  serial_number: string | null;
+  firearm_type: string | null;
+  caliber: string | null;
+  asset_number: string | null;
+  condition_status: CurrentFirearmStatus;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  active_assignment: ActiveAssignment | null;
+};
+
+type ArmoryResponse = {
+  departmentId: string;
+  firearms: ArmoryFirearm[];
+  members: ArmoryMember[];
+};
 
 type DetailModalState =
   | {
@@ -92,18 +75,16 @@ type DetailModalState =
     }
   | null;
 
-const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
-const FIREARM_STATUS_STORAGE_KEY = "tracepoint.armory.statusOverrides.v1";
-const FIREARM_ASSIGNMENT_STORAGE_KEY =
-  "tracepoint.armory.assignmentOverrides.v1";
 
-const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
-  rangeDays: [],
-  drillLibrary: [],
-  rangeDayDrills: [],
-  rangeRoster: [],
-  results: [],
-  malfunctions: [],
+type AddFirearmForm = {
+  make: string;
+  model: string;
+  serialNumber: string;
+  firearmType: FirearmTypeFilter;
+  caliber: string;
+  assetNumber: string;
+  conditionStatus: CurrentFirearmStatus;
+  notes: string;
 };
 
 const CURRENT_STATUS_OPTIONS: CurrentFirearmStatus[] = [
@@ -119,250 +100,70 @@ const STATUS_FILTERS: CurrentStatusFilter[] = [
   ...CURRENT_STATUS_OPTIONS,
 ];
 
-const TYPE_FILTERS = [
-  "All",
-  "Handgun",
-  "Rifle",
-  "Shotgun",
-  "Less Lethal",
-  "Other",
+const TYPE_FILTERS: { value: FirearmTypeFilter; label: string }[] = [
+  { value: "All", label: "All" },
+  { value: "handgun", label: "Handgun" },
+  { value: "rifle", label: "Rifle" },
+  { value: "shotgun", label: "Shotgun" },
+  { value: "less_lethal", label: "Less Lethal" },
+  { value: "other", label: "Other" },
 ];
 
-function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
-  if (typeof window === "undefined") return null;
+const EMPTY_ADD_FIREARM_FORM: AddFirearmForm = {
+  make: "",
+  model: "",
+  serialNumber: "",
+  firearmType: "handgun",
+  caliber: "",
+  assetNumber: "",
+  conditionStatus: "In Service",
+  notes: "",
+};
 
-  try {
-    const storedWorkspace = window.localStorage.getItem(
-      RANGE_DAY_WORKSPACE_STORAGE_KEY,
-    );
-
-    if (!storedWorkspace) return null;
-
-    const parsed = JSON.parse(
-      storedWorkspace,
-    ) as Partial<StoredRangeDayWorkspace>;
-
-    return {
-      rangeDays: Array.isArray(parsed.rangeDays) ? parsed.rangeDays : [],
-      drillLibrary: Array.isArray(parsed.drillLibrary)
-        ? parsed.drillLibrary
-        : [],
-      rangeDayDrills: Array.isArray(parsed.rangeDayDrills)
-        ? parsed.rangeDayDrills
-        : [],
-      rangeRoster: Array.isArray(parsed.rangeRoster)
-        ? parsed.rangeRoster
-        : [],
-      results: Array.isArray(parsed.results) ? parsed.results : [],
-      malfunctions: Array.isArray(parsed.malfunctions)
-        ? parsed.malfunctions
-        : [],
-    };
-  } catch (error) {
-    console.warn("Could not load saved range day workspace.", error);
-    return null;
-  }
-}
-
-function loadStatusOverrides(): StatusOverrides {
-  if (typeof window === "undefined") return {};
-
-  try {
-    const stored = window.localStorage.getItem(FIREARM_STATUS_STORAGE_KEY);
-
-    if (!stored) return {};
-
-    const parsed = JSON.parse(stored) as Record<string, unknown>;
-    const overrides: StatusOverrides = {};
-
-    for (const [firearmId, value] of Object.entries(parsed)) {
-      if (
-        typeof value === "string" &&
-        CURRENT_STATUS_OPTIONS.includes(value as CurrentFirearmStatus)
-      ) {
-        overrides[firearmId] = value as CurrentFirearmStatus;
-      }
-    }
-
-    return overrides;
-  } catch (error) {
-    console.warn("Could not load saved firearm status overrides.", error);
-    return {};
-  }
-}
-
-function persistStatusOverrides(overrides: StatusOverrides) {
-  if (typeof window === "undefined") return;
-
-  window.localStorage.setItem(
-    FIREARM_STATUS_STORAGE_KEY,
-    JSON.stringify(overrides),
-  );
-}
-
-function loadAssignmentOverrides(): AssignmentOverrides {
-  if (typeof window === "undefined") return {};
-
-  try {
-    const stored = window.localStorage.getItem(
-      FIREARM_ASSIGNMENT_STORAGE_KEY,
-    );
-
-    if (!stored) return {};
-
-    const parsed = JSON.parse(stored) as Record<string, unknown>;
-    const overrides: AssignmentOverrides = {};
-
-    for (const [firearmId, value] of Object.entries(parsed)) {
-      if (typeof value === "string" || value === null) {
-        overrides[firearmId] = value;
-      }
-    }
-
-    return overrides;
-  } catch (error) {
-    console.warn("Could not load saved firearm assignment overrides.", error);
-    return {};
-  }
-}
-
-function persistAssignmentOverrides(overrides: AssignmentOverrides) {
-  if (typeof window === "undefined") return;
-
-  window.localStorage.setItem(
-    FIREARM_ASSIGNMENT_STORAGE_KEY,
-    JSON.stringify(overrides),
-  );
-}
-
-function getRecordValue(item: unknown, keys: string[]) {
-  const record = item as Record<string, unknown>;
-
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number") return String(value);
-    if (typeof value === "boolean") return value ? "Yes" : "No";
+function normalizeStatus(value?: string | null): CurrentFirearmStatus {
+  if (CURRENT_STATUS_OPTIONS.includes(value as CurrentFirearmStatus)) {
+    return value as CurrentFirearmStatus;
   }
 
-  return undefined;
+  return "In Service";
 }
 
-function getDateValue(date?: string) {
-  if (!date) return 0;
+function formatDateTime(value?: string | null) {
+  if (!value) return "Not recorded";
 
-  const value = date.includes("T")
-    ? new Date(date).getTime()
-    : new Date(`${date}T00:00:00`).getTime();
+  const date = new Date(value);
 
-  return Number.isNaN(value) ? 0 : value;
-}
+  if (Number.isNaN(date.getTime())) return "Not recorded";
 
-function formatDate(date?: string) {
-  if (!date) return "No date";
-
-  const parsed = date.includes("T")
-    ? new Date(date)
-    : new Date(`${date}T00:00:00`);
-
-  if (Number.isNaN(parsed.getTime())) return "No date";
-
-  return parsed.toLocaleDateString("en-US", {
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
 }
 
-function getUserName(userId?: string) {
-  if (!userId) return "Unassigned";
+function formatFirearmType(value?: string | null) {
+  if (!value) return "Other";
 
-  return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
+  const match = TYPE_FILTERS.find((type) => type.value === value);
+
+  if (match && match.value !== "All") return match.label;
+
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
-function getFirearmName(firearm?: MockFirearm) {
-  if (!firearm) return "Unknown firearm";
+function getFirearmName(firearm: ArmoryFirearm) {
+  const make = firearm.make?.trim();
+  const model = firearm.model?.trim();
 
-  return `${firearm.make} ${firearm.model}`;
-}
+  if (make && model) return `${make} ${model}`;
+  if (make) return make;
+  if (model) return model;
 
-function getFirearmTypeLabel(firearm: MockFirearm) {
-  return (
-    getRecordValue(firearm, [
-      "type",
-      "firearmType",
-      "category",
-      "weaponType",
-      "classification",
-    ]) ?? "Firearm"
-  );
-}
-
-function getFirearmCaliberLabel(firearm: MockFirearm) {
-  return (
-    getRecordValue(firearm, [
-      "caliber",
-      "calibre",
-      "chambering",
-      "gauge",
-      "ammunition",
-    ]) ?? "Not recorded"
-  );
-}
-
-function getFirearmStatusLabel(firearm: MockFirearm) {
-  return (
-    getRecordValue(firearm, [
-      "status",
-      "condition",
-      "inventoryStatus",
-      "serviceStatus",
-      "operationalStatus",
-    ]) ?? "In Service"
-  );
-}
-
-function getDirectAssignedOfficerId(firearm: MockFirearm) {
-  return getRecordValue(firearm, [
-    "assignedOfficerId",
-    "assignedToOfficerId",
-    "assignedUserId",
-    "assignedToUserId",
-    "issuedToUserId",
-    "currentOfficerId",
-  ]);
-}
-
-function normalizeCurrentStatus(value?: string): CurrentFirearmStatus {
-  const normalized = value?.toLowerCase() ?? "";
-
-  // Assignment/custody is tracked separately from service status.
-  if (normalized.includes("assigned") || normalized.includes("issued")) {
-    return "In Service";
-  }
-
-  if (
-    normalized.includes("out") ||
-    normalized.includes("oos") ||
-    normalized.includes("inactive")
-  ) {
-    return "Out of Service";
-  }
-
-  if (normalized.includes("maintenance") || normalized.includes("repair")) {
-    return "Maintenance";
-  }
-
-  if (normalized.includes("inspection")) {
-    return "Inspection Required";
-  }
-
-  if (normalized.includes("retired")) {
-    return "Retired";
-  }
-
-  return "In Service";
+  return "Unnamed firearm";
 }
 
 function isUnavailableStatus(status: CurrentFirearmStatus) {
@@ -372,16 +173,6 @@ function isUnavailableStatus(status: CurrentFirearmStatus) {
     status === "Inspection Required" ||
     status === "Retired"
   );
-}
-
-function isQualificationText(value?: string) {
-  return Boolean(value?.toLowerCase().includes("qualification"));
-}
-
-function isQualificationDrill(drill?: RangeDayDrill) {
-  if (!drill) return false;
-
-  return drill.category === "Qualification" || isQualificationText(drill.name);
 }
 
 function getCurrentStatusTone(status: CurrentFirearmStatus) {
@@ -458,159 +249,11 @@ function DetailItem({
   );
 }
 
-function ModuleLink({
-  href,
-  label,
-}: {
-  href: string;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-blue-500/40 hover:text-white"
-    >
-      {label}
-      <ExternalLink size={12} />
-    </Link>
-  );
-}
-
-function buildFirearmRecords({
-  workspace,
-  statusOverrides,
-  assignmentOverrides,
-}: {
-  workspace: StoredRangeDayWorkspace;
-  statusOverrides: StatusOverrides;
-  assignmentOverrides: AssignmentOverrides;
-}) {
-  const rangeDayById = new Map(
-    workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
-  );
-
-  const drillById = new Map(
-    workspace.rangeDayDrills.map((drill) => [drill.id, drill]),
-  );
-
-  const resultsByFirearmId = new Map<string, DrillRunResult[]>();
-  const malfunctionsByFirearmId = new Map<string, FirearmMalfunction[]>();
-
-  for (const result of workspace.results) {
-    if (!result.firearmId) continue;
-
-    const current = resultsByFirearmId.get(result.firearmId) ?? [];
-    current.push(result);
-    resultsByFirearmId.set(result.firearmId, current);
-  }
-
-  for (const malfunction of workspace.malfunctions) {
-    if (!malfunction.firearmId) continue;
-
-    const current = malfunctionsByFirearmId.get(malfunction.firearmId) ?? [];
-    current.push(malfunction);
-    malfunctionsByFirearmId.set(malfunction.firearmId, current);
-  }
-
-  return MOCK_FIREARMS.map<FirearmRecord>((firearm) => {
-    const sourceStatusLabel = getFirearmStatusLabel(firearm);
-    const sourceStatus = normalizeCurrentStatus(sourceStatusLabel);
-    const directAssignedOfficerId = getDirectAssignedOfficerId(firearm);
-
-    const assignmentOverrideExists = Object.prototype.hasOwnProperty.call(
-      assignmentOverrides,
-      firearm.id,
-    );
-
-    const assignedOfficerId = assignmentOverrideExists
-      ? assignmentOverrides[firearm.id] ?? undefined
-      : directAssignedOfficerId;
-
-    const currentStatus = statusOverrides[firearm.id] ?? sourceStatus;
-
-    const results = (resultsByFirearmId.get(firearm.id) ?? []).slice().sort(
-      (left, right) => {
-        const leftRangeDay = rangeDayById.get(left.rangeDayId);
-        const rightRangeDay = rangeDayById.get(right.rangeDayId);
-
-        return (
-          getDateValue(rightRangeDay?.date) -
-          getDateValue(leftRangeDay?.date)
-        );
-      },
-    );
-
-    const malfunctions = (malfunctionsByFirearmId.get(firearm.id) ?? [])
-      .slice()
-      .sort((left, right) => getDateValue(right.date) - getDateValue(left.date));
-
-    const qualificationReferenceCount = results.filter((result) => {
-      const drill = drillById.get(result.drillId);
-      return isQualificationDrill(drill);
-    }).length;
-
-    const openMalfunctionCount = malfunctions.filter(
-      (malfunction) => !malfunction.resolvedOnRange,
-    ).length;
-
-    const inspectionRequiredCount = malfunctions.filter(
-      (malfunction) => malfunction.inspectionRequired,
-    ).length;
-
-    const removedFromServiceCount = malfunctions.filter(
-      (malfunction) => malfunction.removedFromService,
-    ).length;
-
-    const latestResult = results[0];
-    const latestResultRangeDay = latestResult
-      ? rangeDayById.get(latestResult.rangeDayId)
-      : undefined;
-    const latestMalfunction = malfunctions[0];
-
-    const latestActivityDateValue = Math.max(
-      getDateValue(latestResultRangeDay?.date),
-      getDateValue(latestMalfunction?.date),
-    );
-
-    const latestActivityLabel =
-      latestActivityDateValue > 0
-        ? formatDate(new Date(latestActivityDateValue).toISOString())
-        : "No linked activity";
-
-    const assignedOfficerName = assignedOfficerId
-      ? getUserName(assignedOfficerId)
-      : "Unassigned";
-
-    return {
-      firearm,
-      id: firearm.id,
-      name: getFirearmName(firearm),
-      serialNumber: firearm.serialNumber,
-      typeLabel: getFirearmTypeLabel(firearm),
-      caliberLabel: getFirearmCaliberLabel(firearm),
-      sourceStatusLabel,
-      currentStatus,
-      assignedOfficerId,
-      assignedOfficerName,
-      assignmentLabel: assignedOfficerId ? assignedOfficerName : "Unassigned",
-      rangeUseCount: results.length,
-      qualificationReferenceCount,
-      malfunctionCount: malfunctions.length,
-      openMalfunctionCount,
-      inspectionRequiredCount,
-      removedFromServiceCount,
-      openIssueCount:
-        openMalfunctionCount + inspectionRequiredCount + removedFromServiceCount,
-      latestActivityLabel,
-    };
-  }).sort((left, right) => left.name.localeCompare(right.name));
-}
-
 function FirearmList({
-  records,
+  firearms,
   onOpen,
 }: {
-  records: FirearmRecord[];
+  firearms: ArmoryFirearm[];
   onOpen: (firearmId: string) => void;
 }) {
   return (
@@ -624,15 +267,14 @@ function FirearmList({
               <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Assigned To</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Issues</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-800">
-            {records.map((record) => (
+            {firearms.map((firearm) => (
               <tr
-                key={record.id}
-                onClick={() => onOpen(record.id)}
+                key={firearm.id}
+                onClick={() => onOpen(firearm.id)}
                 className="cursor-pointer transition hover:bg-slate-800/60"
               >
                 <td className="px-4 py-3">
@@ -642,7 +284,7 @@ function FirearmList({
                     </div>
                     <div>
                       <p className="text-[13px] font-bold text-white">
-                        {record.name}
+                        {getFirearmName(firearm)}
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">
                         Click to open firearm record
@@ -652,34 +294,25 @@ function FirearmList({
                 </td>
 
                 <td className="px-4 py-3 text-[12px] font-semibold text-slate-300">
-                  {record.serialNumber}
-                </td>
-
-                <td className="px-4 py-3">
-                  <StatusPill label={record.typeLabel} tone="slate" />
-                </td>
-
-                <td className="px-4 py-3 text-[12px] text-slate-400">
-                  {record.assignmentLabel}
+                  {firearm.serial_number || "Not recorded"}
                 </td>
 
                 <td className="px-4 py-3">
                   <StatusPill
-                    label={record.currentStatus}
-                    tone={getCurrentStatusTone(record.currentStatus)}
+                    label={formatFirearmType(firearm.firearm_type)}
+                    tone="slate"
                   />
                 </td>
 
-                <td className="px-4 py-3 text-right">
-                  <span
-                    className={`text-[13px] font-bold ${
-                      record.openIssueCount > 0
-                        ? "text-amber-300"
-                        : "text-slate-500"
-                    }`}
-                  >
-                    {record.openIssueCount}
-                  </span>
+                <td className="px-4 py-3 text-[12px] text-slate-400">
+                  {firearm.active_assignment?.assigned_to_name ?? "Unassigned"}
+                </td>
+
+                <td className="px-4 py-3">
+                  <StatusPill
+                    label={firearm.condition_status}
+                    tone={getCurrentStatusTone(firearm.condition_status)}
+                  />
                 </td>
               </tr>
             ))}
@@ -688,41 +321,39 @@ function FirearmList({
       </div>
 
       <div className="divide-y divide-slate-800 lg:hidden">
-        {records.map((record) => (
+        {firearms.map((firearm) => (
           <button
-            key={record.id}
+            key={firearm.id}
             type="button"
-            onClick={() => onOpen(record.id)}
+            onClick={() => onOpen(firearm.id)}
             className="block w-full p-4 text-left transition hover:bg-slate-800/60"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-[14px] font-bold text-white">
-                  {record.name}
+                  {getFirearmName(firearm)}
                 </h3>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Serial {record.serialNumber}
+                  Serial {firearm.serial_number || "Not recorded"}
                 </p>
               </div>
 
               <StatusPill
-                label={record.currentStatus}
-                tone={getCurrentStatusTone(record.currentStatus)}
+                label={firearm.condition_status}
+                tone={getCurrentStatusTone(firearm.condition_status)}
               />
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
-              <StatusPill label={record.typeLabel} tone="slate" />
-              {record.openIssueCount > 0 ? (
-                <StatusPill
-                  label={`${record.openIssueCount} Issues`}
-                  tone="amber"
-                />
-              ) : null}
+              <StatusPill
+                label={formatFirearmType(firearm.firearm_type)}
+                tone="slate"
+              />
             </div>
 
             <p className="mt-3 text-[11px] text-slate-500">
-              Assigned to: {record.assignmentLabel}
+              Assigned to:{" "}
+              {firearm.active_assignment?.assigned_to_name ?? "Unassigned"}
             </p>
           </button>
         ))}
@@ -731,9 +362,220 @@ function FirearmList({
   );
 }
 
+function AddFirearmModal({
+  form,
+  saving,
+  errorMessage,
+  onClose,
+  onChange,
+  onSubmit,
+}: {
+  form: AddFirearmForm;
+  saving: boolean;
+  errorMessage: string | null;
+  onClose: () => void;
+  onChange: <Key extends keyof AddFirearmForm>(
+    key: Key,
+    value: AddFirearmForm[Key],
+  ) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="Close add firearm form"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+      />
+
+      <section className="relative z-10 max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50">
+        <div className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 p-5 backdrop-blur">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
+                New Inventory Record
+              </p>
+              <h2 className="mt-2 text-2xl font-bold text-white">
+                Add Firearm
+              </h2>
+              <p className="mt-1 text-[12px] text-slate-500">
+                Create the armory record first. Assignment is handled separately
+                after the firearm exists.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close add firearm form"
+              onClick={onClose}
+              className="rounded-xl border border-slate-800 p-2 text-slate-500 transition hover:text-white"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-5 p-5">
+          {errorMessage ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-200">
+              {errorMessage}
+            </div>
+          ) : null}
+
+          <section className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Make
+              </label>
+              <input
+                value={form.make}
+                onChange={(event) => onChange("make", event.target.value)}
+                placeholder="Glock"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Model
+              </label>
+              <input
+                value={form.model}
+                onChange={(event) => onChange("model", event.target.value)}
+                placeholder="19 Gen 5"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Serial Number
+              </label>
+              <input
+                value={form.serialNumber}
+                onChange={(event) =>
+                  onChange("serialNumber", event.target.value)
+                }
+                placeholder="Serial number"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Asset Number
+              </label>
+              <input
+                value={form.assetNumber}
+                onChange={(event) =>
+                  onChange("assetNumber", event.target.value)
+                }
+                placeholder="Optional agency asset number"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Type
+              </label>
+              <select
+                value={form.firearmType}
+                onChange={(event) =>
+                  onChange("firearmType", event.target.value as FirearmTypeFilter)
+                }
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              >
+                {TYPE_FILTERS.filter((type) => type.value !== "All").map(
+                  (type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Caliber / Gauge
+              </label>
+              <input
+                value={form.caliber}
+                onChange={(event) => onChange("caliber", event.target.value)}
+                placeholder="9mm"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Initial Status
+              </label>
+              <select
+                value={form.conditionStatus}
+                onChange={(event) =>
+                  onChange(
+                    "conditionStatus",
+                    event.target.value as CurrentFirearmStatus,
+                  )
+                }
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              >
+                {CURRENT_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Notes
+              </label>
+              <textarea
+                value={form.notes}
+                onChange={(event) => onChange("notes", event.target.value)}
+                placeholder="Optional notes"
+                rows={4}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+              />
+            </div>
+          </section>
+
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-800 pt-4 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={saving}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? "Adding..." : "Add Firearm"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function FirearmDetailModal({
-  record,
+  firearm,
+  members,
   selectedOfficerId,
+  saving,
+  errorMessage,
+  assignmentMode,
   onSelectedOfficerChange,
   onClose,
   onStatusChange,
@@ -742,10 +584,13 @@ function FirearmDetailModal({
   onConfirmAssign,
   onConfirmReturn,
   onCancelAssignmentMode,
-  assignmentMode,
 }: {
-  record: FirearmRecord;
+  firearm: ArmoryFirearm;
+  members: ArmoryMember[];
   selectedOfficerId: string;
+  saving: boolean;
+  errorMessage: string | null;
+  assignmentMode?: "assign" | "return";
   onSelectedOfficerChange: (officerId: string) => void;
   onClose: () => void;
   onStatusChange: (firearmId: string, status: CurrentFirearmStatus) => void;
@@ -754,11 +599,10 @@ function FirearmDetailModal({
   onConfirmAssign: () => void;
   onConfirmReturn: () => void;
   onCancelAssignmentMode: () => void;
-  assignmentMode?: "assign" | "return";
 }) {
   const canAssign =
-    !record.assignedOfficerId && !isUnavailableStatus(record.currentStatus);
-  const canReturn = Boolean(record.assignedOfficerId);
+    !firearm.active_assignment && !isUnavailableStatus(firearm.condition_status);
+  const canReturn = Boolean(firearm.active_assignment);
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
@@ -777,10 +621,11 @@ function FirearmDetailModal({
                 Firearm Record
               </p>
               <h2 className="mt-2 text-2xl font-bold text-white">
-                {record.name}
+                {getFirearmName(firearm)}
               </h2>
               <p className="mt-1 text-[12px] text-slate-500">
-                Serial {record.serialNumber} · {record.typeLabel}
+                Serial {firearm.serial_number || "Not recorded"} ·{" "}
+                {formatFirearmType(firearm.firearm_type)}
               </p>
             </div>
 
@@ -796,30 +641,36 @@ function FirearmDetailModal({
         </div>
 
         <div className="space-y-5 p-5">
+          {errorMessage ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-200">
+              {errorMessage}
+            </div>
+          ) : null}
+
           <section className="grid gap-3 md:grid-cols-4">
             <DetailItem
               label="Status"
-              value={record.currentStatus}
+              value={firearm.condition_status}
               sub="Current armory status"
             />
             <DetailItem
               label="Assigned To"
-              value={record.assignmentLabel}
+              value={firearm.active_assignment?.assigned_to_name ?? "Unassigned"}
               sub={
-                record.assignedOfficerId
-                  ? "Current assignment"
+                firearm.active_assignment
+                  ? `Since ${formatDateTime(firearm.active_assignment.assigned_at)}`
                   : "No active assignment"
               }
             />
             <DetailItem
-              label="Open Issues"
-              value={record.openIssueCount}
-              sub="Linked flags"
+              label="Asset Number"
+              value={firearm.asset_number || "Not recorded"}
+              sub="Agency inventory reference"
             />
             <DetailItem
-              label="Last Activity"
-              value={record.latestActivityLabel}
-              sub="Linked records"
+              label="Updated"
+              value={formatDateTime(firearm.updated_at)}
+              sub="Last record update"
             />
           </section>
 
@@ -832,76 +683,73 @@ function FirearmDetailModal({
                 </h3>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <DetailItem label="Make / Model" value={record.name} />
-                  <DetailItem label="Serial Number" value={record.serialNumber} />
-                  <DetailItem label="Type" value={record.typeLabel} />
-                  <DetailItem label="Caliber / Gauge" value={record.caliberLabel} />
+                  <DetailItem label="Make" value={firearm.make || "Not recorded"} />
+                  <DetailItem label="Model" value={firearm.model || "Not recorded"} />
+                  <DetailItem
+                    label="Serial Number"
+                    value={firearm.serial_number || "Not recorded"}
+                  />
+                  <DetailItem
+                    label="Type"
+                    value={formatFirearmType(firearm.firearm_type)}
+                  />
+                  <DetailItem
+                    label="Caliber / Gauge"
+                    value={firearm.caliber || "Not recorded"}
+                  />
+                  <DetailItem
+                    label="Created"
+                    value={formatDateTime(firearm.created_at)}
+                  />
                 </div>
+
+                {firearm.notes ? (
+                  <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-3 text-[12px] leading-5 text-slate-400">
+                    {firearm.notes}
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
                 <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
-                  <ClipboardList size={16} className="text-blue-400" />
+                  <AlertTriangle size={16} className="text-blue-400" />
                   Linked Record Summary
                 </h3>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <DetailItem
-                    label="Malfunctions"
-                    value={record.malfunctionCount}
-                    sub={`${record.openMalfunctionCount} open`}
-                  />
-                  <DetailItem
-                    label="Inspection Required"
-                    value={record.inspectionRequiredCount}
-                    sub="Linked inspection flags"
-                  />
-                  <DetailItem
-                    label="Range Uses"
-                    value={record.rangeUseCount}
-                    sub="Linked range records"
-                  />
-                  <DetailItem
-                    label="Qualification Links"
-                    value={record.qualificationReferenceCount}
-                    sub="Linked qual records"
-                  />
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <ModuleLink href="/inspections" label="Inspections" />
-                  <ModuleLink href="/range-days" label="Range Days" />
-                  <ModuleLink href="/qualifications" label="Qualifications" />
-                </div>
+                <p className="text-[12px] leading-5 text-slate-500">
+                  This card now reads firearm condition and custody records from
+                  Supabase. Inspection, maintenance, malfunction, range, and
+                  qualification summaries can be connected here as those modules
+                  are moved to real database records.
+                </p>
               </div>
 
-              {record.openIssueCount > 0 ? (
-                <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
-                  <div className="flex gap-3">
-                    <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="font-semibold text-amber-100">
-                        Review recommended
-                      </p>
-                      <p className="mt-1 text-amber-200/80">
-                        This firearm has linked issue flags. Review the related
-                        inspection, maintenance, or malfunction records before
-                        treating it as ready for use.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
+              {firearm.condition_status === "In Service" ? (
                 <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4 text-[12px] text-emerald-200">
                   <div className="flex gap-3">
                     <CheckCircle2 size={17} className="mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="font-semibold text-emerald-100">
-                        No linked issues
+                        Firearm is in service
                       </p>
                       <p className="mt-1 text-emerald-200/80">
-                        No open malfunction, inspection, or out-of-service flags
-                        are currently linked to this firearm record.
+                        No unavailable status is currently applied to this
+                        firearm.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
+                  <div className="flex gap-3">
+                    <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-amber-100">
+                        Firearm is not available
+                      </p>
+                      <p className="mt-1 text-amber-200/80">
+                        Current status is {firearm.condition_status}. Review
+                        the linked inspection or maintenance record before use.
                       </p>
                     </div>
                   </div>
@@ -920,14 +768,15 @@ function FirearmDetailModal({
                   Current Status
                 </label>
                 <select
-                  value={record.currentStatus}
+                  value={firearm.condition_status}
+                  disabled={saving}
                   onChange={(event) =>
                     onStatusChange(
-                      record.id,
+                      firearm.id,
                       event.target.value as CurrentFirearmStatus,
                     )
                   }
-                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] font-semibold text-white outline-none transition focus:border-blue-500"
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] font-semibold text-white outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {CURRENT_STATUS_OPTIONS.map((status) => (
                     <option key={status} value={status}>
@@ -937,8 +786,8 @@ function FirearmDetailModal({
                 </select>
 
                 <p className="mt-2 text-[11px] leading-4 text-slate-500">
-                  This controls service condition only. Assignment is handled separately
-                  through Assign / Return.
+                  This controls service condition only. Assignment is handled
+                  separately through Assign / Return.
                 </p>
               </div>
 
@@ -950,10 +799,14 @@ function FirearmDetailModal({
 
                 <DetailItem
                   label="Assigned To"
-                  value={record.assignmentLabel}
+                  value={
+                    firearm.active_assignment?.assigned_to_name ?? "Unassigned"
+                  }
                   sub={
-                    record.assignedOfficerId
-                      ? "Current firearm assignment"
+                    firearm.active_assignment
+                      ? `Assigned ${formatDateTime(
+                          firearm.active_assignment.assigned_at,
+                        )}`
                       : "No active assignment"
                   }
                 />
@@ -965,15 +818,16 @@ function FirearmDetailModal({
                     </label>
                     <select
                       value={selectedOfficerId}
+                      disabled={saving}
                       onChange={(event) =>
                         onSelectedOfficerChange(event.target.value)
                       }
-                      className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
+                      className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <option value="">Select officer</option>
-                      {MOCK_USERS.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.name}
+                      {members.map((member) => (
+                        <option key={member.user_id} value={member.user_id}>
+                          {member.full_name}
                         </option>
                       ))}
                     </select>
@@ -982,15 +836,16 @@ function FirearmDetailModal({
                       <button
                         type="button"
                         onClick={onConfirmAssign}
-                        disabled={!selectedOfficerId}
+                        disabled={!selectedOfficerId || saving}
                         className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Confirm Assign
+                        {saving ? "Saving..." : "Confirm Assign"}
                       </button>
                       <button
                         type="button"
                         onClick={onCancelAssignmentMode}
-                        className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:text-white"
+                        disabled={saving}
+                        className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Cancel
                       </button>
@@ -998,19 +853,22 @@ function FirearmDetailModal({
                   </div>
                 ) : assignmentMode === "return" ? (
                   <div className="mt-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 text-[12px] text-amber-100">
-                    Return this firearm from {record.assignedOfficerName}?
+                    Return this firearm from{" "}
+                    {firearm.active_assignment?.assigned_to_name}?
                     <div className="mt-3 flex gap-2">
                       <button
                         type="button"
                         onClick={onConfirmReturn}
-                        className="flex-1 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
+                        disabled={saving}
+                        className="flex-1 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Confirm Return
+                        {saving ? "Saving..." : "Confirm Return"}
                       </button>
                       <button
                         type="button"
                         onClick={onCancelAssignmentMode}
-                        className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:text-white"
+                        disabled={saving}
+                        className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Cancel
                       </button>
@@ -1022,7 +880,8 @@ function FirearmDetailModal({
                       <button
                         type="button"
                         onClick={onBeginReturn}
-                        className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
+                        disabled={saving}
+                        className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Return This Firearm
                       </button>
@@ -1030,13 +889,15 @@ function FirearmDetailModal({
                       <button
                         type="button"
                         onClick={onBeginAssign}
-                        className="w-full rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-[12px] font-semibold text-blue-200 transition hover:bg-blue-500/20"
+                        disabled={saving}
+                        className="w-full rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-[12px] font-semibold text-blue-200 transition hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Assign This Firearm
                       </button>
                     ) : (
                       <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-500">
-                        Assignment is disabled while this firearm is {record.currentStatus}.
+                        Assignment is disabled while this firearm is{" "}
+                        {firearm.condition_status}.
                       </div>
                     )}
                   </div>
@@ -1051,66 +912,93 @@ function FirearmDetailModal({
 }
 
 export default function FirearmsPage() {
-  const [workspace, setWorkspace] =
-    useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
-  const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
-  const [statusOverrides, setStatusOverrides] =
-    useState<StatusOverrides>({});
-  const [assignmentOverrides, setAssignmentOverrides] =
-    useState<AssignmentOverrides>({});
+  const [data, setData] = useState<ArmoryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addForm, setAddForm] = useState<AddFirearmForm>(
+    EMPTY_ADD_FIREARM_FORM,
+  );
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<CurrentStatusFilter>("All");
-  const [typeFilter, setTypeFilter] = useState("All");
+  const [typeFilter, setTypeFilter] = useState<FirearmTypeFilter>("All");
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
 
-  useEffect(() => {
-    const storedWorkspace = loadStoredRangeDayWorkspace();
+  const loadArmory = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
 
-    if (storedWorkspace) {
-      setWorkspace(storedWorkspace);
-      setHasStoredWorkspace(true);
+    try {
+      const response = await fetch("/api/armory/firearms", {
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as
+        | ArmoryResponse
+        | { error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : "The Armory records could not be loaded.",
+        );
+      }
+
+      setData(payload as ArmoryResponse);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "The Armory records could not be loaded.",
+      );
+    } finally {
+      setLoading(false);
     }
-
-    setStatusOverrides(loadStatusOverrides());
-    setAssignmentOverrides(loadAssignmentOverrides());
   }, []);
 
-  const firearmRecords = useMemo(
+  useEffect(() => {
+    void loadArmory();
+  }, [loadArmory]);
+
+  const firearms = useMemo(
     () =>
-      buildFirearmRecords({
-        workspace,
-        statusOverrides,
-        assignmentOverrides,
-      }),
-    [workspace, statusOverrides, assignmentOverrides],
+      (data?.firearms ?? []).map((firearm) => ({
+        ...firearm,
+        condition_status: normalizeStatus(firearm.condition_status),
+      })),
+    [data?.firearms],
   );
 
-  const selectedRecord = detailModal
-    ? firearmRecords.find((record) => record.id === detailModal.firearmId)
+  const members = data?.members ?? [];
+
+  const selectedFirearm = detailModal
+    ? firearms.find((firearm) => firearm.id === detailModal.firearmId)
     : undefined;
 
-  const filteredRecords = useMemo(() => {
+  const filteredFirearms = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase();
 
-    return firearmRecords.filter((record) => {
+    return firearms.filter((firearm) => {
       const statusMatches =
-        statusFilter === "All" || record.currentStatus === statusFilter;
+        statusFilter === "All" || firearm.condition_status === statusFilter;
 
       const typeMatches =
-        typeFilter === "All" ||
-        record.typeLabel.toLowerCase().includes(typeFilter.toLowerCase());
+        typeFilter === "All" || firearm.firearm_type === typeFilter;
 
       const searchableText = [
-        record.name,
-        record.serialNumber,
-        record.typeLabel,
-        record.caliberLabel,
-        record.sourceStatusLabel,
-        record.currentStatus,
-        record.assignmentLabel,
-        record.assignedOfficerName,
+        getFirearmName(firearm),
+        firearm.serial_number ?? "",
+        firearm.asset_number ?? "",
+        firearm.firearm_type ?? "",
+        firearm.caliber ?? "",
+        firearm.condition_status,
+        firearm.active_assignment?.assigned_to_name ?? "Unassigned",
       ]
         .join(" ")
         .toLowerCase();
@@ -1120,27 +1008,83 @@ export default function FirearmsPage() {
 
       return statusMatches && typeMatches && searchMatches;
     });
-  }, [firearmRecords, searchText, statusFilter, typeFilter]);
+  }, [firearms, searchText, statusFilter, typeFilter]);
 
-  const assignedCount = firearmRecords.filter(
-    (record) => record.assignedOfficerId,
+  const assignedCount = firearms.filter(
+    (firearm) => firearm.active_assignment,
   ).length;
 
-  const unavailableCount = firearmRecords.filter((record) =>
-    isUnavailableStatus(record.currentStatus),
+  const unavailableCount = firearms.filter((firearm) =>
+    isUnavailableStatus(firearm.condition_status),
   ).length;
 
-  const openIssueCount = firearmRecords.reduce(
-    (total, record) => total + record.openIssueCount,
-    0,
-  );
+  function openAddFirearmForm() {
+    setAddError(null);
+    setAddForm(EMPTY_ADD_FIREARM_FORM);
+    setAddModalOpen(true);
+  }
+
+  function closeAddFirearmForm() {
+    if (saving) return;
+
+    setAddError(null);
+    setAddForm(EMPTY_ADD_FIREARM_FORM);
+    setAddModalOpen(false);
+  }
+
+  function updateAddForm<Key extends keyof AddFirearmForm>(
+    key: Key,
+    value: AddFirearmForm[Key],
+  ) {
+    setAddForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function submitAddFirearm() {
+    setSaving(true);
+    setAddError(null);
+
+    try {
+      const response = await fetch("/api/armory/firearms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(addForm),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "The firearm could not be added.");
+      }
+
+      await loadArmory();
+      setAddForm(EMPTY_ADD_FIREARM_FORM);
+      setAddModalOpen(false);
+    } catch (error) {
+      setAddError(
+        error instanceof Error
+          ? error.message
+          : "The firearm could not be added.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function openFirearmRecord(firearmId: string) {
+    setModalError(null);
     setSelectedOfficerId("");
     setDetailModal({ firearmId });
   }
 
   function closeFirearmRecord() {
+    setModalError(null);
     setSelectedOfficerId("");
     setDetailModal(null);
   }
@@ -1148,6 +1092,7 @@ export default function FirearmsPage() {
   function setAssignmentMode(mode: "assign" | "return") {
     if (!detailModal) return;
 
+    setModalError(null);
     setSelectedOfficerId("");
     setDetailModal({
       firearmId: detailModal.firearmId,
@@ -1158,63 +1103,123 @@ export default function FirearmsPage() {
   function clearAssignmentMode() {
     if (!detailModal) return;
 
+    setModalError(null);
     setSelectedOfficerId("");
     setDetailModal({ firearmId: detailModal.firearmId });
   }
 
-  function handleStatusChange(
+  async function handleStatusChange(
     firearmId: string,
     status: CurrentFirearmStatus,
   ) {
-    setStatusOverrides((current) => {
-      const next: StatusOverrides = {
-        ...current,
-        [firearmId]: status,
+    setSaving(true);
+    setModalError(null);
+
+    try {
+      const response = await fetch(`/api/armory/firearms/${firearmId}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
       };
 
-      persistStatusOverrides(next);
-      return next;
-    });
+      if (!response.ok) {
+        throw new Error(
+          payload.error || "The firearm status could not be updated.",
+        );
+      }
+
+      await loadArmory();
+    } catch (error) {
+      setModalError(
+        error instanceof Error
+          ? error.message
+          : "The firearm status could not be updated.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function confirmAssign() {
+  async function confirmAssign() {
     if (!detailModal || !selectedOfficerId) return;
 
-    const firearmId = detailModal.firearmId;
+    setSaving(true);
+    setModalError(null);
 
-    setAssignmentOverrides((current) => {
-      const next: AssignmentOverrides = {
-        ...current,
-        [firearmId]: selectedOfficerId,
+    try {
+      const response = await fetch(
+        `/api/armory/firearms/${detailModal.firearmId}/assignments`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ assignedToUserId: selectedOfficerId }),
+        },
+      );
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
       };
 
-      persistAssignmentOverrides(next);
-      return next;
-    });
+      if (!response.ok) {
+        throw new Error(payload.error || "The firearm could not be assigned.");
+      }
 
-
-    setSelectedOfficerId("");
-    setDetailModal({ firearmId });
+      await loadArmory();
+      setSelectedOfficerId("");
+      setDetailModal({ firearmId: detailModal.firearmId });
+    } catch (error) {
+      setModalError(
+        error instanceof Error
+          ? error.message
+          : "The firearm could not be assigned.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function confirmReturn() {
+  async function confirmReturn() {
     if (!detailModal) return;
 
-    const firearmId = detailModal.firearmId;
+    setSaving(true);
+    setModalError(null);
 
-    setAssignmentOverrides((current) => {
-      const next: AssignmentOverrides = {
-        ...current,
-        [firearmId]: null,
+    try {
+      const response = await fetch(
+        `/api/armory/firearms/${detailModal.firearmId}/assignments`,
+        {
+          method: "PATCH",
+        },
+      );
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
       };
 
-      persistAssignmentOverrides(next);
-      return next;
-    });
+      if (!response.ok) {
+        throw new Error(payload.error || "The firearm could not be returned.");
+      }
 
-
-    setSelectedOfficerId("");
-    setDetailModal({ firearmId });
+      await loadArmory();
+      setSelectedOfficerId("");
+      setDetailModal({ firearmId: detailModal.firearmId });
+    } catch (error) {
+      setModalError(
+        error instanceof Error
+          ? error.message
+          : "The firearm could not be returned.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -1230,14 +1235,24 @@ export default function FirearmsPage() {
                 Firearms Inventory
               </h1>
               <p className="mt-1 max-w-3xl text-[12px] leading-5 text-slate-500">
-                Select a firearm from the inventory list to view its full record,
+                Select a firearm from the inventory list to view its record,
                 assignment, current status, and linked history summary.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
-              <Shield size={14} className="text-blue-400" />
-              {hasStoredWorkspace ? "Linked data available" : "Inventory view"}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
+                <Shield size={14} className="text-blue-400" />
+                Supabase inventory
+              </div>
+
+              <button
+                type="button"
+                onClick={openAddFirearmForm}
+                className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-500"
+              >
+                Add Firearm
+              </button>
             </div>
           </div>
         </header>
@@ -1245,13 +1260,13 @@ export default function FirearmsPage() {
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
             label="Total Firearms"
-            value={firearmRecords.length}
+            value={firearms.length}
             sub="Inventory records"
           />
           <StatCard
             label="Assigned"
             value={assignedCount}
-            sub="Issued to personnel"
+            sub="Active custody"
           />
           <StatCard
             label="Unavailable"
@@ -1259,9 +1274,9 @@ export default function FirearmsPage() {
             sub="OOS, maintenance, retired"
           />
           <StatCard
-            label="Open Issues"
-            value={openIssueCount}
-            sub="Linked flags"
+            label="Members"
+            value={members.length}
+            sub="Assignment options"
           />
         </section>
 
@@ -1307,12 +1322,14 @@ export default function FirearmsPage() {
               </label>
               <select
                 value={typeFilter}
-                onChange={(event) => setTypeFilter(event.target.value)}
+                onChange={(event) =>
+                  setTypeFilter(event.target.value as FirearmTypeFilter)
+                }
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none transition focus:border-blue-500"
               >
                 {TYPE_FILTERS.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
+                  <option key={type.value} value={type.value}>
+                    {type.label}
                   </option>
                 ))}
               </select>
@@ -1338,13 +1355,26 @@ export default function FirearmsPage() {
             <div>
               <h2 className="text-[15px] font-bold text-white">Inventory</h2>
               <p className="mt-0.5 text-[12px] text-slate-500">
-                {filteredRecords.length} of {firearmRecords.length} firearms shown
+                {loading
+                  ? "Loading firearms..."
+                  : `${filteredFirearms.length} of ${firearms.length} firearms shown`}
               </p>
             </div>
           </div>
 
-          {filteredRecords.length > 0 ? (
-            <FirearmList records={filteredRecords} onOpen={openFirearmRecord} />
+          {loadError ? (
+            <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-5 text-[13px] text-red-200">
+              {loadError}
+            </div>
+          ) : loading ? (
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center text-[13px] text-slate-400">
+              Loading Armory records...
+            </div>
+          ) : filteredFirearms.length > 0 ? (
+            <FirearmList
+              firearms={filteredFirearms}
+              onOpen={openFirearmRecord}
+            />
           ) : (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center">
               <Search size={22} className="mx-auto text-slate-600" />
@@ -1359,10 +1389,24 @@ export default function FirearmsPage() {
         </section>
       </div>
 
-      {selectedRecord ? (
+      {addModalOpen ? (
+        <AddFirearmModal
+          form={addForm}
+          saving={saving}
+          errorMessage={addError}
+          onClose={closeAddFirearmForm}
+          onChange={updateAddForm}
+          onSubmit={submitAddFirearm}
+        />
+      ) : null}
+
+      {selectedFirearm ? (
         <FirearmDetailModal
-          record={selectedRecord}
+          firearm={selectedFirearm}
+          members={members}
           selectedOfficerId={selectedOfficerId}
+          saving={saving}
+          errorMessage={modalError}
           onSelectedOfficerChange={setSelectedOfficerId}
           onClose={closeFirearmRecord}
           onStatusChange={handleStatusChange}
