@@ -136,6 +136,8 @@ function MetricCard({
 export default function TrainingAlertsClient() {
   const [activeView, setActiveView] = useState<ActiveView>("alerts");
   const [loaded, setLoaded] = useState(false);
+  const [remediationsLoadedFromSupabase, setRemediationsLoadedFromSupabase] =
+    useState(false);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [alerts, setAlerts] =
     useState<TrainingAlert[]>(cloneTrainingAlerts);
@@ -144,6 +146,32 @@ export default function TrainingAlertsClient() {
 
   useEffect(() => {
     let isMounted = true;
+
+    async function loadSupabaseRemediations(fallback: RemediationRecord[]) {
+      try {
+        const response = await fetch("/api/pilot/remediations", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load Supabase remediation records.");
+        }
+
+        const payload = (await response.json()) as {
+          remediations?: RemediationRecord[];
+        };
+
+        setRemediationsLoadedFromSupabase(true);
+
+        return payload.remediations ?? fallback;
+      } catch (error) {
+        console.warn("Could not load Supabase remediations.", error);
+        setRemediationsLoadedFromSupabase(false);
+
+        return fallback;
+      }
+    }
 
     async function loadWorkflowData() {
       const storedAlerts = loadStoredRecords(
@@ -155,6 +183,9 @@ export default function TrainingAlertsClient() {
         REMEDIATIONS_STORAGE_KEY,
         cloneRemediations(),
       );
+
+      const liveRemediations =
+        await loadSupabaseRemediations(storedRemediations);
 
       const legacyMockAlertIds = new Set([
         "alert-night-qualification-reynolds",
@@ -185,6 +216,9 @@ export default function TrainingAlertsClient() {
           const storedById = new Map(
             storedAlerts.map((alert) => [alert.id, alert]),
           );
+          const remediationAlertIds = new Set(
+            liveRemediations.map((record) => record.linkedAlertId),
+          );
 
           const hydratedPilotAlerts = pilotAlerts.map((alert) => {
             const storedAlert = storedById.get(alert.id);
@@ -193,8 +227,16 @@ export default function TrainingAlertsClient() {
 
             return {
               ...alert,
-              status: storedAlert.status,
-              remediationId: storedAlert.remediationId,
+              status:
+                storedAlert.status === "Remediation Assigned" ||
+                remediationAlertIds.has(alert.id)
+                  ? "Remediation Assigned"
+                  : storedAlert.status,
+              remediationId:
+                storedAlert.remediationId ??
+                liveRemediations.find(
+                  (record) => record.linkedAlertId === alert.id,
+                )?.id,
               auditLog:
                 storedAlert.auditLog.length > 0
                   ? storedAlert.auditLog
@@ -218,7 +260,7 @@ export default function TrainingAlertsClient() {
 
           if (isMounted) {
             setAlerts(nextAlerts);
-            setRemediations(storedRemediations);
+            setRemediations(liveRemediations);
             setLoaded(true);
           }
 
@@ -230,7 +272,7 @@ export default function TrainingAlertsClient() {
 
       if (isMounted) {
         setAlerts(storedAlerts);
-        setRemediations(storedRemediations);
+        setRemediations(liveRemediations);
         setLoaded(true);
       }
     }
@@ -258,7 +300,31 @@ export default function TrainingAlertsClient() {
       REMEDIATIONS_STORAGE_KEY,
       JSON.stringify(remediations),
     );
-  }, [loaded, remediations]);
+
+    if (!remediationsLoadedFromSupabase) return;
+
+    const controller = new AbortController();
+
+    const saveTimer = window.setTimeout(() => {
+      void fetch("/api/pilot/remediations", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ remediations }),
+        signal: controller.signal,
+      }).catch((error) => {
+        if (error?.name !== "AbortError") {
+          console.warn("Could not save Supabase remediations.", error);
+        }
+      });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(saveTimer);
+      controller.abort();
+    };
+  }, [loaded, remediations, remediationsLoadedFromSupabase]);
 
   const metrics = useMemo(() => {
     const openAlerts = alerts.filter(
@@ -459,7 +525,8 @@ export default function TrainingAlertsClient() {
               <p className="mt-1 max-w-4xl text-[12px] leading-6 text-slate-500">
                 Surface qualification and drill concerns, route them to the
                 right users, create remediation records, track follow-up, and
-                preserve the audit trail from concern to resolution.
+                preserve the audit trail from concern to resolution. Remediation
+                records now persist to Supabase for the pilot workspace.
               </p>
             </div>
 
