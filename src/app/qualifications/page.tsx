@@ -46,6 +46,21 @@ type QualificationStatus =
 
 type OfficerStatusFilter = "All" | QualificationStatus;
 
+type PilotPersonnel = {
+  id: string;
+  userId: string;
+  displayName: string;
+  fullName: string;
+  email?: string | null;
+  badgeNumber?: string | null;
+  rankTitle?: string | null;
+  unitName?: string | null;
+  employeeNumber?: string | null;
+  assignment?: string;
+  roles?: string[];
+  isActive?: boolean;
+};
+
 type StoredRangeDay = RangeDay & {
   rangeType?: string;
   startTime?: string;
@@ -117,6 +132,23 @@ const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   malfunctions: [],
 };
 
+const FALLBACK_PERSONNEL: PilotPersonnel[] = MOCK_USERS.map((user: any) => ({
+  id: user.id,
+  userId: user.id,
+  displayName: user.name ?? user.fullName ?? user.email ?? "Demo Officer",
+  fullName: user.name ?? user.fullName ?? "Demo Officer",
+  email: user.email ?? null,
+  badgeNumber: user.badgeNumber ?? user.badge ?? user.employeeNumber ?? null,
+  rankTitle: user.rankTitle ?? user.rank ?? null,
+  unitName: user.unitName ?? user.unit ?? user.assignment ?? null,
+  employeeNumber: user.employeeNumber ?? null,
+  assignment: user.assignment ?? user.unitName ?? user.unit ?? "Patrol",
+  roles: user.roles ?? [],
+  isActive: true,
+}));
+
+let activePersonnelDirectory: PilotPersonnel[] = FALLBACK_PERSONNEL;
+
 const STATUS_FILTERS: OfficerStatusFilter[] = [
   "All",
   "Current",
@@ -159,6 +191,54 @@ function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
   }
 }
 
+
+async function loadPilotPersonnel() {
+  if (typeof window === "undefined") {
+    return {
+      personnel: FALLBACK_PERSONNEL,
+      source: "fallback",
+    };
+  }
+
+  try {
+    const response = await fetch("/api/pilot/personnel", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load pilot personnel.");
+    }
+
+    const payload = (await response.json()) as {
+      personnel?: PilotPersonnel[];
+      source?: string;
+    };
+
+    const personnel = Array.isArray(payload.personnel)
+      ? payload.personnel
+      : [];
+
+    if (personnel.length === 0) {
+      return {
+        personnel: FALLBACK_PERSONNEL,
+        source: "fallback",
+      };
+    }
+
+    return {
+      personnel,
+      source: payload.source ?? "supabase_department_memberships",
+    };
+  } catch (error) {
+    console.warn("Could not load pilot personnel.", error);
+
+    return {
+      personnel: FALLBACK_PERSONNEL,
+      source: "fallback",
+    };
+  }
+}
 
 async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | null> {
   if (typeof window === "undefined") return null;
@@ -249,7 +329,11 @@ function getDaysSince(date?: string) {
 function getUserName(userId?: string) {
   if (!userId) return "Unassigned";
 
-  return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
+  return (
+    activePersonnelDirectory.find((person) => person.id === userId)?.displayName ??
+    MOCK_USERS.find((user) => user.id === userId)?.name ??
+    "Unknown User"
+  );
 }
 
 function getFirearmName(firearmId?: string) {
@@ -440,7 +524,7 @@ function evaluateOfficerStatus(
   };
 }
 
-function buildOfficerHistories(workspace: StoredRangeDayWorkspace) {
+function buildOfficerHistories(workspace: StoredRangeDayWorkspace, personnel: PilotPersonnel[]) {
   const rangeDayById = new Map(
     workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
   );
@@ -475,7 +559,30 @@ function buildOfficerHistories(workspace: StoredRangeDayWorkspace) {
     malfunctionsByOfficerId.set(officerId, current);
   });
 
-  return MOCK_USERS.map<OfficerHistory>((officer) => {
+  const personnelById = new Map(personnel.map((officer) => [officer.id, officer]));
+  const workspaceOfficerIds = Array.from(
+    new Set([
+      ...workspace.rangeRoster.map((entry) => entry.officerId),
+      ...workspace.results.map((result) => result.officerId),
+    ].filter(Boolean)),
+  );
+
+  const officers = [
+    ...personnel,
+    ...workspaceOfficerIds
+      .filter((officerId) => !personnelById.has(officerId))
+      .map<PilotPersonnel>((officerId) => ({
+        id: officerId,
+        userId: officerId,
+        displayName: getUserName(officerId),
+        fullName: getUserName(officerId),
+        assignment: "Department Personnel",
+        roles: [],
+        isActive: true,
+      })),
+  ];
+
+  return officers.map<OfficerHistory>((officer) => {
     const officerResults = resultsByOfficerId.get(officer.id) ?? [];
     const rosterEntries = rosterByOfficerId.get(officer.id) ?? [];
     const officerMalfunctions = malfunctionsByOfficerId.get(officer.id) ?? [];
@@ -564,7 +671,7 @@ function buildOfficerHistories(workspace: StoredRangeDayWorkspace) {
 
     return {
       officerId: officer.id,
-      officerName: officer.name,
+      officerName: officer.displayName,
       assignedFirearmIds,
       rosterCount: rosterEntries.length,
       missedRangeDays,
@@ -736,13 +843,53 @@ function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) 
 export default function QualificationsPage() {
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
+  const [personnel, setPersonnel] =
+    useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
+  const [personnelMessage, setPersonnelMessage] = useState(
+    "Using demo personnel until live department personnel is loaded.",
+  );
   const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<OfficerStatusFilter>("All");
   const [selectedOfficerId, setSelectedOfficerId] = useState<string>(
-    MOCK_USERS[0]?.id ?? "",
+    FALLBACK_PERSONNEL[0]?.id ?? "",
   );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPersonnelDirectory() {
+      const payload = await loadPilotPersonnel();
+
+      if (!isMounted) return;
+
+      activePersonnelDirectory = payload.personnel;
+      setPersonnel(payload.personnel);
+      setPersonnelMessage(
+        payload.source === "fallback"
+          ? "Using demo personnel."
+          : `Using ${payload.personnel.length} live department personnel record${
+              payload.personnel.length === 1 ? "" : "s"
+            } from Supabase.`,
+      );
+      setSelectedOfficerId((current) =>
+        payload.personnel.some((person) => person.id === current)
+          ? current
+          : payload.personnel[0]?.id ?? current,
+      );
+    }
+
+    void loadPersonnelDirectory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activePersonnelDirectory = personnel;
+  }, [personnel]);
 
   useEffect(() => {
     let isMounted = true;
@@ -766,8 +913,8 @@ export default function QualificationsPage() {
   }, []);
 
   const officerHistories = useMemo(
-    () => buildOfficerHistories(workspace),
-    [workspace],
+    () => buildOfficerHistories(workspace, personnel),
+    [personnel, workspace],
   );
 
   const selectedHistory =
@@ -1150,3 +1297,4 @@ export default function QualificationsPage() {
     </TracePointShell>
   );
 }
+

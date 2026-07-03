@@ -15,7 +15,9 @@ type Workspace = {
 type Risk = "Low" | "Medium" | "High";
 type Trend = "Improving" | "Stable" | "Monitor" | "Declining" | "Action Needed";
 
-const OFFICER_LABELS: Record<string, { name: string; assignment: string }> = {
+type OfficerLabelMap = Record<string, { name: string; assignment: string }>;
+
+const OFFICER_LABELS: OfficerLabelMap = {
   "user-1": { name: "Officer Smith", assignment: "Patrol" },
   "user-2": { name: "Sgt. Williams", assignment: "Supervision" },
   "user-3": { name: "Instructor Jones", assignment: "Firearms Instructor" },
@@ -109,8 +111,58 @@ function isLowLight(drill: any, result: any) {
   );
 }
 
-function getOfficerLabel(officerId: string) {
+async function getPersonnelLabels(admin: any, departmentId: string): Promise<OfficerLabelMap> {
+  const labels: OfficerLabelMap = { ...OFFICER_LABELS };
+
+  const { data: memberships, error: membershipError } = await admin
+    .from("department_memberships")
+    .select("user_id, badge_number, rank_title, unit_name, employee_number, is_active, joined_at")
+    .eq("department_id", departmentId)
+    .eq("is_active", true);
+
+  if (membershipError) throw new Error(membershipError.message);
+
+  const safeMemberships = Array.isArray(memberships) ? memberships : [];
+  const userIds = safeMemberships
+    .map((membership: any) => membership.user_id)
+    .filter(Boolean);
+
+  if (userIds.length === 0) return labels;
+
+  const { data: profiles, error: profileError } = await admin
+    .from("profiles")
+    .select("id, full_name, email")
+    .in("id", userIds);
+
+  if (profileError) throw new Error(profileError.message);
+
+  const profilesById = new Map<string, any>();
+  (profiles ?? []).forEach((profile: any) => {
+    profilesById.set(profile.id, profile);
+  });
+
+  safeMemberships.forEach((membership: any) => {
+    const profile = profilesById.get(membership.user_id);
+    const fullName = String(
+      profile?.full_name ?? profile?.email ?? membership.user_id,
+    ).trim();
+    const rankTitle = String(membership.rank_title ?? "").trim();
+    const displayName = rankTitle && !fullName.toLowerCase().startsWith(`${rankTitle.toLowerCase()} `)
+      ? `${rankTitle} ${fullName}`
+      : fullName;
+
+    labels[membership.user_id] = {
+      name: displayName,
+      assignment: String(membership.unit_name ?? "").trim() || "Department Personnel",
+    };
+  });
+
+  return labels;
+}
+
+function getOfficerLabel(officerId: string, officerLabels: OfficerLabelMap) {
   return (
+    officerLabels[officerId] ??
     OFFICER_LABELS[officerId] ?? {
       name: officerId,
       assignment: "Department Personnel",
@@ -143,7 +195,7 @@ function getTrendFromChange(change: number): Trend {
   return "Stable";
 }
 
-function buildPerformanceSummary(workspace: Required<Workspace>) {
+function buildPerformanceSummary(workspace: Required<Workspace>, officerLabels: OfficerLabelMap) {
   const rangeDayById = new Map(workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]));
   const drillById = new Map(workspace.rangeDayDrills.map((drill) => [drill.id, drill]));
 
@@ -161,7 +213,7 @@ function buildPerformanceSummary(workspace: Required<Workspace>) {
     officerIds.length > 0 ? officerIds : Array.from(rosterOfficerIds);
 
   const qualificationTrends = effectiveOfficerIds.map((officerId) => {
-    const label = getOfficerLabel(officerId);
+    const label = getOfficerLabel(officerId, officerLabels);
 
     const officerResults = workspace.results
       .filter((result) => result.officerId === officerId)
@@ -249,7 +301,7 @@ function buildPerformanceSummary(workspace: Required<Workspace>) {
 
   const drillTrends = Array.from(drillGroups.entries()).map(([key, items]) => {
     const [officerId, category] = key.split("::");
-    const label = getOfficerLabel(officerId);
+    const label = getOfficerLabel(officerId, officerLabels);
 
     const sorted = [...items].sort(
       (a, b) => dateValue(a.rangeDay?.date) - dateValue(b.rangeDay?.date),
@@ -449,7 +501,6 @@ export async function GET() {
 
   try {
     const admin = createAdminClient() as any;
-    
     const departmentId = await getActiveDepartmentId(admin, user.id);
 
     if (!departmentId) {
@@ -470,7 +521,8 @@ export async function GET() {
     }
 
     const workspace = normalizeWorkspace(data?.workspace);
-    const summary = buildPerformanceSummary(workspace);
+    const officerLabels = await getPersonnelLabels(admin, departmentId);
+    const summary = buildPerformanceSummary(workspace, officerLabels);
 
     return NextResponse.json({
       ...summary,
@@ -488,7 +540,3 @@ export async function GET() {
     );
   }
 }
-
-
-
-

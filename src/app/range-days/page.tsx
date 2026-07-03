@@ -158,6 +158,21 @@ type BatchScoreRow = {
   malfunctionNotes: string;
 };
 
+type PilotPersonnel = {
+  id: string;
+  userId: string;
+  displayName: string;
+  fullName: string;
+  email?: string | null;
+  badgeNumber?: string | null;
+  rankTitle?: string | null;
+  unitName?: string | null;
+  employeeNumber?: string | null;
+  assignment?: string;
+  roles?: string[];
+  isActive?: boolean;
+};
+
 type DrillLifecycleSummary = {
   timesPerformed: number;
   lastPerformedDate?: string;
@@ -172,6 +187,23 @@ type DrillTemplateWithLifecycle = ExtendedDrillTemplate & {
 };
 
 const DRILL_RECOMMENDATION_STALE_DAYS = 90;
+
+const FALLBACK_PERSONNEL: PilotPersonnel[] = MOCK_USERS.map((user) => ({
+  id: user.id,
+  userId: user.id,
+  displayName: user.name,
+  fullName: user.name,
+  email: "email" in user ? String(user.email ?? "") : "",
+  badgeNumber: "",
+  rankTitle: "",
+  unitName: "Department Personnel",
+  employeeNumber: "",
+  assignment: "Department Personnel",
+  roles: [],
+  isActive: true,
+}));
+
+let activePersonnelDirectory: PilotPersonnel[] = FALLBACK_PERSONNEL;
 
 const DEFAULT_EQUIPMENT_CHECKLIST: RangeEquipmentItem[] = [
   { id: "equipment-ammo", label: "Ammunition staged", required: true, packed: false },
@@ -648,6 +680,114 @@ function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
       console.warn("Could not save Supabase range day workspace.", error);
     });
   }, 650);
+}
+
+async function loadPilotPersonnel() {
+  if (typeof window === "undefined") {
+    return {
+      personnel: FALLBACK_PERSONNEL,
+      source: "fallback",
+    };
+  }
+
+  try {
+    const response = await fetch("/api/pilot/personnel", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load pilot personnel.");
+    }
+
+    const payload = (await response.json()) as {
+      personnel?: PilotPersonnel[];
+      source?: string;
+    };
+
+    const personnel = Array.isArray(payload.personnel)
+      ? payload.personnel
+      : [];
+
+    if (personnel.length === 0) {
+      return {
+        personnel: FALLBACK_PERSONNEL,
+        source: "fallback",
+      };
+    }
+
+    return {
+      personnel,
+      source: payload.source ?? "supabase_department_memberships",
+    };
+  } catch (error) {
+    console.warn("Could not load pilot personnel.", error);
+
+    return {
+      personnel: FALLBACK_PERSONNEL,
+      source: "fallback",
+    };
+  }
+}
+
+function getPreferredPersonnel(
+  personnel: PilotPersonnel[],
+  preferredRoles: string[],
+) {
+  return (
+    personnel.find((person) =>
+      (person.roles ?? []).some((role) => preferredRoles.includes(role)),
+    ) ?? personnel[0]
+  );
+}
+
+function getMockPersonnelReplacementMap(personnel: PilotPersonnel[]) {
+  if (personnel.length === 0) return {} as Record<string, string>;
+
+  return {
+    "user-1": personnel[0]?.id ?? "user-1",
+    "user-2": personnel[1]?.id ?? personnel[0]?.id ?? "user-2",
+    "user-3":
+      getPreferredPersonnel(personnel, [
+        "range_master",
+        "instructor",
+        "administrator",
+        "chief",
+        "command_staff",
+      ])?.id ?? personnel[0]?.id ?? "user-3",
+    "user-4":
+      getPreferredPersonnel(personnel, ["armorer", "range_master", "administrator"])
+        ?.id ?? personnel[0]?.id ?? "user-4",
+    "user-5":
+      getPreferredPersonnel(personnel, ["chief", "command_staff", "administrator"])
+        ?.id ?? personnel[0]?.id ?? "user-5",
+    "user-6":
+      getPreferredPersonnel(personnel, ["administrator", "chief", "command_staff"])
+        ?.id ?? personnel[0]?.id ?? "user-6",
+  };
+}
+
+function replacePersonnelId(value: string | null | undefined, replacementMap: Record<string, string>) {
+  if (!value) return value;
+
+  return replacementMap[value] ?? value;
+}
+
+function hasReplaceablePersonnelId(value: string | null | undefined, replacementMap: Record<string, string>) {
+  return Boolean(value && replacementMap[value]);
+}
+
+function dedupeRosterEntries(entries: RangeRosterEntry[]) {
+  const seen = new Set<string>();
+
+  return entries.filter((entry) => {
+    const key = `${entry.rangeDayId}::${entry.officerId}`;
+
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
 }
 
 function isQualificationNameOrCategory(name?: string, category?: string) {
@@ -1198,7 +1338,11 @@ function buildDrillLifecycleLibrary({
 }
 
 function getUserName(userId: string) {
-  return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
+  return (
+    activePersonnelDirectory.find((person) => person.id === userId)?.displayName ??
+    MOCK_USERS.find((user) => user.id === userId)?.name ??
+    "Unknown User"
+  );
 }
 
 function getFirearmName(firearmId?: string) {
@@ -1558,6 +1702,13 @@ export default function RangeDaysPage() {
   const [rangeRoster, setRangeRoster] =
     useState<RangeRosterEntry[]>(INITIAL_RANGE_ROSTER);
 
+  const [personnel, setPersonnel] =
+    useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
+  const [hasLivePersonnel, setHasLivePersonnel] = useState(false);
+  const [personnelMessage, setPersonnelMessage] = useState(
+    "Using demo personnel until live department personnel is loaded.",
+  );
+
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
   const [saveMessage, setSaveMessage] = useState("");
@@ -1653,16 +1804,16 @@ export default function RangeDaysPage() {
       selectedRoster.map((entry) => entry.officerId),
     );
 
-    return MOCK_USERS.filter((user) => !rosteredOfficerIds.has(user.id));
-  }, [selectedRangeDay, selectedRoster]);
+    return personnel.filter((user) => !rosteredOfficerIds.has(user.id));
+  }, [personnel, selectedRangeDay, selectedRoster]);
 
   const availableInstructorUsers = useMemo(() => {
     if (!selectedRangeDay) return [];
 
     const assignedInstructorIds = new Set(selectedRangeDay.instructorIds ?? []);
 
-    return MOCK_USERS.filter((user) => !assignedInstructorIds.has(user.id));
-  }, [selectedRangeDay]);
+    return personnel.filter((user) => !assignedInstructorIds.has(user.id));
+  }, [personnel, selectedRangeDay]);
 
   const selectedDrills = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -1914,6 +2065,37 @@ export default function RangeDaysPage() {
   useEffect(() => {
     let isMounted = true;
 
+    async function loadPersonnelDirectory() {
+      const payload = await loadPilotPersonnel();
+
+      if (!isMounted) return;
+
+      activePersonnelDirectory = payload.personnel;
+      setPersonnel(payload.personnel);
+      setHasLivePersonnel(payload.source !== "fallback");
+      setPersonnelMessage(
+        payload.source === "fallback"
+          ? "Using demo personnel."
+          : `Using ${payload.personnel.length} live department personnel record${
+              payload.personnel.length === 1 ? "" : "s"
+            } from Supabase.`,
+      );
+    }
+
+    void loadPersonnelDirectory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activePersonnelDirectory = personnel;
+  }, [personnel]);
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadWorkspace() {
       const remoteWorkspace = await loadRemoteRangeDayWorkspace();
       const storedWorkspace =
@@ -1981,6 +2163,90 @@ export default function RangeDaysPage() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedStoredWorkspace || !hasLivePersonnel || personnel.length === 0) {
+      return;
+    }
+
+    const replacementMap = getMockPersonnelReplacementMap(personnel);
+
+    setRangeDays((current) => {
+      if (
+        !current.some(
+          (rangeDay) =>
+            hasReplaceablePersonnelId(rangeDay.leadInstructorId, replacementMap) ||
+            (rangeDay.instructorIds ?? []).some((id) =>
+              hasReplaceablePersonnelId(id, replacementMap),
+            ),
+        )
+      ) {
+        return current;
+      }
+
+      return current.map((rangeDay) => ({
+        ...rangeDay,
+        leadInstructorId:
+          replacePersonnelId(rangeDay.leadInstructorId, replacementMap) ??
+          rangeDay.leadInstructorId,
+        instructorIds: (rangeDay.instructorIds ?? []).map(
+          (id) => replacePersonnelId(id, replacementMap) ?? id,
+        ),
+      }));
+    });
+
+    setRangeRoster((current) => {
+      if (!current.some((entry) => hasReplaceablePersonnelId(entry.officerId, replacementMap))) {
+        return current;
+      }
+
+      return dedupeRosterEntries(
+        current.map((entry) => ({
+          ...entry,
+          officerId:
+            replacePersonnelId(entry.officerId, replacementMap) ?? entry.officerId,
+        })),
+      );
+    });
+
+    setResults((current) => {
+      if (
+        !current.some((result) =>
+          hasReplaceablePersonnelId(result.officerId, replacementMap),
+        )
+      ) {
+        return current;
+      }
+
+      return current.map((result) => ({
+        ...result,
+        officerId:
+          replacePersonnelId(result.officerId, replacementMap) ?? result.officerId,
+        instructorId:
+          replacePersonnelId(result.instructorId, replacementMap) ?? result.instructorId,
+      }));
+    });
+
+    setMalfunctions((current) => {
+      if (
+        !current.some((malfunction) =>
+          hasReplaceablePersonnelId(malfunction.officerId, replacementMap),
+        )
+      ) {
+        return current;
+      }
+
+      return current.map((malfunction) => ({
+        ...malfunction,
+        officerId:
+          replacePersonnelId(malfunction.officerId, replacementMap) ?? malfunction.officerId,
+      }));
+    });
+
+    setSelectedOfficerId((current) => replacePersonnelId(current, replacementMap) ?? current);
+    setNewRosterOfficerId((current) => replacePersonnelId(current, replacementMap) ?? current);
+    setNewInstructorUserId((current) => replacePersonnelId(current, replacementMap) ?? current);
+  }, [hasLivePersonnel, hasLoadedStoredWorkspace, personnel]);
 
   useEffect(() => {
     if (!hasLoadedStoredWorkspace) return;
@@ -3777,9 +4043,9 @@ export default function RangeDaysPage() {
                         onChange={(event) => handleSetLeadInstructor(event.target.value)}
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                       >
-                        {MOCK_USERS.map((user) => (
+                        {personnel.map((user) => (
                           <option key={user.id} value={user.id}>
-                            {user.name}
+                            {user.displayName}
                           </option>
                         ))}
                       </select>
@@ -3803,7 +4069,7 @@ export default function RangeDaysPage() {
                           ) : (
                             availableInstructorUsers.map((user) => (
                               <option key={user.id} value={user.id}>
-                                {user.name}
+                                {user.displayName}
                               </option>
                             ))
                           )}
@@ -4032,6 +4298,8 @@ export default function RangeDaysPage() {
                   </h2>
                   <p className="mt-1 text-[12px] text-slate-500">
                     Add officers, mark attendance, and assign firearms without scrolling through the entire range day.
+                    {" "}
+                    <span className="text-blue-300">{personnelMessage}</span>
                   </p>
                 </div>
 
@@ -4047,7 +4315,7 @@ export default function RangeDaysPage() {
                     ) : (
                       availableRosterOfficers.map((user) => (
                         <option key={user.id} value={user.id}>
-                          {user.name}
+                          {user.displayName}
                         </option>
                       ))
                     )}
