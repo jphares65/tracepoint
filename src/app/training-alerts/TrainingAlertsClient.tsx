@@ -220,7 +220,7 @@ export default function TrainingAlertsClient() {
             liveRemediations.map((record) => record.linkedAlertId),
           );
 
-          const hydratedPilotAlerts = pilotAlerts.map((alert) => {
+          const hydratedPilotAlerts: TrainingAlert[] = pilotAlerts.map((alert) => {
             const storedAlert = storedById.get(alert.id);
 
             if (!storedAlert) return alert;
@@ -254,7 +254,7 @@ export default function TrainingAlertsClient() {
           const shouldUsePilotAlerts =
             Boolean(payload.hasWorkspaceData) || pilotAlerts.length > 0;
 
-          const nextAlerts = shouldUsePilotAlerts
+          const nextAlerts: TrainingAlert[] = shouldUsePilotAlerts
             ? [...hydratedPilotAlerts, ...nonDemoStoredAlerts]
             : storedAlerts;
 
@@ -1007,3 +1007,4 @@ export default function TrainingAlertsClient() {
     </TracePointShell>
   );
 }
+

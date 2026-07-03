@@ -48,7 +48,8 @@ export async function GET() {
   }
 
   try {
-    const admin = createAdminClient();
+    const admin = createAdminClient() as any;
+    
     const departmentId = await getActiveDepartmentId(admin, user.id);
 
     if (!departmentId) {
@@ -106,7 +107,8 @@ export async function PUT(request: Request) {
   const remediations = normalizeRemediations(payload.remediations);
 
   try {
-    const admin = createAdminClient();
+    const admin = createAdminClient() as any;
+    
     const departmentId = await getActiveDepartmentId(admin, user.id);
 
     if (!departmentId) {
@@ -165,3 +167,7 @@ export async function PUT(request: Request) {
     );
   }
 }
+
+
+
+
