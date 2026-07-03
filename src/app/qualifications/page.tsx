@@ -159,6 +159,57 @@ function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
   }
 }
 
+
+async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | null> {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const response = await fetch("/api/pilot/range-workspace", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      workspace?: Partial<StoredRangeDayWorkspace> | null;
+    };
+
+    if (!payload.workspace) return null;
+
+    const workspace: StoredRangeDayWorkspace = {
+      rangeDays: Array.isArray(payload.workspace.rangeDays)
+        ? payload.workspace.rangeDays
+        : [],
+      drillLibrary: Array.isArray(payload.workspace.drillLibrary)
+        ? payload.workspace.drillLibrary
+        : [],
+      rangeDayDrills: Array.isArray(payload.workspace.rangeDayDrills)
+        ? payload.workspace.rangeDayDrills
+        : [],
+      rangeRoster: Array.isArray(payload.workspace.rangeRoster)
+        ? payload.workspace.rangeRoster
+        : [],
+      results: Array.isArray(payload.workspace.results)
+        ? payload.workspace.results
+        : [],
+      malfunctions: Array.isArray(payload.workspace.malfunctions)
+        ? payload.workspace.malfunctions
+        : [],
+    };
+
+    window.localStorage.setItem(
+      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+      JSON.stringify(workspace),
+    );
+
+    return workspace;
+  } catch (error) {
+    console.warn("Could not load Supabase qualification workspace.", error);
+    return null;
+  }
+}
+
 function formatDate(date?: string) {
   if (!date) return "No date";
 
@@ -694,12 +745,24 @@ export default function QualificationsPage() {
   );
 
   useEffect(() => {
-    const storedWorkspace = loadStoredRangeDayWorkspace();
+    let isMounted = true;
 
-    if (!storedWorkspace) return;
+    async function loadWorkspace() {
+      const remoteWorkspace = await loadRemoteRangeDayWorkspace();
+      const storedWorkspace =
+        remoteWorkspace ?? loadStoredRangeDayWorkspace();
 
-    setWorkspace(storedWorkspace);
-    setHasStoredWorkspace(true);
+      if (!isMounted || !storedWorkspace) return;
+
+      setWorkspace(storedWorkspace);
+      setHasStoredWorkspace(true);
+    }
+
+    void loadWorkspace();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const officerHistories = useMemo(

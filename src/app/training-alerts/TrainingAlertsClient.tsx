@@ -143,19 +143,103 @@ export default function TrainingAlertsClient() {
     useState<RemediationRecord[]>(cloneRemediations);
 
   useEffect(() => {
-    setAlerts(
-      loadStoredRecords(
+    let isMounted = true;
+
+    async function loadWorkflowData() {
+      const storedAlerts = loadStoredRecords(
         TRAINING_ALERTS_STORAGE_KEY,
         cloneTrainingAlerts(),
-      ),
-    );
-    setRemediations(
-      loadStoredRecords(
+      );
+
+      const storedRemediations = loadStoredRecords(
         REMEDIATIONS_STORAGE_KEY,
         cloneRemediations(),
-      ),
-    );
-    setLoaded(true);
+      );
+
+      const legacyMockAlertIds = new Set([
+        "alert-night-qualification-reynolds",
+        "alert-low-light-carter",
+        "alert-decision-making-reynolds",
+      ]);
+
+      const defaultDemoAlertIds = new Set(
+        cloneTrainingAlerts().map((alert) => alert.id),
+      );
+
+      try {
+        const response = await fetch("/api/pilot/performance-summary", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as {
+            hasWorkspaceData?: boolean;
+            trainingAlerts?: TrainingAlert[];
+          };
+
+          const pilotAlerts = payload.trainingAlerts ?? [];
+          const pilotAlertIds = new Set(
+            pilotAlerts.map((alert) => alert.id),
+          );
+          const storedById = new Map(
+            storedAlerts.map((alert) => [alert.id, alert]),
+          );
+
+          const hydratedPilotAlerts = pilotAlerts.map((alert) => {
+            const storedAlert = storedById.get(alert.id);
+
+            if (!storedAlert) return alert;
+
+            return {
+              ...alert,
+              status: storedAlert.status,
+              remediationId: storedAlert.remediationId,
+              auditLog:
+                storedAlert.auditLog.length > 0
+                  ? storedAlert.auditLog
+                  : alert.auditLog,
+            };
+          });
+
+          const nonDemoStoredAlerts = storedAlerts.filter(
+            (alert) =>
+              !pilotAlertIds.has(alert.id) &&
+              !defaultDemoAlertIds.has(alert.id) &&
+              !legacyMockAlertIds.has(alert.id),
+          );
+
+          const shouldUsePilotAlerts =
+            Boolean(payload.hasWorkspaceData) || pilotAlerts.length > 0;
+
+          const nextAlerts = shouldUsePilotAlerts
+            ? [...hydratedPilotAlerts, ...nonDemoStoredAlerts]
+            : storedAlerts;
+
+          if (isMounted) {
+            setAlerts(nextAlerts);
+            setRemediations(storedRemediations);
+            setLoaded(true);
+          }
+
+          return;
+        }
+      } catch (error) {
+        console.warn("Could not load pilot-generated training alerts.", error);
+      }
+
+      if (isMounted) {
+        setAlerts(storedAlerts);
+        setRemediations(storedRemediations);
+        setLoaded(true);
+      }
+    }
+
+    void loadWorkflowData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {

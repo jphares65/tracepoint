@@ -605,6 +605,51 @@ function writeStoredRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 }
 
+
+async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWorkspace> | null> {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const response = await fetch("/api/pilot/range-workspace", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      workspace?: Partial<StoredRangeDayWorkspace> | null;
+    };
+
+    return payload.workspace ?? null;
+  } catch (error) {
+    console.warn("Could not load Supabase range day workspace.", error);
+    return null;
+  }
+}
+
+let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+  if (typeof window === "undefined") return;
+
+  if (remoteWorkspaceSyncTimer) {
+    clearTimeout(remoteWorkspaceSyncTimer);
+  }
+
+  remoteWorkspaceSyncTimer = setTimeout(() => {
+    fetch("/api/pilot/range-workspace", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ workspace }),
+    }).catch((error) => {
+      console.warn("Could not save Supabase range day workspace.", error);
+    });
+  }, 650);
+}
+
 function isQualificationNameOrCategory(name?: string, category?: string) {
   return (
     category === "Qualification" ||
@@ -1867,50 +1912,90 @@ export default function RangeDaysPage() {
   ]);
 
   useEffect(() => {
-    const storedWorkspace = loadStoredRangeDayWorkspace();
+    let isMounted = true;
 
-    if (Array.isArray(storedWorkspace?.rangeDays)) {
-      setRangeDays(normalizeRangeDaysForWorkspace(storedWorkspace.rangeDays));
+    async function loadWorkspace() {
+      const remoteWorkspace = await loadRemoteRangeDayWorkspace();
+      const storedWorkspace =
+        remoteWorkspace ?? loadStoredRangeDayWorkspace();
+
+      if (!isMounted) return;
+
+      if (remoteWorkspace) {
+        writeStoredRangeDayWorkspace({
+          rangeDays: Array.isArray(remoteWorkspace.rangeDays)
+            ? normalizeRangeDaysForWorkspace(remoteWorkspace.rangeDays)
+            : [],
+          drillLibrary: Array.isArray(remoteWorkspace.drillLibrary)
+            ? normalizeDrillLibraryForWorkspace(remoteWorkspace.drillLibrary)
+            : [],
+          rangeDayDrills: Array.isArray(remoteWorkspace.rangeDayDrills)
+            ? normalizeRangeDayDrillsForWorkspace(remoteWorkspace.rangeDayDrills)
+            : [],
+          rangeRoster: Array.isArray(remoteWorkspace.rangeRoster)
+            ? remoteWorkspace.rangeRoster
+            : [],
+          results: Array.isArray(remoteWorkspace.results)
+            ? remoteWorkspace.results
+            : [],
+          malfunctions: Array.isArray(remoteWorkspace.malfunctions)
+            ? remoteWorkspace.malfunctions
+            : [],
+        });
+      }
+
+      if (Array.isArray(storedWorkspace?.rangeDays)) {
+        setRangeDays(normalizeRangeDaysForWorkspace(storedWorkspace.rangeDays));
+      }
+
+      if (Array.isArray(storedWorkspace?.drillLibrary)) {
+        setDrillLibrary(
+          normalizeDrillLibraryForWorkspace(storedWorkspace.drillLibrary),
+        );
+      }
+
+      if (Array.isArray(storedWorkspace?.rangeDayDrills)) {
+        setRangeDayDrills(
+          normalizeRangeDayDrillsForWorkspace(storedWorkspace.rangeDayDrills),
+        );
+      }
+
+      if (Array.isArray(storedWorkspace?.rangeRoster)) {
+        setRangeRoster(storedWorkspace.rangeRoster);
+      }
+
+      if (Array.isArray(storedWorkspace?.results)) {
+        setResults(storedWorkspace.results);
+      }
+
+      if (Array.isArray(storedWorkspace?.malfunctions)) {
+        setMalfunctions(storedWorkspace.malfunctions);
+      }
+
+      setHasLoadedStoredWorkspace(true);
     }
 
-    if (Array.isArray(storedWorkspace?.drillLibrary)) {
-      setDrillLibrary(
-        normalizeDrillLibraryForWorkspace(storedWorkspace.drillLibrary),
-      );
-    }
+    void loadWorkspace();
 
-    if (Array.isArray(storedWorkspace?.rangeDayDrills)) {
-      setRangeDayDrills(
-        normalizeRangeDayDrillsForWorkspace(storedWorkspace.rangeDayDrills),
-      );
-    }
-
-    if (Array.isArray(storedWorkspace?.rangeRoster)) {
-      setRangeRoster(storedWorkspace.rangeRoster);
-    }
-
-    if (Array.isArray(storedWorkspace?.results)) {
-      setResults(storedWorkspace.results);
-    }
-
-    if (Array.isArray(storedWorkspace?.malfunctions)) {
-      setMalfunctions(storedWorkspace.malfunctions);
-    }
-
-    setHasLoadedStoredWorkspace(true);
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!hasLoadedStoredWorkspace) return;
 
-    writeStoredRangeDayWorkspace({
+    const workspace = {
       rangeDays,
       drillLibrary,
       rangeDayDrills,
       rangeRoster,
       results,
       malfunctions,
-    });
+    };
+
+    writeStoredRangeDayWorkspace(workspace);
+    writeRemoteRangeDayWorkspace(workspace);
   }, [
     drillLibrary,
     hasLoadedStoredWorkspace,
