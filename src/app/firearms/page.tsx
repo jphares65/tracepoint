@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Boxes,
   CheckCircle2,
   ClipboardList,
   Crosshair,
@@ -498,6 +499,51 @@ export default function FirearmsPage() {
                 <p className="mt-2 text-3xl font-bold text-red-200">
                   {inventoryCounts.outOfService}
                 </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <a
+                href="/firearms/ammunition"
+                className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-emerald-500 hover:bg-slate-900"
+              >
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                    <Boxes className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Ammunition Management
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Manage duty ammunition accountability and training
+                      ammunition logistics under the Armory workspace.
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300 transition group-hover:text-emerald-200">
+                      Open Ammunition →
+                    </p>
+                  </div>
+                </div>
+              </a>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/60 p-5">
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
+                    <Wrench className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Maintenance & Inspections
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Firearm service, inspection, and return-to-service workflows
+                      remain available from selected firearm records.
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-600">
+                      Managed on firearm record
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
