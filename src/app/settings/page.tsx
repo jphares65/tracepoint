@@ -43,7 +43,7 @@ import {
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
-type TabId = "agency" | "users" | "rules" | "branding" | "audit";
+type TabId = "agency" | "users" | "rules" | "branding" | "importExport" | "audit";
 type NoticeTone = "success" | "error" | "info";
 
 type RoleRow = {
@@ -738,10 +738,15 @@ export default function AdminSettingsPage() {
         label: "Rules Engine",
         icon: Settings,
       });
-      items.push({
+            items.push({
         id: "branding",
         label: "Branding",
         icon: Palette,
+      });
+      items.push({
+        id: "importExport",
+        label: "Import / Export",
+        icon: Upload,
       });
     }
 
@@ -1790,6 +1795,86 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
+        {!loading && !accessLoading && activeTab === "importExport" ? (
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
+            <SettingsCard
+              title="Import / Export"
+              description="Administrative onboarding tools for importing agency data and preparing export workflows."
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <a
+                  href="/settings/import-export"
+                  className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-blue-500 hover:bg-slate-900"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600/20 text-blue-300">
+                      <Upload size={20} />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">
+                        Import Wizard
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Upload CSV files, map fields, validate records, preview
+                        rows, and import supported pilot data.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-xs font-semibold text-blue-300 transition group-hover:text-blue-200">
+                    Open Import Wizard ?
+                  </p>
+                </a>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
+                      <Download size={20} />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">
+                        Export Center
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Planned area for agency exports, templates, import
+                        history, rollback reports, and saved mappings.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-xs font-semibold text-slate-600">
+                    Coming soon
+                  </p>
+                </div>
+              </div>
+            </SettingsCard>
+
+            <SettingsCard
+              title="Pilot Import Support"
+              description="Current import scope for the Readington pilot build."
+            >
+              <div className="space-y-3 text-sm text-slate-400">
+                <div className="rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4">
+                  <p className="font-semibold text-emerald-200">
+                    Firearms import is live.
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-emerald-200/80">
+                    CSV firearm rows can be imported into the live Armory pilot
+                    records.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-4">
+                  <p className="font-semibold text-amber-200">
+                    Personnel and qualification history are preview-only.
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-amber-200/80">
+                    Those workflows validate and preview data until the final
+                    normalized import targets are completed.
+                  </p>
+                </div>
+              </div>
+            </SettingsCard>
+          </div>
+        ) : null}
         {!loading && !accessLoading && activeTab === "agency" ? (
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
             <SettingsCard
@@ -2898,3 +2983,4 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
+
