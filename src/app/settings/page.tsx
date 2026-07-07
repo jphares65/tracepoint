@@ -1825,25 +1825,28 @@ export default function AdminSettingsPage() {
                   </p>
                 </a>
 
-                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                <a
+                  href="/settings/import-export"
+                  className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-emerald-500 hover:bg-slate-900"
+                >
                   <div className="flex items-center gap-3">
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
                       <Download size={20} />
                     </span>
                     <div>
                       <h3 className="text-sm font-semibold text-white">
-                        Export Center
+                        Export Tools
                       </h3>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
-                        Planned area for agency exports, templates, import
-                        history, rollback reports, and saved mappings.
+                        Download personnel, firearms, ammunition exports,
+                        plus blank CSV templates for agency onboarding.
                       </p>
                     </div>
                   </div>
-                  <p className="mt-4 text-xs font-semibold text-slate-600">
-                    Coming soon
+                  <p className="mt-4 text-xs font-semibold text-emerald-300 transition group-hover:text-emerald-200">
+                    Open Exports ?
                   </p>
-                </div>
+                </a>
               </div>
             </SettingsCard>
 
@@ -2983,4 +2986,8 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
+
+
+
+
 

@@ -6,6 +6,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardCheck,
+  Download,
   FileSpreadsheet,
   Loader2,
   RefreshCcw,
@@ -470,6 +471,85 @@ async function importFirearm(row: Record<string, string>) {
   }
 }
 
+
+type CsvValue = string | number | boolean | null | undefined;
+
+function csvEscape(value: CsvValue) {
+  const stringValue = value === null || value === undefined ? "" : String(value);
+
+  if (
+    stringValue.includes(",") ||
+    stringValue.includes('"') ||
+    stringValue.includes("\n")
+  ) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+
+  return stringValue;
+}
+
+function downloadCsv(fileName: string, rows: Record<string, CsvValue>[]) {
+  const headers =
+    rows.length > 0
+      ? Object.keys(rows[0])
+      : ["No records available for this export."];
+
+  const csv = [
+    headers.join(","),
+    ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(",")),
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadTemplate(fileName: string, headers: string[]) {
+  const csv = `${headers.join(",")}\n`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function fetchJson<T>(url: string) {
+  const response = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    let message = "Export request failed.";
+
+    try {
+      const payload = (await response.json()) as { error?: string };
+      message = payload.error ?? message;
+    } catch {
+      // no-op
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+const exportDate = () => new Date().toISOString().slice(0, 10);
+
+
 export default function ImportWizardPage() {
   const [selectedTypeId, setSelectedTypeId] = useState<ImportTypeId>("personnel");
   const [step, setStep] = useState<ImportStep>("type");
@@ -478,6 +558,8 @@ export default function ImportWizardPage() {
   const [mapping, setMapping] = useState<MappingState>({});
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
 
   const selectedDefinition = useMemo(
@@ -581,6 +663,192 @@ export default function ImportWizardPage() {
     setStep("report");
   }
 
+
+  async function handleExportPersonnel() {
+    setExporting("personnel");
+    setExportError(null);
+
+    try {
+      const payload = await fetchJson<{
+        personnel?: Array<{
+          displayName?: string;
+          fullName?: string;
+          email?: string | null;
+          badgeNumber?: string | null;
+          rankTitle?: string | null;
+          unitName?: string | null;
+          employeeNumber?: string | null;
+          assignment?: string | null;
+          roles?: string[];
+          isActive?: boolean;
+        }>;
+      }>("/api/pilot/personnel");
+
+      const rows = (payload.personnel ?? []).map((person) => ({
+        displayName: person.displayName,
+        fullName: person.fullName,
+        email: person.email,
+        badgeNumber: person.badgeNumber,
+        employeeNumber: person.employeeNumber,
+        rankTitle: person.rankTitle,
+        unitName: person.unitName,
+        assignment: person.assignment,
+        roles: person.roles?.join("; "),
+        isActive: person.isActive,
+      }));
+
+      downloadCsv(`tracepoint-personnel-${exportDate()}.csv`, rows);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Personnel export failed.",
+      );
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function handleExportFirearms() {
+    setExporting("firearms");
+    setExportError(null);
+
+    try {
+      const payload = await fetchJson<{
+        firearms?: Array<{
+          make?: string;
+          model?: string;
+          serial_number?: string;
+          firearm_type?: string;
+          caliber?: string | null;
+          asset_number?: string | null;
+          condition_status?: string | null;
+          notes?: string | null;
+          is_active?: boolean;
+          active_assignment?: {
+            assigned_to_name?: string;
+            assigned_at?: string;
+          } | null;
+        }>;
+      }>("/api/armory/firearms");
+
+      const rows = (payload.firearms ?? []).map((firearm) => ({
+        make: firearm.make,
+        model: firearm.model,
+        serialNumber: firearm.serial_number,
+        firearmType: firearm.firearm_type,
+        caliber: firearm.caliber,
+        assetNumber: firearm.asset_number,
+        conditionStatus: firearm.condition_status,
+        assignedTo: firearm.active_assignment?.assigned_to_name,
+        assignedAt: firearm.active_assignment?.assigned_at,
+        isActive: firearm.is_active,
+        notes: firearm.notes,
+      }));
+
+      downloadCsv(`tracepoint-firearms-${exportDate()}.csv`, rows);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Firearms export failed.",
+      );
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function handleExportAmmunition() {
+    setExporting("ammunition");
+    setExportError(null);
+
+    try {
+      const payload = await fetchJson<{
+        workspace?: {
+          dutyLots?: Array<Record<string, any>>;
+          trainingLots?: Array<Record<string, any>>;
+        };
+      }>("/api/pilot/ammunition");
+
+      const dutyRows = (payload.workspace?.dutyLots ?? []).map((lot) => ({
+        workspace: "Duty",
+        caliber: lot.caliber,
+        manufacturer: lot.manufacturer,
+        loadDescription: lot.loadDescription,
+        lotNumber: lot.lotNumber,
+        purchaseDate: lot.purchaseDate,
+        quantityOnHand: lot.quantityOnHand,
+        replacementDueDate: lot.replacementDueDate,
+        recallFlag: lot.recallFlag,
+        costPerRound: "",
+        lowStockThreshold: "",
+        notes: lot.notes,
+      }));
+
+      const trainingRows = (payload.workspace?.trainingLots ?? []).map((lot) => ({
+        workspace: "Training",
+        caliber: lot.caliber,
+        manufacturer: lot.manufacturer,
+        loadDescription: lot.loadDescription,
+        lotNumber: lot.lotNumber,
+        purchaseDate: lot.purchaseDate,
+        quantityOnHand: lot.quantityOnHand,
+        replacementDueDate: "",
+        recallFlag: "",
+        costPerRound: lot.costPerRound,
+        lowStockThreshold: lot.lowStockThreshold,
+        notes: lot.notes,
+      }));
+
+      downloadCsv(`tracepoint-ammunition-${exportDate()}.csv`, [
+        ...dutyRows,
+        ...trainingRows,
+      ]);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Ammunition export failed.",
+      );
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function handleDownloadFirearmsTemplate() {
+    downloadTemplate("tracepoint-firearms-template.csv", [
+      "make",
+      "model",
+      "serialNumber",
+      "firearmType",
+      "caliber",
+      "assetNumber",
+      "conditionStatus",
+      "notes",
+    ]);
+  }
+
+  function handleDownloadPersonnelTemplate() {
+    downloadTemplate("tracepoint-personnel-template.csv", [
+      "firstName",
+      "lastName",
+      "rankTitle",
+      "badgeNumber",
+      "email",
+      "unitName",
+      "active",
+    ]);
+  }
+
+  function handleDownloadQualificationTemplate() {
+    downloadTemplate("tracepoint-qualification-history-template.csv", [
+      "officerName",
+      "badgeNumber",
+      "qualificationDate",
+      "courseName",
+      "score",
+      "passingScore",
+      "result",
+      "instructor",
+      "notes",
+    ]);
+  }
+
+
   const steps: { id: ImportStep; label: string }[] = [
     { id: "type", label: "Type" },
     { id: "upload", label: "Upload" },
@@ -639,6 +907,111 @@ export default function ImportWizardPage() {
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+            <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6">
+              <div className="flex items-center gap-3">
+                <Download className="h-6 w-6 text-emerald-300" />
+                <div>
+                  <h2 className="text-xl font-bold text-white">Export Center</h2>
+                  <p className="mt-1 text-sm text-slate-300">
+                    Download current pilot data from TracePoint as CSV files.
+                  </p>
+                </div>
+              </div>
+
+              {exportError ? (
+                <div className="mt-4 rounded-2xl border border-red-800 bg-red-950/40 p-3 text-sm font-medium text-red-200">
+                  {exportError}
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => void handleExportPersonnel()}
+                  disabled={exporting !== null}
+                  className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <p className="text-sm font-bold text-white">Personnel</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Export active department personnel records.
+                  </p>
+                  <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
+                    {exporting === "personnel" ? "Exporting..." : "Download CSV"}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleExportFirearms()}
+                  disabled={exporting !== null}
+                  className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <p className="text-sm font-bold text-white">Firearms</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Export live Armory inventory and assignment status.
+                  </p>
+                  <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
+                    {exporting === "firearms" ? "Exporting..." : "Download CSV"}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleExportAmmunition()}
+                  disabled={exporting !== null}
+                  className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <p className="text-sm font-bold text-white">Ammunition</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Export duty and training ammunition lots.
+                  </p>
+                  <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
+                    {exporting === "ammunition" ? "Exporting..." : "Download CSV"}
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="h-6 w-6 text-sky-300" />
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Download Templates
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-300">
+                    Blank CSV templates for clean agency import prep.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                <button
+                  type="button"
+                  onClick={handleDownloadFirearmsTemplate}
+                  className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:bg-slate-900"
+                >
+                  Firearms Template
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPersonnelTemplate}
+                  className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:bg-slate-900"
+                >
+                  Personnel Template
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadQualificationTemplate}
+                  className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:bg-slate-900"
+                >
+                  Qualification History Template
+                </button>
+              </div>
             </div>
           </section>
 
