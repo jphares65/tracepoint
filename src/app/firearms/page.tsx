@@ -526,9 +526,12 @@ export default function FirearmsPage() {
                 </div>
               </a>
 
-              <div className="rounded-3xl border border-slate-800 bg-slate-950/60 p-5">
+              <a
+                href="#selected-firearm"
+                className="group block rounded-3xl border border-slate-800 bg-slate-950/60 p-5 transition hover:border-emerald-500 hover:bg-slate-950"
+              >
                 <div className="flex items-start gap-4">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-slate-300 transition group-hover:bg-emerald-950 group-hover:text-emerald-300">
                     <Wrench className="h-6 w-6" />
                   </span>
                   <div>
@@ -539,12 +542,12 @@ export default function FirearmsPage() {
                       Firearm service, inspection, and return-to-service workflows
                       remain available from selected firearm records.
                     </p>
-                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-600">
-                      Managed on firearm record
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300 transition group-hover:text-emerald-200">
+                      Open selected firearm record
                     </p>
                   </div>
                 </div>
-              </div>
+              </a>
             </div>
           </section>
 
