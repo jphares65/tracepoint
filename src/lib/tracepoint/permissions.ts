@@ -1,4 +1,4 @@
-export const TRACEPOINT_PERMISSIONS = [
+﻿export const TRACEPOINT_PERMISSIONS = [
   "view_command_dashboard",
   "view_analytics",
   "manage_users",
@@ -46,7 +46,7 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
     },
   },
   {
-    prefix: "/inspections",
+    prefix: "/firearms/inspections",
     requirement: {
       anyOf: [
         "manage_inspections",
@@ -129,3 +129,4 @@ export function getRoutePermissionRequirement(
 
   return rule?.requirement;
 }
+

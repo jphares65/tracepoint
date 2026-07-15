@@ -169,9 +169,7 @@ export async function GET() {
 
       admin
         .from("firearm_assignments")
-        .select(
-          "id, firearm_id, assigned_to_user_id, assigned_at, magazines_issued, magazine_description",
-        )
+        .select("id, firearm_id, assigned_to_user_id, assigned_at")
         .eq("department_id", departmentId)
         .is("returned_at", null),
 
@@ -200,8 +198,6 @@ export async function GET() {
             membersById.get(assignment.assigned_to_user_id)?.full_name ??
             "Unknown User",
           assigned_at: assignment.assigned_at,
-          magazines_issued: assignment.magazines_issued ?? 0,
-          magazine_description: assignment.magazine_description ?? null,
         },
       ]),
     );

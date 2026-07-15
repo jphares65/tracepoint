@@ -1,22 +1,22 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Boxes,
   CheckCircle2,
   ClipboardList,
   Crosshair,
   Loader2,
   Plus,
+  RotateCcw,
   Save,
   Search,
   ShieldCheck,
   UserPlus,
   Wrench,
-  RotateCcw,
 } from "lucide-react";
 
-import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
 
 type ArmoryMember = {
@@ -492,43 +492,112 @@ export default function FirearmsPage() {
     <TracePointShell activePage="Armory">
       <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
-          <ArmorySectionShell
-            title="Department Firearms"
-            description="Department-owned inventory, assignments, returns, magazine accountability, and firearm condition."
-          />
+          <section className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6 shadow-sm">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
+                  TracePoint Armory
+                </p>
+                <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+                  Firearms Inventory
+                </h1>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                  Live Supabase-backed firearm inventory, current custody, and
+                  condition status for the pilot workspace.
+                </p>
+              </div>
 
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Inventory
-              </p>
-              <p className="mt-2 text-3xl font-bold text-white">
-                {inventoryCounts.total}
-              </p>
+              <button
+                type="button"
+                onClick={() => void loadArmory({ preserveSelection: true })}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-2 text-sm font-semibold text-slate-200 shadow-sm transition hover:bg-slate-200/70"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Refresh
+              </button>
             </div>
-            <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-                Assigned
-              </p>
-              <p className="mt-2 text-3xl font-bold text-emerald-200">
-                {inventoryCounts.assigned}
-              </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Inventory
+                </p>
+                <p className="mt-2 text-3xl font-bold text-white">
+                  {inventoryCounts.total}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
+                  Assigned
+                </p>
+                <p className="mt-2 text-3xl font-bold text-emerald-200">
+                  {inventoryCounts.assigned}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-sky-800 bg-sky-950/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">
+                  Available
+                </p>
+                <p className="mt-2 text-3xl font-bold text-sky-200">
+                  {inventoryCounts.available}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
+                  Needs Attention
+                </p>
+                <p className="mt-2 text-3xl font-bold text-red-200">
+                  {inventoryCounts.outOfService}
+                </p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-sky-800 bg-sky-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">
-                Available
-              </p>
-              <p className="mt-2 text-3xl font-bold text-sky-200">
-                {inventoryCounts.available}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
-                Needs Attention
-              </p>
-              <p className="mt-2 text-3xl font-bold text-red-200">
-                {inventoryCounts.outOfService}
-              </p>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <a
+                href="/firearms/ammunition"
+                className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-emerald-500 hover:bg-slate-900"
+              >
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                    <Boxes className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Ammunition Management
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Manage duty ammunition accountability and training
+                      ammunition logistics under the Armory workspace.
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300 transition group-hover:text-emerald-200">
+                      Open Ammunition →
+                    </p>
+                  </div>
+                </div>
+              </a>
+
+              <a
+                href="/firearms/inspections"
+                className="group block rounded-3xl border border-slate-800 bg-slate-950/60 p-5 transition hover:border-emerald-500 hover:bg-slate-950"
+              >
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-slate-300 transition group-hover:bg-emerald-950 group-hover:text-emerald-300">
+                    <Wrench className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Maintenance & Inspections
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Firearm service, inspection, and return-to-service
+                      workflows remain available from selected firearm records.
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300 transition group-hover:text-emerald-200">
+                      Open inspection workflow
+                    </p>
+                  </div>
+                </div>
+              </a>
             </div>
           </section>
 
@@ -633,7 +702,7 @@ export default function FirearmsPage() {
                                 <p className="text-xs text-slate-500">
                                   {formatFirearmType(firearm.firearm_type)}
                                   {firearm.caliber
-                                    ? ` â€¢ ${firearm.caliber}`
+                                    ? ` • ${firearm.caliber}`
                                     : ""}
                                 </p>
                               </td>
@@ -1125,6 +1194,5 @@ export default function FirearmsPage() {
     </TracePointShell>
   );
 }
-
 
 

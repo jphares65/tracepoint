@@ -3,20 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Boxes,
   CheckCircle2,
   ClipboardList,
   Crosshair,
   Loader2,
   Plus,
+  RotateCcw,
   Save,
   Search,
   ShieldCheck,
   UserPlus,
   Wrench,
-  RotateCcw,
 } from "lucide-react";
 
-import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
 
 type ArmoryMember = {
@@ -32,8 +32,6 @@ type ActiveAssignment = {
   assigned_to_user_id: string;
   assigned_to_name: string;
   assigned_at: string;
-  magazines_issued: number;
-  magazine_description?: string | null;
 };
 
 type ArmoryFirearm = {
@@ -66,7 +64,12 @@ type FirearmStatus =
   | "Inspection Required"
   | "Retired";
 
-type FirearmType = "handgun" | "rifle" | "shotgun" | "less_lethal" | "other";
+type FirearmType =
+  | "handgun"
+  | "rifle"
+  | "shotgun"
+  | "less_lethal"
+  | "other";
 
 type NewFirearmForm = {
   make: string;
@@ -172,9 +175,8 @@ function matchesSearch(firearm: ArmoryFirearm, query: string) {
     firearm.active_assignment?.assigned_to_name,
   ];
 
-  return fields.some(
-    (field) =>
-      typeof field === "string" && field.toLowerCase().includes(normalized),
+  return fields.some((field) =>
+    typeof field === "string" && field.toLowerCase().includes(normalized),
   );
 }
 
@@ -190,13 +192,9 @@ async function readError(response: Response) {
 export default function FirearmsPage() {
   const [firearms, setFirearms] = useState<ArmoryFirearm[]>([]);
   const [members, setMembers] = useState<ArmoryMember[]>([]);
-  const [selectedFirearmId, setSelectedFirearmId] = useState<string | null>(
-    null,
-  );
+  const [selectedFirearmId, setSelectedFirearmId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | FirearmStatus>(
-    "All",
-  );
+  const [statusFilter, setStatusFilter] = useState<"All" | FirearmStatus>("All");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -205,11 +203,6 @@ export default function FirearmsPage() {
   const [newFirearm, setNewFirearm] = useState<NewFirearmForm>(EMPTY_FORM);
   const [assignmentOfficerId, setAssignmentOfficerId] = useState("");
   const [assignmentNotes, setAssignmentNotes] = useState("");
-  const [magazinesIssued, setMagazinesIssued] = useState(3);
-  const [magazineDescription, setMagazineDescription] = useState("");
-  const [magazinesReturned, setMagazinesReturned] = useState(3);
-  const [magazineDiscrepancyReason, setMagazineDiscrepancyReason] =
-    useState("");
   const [statusDraft, setStatusDraft] = useState<FirearmStatus>("In Service");
   const [statusNotes, setStatusNotes] = useState("");
 
@@ -228,9 +221,7 @@ export default function FirearmsPage() {
   }, [firearms, query, statusFilter]);
 
   const inventoryCounts = useMemo(() => {
-    const assigned = firearms.filter(
-      (firearm) => firearm.active_assignment,
-    ).length;
+    const assigned = firearms.filter((firearm) => firearm.active_assignment).length;
     const outOfService = firearms.filter((firearm) =>
       ["Out of Service", "Maintenance", "Inspection Required"].includes(
         normalizeStatus(firearm.condition_status),
@@ -294,12 +285,6 @@ export default function FirearmsPage() {
 
     setAssignmentOfficerId("");
     setAssignmentNotes("");
-    setMagazinesIssued(3);
-    setMagazineDescription("");
-    setMagazinesReturned(
-      selectedFirearm.active_assignment?.magazines_issued ?? 3,
-    );
-    setMagazineDiscrepancyReason("");
     setStatusDraft(normalizeStatus(selectedFirearm.condition_status));
     setStatusNotes("");
   }, [selectedFirearm]);
@@ -346,11 +331,6 @@ export default function FirearmsPage() {
   async function handleAssignFirearm() {
     if (!selectedFirearm) return;
 
-    if (!Number.isInteger(magazinesIssued) || magazinesIssued < 0) {
-      setError("Magazines issued must be a whole number of zero or greater.");
-      return;
-    }
-
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -366,8 +346,6 @@ export default function FirearmsPage() {
           body: JSON.stringify({
             assignedToUserId: assignmentOfficerId,
             notes: assignmentNotes,
-            magazinesIssued,
-            magazineDescription: magazineDescription.trim() || null,
           }),
         },
       );
@@ -390,25 +368,7 @@ export default function FirearmsPage() {
   }
 
   async function handleReturnFirearm() {
-    if (!selectedFirearm?.active_assignment) return;
-
-    const expectedMagazines =
-      selectedFirearm.active_assignment.magazines_issued ?? 0;
-
-    if (!Number.isInteger(magazinesReturned) || magazinesReturned < 0) {
-      setError("Magazines returned must be a whole number of zero or greater.");
-      return;
-    }
-
-    if (
-      magazinesReturned !== expectedMagazines &&
-      !magazineDiscrepancyReason.trim()
-    ) {
-      setError(
-        "A discrepancy reason is required when returned magazines do not match the expected quantity.",
-      );
-      return;
-    }
+    if (!selectedFirearm) return;
 
     setSaving(true);
     setError(null);
@@ -419,16 +379,6 @@ export default function FirearmsPage() {
         `/api/armory/firearms/${selectedFirearm.id}/assignments`,
         {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            magazinesReturned,
-            discrepancyReason:
-              magazinesReturned !== expectedMagazines
-                ? magazineDiscrepancyReason.trim()
-                : null,
-          }),
         },
       );
 
@@ -492,43 +442,112 @@ export default function FirearmsPage() {
     <TracePointShell activePage="Armory">
       <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
-          <ArmorySectionShell
-            title="Department Firearms"
-            description="Department-owned inventory, assignments, returns, magazine accountability, and firearm condition."
-          />
+          <section className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6 shadow-sm">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">
+                  TracePoint Armory
+                </p>
+                <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
+                  Firearms Inventory
+                </h1>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                  Live Supabase-backed firearm inventory, current custody, and
+                  condition status for the pilot workspace.
+                </p>
+              </div>
 
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Inventory
-              </p>
-              <p className="mt-2 text-3xl font-bold text-white">
-                {inventoryCounts.total}
-              </p>
+              <button
+                type="button"
+                onClick={() => void loadArmory({ preserveSelection: true })}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-2 text-sm font-semibold text-slate-200 shadow-sm transition hover:bg-slate-200/70"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Refresh
+              </button>
             </div>
-            <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-                Assigned
-              </p>
-              <p className="mt-2 text-3xl font-bold text-emerald-200">
-                {inventoryCounts.assigned}
-              </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Inventory
+                </p>
+                <p className="mt-2 text-3xl font-bold text-white">
+                  {inventoryCounts.total}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
+                  Assigned
+                </p>
+                <p className="mt-2 text-3xl font-bold text-emerald-200">
+                  {inventoryCounts.assigned}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-sky-800 bg-sky-950/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">
+                  Available
+                </p>
+                <p className="mt-2 text-3xl font-bold text-sky-200">
+                  {inventoryCounts.available}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
+                  Needs Attention
+                </p>
+                <p className="mt-2 text-3xl font-bold text-red-200">
+                  {inventoryCounts.outOfService}
+                </p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-sky-800 bg-sky-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">
-                Available
-              </p>
-              <p className="mt-2 text-3xl font-bold text-sky-200">
-                {inventoryCounts.available}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
-                Needs Attention
-              </p>
-              <p className="mt-2 text-3xl font-bold text-red-200">
-                {inventoryCounts.outOfService}
-              </p>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <a
+                href="/firearms/ammunition"
+                className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-emerald-500 hover:bg-slate-900"
+              >
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                    <Boxes className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Ammunition Management
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Manage duty ammunition accountability and training
+                      ammunition logistics under the Armory workspace.
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300 transition group-hover:text-emerald-200">
+                      Open Ammunition â†’
+                    </p>
+                  </div>
+                </div>
+              </a>
+
+              <a
+                href="/firearms/inspections"
+                className="group block rounded-3xl border border-slate-800 bg-slate-950/60 p-5 transition hover:border-emerald-500 hover:bg-slate-950"
+              >
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-slate-300 transition group-hover:bg-emerald-950 group-hover:text-emerald-300">
+                    <Wrench className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Maintenance & Inspections
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Firearm service, inspection, and return-to-service workflows
+                      remain available from selected firearm records.
+                    </p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300 transition group-hover:text-emerald-200">
+                      Open inspection workflow
+                    </p>
+                  </div>
+                </div>
+              </a>
             </div>
           </section>
 
@@ -548,7 +567,9 @@ export default function FirearmsPage() {
             <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Inventory</h2>
+                  <h2 className="text-lg font-bold text-white">
+                    Inventory
+                  </h2>
                   <p className="text-sm text-slate-500">
                     Select a firearm to manage custody and condition.
                   </p>
@@ -568,9 +589,7 @@ export default function FirearmsPage() {
                   <select
                     value={statusFilter}
                     onChange={(event) =>
-                      setStatusFilter(
-                        event.target.value as "All" | FirearmStatus,
-                      )
+                      setStatusFilter(event.target.value as "All" | FirearmStatus)
                     }
                     className="rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-medium text-slate-200 outline-none transition focus:border-slate-500"
                   >
@@ -632,9 +651,7 @@ export default function FirearmsPage() {
                                 </p>
                                 <p className="text-xs text-slate-500">
                                   {formatFirearmType(firearm.firearm_type)}
-                                  {firearm.caliber
-                                    ? ` â€¢ ${firearm.caliber}`
-                                    : ""}
+                                  {firearm.caliber ? ` â€¢ ${firearm.caliber}` : ""}
                                 </p>
                               </td>
                               <td className="px-4 py-4 font-mono text-xs text-slate-600">
@@ -748,102 +765,21 @@ export default function FirearmsPage() {
                             {selectedFirearm.active_assignment.assigned_to_name}
                           </p>
                           <p className="mt-1 text-xs text-emerald-300">
-                            Assigned{" "}
-                            {formatDateTime(
-                              selectedFirearm.active_assignment.assigned_at,
-                            )}
+                            Assigned {formatDateTime(selectedFirearm.active_assignment.assigned_at)}
                           </p>
-
-                          <div className="mt-4 grid gap-3 rounded-2xl border border-emerald-800/70 bg-slate-950/40 p-3 sm:grid-cols-2">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                                Magazines Issued
-                              </p>
-                              <p className="mt-1 text-lg font-bold text-emerald-100">
-                                {selectedFirearm.active_assignment
-                                  .magazines_issued ?? 0}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                                Magazine Description
-                              </p>
-                              <p className="mt-1 text-sm font-semibold text-emerald-100">
-                                {selectedFirearm.active_assignment
-                                  .magazine_description || "Not recorded"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 space-y-3 border-t border-emerald-800/70 pt-4">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <label className="space-y-1">
-                                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                                  Expected Magazines
-                                </span>
-                                <input
-                                  value={
-                                    selectedFirearm.active_assignment
-                                      .magazines_issued ?? 0
-                                  }
-                                  readOnly
-                                  className="w-full rounded-2xl border border-emerald-800/70 bg-slate-950/70 px-3 py-2 text-sm font-semibold text-emerald-100 outline-none"
-                                />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                                  Magazines Returned
-                                </span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={magazinesReturned}
-                                  onChange={(event) =>
-                                    setMagazinesReturned(
-                                      Number(event.target.value),
-                                    )
-                                  }
-                                  className="w-full rounded-2xl border border-emerald-800/70 bg-slate-950/70 px-3 py-2 text-sm font-semibold text-emerald-100 outline-none focus:border-emerald-500"
-                                />
-                              </label>
-                            </div>
-
-                            {magazinesReturned !==
-                              (selectedFirearm.active_assignment
-                                .magazines_issued ?? 0) && (
-                              <label className="block space-y-1">
-                                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
-                                  Discrepancy Reason
-                                </span>
-                                <textarea
-                                  value={magazineDiscrepancyReason}
-                                  onChange={(event) =>
-                                    setMagazineDiscrepancyReason(
-                                      event.target.value,
-                                    )
-                                  }
-                                  rows={3}
-                                  placeholder="Explain the missing, additional, retained, damaged, or otherwise discrepant magazines..."
-                                  className="w-full rounded-2xl border border-amber-800 bg-amber-950/20 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-500"
-                                />
-                              </label>
+                          <button
+                            type="button"
+                            onClick={() => void handleReturnFirearm()}
+                            disabled={saving}
+                            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-950/400 px-4 py-2 text-sm font-bold text-emerald-100 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {saving ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="h-4 w-4" />
                             )}
-
-                            <button
-                              type="button"
-                              onClick={() => void handleReturnFirearm()}
-                              disabled={saving}
-                              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {saving ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <RotateCcw className="h-4 w-4" />
-                              )}
-                              Record Return
-                            </button>
-                          </div>
+                            Record Return
+                          </button>
                         </div>
                       ) : (
                         <div className="mt-4 flex flex-col gap-3">
@@ -856,10 +792,7 @@ export default function FirearmsPage() {
                           >
                             <option value="">Select officer...</option>
                             {members.map((member) => (
-                              <option
-                                key={member.user_id}
-                                value={member.user_id}
-                              >
+                              <option key={member.user_id} value={member.user_id}>
                                 {member.full_name}
                                 {member.badge_number
                                   ? ` #${member.badge_number}`
@@ -867,36 +800,6 @@ export default function FirearmsPage() {
                               </option>
                             ))}
                           </select>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <label className="space-y-1">
-                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                Magazines Issued
-                              </span>
-                              <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                value={magazinesIssued}
-                                onChange={(event) =>
-                                  setMagazinesIssued(Number(event.target.value))
-                                }
-                                className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
-                              />
-                            </label>
-                            <label className="space-y-1">
-                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                Magazine Description
-                              </span>
-                              <input
-                                value={magazineDescription}
-                                onChange={(event) =>
-                                  setMagazineDescription(event.target.value)
-                                }
-                                placeholder="Glock OEM 17-round"
-                                className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
-                              />
-                            </label>
-                          </div>
                           <textarea
                             value={assignmentNotes}
                             onChange={(event) =>
@@ -947,9 +850,7 @@ export default function FirearmsPage() {
                         </select>
                         <textarea
                           value={statusNotes}
-                          onChange={(event) =>
-                            setStatusNotes(event.target.value)
-                          }
+                          onChange={(event) => setStatusNotes(event.target.value)}
                           rows={3}
                           placeholder="Status/change notes..."
                           className="rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
@@ -980,7 +881,9 @@ export default function FirearmsPage() {
               <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
                 <div className="flex items-center gap-2">
                   <Plus className="h-5 w-5 text-slate-500" />
-                  <h2 className="text-lg font-bold text-white">Add Firearm</h2>
+                  <h2 className="text-lg font-bold text-white">
+                    Add Firearm
+                  </h2>
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1125,6 +1028,4 @@ export default function FirearmsPage() {
     </TracePointShell>
   );
 }
-
-
 

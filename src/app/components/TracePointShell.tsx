@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -9,7 +9,6 @@ import {
   BarChart3,
   BellRing,
   CalendarRange,
-  ClipboardList,
   Crosshair,
   House,
   LogOut,
@@ -123,18 +122,6 @@ const NAV_ITEMS: NavigationItem[] = [
       anyOf: [
         "manage_range_days",
         "score_range_days",
-        "view_command_dashboard",
-      ],
-    },
-  },
-  {
-    label: "Inspections",
-    href: "/inspections",
-    icon: ClipboardList,
-    requirement: {
-      anyOf: [
-        "manage_inspections",
-        "manage_firearms",
         "view_command_dashboard",
       ],
     },
@@ -550,3 +537,4 @@ export default function TracePointShell({
     </div>
   );
 }
+

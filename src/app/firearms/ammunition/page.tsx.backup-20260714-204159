@@ -9,13 +9,15 @@ import {
   ClipboardList,
   Loader2,
   Plus,
+  RotateCcw,
   Save,
   ShieldCheck,
   Target,
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
-import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import ArmoryPageHeader from "@/app/components/ArmoryPageHeader";
+import ArmoryWorkspaceNav from "@/app/components/ArmoryWorkspaceNav";
 
 type AmmoWorkspace = {
   dutyLots: DutyAmmoLot[];
@@ -585,53 +587,67 @@ export default function ArmoryAmmunitionPage() {
     <TracePointShell activePage="Armory">
       <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
-          <ArmorySectionShell
-            title="Ammunition"
-            description="Duty ammunition accountability and training ammunition logistics."
+          <ArmoryPageHeader
+            eyebrow="Armory / Ammunition"
+            title="Ammunition Management"
+            description="Duty ammunition accountability and training ammunition logistics, including officer issues, replacement cycles, recalls, range-day usage, returns, consumption, and low-stock awareness."
+            actions={
+              <button
+                type="button"
+                onClick={() => void loadWorkspace()}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Refresh
+              </button>
+            }
+            footer={
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Ammo Lots
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-white">
+                    {formatNumber(stats.totalLots)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-blue-800 bg-blue-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
+                    Duty Rounds
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-blue-100">
+                    {formatNumber(stats.dutyOnHand)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">
+                    Training Rounds
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-emerald-100">
+                    {formatNumber(stats.trainingOnHand)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-amber-800 bg-amber-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
+                    Low Stock
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-amber-100">
+                    {formatNumber(stats.lowStockTrainingLots)}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">
+                    Recall Flags
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-red-100">
+                    {formatNumber(stats.recalledDutyLots)}
+                  </p>
+                </div>
+              </div>
+            }
           />
 
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Ammo Lots
-              </p>
-              <p className="mt-2 text-3xl font-bold text-white">
-                {formatNumber(stats.totalLots)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-blue-800 bg-blue-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">
-                Duty Rounds
-              </p>
-              <p className="mt-2 text-3xl font-bold text-blue-100">
-                {formatNumber(stats.dutyOnHand)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">
-                Training Rounds
-              </p>
-              <p className="mt-2 text-3xl font-bold text-emerald-100">
-                {formatNumber(stats.trainingOnHand)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-amber-800 bg-amber-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
-                Low Stock
-              </p>
-              <p className="mt-2 text-3xl font-bold text-amber-100">
-                {formatNumber(stats.lowStockTrainingLots)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">
-                Recall Flags
-              </p>
-              <p className="mt-2 text-3xl font-bold text-red-100">
-                {formatNumber(stats.recalledDutyLots)}
-              </p>
-            </div>
-          </section>
+          <ArmoryWorkspaceNav />
 
           {(error || message) && (
             <section

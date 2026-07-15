@@ -1,0 +1,1056 @@
+"use client";
+
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import TracePointShell from "@/app/components/TracePointShell";
+import ArmoryPageHeader from "@/app/components/ArmoryPageHeader";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardCheck,
+  Crosshair,
+  Save,
+  ShieldCheck,
+  Wrench,
+} from "lucide-react";
+
+type CurrentFirearmStatus =
+  | "In Service"
+  | "Out of Service"
+  | "Maintenance"
+  | "Inspection Required"
+  | "Retired";
+
+type ActiveAssignment = {
+  id: string;
+  assigned_to_user_id: string;
+  assigned_to_name: string;
+  assigned_at: string;
+};
+
+type ArmoryFirearm = {
+  id: string;
+  department_id: string;
+  make: string | null;
+  model: string | null;
+  serial_number: string | null;
+  firearm_type: string | null;
+  caliber: string | null;
+  asset_number: string | null;
+  condition_status: CurrentFirearmStatus;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  active_assignment: ActiveAssignment | null;
+};
+
+type ArmoryResponse = {
+  departmentId: string;
+  firearms: ArmoryFirearm[];
+  members: unknown[];
+};
+
+type ChecklistStatus = "Pass" | "Fail" | "N/A";
+
+type ChecklistItem = {
+  id: string;
+  section: string;
+  label: string;
+  status: ChecklistStatus;
+  note: string;
+  critical?: boolean;
+};
+
+const INSPECTION_TYPES = [
+  "Routine Firearm Inspection",
+  "Return-to-Service Inspection",
+  "Reported Issue / Failure Inspection",
+  "Optic / Battery Inspection",
+  "Pre-Issue Inspection",
+  "Post-Return Inspection",
+] as const;
+
+const INSPECTION_REASONS = [
+  "Scheduled routine inspection",
+  "Officer reported issue",
+  "Returned firearm",
+  "Before issue/reissue",
+  "After maintenance",
+  "RMR/optic battery interval",
+  "Command-directed review",
+  "Other",
+] as const;
+
+const RESULTS = [
+  "Passed",
+  "Failed",
+  "Needs Maintenance",
+  "Removed from Service",
+] as const;
+
+const SERVICE_RECOMMENDATIONS = [
+  "Remain In Service",
+  "Clean and Return to Service",
+  "Maintenance Required",
+  "Remove from Service",
+  "Armorer Review Required",
+  "Command Review Required",
+] as const;
+
+const DEFAULT_CHECKLIST: ChecklistItem[] = [
+  {
+    id: "identity-serial",
+    section: "Identity & Custody",
+    label: "Serial number verified against Armory record",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "identity-asset",
+    section: "Identity & Custody",
+    label: "Asset number / department marking verified",
+    status: "Pass",
+    note: "",
+  },
+  {
+    id: "identity-assignment",
+    section: "Identity & Custody",
+    label: "Current assignee / custody status verified",
+    status: "Pass",
+    note: "",
+  },
+  {
+    id: "safety-cleared",
+    section: "Safety",
+    label: "Firearm cleared and safe before inspection",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "safety-magazine",
+    section: "Safety",
+    label: "Magazine removed / chamber verified clear",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "condition-exterior",
+    section: "Physical Condition",
+    label: "Exterior condition acceptable",
+    status: "Pass",
+    note: "",
+  },
+  {
+    id: "condition-frame-slide",
+    section: "Physical Condition",
+    label: "Frame/slide/receiver inspected for damage or unusual wear",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "condition-barrel",
+    section: "Physical Condition",
+    label: "Barrel/bore inspected",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "condition-cleanliness",
+    section: "Physical Condition",
+    label: "Cleaning/lubrication condition acceptable",
+    status: "Pass",
+    note: "",
+  },
+  {
+    id: "function-trigger",
+    section: "Function Check",
+    label: "Trigger/function check completed",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "function-safety",
+    section: "Function Check",
+    label: "Safeties/decocker/controls checked, if applicable",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "function-magazines",
+    section: "Function Check",
+    label: "Magazine fit, release, and seating checked",
+    status: "Pass",
+    note: "",
+  },
+  {
+    id: "sights-irons",
+    section: "Sights / Optics",
+    label: "Iron sights checked",
+    status: "Pass",
+    note: "",
+  },
+  {
+    id: "optic-body",
+    section: "Sights / Optics",
+    label: "Optic/RMR body and mounting checked, if applicable",
+    status: "N/A",
+    note: "",
+  },
+  {
+    id: "optic-battery",
+    section: "Sights / Optics",
+    label: "Optic/RMR battery checked or replaced, if applicable",
+    status: "N/A",
+    note: "",
+  },
+  {
+    id: "accessory-light",
+    section: "Accessories",
+    label: "Weapon-mounted light checked, if applicable",
+    status: "N/A",
+    note: "",
+  },
+  {
+    id: "accessory-holster",
+    section: "Accessories",
+    label: "Holster/retention compatibility concern noted, if applicable",
+    status: "N/A",
+    note: "",
+  },
+  {
+    id: "final-duty",
+    section: "Final Determination",
+    label: "Safe for duty use",
+    status: "Pass",
+    note: "",
+    critical: true,
+  },
+  {
+    id: "final-defects",
+    section: "Final Determination",
+    label: "Defects, deficiencies, or maintenance needs documented",
+    status: "Pass",
+    note: "",
+  },
+];
+
+function getFirearmName(firearm: ArmoryFirearm) {
+  const make = firearm.make?.trim();
+  const model = firearm.model?.trim();
+
+  if (make && model) return `${make} ${model}`;
+  if (make) return make;
+  if (model) return model;
+
+  return "Unnamed firearm";
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Not recorded";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "Not recorded";
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+      {children}
+    </span>
+  );
+}
+
+function DetailPill({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+        {label}
+      </p>
+      <p className="mt-1 text-[13px] font-semibold text-slate-100">
+        {value || "Not recorded"}
+      </p>
+    </div>
+  );
+}
+
+function NewInspectionContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialFirearmId = searchParams.get("firearmId") ?? "";
+
+  const [firearms, setFirearms] = useState<ArmoryFirearm[]>([]);
+  const [selectedFirearmId, setSelectedFirearmId] = useState(initialFirearmId);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  const [inspectionType, setInspectionType] = useState<
+    (typeof INSPECTION_TYPES)[number]
+  >("Routine Firearm Inspection");
+  const [inspectionReason, setInspectionReason] = useState<
+    (typeof INSPECTION_REASONS)[number]
+  >("Scheduled routine inspection");
+  const [inspectionDate, setInspectionDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [inspectionTime, setInspectionTime] = useState(() =>
+    new Date().toTimeString().slice(0, 5),
+  );
+  const [inspectorName, setInspectorName] = useState("");
+  const [inspectionLocation, setInspectionLocation] = useState("Armory");
+
+  const [weaponCleared, setWeaponCleared] = useState("Yes");
+  const [ammoRemoved, setAmmoRemoved] = useState("Yes");
+  const [magazinesPresented, setMagazinesPresented] = useState("");
+  const [roundCount, setRoundCount] = useState("");
+  const [opticBatteryReplaced, setOpticBatteryReplaced] = useState("N/A");
+  const [cleaningCondition, setCleaningCondition] = useState("Acceptable");
+
+  const [checklist, setChecklist] =
+    useState<ChecklistItem[]>(DEFAULT_CHECKLIST);
+
+  const [result, setResult] = useState<(typeof RESULTS)[number]>("Passed");
+  const [serviceRecommendation, setServiceRecommendation] = useState<
+    (typeof SERVICE_RECOMMENDATIONS)[number]
+  >("Remain In Service");
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [correctiveAction, setCorrectiveAction] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const loadArmory = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const response = await fetch("/api/armory/firearms", {
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as
+        | ArmoryResponse
+        | { error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : "The Armory records could not be loaded.",
+        );
+      }
+
+      setFirearms((payload as ArmoryResponse).firearms);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "The Armory records could not be loaded.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadArmory();
+  }, [loadArmory]);
+
+  const selectedFirearm = useMemo(
+    () => firearms.find((firearm) => firearm.id === selectedFirearmId) ?? null,
+    [firearms, selectedFirearmId],
+  );
+
+  const checklistSections = useMemo(() => {
+    return checklist.reduce<Record<string, ChecklistItem[]>>((groups, item) => {
+      if (!groups[item.section]) groups[item.section] = [];
+      groups[item.section].push(item);
+      return groups;
+    }, {});
+  }, [checklist]);
+
+  const failedItems = checklist.filter((item) => item.status === "Fail");
+  const failedCriticalItems = failedItems.filter((item) => item.critical);
+
+  function updateChecklistStatus(id: string, status: ChecklistStatus) {
+    setChecklist((current) =>
+      current.map((item) => (item.id === id ? { ...item, status } : item)),
+    );
+  }
+
+  function updateChecklistNote(id: string, note: string) {
+    setChecklist((current) =>
+      current.map((item) => (item.id === id ? { ...item, note } : item)),
+    );
+  }
+
+  async function handleSaveInspection() {
+    setSubmitError(null);
+    setSavedMessage(null);
+
+    if (!selectedFirearm) {
+      setSubmitError("Select a firearm before saving the inspection.");
+      return;
+    }
+
+    if (!inspectorName.trim()) {
+      setSubmitError("Enter the inspector name before saving.");
+      return;
+    }
+
+    if (result === "Passed" && failedCriticalItems.length > 0) {
+      setSubmitError(
+        "This inspection cannot be marked Passed while critical checklist items are failed.",
+      );
+      return;
+    }
+
+    try {
+      const inspectionDateTime = new Date(
+        `${inspectionDate}T${inspectionTime || "00:00"}`,
+      ).toISOString();
+
+      const response = await fetch("/api/armory/inspections", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          firearmId: selectedFirearm.id,
+          inspectionType,
+          inspectionReason,
+          inspectionDate: inspectionDateTime,
+          inspectorName,
+          inspectionLocation,
+          assigneeName:
+            selectedFirearm.active_assignment?.assigned_to_name ?? null,
+          weaponCleared,
+          ammunitionRemoved: ammoRemoved,
+          magazinesPresented,
+          roundCount,
+          opticBatteryStatus: opticBatteryReplaced,
+          cleaningCondition,
+          result,
+          serviceRecommendation,
+          followUpDate: followUpDate || null,
+          correctiveAction,
+          notes,
+          checklist,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Inspection could not be saved.");
+      }
+
+      setSavedMessage("Inspection saved successfully.");
+      router.push("/firearms/inspections");
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Inspection could not be saved.",
+      );
+    }
+  }
+
+  return (
+    <TracePointShell activePage="Armory">
+      <div className="mx-auto w-full max-w-[1450px] space-y-5">
+        <ArmoryPageHeader
+          eyebrow="Armory / Maintenance & Inspections / New"
+          title="New Firearm Inspection"
+          description="Select a firearm, verify custody and condition, complete the inspection checklist, and document the operational result."
+          backHref="/firearms/inspections"
+          backLabel="Back to Inspections"
+        />
+
+        {loadError ? (
+          <section className="rounded-3xl border border-red-500/20 bg-red-500/[0.08] p-4 text-[12px] text-red-200">
+            <div className="flex gap-3">
+              <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-red-100">
+                  Could not load Armory records.
+                </p>
+                <p className="mt-1 text-red-200/80">{loadError}</p>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {submitError ? (
+          <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
+            <div className="flex gap-3">
+              <AlertTriangle size={17} className="mt-0.5 flex-shrink-0" />
+              <p>{submitError}</p>
+            </div>
+          </section>
+        ) : null}
+
+        {savedMessage ? (
+          <section className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4 text-[12px] text-emerald-200">
+            <div className="flex gap-3">
+              <CheckCircle2 size={17} className="mt-0.5 flex-shrink-0" />
+              <p>{savedMessage}</p>
+            </div>
+          </section>
+        ) : null}
+
+        <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-5">
+            <section className="rounded-3xl border border-slate-800 bg-slate-900">
+              <div className="border-b border-slate-800 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <Crosshair size={17} className="text-blue-300" />
+                  <h2 className="text-[15px] font-bold text-white">
+                    Firearm Selection
+                  </h2>
+                </div>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Choose the firearm being inspected. The current Armory record
+                  is shown before the inspection is completed.
+                </p>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <label className="block">
+                  <FieldLabel>Firearm</FieldLabel>
+                  <select
+                    value={selectedFirearmId}
+                    onChange={(event) =>
+                      setSelectedFirearmId(event.target.value)
+                    }
+                    disabled={loading}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    <option value="">
+                      {loading ? "Loading firearms..." : "Select firearm"}
+                    </option>
+
+                    {firearms.map((firearm) => (
+                      <option key={firearm.id} value={firearm.id}>
+                        {getFirearmName(firearm)} ·{" "}
+                        {firearm.serial_number || "No serial"} ·{" "}
+                        {firearm.condition_status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {selectedFirearm ? (
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-slate-500">
+                          <Crosshair size={18} />
+                        </div>
+
+                        <div>
+                          <p className="text-[15px] font-bold text-white">
+                            {getFirearmName(selectedFirearm)}
+                          </p>
+                          <p className="mt-1 text-[12px] text-slate-500">
+                            Serial:{" "}
+                            {selectedFirearm.serial_number || "Not recorded"} ·
+                            Asset:{" "}
+                            {selectedFirearm.asset_number || "Not recorded"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-semibold text-slate-300">
+                        {selectedFirearm.condition_status}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                      <DetailPill label="Make" value={selectedFirearm.make} />
+                      <DetailPill label="Model" value={selectedFirearm.model} />
+                      <DetailPill
+                        label="Type"
+                        value={selectedFirearm.firearm_type}
+                      />
+                      <DetailPill
+                        label="Caliber"
+                        value={selectedFirearm.caliber}
+                      />
+                      <DetailPill
+                        label="Assigned To"
+                        value={
+                          selectedFirearm.active_assignment
+                            ?.assigned_to_name ?? "Unassigned"
+                        }
+                      />
+                      <DetailPill
+                        label="Last Updated"
+                        value={formatDate(selectedFirearm.updated_at)}
+                      />
+                      <DetailPill
+                        label="Active"
+                        value={selectedFirearm.is_active ? "Yes" : "No"}
+                      />
+                      <DetailPill
+                        label="Record ID"
+                        value={selectedFirearm.id.slice(0, 8)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-center">
+                    <p className="text-[13px] font-semibold text-slate-300">
+                      No firearm selected.
+                    </p>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Select a firearm to display its current assignment,
+                      status, and inventory details.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-800 bg-slate-900">
+              <div className="border-b border-slate-800 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <ClipboardCheck size={17} className="text-blue-300" />
+                  <h2 className="text-[15px] font-bold text-white">
+                    Inspection Information
+                  </h2>
+                </div>
+              </div>
+
+              <div className="grid gap-4 p-5 md:grid-cols-2">
+                <label className="block">
+                  <FieldLabel>Inspection Type</FieldLabel>
+                  <select
+                    value={inspectionType}
+                    onChange={(event) =>
+                      setInspectionType(
+                        event.target.value as (typeof INSPECTION_TYPES)[number],
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    {INSPECTION_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Inspection Reason</FieldLabel>
+                  <select
+                    value={inspectionReason}
+                    onChange={(event) =>
+                      setInspectionReason(
+                        event.target
+                          .value as (typeof INSPECTION_REASONS)[number],
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    {INSPECTION_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Date</FieldLabel>
+                  <input
+                    type="date"
+                    value={inspectionDate}
+                    onChange={(event) => setInspectionDate(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Time</FieldLabel>
+                  <input
+                    type="time"
+                    value={inspectionTime}
+                    onChange={(event) => setInspectionTime(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Inspector</FieldLabel>
+                  <input
+                    value={inspectorName}
+                    onChange={(event) => setInspectorName(event.target.value)}
+                    placeholder="Inspector / armorer name"
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Location</FieldLabel>
+                  <input
+                    value={inspectionLocation}
+                    onChange={(event) =>
+                      setInspectionLocation(event.target.value)
+                    }
+                    placeholder="Armory, range, HQ, etc."
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-800 bg-slate-900">
+              <div className="border-b border-slate-800 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={17} className="text-emerald-300" />
+                  <h2 className="text-[15px] font-bold text-white">
+                    Safety & Condition Fields
+                  </h2>
+                </div>
+              </div>
+
+              <div className="grid gap-4 p-5 md:grid-cols-2 lg:grid-cols-3">
+                <label className="block">
+                  <FieldLabel>Weapon Cleared</FieldLabel>
+                  <select
+                    value={weaponCleared}
+                    onChange={(event) => setWeaponCleared(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    <option>Yes</option>
+                    <option>No</option>
+                    <option>N/A</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Ammunition Removed</FieldLabel>
+                  <select
+                    value={ammoRemoved}
+                    onChange={(event) => setAmmoRemoved(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    <option>Yes</option>
+                    <option>No</option>
+                    <option>N/A</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Magazines Presented</FieldLabel>
+                  <input
+                    value={magazinesPresented}
+                    onChange={(event) =>
+                      setMagazinesPresented(event.target.value)
+                    }
+                    placeholder="Example: 3 duty magazines"
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Round Count Since Last Review</FieldLabel>
+                  <input
+                    value={roundCount}
+                    onChange={(event) => setRoundCount(event.target.value)}
+                    placeholder="Optional"
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Optic Battery</FieldLabel>
+                  <select
+                    value={opticBatteryReplaced}
+                    onChange={(event) =>
+                      setOpticBatteryReplaced(event.target.value)
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    <option>N/A</option>
+                    <option>Checked</option>
+                    <option>Replaced</option>
+                    <option>Needs Replacement</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Cleaning Condition</FieldLabel>
+                  <select
+                    value={cleaningCondition}
+                    onChange={(event) =>
+                      setCleaningCondition(event.target.value)
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    <option>Acceptable</option>
+                    <option>Needs Cleaning</option>
+                    <option>Needs Lubrication</option>
+                    <option>Unsatisfactory</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-800 bg-slate-900">
+              <div className="border-b border-slate-800 px-5 py-4">
+                <h2 className="text-[15px] font-bold text-white">
+                  Inspection Checklist
+                </h2>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Critical items prevent a Passed result if marked Fail.
+                </p>
+              </div>
+
+              <div className="space-y-5 p-5">
+                {Object.entries(checklistSections).map(([section, items]) => (
+                  <div key={section} className="space-y-3">
+                    <h3 className="text-[12px] font-bold uppercase tracking-widest text-slate-500">
+                      {section}
+                    </h3>
+
+                    {items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
+                      >
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                            <div>
+                              <p className="text-[13px] font-semibold text-slate-100">
+                                {item.label}
+                              </p>
+                              {item.critical ? (
+                                <p className="mt-1 text-[11px] text-amber-300">
+                                  Critical item
+                                </p>
+                              ) : null}
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              {(["Pass", "Fail", "N/A"] as ChecklistStatus[]).map(
+                                (status) => (
+                                  <button
+                                    key={status}
+                                    type="button"
+                                    onClick={() =>
+                                      updateChecklistStatus(item.id, status)
+                                    }
+                                    className={`rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition ${
+                                      item.status === status
+                                        ? status === "Fail"
+                                          ? "border-red-500 bg-red-500/10 text-red-200"
+                                          : status === "Pass"
+                                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-200"
+                                            : "border-slate-600 bg-slate-700/30 text-slate-200"
+                                        : "border-slate-700 text-slate-400 hover:border-blue-500/50 hover:text-white"
+                                    }`}
+                                  >
+                                    {status}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <input
+                            value={item.note}
+                            onChange={(event) =>
+                              updateChecklistNote(item.id, event.target.value)
+                            }
+                            placeholder="Optional item note"
+                            className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[12px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <aside className="space-y-5">
+            <section className="rounded-3xl border border-slate-800 bg-slate-900">
+              <div className="border-b border-slate-800 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <Wrench size={17} className="text-amber-300" />
+                  <h2 className="text-[15px] font-bold text-white">
+                    Result & Disposition
+                  </h2>
+                </div>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <label className="block">
+                  <FieldLabel>Overall Result</FieldLabel>
+                  <select
+                    value={result}
+                    onChange={(event) =>
+                      setResult(event.target.value as (typeof RESULTS)[number])
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    {RESULTS.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Service Recommendation</FieldLabel>
+                  <select
+                    value={serviceRecommendation}
+                    onChange={(event) =>
+                      setServiceRecommendation(
+                        event.target
+                          .value as (typeof SERVICE_RECOMMENDATIONS)[number],
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  >
+                    {SERVICE_RECOMMENDATIONS.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Follow-Up Date</FieldLabel>
+                  <input
+                    type="date"
+                    value={followUpDate}
+                    onChange={(event) => setFollowUpDate(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Corrective Action / Maintenance Needed</FieldLabel>
+                  <textarea
+                    value={correctiveAction}
+                    onChange={(event) =>
+                      setCorrectiveAction(event.target.value)
+                    }
+                    rows={4}
+                    placeholder="Document required maintenance, parts, armorer review, or removal from service reason."
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <FieldLabel>Inspection Notes</FieldLabel>
+                  <textarea
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    rows={5}
+                    placeholder="General notes, condition details, officer comments, range observations, or return-to-service notes."
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-800 bg-slate-900">
+              <div className="border-b border-slate-800 px-5 py-4">
+                <h2 className="text-[15px] font-bold text-white">
+                  Inspection Summary
+                </h2>
+              </div>
+
+              <div className="space-y-3 p-5 text-[12px] text-slate-400">
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+                  <span>Failed checklist items</span>
+                  <span className="font-bold text-white">
+                    {failedItems.length}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+                  <span>Critical failures</span>
+                  <span
+                    className={`font-bold ${
+                      failedCriticalItems.length > 0
+                        ? "text-red-300"
+                        : "text-emerald-300"
+                    }`}
+                  >
+                    {failedCriticalItems.length}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+                  <p className="font-semibold text-slate-300">
+                    Selected firearm
+                  </p>
+                  <p className="mt-1 text-slate-500">
+                    {selectedFirearm
+                      ? `${getFirearmName(selectedFirearm)} · ${
+                          selectedFirearm.serial_number || "No serial"
+                        }`
+                      : "None selected"}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveInspection}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-blue-500"
+                >
+                  <Save size={14} />
+                  Save Inspection
+                </button>
+
+                <p className="text-[11px] leading-5 text-slate-600">
+                  Save currently validates the completed form. Next step is
+                  connecting this to the inspection database/API and applying
+                  firearm status changes.
+                </p>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </div>
+    </TracePointShell>
+  );
+}
+
+export default function NewInspectionPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewInspectionContent />
+    </Suspense>
+  );
+}

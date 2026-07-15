@@ -9,14 +9,6 @@ type RouteContext = {
   }>;
 };
 
-function cleanText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
 async function getCurrentUser() {
   const supabase = await createServerClient();
   const {
@@ -72,23 +64,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const body = (await request.json().catch(() => ({}))) as {
     assignedToUserId?: string;
     notes?: string;
-    magazinesIssued?: number;
-    magazineDescription?: string;
   };
 
   if (!body.assignedToUserId) {
     return NextResponse.json(
       { error: "Select an officer before assigning the firearm." },
-      { status: 400 },
-    );
-  }
-
-  if (!isNonNegativeInteger(body.magazinesIssued)) {
-    return NextResponse.json(
-      {
-        error:
-          "Magazines issued must be a whole number of zero or greater.",
-      },
       { status: 400 },
     );
   }
@@ -169,10 +149,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         assigned_by_user_id: user.id,
         assigned_at: new Date().toISOString(),
         condition_at_issue: firearm.condition_status ?? null,
-        notes: cleanText(body.notes),
-        magazines_issued: body.magazinesIssued,
-        magazines_expected_return: body.magazinesIssued,
-        magazine_description: cleanText(body.magazineDescription),
+        notes: body.notes ?? null,
       });
 
     if (insertError) {
@@ -193,23 +170,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function PATCH(request: NextRequest, context: RouteContext) {
+export async function PATCH(_request: NextRequest, context: RouteContext) {
   const { firearmId } = await context.params;
-  const body = (await request.json().catch(() => ({}))) as {
-    magazinesReturned?: number;
-    discrepancyReason?: string | null;
-  };
-
-  if (!isNonNegativeInteger(body.magazinesReturned)) {
-    return NextResponse.json(
-      {
-        error:
-          "Magazines returned must be a whole number of zero or greater.",
-      },
-      { status: 400 },
-    );
-  }
-
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -247,7 +209,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const { data: activeAssignment, error: activeError } = await admin
       .from("firearm_assignments")
-      .select("id, magazines_issued, magazines_expected_return")
+      .select("id")
       .eq("department_id", departmentId)
       .eq("firearm_id", firearmId)
       .is("returned_at", null)
@@ -264,34 +226,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const expectedMagazines =
-      activeAssignment.magazines_expected_return ??
-      activeAssignment.magazines_issued ??
-      0;
-
-    const discrepancyReason = cleanText(body.discrepancyReason);
-    const hasDiscrepancy = body.magazinesReturned !== expectedMagazines;
-
-    if (hasDiscrepancy && !discrepancyReason) {
-      return NextResponse.json(
-        {
-          error:
-            "A discrepancy reason is required when returned magazines do not match the expected quantity.",
-        },
-        { status: 400 },
-      );
-    }
-
     const { error: updateError } = await admin
       .from("firearm_assignments")
       .update({
         returned_by_user_id: user.id,
         returned_at: new Date().toISOString(),
         condition_at_return: firearm.condition_status ?? null,
-        magazines_returned: body.magazinesReturned,
-        magazine_discrepancy_reason: hasDiscrepancy
-          ? discrepancyReason
-          : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", activeAssignment.id)

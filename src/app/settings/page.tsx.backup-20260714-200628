@@ -89,12 +89,6 @@ type RulesForm = {
   inspection_interval_days: number;
   battery_check_interval_days: number;
   off_duty_renewal_days: number;
-  allow_personally_owned_rifles: boolean;
-  require_personal_rifle_armorer_inspection: boolean;
-  require_personal_rifle_chief_approval: boolean;
-  require_personal_rifle_qualification: boolean;
-  require_personal_rifle_annual_reinspection: boolean;
-  require_personal_rifle_spec_acknowledgment: boolean;
 };
 
 type SecurityForm = {
@@ -172,12 +166,6 @@ const EMPTY_RULES: RulesForm = {
   inspection_interval_days: 180,
   battery_check_interval_days: 180,
   off_duty_renewal_days: 365,
-  allow_personally_owned_rifles: false,
-  require_personal_rifle_armorer_inspection: true,
-  require_personal_rifle_chief_approval: true,
-  require_personal_rifle_qualification: true,
-  require_personal_rifle_annual_reinspection: true,
-  require_personal_rifle_spec_acknowledgment: true,
 };
 
 const EMPTY_SECURITY: SecurityForm = {
@@ -950,40 +938,6 @@ export default function AdminSettingsPage() {
                 rulesData.off_duty_renewal_days,
                 365,
               ),
-              allow_personally_owned_rifles: Boolean(
-                rulesData.allow_personally_owned_rifles,
-              ),
-              require_personal_rifle_armorer_inspection:
-                rulesData.require_personal_rifle_armorer_inspection === null ||
-                rulesData.require_personal_rifle_armorer_inspection === undefined
-                  ? true
-                  : Boolean(
-                      rulesData.require_personal_rifle_armorer_inspection,
-                    ),
-              require_personal_rifle_chief_approval:
-                rulesData.require_personal_rifle_chief_approval === null ||
-                rulesData.require_personal_rifle_chief_approval === undefined
-                  ? true
-                  : Boolean(rulesData.require_personal_rifle_chief_approval),
-              require_personal_rifle_qualification:
-                rulesData.require_personal_rifle_qualification === null ||
-                rulesData.require_personal_rifle_qualification === undefined
-                  ? true
-                  : Boolean(rulesData.require_personal_rifle_qualification),
-              require_personal_rifle_annual_reinspection:
-                rulesData.require_personal_rifle_annual_reinspection === null ||
-                rulesData.require_personal_rifle_annual_reinspection === undefined
-                  ? true
-                  : Boolean(
-                      rulesData.require_personal_rifle_annual_reinspection,
-                    ),
-              require_personal_rifle_spec_acknowledgment:
-                rulesData.require_personal_rifle_spec_acknowledgment === null ||
-                rulesData.require_personal_rifle_spec_acknowledgment === undefined
-                  ? true
-                  : Boolean(
-                      rulesData.require_personal_rifle_spec_acknowledgment,
-                    ),
             }
           : EMPTY_RULES,
       );
@@ -2416,94 +2370,6 @@ export default function AdminSettingsPage() {
                       setRules((current) => ({
                         ...current,
                         off_duty_renewal_days: value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            </SettingsCard>
-
-            <SettingsCard
-              title="Personally Owned Rifle Program"
-              description="Configure whether officers may submit personally owned rifles and which approval safeguards apply."
-            >
-              <div className="space-y-3">
-                <ToggleRow
-                  title="Allow personally owned rifles"
-                  description="Enables officer submission and agency review of personally owned rifles for duty use."
-                  checked={rules.allow_personally_owned_rifles}
-                  onChange={(checked) =>
-                    setRules((current) => ({
-                      ...current,
-                      allow_personally_owned_rifles: checked,
-                    }))
-                  }
-                />
-
-                <div
-                  className={`space-y-3 ${
-                    rules.allow_personally_owned_rifles
-                      ? ""
-                      : "pointer-events-none opacity-50"
-                  }`}
-                >
-                  <ToggleRow
-                    title="Require armorer inspection"
-                    description="An armorer must physically inspect the rifle before it can advance."
-                    checked={rules.require_personal_rifle_armorer_inspection}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_armorer_inspection: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require Chief approval"
-                    description="Final duty-use approval must be granted by the Chief or authorized command reviewer."
-                    checked={rules.require_personal_rifle_chief_approval}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_chief_approval: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require qualification before approval"
-                    description="The officer must complete the required rifle qualification before final approval."
-                    checked={rules.require_personal_rifle_qualification}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_qualification: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require annual reinspection"
-                    description="Approved personally owned rifles are subject to an annual physical reinspection."
-                    checked={rules.require_personal_rifle_annual_reinspection}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_annual_reinspection: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require specification acknowledgment"
-                    description="The officer must acknowledge department specifications before submitting."
-                    checked={rules.require_personal_rifle_spec_acknowledgment}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_spec_acknowledgment: checked,
                       }))
                     }
                   />

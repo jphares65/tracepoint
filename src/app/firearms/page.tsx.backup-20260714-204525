@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   UserPlus,
   Wrench,
-  RotateCcw,
 } from "lucide-react";
 
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
@@ -633,7 +632,7 @@ export default function FirearmsPage() {
                                 <p className="text-xs text-slate-500">
                                   {formatFirearmType(firearm.firearm_type)}
                                   {firearm.caliber
-                                    ? ` â€¢ ${firearm.caliber}`
+                                    ? ` • ${firearm.caliber}`
                                     : ""}
                                 </p>
                               </td>
@@ -1125,6 +1124,5 @@ export default function FirearmsPage() {
     </TracePointShell>
   );
 }
-
 
 

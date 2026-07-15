@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# TracePoint local installer and collector artifacts
+*.backup-*
+*.encoding-backup-*
+armory-navigation-files-*/
+rifle-inbox-files-*/

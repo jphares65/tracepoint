@@ -1,0 +1,229 @@
+import { NextResponse } from "next/server";
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+
+type SupabaseAuthUser = {
+  id: string;
+  email?: string | null;
+  user_metadata?: {
+    full_name?: string;
+    name?: string;
+    display_name?: string;
+  } | null;
+};
+
+function getDisplayName(user?: SupabaseAuthUser | null) {
+  const metadata = user?.user_metadata ?? {};
+  return (
+    metadata.full_name ||
+    metadata.name ||
+    metadata.display_name ||
+    user?.email ||
+    "Unknown User"
+  );
+}
+
+async function getCurrentUser() {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return { user: null, error: "You must be signed in." };
+  }
+
+  return { user, error: null };
+}
+
+async function getActiveDepartmentId(admin: any, userId: string) {
+  const { data, error } = await admin
+    .from("department_memberships")
+    .select("department_id")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data?.department_id ?? null;
+}
+
+async function getAccess(admin: any, departmentId: string, userId: string) {
+  const { data, error } = await admin.rpc("get_department_members", {
+    p_department_id: departmentId,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const current = (data ?? []).find(
+    (row: any) => String(row.user_id) === userId,
+  );
+
+  const permissions = Array.isArray(current?.effective_permissions)
+    ? current.effective_permissions.map(String)
+    : [];
+
+  const roleCodes = Array.isArray(current?.role_codes)
+    ? current.role_codes.map(String)
+    : [];
+
+  return {
+    canArmorerReview:
+      roleCodes.includes("armorer") ||
+      permissions.includes("manage_firearms") ||
+      permissions.includes("manage_inspections") ||
+      permissions.includes("administer_department"),
+    canChiefReview:
+      roleCodes.includes("chief") ||
+      permissions.includes("administer_department"),
+  };
+}
+
+export async function GET() {
+  const { user, error: authError } = await getCurrentUser();
+
+  if (authError || !user) {
+    return NextResponse.json({ error: authError }, { status: 401 });
+  }
+
+  try {
+    const admin = createAdminClient() as any;
+    const departmentId = await getActiveDepartmentId(admin, user.id);
+
+    if (!departmentId) {
+      return NextResponse.json(
+        { error: "No active department membership was found." },
+        { status: 403 },
+      );
+    }
+
+    const [access, riflesResult, usersResult] = await Promise.all([
+      getAccess(admin, departmentId, user.id),
+      admin
+        .from("personal_rifles")
+        .select(
+          "id,owner_user_id,manufacturer,model,serial_number,caliber,status,submitted_at,correction_notes,armorer_decision_notes,chief_decision_notes,updated_at",
+        )
+        .eq("department_id", departmentId)
+        .order("updated_at", { ascending: false }),
+      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    ]);
+
+    if (riflesResult.error) throw new Error(riflesResult.error.message);
+    if (usersResult.error) throw new Error(usersResult.error.message);
+
+    const usersById = new Map<string, SupabaseAuthUser>(
+      ((usersResult.data?.users ?? []) as SupabaseAuthUser[]).map((item) => [
+        item.id,
+        item,
+      ]),
+    );
+
+    const items: Array<Record<string, unknown>> = [];
+
+    for (const rifle of riflesResult.data ?? []) {
+      const rifleLabel = `${rifle.manufacturer} ${rifle.model}`.trim();
+      const ownerName = getDisplayName(usersById.get(rifle.owner_user_id));
+
+      if (
+        access.canArmorerReview &&
+        rifle.status === "Pending Armorer Review"
+      ) {
+        items.push({
+          id: `personal-rifle-armorer-${rifle.id}`,
+          kind: "personal_rifle_armorer_review",
+          rifleId: rifle.id,
+          title: "Personal Rifle Awaiting Armorer Review",
+          detail: `${ownerName} submitted ${rifleLabel} (${rifle.caliber}).`,
+          href: `/personal-rifle-review/${rifle.id}`,
+          priority: "High",
+          createdAt: rifle.submitted_at ?? rifle.updated_at,
+        });
+      }
+
+      if (
+        access.canChiefReview &&
+        rifle.status === "Pending Chief Approval"
+      ) {
+        items.push({
+          id: `personal-rifle-chief-${rifle.id}`,
+          kind: "personal_rifle_chief_review",
+          rifleId: rifle.id,
+          title: "Personal Rifle Awaiting Final Approval",
+          detail: `${ownerName}'s ${rifleLabel} passed armorer review.`,
+          href: `/personal-rifle-review/${rifle.id}`,
+          priority: "High",
+          createdAt: rifle.updated_at,
+        });
+      }
+
+      if (
+        rifle.owner_user_id === user.id &&
+        rifle.status === "Correction Requested"
+      ) {
+        items.push({
+          id: `personal-rifle-correction-${rifle.id}`,
+          kind: "personal_rifle_owner_correction",
+          rifleId: rifle.id,
+          title: "Personal Rifle Correction Required",
+          detail:
+            rifle.correction_notes ||
+            `Corrections are required for ${rifleLabel}.`,
+          href: `/firearms/personal-rifles?edit=${rifle.id}`,
+          priority: "High",
+          createdAt: rifle.updated_at,
+        });
+      }
+
+      if (
+        rifle.owner_user_id === user.id &&
+        ["Armorer Denied", "Denied"].includes(rifle.status)
+      ) {
+        items.push({
+          id: `personal-rifle-denied-${rifle.id}`,
+          kind: "personal_rifle_owner_decision",
+          rifleId: rifle.id,
+          title: "Personal Rifle Request Denied",
+          detail:
+            rifle.chief_decision_notes ||
+            rifle.armorer_decision_notes ||
+            `${rifleLabel} was denied.`,
+          href: `/firearms/personal-rifles?record=${rifle.id}`,
+          priority: "Normal",
+          createdAt: rifle.updated_at,
+        });
+      }
+
+      if (
+        rifle.owner_user_id === user.id &&
+        rifle.status === "Approved"
+      ) {
+        items.push({
+          id: `personal-rifle-approved-${rifle.id}`,
+          kind: "personal_rifle_owner_decision",
+          rifleId: rifle.id,
+          title: "Personal Rifle Approved",
+          detail: `${rifleLabel} is approved for duty use.`,
+          href: `/firearms/personal-rifles?record=${rifle.id}`,
+          priority: "Normal",
+          createdAt: rifle.updated_at,
+        });
+      }
+    }
+
+    return NextResponse.json({ items });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Personal rifle inbox could not be loaded.",
+      },
+      { status: 500 },
+    );
+  }
+}

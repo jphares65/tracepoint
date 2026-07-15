@@ -88,19 +88,7 @@ type HomeItem = {
     | "Range"
     | "Qualifications"
     | "Firearms"
-    | "Personal Rifle"
     | "System";
-  createdAt?: string;
-};
-
-type PersonalRifleInboxItem = {
-  id: string;
-  kind: string;
-  rifleId: string;
-  title: string;
-  detail: string;
-  href: string;
-  priority: "High" | "Normal";
   createdAt?: string;
 };
 
@@ -367,9 +355,6 @@ export default function MyTracePointHomePage() {
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
   const [storedInbox, setStoredInbox] = useState<InboxItem[]>([]);
   const [offDutyRecords, setOffDutyRecords] = useState<OffDutyRecord[]>([]);
-  const [personalRifleInbox, setPersonalRifleInbox] = useState<
-    PersonalRifleInboxItem[]
-  >([]);
   const [hydrated, setHydrated] = useState(false);
   const [homeProfile, setHomeProfile] =
     useState<AuthenticatedHomeProfile>({
@@ -391,38 +376,6 @@ export default function MyTracePointHomePage() {
     setStoredInbox(loadJson<InboxItem[]>(INBOX_KEY, []));
     setOffDutyRecords(loadJson<OffDutyRecord[]>(OFF_DUTY_KEY, []));
     setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadPersonalRifleInbox() {
-      try {
-        const response = await fetch("/api/armory/personal-rifles/inbox", {
-          cache: "no-store",
-        });
-
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          items?: PersonalRifleInboxItem[];
-        };
-
-        if (active) {
-          setPersonalRifleInbox(
-            Array.isArray(payload.items) ? payload.items : [],
-          );
-        }
-      } catch {
-        if (active) setPersonalRifleInbox([]);
-      }
-    }
-
-    void loadPersonalRifleInbox();
-
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -626,18 +579,6 @@ export default function MyTracePointHomePage() {
   const homeItems = useMemo(() => {
     const items: HomeItem[] = [];
 
-    for (const item of personalRifleInbox) {
-      items.push({
-        id: item.id,
-        title: item.title,
-        detail: item.detail,
-        href: item.href,
-        priority: item.priority,
-        source: "Personal Rifle",
-        createdAt: item.createdAt,
-      });
-    }
-
     for (const item of relevantStoredInbox) {
       items.push({
         id: `stored-${item.id}`,
@@ -776,7 +717,6 @@ export default function MyTracePointHomePage() {
       );
     });
   }, [
-    personalRifleInbox,
     relevantStoredInbox,
     upcomingRangeDays,
     workspace.rangeRoster,
