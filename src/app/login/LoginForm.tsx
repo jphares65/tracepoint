@@ -28,8 +28,6 @@ export default function LoginForm({ nextPath }: LoginFormProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
 
-  const setupPath = `/auth/setup?next=${encodeURIComponent(nextPath)}`;
-
   async function signInWithPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusyAction("password");
@@ -48,7 +46,7 @@ export default function LoginForm({ nextPath }: LoginFormProps) {
       return;
     }
 
-    router.replace(setupPath);
+    router.replace(nextPath);
     router.refresh();
   }
 
@@ -63,9 +61,8 @@ export default function LoginForm({ nextPath }: LoginFormProps) {
     setMessage(null);
     setIsError(false);
 
-    const callbackNext = `/auth/setup?next=${encodeURIComponent(nextPath)}`;
     const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
-      callbackNext,
+      nextPath,
     )}`;
 
     const { error } = await supabase.auth.signInWithOtp({

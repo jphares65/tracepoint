@@ -31,7 +31,7 @@ export default async function LoginPage({
   const claims = claimsData?.claims;
 
   if (claims?.sub) {
-    redirect(`/auth/setup?next=${encodeURIComponent(nextPath)}`);
+    redirect(nextPath);
   }
 
   return (
