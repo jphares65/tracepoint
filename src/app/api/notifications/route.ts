@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -15,6 +15,14 @@ type GeneratedAlert = {
   href: string;
   priority: Priority;
   createdAt?: string | null;
+};
+
+type ExistingNotificationEvent = {
+  notification_key?: string | null;
+  fingerprint?: string | null;
+  first_seen_at?: string | null;
+  acknowledged_at?: string | null;
+  snoozed_until?: string | null;
 };
 
 function text(value: unknown) {
@@ -174,7 +182,7 @@ function collectInspections(payload: any, context: any): GeneratedAlert[] {
       source: "Inspection",
       kind: status === "Out of Service" ? "firearm_out_of_service" : status === "Maintenance" ? "firearm_maintenance" : "firearm_inspection_required",
       title: status === "Out of Service" ? "Firearm Out of Service" : status === "Maintenance" ? "Firearm Maintenance Required" : "Firearm Inspection Required",
-      detail: `${name} · SN ${serial} · ${status}`,
+      detail: `${name} Â· SN ${serial} Â· ${status}`,
       href: id ? `/firearms/${id}` : "/firearms/inspections",
       priority: status === "Out of Service" ? "Critical" : "High",
       createdAt: text(firearm.updated_at) || null,
@@ -215,7 +223,7 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
         source: "Range",
         kind: isInstructor ? "range_instructor_assignment" : "range_officer_assignment",
         title: isInstructor ? "Instructor Range Assignment" : "Upcoming Range Assignment",
-        detail: `${title} · ${date} · ${location}`,
+        detail: `${title} Â· ${date} Â· ${location}`,
         href: "/range-days",
         priority: "Normal",
         createdAt: date,
@@ -317,7 +325,14 @@ export async function GET(request: NextRequest) {
       .eq("user_id", context.user.id);
 
     if (existingError) throw new Error(existingError.message);
-    const byKey = new Map((existing ?? []).map((row: any) => [String(row.notification_key), row]));
+    const byKey = new Map<string, ExistingNotificationEvent>(
+      (existing ?? []).map(
+        (row: ExistingNotificationEvent): [string, ExistingNotificationEvent] => [
+          String(row.notification_key),
+          row,
+        ],
+      ),
+    );
 
     for (const item of filtered) {
       const prior = byKey.get(item.key);
@@ -451,3 +466,4 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
