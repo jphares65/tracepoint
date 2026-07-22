@@ -1,131 +1,30 @@
 import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  getPersonalRifleAccess,
+  getPersonalRifleDisplayName,
+  getPersonalRifleRequestContext,
+  type SupabaseAuthUser,
+} from "@/lib/tracepoint/personal-rifle-server";
 
-type SupabaseAuthUser = {
-  id: string;
-  email?: string | null;
-  user_metadata?: {
-    full_name?: string;
-    name?: string;
-    display_name?: string;
-  } | null;
-};
+export async function GET() {
+  const context = await getPersonalRifleRequestContext();
 
-function getDisplayName(user?: SupabaseAuthUser | null) {
-  const metadata = user?.user_metadata ?? {};
-  return (
-    metadata.full_name ||
-    metadata.name ||
-    metadata.display_name ||
-    user?.email ||
-    "Unknown User"
-  );
-}
-
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in." };
-  }
-
-  return { user, error: null };
-}
-
-async function getActiveDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data?.department_id ?? null;
-}
-
-async function getAccess(admin: any, departmentId: string, userId: string) {
-  const { data: roleRows, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", userId);
-
-  if (roleError) throw new Error(roleError.message);
-
-  const roleCodes = Array.from(
-    new Set(
-      (roleRows ?? [])
-        .map((row: any) => row.role_code)
-        .filter((value: unknown): value is string => Boolean(value)),
-    ),
-  );
-
-  let permissions: string[] = [];
-
-  if (roleCodes.length > 0) {
-    const { data: permissionRows, error: permissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes);
-
-    if (permissionError) throw new Error(permissionError.message);
-
-    permissions = Array.from(
-      new Set(
-        (permissionRows ?? [])
-          .map((row: any) => row.permission_code)
-          .filter((value: unknown): value is string => Boolean(value)),
-      ),
+  if (context.error || !context.user || !context.admin || !context.departmentId) {
+    return NextResponse.json(
+      { error: context.error ?? "Personal rifle access could not be resolved." },
+      { status: context.user ? 403 : 401 },
     );
   }
 
-  return {
-    canArmorerReview:
-      roleCodes.includes("armorer") ||
-      roleCodes.includes("range_master") ||
-      permissions.includes("manage_firearms") ||
-      permissions.includes("manage_inspections") ||
-      permissions.includes("administer_department"),
-    canChiefReview:
-      roleCodes.includes("chief") ||
-      roleCodes.includes("administrator") ||
-      permissions.includes("administer_department"),
-  };
-}
-
-export async function GET() {
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
-  }
-
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
-
+    const { admin, departmentId, user } = context;
     const [access, riflesResult, usersResult] = await Promise.all([
-      getAccess(admin, departmentId, user.id),
+      getPersonalRifleAccess(admin, departmentId, user.id),
       admin
         .from("personal_rifles")
         .select(
-          "id,owner_user_id,manufacturer,model,serial_number,caliber,status,submitted_at,correction_notes,armorer_decision_notes,chief_decision_notes,updated_at",
+          "id,owner_user_id,manufacturer,model,caliber,status,submitted_at,correction_notes,armorer_decision_notes,chief_decision_notes,expiration_date,updated_at",
         )
         .eq("department_id", departmentId)
         .order("updated_at", { ascending: false }),
@@ -142,11 +41,16 @@ export async function GET() {
       ]),
     );
 
+    const today = new Date();
+    const sixtyDays = new Date();
+    sixtyDays.setDate(sixtyDays.getDate() + 60);
     const items: Array<Record<string, unknown>> = [];
 
     for (const rifle of riflesResult.data ?? []) {
-      const rifleLabel = `${rifle.manufacturer} ${rifle.model}`.trim();
-      const ownerName = getDisplayName(usersById.get(rifle.owner_user_id));
+      const label = `${rifle.manufacturer} ${rifle.model}`.trim();
+      const ownerName = getPersonalRifleDisplayName(
+        usersById.get(rifle.owner_user_id),
+      );
 
       if (
         access.canArmorerReview &&
@@ -157,8 +61,8 @@ export async function GET() {
           kind: "personal_rifle_armorer_review",
           rifleId: rifle.id,
           title: "Personal Rifle Awaiting Armorer Review",
-          detail: `${ownerName} submitted ${rifleLabel} (${rifle.caliber}).`,
-          href: `/personal-rifle-review/${rifle.id}`,
+          detail: `${ownerName} submitted ${label} (${rifle.caliber}).`,
+          href: `/firearms/personal-rifles?record=${rifle.id}&view=review`,
           priority: "High",
           createdAt: rifle.submitted_at ?? rifle.updated_at,
         });
@@ -173,8 +77,8 @@ export async function GET() {
           kind: "personal_rifle_chief_review",
           rifleId: rifle.id,
           title: "Personal Rifle Awaiting Final Approval",
-          detail: `${ownerName}'s ${rifleLabel} passed armorer review.`,
-          href: `/personal-rifle-review/${rifle.id}`,
+          detail: `${ownerName}'s ${label} passed armorer review.`,
+          href: `/firearms/personal-rifles?record=${rifle.id}&view=review`,
           priority: "High",
           createdAt: rifle.updated_at,
         });
@@ -190,9 +94,8 @@ export async function GET() {
           rifleId: rifle.id,
           title: "Personal Rifle Correction Required",
           detail:
-            rifle.correction_notes ||
-            `Corrections are required for ${rifleLabel}.`,
-          href: `/firearms/personal-rifles?edit=${rifle.id}`,
+            rifle.correction_notes || `Corrections are required for ${label}.`,
+          href: `/firearms/personal-rifles?record=${rifle.id}&edit=1`,
           priority: "High",
           createdAt: rifle.updated_at,
         });
@@ -200,17 +103,20 @@ export async function GET() {
 
       if (
         rifle.owner_user_id === user.id &&
-        ["Armorer Denied", "Denied"].includes(rifle.status)
+        ["Armorer Denied", "Denied", "Revoked"].includes(rifle.status)
       ) {
         items.push({
-          id: `personal-rifle-denied-${rifle.id}`,
+          id: `personal-rifle-decision-${rifle.id}`,
           kind: "personal_rifle_owner_decision",
           rifleId: rifle.id,
-          title: "Personal Rifle Request Denied",
+          title:
+            rifle.status === "Revoked"
+              ? "Personal Rifle Approval Revoked"
+              : "Personal Rifle Request Denied",
           detail:
             rifle.chief_decision_notes ||
             rifle.armorer_decision_notes ||
-            `${rifleLabel} was denied.`,
+            `${label} was not approved.`,
           href: `/firearms/personal-rifles?record=${rifle.id}`,
           priority: "Normal",
           createdAt: rifle.updated_at,
@@ -219,25 +125,30 @@ export async function GET() {
 
       if (
         rifle.owner_user_id === user.id &&
-        rifle.status === "Approved"
+        rifle.status === "Approved" &&
+        rifle.expiration_date
       ) {
-        items.push({
-          id: `personal-rifle-approved-${rifle.id}`,
-          kind: "personal_rifle_owner_decision",
-          rifleId: rifle.id,
-          title: "Personal Rifle Approved",
-          detail: `${rifleLabel} is approved for duty use.`,
-          href: `/firearms/personal-rifles?record=${rifle.id}`,
-          priority: "Normal",
-          createdAt: rifle.updated_at,
-        });
+        const expiration = new Date(`${rifle.expiration_date}T00:00:00`);
+        if (
+          !Number.isNaN(expiration.getTime()) &&
+          expiration >= today &&
+          expiration <= sixtyDays
+        ) {
+          items.push({
+            id: `personal-rifle-expiration-${rifle.id}`,
+            kind: "personal_rifle_expiration",
+            rifleId: rifle.id,
+            title: "Personal Rifle Approval Expiring",
+            detail: `${label} expires on ${rifle.expiration_date}.`,
+            href: `/firearms/personal-rifles?record=${rifle.id}`,
+            priority: "Normal",
+            createdAt: rifle.updated_at,
+          });
+        }
       }
     }
 
-    return NextResponse.json({
-      access,
-      items,
-    });
+    return NextResponse.json({ access, items });
   } catch (error) {
     return NextResponse.json(
       {

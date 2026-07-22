@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type RouteContext = {
-  params: Promise<{
-    firearmId: string;
-  }>;
+  params: Promise<{ firearmId: string }>;
 };
 
 const VALID_STATUSES = [
@@ -17,38 +19,36 @@ const VALID_STATUSES = [
   "Retired",
 ] as const;
 
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in to use Armory." };
-  }
-
-  return { user, error: null };
+function cleanText(value: unknown) {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : null;
 }
 
-async function getActiveDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+export async function PATCH(
+  request: NextRequest,
+  routeContext: RouteContext,
+) {
+  const resolved = await resolveServerAccess();
 
-  if (error) {
-    throw new Error(error.message);
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
   }
 
-  return data?.department_id ?? null;
-}
+  const context = resolved.context;
 
-export async function PATCH(request: NextRequest, context: RouteContext) {
-  const { firearmId } = await context.params;
+  if (
+    !hasAnyServerPermission(context, [
+      "manage_firearms",
+      "manage_inspections",
+    ])
+  ) {
+    return permissionDeniedResponse(
+      "Armory or inspection-management permission is required to change firearm status.",
+    );
+  }
+
+  const { firearmId } = await routeContext.params;
   const body = (await request.json().catch(() => ({}))) as {
     status?: string;
     notes?: string;
@@ -61,29 +61,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
   }
 
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
-  }
-
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found for this user." },
-        { status: 403 },
-      );
-    }
-
-    const { data: firearm, error: firearmError } = await admin
-      .from("firearms")
-      .select("id, department_id, condition_status")
-      .eq("id", firearmId)
-      .eq("department_id", departmentId)
-      .maybeSingle();
+    const { data: firearm, error: firearmError } =
+      await context.admin
+        .from("firearms")
+        .select("id,condition_status")
+        .eq("id", firearmId)
+        .eq("department_id", context.departmentId)
+        .maybeSingle();
 
     if (firearmError) {
       throw new Error(firearmError.message);
@@ -96,33 +81,53 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const nextStatus = body.status;
+    const nextStatus = body.status as
+      (typeof VALID_STATUSES)[number];
 
-    const { error: updateError } = await admin
+    if (nextStatus === firearm.condition_status) {
+      return NextResponse.json({ ok: true, unchanged: true });
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await context.admin
       .from("firearms")
       .update({
         condition_status: nextStatus,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       })
       .eq("id", firearmId)
-      .eq("department_id", departmentId);
+      .eq("department_id", context.departmentId);
 
     if (updateError) {
       throw new Error(updateError.message);
     }
 
-    const { error: historyError } = await admin
+    const { error: historyError } = await context.admin
       .from("firearm_status_history")
       .insert({
-        department_id: departmentId,
+        department_id: context.departmentId,
         firearm_id: firearmId,
         old_status: firearm.condition_status,
         new_status: nextStatus,
-        changed_by_user_id: user.id,
-        notes: body.notes ?? null,
+        changed_by_user_id: context.userId,
+        notes: cleanText(body.notes),
       });
 
     if (historyError) {
+      /*
+       * Revert the status if the immutable history entry cannot be written.
+       * A status change without its audit record is not acceptable.
+       */
+      await context.admin
+        .from("firearms")
+        .update({
+          condition_status: firearm.condition_status,
+          updated_at: now,
+        })
+        .eq("id", firearmId)
+        .eq("department_id", context.departmentId);
+
       throw new Error(historyError.message);
     }
 

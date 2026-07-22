@@ -54,6 +54,7 @@ type DepartmentAppearanceRow = {
 
 const NAV_ITEMS: NavigationItem[] = [
   { label: "My Home", href: "/", icon: House },
+  { label: "Notifications", href: "/notifications", icon: BellRing },
   {
     label: "Command Dashboard",
     href: "/command-dashboard",
@@ -537,4 +538,5 @@ export default function TracePointShell({
     </div>
   );
 }
+
 

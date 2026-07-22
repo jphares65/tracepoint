@@ -1,173 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  cleanPersonalRifleText,
+  getInitialPersonalRifleStatus,
+  getPersonalRifleAccess,
+  getPersonalRifleDisplayName,
+  getPersonalRifleExpirationDate,
+  getPersonalRifleRequestContext,
+  getPersonalRifleRules,
+  recordPersonalRifleHistory,
+  type SupabaseAuthUser,
+} from "@/lib/tracepoint/personal-rifle-server";
 
-type SupabaseAuthUser = {
-  id: string;
-  email?: string | null;
-  user_metadata?: {
-    full_name?: string;
-    name?: string;
-    display_name?: string;
-  } | null;
-};
-
-function cleanText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function getDisplayName(user?: SupabaseAuthUser | null) {
-  const metadata = user?.user_metadata ?? {};
-  return (
-    metadata.full_name ||
-    metadata.name ||
-    metadata.display_name ||
-    user?.email ||
-    "Unknown User"
-  );
-}
-
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in to use Armory." };
-  }
-
-  return { user, error: null };
-}
-
-async function getActiveDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data?.department_id ?? null;
-}
-
-async function getRules(admin: any, departmentId: string) {
-  const { data, error } = await admin
-    .from("department_rules")
-    .select(
-      "allow_personally_owned_rifles, require_personal_rifle_armorer_inspection, require_personal_rifle_chief_approval, require_personal_rifle_qualification, require_personal_rifle_annual_reinspection, require_personal_rifle_spec_acknowledgment",
-    )
-    .eq("department_id", departmentId)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-
-  return {
-    allow_personally_owned_rifles: Boolean(data?.allow_personally_owned_rifles),
-    require_personal_rifle_armorer_inspection:
-      data?.require_personal_rifle_armorer_inspection ?? true,
-    require_personal_rifle_chief_approval:
-      data?.require_personal_rifle_chief_approval ?? true,
-    require_personal_rifle_qualification:
-      data?.require_personal_rifle_qualification ?? true,
-    require_personal_rifle_annual_reinspection:
-      data?.require_personal_rifle_annual_reinspection ?? true,
-    require_personal_rifle_spec_acknowledgment:
-      data?.require_personal_rifle_spec_acknowledgment ?? true,
-  };
-}
-
-async function getAccess(admin: any, departmentId: string, userId: string) {
-  const { data: roleRows, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", userId);
-
-  if (roleError) throw new Error(roleError.message);
-
-  const roleCodes = Array.from(
-    new Set(
-      (roleRows ?? [])
-        .map((row: any) => row.role_code)
-        .filter((value: unknown): value is string => Boolean(value)),
-    ),
-  );
-
-  let permissions: string[] = [];
-
-  if (roleCodes.length > 0) {
-    const { data: permissionRows, error: permissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes);
-
-    if (permissionError) throw new Error(permissionError.message);
-
-    permissions = Array.from(
-      new Set(
-        (permissionRows ?? [])
-          .map((row: any) => row.permission_code)
-          .filter((value: unknown): value is string => Boolean(value)),
-      ),
-    );
-  }
-
-  return {
-    canArmorerReview:
-      roleCodes.includes("armorer") ||
-      roleCodes.includes("range_master") ||
-      permissions.includes("manage_firearms") ||
-      permissions.includes("manage_inspections") ||
-      permissions.includes("administer_department"),
-    canChiefReview:
-      roleCodes.includes("chief") ||
-      roleCodes.includes("administrator") ||
-      permissions.includes("administer_department"),
-  };
+function serializeError(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export async function GET() {
-  const { user, error: authError } = await getCurrentUser();
+  const context = await getPersonalRifleRequestContext();
 
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
+  if (context.error || !context.user || !context.admin || !context.departmentId) {
+    return NextResponse.json(
+      { error: context.error ?? "Personal rifle access could not be resolved." },
+      { status: context.user ? 403 : 401 },
+    );
   }
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
+    const { admin, departmentId, user } = context;
+    const [rules, access] = await Promise.all([
+      getPersonalRifleRules(admin, departmentId),
+      getPersonalRifleAccess(admin, departmentId, user.id),
+    ]);
 
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found for this user." },
-        { status: 403 },
-      );
+    let rifleQuery = admin
+      .from("personal_rifles")
+      .select("*")
+      .eq("department_id", departmentId)
+      .order("updated_at", { ascending: false });
+
+    if (!access.canViewAll) {
+      rifleQuery = rifleQuery.eq("owner_user_id", user.id);
     }
 
-    const [rules, access, riflesResult, usersResult, historyResult] =
-      await Promise.all([
-        getRules(admin, departmentId),
-        getAccess(admin, departmentId, user.id),
-        admin
-          .from("personal_rifles")
-          .select("*")
-          .eq("department_id", departmentId)
-          .order("updated_at", { ascending: false }),
-        admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-        admin
-          .from("personal_rifle_status_history")
-          .select("*")
-          .eq("department_id", departmentId)
-          .order("created_at", { ascending: false }),
-      ]);
+    const { data: rifles, error: riflesError } = await rifleQuery;
+    if (riflesError) throw new Error(riflesError.message);
 
-    if (riflesResult.error) throw new Error(riflesResult.error.message);
+    const rifleIds = (rifles ?? []).map((rifle: any) => rifle.id);
+    const [usersResult, historyResult] = await Promise.all([
+      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      rifleIds.length > 0
+        ? admin
+            .from("personal_rifle_status_history")
+            .select("*")
+            .in("personal_rifle_id", rifleIds)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
     if (usersResult.error) throw new Error(usersResult.error.message);
     if (historyResult.error) throw new Error(historyResult.error.message);
 
@@ -179,18 +69,22 @@ export async function GET() {
     );
 
     const historyByRifle = new Map<string, any[]>();
-    for (const entry of historyResult.data ?? []) {
-      const list = historyByRifle.get(entry.personal_rifle_id) ?? [];
-      list.push({
-        ...entry,
-        actor_name: getDisplayName(usersById.get(entry.actor_user_id)),
+    for (const history of historyResult.data ?? []) {
+      const current = historyByRifle.get(history.personal_rifle_id) ?? [];
+      current.push({
+        ...history,
+        actor_name: getPersonalRifleDisplayName(
+          usersById.get(history.actor_user_id),
+        ),
       });
-      historyByRifle.set(entry.personal_rifle_id, list);
+      historyByRifle.set(history.personal_rifle_id, current);
     }
 
-    const rifles = (riflesResult.data ?? []).map((rifle: any) => ({
+    const result = (rifles ?? []).map((rifle: any) => ({
       ...rifle,
-      owner_name: getDisplayName(usersById.get(rifle.owner_user_id)),
+      owner_name: getPersonalRifleDisplayName(
+        usersById.get(rifle.owner_user_id),
+      ),
       history: historyByRifle.get(rifle.id) ?? [],
     }));
 
@@ -198,15 +92,15 @@ export async function GET() {
       currentUserId: user.id,
       rules,
       access,
-      rifles,
+      rifles: result,
     });
   } catch (error) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Personally owned rifles could not be loaded.",
+        error: serializeError(
+          error,
+          "Personally owned rifles could not be loaded.",
+        ),
       },
       { status: 500 },
     );
@@ -214,17 +108,24 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, error: authError } = await getCurrentUser();
+  const context = await getPersonalRifleRequestContext();
 
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
+  if (context.error || !context.user || !context.admin || !context.departmentId) {
+    return NextResponse.json(
+      { error: context.error ?? "Personal rifle access could not be resolved." },
+      { status: context.user ? 403 : 401 },
+    );
   }
 
-  const body = (await request.json().catch(() => ({}))) as any;
-  const manufacturer = cleanText(body.manufacturer);
-  const model = cleanText(body.model);
-  const serialNumber = cleanText(body.serialNumber);
-  const caliber = cleanText(body.caliber);
+  const body = (await request.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+
+  const manufacturer = cleanPersonalRifleText(body.manufacturer);
+  const model = cleanPersonalRifleText(body.model);
+  const serialNumber = cleanPersonalRifleText(body.serialNumber);
+  const caliber = cleanPersonalRifleText(body.caliber);
 
   if (!manufacturer || !model || !serialNumber || !caliber) {
     return NextResponse.json(
@@ -241,27 +142,20 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found for this user." },
-        { status: 403 },
-      );
-    }
-
-    const rules = await getRules(admin, departmentId);
+    const { admin, departmentId, user } = context;
+    const rules = await getPersonalRifleRules(admin, departmentId);
 
     if (!rules.allow_personally_owned_rifles) {
       return NextResponse.json(
-        { error: "Personally owned rifles are not enabled for this department." },
+        { error: "Personally owned rifles are not enabled for this agency." },
         { status: 403 },
       );
     }
 
+    const submit = body.submit === true;
+
     if (
-      body.submit &&
+      submit &&
       rules.require_personal_rifle_spec_acknowledgment &&
       !body.specificationAcknowledged
     ) {
@@ -271,15 +165,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const status = body.submit
-      ? rules.require_personal_rifle_armorer_inspection
-        ? "Pending Armorer Review"
-        : rules.require_personal_rifle_chief_approval
-          ? "Pending Chief Approval"
-          : "Approved"
-      : "Draft";
+    const { data: duplicate, error: duplicateError } = await admin
+      .from("personal_rifles")
+      .select("id")
+      .eq("department_id", departmentId)
+      .ilike("serial_number", serialNumber)
+      .limit(1)
+      .maybeSingle();
 
-    const now = new Date().toISOString();
+    if (duplicateError) throw new Error(duplicateError.message);
+    if (duplicate) {
+      return NextResponse.json(
+        { error: "A personal rifle with this serial number already exists." },
+        { status: 409 },
+      );
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const status = submit ? getInitialPersonalRifleStatus(rules) : "Draft";
+    const immediatelyApproved = status === "Approved";
 
     const { data: inserted, error: insertError } = await admin
       .from("personal_rifles")
@@ -290,54 +195,71 @@ export async function POST(request: NextRequest) {
         model,
         serial_number: serialNumber,
         caliber,
-        barrel_length: cleanText(body.barrelLength),
-        operating_system: cleanText(body.operatingSystem),
-        stock_brace_configuration: cleanText(body.stockBraceConfiguration),
-        sights_optic: cleanText(body.sightsOptic),
-        weapon_mounted_light: cleanText(body.weaponMountedLight),
-        sling: cleanText(body.sling),
-        trigger: cleanText(body.trigger),
-        muzzle_device: cleanText(body.muzzleDevice),
-        magazine_type: cleanText(body.magazineType),
-        other_modifications: cleanText(body.otherModifications),
+        barrel_length: cleanPersonalRifleText(body.barrelLength),
+        operating_system: cleanPersonalRifleText(body.operatingSystem),
+        stock_brace_configuration: cleanPersonalRifleText(
+          body.stockBraceConfiguration,
+        ),
+        sights_optic: cleanPersonalRifleText(body.sightsOptic),
+        weapon_mounted_light: cleanPersonalRifleText(
+          body.weaponMountedLight,
+        ),
+        sling: cleanPersonalRifleText(body.sling),
+        trigger: cleanPersonalRifleText(body.trigger),
+        muzzle_device: cleanPersonalRifleText(body.muzzleDevice),
+        magazine_type: cleanPersonalRifleText(body.magazineType),
+        other_modifications: cleanPersonalRifleText(body.otherModifications),
         ownership_confirmed: true,
-        specification_acknowledged: Boolean(body.specificationAcknowledged),
+        specification_acknowledged: Boolean(
+          body.specificationAcknowledged,
+        ),
         status,
-        submitted_at: body.submit ? now : null,
-        updated_at: now,
+        submitted_at: submit ? nowIso : null,
+        approval_date: immediatelyApproved ? nowIso.slice(0, 10) : null,
+        expiration_date: immediatelyApproved
+          ? getPersonalRifleExpirationDate(rules, now)
+          : null,
+        updated_at: nowIso,
       })
       .select("id")
       .single();
 
     if (insertError) throw new Error(insertError.message);
 
-    const { error: historyError } = await admin
-      .from("personal_rifle_status_history")
-      .insert({
-        department_id: departmentId,
-        personal_rifle_id: inserted.id,
-        actor_user_id: user.id,
-        from_status: null,
-        to_status: status,
-        action: body.submit ? "Submitted" : "Draft Created",
-        notes: null,
-      });
-
-    if (historyError) throw new Error(historyError.message);
+    await recordPersonalRifleHistory(admin, {
+      departmentId,
+      rifleId: inserted.id,
+      actorUserId: user.id,
+      fromStatus: null,
+      toStatus: status,
+      action: submit ? "Owner Submitted" : "Draft Created",
+      notes: null,
+    });
 
     return NextResponse.json(
-      { ok: true, personalRifleId: inserted.id, status },
+      {
+        ok: true,
+        personalRifleId: inserted.id,
+        status,
+      },
       { status: 201 },
     );
   } catch (error) {
+    const message = serializeError(
+      error,
+      "The personal rifle could not be saved.",
+    );
+    const duplicate =
+      message.toLowerCase().includes("duplicate") ||
+      message.toLowerCase().includes("unique");
+
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "The personal rifle could not be saved.",
+        error: duplicate
+          ? "A personal rifle with this serial number already exists."
+          : message,
       },
-      { status: 500 },
+      { status: duplicate ? 409 : 500 },
     );
   }
 }

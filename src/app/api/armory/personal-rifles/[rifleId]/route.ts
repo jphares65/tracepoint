@@ -1,151 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  cleanPersonalRifleText,
+  getInitialPersonalRifleStatus,
+  getPersonalRifleAccess,
+  getPersonalRifleExpirationDate,
+  getPersonalRifleRequestContext,
+  getPersonalRifleRules,
+  recordPersonalRifleHistory,
+} from "@/lib/tracepoint/personal-rifle-server";
 
 type RouteContext = {
   params: Promise<{ rifleId: string }>;
 };
 
-function cleanText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+const REQUIRED_INSPECTION_CHECKS = [
+  "serial_verified",
+  "safe_function",
+  "department_specifications",
+  "optic_sights",
+  "sling_light",
+  "trigger_muzzle",
+] as const;
+
+function serializeError(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in to use Armory." };
-  }
-
-  return { user, error: null };
+function checklistComplete(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const checklist = value as Record<string, unknown>;
+  return REQUIRED_INSPECTION_CHECKS.every((key) => checklist[key] === true);
 }
 
-async function getActiveDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+export async function PATCH(
+  request: NextRequest,
+  routeContext: RouteContext,
+) {
+  const { rifleId } = await routeContext.params;
+  const context = await getPersonalRifleRequestContext();
 
-  if (error) throw new Error(error.message);
-  return data?.department_id ?? null;
-}
-
-async function getRules(admin: any, departmentId: string) {
-  const { data, error } = await admin
-    .from("department_rules")
-    .select("*")
-    .eq("department_id", departmentId)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data ?? {};
-}
-
-async function getAccess(admin: any, departmentId: string, userId: string) {
-  const { data: roleRows, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", userId);
-
-  if (roleError) throw new Error(roleError.message);
-
-  const roleCodes = Array.from(
-    new Set(
-      (roleRows ?? [])
-        .map((row: any) => row.role_code)
-        .filter((value: unknown): value is string => Boolean(value)),
-    ),
-  );
-
-  let permissions: string[] = [];
-
-  if (roleCodes.length > 0) {
-    const { data: permissionRows, error: permissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes);
-
-    if (permissionError) throw new Error(permissionError.message);
-
-    permissions = Array.from(
-      new Set(
-        (permissionRows ?? [])
-          .map((row: any) => row.permission_code)
-          .filter((value: unknown): value is string => Boolean(value)),
-      ),
+  if (context.error || !context.user || !context.admin || !context.departmentId) {
+    return NextResponse.json(
+      { error: context.error ?? "Personal rifle access could not be resolved." },
+      { status: context.user ? 403 : 401 },
     );
   }
 
-  return {
-    canArmorerReview:
-      roleCodes.includes("armorer") ||
-      roleCodes.includes("range_master") ||
-      permissions.includes("manage_firearms") ||
-      permissions.includes("manage_inspections") ||
-      permissions.includes("administer_department"),
-    canChiefReview:
-      roleCodes.includes("chief") ||
-      roleCodes.includes("administrator") ||
-      permissions.includes("administer_department"),
-  };
-}
-
-async function recordHistory(
-  admin: any,
-  values: {
-    departmentId: string;
-    rifleId: string;
-    actorUserId: string;
-    fromStatus: string;
-    toStatus: string;
-    action: string;
-    notes?: string | null;
-  },
-) {
-  const { error } = await admin.from("personal_rifle_status_history").insert({
-    department_id: values.departmentId,
-    personal_rifle_id: values.rifleId,
-    actor_user_id: values.actorUserId,
-    from_status: values.fromStatus,
-    to_status: values.toStatus,
-    action: values.action,
-    notes: values.notes ?? null,
-  });
-
-  if (error) throw new Error(error.message);
-}
-
-export async function PATCH(request: NextRequest, context: RouteContext) {
-  const { rifleId } = await context.params;
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
-  }
-
-  const body = (await request.json().catch(() => ({}))) as any;
+  const body = (await request.json().catch(() => ({}))) as Record<
+    string,
+    any
+  >;
   const action = String(body.action ?? "");
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
+    const { admin, departmentId, user } = context;
 
     const [{ data: rifle, error: rifleError }, rules, access] =
       await Promise.all([
@@ -155,8 +64,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           .eq("id", rifleId)
           .eq("department_id", departmentId)
           .maybeSingle(),
-        getRules(admin, departmentId),
-        getAccess(admin, departmentId, user.id),
+        getPersonalRifleRules(admin, departmentId),
+        getPersonalRifleAccess(admin, departmentId, user.id),
       ]);
 
     if (rifleError) throw new Error(rifleError.message);
@@ -167,11 +76,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const now = new Date().toISOString();
-    let updates: Record<string, unknown> = { updated_at: now };
-    let nextStatus = rifle.status;
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const notes = cleanPersonalRifleText(body.notes);
+    let nextStatus = String(rifle.status);
     let historyAction = "";
-    let historyNotes = cleanText(body.notes);
+    let historyNotes = notes;
+    let historyMetadata: Record<string, unknown> = {};
+    let updates: Record<string, unknown> = { updated_at: nowIso };
 
     if (action === "owner_save" || action === "owner_submit") {
       if (rifle.owner_user_id !== user.id) {
@@ -180,34 +92,34 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           { status: 403 },
         );
       }
-
       if (!["Draft", "Correction Requested"].includes(rifle.status)) {
         return NextResponse.json(
-          { error: "This record can no longer be edited by the owner." },
+          { error: "This record is no longer editable by the owner." },
           { status: 409 },
         );
       }
 
       const form = body.rifle ?? {};
-      const manufacturer = cleanText(form.manufacturer);
-      const model = cleanText(form.model);
-      const serialNumber = cleanText(form.serialNumber);
-      const caliber = cleanText(form.caliber);
+      const manufacturer = cleanPersonalRifleText(form.manufacturer);
+      const model = cleanPersonalRifleText(form.model);
+      const serialNumber = cleanPersonalRifleText(form.serialNumber);
+      const caliber = cleanPersonalRifleText(form.caliber);
 
       if (!manufacturer || !model || !serialNumber || !caliber) {
         return NextResponse.json(
-          { error: "Manufacturer, model, serial number, and caliber are required." },
+          {
+            error:
+              "Manufacturer, model, serial number, and caliber are required.",
+          },
           { status: 400 },
         );
       }
-
       if (!form.ownershipConfirmed) {
         return NextResponse.json(
           { error: "Ownership confirmation is required." },
           { status: 400 },
         );
       }
-
       if (
         action === "owner_submit" &&
         rules.require_personal_rifle_spec_acknowledgment &&
@@ -219,14 +131,29 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
       }
 
+      const { data: duplicate, error: duplicateError } = await admin
+        .from("personal_rifles")
+        .select("id")
+        .eq("department_id", departmentId)
+        .ilike("serial_number", serialNumber)
+        .neq("id", rifleId)
+        .limit(1)
+        .maybeSingle();
+
+      if (duplicateError) throw new Error(duplicateError.message);
+      if (duplicate) {
+        return NextResponse.json(
+          { error: "A personal rifle with this serial number already exists." },
+          { status: 409 },
+        );
+      }
+
       nextStatus =
         action === "owner_submit"
-          ? rules.require_personal_rifle_armorer_inspection
-            ? "Pending Armorer Review"
-            : rules.require_personal_rifle_chief_approval
-              ? "Pending Chief Approval"
-              : "Approved"
+          ? getInitialPersonalRifleStatus(rules)
           : "Draft";
+
+      const immediatelyApproved = nextStatus === "Approved";
 
       updates = {
         ...updates,
@@ -234,23 +161,35 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         model,
         serial_number: serialNumber,
         caliber,
-        barrel_length: cleanText(form.barrelLength),
-        operating_system: cleanText(form.operatingSystem),
-        stock_brace_configuration: cleanText(form.stockBraceConfiguration),
-        sights_optic: cleanText(form.sightsOptic),
-        weapon_mounted_light: cleanText(form.weaponMountedLight),
-        sling: cleanText(form.sling),
-        trigger: cleanText(form.trigger),
-        muzzle_device: cleanText(form.muzzleDevice),
-        magazine_type: cleanText(form.magazineType),
-        other_modifications: cleanText(form.otherModifications),
+        barrel_length: cleanPersonalRifleText(form.barrelLength),
+        operating_system: cleanPersonalRifleText(form.operatingSystem),
+        stock_brace_configuration: cleanPersonalRifleText(
+          form.stockBraceConfiguration,
+        ),
+        sights_optic: cleanPersonalRifleText(form.sightsOptic),
+        weapon_mounted_light: cleanPersonalRifleText(
+          form.weaponMountedLight,
+        ),
+        sling: cleanPersonalRifleText(form.sling),
+        trigger: cleanPersonalRifleText(form.trigger),
+        muzzle_device: cleanPersonalRifleText(form.muzzleDevice),
+        magazine_type: cleanPersonalRifleText(form.magazineType),
+        other_modifications: cleanPersonalRifleText(form.otherModifications),
         ownership_confirmed: true,
-        specification_acknowledged: Boolean(form.specificationAcknowledged),
+        specification_acknowledged: Boolean(
+          form.specificationAcknowledged,
+        ),
         status: nextStatus,
         correction_notes: null,
-        submitted_at: action === "owner_submit" ? now : rifle.submitted_at,
+        submitted_at:
+          action === "owner_submit" ? nowIso : rifle.submitted_at,
+        approval_date: immediatelyApproved
+          ? nowIso.slice(0, 10)
+          : rifle.approval_date,
+        expiration_date: immediatelyApproved
+          ? getPersonalRifleExpirationDate(rules, now)
+          : rifle.expiration_date,
       };
-
       historyAction =
         action === "owner_submit" ? "Owner Submitted" : "Owner Saved Draft";
     } else if (action === "request_correction") {
@@ -266,20 +205,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           { status: 409 },
         );
       }
-      if (!historyNotes) {
+      if (!notes) {
         return NextResponse.json(
           { error: "A correction reason is required." },
           { status: 400 },
         );
       }
+
       nextStatus = "Correction Requested";
       updates = {
         ...updates,
         status: nextStatus,
-        correction_notes: historyNotes,
+        correction_notes: notes,
         armorer_reviewed_by: user.id,
-        armorer_reviewed_at: now,
-        armorer_decision_notes: historyNotes,
+        armorer_reviewed_at: nowIso,
+        armorer_decision_notes: notes,
       };
       historyAction = "Correction Requested";
     } else if (action === "armorer_approve") {
@@ -296,8 +236,26 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
       }
       if (
+        rules.require_personal_rifle_armorer_inspection &&
+        !checklistComplete(body.checklist)
+      ) {
+        return NextResponse.json(
+          { error: "Complete every required armorer inspection item." },
+          { status: 400 },
+        );
+      }
+      if (
+        rules.require_personal_rifle_armorer_inspection &&
+        !cleanPersonalRifleText(body.inspectionDate)
+      ) {
+        return NextResponse.json(
+          { error: "Inspection date is required." },
+          { status: 400 },
+        );
+      }
+      if (
         rules.require_personal_rifle_qualification &&
-        !body.qualificationVerified
+        body.qualificationVerified !== true
       ) {
         return NextResponse.json(
           { error: "Qualification must be verified before approval." },
@@ -313,17 +271,34 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         ...updates,
         status: nextStatus,
         correction_notes: null,
-        inspection_date: body.inspectionDate || null,
+        inspection_date: cleanPersonalRifleText(body.inspectionDate),
+        armorer_checklist:
+          body.checklist && typeof body.checklist === "object"
+            ? body.checklist
+            : {},
         qualification_verified: Boolean(body.qualificationVerified),
-        qualification_verified_by: body.qualificationVerified ? user.id : null,
-        qualification_verified_at: body.qualificationVerified ? now : null,
+        qualification_verified_by: body.qualificationVerified
+          ? user.id
+          : null,
+        qualification_verified_at: body.qualificationVerified
+          ? nowIso
+          : null,
         armorer_reviewed_by: user.id,
-        armorer_reviewed_at: now,
-        armorer_decision_notes: historyNotes,
+        armorer_reviewed_at: nowIso,
+        armorer_decision_notes: notes,
         approval_date:
-          nextStatus === "Approved" ? now.slice(0, 10) : rifle.approval_date,
+          nextStatus === "Approved" ? nowIso.slice(0, 10) : rifle.approval_date,
+        expiration_date:
+          nextStatus === "Approved"
+            ? getPersonalRifleExpirationDate(rules, now)
+            : rifle.expiration_date,
       };
       historyAction = "Armorer Approved";
+      historyMetadata = {
+        checklist: body.checklist ?? {},
+        inspectionDate: body.inspectionDate ?? null,
+        qualificationVerified: Boolean(body.qualificationVerified),
+      };
     } else if (action === "armorer_deny") {
       if (!access.canArmorerReview) {
         return NextResponse.json(
@@ -331,19 +306,31 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           { status: 403 },
         );
       }
-      if (!historyNotes) {
+      if (rifle.status !== "Pending Armorer Review") {
+        return NextResponse.json(
+          { error: "This rifle is not pending armorer review." },
+          { status: 409 },
+        );
+      }
+      if (!notes) {
         return NextResponse.json(
           { error: "A denial reason is required." },
           { status: 400 },
         );
       }
+
       nextStatus = "Armorer Denied";
       updates = {
         ...updates,
         status: nextStatus,
         armorer_reviewed_by: user.id,
-        armorer_reviewed_at: now,
-        armorer_decision_notes: historyNotes,
+        armorer_reviewed_at: nowIso,
+        armorer_decision_notes: notes,
+        armorer_checklist:
+          body.checklist && typeof body.checklist === "object"
+            ? body.checklist
+            : {},
+        inspection_date: cleanPersonalRifleText(body.inspectionDate),
       };
       historyAction = "Armorer Denied";
     } else if (action === "chief_approve") {
@@ -360,21 +347,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
       }
 
-      const approvalDate = now.slice(0, 10);
-      const expiration = new Date(now);
-      expiration.setFullYear(expiration.getFullYear() + 1);
-
       nextStatus = "Approved";
       updates = {
         ...updates,
         status: nextStatus,
         chief_reviewed_by: user.id,
-        chief_reviewed_at: now,
-        chief_decision_notes: historyNotes,
-        approval_date: approvalDate,
-        expiration_date: rules.require_personal_rifle_annual_reinspection
-          ? expiration.toISOString().slice(0, 10)
-          : null,
+        chief_reviewed_at: nowIso,
+        chief_decision_notes: notes,
+        approval_date: nowIso.slice(0, 10),
+        expiration_date: getPersonalRifleExpirationDate(rules, now),
       };
       historyAction = "Chief Approved";
     } else if (action === "chief_deny") {
@@ -384,21 +365,103 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           { status: 403 },
         );
       }
-      if (!historyNotes) {
+      if (rifle.status !== "Pending Chief Approval") {
+        return NextResponse.json(
+          { error: "This rifle is not pending Chief approval." },
+          { status: 409 },
+        );
+      }
+      if (!notes) {
         return NextResponse.json(
           { error: "A denial reason is required." },
           { status: 400 },
         );
       }
+
       nextStatus = "Denied";
       updates = {
         ...updates,
         status: nextStatus,
         chief_reviewed_by: user.id,
-        chief_reviewed_at: now,
-        chief_decision_notes: historyNotes,
+        chief_reviewed_at: nowIso,
+        chief_decision_notes: notes,
       };
       historyAction = "Chief Denied";
+    } else if (action === "suspend") {
+      if (!access.canChiefReview) {
+        return NextResponse.json(
+          { error: "Command permission is required." },
+          { status: 403 },
+        );
+      }
+      if (rifle.status !== "Approved") {
+        return NextResponse.json(
+          { error: "Only an approved rifle may be suspended." },
+          { status: 409 },
+        );
+      }
+      if (!notes) {
+        return NextResponse.json(
+          { error: "A suspension reason is required." },
+          { status: 400 },
+        );
+      }
+
+      nextStatus = "Suspended";
+      updates = {
+        ...updates,
+        status: nextStatus,
+        suspension_notes: notes,
+      };
+      historyAction = "Approval Suspended";
+    } else if (action === "reinstate") {
+      if (!access.canChiefReview) {
+        return NextResponse.json(
+          { error: "Command permission is required." },
+          { status: 403 },
+        );
+      }
+      if (rifle.status !== "Suspended") {
+        return NextResponse.json(
+          { error: "Only a suspended rifle may be reinstated." },
+          { status: 409 },
+        );
+      }
+
+      nextStatus = "Approved";
+      updates = {
+        ...updates,
+        status: nextStatus,
+        suspension_notes: null,
+      };
+      historyAction = "Approval Reinstated";
+    } else if (action === "revoke") {
+      if (!access.canChiefReview) {
+        return NextResponse.json(
+          { error: "Command permission is required." },
+          { status: 403 },
+        );
+      }
+      if (!["Approved", "Suspended"].includes(rifle.status)) {
+        return NextResponse.json(
+          { error: "Only an approved or suspended rifle may be revoked." },
+          { status: 409 },
+        );
+      }
+      if (!notes) {
+        return NextResponse.json(
+          { error: "A revocation reason is required." },
+          { status: 400 },
+        );
+      }
+
+      nextStatus = "Revoked";
+      updates = {
+        ...updates,
+        status: nextStatus,
+        revocation_notes: notes,
+      };
+      historyAction = "Approval Revoked";
     } else {
       return NextResponse.json(
         { error: "Unsupported personal rifle action." },
@@ -414,14 +477,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (updateError) throw new Error(updateError.message);
 
-    await recordHistory(admin, {
+    await recordPersonalRifleHistory(admin, {
       departmentId,
       rifleId,
       actorUserId: user.id,
-      fromStatus: rifle.status,
+      fromStatus: String(rifle.status),
       toStatus: nextStatus,
       action: historyAction,
       notes: historyNotes,
+      metadata: historyMetadata,
     });
 
     return NextResponse.json({
@@ -430,14 +494,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       status: nextStatus,
     });
   } catch (error) {
+    const message = serializeError(
+      error,
+      "The personal rifle workflow could not be updated.",
+    );
+    const duplicate =
+      message.toLowerCase().includes("duplicate") ||
+      message.toLowerCase().includes("unique");
+
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "The personal rifle workflow could not be updated.",
+        error: duplicate
+          ? "A personal rifle with this serial number already exists."
+          : message,
       },
-      { status: 500 },
+      { status: duplicate ? 409 : 500 },
     );
   }
 }
