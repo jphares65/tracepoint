@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   BadgeCheck,
@@ -196,12 +195,14 @@ function PasswordSetupView({
           <p className="text-xs font-semibold uppercase tracking-[0.26em] text-blue-400">
             Account setup
           </p>
+
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
             Secure your TracePoint account
           </h1>
+
           <p className="mt-4 text-sm leading-6 text-slate-400">
-            Your department membership is already active. Set or update your
-            password to finish account setup and continue into TracePoint.
+            Your department membership is already active. Set your password to
+            finish account setup and continue into TracePoint.
           </p>
 
           <div className="mt-8 space-y-4">
@@ -209,7 +210,7 @@ function PasswordSetupView({
               [
                 KeyRound,
                 "Password setup",
-                "Creates or updates your TracePoint login password",
+                "Creates your TracePoint login password",
               ],
               [
                 Building2,
@@ -237,10 +238,12 @@ function PasswordSetupView({
                   <span className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-2 text-blue-400">
                     <ItemIcon size={17} />
                   </span>
+
                   <div>
                     <p className="text-sm font-semibold text-slate-200">
                       {title as string}
                     </p>
+
                     <p className="mt-1 text-xs text-slate-500">
                       {description as string}
                     </p>
@@ -256,10 +259,12 @@ function PasswordSetupView({
             <span className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-emerald-400">
               <BadgeCheck size={20} />
             </span>
+
             <div>
               <h2 className="text-lg font-semibold text-white">
                 Set your password
               </h2>
+
               <p className="text-sm text-slate-500">
                 Use at least 8 characters.
               </p>
@@ -275,6 +280,7 @@ function PasswordSetupView({
               <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                 New password
               </span>
+
               <input
                 name="password"
                 type="password"
@@ -289,6 +295,7 @@ function PasswordSetupView({
               <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                 Confirm password
               </span>
+
               <input
                 name="confirmPassword"
                 type="password"
@@ -306,13 +313,6 @@ function PasswordSetupView({
               <ShieldCheck size={17} />
               Save password and continue
             </button>
-
-            <Link
-              href={nextPath}
-              className="block text-center text-xs font-semibold text-slate-500 transition hover:text-slate-300"
-            >
-              Continue to TracePoint
-            </Link>
           </form>
         </section>
       </div>
@@ -334,9 +334,11 @@ function InitialDepartmentSetupView({
           <p className="text-xs font-semibold uppercase tracking-[0.26em] text-blue-400">
             Initial configuration
           </p>
+
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
             Establish your TracePoint department
           </h1>
+
           <p className="mt-4 text-sm leading-6 text-slate-400">
             This creates the first secure tenant and assigns your signed-in
             account as its administrator.
@@ -359,10 +361,12 @@ function InitialDepartmentSetupView({
                   <span className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-2 text-blue-400">
                     <ItemIcon size={17} />
                   </span>
+
                   <div>
                     <p className="text-sm font-semibold text-slate-200">
                       {title as string}
                     </p>
+
                     <p className="mt-1 text-xs text-slate-500">
                       {description as string}
                     </p>
@@ -378,10 +382,12 @@ function InitialDepartmentSetupView({
             <span className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-emerald-400">
               <BadgeCheck size={20} />
             </span>
+
             <div>
               <h2 className="text-lg font-semibold text-white">
                 Readington pilot setup
               </h2>
+
               <p className="text-sm text-slate-500">
                 Review the values before creating the department.
               </p>
@@ -398,6 +404,7 @@ function InitialDepartmentSetupView({
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                   Department name
                 </span>
+
                 <input
                   name="departmentName"
                   required
@@ -410,6 +417,7 @@ function InitialDepartmentSetupView({
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                   Short name
                 </span>
+
                 <input
                   name="shortName"
                   defaultValue="Readington PD"
@@ -421,6 +429,7 @@ function InitialDepartmentSetupView({
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                   Department identifier
                 </span>
+
                 <input
                   name="slug"
                   required
@@ -433,6 +442,7 @@ function InitialDepartmentSetupView({
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                   Badge number
                 </span>
+
                 <input
                   name="badgeNumber"
                   placeholder="Optional"
@@ -444,6 +454,7 @@ function InitialDepartmentSetupView({
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                   Rank / title
                 </span>
+
                 <input
                   name="rankTitle"
                   defaultValue="Lieutenant"
@@ -455,6 +466,7 @@ function InitialDepartmentSetupView({
                 <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
                   Unit / assignment
                 </span>
+
                 <input
                   name="unitName"
                   defaultValue="Special Services"
