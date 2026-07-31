@@ -170,7 +170,7 @@ export default function AnalyticsPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Unable to load saved pilot performance data.");
+          throw new Error("Unable to load performance data.");
         }
 
         const payload = (await response.json()) as PerformanceSummary;
@@ -251,15 +251,11 @@ export default function AnalyticsPage() {
                 Qualification & Drill Performance Trends
               </h1>
               <p className="mt-1 max-w-4xl text-[12px] leading-6 text-slate-500">
-                Live pilot analytics now read from the saved Range & Training
-                workspace in Supabase, separating formal qualification compliance
-                from practical drill-performance trends.
+                Review qualification compliance, drill performance, training
+                follow-ups, and officers requiring attention.
               </p>
             </div>
 
-            <span className="w-fit rounded-full border border-emerald-500/30 bg-emerald-500/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-              Supabase pilot data
-            </span>
           </div>
         </header>
 
@@ -558,11 +554,11 @@ export default function AnalyticsPage() {
             <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3">
               <p className="flex items-center gap-2 text-[12px] font-semibold text-emerald-200">
                 <CheckCircle2 size={15} />
-                Officer performance analytics now use saved pilot data.
+                Performance analytics are active.
               </p>
               <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                Qualification and drill trends are calculated from the
-                Supabase-backed Range & Training workspace.
+                Qualification and drill results feed officer trends, alerts,
+                watchlists, and training follow-ups.
               </p>
             </div>
           </div>
@@ -571,7 +567,7 @@ export default function AnalyticsPage() {
         <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
           <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
             <UserCheck size={18} className="text-blue-400" />
-            Live Officer Performance Inputs
+            Officer Performance Inputs
           </h2>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

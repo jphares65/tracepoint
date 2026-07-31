@@ -33,11 +33,7 @@ import type {
   RangeRosterEntry,
 } from "@/app/lib/tracepoint/range-day-types";
 
-import {
-  DEMO_DEPARTMENT,
-  MOCK_FIREARMS,
-  MOCK_USERS,
-} from "@/app/lib/tracepoint/mock-data";
+import { MOCK_FIREARMS, MOCK_USERS } from "@/app/lib/tracepoint/mock-data";
 
 type StoredRangeDay = RangeDay & {
   rangeType?: string;
@@ -470,11 +466,9 @@ function SnapshotLink({
 export default function DashboardPage() {
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
-  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
   useEffect(() => {
     setWorkspace(loadStoredRangeDayWorkspace() ?? EMPTY_WORKSPACE);
-    setWorkspaceLoaded(true);
   }, []);
 
   const rangeDaysById = useMemo(() => {
@@ -802,15 +796,6 @@ export default function DashboardPage() {
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <StatusPill
-                  label={workspaceLoaded ? "Live Local Workspace" : "Loading"}
-                  tone={workspaceLoaded ? "green" : "slate"}
-                />
-                <StatusPill label={DEMO_DEPARTMENT.name} tone="slate" />
-                <StatusPill label="Command View" tone="blue" />
-              </div>
-
               <h1 className="text-[24px] font-bold text-white">
                 TracePoint Command Pulse
               </h1>

@@ -13,7 +13,6 @@ import {
   Moon,
   Search,
   Shield,
-  ShieldAlert,
   Sun,
   Target,
   User,
@@ -422,26 +421,6 @@ function StatusPill({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  sub: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-bold text-white">{value}</p>
-      <p className="mt-1 text-[11px] text-slate-500">{sub}</p>
-    </div>
-  );
-}
-
 function evaluateOfficerStatus(
   lastDayQualification: OfficerQualificationEvent | undefined,
   lastNightQualification: OfficerQualificationEvent | undefined,
@@ -687,12 +666,38 @@ function buildOfficerHistories(workspace: StoredRangeDayWorkspace, personnel: Pi
   }).sort((a, b) => a.officerName.localeCompare(b.officerName));
 }
 
-function OfficerSummaryCard({
+
+function getOfficerDetails(officerId: string, personnel: PilotPersonnel[]) {
+  return personnel.find((officer) => officer.id === officerId);
+}
+
+function QualificationDateCell({
+  label,
+  event,
+}: {
+  label: string;
+  event?: OfficerQualificationEvent;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+        {label}
+      </p>
+      <p className={`mt-1 text-[12px] font-semibold ${event ? "text-slate-200" : "text-slate-500"}`}>
+        {event ? formatDate(event.date) : "Missing"}
+      </p>
+    </div>
+  );
+}
+
+function OfficerListRow({
   history,
+  officer,
   selected,
   onClick,
 }: {
   history: OfficerHistory;
+  officer?: PilotPersonnel;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -700,158 +705,144 @@ function OfficerSummaryCard({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-3xl border p-4 text-left transition hover:-translate-y-[1px] hover:border-blue-500/40 hover:bg-slate-800/70 ${
-        selected
-          ? "border-blue-500/50 bg-blue-500/10"
-          : "border-slate-800 bg-slate-900"
+      className={`w-full border-b border-slate-800/80 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-800/50 ${
+        selected ? "bg-blue-500/[0.09] shadow-[inset_3px_0_0_0_rgba(59,130,246,0.85)]" : "bg-transparent"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 flex flex-wrap gap-2">
-            <StatusPill
-              label={history.status}
-              tone={getStatusTone(history.status)}
-            />
-            {history.malfunctionCount > 0 && (
-              <StatusPill label="Malfunction" tone="amber" />
-            )}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-[13px] font-bold text-white">
+              {history.officerName}
+            </p>
+            <StatusPill label={history.status} tone={getStatusTone(history.status)} />
           </div>
-
-          <h3 className="text-[15px] font-bold text-white">
-            {history.officerName}
-          </h3>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {history.statusReason}
+          <p className="mt-1 truncate text-[11px] text-slate-500">
+            {[officer?.rankTitle, officer?.badgeNumber ? `Badge ${officer.badgeNumber}` : null, officer?.assignment ?? officer?.unitName]
+              .filter(Boolean)
+              .join(" · ") || "Department personnel"}
           </p>
         </div>
-
-        <User size={17} className="mt-1 text-slate-600" />
+        <span className="shrink-0 text-[11px] font-semibold text-slate-400">
+          {history.qualificationEvents.length}
+        </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Day Qual
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {history.lastDayQualification
-              ? formatDate(history.lastDayQualification.date)
-              : "Missing"}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Night Qual
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {history.lastNightQualification
-              ? formatDate(history.lastNightQualification.date)
-              : "Missing"}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest text-slate-600">
-        <span>{history.qualificationEvents.length} records</span>
-        <span>·</span>
-        <span>{history.assignedFirearmIds.length} firearm refs</span>
-        {history.failedQualifications.length > 0 && (
-          <>
-            <span>·</span>
-            <span className="text-red-300">
-              {history.failedQualifications.length} fail
-              {history.failedQualifications.length !== 1 ? "s" : ""}
-            </span>
-          </>
-        )}
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <QualificationDateCell label="Day" event={history.lastDayQualification} />
+        <QualificationDateCell label="Night" event={history.lastNightQualification} />
       </div>
     </button>
   );
 }
 
+function SummaryMetric({
+  label,
+  value,
+  detail,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: "default" | "green" | "amber" | "red";
+}) {
+  const valueTone = {
+    default: "text-white",
+    green: "text-emerald-300",
+    amber: "text-amber-300",
+    red: "text-red-300",
+  }[tone];
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/35 px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+        {label}
+      </p>
+      <p className={`mt-1 text-[22px] font-bold ${valueTone}`}>{value}</p>
+      <p className="mt-0.5 text-[11px] text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function CurrentQualificationCard({
+  label,
+  icon,
+  event,
+  emptyText,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  event?: OfficerQualificationEvent;
+  emptyText: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/35 p-4">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {icon}
+        {label}
+      </div>
+      <p className={`mt-3 text-[17px] font-bold ${event ? "text-white" : "text-slate-500"}`}>
+        {event ? formatDate(event.date) : emptyText}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+        <span>Score: {event?.score ?? "—"}</span>
+        <span>{event ? getFirearmShortName(event.firearmId) : "No firearm recorded"}</span>
+      </div>
+    </div>
+  );
+}
+
 function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="mb-2 flex flex-wrap gap-2">
-            <StatusPill label={event.runLabel} tone="slate" />
-            {event.passed === true && <StatusPill label="Pass" tone="green" />}
-            {event.passed === false && <StatusPill label="Fail" tone="red" />}
-            {event.passed === undefined && event.completed && (
-              <StatusPill label="Completed" tone="green" />
-            )}
-            {event.malfunctionCount > 0 && (
-              <StatusPill label="Malfunction" tone="amber" />
-            )}
-          </div>
-
-          <h4 className="text-[13px] font-bold text-white">
-            {event.drillName}
-          </h4>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {event.rangeDayTitle} · {event.location}
-          </p>
-        </div>
-
-        <div className="text-left text-[11px] text-slate-400 sm:text-right">
-          <p>{formatDate(event.date)}</p>
-          <p>Instructor: {getUserName(event.instructorId)}</p>
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2 text-[11px] text-slate-400 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Score
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {event.score ?? "—"}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Firearm
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {getFirearmShortName(event.firearmId)}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-widest text-slate-600">
-            Deficiency
-          </p>
-          <p className="mt-1 font-semibold text-white">
-            {event.deficiencyObserved ? "Yes" : "No"}
-          </p>
-        </div>
-      </div>
-
-      {event.notes && (
-        <p className="mt-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[11px] text-slate-400">
-          {event.notes}
+    <div className="grid gap-3 border-b border-slate-800/80 px-4 py-4 last:border-b-0 lg:grid-cols-[150px_minmax(0,1fr)_110px_180px] lg:items-center">
+      <div>
+        <p className="text-[12px] font-semibold text-white">{formatDate(event.date)}</p>
+        <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">
+          {event.runLabel}
         </p>
-      )}
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-[13px] font-semibold text-slate-200">{event.drillName}</p>
+          {event.passed === true && <StatusPill label="Pass" tone="green" />}
+          {event.passed === false && <StatusPill label="Fail" tone="red" />}
+          {event.passed === undefined && event.completed && <StatusPill label="Complete" tone="green" />}
+          {event.malfunctionCount > 0 && <StatusPill label="Malfunction" tone="amber" />}
+        </div>
+        <p className="mt-1 truncate text-[11px] text-slate-500">
+          {event.rangeDayTitle} · {event.location} · Instructor: {getUserName(event.instructorId)}
+        </p>
+        {event.notes && <p className="mt-2 text-[11px] text-slate-400">{event.notes}</p>}
+      </div>
+
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Score</p>
+        <p className="mt-1 text-[13px] font-semibold text-white">{event.score ?? "—"}</p>
+      </div>
+
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Firearm</p>
+        <p className="mt-1 text-[12px] font-semibold text-slate-300">
+          {getFirearmShortName(event.firearmId)}
+        </p>
+        {(event.deficiencyObserved || event.remedialTrainingRecommended) && (
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-300">
+            {event.remedialTrainingRecommended ? "Remediation recommended" : "Deficiency recorded"}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
 export default function QualificationsPage() {
-  const [workspace, setWorkspace] =
-    useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
-  const [personnel, setPersonnel] =
-    useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
-  const [personnelMessage, setPersonnelMessage] = useState(
-    "Using demo personnel until live department personnel is loaded.",
-  );
+  const [workspace, setWorkspace] = useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
+  const [personnel, setPersonnel] = useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
   const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
   const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] =
-    useState<OfficerStatusFilter>("All");
+  const [statusFilter, setStatusFilter] = useState<OfficerStatusFilter>("All");
   const [selectedOfficerId, setSelectedOfficerId] = useState<string>(
     FALLBACK_PERSONNEL[0]?.id ?? "",
   );
@@ -861,18 +852,10 @@ export default function QualificationsPage() {
 
     async function loadPersonnelDirectory() {
       const payload = await loadPilotPersonnel();
-
       if (!isMounted) return;
 
       activePersonnelDirectory = payload.personnel;
       setPersonnel(payload.personnel);
-      setPersonnelMessage(
-        payload.source === "fallback"
-          ? "Using demo personnel."
-          : `Using ${payload.personnel.length} live department personnel record${
-              payload.personnel.length === 1 ? "" : "s"
-            } from Supabase.`,
-      );
       setSelectedOfficerId((current) =>
         payload.personnel.some((person) => person.id === current)
           ? current
@@ -881,7 +864,6 @@ export default function QualificationsPage() {
     }
 
     void loadPersonnelDirectory();
-
     return () => {
       isMounted = false;
     };
@@ -896,9 +878,7 @@ export default function QualificationsPage() {
 
     async function loadWorkspace() {
       const remoteWorkspace = await loadRemoteRangeDayWorkspace();
-      const storedWorkspace =
-        remoteWorkspace ?? loadStoredRangeDayWorkspace();
-
+      const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace();
       if (!isMounted || !storedWorkspace) return;
 
       setWorkspace(storedWorkspace);
@@ -906,7 +886,6 @@ export default function QualificationsPage() {
     }
 
     void loadWorkspace();
-
     return () => {
       isMounted = false;
     };
@@ -917,21 +896,19 @@ export default function QualificationsPage() {
     [personnel, workspace],
   );
 
-  const selectedHistory =
-    officerHistories.find((history) => history.officerId === selectedOfficerId) ??
-    officerHistories[0];
-
   const filteredHistories = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase();
 
     return officerHistories.filter((history) => {
-      const statusMatches =
-        statusFilter === "All" || history.status === statusFilter;
-
+      const statusMatches = statusFilter === "All" || history.status === statusFilter;
+      const officer = getOfficerDetails(history.officerId, personnel);
       const searchableText = [
         history.officerName,
+        officer?.rankTitle ?? "",
+        officer?.badgeNumber ?? "",
+        officer?.assignment ?? "",
+        officer?.unitName ?? "",
         history.status,
-        history.statusReason,
         ...history.assignedFirearmIds.map(getFirearmName),
         ...history.qualificationEvents.flatMap((event) => [
           event.rangeDayTitle,
@@ -945,29 +922,30 @@ export default function QualificationsPage() {
         .join(" ")
         .toLowerCase();
 
-      const searchMatches =
-        !normalizedSearch || searchableText.includes(normalizedSearch);
-
-      return statusMatches && searchMatches;
+      return statusMatches && (!normalizedSearch || searchableText.includes(normalizedSearch));
     });
-  }, [officerHistories, searchText, statusFilter]);
+  }, [officerHistories, personnel, searchText, statusFilter]);
 
-  const currentCount = officerHistories.filter(
-    (history) => history.status === "Current",
-  ).length;
+  useEffect(() => {
+    if (filteredHistories.length === 0) return;
+    if (!filteredHistories.some((history) => history.officerId === selectedOfficerId)) {
+      setSelectedOfficerId(filteredHistories[0].officerId);
+    }
+  }, [filteredHistories, selectedOfficerId]);
 
-  const dueSoonCount = officerHistories.filter(
-    (history) => history.status === "Due Soon",
-  ).length;
+  const selectedHistory =
+    officerHistories.find((history) => history.officerId === selectedOfficerId) ??
+    filteredHistories[0] ??
+    officerHistories[0];
 
+  const selectedOfficer = selectedHistory
+    ? getOfficerDetails(selectedHistory.officerId, personnel)
+    : undefined;
+
+  const currentCount = officerHistories.filter((history) => history.status === "Current").length;
+  const dueSoonCount = officerHistories.filter((history) => history.status === "Due Soon").length;
   const attentionCount = officerHistories.filter((history) =>
-    ["Overdue", "Missing Night", "Failed", "No Record"].includes(
-      history.status,
-    ),
-  ).length;
-
-  const failedCount = officerHistories.filter(
-    (history) => history.failedQualifications.length > 0,
+    ["Overdue", "Missing Night", "Failed", "No Record"].includes(history.status),
   ).length;
 
   const clearFilters = () => {
@@ -977,324 +955,217 @@ export default function QualificationsPage() {
 
   return (
     <TracePointShell activePage="Qualification History">
-      <div className="mx-auto w-full max-w-[1600px] space-y-5">
-        <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-[22px] font-bold text-white">
-                Officer Qualification History
-              </h1>
-              <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
-                Review each officer&apos;s firearms qualification history, day/night
-                status, assigned firearms, failures, missed range days, and
-                linked malfunction records.
-              </p>
+      <div className="mx-auto w-full max-w-[1680px] space-y-4">
+        <header className="flex flex-col gap-3 border-b border-slate-800 pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-400">
+              <Shield size={14} />
+              {DEMO_DEPARTMENT.name}
             </div>
+            <h1 className="mt-2 text-[24px] font-bold tracking-tight text-white">
+              Qualification History
+            </h1>
+            <p className="mt-1 text-[12px] text-slate-500">
+              Current status, required day and night records, and complete qualification history by officer.
+            </p>
+          </div>
 
-            <div className="flex flex-wrap gap-2">
-              <div className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
-                <Shield size={14} className="text-blue-400" />
-                {DEMO_DEPARTMENT.name}
-              </div>
-
-              <div className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
-                <History size={14} className="text-blue-400" />
-                {hasStoredWorkspace ? "Saved range data loaded" : "No saved range data"}
-              </div>
-            </div>
+          <div className="text-left text-[11px] text-slate-500 lg:text-right">
+            <p className="mt-1">
+              {hasStoredWorkspace ? "Range workspace synchronized" : "No saved range workspace found"}
+            </p>
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <StatCard
-            label="Officers"
-            value={officerHistories.length}
-            sub="Tracked users"
-          />
-          <StatCard
-            label="Current"
-            value={currentCount}
-            sub="Day/night complete"
-          />
-          <StatCard
-            label="Due Soon"
-            value={dueSoonCount}
-            sub="Approaching cycle"
-          />
-          <StatCard
-            label="Needs Review"
-            value={attentionCount}
-            sub="Missing, overdue, or failed"
-          />
-          <StatCard
-            label="Failures"
-            value={failedCount}
-            sub="Officers with fail history"
-          />
-        </section>
-
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
-            <div className="relative">
-              <Search
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
-              />
-              <input
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search officer, firearm, range day, drill, location, or notes..."
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-[13px] text-white outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div className="relative">
-              <Filter
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
-              />
-              <select
-                value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as OfficerStatusFilter)
-                }
-                className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-[13px] text-white outline-none focus:border-blue-500"
-              >
-                {STATUS_FILTERS.map((status) => (
-                  <option key={status} value={status}>
-                    {status === "All" ? "All Statuses" : status}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-            >
-              <X size={14} />
-              Clear
-            </button>
-          </div>
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <SummaryMetric label="Personnel" value={officerHistories.length} detail="Active records reviewed" />
+          <SummaryMetric label="Current" value={currentCount} detail="Day and night complete" tone="green" />
+          <SummaryMetric label="Due Soon" value={dueSoonCount} detail="Approaching expiration" tone="amber" />
+          <SummaryMetric label="Needs Action" value={attentionCount} detail="Missing, overdue, failed" tone="red" />
         </section>
 
         {!hasStoredWorkspace && (
-          <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
-            <div className="flex gap-3">
-              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-              <p>
-                No saved range-day workspace was found in this browser. Create and
-                save a range day from the Range &amp; Training page first, then this
-                page will populate from that data.
-              </p>
-            </div>
+          <section className="flex gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-[12px] text-amber-200">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <p>
+              No saved range-day workspace was found. Qualification records will populate after a range day is saved.
+            </p>
           </section>
         )}
 
-        <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
-          <div className="space-y-3">
-            {filteredHistories.map((history) => (
-              <OfficerSummaryCard
-                key={history.officerId}
-                history={history}
-                selected={selectedHistory?.officerId === history.officerId}
-                onClick={() => setSelectedOfficerId(history.officerId)}
-              />
-            ))}
-
-            {filteredHistories.length === 0 && (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-center">
-                <p className="text-[14px] font-semibold text-white">
-                  No officers match those filters.
-                </p>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  Clear the search or choose a different status.
-                </p>
+        <section className="grid min-h-[680px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="border-b border-slate-800 xl:border-b-0 xl:border-r">
+            <div className="space-y-3 border-b border-slate-800 p-4">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+                <input
+                  value={searchText}
+                  onChange={(event) => setSearchText(event.target.value)}
+                  placeholder="Search personnel or records"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-[12px] text-white outline-none focus:border-blue-500"
+                />
               </div>
-            )}
-          </div>
 
-          {selectedHistory && (
-            <div className="space-y-5">
-              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      <StatusPill
-                        label={selectedHistory.status}
-                        tone={getStatusTone(selectedHistory.status)}
-                      />
-                      {selectedHistory.malfunctionCount > 0 && (
-                        <StatusPill
-                          label={`${selectedHistory.malfunctionCount} Malfunction${
-                            selectedHistory.malfunctionCount !== 1 ? "s" : ""
-                          }`}
-                          tone="amber"
-                        />
-                      )}
-                    </div>
-
-                    <h2 className="text-[20px] font-bold text-white">
-                      {selectedHistory.officerName}
-                    </h2>
-                    <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
-                      {selectedHistory.statusReason}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400 sm:min-w-[280px]">
-                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                      <p className="text-[10px] uppercase tracking-widest text-slate-600">
-                        Range Days
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-white">
-                        {selectedHistory.rosterCount}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                      <p className="text-[10px] uppercase tracking-widest text-slate-600">
-                        Missed
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-white">
-                        {selectedHistory.missedRangeDays}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-slate-300">
-                    <Sun size={15} className="text-amber-300" />
-                    Day Qualification
-                  </div>
-                  <p className="text-[18px] font-bold text-white">
-                    {selectedHistory.lastDayQualification
-                      ? formatDate(selectedHistory.lastDayQualification.date)
-                      : "Missing"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Score: {selectedHistory.lastDayQualification?.score ?? "—"}
-                  </p>
-                </div>
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-slate-300">
-                    <Moon size={15} className="text-blue-300" />
-                    Night Qualification
-                  </div>
-                  <p className="text-[18px] font-bold text-white">
-                    {selectedHistory.lastNightQualification
-                      ? formatDate(selectedHistory.lastNightQualification.date)
-                      : "Missing"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Score: {selectedHistory.lastNightQualification?.score ?? "—"}
-                  </p>
-                </div>
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-slate-300">
-                    <Crosshair size={15} className="text-emerald-300" />
-                    Rifle
-                  </div>
-                  <p className="text-[18px] font-bold text-white">
-                    {selectedHistory.lastRifleQualification
-                      ? formatDate(selectedHistory.lastRifleQualification.date)
-                      : "No Record"}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Last rifle-related record
-                  </p>
-                </div>
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-slate-300">
-                    <ShieldAlert size={15} className="text-red-300" />
-                    Failures
-                  </div>
-                  <p className="text-[18px] font-bold text-white">
-                    {selectedHistory.failedQualifications.length}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Qualification failures recorded
-                  </p>
-                </div>
-              </section>
-
-              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                <h3 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-white">
-                  <Target size={15} className="text-blue-400" />
-                  Firearms Referenced
-                </h3>
-
-                {selectedHistory.assignedFirearmIds.length > 0 ? (
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {selectedHistory.assignedFirearmIds.map((firearmId) => (
-                      <div
-                        key={firearmId}
-                        className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3 text-[12px] text-slate-300"
-                      >
-                        {getFirearmName(firearmId)}
-                      </div>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <div className="relative">
+                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as OfficerStatusFilter)}
+                    className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-[12px] text-white outline-none focus:border-blue-500"
+                  >
+                    {STATUS_FILTERS.map((status) => (
+                      <option key={status} value={status}>
+                        {status === "All" ? "All statuses" : status}
+                      </option>
                     ))}
-                  </div>
-                ) : (
-                  <p className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3 text-[12px] text-slate-500">
-                    No firearms have been linked to this officer through saved
-                    range-day roster entries.
-                  </p>
-                )}
-              </section>
-
-              <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="flex items-center gap-2 text-[15px] font-bold text-white">
-                      <ClipboardList size={15} className="text-blue-400" />
-                      Qualification Timeline
-                    </h3>
-                    <p className="mt-1 text-[12px] text-slate-500">
-                      Results pulled from saved Range &amp; Training entries.
-                    </p>
-                  </div>
-
-                  <div className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
-                    <CalendarDays size={14} className="text-blue-400" />
-                    {selectedHistory.qualificationEvents.length} record
-                    {selectedHistory.qualificationEvents.length !== 1 ? "s" : ""}
-                  </div>
+                  </select>
                 </div>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  aria-label="Clear filters"
+                  className="rounded-xl border border-slate-700 px-3 text-slate-400 transition hover:border-blue-500/40 hover:text-white"
+                >
+                  <X size={15} />
+                </button>
+              </div>
 
-                <div className="space-y-3">
-                  {selectedHistory.qualificationEvents.map((event) => (
-                    <QualificationEventRow key={event.id} event={event} />
-                  ))}
+              <p className="text-[11px] text-slate-600">
+                {filteredHistories.length} of {officerHistories.length} personnel
+              </p>
+            </div>
 
-                  {selectedHistory.qualificationEvents.length === 0 && (
-                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-center">
-                      <FileText
-                        size={20}
-                        className="mx-auto mb-2 text-slate-600"
-                      />
-                      <p className="text-[13px] font-semibold text-white">
-                        No qualification records found for this officer.
-                      </p>
+            <div className="max-h-[560px] overflow-y-auto xl:max-h-[760px]">
+              {filteredHistories.map((history) => (
+                <OfficerListRow
+                  key={history.officerId}
+                  history={history}
+                  officer={getOfficerDetails(history.officerId, personnel)}
+                  selected={selectedHistory?.officerId === history.officerId}
+                  onClick={() => setSelectedOfficerId(history.officerId)}
+                />
+              ))}
+
+              {filteredHistories.length === 0 && (
+                <div className="px-5 py-12 text-center">
+                  <User size={22} className="mx-auto text-slate-700" />
+                  <p className="mt-3 text-[13px] font-semibold text-white">No matching personnel</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Adjust the search or status filter.</p>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <main className="min-w-0">
+            {selectedHistory ? (
+              <>
+                <section className="border-b border-slate-800 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill label={selectedHistory.status} tone={getStatusTone(selectedHistory.status)} />
+                        {selectedHistory.malfunctionCount > 0 && (
+                          <StatusPill label={`${selectedHistory.malfunctionCount} malfunction${selectedHistory.malfunctionCount === 1 ? "" : "s"}`} tone="amber" />
+                        )}
+                      </div>
+                      <h2 className="mt-3 text-[22px] font-bold text-white">{selectedHistory.officerName}</h2>
                       <p className="mt-1 text-[12px] text-slate-500">
-                        Enter day/night qualification results from a saved range
-                        day to populate this timeline.
+                        {[selectedOfficer?.rankTitle, selectedOfficer?.badgeNumber ? `Badge ${selectedOfficer.badgeNumber}` : null, selectedOfficer?.assignment ?? selectedOfficer?.unitName]
+                          .filter(Boolean)
+                          .join(" · ") || "Department personnel"}
                       </p>
+                      <p className="mt-3 max-w-3xl text-[12px] leading-5 text-slate-400">
+                        {selectedHistory.statusReason}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 lg:min-w-[330px]">
+                      <SummaryMetric label="Range Days" value={selectedHistory.rosterCount} detail="Roster entries" />
+                      <SummaryMetric label="Missed" value={selectedHistory.missedRangeDays} detail="Recorded absences" tone={selectedHistory.missedRangeDays > 0 ? "amber" : "default"} />
+                      <SummaryMetric label="Failures" value={selectedHistory.failedQualifications.length} detail="Recorded results" tone={selectedHistory.failedQualifications.length > 0 ? "red" : "default"} />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="border-b border-slate-800 p-4 sm:p-5">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-[13px] font-bold text-white">Current Qualification Status</h3>
+                    <p className="text-[11px] text-slate-600">365-day qualification cycle</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <CurrentQualificationCard label="Day Qualification" icon={<Sun size={14} className="text-amber-300" />} event={selectedHistory.lastDayQualification} emptyText="Missing" />
+                    <CurrentQualificationCard label="Night Qualification" icon={<Moon size={14} className="text-blue-300" />} event={selectedHistory.lastNightQualification} emptyText="Missing" />
+                    <CurrentQualificationCard label="Rifle Qualification" icon={<Crosshair size={14} className="text-emerald-300" />} event={selectedHistory.lastRifleQualification} emptyText="No record" />
+                  </div>
+                </section>
+
+                <section className="border-b border-slate-800 p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-[13px] font-bold text-white">
+                        <Target size={14} className="text-blue-400" />
+                        Firearms Referenced
+                      </h3>
+                      <p className="mt-1 text-[11px] text-slate-500">Firearms linked through range-day roster records.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedHistory.assignedFirearmIds.length > 0 ? (
+                      selectedHistory.assignedFirearmIds.map((firearmId) => (
+                        <span key={firearmId} className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] font-medium text-slate-300">
+                          {getFirearmName(firearmId)}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-[11px] text-slate-500">No firearms are linked to this officer.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <div className="flex flex-col gap-2 border-b border-slate-800 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-[13px] font-bold text-white">
+                        <ClipboardList size={14} className="text-blue-400" />
+                        Qualification Timeline
+                      </h3>
+                      <p className="mt-1 text-[11px] text-slate-500">Most recent records appear first.</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                      <CalendarDays size={14} />
+                      {selectedHistory.qualificationEvents.length} record{selectedHistory.qualificationEvents.length === 1 ? "" : "s"}
+                    </div>
+                  </div>
+
+                  {selectedHistory.qualificationEvents.length > 0 ? (
+                    <div>
+                      {selectedHistory.qualificationEvents.map((event) => (
+                        <QualificationEventRow key={event.id} event={event} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-5 py-14 text-center">
+                      <FileText size={22} className="mx-auto text-slate-700" />
+                      <p className="mt-3 text-[13px] font-semibold text-white">No qualification records</p>
+                      <p className="mt-1 text-[11px] text-slate-500">Saved range-day results will appear here.</p>
                     </div>
                   )}
+                </section>
+              </>
+            ) : (
+              <div className="flex min-h-[500px] items-center justify-center p-6 text-center">
+                <div>
+                  <History size={24} className="mx-auto text-slate-700" />
+                  <p className="mt-3 text-[13px] font-semibold text-white">Select an officer</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Choose a personnel record to view qualification history.</p>
                 </div>
-              </section>
-            </div>
-          )}
+              </div>
+            )}
+          </main>
         </section>
       </div>
     </TracePointShell>
   );
 }
-
