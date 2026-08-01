@@ -153,8 +153,22 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
       },
       {
         key: "caliber",
-        label: "Caliber",
-        aliases: ["caliber", "calibre"],
+        label: "Caliber / Gauge",
+        required: true,
+        aliases: [
+          "caliber",
+          "calibre",
+          "cal",
+          "gauge",
+          "caliber gauge",
+          "caliber/gauge",
+          "cal gauge",
+          "cal/gauge",
+          "weapon caliber",
+          "weapon calibre",
+        ],
+        help:
+          "Required. Map the firearm caliber or shotgun gauge from the source file.",
       },
       {
         key: "assetNumber",
