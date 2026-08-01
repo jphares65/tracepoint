@@ -464,12 +464,53 @@ function normalizeStatus(value: string) {
   return "In Service";
 }
 
+const PERSONNEL_RANK_PREFIXES = [
+  "chief",
+  "deputy chief",
+  "captain",
+  "capt",
+  "lt",
+  "lieutenant",
+  "sgt",
+  "sergeant",
+  "cpl",
+  "corporal",
+  "det",
+  "detective",
+  "officer",
+  "patrolman",
+  "patrol officer",
+  "po",
+  "spo",
+  "special police officer",
+];
+
 function normalizePersonLookup(value: string) {
-  return value
+  let normalized = value
     .trim()
     .toLowerCase()
     .replace(/[.,]/g, " ")
     .replace(/\s+/g, " ");
+
+  for (const prefix of PERSONNEL_RANK_PREFIXES.sort(
+    (left, right) => right.length - left.length,
+  )) {
+    if (normalized === prefix) return "";
+
+    if (normalized.startsWith(`${prefix} `)) {
+      normalized = normalized.slice(prefix.length).trim();
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+function getLastName(value: string) {
+  const normalized = normalizePersonLookup(value);
+  const parts = normalized.split(" ").filter(Boolean);
+
+  return parts.at(-1) ?? "";
 }
 
 function getPersonnelMatch(
@@ -515,6 +556,20 @@ function getPersonnelMatch(
 
     if (reorderedMatches.length === 1) {
       return reorderedMatches[0];
+    }
+  }
+
+  const sourceLastName = getLastName(value);
+
+  if (sourceLastName) {
+    const surnameMatches = personnel.filter((person) =>
+      [person.fullName, person.displayName]
+        .filter(Boolean)
+        .some((candidate) => getLastName(candidate) === sourceLastName),
+    );
+
+    if (surnameMatches.length === 1) {
+      return surnameMatches[0];
     }
   }
 
