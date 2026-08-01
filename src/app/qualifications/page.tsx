@@ -29,12 +29,6 @@ import type {
   RangeRosterEntry,
 } from "@/app/lib/tracepoint/range-day-types";
 
-import {
-  DEMO_DEPARTMENT,
-  MOCK_FIREARMS,
-  MOCK_USERS,
-} from "@/app/lib/tracepoint/mock-data";
-
 type QualificationStatus =
   | "Current"
   | "Due Soon"
@@ -131,22 +125,9 @@ const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   malfunctions: [],
 };
 
-const FALLBACK_PERSONNEL: PilotPersonnel[] = MOCK_USERS.map((user: any) => ({
-  id: user.id,
-  userId: user.id,
-  displayName: user.name ?? user.fullName ?? user.email ?? "Demo Officer",
-  fullName: user.name ?? user.fullName ?? "Demo Officer",
-  email: user.email ?? null,
-  badgeNumber: user.badgeNumber ?? user.badge ?? user.employeeNumber ?? null,
-  rankTitle: user.rankTitle ?? user.rank ?? null,
-  unitName: user.unitName ?? user.unit ?? user.assignment ?? null,
-  employeeNumber: user.employeeNumber ?? null,
-  assignment: user.assignment ?? user.unitName ?? user.unit ?? "Patrol",
-  roles: user.roles ?? [],
-  isActive: true,
-}));
+const EMPTY_PERSONNEL: PilotPersonnel[] = [];
 
-let activePersonnelDirectory: PilotPersonnel[] = FALLBACK_PERSONNEL;
+let activePersonnelDirectory: PilotPersonnel[] = EMPTY_PERSONNEL;
 
 const STATUS_FILTERS: OfficerStatusFilter[] = [
   "All",
@@ -194,8 +175,8 @@ function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
 async function loadPilotPersonnel() {
   if (typeof window === "undefined") {
     return {
-      personnel: FALLBACK_PERSONNEL,
-      source: "fallback",
+      personnel: EMPTY_PERSONNEL,
+      source: "empty",
     };
   }
 
@@ -206,7 +187,7 @@ async function loadPilotPersonnel() {
     });
 
     if (!response.ok) {
-      throw new Error("Unable to load pilot personnel.");
+      throw new Error("Unable to load personnel.");
     }
 
     const payload = (await response.json()) as {
@@ -214,27 +195,16 @@ async function loadPilotPersonnel() {
       source?: string;
     };
 
-    const personnel = Array.isArray(payload.personnel)
-      ? payload.personnel
-      : [];
-
-    if (personnel.length === 0) {
-      return {
-        personnel: FALLBACK_PERSONNEL,
-        source: "fallback",
-      };
-    }
-
     return {
-      personnel,
-      source: payload.source ?? "supabase_department_memberships",
+      personnel: Array.isArray(payload.personnel) ? payload.personnel : [],
+      source: payload.source ?? "department_memberships",
     };
   } catch (error) {
-    console.warn("Could not load pilot personnel.", error);
+    console.warn("Could not load personnel.", error);
 
     return {
-      personnel: FALLBACK_PERSONNEL,
-      source: "fallback",
+      personnel: EMPTY_PERSONNEL,
+      source: "error",
     };
   }
 }
@@ -330,7 +300,6 @@ function getUserName(userId?: string) {
 
   return (
     activePersonnelDirectory.find((person) => person.id === userId)?.displayName ??
-    MOCK_USERS.find((user) => user.id === userId)?.name ??
     "Unknown User"
   );
 }
@@ -338,21 +307,13 @@ function getUserName(userId?: string) {
 function getFirearmName(firearmId?: string) {
   if (!firearmId) return "No firearm recorded";
 
-  const firearm = MOCK_FIREARMS.find((item) => item.id === firearmId);
-
-  if (!firearm) return "Unknown firearm";
-
-  return `${firearm.make} ${firearm.model} (${firearm.serialNumber})`;
+  return `Firearm ${firearmId}`;
 }
 
 function getFirearmShortName(firearmId?: string) {
   if (!firearmId) return "No firearm";
 
-  const firearm = MOCK_FIREARMS.find((item) => item.id === firearmId);
-
-  if (!firearm) return "Unknown firearm";
-
-  return `${firearm.model} · ${firearm.serialNumber}`;
+  return `Firearm ${firearmId}`;
 }
 
 function isQualificationText(value?: string) {
@@ -839,13 +800,11 @@ function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) 
 
 export default function QualificationsPage() {
   const [workspace, setWorkspace] = useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
-  const [personnel, setPersonnel] = useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
+  const [personnel, setPersonnel] = useState<PilotPersonnel[]>(EMPTY_PERSONNEL);
   const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<OfficerStatusFilter>("All");
-  const [selectedOfficerId, setSelectedOfficerId] = useState<string>(
-    FALLBACK_PERSONNEL[0]?.id ?? "",
-  );
+  const [selectedOfficerId, setSelectedOfficerId] = useState<string>("");
 
   useEffect(() => {
     let isMounted = true;
@@ -960,7 +919,7 @@ export default function QualificationsPage() {
           <div>
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-400">
               <Shield size={14} />
-              {DEMO_DEPARTMENT.name}
+              Department Qualification Records
             </div>
             <h1 className="mt-2 text-[24px] font-bold tracking-tight text-white">
               Qualification History
@@ -972,7 +931,7 @@ export default function QualificationsPage() {
 
           <div className="text-left text-[11px] text-slate-500 lg:text-right">
             <p className="mt-1">
-              {hasStoredWorkspace ? "Range workspace synchronized" : "No saved range workspace found"}
+              {hasStoredWorkspace ? "Qualification records loaded" : "No qualification records found"}
             </p>
           </div>
         </header>
@@ -988,7 +947,7 @@ export default function QualificationsPage() {
           <section className="flex gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-[12px] text-amber-200">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <p>
-              No saved range-day workspace was found. Qualification records will populate after a range day is saved.
+              No qualification history is available yet. Records will appear after completed range-day results are saved.
             </p>
           </section>
         )}
