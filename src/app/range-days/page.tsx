@@ -49,12 +49,11 @@ import {
   getRangeDayCompletionSummary,
 } from "@/app/lib/tracepoint/range-day-utils";
 
-import {
-  CURRENT_USER,
-  DEMO_DEPARTMENT,
-  MOCK_FIREARMS,
-  MOCK_USERS,
-} from "@/app/lib/tracepoint/mock-data";
+import { CURRENT_USER_PROFILE } from "@/app/lib/tracepoint/current-user";
+
+const CURRENT_USER = {
+  id: CURRENT_USER_PROFILE.id,
+};
 
 type RangeDayType =
   | "Qualification"
@@ -173,6 +172,19 @@ type PilotPersonnel = {
   isActive?: boolean;
 };
 
+type LiveFirearm = {
+  id: string;
+  department_id: string;
+  make: string;
+  model: string;
+  serial_number: string;
+  firearm_type?: string | null;
+  caliber?: string | null;
+  asset_number?: string | null;
+  condition_status?: string | null;
+  is_active?: boolean;
+};
+
 type DrillLifecycleSummary = {
   timesPerformed: number;
   lastPerformedDate?: string;
@@ -188,22 +200,11 @@ type DrillTemplateWithLifecycle = ExtendedDrillTemplate & {
 
 const DRILL_RECOMMENDATION_STALE_DAYS = 90;
 
-const FALLBACK_PERSONNEL: PilotPersonnel[] = MOCK_USERS.map((user) => ({
-  id: user.id,
-  userId: user.id,
-  displayName: user.name,
-  fullName: user.name,
-  email: "email" in user ? String(user.email ?? "") : "",
-  badgeNumber: "",
-  rankTitle: "",
-  unitName: "Department Personnel",
-  employeeNumber: "",
-  assignment: "Department Personnel",
-  roles: [],
-  isActive: true,
-}));
+const EMPTY_PERSONNEL: PilotPersonnel[] = [];
+const EMPTY_FIREARMS: LiveFirearm[] = [];
 
-let activePersonnelDirectory: PilotPersonnel[] = FALLBACK_PERSONNEL;
+let activePersonnelDirectory: PilotPersonnel[] = EMPTY_PERSONNEL;
+let activeFirearmDirectory: LiveFirearm[] = [];
 
 const DEFAULT_EQUIPMENT_CHECKLIST: RangeEquipmentItem[] = [
   { id: "equipment-ammo", label: "Ammunition staged", required: true, packed: false },
@@ -220,269 +221,10 @@ type ReadinessItem = {
   status: "ready" | "warning" | "critical";
 };
 
-const DRILL_TEMPLATES: ExtendedDrillTemplate[] = [
-  {
-    id: "template-qual-1",
-    departmentId: DEMO_DEPARTMENT.id,
-    name: "Handgun Qualification Course",
-    category: "Qualification",
-    description: "Formal handgun qualification course.",
-    instructions:
-      "Run the department-approved handgun qualification course. Record score, pass/fail status, firearm used, and instructor notes.",
-    firearmType: "Handgun",
-    roundCount: 50,
-    estimatedMinutes: 30,
-    difficulty: "Intermediate",
-    defaultScoringMode: "Scored",
-    defaultPassingScore: 80,
-    defaultMaxScore: 100,
-    defaultRunCount: 2,
-    defaultRequired: true,
-    tags: ["qualification", "handgun", "annual"],
-    status: "Active",
-    createdByUserId: CURRENT_USER.id,
-    createdAt: "2026-06-18T12:00:00Z",
-    isDepartmentStandard: true,
-    departmentStandardName: "Annual Handgun Standard",
-    departmentStandardScoringBasis: "Percentage",
-    departmentStandardMinimumScore: 80,
-    departmentStandardAppliesTo: "All sworn officers",
-    departmentStandardRemediationRequired: true,
-    departmentStandardRetestRequired: true,
-    departmentStandardEffectiveDate: "2026-01-01",
-    notes: "Primary handgun qualification template.",
-  },
-  {
-    id: "template-drill-1",
-    departmentId: DEMO_DEPARTMENT.id,
-    name: "Failure Drill",
-    category: "Marksmanship",
-    description: "Two rounds to body, one round to head.",
-    instructions:
-      "Officer begins from the holster or ready position based on range master direction. Record pass/fail and any observed deficiencies.",
-    firearmType: "Handgun",
-    roundCount: 3,
-    estimatedMinutes: 10,
-    difficulty: "Intermediate",
-    defaultScoringMode: "Pass/Fail",
-    defaultRunCount: 3,
-    defaultRequired: false,
-    tags: ["handgun", "marksmanship", "failure drill"],
-    status: "Active",
-    createdByUserId: CURRENT_USER.id,
-    createdAt: "2026-06-18T12:00:00Z",
-    notes: "Useful as a supplemental performance drill.",
-  },
-  {
-    id: "template-drill-2",
-    departmentId: DEMO_DEPARTMENT.id,
-    name: "Malfunction Clearance",
-    category: "Malfunction Clearance",
-    description: "Immediate action and remedial action drill.",
-    instructions:
-      "Use only expected/training-induced malfunctions for the drill. Separately mark any unanticipated malfunction that may indicate a firearm issue.",
-    firearmType: "Any",
-    roundCount: 6,
-    estimatedMinutes: 15,
-    difficulty: "Basic",
-    defaultScoringMode: "Completion Only",
-    defaultRunCount: 3,
-    defaultRequired: false,
-    tags: ["malfunction", "weapon handling", "remedial action"],
-    status: "Active",
-    createdByUserId: CURRENT_USER.id,
-    createdAt: "2026-06-18T12:00:00Z",
-    notes:
-      "Training malfunctions should not automatically create armorer alerts unless marked as unanticipated.",
-  },
-  {
-    id: "template-drill-3",
-    departmentId: DEMO_DEPARTMENT.id,
-    name: "Low Light Decision Making",
-    category: "Low Light",
-    description: "Low-light threat identification and engagement.",
-    instructions:
-      "Instructor documents decision-making, target identification, light discipline, and safety observations.",
-    firearmType: "Handgun",
-    roundCount: 10,
-    estimatedMinutes: 20,
-    difficulty: "Advanced",
-    defaultScoringMode: "Notes Only",
-    defaultRunCount: 2,
-    defaultRequired: false,
-    tags: ["low light", "decision making", "judgment"],
-    status: "Active",
-    createdByUserId: CURRENT_USER.id,
-    createdAt: "2026-06-18T12:00:00Z",
-    notes:
-      "Designed for qualitative instructor observations rather than numeric scoring.",
-  },
-  {
-    id: "template-rifle-1",
-    departmentId: DEMO_DEPARTMENT.id,
-    name: "50-Yard Zero Confirmation",
-    category: "Rifle",
-    description: "Rifle zero confirmation and grouping.",
-    instructions:
-      "Confirm zero from a supported position. Record completion, notes, and any firearm concerns.",
-    firearmType: "Rifle",
-    roundCount: 20,
-    estimatedMinutes: 20,
-    difficulty: "Basic",
-    defaultScoringMode: "Completion Only",
-    defaultRunCount: 2,
-    defaultRequired: true,
-    tags: ["rifle", "zero", "familiarization"],
-    status: "Active",
-    createdByUserId: CURRENT_USER.id,
-    createdAt: "2026-06-18T12:00:00Z",
-    notes: "Rifle familiarization / zero confirmation template.",
-  },
-  {
-    id: "template-rifle-2",
-    departmentId: DEMO_DEPARTMENT.id,
-    name: "Rifle to Pistol Transition",
-    category: "Transition",
-    description: "Transition from rifle to handgun under instructor direction.",
-    instructions:
-      "Officer safely transitions from rifle to handgun. Instructor records pass/fail and any weapon-handling concerns.",
-    firearmType: "Any",
-    roundCount: 10,
-    estimatedMinutes: 15,
-    difficulty: "Advanced",
-    defaultScoringMode: "Pass/Fail",
-    defaultRunCount: 3,
-    defaultRequired: false,
-    tags: ["rifle", "handgun", "transition"],
-    status: "Active",
-    createdByUserId: CURRENT_USER.id,
-    createdAt: "2026-06-18T12:00:00Z",
-    notes: "Advanced transition drill.",
-  },
-];
-
-const INITIAL_RANGE_DAYS: PlannedRangeDay[] = [
-  {
-    id: "range-1",
-    departmentId: DEMO_DEPARTMENT.id,
-    title: "Fall 2026 Handgun Qualification",
-    date: "2026-10-08",
-    startTime: "0800",
-    endTime: "1200",
-    location: "Flemington Indoor Range",
-    status: "Planned",
-    rangeType: "Qualification",
-    packetStatus: "Ready",
-    leadInstructorId: "user-3",
-    instructorIds: ["user-3", "user-4"],
-    weather: "Indoor",
-    staffingNotes: "Lead instructor plus one armorer/range safety support.",
-    outline: [
-      "Safety briefing",
-      "Handgun qualification course",
-      "Failure drill",
-      "Malfunction clearance drill",
-    ],
-    notes: "Qualification plus supplemental drills.",
-    equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
-  },
-  {
-    id: "range-2",
-    departmentId: DEMO_DEPARTMENT.id,
-    title: "Patrol Rifle Familiarization",
-    date: "2026-10-22",
-    startTime: "0900",
-    endTime: "1300",
-    location: "Outdoor Training Range",
-    status: "Planned",
-    rangeType: "Rifle",
-    packetStatus: "In Progress",
-    leadInstructorId: "user-3",
-    instructorIds: ["user-3"],
-    weather: "Outdoor",
-    staffingNotes: "Needs one additional instructor or armorer before final packet.",
-    outline: [
-      "Rifle safety briefing",
-      "50-yard zero confirmation",
-      "Rifle to pistol transition",
-      "Instructor notes and deficiencies",
-    ],
-    notes: "Rifle zero confirmation, transitions, and barricade work.",
-    equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
-  },
-  {
-    id: "range-3",
-    departmentId: DEMO_DEPARTMENT.id,
-    title: "Low Light Decision Making",
-    date: "2026-11-05",
-    startTime: "1800",
-    endTime: "2200",
-    location: "Flemington Indoor Range",
-    status: "Planned",
-    rangeType: "Low Light",
-    packetStatus: "Needs Setup",
-    leadInstructorId: "user-3",
-    instructorIds: ["user-3", "user-4"],
-    weather: "Indoor",
-    staffingNotes: "Two instructors assigned due to low-light decision-making component.",
-    outline: [
-      "Low-light safety briefing",
-      "Threat identification",
-      "Light discipline",
-      "Decision-making observations",
-    ],
-    notes: "Low-light identification, movement, and decision-making drills.",
-    equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
-  },
-];
-
-const INITIAL_RANGE_ROSTER: RangeRosterEntry[] = [
-  {
-    id: "roster-1",
-    rangeDayId: "range-1",
-    officerId: "user-1",
-    assignedFirearmIds: ["gun-1"],
-    attended: true,
-  },
-  {
-    id: "roster-2",
-    rangeDayId: "range-1",
-    officerId: "user-2",
-    assignedFirearmIds: ["gun-2"],
-    attended: true,
-  },
-  {
-    id: "roster-3",
-    rangeDayId: "range-2",
-    officerId: "user-1",
-    assignedFirearmIds: ["gun-2"],
-    attended: false,
-  },
-  {
-    id: "roster-4",
-    rangeDayId: "range-2",
-    officerId: "user-2",
-    assignedFirearmIds: ["gun-2"],
-    attended: false,
-  },
-  {
-    id: "roster-5",
-    rangeDayId: "range-3",
-    officerId: "user-1",
-    assignedFirearmIds: ["gun-1"],
-    attended: false,
-  },
-];
-
-const INITIAL_RANGE_DRILLS: ExtendedRangeDayDrill[] = [
-  createDrillFromTemplate(DRILL_TEMPLATES[0], "range-1"),
-  createDrillFromTemplate(DRILL_TEMPLATES[1], "range-1"),
-  createDrillFromTemplate(DRILL_TEMPLATES[2], "range-1"),
-  createDrillFromTemplate(DRILL_TEMPLATES[4], "range-2"),
-  createDrillFromTemplate(DRILL_TEMPLATES[5], "range-2"),
-  createDrillFromTemplate(DRILL_TEMPLATES[3], "range-3"),
-  createDrillFromTemplate(DRILL_TEMPLATES[2], "range-3"),
-];
+const DRILL_TEMPLATES: ExtendedDrillTemplate[] = [];
+const INITIAL_RANGE_DAYS: PlannedRangeDay[] = [];
+const INITIAL_RANGE_ROSTER: RangeRosterEntry[] = [];
+const INITIAL_RANGE_DRILLS: ExtendedRangeDayDrill[] = [];
 
 const MALFUNCTION_TYPES: MalfunctionType[] = [
   "Failure to Feed",
@@ -655,7 +397,7 @@ async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWork
 
     return payload.workspace ?? null;
   } catch (error) {
-    console.warn("Could not load Supabase range day workspace.", error);
+    console.warn("Could not load range day workspace.", error);
     return null;
   }
 }
@@ -677,7 +419,7 @@ function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
       },
       body: JSON.stringify({ workspace }),
     }).catch((error) => {
-      console.warn("Could not save Supabase range day workspace.", error);
+      console.warn("Could not save range day workspace.", error);
     });
   }, 650);
 }
@@ -685,8 +427,8 @@ function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
 async function loadPilotPersonnel() {
   if (typeof window === "undefined") {
     return {
-      personnel: FALLBACK_PERSONNEL,
-      source: "fallback",
+      personnel: EMPTY_PERSONNEL,
+      source: "empty",
     };
   }
 
@@ -697,7 +439,7 @@ async function loadPilotPersonnel() {
     });
 
     if (!response.ok) {
-      throw new Error("Unable to load pilot personnel.");
+      throw new Error("Unable to load department personnel.");
     }
 
     const payload = (await response.json()) as {
@@ -705,76 +447,55 @@ async function loadPilotPersonnel() {
       source?: string;
     };
 
-    const personnel = Array.isArray(payload.personnel)
-      ? payload.personnel
-      : [];
-
-    if (personnel.length === 0) {
-      return {
-        personnel: FALLBACK_PERSONNEL,
-        source: "fallback",
-      };
-    }
-
     return {
-      personnel,
-      source: payload.source ?? "supabase_department_memberships",
+      personnel: Array.isArray(payload.personnel) ? payload.personnel : [],
+      source: payload.source ?? "department_memberships",
     };
   } catch (error) {
-    console.warn("Could not load pilot personnel.", error);
+    console.warn("Could not load department personnel.", error);
 
     return {
-      personnel: FALLBACK_PERSONNEL,
-      source: "fallback",
+      personnel: EMPTY_PERSONNEL,
+      source: "error",
     };
   }
 }
 
-function getPreferredPersonnel(
-  personnel: PilotPersonnel[],
-  preferredRoles: string[],
-) {
-  return (
-    personnel.find((person) =>
-      (person.roles ?? []).some((role) => preferredRoles.includes(role)),
-    ) ?? personnel[0]
-  );
-}
+async function loadArmoryFirearms() {
+  if (typeof window === "undefined") {
+    return {
+      departmentId: "",
+      firearms: EMPTY_FIREARMS,
+    };
+  }
 
-function getMockPersonnelReplacementMap(personnel: PilotPersonnel[]) {
-  if (personnel.length === 0) return {} as Record<string, string>;
+  try {
+    const response = await fetch("/api/armory/firearms", {
+      method: "GET",
+      cache: "no-store",
+    });
 
-  return {
-    "user-1": personnel[0]?.id ?? "user-1",
-    "user-2": personnel[1]?.id ?? personnel[0]?.id ?? "user-2",
-    "user-3":
-      getPreferredPersonnel(personnel, [
-        "range_master",
-        "instructor",
-        "administrator",
-        "chief",
-        "command_staff",
-      ])?.id ?? personnel[0]?.id ?? "user-3",
-    "user-4":
-      getPreferredPersonnel(personnel, ["armorer", "range_master", "administrator"])
-        ?.id ?? personnel[0]?.id ?? "user-4",
-    "user-5":
-      getPreferredPersonnel(personnel, ["chief", "command_staff", "administrator"])
-        ?.id ?? personnel[0]?.id ?? "user-5",
-    "user-6":
-      getPreferredPersonnel(personnel, ["administrator", "chief", "command_staff"])
-        ?.id ?? personnel[0]?.id ?? "user-6",
-  };
-}
+    if (!response.ok) {
+      throw new Error("Unable to load armory firearms.");
+    }
 
-function replacePersonnelId(value: string | null | undefined, replacementMap: Record<string, string>) {
-  if (!value) return value;
+    const payload = (await response.json()) as {
+      departmentId?: string;
+      firearms?: LiveFirearm[];
+    };
 
-  return replacementMap[value] ?? value;
-}
+    return {
+      departmentId: payload.departmentId ?? "",
+      firearms: Array.isArray(payload.firearms) ? payload.firearms : [],
+    };
+  } catch (error) {
+    console.warn("Could not load armory firearms.", error);
 
-function hasReplaceablePersonnelId(value: string | null | undefined, replacementMap: Record<string, string>) {
-  return Boolean(value && replacementMap[value]);
+    return {
+      departmentId: "",
+      firearms: EMPTY_FIREARMS,
+    };
+  }
 }
 
 function dedupeRosterEntries(entries: RangeRosterEntry[]) {
@@ -1340,7 +1061,6 @@ function buildDrillLifecycleLibrary({
 function getUserName(userId: string) {
   return (
     activePersonnelDirectory.find((person) => person.id === userId)?.displayName ??
-    MOCK_USERS.find((user) => user.id === userId)?.name ??
     "Unknown User"
   );
 }
@@ -1348,11 +1068,11 @@ function getUserName(userId: string) {
 function getFirearmName(firearmId?: string) {
   if (!firearmId) return "No firearm selected";
 
-  const firearm = MOCK_FIREARMS.find((item) => item.id === firearmId);
+  const firearm = activeFirearmDirectory.find((item) => item.id === firearmId);
 
   if (!firearm) return "Unknown firearm";
 
-  return `${firearm.make} ${firearm.model} (${firearm.serialNumber})`;
+  return `${firearm.make} ${firearm.model} (${firearm.serial_number})`;
 }
 
 function StatusPill({
@@ -1463,7 +1183,7 @@ function PrintableRangePacket({
           <div>
             <p className="packet-eyebrow">TracePoint Range Packet</p>
             <h1>{rangeDay.title}</h1>
-            <p className="packet-subtitle">{(DEMO_DEPARTMENT as { name?: string }).name ?? "Demo Department"}</p>
+            <p className="packet-subtitle">Department Range & Training</p>
           </div>
           <div className="packet-meta-box">
             <p>Packet Status</p>
@@ -1703,10 +1423,12 @@ export default function RangeDaysPage() {
     useState<RangeRosterEntry[]>(INITIAL_RANGE_ROSTER);
 
   const [personnel, setPersonnel] =
-    useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
-  const [hasLivePersonnel, setHasLivePersonnel] = useState(false);
+    useState<PilotPersonnel[]>(EMPTY_PERSONNEL);
+  const [firearms, setFirearms] =
+    useState<LiveFirearm[]>(EMPTY_FIREARMS);
+  const [departmentId, setDepartmentId] = useState("");
   const [personnelMessage, setPersonnelMessage] = useState(
-    "Using demo personnel until live department personnel is loaded.",
+    "Loading department personnel...",
   );
 
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
@@ -2065,24 +1787,30 @@ export default function RangeDaysPage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadPersonnelDirectory() {
-      const payload = await loadPilotPersonnel();
+    async function loadDepartmentData() {
+      const [personnelPayload, armoryPayload] = await Promise.all([
+        loadPilotPersonnel(),
+        loadArmoryFirearms(),
+      ]);
 
       if (!isMounted) return;
 
-      activePersonnelDirectory = payload.personnel;
-      setPersonnel(payload.personnel);
-      setHasLivePersonnel(payload.source !== "fallback");
+      activePersonnelDirectory = personnelPayload.personnel;
+      activeFirearmDirectory = armoryPayload.firearms;
+
+      setPersonnel(personnelPayload.personnel);
+      setFirearms(armoryPayload.firearms);
+      setDepartmentId(armoryPayload.departmentId);
       setPersonnelMessage(
-        payload.source === "fallback"
-          ? "Using demo personnel."
-          : `Using ${payload.personnel.length} live department personnel record${
-              payload.personnel.length === 1 ? "" : "s"
-            } from Supabase.`,
+        personnelPayload.source === "error"
+          ? "Department personnel could not be loaded."
+          : `${personnelPayload.personnel.length} department personnel record${
+              personnelPayload.personnel.length === 1 ? "" : "s"
+            } available.`,
       );
     }
 
-    void loadPersonnelDirectory();
+    void loadDepartmentData();
 
     return () => {
       isMounted = false;
@@ -2092,6 +1820,10 @@ export default function RangeDaysPage() {
   useEffect(() => {
     activePersonnelDirectory = personnel;
   }, [personnel]);
+
+  useEffect(() => {
+    activeFirearmDirectory = firearms;
+  }, [firearms]);
 
   useEffect(() => {
     let isMounted = true;
@@ -2163,90 +1895,6 @@ export default function RangeDaysPage() {
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!hasLoadedStoredWorkspace || !hasLivePersonnel || personnel.length === 0) {
-      return;
-    }
-
-    const replacementMap = getMockPersonnelReplacementMap(personnel);
-
-    setRangeDays((current) => {
-      if (
-        !current.some(
-          (rangeDay) =>
-            hasReplaceablePersonnelId(rangeDay.leadInstructorId, replacementMap) ||
-            (rangeDay.instructorIds ?? []).some((id) =>
-              hasReplaceablePersonnelId(id, replacementMap),
-            ),
-        )
-      ) {
-        return current;
-      }
-
-      return current.map((rangeDay) => ({
-        ...rangeDay,
-        leadInstructorId:
-          replacePersonnelId(rangeDay.leadInstructorId, replacementMap) ??
-          rangeDay.leadInstructorId,
-        instructorIds: (rangeDay.instructorIds ?? []).map(
-          (id) => replacePersonnelId(id, replacementMap) ?? id,
-        ),
-      }));
-    });
-
-    setRangeRoster((current) => {
-      if (!current.some((entry) => hasReplaceablePersonnelId(entry.officerId, replacementMap))) {
-        return current;
-      }
-
-      return dedupeRosterEntries(
-        current.map((entry) => ({
-          ...entry,
-          officerId:
-            replacePersonnelId(entry.officerId, replacementMap) ?? entry.officerId,
-        })),
-      );
-    });
-
-    setResults((current) => {
-      if (
-        !current.some((result) =>
-          hasReplaceablePersonnelId(result.officerId, replacementMap),
-        )
-      ) {
-        return current;
-      }
-
-      return current.map((result) => ({
-        ...result,
-        officerId:
-          replacePersonnelId(result.officerId, replacementMap) ?? result.officerId,
-        instructorId:
-          replacePersonnelId(result.instructorId, replacementMap) ?? result.instructorId,
-      }));
-    });
-
-    setMalfunctions((current) => {
-      if (
-        !current.some((malfunction) =>
-          hasReplaceablePersonnelId(malfunction.officerId, replacementMap),
-        )
-      ) {
-        return current;
-      }
-
-      return current.map((malfunction) => ({
-        ...malfunction,
-        officerId:
-          replacePersonnelId(malfunction.officerId, replacementMap) ?? malfunction.officerId,
-      }));
-    });
-
-    setSelectedOfficerId((current) => replacePersonnelId(current, replacementMap) ?? current);
-    setNewRosterOfficerId((current) => replacePersonnelId(current, replacementMap) ?? current);
-    setNewInstructorUserId((current) => replacePersonnelId(current, replacementMap) ?? current);
-  }, [hasLivePersonnel, hasLoadedStoredWorkspace, personnel]);
 
   useEffect(() => {
     if (!hasLoadedStoredWorkspace) return;
@@ -2446,12 +2094,17 @@ export default function RangeDaysPage() {
   }
 
   function handleCreateRangeDay() {
+    if (!departmentId) {
+      setSaveMessage("Department context could not be loaded.");
+      return;
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const newRangeDayId = `range-${Date.now()}`;
 
     const newRangeDay: PlannedRangeDay = {
       id: newRangeDayId,
-      departmentId: DEMO_DEPARTMENT.id,
+      departmentId,
       title: "New Range Day",
       date: today,
       startTime: "0800",
@@ -2600,7 +2253,7 @@ export default function RangeDaysPage() {
       malfunctions,
     });
 
-    setSaveMessage("Saved locally");
+    setSaveMessage("Saved");
 
     if (typeof window !== "undefined") {
       window.setTimeout(() => setSaveMessage(""), 2000);
@@ -2688,13 +2341,11 @@ export default function RangeDaysPage() {
 
     if (alreadyRostered) return;
 
-    const defaultFirearmId = MOCK_FIREARMS[0]?.id;
-
     const newRosterEntry: RangeRosterEntry = {
       id: `roster-${Date.now()}`,
       rangeDayId: selectedRangeDay.id,
       officerId: newRosterOfficerId,
-      assignedFirearmIds: defaultFirearmId ? [defaultFirearmId] : [],
+      assignedFirearmIds: [],
       attended: false,
     };
 
@@ -2916,7 +2567,7 @@ export default function RangeDaysPage() {
       if (malfunctionId && firearmId) {
         newMalfunctions.push({
           id: malfunctionId,
-          departmentId: DEMO_DEPARTMENT.id,
+          departmentId,
           firearmId,
           officerId: entry.officerId,
           rangeDayId: selectedRangeDay.id,
@@ -2987,7 +2638,7 @@ export default function RangeDaysPage() {
     if (!newDrillName.trim()) return;
 
     const baseTemplate = createDrillLibraryTemplate({
-      departmentId: DEMO_DEPARTMENT.id,
+      departmentId,
       name: newDrillName.trim(),
       category: newDrillCategory,
       description: newDrillDescription.trim() || undefined,
@@ -4382,7 +4033,7 @@ export default function RangeDaysPage() {
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
                       >
                         <option value="">No firearm selected</option>
-                        {MOCK_FIREARMS.map((firearm) => (
+                        {firearms.map((firearm) => (
                           <option key={firearm.id} value={firearm.id}>
                             {getFirearmName(firearm.id)}
                           </option>
