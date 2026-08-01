@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   BellRing,
   CheckCircle2,
   ClipboardCheck,
@@ -17,8 +16,6 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   buildRemediationFromAlert,
-  cloneRemediations,
-  cloneTrainingAlerts,
   REMEDIATIONS_STORAGE_KEY,
   TRAINING_ALERTS_STORAGE_KEY,
   type RemediationRecord,
@@ -29,19 +26,6 @@ import {
 } from "@/lib/tracepoint/training-alerts";
 
 type ActiveView = "alerts" | "remediations";
-
-function loadStoredRecords<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function getSeverityClasses(severity: TrainingAlertSeverity) {
   if (severity === "High") {
@@ -136,143 +120,112 @@ function MetricCard({
 export default function TrainingAlertsClient() {
   const [activeView, setActiveView] = useState<ActiveView>("alerts");
   const [loaded, setLoaded] = useState(false);
-  const [remediationsLoadedFromSupabase, setRemediationsLoadedFromSupabase] =
-    useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [remediationsLoaded, setRemediationsLoaded] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
-  const [alerts, setAlerts] =
-    useState<TrainingAlert[]>(cloneTrainingAlerts);
-  const [remediations, setRemediations] =
-    useState<RemediationRecord[]>(cloneRemediations);
+  const [alerts, setAlerts] = useState<TrainingAlert[]>([]);
+  const [remediations, setRemediations] = useState<RemediationRecord[]>([]);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadSupabaseRemediations(fallback: RemediationRecord[]) {
+    async function loadWorkflowData() {
       try {
-        const response = await fetch("/api/pilot/remediations", {
-          method: "GET",
-          cache: "no-store",
-        });
+        const [summaryResponse, remediationsResponse] = await Promise.all([
+          fetch("/api/pilot/performance-summary", {
+            method: "GET",
+            cache: "no-store",
+          }),
+          fetch("/api/pilot/remediations", {
+            method: "GET",
+            cache: "no-store",
+          }),
+        ]);
 
-        if (!response.ok) {
-          throw new Error("Unable to load Supabase remediation records.");
+        if (!summaryResponse.ok) {
+          throw new Error("Unable to load training alerts.");
         }
 
-        const payload = (await response.json()) as {
+        if (!remediationsResponse.ok) {
+          throw new Error("Unable to load remediation records.");
+        }
+
+        const summaryPayload = (await summaryResponse.json()) as {
+          trainingAlerts?: TrainingAlert[];
+        };
+
+        const remediationPayload = (await remediationsResponse.json()) as {
           remediations?: RemediationRecord[];
         };
 
-        setRemediationsLoadedFromSupabase(true);
+        if (!isMounted) return;
 
-        return payload.remediations ?? fallback;
-      } catch (error) {
-        console.warn("Could not load Supabase remediations.", error);
-        setRemediationsLoadedFromSupabase(false);
+        const liveAlerts = summaryPayload.trainingAlerts ?? [];
+        const liveRemediations = remediationPayload.remediations ?? [];
+        const storedAlerts = (() => {
+          try {
+            const raw = window.localStorage.getItem(
+              TRAINING_ALERTS_STORAGE_KEY,
+            );
 
-        return fallback;
-      }
-    }
+            return raw
+              ? (JSON.parse(raw) as TrainingAlert[])
+              : [];
+          } catch {
+            return [];
+          }
+        })();
 
-    async function loadWorkflowData() {
-      const storedAlerts = loadStoredRecords(
-        TRAINING_ALERTS_STORAGE_KEY,
-        cloneTrainingAlerts(),
-      );
+        const storedById = new Map(
+          storedAlerts.map((alert) => [alert.id, alert]),
+        );
+        const remediationByAlertId = new Map(
+          liveRemediations.map((record) => [
+            record.linkedAlertId,
+            record,
+          ]),
+        );
 
-      const storedRemediations = loadStoredRecords(
-        REMEDIATIONS_STORAGE_KEY,
-        cloneRemediations(),
-      );
+        const hydratedAlerts = liveAlerts.map((alert) => {
+          const storedAlert = storedById.get(alert.id);
+          const linkedRemediation = remediationByAlertId.get(
+            alert.id,
+          );
 
-      const liveRemediations =
-        await loadSupabaseRemediations(storedRemediations);
+          if (!storedAlert && !linkedRemediation) return alert;
 
-      const legacyMockAlertIds = new Set([
-        "alert-night-qualification-reynolds",
-        "alert-low-light-carter",
-        "alert-decision-making-reynolds",
-      ]);
-
-      const defaultDemoAlertIds = new Set(
-        cloneTrainingAlerts().map((alert) => alert.id),
-      );
-
-      try {
-        const response = await fetch("/api/pilot/performance-summary", {
-          method: "GET",
-          cache: "no-store",
+          return {
+            ...alert,
+            status: linkedRemediation
+              ? "Remediation Assigned"
+              : storedAlert?.status ?? alert.status,
+            remediationId:
+              linkedRemediation?.id ??
+              storedAlert?.remediationId ??
+              alert.remediationId,
+            auditLog:
+              storedAlert?.auditLog?.length
+                ? storedAlert.auditLog
+                : alert.auditLog,
+          };
         });
 
-        if (response.ok) {
-          const payload = (await response.json()) as {
-            hasWorkspaceData?: boolean;
-            trainingAlerts?: TrainingAlert[];
-          };
-
-          const pilotAlerts = payload.trainingAlerts ?? [];
-          const pilotAlertIds = new Set(
-            pilotAlerts.map((alert) => alert.id),
-          );
-          const storedById = new Map(
-            storedAlerts.map((alert) => [alert.id, alert]),
-          );
-          const remediationAlertIds = new Set(
-            liveRemediations.map((record) => record.linkedAlertId),
-          );
-
-          const hydratedPilotAlerts: TrainingAlert[] = pilotAlerts.map((alert) => {
-            const storedAlert = storedById.get(alert.id);
-
-            if (!storedAlert) return alert;
-
-            return {
-              ...alert,
-              status:
-                storedAlert.status === "Remediation Assigned" ||
-                remediationAlertIds.has(alert.id)
-                  ? "Remediation Assigned"
-                  : storedAlert.status,
-              remediationId:
-                storedAlert.remediationId ??
-                liveRemediations.find(
-                  (record) => record.linkedAlertId === alert.id,
-                )?.id,
-              auditLog:
-                storedAlert.auditLog.length > 0
-                  ? storedAlert.auditLog
-                  : alert.auditLog,
-            };
-          });
-
-          const nonDemoStoredAlerts = storedAlerts.filter(
-            (alert) =>
-              !pilotAlertIds.has(alert.id) &&
-              !defaultDemoAlertIds.has(alert.id) &&
-              !legacyMockAlertIds.has(alert.id),
-          );
-
-          const shouldUsePilotAlerts =
-            Boolean(payload.hasWorkspaceData) || pilotAlerts.length > 0;
-
-          const nextAlerts: TrainingAlert[] = shouldUsePilotAlerts
-            ? [...hydratedPilotAlerts, ...nonDemoStoredAlerts]
-            : storedAlerts;
-
-          if (isMounted) {
-            setAlerts(nextAlerts);
-            setRemediations(liveRemediations);
-            setLoaded(true);
-          }
-
-          return;
-        }
-      } catch (error) {
-        console.warn("Could not load pilot-generated training alerts.", error);
-      }
-
-      if (isMounted) {
-        setAlerts(storedAlerts);
+        setAlerts(hydratedAlerts);
         setRemediations(liveRemediations);
+        setRemediationsLoaded(true);
+        setLoadError(null);
+        setLoaded(true);
+      } catch (error) {
+        if (!isMounted) return;
+
+        setAlerts([]);
+        setRemediations([]);
+        setRemediationsLoaded(false);
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Training workflow data could not be loaded.",
+        );
         setLoaded(true);
       }
     }
@@ -301,7 +254,7 @@ export default function TrainingAlertsClient() {
       JSON.stringify(remediations),
     );
 
-    if (!remediationsLoadedFromSupabase) return;
+    if (!remediationsLoaded) return;
 
     const controller = new AbortController();
 
@@ -315,7 +268,7 @@ export default function TrainingAlertsClient() {
         signal: controller.signal,
       }).catch((error) => {
         if (error?.name !== "AbortError") {
-          console.warn("Could not save Supabase remediations.", error);
+          console.warn("Could not save remediation records.", error);
         }
       });
     }, 500);
@@ -324,7 +277,7 @@ export default function TrainingAlertsClient() {
       window.clearTimeout(saveTimer);
       controller.abort();
     };
-  }, [loaded, remediations, remediationsLoadedFromSupabase]);
+  }, [loaded, remediations, remediationsLoaded]);
 
   const metrics = useMemo(() => {
     const openAlerts = alerts.filter(
@@ -503,12 +456,6 @@ export default function TrainingAlertsClient() {
     }));
   }
 
-  function resetDemoData() {
-    setAlerts(cloneTrainingAlerts());
-    setRemediations(cloneRemediations());
-    setNoteDrafts({});
-    setActiveView("alerts");
-  }
 
   return (
     <TracePointShell activePage="Training Alerts">
@@ -525,20 +472,17 @@ export default function TrainingAlertsClient() {
               <p className="mt-1 max-w-4xl text-[12px] leading-6 text-slate-500">
                 Surface qualification and drill concerns, route them to the
                 right users, create remediation records, track follow-up, and
-                preserve the audit trail from concern to resolution. Remediation
-                records now persist to Supabase for the pilot workspace.
+                preserve the audit trail from concern to resolution.
               </p>
             </div>
-
-            <button
-              type="button"
-              onClick={resetDemoData}
-              className="w-fit rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] font-semibold text-slate-300 transition hover:border-blue-500/50 hover:text-white"
-            >
-              Reset demo workflow
-            </button>
           </div>
         </header>
+
+        {loadError ? (
+          <section className="rounded-3xl border border-red-500/20 bg-red-500/[0.08] p-4 text-[12px] text-red-200">
+            {loadError}
+          </section>
+        ) : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
@@ -608,6 +552,19 @@ export default function TrainingAlertsClient() {
 
           {activeView === "alerts" ? (
             <div className="mt-4 space-y-3">
+              {alerts.length === 0 ? (
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 text-center">
+                  <BellRing size={24} className="mx-auto text-slate-600" />
+                  <p className="mt-3 text-[13px] font-semibold text-white">
+                    No training alerts.
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Qualification failures, missing records, or documented
+                    performance concerns will appear here.
+                  </p>
+                </div>
+              ) : null}
+
               {alerts.map((alert) => (
                 <article
                   key={alert.id}
