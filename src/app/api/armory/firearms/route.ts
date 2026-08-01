@@ -25,6 +25,12 @@ type SupabaseAuthUser = {
   } | null;
 };
 
+type ProfileRecord = {
+  id: string;
+  full_name?: string | null;
+  email?: string | null;
+};
+
 const VALID_FIREARM_TYPES = [
   "handgun",
   "rifle",
@@ -42,18 +48,21 @@ const VALID_STATUSES = [
 ] as const;
 
 function cleanText(value: unknown) {
-  return typeof value === "string" && value.trim()
-    ? value.trim()
-    : null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function displayName(user?: SupabaseAuthUser | null) {
+function getDisplayName(
+  profile?: ProfileRecord | null,
+  user?: SupabaseAuthUser | null,
+) {
   const metadata = user?.user_metadata ?? {};
 
   return (
+    profile?.full_name ||
     metadata.full_name ||
     metadata.name ||
     metadata.display_name ||
+    profile?.email ||
     user?.email ||
     "Unknown User"
   );
@@ -71,6 +80,25 @@ async function getDepartmentMembers(
 
   if (error) throw new Error(error.message);
 
+  const userIds = (memberships ?? [])
+    .map((membership: any) => membership.user_id)
+    .filter(Boolean);
+
+  const profilesById = new Map<string, ProfileRecord>();
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: profilesError } = await admin
+      .from("profiles")
+      .select("id,full_name,email")
+      .in("id", userIds);
+
+    if (profilesError) throw new Error(profilesError.message);
+
+    (profiles ?? []).forEach((profile: ProfileRecord) => {
+      profilesById.set(profile.id, profile);
+    });
+  }
+
   const { data: usersData, error: usersError } =
     await admin.auth.admin.listUsers({
       page: 1,
@@ -80,19 +108,21 @@ async function getDepartmentMembers(
   if (usersError) throw new Error(usersError.message);
 
   const usersById = new Map<string, SupabaseAuthUser>(
-    ((usersData?.users ?? []) as SupabaseAuthUser[]).map(
-      (user) => [user.id, user],
-    ),
+    ((usersData?.users ?? []) as SupabaseAuthUser[]).map((user) => [
+      user.id,
+      user,
+    ]),
   );
 
   return (memberships ?? [])
     .map((membership: any) => {
       const user = usersById.get(membership.user_id);
+      const profile = profilesById.get(membership.user_id);
 
       return {
         user_id: membership.user_id,
-        full_name: displayName(user),
-        email: user?.email ?? "",
+        full_name: getDisplayName(profile, user),
+        email: profile?.email ?? user?.email ?? "",
         rank_title: membership.rank_title ?? null,
         badge_number: membership.badge_number ?? null,
       };
@@ -105,8 +135,7 @@ async function getDepartmentMembers(
 function responseError(error: unknown, fallback: string) {
   return NextResponse.json(
     {
-      error:
-        error instanceof Error ? error.message : fallback,
+      error: error instanceof Error ? error.message : fallback,
     },
     { status: 500 },
   );
@@ -125,9 +154,7 @@ export async function GET() {
     "manage_inspections",
     "view_command_dashboard",
   ]);
-  const canManage = hasAnyServerPermission(context, [
-    "manage_firearms",
-  ]);
+  const canManage = hasAnyServerPermission(context, ["manage_firearms"]);
   const canInspect = hasAnyServerPermission(context, [
     "manage_firearms",
     "manage_inspections",
@@ -190,20 +217,12 @@ export async function GET() {
       firearms = firearmsResult.data ?? [];
     }
 
-    const usersResult =
-      await context.admin.auth.admin.listUsers({
-        page: 1,
-        perPage: 1000,
-      });
-
-    if (usersResult.error) {
-      throw new Error(usersResult.error.message);
-    }
-
-    const usersById = new Map<string, SupabaseAuthUser>(
-      ((usersResult.data?.users ?? []) as SupabaseAuthUser[]).map(
-        (user) => [user.id, user],
-      ),
+    const members = await getDepartmentMembers(
+      context.admin,
+      context.departmentId,
+    );
+    const membersById = new Map(
+      members.map((member) => [member.user_id, member]),
     );
 
     const assignmentsByFirearmId = new Map(
@@ -211,9 +230,9 @@ export async function GET() {
         assignment.firearm_id,
         {
           ...assignment,
-          assigned_to_name: displayName(
-            usersById.get(assignment.assigned_to_user_id),
-          ),
+          assigned_to_name:
+            membersById.get(assignment.assigned_to_user_id)?.full_name ??
+            "Unknown User",
         },
       ]),
     );
@@ -223,17 +242,11 @@ export async function GET() {
         departmentId: context.departmentId,
         firearms: firearms.map((firearm: any) => ({
           ...firearm,
-          condition_status:
-            firearm.condition_status ?? "In Service",
+          condition_status: firearm.condition_status ?? "In Service",
           active_assignment:
             assignmentsByFirearmId.get(firearm.id) ?? null,
         })),
-        members: canManage
-          ? await getDepartmentMembers(
-              context.admin,
-              context.departmentId,
-            )
-          : [],
+        members: canManage ? members : [],
         access: {
           canViewAll,
           canManage,
@@ -259,9 +272,7 @@ export async function POST(request: NextRequest) {
 
   const context = resolved.context;
 
-  if (
-    !hasAnyServerPermission(context, ["manage_firearms"])
-  ) {
+  if (!hasAnyServerPermission(context, ["manage_firearms"])) {
     return permissionDeniedResponse(
       "Firearm-management permission is required to add inventory.",
     );
@@ -276,29 +287,24 @@ export async function POST(request: NextRequest) {
     assetNumber?: string;
     conditionStatus?: string;
     notes?: string;
+    assignedToUserId?: string;
   };
 
   const make = cleanText(body.make);
   const model = cleanText(body.model);
   const serialNumber = cleanText(body.serialNumber);
-  const firearmType =
-    cleanText(body.firearmType) ?? "handgun";
-  const conditionStatus =
-    cleanText(body.conditionStatus) ?? "In Service";
+  const firearmType = cleanText(body.firearmType) ?? "handgun";
+  const conditionStatus = cleanText(body.conditionStatus) ?? "In Service";
+  const assignedToUserId = cleanText(body.assignedToUserId);
 
   if (!make || !model || !serialNumber) {
     return NextResponse.json(
-      {
-        error:
-          "Make, model, and serial number are required.",
-      },
+      { error: "Make, model, and serial number are required." },
       { status: 400 },
     );
   }
 
-  if (
-    !VALID_FIREARM_TYPES.includes(firearmType as any)
-  ) {
+  if (!VALID_FIREARM_TYPES.includes(firearmType as any)) {
     return NextResponse.json(
       { error: "Invalid firearm type." },
       { status: 400 },
@@ -313,6 +319,41 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (assignedToUserId) {
+      const { data: membership, error: membershipError } =
+        await context.admin
+          .from("department_memberships")
+          .select("user_id")
+          .eq("department_id", context.departmentId)
+          .eq("user_id", assignedToUserId)
+          .eq("is_active", true)
+          .maybeSingle();
+
+      if (membershipError) {
+        throw new Error(membershipError.message);
+      }
+
+      if (!membership) {
+        return NextResponse.json(
+          {
+            error:
+              "The assigned officer is not an active department member.",
+          },
+          { status: 400 },
+        );
+      }
+
+      if (conditionStatus !== "In Service") {
+        return NextResponse.json(
+          {
+            error:
+              "Only an in-service firearm may be assigned during import.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const { data: existing, error: existingError } =
       await context.admin
         .from("firearms")
@@ -350,7 +391,7 @@ export async function POST(request: NextRequest) {
           condition_status: conditionStatus,
           notes: cleanText(body.notes),
           is_active: true,
-          created_by_user_id: context.userId,
+          created_by: context.userId,
         })
         .select("id")
         .single();
@@ -359,13 +400,42 @@ export async function POST(request: NextRequest) {
       throw new Error(insertError.message);
     }
 
+    if (assignedToUserId) {
+      const { error: assignmentError } = await context.admin
+        .from("firearm_assignments")
+        .insert({
+          department_id: context.departmentId,
+          firearm_id: inserted.id,
+          assigned_to_user_id: assignedToUserId,
+          assigned_by_user_id: context.userId,
+          assigned_at: new Date().toISOString(),
+          condition_at_issue: conditionStatus,
+          magazines_issued: 0,
+        });
+
+      if (assignmentError) {
+        await context.admin
+          .from("firearms")
+          .delete()
+          .eq("id", inserted.id)
+          .eq("department_id", context.departmentId);
+
+        throw new Error(
+          `The firearm assignment could not be created: ${assignmentError.message}`,
+        );
+      }
+    }
+
     return NextResponse.json(
-      { ok: true, firearmId: inserted.id },
+      {
+        ok: true,
+        firearmId: inserted.id,
+        assignmentCreated: Boolean(assignedToUserId),
+      },
       { status: 201 },
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "";
+    const message = error instanceof Error ? error.message : "";
 
     return NextResponse.json(
       {

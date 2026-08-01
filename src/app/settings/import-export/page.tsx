@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -58,6 +58,16 @@ type ImportReport = {
   failed: number;
   message: string;
   failures: string[];
+};
+
+type PilotPersonnel = {
+  id: string;
+  userId: string;
+  displayName: string;
+  fullName: string;
+  email?: string | null;
+  badgeNumber?: string | null;
+  rankTitle?: string | null;
 };
 
 const IMPORT_TYPES: ImportTypeDefinition[] = [
@@ -155,6 +165,21 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
         key: "conditionStatus",
         label: "Condition Status",
         aliases: ["status", "condition", "condition status"],
+      },
+      {
+        key: "assignedOfficerName",
+        label: "Assigned Officer Name",
+        aliases: [
+          "assigned officer",
+          "assigned officer name",
+          "assigned to",
+          "assigned to name",
+          "officer",
+          "officer name",
+          "employee",
+        ],
+        help:
+          "Optional. Matches an active officer by name, email, or badge number.",
       },
       {
         key: "notes",
@@ -439,7 +464,67 @@ function normalizeStatus(value: string) {
   return "In Service";
 }
 
-async function importFirearm(row: Record<string, string>) {
+function normalizePersonLookup(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function getPersonnelMatch(
+  value: string,
+  personnel: PilotPersonnel[],
+): PilotPersonnel | null {
+  const normalized = normalizePersonLookup(value);
+
+  if (!normalized) return null;
+
+  const exactMatches = personnel.filter((person) => {
+    const candidates = [
+      person.fullName,
+      person.displayName,
+      person.email ?? "",
+      person.badgeNumber ?? "",
+      person.badgeNumber ? `badge ${person.badgeNumber}` : "",
+    ]
+      .filter(Boolean)
+      .map(normalizePersonLookup);
+
+    return candidates.includes(normalized);
+  });
+
+  if (exactMatches.length === 1) return exactMatches[0];
+
+  const commaParts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (commaParts.length === 2) {
+    const reordered = normalizePersonLookup(
+      `${commaParts[1]} ${commaParts[0]}`,
+    );
+
+    const reorderedMatches = personnel.filter((person) =>
+      [person.fullName, person.displayName]
+        .filter(Boolean)
+        .map(normalizePersonLookup)
+        .includes(reordered),
+    );
+
+    if (reorderedMatches.length === 1) {
+      return reorderedMatches[0];
+    }
+  }
+
+  return null;
+}
+
+async function importFirearm(
+  row: Record<string, string>,
+  assignedToUserId?: string,
+) {
   const response = await fetch("/api/armory/firearms", {
     method: "POST",
     headers: {
@@ -454,6 +539,7 @@ async function importFirearm(row: Record<string, string>) {
       assetNumber: row.assetNumber,
       conditionStatus: normalizeStatus(row.conditionStatus || "In Service"),
       notes: row.notes,
+      assignedToUserId: assignedToUserId || undefined,
     }),
   });
 
@@ -561,6 +647,40 @@ export default function ImportWizardPage() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
+  const [personnel, setPersonnel] = useState<PilotPersonnel[]>([]);
+  const [personnelError, setPersonnelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPersonnel() {
+      try {
+        const payload = await fetchJson<{
+          personnel?: PilotPersonnel[];
+        }>("/api/pilot/personnel");
+
+        if (!isMounted) return;
+
+        setPersonnel(payload.personnel ?? []);
+        setPersonnelError(null);
+      } catch (error) {
+        if (!isMounted) return;
+
+        setPersonnel([]);
+        setPersonnelError(
+          error instanceof Error
+            ? error.message
+            : "Personnel directory could not be loaded.",
+        );
+      }
+    }
+
+    void loadPersonnel();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const selectedDefinition = useMemo(
     () => IMPORT_TYPES.find((type) => type.id === selectedTypeId) ?? IMPORT_TYPES[0],
@@ -572,10 +692,41 @@ export default function ImportWizardPage() {
     [parsedCsv.rows, mapping, selectedDefinition],
   );
 
-  const validationIssues = useMemo(
-    () => validateRows(parsedCsv.rows, mapping, selectedDefinition),
-    [parsedCsv.rows, mapping, selectedDefinition],
-  );
+  const validationIssues = useMemo(() => {
+    const issues = validateRows(
+      parsedCsv.rows,
+      mapping,
+      selectedDefinition,
+    );
+
+    if (selectedDefinition.id === "firearms") {
+      mappedRows.forEach((row, rowIndex) => {
+        const assignedOfficerName =
+          row.assignedOfficerName?.trim() ?? "";
+
+        if (
+          assignedOfficerName &&
+          !getPersonnelMatch(assignedOfficerName, personnel)
+        ) {
+          issues.push({
+            rowNumber: rowIndex + 2,
+            severity: "error",
+            field: "assignedOfficerName",
+            message:
+              `Assigned officer "${assignedOfficerName}" did not uniquely match an active personnel record.`,
+          });
+        }
+      });
+    }
+
+    return issues;
+  }, [
+    mappedRows,
+    parsedCsv.rows,
+    mapping,
+    selectedDefinition,
+    personnel,
+  ]);
 
   const blockingErrors = validationIssues.filter((issue) => issue.severity === "error");
 
@@ -638,7 +789,19 @@ export default function ImportWizardPage() {
 
     for (const [index, row] of mappedRows.entries()) {
       try {
-        await importFirearm(row);
+        const assignedOfficerName =
+          row.assignedOfficerName?.trim() ?? "";
+        const matchedOfficer = assignedOfficerName
+          ? getPersonnelMatch(assignedOfficerName, personnel)
+          : null;
+
+        if (assignedOfficerName && !matchedOfficer) {
+          throw new Error(
+            `Assigned officer "${assignedOfficerName}" did not uniquely match an active personnel record.`,
+          );
+        }
+
+        await importFirearm(row, matchedOfficer?.userId);
         created += 1;
       } catch (error) {
         failures.push(
@@ -818,6 +981,7 @@ export default function ImportWizardPage() {
       "caliber",
       "assetNumber",
       "conditionStatus",
+      "assignedOfficerName",
       "notes",
     ]);
   }
@@ -1105,6 +1269,12 @@ export default function ImportWizardPage() {
                   {selectedDefinition.label}
                 </span>
               </div>
+
+              {selectedDefinition.id === "firearms" && personnelError ? (
+                <div className="mt-5 rounded-2xl border border-red-800 bg-red-950/40 p-3 text-sm text-red-200">
+                  Personnel matching is unavailable: {personnelError}
+                </div>
+              ) : null}
 
               <div className="mt-6 grid gap-3 lg:grid-cols-2">
                 {selectedDefinition.fields.map((field) => (
