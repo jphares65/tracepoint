@@ -1,5 +1,7 @@
 "use client";
 
+import { CURRENT_USER } from "./mock-data";
+
 export type TracePointRole =
   | "Officer"
   | "Instructor"
@@ -27,16 +29,48 @@ export type TracePointUserProfile = {
   permissions: TracePointPermission[];
 };
 
+function readString(
+  record: Record<string, unknown>,
+  keys: string[],
+  fallback: string,
+) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+
+  return fallback;
+}
+
+const rawCurrentUser = CURRENT_USER as unknown as Record<string, unknown>;
+
 /**
- * Temporary normalized profile used by client workflows until every module
- * reads the authenticated Supabase user and department membership directly.
+ * Temporary prototype session.
+ *
+ * Authentication will replace this file later. Every module should import this
+ * normalized profile instead of declaring its own hard-coded "current user."
  */
 export const CURRENT_USER_PROFILE: TracePointUserProfile = {
-  id: "de55f6f2-6879-4756-82c5-05a3313bfee2",
-  name: "Jason Phares",
-  badge: "Badge not set",
-  unit: "Command Staff",
-  role: "Administrator",
+  id: CURRENT_USER.id,
+  name: readString(rawCurrentUser, ["name", "displayName"], "Current User"),
+  badge: readString(
+    rawCurrentUser,
+    ["badge", "badgeNumber", "employeeNumber"],
+    "Badge not set",
+  ),
+  unit: readString(
+    rawCurrentUser,
+    ["unit", "division", "assignment"],
+    "Department",
+  ),
+  role: "Command Staff",
   permissions: [
     "view_command_dashboard",
     "approve_off_duty_firearms",
@@ -48,7 +82,7 @@ export const CURRENT_USER_PROFILE: TracePointUserProfile = {
 };
 
 export const CHIEF_PROFILE: TracePointUserProfile = {
-  id: "chief",
+  id: "chief-1",
   name: "Chief of Police",
   badge: "Chief",
   unit: "Office of the Chief",

@@ -1,0 +1,1171 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import TracePointShell from "@/app/components/TracePointShell";
+import {
+  AlertTriangle,
+  CalendarDays,
+  ClipboardList,
+  Crosshair,
+  FileText,
+  Filter,
+  History,
+  Moon,
+  Search,
+  Shield,
+  Sun,
+  Target,
+  User,
+  X,
+} from "lucide-react";
+
+import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
+
+import type {
+  DrillRunResult,
+  DrillTemplate,
+  RangeDay,
+  RangeDayDrill,
+  RangeRosterEntry,
+} from "@/app/lib/tracepoint/range-day-types";
+
+import {
+  DEMO_DEPARTMENT,
+  MOCK_FIREARMS,
+  MOCK_USERS,
+} from "@/app/lib/tracepoint/mock-data";
+
+type QualificationStatus =
+  | "Current"
+  | "Due Soon"
+  | "Overdue"
+  | "Missing Night"
+  | "Failed"
+  | "No Record";
+
+type OfficerStatusFilter = "All" | QualificationStatus;
+
+type PilotPersonnel = {
+  id: string;
+  userId: string;
+  displayName: string;
+  fullName: string;
+  email?: string | null;
+  badgeNumber?: string | null;
+  rankTitle?: string | null;
+  unitName?: string | null;
+  employeeNumber?: string | null;
+  assignment?: string;
+  roles?: string[];
+  isActive?: boolean;
+};
+
+type StoredRangeDay = RangeDay & {
+  rangeType?: string;
+  startTime?: string;
+  endTime?: string;
+  packetStatus?: string;
+  staffingNotes?: string;
+  outline?: string[];
+};
+
+type StoredRangeDayWorkspace = {
+  rangeDays: StoredRangeDay[];
+  drillLibrary: DrillTemplate[];
+  rangeDayDrills: RangeDayDrill[];
+  rangeRoster: RangeRosterEntry[];
+  results: DrillRunResult[];
+  malfunctions: FirearmMalfunction[];
+};
+
+type OfficerQualificationEvent = {
+  id: string;
+  rangeDayId: string;
+  rangeDayTitle: string;
+  rangeDayStatus: string;
+  date: string;
+  location: string;
+  drillName: string;
+  drillCategory: string;
+  runNumber: number;
+  runLabel: string;
+  firearmId?: string;
+  score?: number;
+  passed?: boolean;
+  completed: boolean;
+  instructorId?: string;
+  notes?: string;
+  deficiencyObserved?: boolean;
+  remedialTrainingRecommended?: boolean;
+  malfunctionCount: number;
+};
+
+type OfficerHistory = {
+  officerId: string;
+  officerName: string;
+  assignedFirearmIds: string[];
+  rosterCount: number;
+  missedRangeDays: number;
+  qualificationEvents: OfficerQualificationEvent[];
+  lastDayQualification?: OfficerQualificationEvent;
+  lastNightQualification?: OfficerQualificationEvent;
+  lastQualification?: OfficerQualificationEvent;
+  lastRifleQualification?: OfficerQualificationEvent;
+  failedQualifications: OfficerQualificationEvent[];
+  malfunctionCount: number;
+  status: QualificationStatus;
+  statusReason: string;
+  daysSinceLastQualification?: number;
+};
+
+const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
+const QUALIFICATION_VALID_DAYS = 365;
+const DUE_SOON_DAYS = 335;
+
+const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
+  rangeDays: [],
+  drillLibrary: [],
+  rangeDayDrills: [],
+  rangeRoster: [],
+  results: [],
+  malfunctions: [],
+};
+
+const FALLBACK_PERSONNEL: PilotPersonnel[] = MOCK_USERS.map((user: any) => ({
+  id: user.id,
+  userId: user.id,
+  displayName: user.name ?? user.fullName ?? user.email ?? "Demo Officer",
+  fullName: user.name ?? user.fullName ?? "Demo Officer",
+  email: user.email ?? null,
+  badgeNumber: user.badgeNumber ?? user.badge ?? user.employeeNumber ?? null,
+  rankTitle: user.rankTitle ?? user.rank ?? null,
+  unitName: user.unitName ?? user.unit ?? user.assignment ?? null,
+  employeeNumber: user.employeeNumber ?? null,
+  assignment: user.assignment ?? user.unitName ?? user.unit ?? "Patrol",
+  roles: user.roles ?? [],
+  isActive: true,
+}));
+
+let activePersonnelDirectory: PilotPersonnel[] = FALLBACK_PERSONNEL;
+
+const STATUS_FILTERS: OfficerStatusFilter[] = [
+  "All",
+  "Current",
+  "Due Soon",
+  "Overdue",
+  "Missing Night",
+  "Failed",
+  "No Record",
+];
+
+function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storedWorkspace = window.localStorage.getItem(
+      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+    );
+
+    if (!storedWorkspace) return null;
+
+    const parsed = JSON.parse(
+      storedWorkspace,
+    ) as Partial<StoredRangeDayWorkspace>;
+
+    return {
+      rangeDays: Array.isArray(parsed.rangeDays) ? parsed.rangeDays : [],
+      drillLibrary: Array.isArray(parsed.drillLibrary) ? parsed.drillLibrary : [],
+      rangeDayDrills: Array.isArray(parsed.rangeDayDrills)
+        ? parsed.rangeDayDrills
+        : [],
+      rangeRoster: Array.isArray(parsed.rangeRoster) ? parsed.rangeRoster : [],
+      results: Array.isArray(parsed.results) ? parsed.results : [],
+      malfunctions: Array.isArray(parsed.malfunctions)
+        ? parsed.malfunctions
+        : [],
+    };
+  } catch (error) {
+    console.warn("Could not load saved range day workspace.", error);
+    return null;
+  }
+}
+
+
+async function loadPilotPersonnel() {
+  if (typeof window === "undefined") {
+    return {
+      personnel: FALLBACK_PERSONNEL,
+      source: "fallback",
+    };
+  }
+
+  try {
+    const response = await fetch("/api/pilot/personnel", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load pilot personnel.");
+    }
+
+    const payload = (await response.json()) as {
+      personnel?: PilotPersonnel[];
+      source?: string;
+    };
+
+    const personnel = Array.isArray(payload.personnel)
+      ? payload.personnel
+      : [];
+
+    if (personnel.length === 0) {
+      return {
+        personnel: FALLBACK_PERSONNEL,
+        source: "fallback",
+      };
+    }
+
+    return {
+      personnel,
+      source: payload.source ?? "supabase_department_memberships",
+    };
+  } catch (error) {
+    console.warn("Could not load pilot personnel.", error);
+
+    return {
+      personnel: FALLBACK_PERSONNEL,
+      source: "fallback",
+    };
+  }
+}
+
+async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | null> {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const response = await fetch("/api/pilot/range-workspace", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      workspace?: Partial<StoredRangeDayWorkspace> | null;
+    };
+
+    if (!payload.workspace) return null;
+
+    const workspace: StoredRangeDayWorkspace = {
+      rangeDays: Array.isArray(payload.workspace.rangeDays)
+        ? payload.workspace.rangeDays
+        : [],
+      drillLibrary: Array.isArray(payload.workspace.drillLibrary)
+        ? payload.workspace.drillLibrary
+        : [],
+      rangeDayDrills: Array.isArray(payload.workspace.rangeDayDrills)
+        ? payload.workspace.rangeDayDrills
+        : [],
+      rangeRoster: Array.isArray(payload.workspace.rangeRoster)
+        ? payload.workspace.rangeRoster
+        : [],
+      results: Array.isArray(payload.workspace.results)
+        ? payload.workspace.results
+        : [],
+      malfunctions: Array.isArray(payload.workspace.malfunctions)
+        ? payload.workspace.malfunctions
+        : [],
+    };
+
+    window.localStorage.setItem(
+      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+      JSON.stringify(workspace),
+    );
+
+    return workspace;
+  } catch (error) {
+    console.warn("Could not load Supabase qualification workspace.", error);
+    return null;
+  }
+}
+
+function formatDate(date?: string) {
+  if (!date) return "No date";
+
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getDateValue(date?: string) {
+  if (!date) return 0;
+
+  const value = new Date(`${date}T00:00:00`).getTime();
+
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function getDaysSince(date?: string) {
+  const dateValue = getDateValue(date);
+
+  if (!dateValue) return undefined;
+
+  const now = new Date();
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+
+  return Math.max(
+    Math.floor((today - dateValue) / (1000 * 60 * 60 * 24)),
+    0,
+  );
+}
+
+function getUserName(userId?: string) {
+  if (!userId) return "Unassigned";
+
+  return (
+    activePersonnelDirectory.find((person) => person.id === userId)?.displayName ??
+    MOCK_USERS.find((user) => user.id === userId)?.name ??
+    "Unknown User"
+  );
+}
+
+function getFirearmName(firearmId?: string) {
+  if (!firearmId) return "No firearm recorded";
+
+  const firearm = MOCK_FIREARMS.find((item) => item.id === firearmId);
+
+  if (!firearm) return "Unknown firearm";
+
+  return `${firearm.make} ${firearm.model} (${firearm.serialNumber})`;
+}
+
+function getFirearmShortName(firearmId?: string) {
+  if (!firearmId) return "No firearm";
+
+  const firearm = MOCK_FIREARMS.find((item) => item.id === firearmId);
+
+  if (!firearm) return "Unknown firearm";
+
+  return `${firearm.model} · ${firearm.serialNumber}`;
+}
+
+function isQualificationText(value?: string) {
+  return Boolean(value?.toLowerCase().includes("qualification"));
+}
+
+function isQualificationDrill(drill?: RangeDayDrill) {
+  if (!drill) return false;
+
+  return drill.category === "Qualification" || isQualificationText(drill.name);
+}
+
+function isRifleDrill(drill?: RangeDayDrill) {
+  if (!drill) return false;
+
+  const name = drill.name.toLowerCase();
+  const category = drill.category.toLowerCase();
+  const firearmType = drill.firearmType?.toLowerCase() ?? "";
+
+  return (
+    name.includes("rifle") ||
+    category.includes("rifle") ||
+    firearmType.includes("rifle")
+  );
+}
+
+function getRunLabel(drill?: RangeDayDrill, runNumber?: number) {
+  if (isQualificationDrill(drill)) {
+    if (runNumber === 1) return "Day Qualification";
+    if (runNumber === 2) return "Night Qualification";
+  }
+
+  return `Run ${runNumber ?? 1}`;
+}
+
+function getStatusTone(status: QualificationStatus) {
+  if (status === "Current") return "green";
+  if (status === "Due Soon") return "amber";
+  if (status === "Overdue" || status === "Failed") return "red";
+  if (status === "Missing Night") return "blue";
+
+  return "slate";
+}
+
+function StatusPill({
+  label,
+  tone = "blue",
+}: {
+  label: string;
+  tone?: "blue" | "green" | "amber" | "red" | "slate";
+}) {
+  const styles = {
+    blue: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+    green: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    amber: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    red: "border-red-500/30 bg-red-500/10 text-red-300",
+    slate: "border-slate-700 bg-slate-800/60 text-slate-300",
+  };
+
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${styles[tone]}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function evaluateOfficerStatus(
+  lastDayQualification: OfficerQualificationEvent | undefined,
+  lastNightQualification: OfficerQualificationEvent | undefined,
+  failedQualifications: OfficerQualificationEvent[],
+): {
+  status: QualificationStatus;
+  statusReason: string;
+  daysSinceLastQualification?: number;
+} {
+  const newestFailure = failedQualifications[0];
+  const newestPassed = [lastDayQualification, lastNightQualification]
+    .filter(Boolean)
+    .sort((a, b) => getDateValue(b?.date) - getDateValue(a?.date))[0];
+
+  if (newestFailure && getDateValue(newestFailure.date) >= getDateValue(newestPassed?.date)) {
+    return {
+      status: "Failed",
+      statusReason: `Most recent qualification issue: ${newestFailure.runLabel} on ${formatDate(newestFailure.date)}.`,
+      daysSinceLastQualification: getDaysSince(newestFailure.date),
+    };
+  }
+
+  if (!lastDayQualification && !lastNightQualification) {
+    return {
+      status: "No Record",
+      statusReason: "No recorded qualification result found in saved range days.",
+    };
+  }
+
+  if (!lastNightQualification) {
+    return {
+      status: "Missing Night",
+      statusReason: "Day qualification exists, but no night qualification is recorded.",
+      daysSinceLastQualification: getDaysSince(lastDayQualification?.date),
+    };
+  }
+
+  if (!lastDayQualification) {
+    return {
+      status: "Missing Night",
+      statusReason: "Night qualification exists, but no day qualification is recorded.",
+      daysSinceLastQualification: getDaysSince(lastNightQualification.date),
+    };
+  }
+
+  const oldestRequiredDate =
+    getDateValue(lastDayQualification.date) < getDateValue(lastNightQualification.date)
+      ? lastDayQualification.date
+      : lastNightQualification.date;
+
+  const daysSinceOldestRequired = getDaysSince(oldestRequiredDate);
+
+  if (daysSinceOldestRequired === undefined) {
+    return {
+      status: "No Record",
+      statusReason: "Qualification dates could not be evaluated.",
+    };
+  }
+
+  if (daysSinceOldestRequired > QUALIFICATION_VALID_DAYS) {
+    return {
+      status: "Overdue",
+      statusReason: `Oldest required qualification is ${daysSinceOldestRequired} days old.`,
+      daysSinceLastQualification: daysSinceOldestRequired,
+    };
+  }
+
+  if (daysSinceOldestRequired >= DUE_SOON_DAYS) {
+    return {
+      status: "Due Soon",
+      statusReason: `Qualification cycle is approaching ${QUALIFICATION_VALID_DAYS} days.`,
+      daysSinceLastQualification: daysSinceOldestRequired,
+    };
+  }
+
+  return {
+    status: "Current",
+    statusReason: "Day and night qualification records are present and within the current cycle.",
+    daysSinceLastQualification: daysSinceOldestRequired,
+  };
+}
+
+function buildOfficerHistories(workspace: StoredRangeDayWorkspace, personnel: PilotPersonnel[]) {
+  const rangeDayById = new Map(
+    workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
+  );
+
+  const drillById = new Map(
+    workspace.rangeDayDrills.map((drill) => [drill.id, drill]),
+  );
+
+  const resultsByOfficerId = new Map<string, DrillRunResult[]>();
+  const rosterByOfficerId = new Map<string, RangeRosterEntry[]>();
+  const malfunctionsByOfficerId = new Map<string, FirearmMalfunction[]>();
+
+  workspace.results.forEach((result) => {
+    const current = resultsByOfficerId.get(result.officerId) ?? [];
+    current.push(result);
+    resultsByOfficerId.set(result.officerId, current);
+  });
+
+  workspace.rangeRoster.forEach((entry) => {
+    const current = rosterByOfficerId.get(entry.officerId) ?? [];
+    current.push(entry);
+    rosterByOfficerId.set(entry.officerId, current);
+  });
+
+  workspace.malfunctions.forEach((malfunction) => {
+    const officerId = malfunction.officerId;
+
+    if (!officerId) return;
+
+    const current = malfunctionsByOfficerId.get(officerId) ?? [];
+    current.push(malfunction);
+    malfunctionsByOfficerId.set(officerId, current);
+  });
+
+  const personnelById = new Map(personnel.map((officer) => [officer.id, officer]));
+  const workspaceOfficerIds = Array.from(
+    new Set([
+      ...workspace.rangeRoster.map((entry) => entry.officerId),
+      ...workspace.results.map((result) => result.officerId),
+    ].filter(Boolean)),
+  );
+
+  const officers = [
+    ...personnel,
+    ...workspaceOfficerIds
+      .filter((officerId) => !personnelById.has(officerId))
+      .map<PilotPersonnel>((officerId) => ({
+        id: officerId,
+        userId: officerId,
+        displayName: getUserName(officerId),
+        fullName: getUserName(officerId),
+        assignment: "Department Personnel",
+        roles: [],
+        isActive: true,
+      })),
+  ];
+
+  return officers.map<OfficerHistory>((officer) => {
+    const officerResults = resultsByOfficerId.get(officer.id) ?? [];
+    const rosterEntries = rosterByOfficerId.get(officer.id) ?? [];
+    const officerMalfunctions = malfunctionsByOfficerId.get(officer.id) ?? [];
+
+    const assignedFirearmIds = Array.from(
+      new Set(rosterEntries.flatMap((entry) => entry.assignedFirearmIds ?? [])),
+    );
+
+    const missedRangeDays = rosterEntries.filter(
+      (entry) => entry.attended === false,
+    ).length;
+
+    const qualificationEvents = officerResults
+      .map<OfficerQualificationEvent | null>((result) => {
+        const drill = drillById.get(result.drillId);
+
+        if (!isQualificationDrill(drill) && !isRifleDrill(drill)) return null;
+
+        const rangeDay = rangeDayById.get(result.rangeDayId);
+        const linkedMalfunctionCount = workspace.malfunctions.filter(
+          (malfunction) =>
+            malfunction.drillRunId === result.id ||
+            result.malfunctionIds?.includes(malfunction.id),
+        ).length;
+
+        return {
+          id: result.id,
+          rangeDayId: result.rangeDayId,
+          rangeDayTitle: rangeDay?.title ?? "Unknown Range Day",
+          rangeDayStatus: rangeDay?.status ?? "Unknown",
+          date: rangeDay?.date ?? "",
+          location: rangeDay?.location ?? "No location recorded",
+          drillName: drill?.name ?? "Unknown Drill",
+          drillCategory: drill?.category ?? "Unknown",
+          runNumber: result.runNumber,
+          runLabel: getRunLabel(drill, result.runNumber),
+          firearmId: result.firearmId,
+          score: result.score,
+          passed: result.passed,
+          completed: result.completed,
+          instructorId: result.instructorId,
+          notes: result.notes,
+          deficiencyObserved: result.deficiencyObserved,
+          remedialTrainingRecommended: result.remedialTrainingRecommended,
+          malfunctionCount: linkedMalfunctionCount,
+        };
+      })
+      .filter((event): event is OfficerQualificationEvent => Boolean(event))
+      .sort((a, b) => getDateValue(b.date) - getDateValue(a.date));
+
+    const passedQualificationEvents = qualificationEvents.filter(
+      (event) => event.passed === true || event.completed === true,
+    );
+
+    const lastDayQualification = passedQualificationEvents.find(
+      (event) =>
+        event.runNumber === 1 &&
+        event.runLabel.toLowerCase().includes("day") &&
+        !event.drillName.toLowerCase().includes("rifle"),
+    );
+
+    const lastNightQualification = passedQualificationEvents.find(
+      (event) =>
+        event.runNumber === 2 &&
+        event.runLabel.toLowerCase().includes("night") &&
+        !event.drillName.toLowerCase().includes("rifle"),
+    );
+
+    const lastQualification = passedQualificationEvents.find(
+      (event) => !event.drillName.toLowerCase().includes("rifle"),
+    );
+
+    const lastRifleQualification = passedQualificationEvents.find((event) =>
+      event.drillName.toLowerCase().includes("rifle"),
+    );
+
+    const failedQualifications = qualificationEvents.filter(
+      (event) => event.passed === false,
+    );
+
+    const evaluatedStatus = evaluateOfficerStatus(
+      lastDayQualification,
+      lastNightQualification,
+      failedQualifications,
+    );
+
+    return {
+      officerId: officer.id,
+      officerName: officer.displayName,
+      assignedFirearmIds,
+      rosterCount: rosterEntries.length,
+      missedRangeDays,
+      qualificationEvents,
+      lastDayQualification,
+      lastNightQualification,
+      lastQualification,
+      lastRifleQualification,
+      failedQualifications,
+      malfunctionCount: officerMalfunctions.length,
+      ...evaluatedStatus,
+    };
+  }).sort((a, b) => a.officerName.localeCompare(b.officerName));
+}
+
+
+function getOfficerDetails(officerId: string, personnel: PilotPersonnel[]) {
+  return personnel.find((officer) => officer.id === officerId);
+}
+
+function QualificationDateCell({
+  label,
+  event,
+}: {
+  label: string;
+  event?: OfficerQualificationEvent;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+        {label}
+      </p>
+      <p className={`mt-1 text-[12px] font-semibold ${event ? "text-slate-200" : "text-slate-500"}`}>
+        {event ? formatDate(event.date) : "Missing"}
+      </p>
+    </div>
+  );
+}
+
+function OfficerListRow({
+  history,
+  officer,
+  selected,
+  onClick,
+}: {
+  history: OfficerHistory;
+  officer?: PilotPersonnel;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full border-b border-slate-800/80 px-4 py-3 text-left transition last:border-b-0 hover:bg-slate-800/50 ${
+        selected ? "bg-blue-500/[0.09] shadow-[inset_3px_0_0_0_rgba(59,130,246,0.85)]" : "bg-transparent"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-[13px] font-bold text-white">
+              {history.officerName}
+            </p>
+            <StatusPill label={history.status} tone={getStatusTone(history.status)} />
+          </div>
+          <p className="mt-1 truncate text-[11px] text-slate-500">
+            {[officer?.rankTitle, officer?.badgeNumber ? `Badge ${officer.badgeNumber}` : null, officer?.assignment ?? officer?.unitName]
+              .filter(Boolean)
+              .join(" · ") || "Department personnel"}
+          </p>
+        </div>
+        <span className="shrink-0 text-[11px] font-semibold text-slate-400">
+          {history.qualificationEvents.length}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <QualificationDateCell label="Day" event={history.lastDayQualification} />
+        <QualificationDateCell label="Night" event={history.lastNightQualification} />
+      </div>
+    </button>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  detail,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: "default" | "green" | "amber" | "red";
+}) {
+  const valueTone = {
+    default: "text-white",
+    green: "text-emerald-300",
+    amber: "text-amber-300",
+    red: "text-red-300",
+  }[tone];
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/35 px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+        {label}
+      </p>
+      <p className={`mt-1 text-[22px] font-bold ${valueTone}`}>{value}</p>
+      <p className="mt-0.5 text-[11px] text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function CurrentQualificationCard({
+  label,
+  icon,
+  event,
+  emptyText,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  event?: OfficerQualificationEvent;
+  emptyText: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/35 p-4">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {icon}
+        {label}
+      </div>
+      <p className={`mt-3 text-[17px] font-bold ${event ? "text-white" : "text-slate-500"}`}>
+        {event ? formatDate(event.date) : emptyText}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+        <span>Score: {event?.score ?? "—"}</span>
+        <span>{event ? getFirearmShortName(event.firearmId) : "No firearm recorded"}</span>
+      </div>
+    </div>
+  );
+}
+
+function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) {
+  return (
+    <div className="grid gap-3 border-b border-slate-800/80 px-4 py-4 last:border-b-0 lg:grid-cols-[150px_minmax(0,1fr)_110px_180px] lg:items-center">
+      <div>
+        <p className="text-[12px] font-semibold text-white">{formatDate(event.date)}</p>
+        <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">
+          {event.runLabel}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-[13px] font-semibold text-slate-200">{event.drillName}</p>
+          {event.passed === true && <StatusPill label="Pass" tone="green" />}
+          {event.passed === false && <StatusPill label="Fail" tone="red" />}
+          {event.passed === undefined && event.completed && <StatusPill label="Complete" tone="green" />}
+          {event.malfunctionCount > 0 && <StatusPill label="Malfunction" tone="amber" />}
+        </div>
+        <p className="mt-1 truncate text-[11px] text-slate-500">
+          {event.rangeDayTitle} · {event.location} · Instructor: {getUserName(event.instructorId)}
+        </p>
+        {event.notes && <p className="mt-2 text-[11px] text-slate-400">{event.notes}</p>}
+      </div>
+
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Score</p>
+        <p className="mt-1 text-[13px] font-semibold text-white">{event.score ?? "—"}</p>
+      </div>
+
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Firearm</p>
+        <p className="mt-1 text-[12px] font-semibold text-slate-300">
+          {getFirearmShortName(event.firearmId)}
+        </p>
+        {(event.deficiencyObserved || event.remedialTrainingRecommended) && (
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-300">
+            {event.remedialTrainingRecommended ? "Remediation recommended" : "Deficiency recorded"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function QualificationsPage() {
+  const [workspace, setWorkspace] = useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
+  const [personnel, setPersonnel] = useState<PilotPersonnel[]>(FALLBACK_PERSONNEL);
+  const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<OfficerStatusFilter>("All");
+  const [selectedOfficerId, setSelectedOfficerId] = useState<string>(
+    FALLBACK_PERSONNEL[0]?.id ?? "",
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadPersonnelDirectory() {
+      const payload = await loadPilotPersonnel();
+      if (!isMounted) return;
+
+      activePersonnelDirectory = payload.personnel;
+      setPersonnel(payload.personnel);
+      setSelectedOfficerId((current) =>
+        payload.personnel.some((person) => person.id === current)
+          ? current
+          : payload.personnel[0]?.id ?? current,
+      );
+    }
+
+    void loadPersonnelDirectory();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activePersonnelDirectory = personnel;
+  }, [personnel]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadWorkspace() {
+      const remoteWorkspace = await loadRemoteRangeDayWorkspace();
+      const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace();
+      if (!isMounted || !storedWorkspace) return;
+
+      setWorkspace(storedWorkspace);
+      setHasStoredWorkspace(true);
+    }
+
+    void loadWorkspace();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const officerHistories = useMemo(
+    () => buildOfficerHistories(workspace, personnel),
+    [personnel, workspace],
+  );
+
+  const filteredHistories = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase();
+
+    return officerHistories.filter((history) => {
+      const statusMatches = statusFilter === "All" || history.status === statusFilter;
+      const officer = getOfficerDetails(history.officerId, personnel);
+      const searchableText = [
+        history.officerName,
+        officer?.rankTitle ?? "",
+        officer?.badgeNumber ?? "",
+        officer?.assignment ?? "",
+        officer?.unitName ?? "",
+        history.status,
+        ...history.assignedFirearmIds.map(getFirearmName),
+        ...history.qualificationEvents.flatMap((event) => [
+          event.rangeDayTitle,
+          event.drillName,
+          event.runLabel,
+          event.location,
+          event.notes ?? "",
+          getFirearmName(event.firearmId),
+        ]),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return statusMatches && (!normalizedSearch || searchableText.includes(normalizedSearch));
+    });
+  }, [officerHistories, personnel, searchText, statusFilter]);
+
+  useEffect(() => {
+    if (filteredHistories.length === 0) return;
+    if (!filteredHistories.some((history) => history.officerId === selectedOfficerId)) {
+      setSelectedOfficerId(filteredHistories[0].officerId);
+    }
+  }, [filteredHistories, selectedOfficerId]);
+
+  const selectedHistory =
+    officerHistories.find((history) => history.officerId === selectedOfficerId) ??
+    filteredHistories[0] ??
+    officerHistories[0];
+
+  const selectedOfficer = selectedHistory
+    ? getOfficerDetails(selectedHistory.officerId, personnel)
+    : undefined;
+
+  const currentCount = officerHistories.filter((history) => history.status === "Current").length;
+  const dueSoonCount = officerHistories.filter((history) => history.status === "Due Soon").length;
+  const attentionCount = officerHistories.filter((history) =>
+    ["Overdue", "Missing Night", "Failed", "No Record"].includes(history.status),
+  ).length;
+
+  const clearFilters = () => {
+    setSearchText("");
+    setStatusFilter("All");
+  };
+
+  return (
+    <TracePointShell activePage="Qualification History">
+      <div className="mx-auto w-full max-w-[1680px] space-y-4">
+        <header className="flex flex-col gap-3 border-b border-slate-800 pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-400">
+              <Shield size={14} />
+              {DEMO_DEPARTMENT.name}
+            </div>
+            <h1 className="mt-2 text-[24px] font-bold tracking-tight text-white">
+              Qualification History
+            </h1>
+            <p className="mt-1 text-[12px] text-slate-500">
+              Current status, required day and night records, and complete qualification history by officer.
+            </p>
+          </div>
+
+          <div className="text-left text-[11px] text-slate-500 lg:text-right">
+            <p className="mt-1">
+              {hasStoredWorkspace ? "Range workspace synchronized" : "No saved range workspace found"}
+            </p>
+          </div>
+        </header>
+
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <SummaryMetric label="Personnel" value={officerHistories.length} detail="Active records reviewed" />
+          <SummaryMetric label="Current" value={currentCount} detail="Day and night complete" tone="green" />
+          <SummaryMetric label="Due Soon" value={dueSoonCount} detail="Approaching expiration" tone="amber" />
+          <SummaryMetric label="Needs Action" value={attentionCount} detail="Missing, overdue, failed" tone="red" />
+        </section>
+
+        {!hasStoredWorkspace && (
+          <section className="flex gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-[12px] text-amber-200">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <p>
+              No saved range-day workspace was found. Qualification records will populate after a range day is saved.
+            </p>
+          </section>
+        )}
+
+        <section className="grid min-h-[680px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="border-b border-slate-800 xl:border-b-0 xl:border-r">
+            <div className="space-y-3 border-b border-slate-800 p-4">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+                <input
+                  value={searchText}
+                  onChange={(event) => setSearchText(event.target.value)}
+                  placeholder="Search personnel or records"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-[12px] text-white outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <div className="relative">
+                  <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as OfficerStatusFilter)}
+                    className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-[12px] text-white outline-none focus:border-blue-500"
+                  >
+                    {STATUS_FILTERS.map((status) => (
+                      <option key={status} value={status}>
+                        {status === "All" ? "All statuses" : status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  aria-label="Clear filters"
+                  className="rounded-xl border border-slate-700 px-3 text-slate-400 transition hover:border-blue-500/40 hover:text-white"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-600">
+                {filteredHistories.length} of {officerHistories.length} personnel
+              </p>
+            </div>
+
+            <div className="max-h-[560px] overflow-y-auto xl:max-h-[760px]">
+              {filteredHistories.map((history) => (
+                <OfficerListRow
+                  key={history.officerId}
+                  history={history}
+                  officer={getOfficerDetails(history.officerId, personnel)}
+                  selected={selectedHistory?.officerId === history.officerId}
+                  onClick={() => setSelectedOfficerId(history.officerId)}
+                />
+              ))}
+
+              {filteredHistories.length === 0 && (
+                <div className="px-5 py-12 text-center">
+                  <User size={22} className="mx-auto text-slate-700" />
+                  <p className="mt-3 text-[13px] font-semibold text-white">No matching personnel</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Adjust the search or status filter.</p>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <main className="min-w-0">
+            {selectedHistory ? (
+              <>
+                <section className="border-b border-slate-800 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill label={selectedHistory.status} tone={getStatusTone(selectedHistory.status)} />
+                        {selectedHistory.malfunctionCount > 0 && (
+                          <StatusPill label={`${selectedHistory.malfunctionCount} malfunction${selectedHistory.malfunctionCount === 1 ? "" : "s"}`} tone="amber" />
+                        )}
+                      </div>
+                      <h2 className="mt-3 text-[22px] font-bold text-white">{selectedHistory.officerName}</h2>
+                      <p className="mt-1 text-[12px] text-slate-500">
+                        {[selectedOfficer?.rankTitle, selectedOfficer?.badgeNumber ? `Badge ${selectedOfficer.badgeNumber}` : null, selectedOfficer?.assignment ?? selectedOfficer?.unitName]
+                          .filter(Boolean)
+                          .join(" · ") || "Department personnel"}
+                      </p>
+                      <p className="mt-3 max-w-3xl text-[12px] leading-5 text-slate-400">
+                        {selectedHistory.statusReason}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 lg:min-w-[330px]">
+                      <SummaryMetric label="Range Days" value={selectedHistory.rosterCount} detail="Roster entries" />
+                      <SummaryMetric label="Missed" value={selectedHistory.missedRangeDays} detail="Recorded absences" tone={selectedHistory.missedRangeDays > 0 ? "amber" : "default"} />
+                      <SummaryMetric label="Failures" value={selectedHistory.failedQualifications.length} detail="Recorded results" tone={selectedHistory.failedQualifications.length > 0 ? "red" : "default"} />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="border-b border-slate-800 p-4 sm:p-5">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-[13px] font-bold text-white">Current Qualification Status</h3>
+                    <p className="text-[11px] text-slate-600">365-day qualification cycle</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <CurrentQualificationCard label="Day Qualification" icon={<Sun size={14} className="text-amber-300" />} event={selectedHistory.lastDayQualification} emptyText="Missing" />
+                    <CurrentQualificationCard label="Night Qualification" icon={<Moon size={14} className="text-blue-300" />} event={selectedHistory.lastNightQualification} emptyText="Missing" />
+                    <CurrentQualificationCard label="Rifle Qualification" icon={<Crosshair size={14} className="text-emerald-300" />} event={selectedHistory.lastRifleQualification} emptyText="No record" />
+                  </div>
+                </section>
+
+                <section className="border-b border-slate-800 p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-[13px] font-bold text-white">
+                        <Target size={14} className="text-blue-400" />
+                        Firearms Referenced
+                      </h3>
+                      <p className="mt-1 text-[11px] text-slate-500">Firearms linked through range-day roster records.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedHistory.assignedFirearmIds.length > 0 ? (
+                      selectedHistory.assignedFirearmIds.map((firearmId) => (
+                        <span key={firearmId} className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] font-medium text-slate-300">
+                          {getFirearmName(firearmId)}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-[11px] text-slate-500">No firearms are linked to this officer.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <div className="flex flex-col gap-2 border-b border-slate-800 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-[13px] font-bold text-white">
+                        <ClipboardList size={14} className="text-blue-400" />
+                        Qualification Timeline
+                      </h3>
+                      <p className="mt-1 text-[11px] text-slate-500">Most recent records appear first.</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                      <CalendarDays size={14} />
+                      {selectedHistory.qualificationEvents.length} record{selectedHistory.qualificationEvents.length === 1 ? "" : "s"}
+                    </div>
+                  </div>
+
+                  {selectedHistory.qualificationEvents.length > 0 ? (
+                    <div>
+                      {selectedHistory.qualificationEvents.map((event) => (
+                        <QualificationEventRow key={event.id} event={event} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-5 py-14 text-center">
+                      <FileText size={22} className="mx-auto text-slate-700" />
+                      <p className="mt-3 text-[13px] font-semibold text-white">No qualification records</p>
+                      <p className="mt-1 text-[11px] text-slate-500">Saved range-day results will appear here.</p>
+                    </div>
+                  )}
+                </section>
+              </>
+            ) : (
+              <div className="flex min-h-[500px] items-center justify-center p-6 text-center">
+                <div>
+                  <History size={24} className="mx-auto text-slate-700" />
+                  <p className="mt-3 text-[13px] font-semibold text-white">Select an officer</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Choose a personnel record to view qualification history.</p>
+                </div>
+              </div>
+            )}
+          </main>
+        </section>
+      </div>
+    </TracePointShell>
+  );
+}

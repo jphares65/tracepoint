@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import TracePointShell from "@/app/components/TracePointShell";
 import {
   Activity,
   AlertTriangle,
@@ -17,14 +16,13 @@ import {
   Shield,
   ShieldAlert,
   Sun,
-  Target,
   TrendingDown,
   TrendingUp,
   Wrench,
 } from "lucide-react";
 
+import TracePointShell from "@/app/components/TracePointShell";
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
-
 import type {
   DrillRunResult,
   DrillTemplate,
@@ -33,15 +31,30 @@ import type {
   RangeRosterEntry,
 } from "@/app/lib/tracepoint/range-day-types";
 
-import { MOCK_FIREARMS, MOCK_USERS } from "@/app/lib/tracepoint/mock-data";
+type PilotPersonnel = {
+  id: string;
+  displayName: string;
+  fullName: string;
+  rankTitle?: string | null;
+  badgeNumber?: string | null;
+  isActive?: boolean;
+};
+
+type LiveFirearm = {
+  id: string;
+  make: string;
+  model: string;
+  serial_number: string;
+  firearm_type?: string | null;
+  condition_status?: string | null;
+  is_active?: boolean;
+};
 
 type StoredRangeDay = RangeDay & {
   rangeType?: string;
   startTime?: string;
   endTime?: string;
   packetStatus?: string;
-  staffingNotes?: string;
-  outline?: string[];
 };
 
 type StoredRangeDayWorkspace = {
@@ -61,7 +74,6 @@ type ReadinessStatus =
   | "Overdue"
   | "No Record";
 
-type Priority = "Critical" | "High" | "Medium" | "Low";
 type Tone = "blue" | "green" | "amber" | "red" | "slate";
 
 type OfficerSummary = {
@@ -69,30 +81,16 @@ type OfficerSummary = {
   officerName: string;
   status: ReadinessStatus;
   statusReason: string;
-  lastDayQualification?: DrillRunResult;
-  lastNightQualification?: DrillRunResult;
-  lastQualificationDate?: string;
-  failedQualificationCount: number;
   scoreTrend: "Improving" | "Declining" | "Stable" | "Insufficient Data";
   trendDelta?: number;
 };
 
-type DrillAnalyticsSummary = {
-  drillId: string;
-  drillName: string;
-  resultCount: number;
-  passRate: number;
-  averageScore?: number;
-  failedCount: number;
-};
-
-type CriticalItem = {
+type AttentionItem = {
   id: string;
   title: string;
   detail: string;
-  module: "Qualifications" | "Range" | "Firearms" | "Analytics" | "Records";
   href: string;
-  priority: Priority;
+  tone: Tone;
   icon: typeof Shield;
 };
 
@@ -108,60 +106,75 @@ const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   malfunctions: [],
 };
 
-function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
-  if (typeof window === "undefined") return null;
+function normalizeWorkspace(
+  workspace?: Partial<StoredRangeDayWorkspace> | null,
+): StoredRangeDayWorkspace {
+  return {
+    rangeDays: Array.isArray(workspace?.rangeDays) ? workspace.rangeDays : [],
+    drillLibrary: Array.isArray(workspace?.drillLibrary)
+      ? workspace.drillLibrary
+      : [],
+    rangeDayDrills: Array.isArray(workspace?.rangeDayDrills)
+      ? workspace.rangeDayDrills
+      : [],
+    rangeRoster: Array.isArray(workspace?.rangeRoster)
+      ? workspace.rangeRoster
+      : [],
+    results: Array.isArray(workspace?.results) ? workspace.results : [],
+    malfunctions: Array.isArray(workspace?.malfunctions)
+      ? workspace.malfunctions
+      : [],
+  };
+}
+
+function loadStoredWorkspace() {
+  if (typeof window === "undefined") return EMPTY_WORKSPACE;
 
   try {
-    const storedWorkspace = window.localStorage.getItem(
-      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+    const raw = window.localStorage.getItem(RANGE_DAY_WORKSPACE_STORAGE_KEY);
+    if (!raw) return EMPTY_WORKSPACE;
+
+    return normalizeWorkspace(
+      JSON.parse(raw) as Partial<StoredRangeDayWorkspace>,
     );
-
-    if (!storedWorkspace) return null;
-
-    const parsed = JSON.parse(
-      storedWorkspace,
-    ) as Partial<StoredRangeDayWorkspace>;
-
-    return {
-      rangeDays: Array.isArray(parsed.rangeDays) ? parsed.rangeDays : [],
-      drillLibrary: Array.isArray(parsed.drillLibrary) ? parsed.drillLibrary : [],
-      rangeDayDrills: Array.isArray(parsed.rangeDayDrills)
-        ? parsed.rangeDayDrills
-        : [],
-      rangeRoster: Array.isArray(parsed.rangeRoster) ? parsed.rangeRoster : [],
-      results: Array.isArray(parsed.results) ? parsed.results : [],
-      malfunctions: Array.isArray(parsed.malfunctions)
-        ? parsed.malfunctions
-        : [],
-    };
-  } catch (error) {
-    console.warn("Could not load saved range day workspace.", error);
-    return null;
+  } catch {
+    return EMPTY_WORKSPACE;
   }
 }
 
-function getRecordValue(item: unknown, keys: string[]) {
-  const record = item as Record<string, unknown>;
+async function loadDashboardData() {
+  const [personnelResponse, firearmsResponse, workspaceResponse] =
+    await Promise.all([
+      fetch("/api/pilot/personnel", { cache: "no-store" }),
+      fetch("/api/armory/firearms", { cache: "no-store" }),
+      fetch("/api/pilot/range-workspace", { cache: "no-store" }),
+    ]);
 
-  for (const key of keys) {
-    const value = record[key];
+  const personnelPayload = personnelResponse.ok
+    ? ((await personnelResponse.json()) as { personnel?: PilotPersonnel[] })
+    : {};
 
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number") return String(value);
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-  }
+  const firearmsPayload = firearmsResponse.ok
+    ? ((await firearmsResponse.json()) as { firearms?: LiveFirearm[] })
+    : {};
 
-  return undefined;
-}
+  const workspacePayload = workspaceResponse.ok
+    ? ((await workspaceResponse.json()) as {
+        workspace?: Partial<StoredRangeDayWorkspace> | null;
+      })
+    : {};
 
-function formatDate(date?: string) {
-  if (!date) return "No date";
-
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return {
+    personnel: Array.isArray(personnelPayload.personnel)
+      ? personnelPayload.personnel
+      : [],
+    firearms: Array.isArray(firearmsPayload.firearms)
+      ? firearmsPayload.firearms
+      : [],
+    workspace: workspacePayload.workspace
+      ? normalizeWorkspace(workspacePayload.workspace)
+      : loadStoredWorkspace(),
+  };
 }
 
 function getDateValue(date?: string) {
@@ -176,13 +189,11 @@ function getDateValue(date?: string) {
 
 function getTodayValue() {
   const now = new Date();
-
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
 
 function getDaysSince(date?: string) {
   const value = getDateValue(date);
-
   if (!value) return undefined;
 
   return Math.max(
@@ -191,34 +202,14 @@ function getDaysSince(date?: string) {
   );
 }
 
-function getUserName(userId?: string) {
-  if (!userId) return "Unassigned";
+function formatDate(date?: string) {
+  if (!date) return "No date";
 
-  return MOCK_USERS.find((user) => user.id === userId)?.name ?? "Unknown User";
-}
-
-function getFirearmStatusLabel(firearm: (typeof MOCK_FIREARMS)[number]) {
-  return (
-    getRecordValue(firearm, [
-      "status",
-      "condition",
-      "inventoryStatus",
-      "serviceStatus",
-      "operationalStatus",
-    ]) ?? "Active"
-  );
-}
-
-function getFirearmTypeLabel(firearm: (typeof MOCK_FIREARMS)[number]) {
-  return (
-    getRecordValue(firearm, [
-      "type",
-      "firearmType",
-      "category",
-      "weaponType",
-      "classification",
-    ]) ?? "Firearm"
-  );
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function isQualificationDrill(drill?: RangeDayDrill | null) {
@@ -231,114 +222,25 @@ function isQualificationDrill(drill?: RangeDayDrill | null) {
 }
 
 function isPassed(result: DrillRunResult) {
-  if (typeof result.passed === "boolean") return result.passed;
-
-  return result.completed;
+  return typeof result.passed === "boolean" ? result.passed : result.completed;
 }
 
-function getResultDate(
-  result: DrillRunResult | undefined,
-  rangeDaysById: Map<string, StoredRangeDay>,
-) {
-  if (!result) return undefined;
-
-  return rangeDaysById.get(result.rangeDayId)?.date;
-}
-
-function sortResultsNewestFirst(
-  results: DrillRunResult[],
-  rangeDaysById: Map<string, StoredRangeDay>,
-) {
-  return [...results].sort(
-    (a, b) =>
-      getDateValue(getResultDate(b, rangeDaysById)) -
-      getDateValue(getResultDate(a, rangeDaysById)),
-  );
-}
-
-function sortResultsOldestFirst(
-  results: DrillRunResult[],
-  rangeDaysById: Map<string, StoredRangeDay>,
-) {
-  return [...results].sort(
-    (a, b) =>
-      getDateValue(getResultDate(a, rangeDaysById)) -
-      getDateValue(getResultDate(b, rangeDaysById)),
-  );
-}
-
-function getScoreTrend(
-  results: DrillRunResult[],
-  rangeDaysById: Map<string, StoredRangeDay>,
-): OfficerSummary["scoreTrend"] {
-  const scoredResults = sortResultsOldestFirst(
-    results.filter((result) => typeof result.score === "number"),
-    rangeDaysById,
-  );
-
-  if (scoredResults.length < 3) return "Insufficient Data";
-
-  const firstScore = scoredResults[0].score ?? 0;
-  const lastScore = scoredResults[scoredResults.length - 1].score ?? 0;
-  const delta = lastScore - firstScore;
-
-  if (delta <= -5) return "Declining";
-  if (delta >= 5) return "Improving";
-
-  return "Stable";
-}
-
-function getTrendDelta(
-  results: DrillRunResult[],
-  rangeDaysById: Map<string, StoredRangeDay>,
-) {
-  const scoredResults = sortResultsOldestFirst(
-    results.filter((result) => typeof result.score === "number"),
-    rangeDaysById,
-  );
-
-  if (scoredResults.length < 3) return undefined;
-
-  const firstScore = scoredResults[0].score ?? 0;
-  const lastScore = scoredResults[scoredResults.length - 1].score ?? 0;
-
-  return lastScore - firstScore;
-}
-
-function getPriorityValue(priority: Priority) {
-  const order: Record<Priority, number> = {
-    Critical: 0,
-    High: 1,
-    Medium: 2,
-    Low: 3,
-  };
-
-  return order[priority];
-}
-
-function getPriorityTone(priority: Priority): Tone {
-  if (priority === "Critical" || priority === "High") return "red";
-  if (priority === "Medium") return "amber";
-
-  return "blue";
-}
-
-function getToneClasses(tone: Tone) {
-  const styles = {
+function toneClasses(tone: Tone) {
+  return {
     blue: "border-blue-500/25 bg-blue-500/[0.08] text-blue-300",
     green: "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-300",
     amber: "border-amber-500/25 bg-amber-500/[0.08] text-amber-300",
     red: "border-red-500/25 bg-red-500/[0.08] text-red-300",
     slate: "border-slate-700 bg-slate-800/60 text-slate-300",
-  };
-
-  return styles[tone];
+  }[tone];
 }
 
 function StatusPill({ label, tone = "blue" }: { label: string; tone?: Tone }) {
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${getToneClasses(tone)}`}
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${toneClasses(
+        tone,
+      )}`}
     >
       {label}
     </span>
@@ -363,7 +265,7 @@ function PulseCard({
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
             {title}
           </p>
@@ -373,7 +275,7 @@ function PulseCard({
           </p>
         </div>
 
-        <div className={`rounded-2xl border p-2.5 ${getToneClasses(tone)}`}>
+        <div className={`rounded-2xl border p-2.5 ${toneClasses(tone)}`}>
           <Icon size={18} />
         </div>
       </div>
@@ -387,281 +289,182 @@ function PulseCard({
 
 function EmptyPanel({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-center text-[12px] text-slate-500">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5 text-center text-[12px] text-slate-500">
       {message}
     </div>
   );
 }
 
-function CriticalItemRow({ item }: { item: CriticalItem }) {
-  const Icon = item.icon;
-  const tone = getPriorityTone(item.priority);
-
-  return (
-    <Link
-      href={item.href}
-      className={`group flex items-start justify-between gap-3 rounded-2xl border p-3 transition hover:border-blue-500/40 ${getToneClasses(tone)}`}
-    >
-      <div className="flex min-w-0 gap-3">
-        <div className={`h-fit rounded-xl border p-2 ${getToneClasses(tone)}`}>
-          <Icon size={15} />
-        </div>
-
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill label={item.priority} tone={tone} />
-            <StatusPill label={item.module} tone="slate" />
-          </div>
-
-          <p className="mt-2 text-[13px] font-bold text-white">{item.title}</p>
-          <p className="mt-1 text-[11px] leading-5 text-slate-400">
-            {item.detail}
-          </p>
-        </div>
-      </div>
-
-      <ChevronRight
-        size={15}
-        className="mt-1 shrink-0 text-slate-600 group-hover:text-blue-300"
-      />
-    </Link>
-  );
-}
-
-function SnapshotLink({
-  title,
-  href,
-  icon: Icon,
-  primary,
-  secondary,
-  tone,
-}: {
-  title: string;
-  href: string;
-  icon: typeof Shield;
-  primary: string;
-  secondary: string;
-  tone: Tone;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group block rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40 hover:bg-slate-800/70"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[13px] font-bold text-white">{title}</p>
-          <p className="mt-1 text-[11px] text-slate-400">{primary}</p>
-          <p className="mt-1 text-[11px] text-slate-600">{secondary}</p>
-        </div>
-
-        <div className={`rounded-xl border p-2 ${getToneClasses(tone)}`}>
-          <Icon size={15} />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
 export default function DashboardPage() {
+  const [personnel, setPersonnel] = useState<PilotPersonnel[]>([]);
+  const [firearms, setFirearms] = useState<LiveFirearm[]>([]);
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    setWorkspace(loadStoredRangeDayWorkspace() ?? EMPTY_WORKSPACE);
+    let mounted = true;
+
+    async function load() {
+      try {
+        const data = await loadDashboardData();
+        if (!mounted) return;
+
+        setPersonnel(data.personnel.filter((person) => person.isActive !== false));
+        setFirearms(data.firearms.filter((firearm) => firearm.is_active !== false));
+        setWorkspace(data.workspace);
+      } catch (error) {
+        console.error("Could not load command dashboard.", error);
+        if (mounted) {
+          setLoadError("Command dashboard data could not be loaded.");
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    void load();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const rangeDaysById = useMemo(() => {
-    return new Map(
-      workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
-    );
-  }, [workspace.rangeDays]);
-
-  const drillsById = useMemo(() => {
-    return new Map(workspace.rangeDayDrills.map((drill) => [drill.id, drill]));
-  }, [workspace.rangeDayDrills]);
-
-  const activeRangeDays = useMemo(
-    () =>
-      workspace.rangeDays.filter(
-        (rangeDay) => rangeDay.status !== "Archived",
-      ),
+  const rangeDaysById = useMemo(
+    () => new Map(workspace.rangeDays.map((day) => [day.id, day])),
     [workspace.rangeDays],
   );
 
-  const upcomingRangeDays = useMemo(() => {
-    return activeRangeDays
-      .filter((rangeDay) => getDateValue(rangeDay.date) >= getTodayValue())
-      .sort((a, b) => getDateValue(a.date) - getDateValue(b.date))
-      .slice(0, 4);
-  }, [activeRangeDays]);
+  const drillsById = useMemo(
+    () => new Map(workspace.rangeDayDrills.map((drill) => [drill.id, drill])),
+    [workspace.rangeDayDrills],
+  );
 
-  const incompletePackets = useMemo(() => {
-    return activeRangeDays.filter(
-      (rangeDay) =>
-        rangeDay.status !== "Completed" &&
-        rangeDay.status !== "Locked" &&
-        rangeDay.packetStatus !== "Ready",
-    );
-  }, [activeRangeDays]);
-
-  const qualificationResults = useMemo(() => {
-    return workspace.results.filter((result) =>
-      isQualificationDrill(drillsById.get(result.drillId)),
-    );
-  }, [workspace.results, drillsById]);
+  const qualificationResults = useMemo(
+    () =>
+      workspace.results.filter((result) =>
+        isQualificationDrill(drillsById.get(result.drillId)),
+      ),
+    [drillsById, workspace.results],
+  );
 
   const officerSummaries = useMemo<OfficerSummary[]>(() => {
-    return MOCK_USERS.map((user) => {
-      const officerResults = sortResultsNewestFirst(
-        qualificationResults.filter((result) => result.officerId === user.id),
-        rangeDaysById,
-      );
+    return personnel.map((person) => {
+      const results = qualificationResults
+        .filter((result) => result.officerId === person.id)
+        .sort(
+          (a, b) =>
+            getDateValue(rangeDaysById.get(b.rangeDayId)?.date) -
+            getDateValue(rangeDaysById.get(a.rangeDayId)?.date),
+        );
 
-      const passedResults = officerResults.filter(isPassed);
-      const failedResults = officerResults.filter(
-        (result) => result.passed === false,
-      );
-      const dayResults = passedResults.filter((result) => result.runNumber === 1);
-      const nightResults = passedResults.filter((result) => result.runNumber === 2);
-
-      const lastDayQualification = dayResults[0];
-      const lastNightQualification = nightResults[0];
-      const lastQualification = passedResults[0];
-      const lastQualificationDate = getResultDate(
-        lastQualification,
-        rangeDaysById,
-      );
-      const daysSinceLastQualification = getDaysSince(lastQualificationDate);
-      const mostRecentResult = officerResults[0];
+      const passed = results.filter(isPassed);
+      const day = passed.find((result) => result.runNumber === 1);
+      const night = passed.find((result) => result.runNumber === 2);
+      const latest = results[0];
+      const latestPassed = passed[0];
+      const latestPassedDate = latestPassed
+        ? rangeDaysById.get(latestPassed.rangeDayId)?.date
+        : undefined;
+      const daysSince = getDaysSince(latestPassedDate);
 
       let status: ReadinessStatus = "No Record";
       let statusReason = "No passing qualification record is recorded.";
 
-      if (mostRecentResult?.passed === false) {
+      if (latest?.passed === false) {
         status = "Failed";
-        statusReason = "Most recent qualification result is marked failed.";
-      } else if (passedResults.length === 0) {
+        statusReason = "The most recent qualification result is marked failed.";
+      } else if (!day && !night) {
         status = "No Record";
-        statusReason = "No passing qualification record is recorded.";
-      } else if (!lastDayQualification) {
+      } else if (!day) {
         status = "Needs Day";
         statusReason = "No passing day qualification is recorded.";
-      } else if (!lastNightQualification) {
+      } else if (!night) {
         status = "Needs Night";
-        statusReason = "Passing day qualification exists, but night qualification is missing.";
+        statusReason = "No passing night qualification is recorded.";
       } else if (
-        typeof daysSinceLastQualification === "number" &&
-        daysSinceLastQualification > QUALIFICATION_VALID_DAYS
+        typeof daysSince === "number" &&
+        daysSince > QUALIFICATION_VALID_DAYS
       ) {
         status = "Overdue";
-        statusReason = `${daysSinceLastQualification} days since the last passing qualification.`;
+        statusReason = `${daysSince} days since the last passing qualification.`;
       } else {
         status = "Current";
-        statusReason = "Passing day and night qualification records are present.";
+        statusReason = "Day and night qualification records are current.";
+      }
+
+      const scored = [...results]
+        .filter((result) => typeof result.score === "number")
+        .reverse();
+
+      let scoreTrend: OfficerSummary["scoreTrend"] = "Insufficient Data";
+      let trendDelta: number | undefined;
+
+      if (scored.length >= 3) {
+        trendDelta =
+          (scored[scored.length - 1].score ?? 0) - (scored[0].score ?? 0);
+
+        scoreTrend =
+          trendDelta <= -5
+            ? "Declining"
+            : trendDelta >= 5
+              ? "Improving"
+              : "Stable";
       }
 
       return {
-        officerId: user.id,
-        officerName: user.name,
+        officerId: person.id,
+        officerName: person.displayName || person.fullName,
         status,
         statusReason,
-        lastDayQualification,
-        lastNightQualification,
-        lastQualificationDate,
-        failedQualificationCount: failedResults.length,
-        scoreTrend: getScoreTrend(officerResults, rangeDaysById),
-        trendDelta: getTrendDelta(officerResults, rangeDaysById),
+        scoreTrend,
+        trendDelta,
       };
     });
-  }, [qualificationResults, rangeDaysById]);
+  }, [personnel, qualificationResults, rangeDaysById]);
 
-  const firearmAlerts = useMemo(() => {
-    return MOCK_FIREARMS.map((firearm) => {
-      const statusLabel = getFirearmStatusLabel(firearm);
-      const normalizedStatus = statusLabel.toLowerCase();
-      const malfunctions = workspace.malfunctions.filter(
-        (malfunction) => malfunction.firearmId === firearm.id,
-      );
-      const unresolvedMalfunctions = malfunctions.filter(
-        (malfunction) =>
-          malfunction.inspectionRequired ||
+  const activeRangeDays = workspace.rangeDays.filter(
+    (day) => day.status !== "Archived",
+  );
+
+  const upcomingRangeDays = [...activeRangeDays]
+    .filter((day) => getDateValue(day.date) >= getTodayValue())
+    .sort((a, b) => getDateValue(a.date) - getDateValue(b.date))
+    .slice(0, 4);
+
+  const incompletePackets = activeRangeDays.filter(
+    (day) =>
+      day.status !== "Completed" &&
+      day.status !== "Locked" &&
+      day.packetStatus !== "Ready",
+  );
+
+  const firearmAlerts = firearms.filter((firearm) => {
+    const status = (firearm.condition_status ?? "").toLowerCase();
+
+    const unresolved = workspace.malfunctions.some(
+      (malfunction) =>
+        malfunction.firearmId === firearm.id &&
+        (malfunction.inspectionRequired ||
           malfunction.removedFromService ||
-          malfunction.resolvedOnRange === false,
-      );
+          malfunction.resolvedOnRange === false),
+    );
 
-      const outOfService =
-        normalizedStatus.includes("out") ||
-        normalizedStatus.includes("maintenance") ||
-        unresolvedMalfunctions.some(
-          (malfunction) => malfunction.removedFromService,
-        );
+    return (
+      status.includes("maintenance") ||
+      status.includes("out of service") ||
+      status.includes("oos") ||
+      unresolved
+    );
+  });
 
-      return {
-        firearmId: firearm.id,
-        name: `${firearm.make} ${firearm.model}`,
-        serialNumber: firearm.serialNumber,
-        typeLabel: getFirearmTypeLabel(firearm),
-        statusLabel,
-        malfunctionCount: malfunctions.length,
-        unresolvedCount: unresolvedMalfunctions.length,
-        outOfService,
-        requiresAttention: outOfService || unresolvedMalfunctions.length > 0,
-      };
-    }).filter((firearm) => firearm.requiresAttention);
-  }, [workspace.malfunctions]);
-
-  const drillAnalytics = useMemo<DrillAnalyticsSummary[]>(() => {
-    const summaries = workspace.rangeDayDrills.map((drill) => {
-      const drillResults = workspace.results.filter(
-        (result) => result.drillId === drill.id,
-      );
-      const scoredResults = drillResults.filter(
-        (result) => typeof result.score === "number",
-      );
-      const passableResults = drillResults.filter(
-        (result) => typeof result.passed === "boolean",
-      );
-      const failedCount = passableResults.filter(
-        (result) => result.passed === false,
-      ).length;
-      const passRate = passableResults.length
-        ? Math.round(
-            ((passableResults.length - failedCount) / passableResults.length) * 100,
-          )
-        : drillResults.length
-          ? 100
-          : 0;
-      const averageScore = scoredResults.length
-        ? Math.round(
-            scoredResults.reduce(
-              (total, result) => total + (result.score ?? 0),
-              0,
-            ) / scoredResults.length,
-          )
-        : undefined;
-
-      return {
-        drillId: drill.id,
-        drillName: drill.name,
-        resultCount: drillResults.length,
-        passRate,
-        averageScore,
-        failedCount,
-      };
-    });
-
-    return summaries
-      .filter((summary) => summary.resultCount > 0)
-      .sort((a, b) => a.passRate - b.passRate || b.failedCount - a.failedCount)
-      .slice(0, 5);
-  }, [workspace.rangeDayDrills, workspace.results]);
-
-  const currentOfficerCount = officerSummaries.filter(
+  const currentCount = officerSummaries.filter(
     (officer) => officer.status === "Current",
   ).length;
   const needsDayCount = officerSummaries.filter(
-    (officer) => officer.status === "Needs Day" || officer.status === "No Record",
+    (officer) =>
+      officer.status === "Needs Day" || officer.status === "No Record",
   ).length;
   const needsNightCount = officerSummaries.filter(
     (officer) => officer.status === "Needs Night",
@@ -669,10 +472,10 @@ export default function DashboardPage() {
   const failedOrOverdueCount = officerSummaries.filter(
     (officer) => officer.status === "Failed" || officer.status === "Overdue",
   ).length;
-  const decliningOfficers = officerSummaries.filter(
+  const declining = officerSummaries.filter(
     (officer) => officer.scoreTrend === "Declining",
   );
-  const improvingOfficerCount = officerSummaries.filter(
+  const improvingCount = officerSummaries.filter(
     (officer) => officer.scoreTrend === "Improving",
   ).length;
 
@@ -681,103 +484,73 @@ export default function DashboardPage() {
   );
   const averageScore = scoredResults.length
     ? Math.round(
-        scoredResults.reduce((total, result) => total + (result.score ?? 0), 0) /
+        scoredResults.reduce((sum, result) => sum + (result.score ?? 0), 0) /
           scoredResults.length,
       )
     : undefined;
-  const completedRangeDays = activeRangeDays.filter(
-    (rangeDay) =>
-      rangeDay.status === "Completed" || rangeDay.status === "Locked",
-  ).length;
-  const readyPackets = activeRangeDays.filter(
-    (rangeDay) => rangeDay.packetStatus === "Ready",
-  ).length;
-  const rosterAssignments = workspace.rangeRoster.length;
-  const plannedDrills = workspace.rangeDayDrills.length;
 
-  const criticalItems = useMemo<CriticalItem[]>(() => {
-    const items: CriticalItem[] = [];
+  const attentionItems = useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = [];
 
-    for (const officer of officerSummaries) {
-      if (officer.status === "Failed" || officer.status === "Overdue") {
+    officerSummaries.forEach((officer) => {
+      if (
+        officer.status === "Failed" ||
+        officer.status === "Overdue" ||
+        officer.status === "Needs Day" ||
+        officer.status === "Needs Night"
+      ) {
         items.push({
-          id: `critical-qual-${officer.officerId}`,
+          id: `qualification-${officer.officerId}`,
           title: `${officer.officerName} · ${officer.status}`,
           detail: officer.statusReason,
-          module: "Qualifications",
           href: "/qualifications",
-          priority: "Critical",
+          tone:
+            officer.status === "Failed" || officer.status === "Overdue"
+              ? "red"
+              : "amber",
           icon: ShieldAlert,
         });
       }
-    }
+    });
 
-    for (const firearm of firearmAlerts) {
+    firearmAlerts.forEach((firearm) => {
       items.push({
-        id: `firearm-${firearm.firearmId}`,
-        title: `${firearm.name} · ${firearm.serialNumber}`,
-        detail: firearm.outOfService
-          ? "Firearm is marked or inferred as out of service."
-          : `${firearm.unresolvedCount} malfunction/inspection item${firearm.unresolvedCount === 1 ? "" : "s"} require review.`,
-        module: "Firearms",
+        id: `firearm-${firearm.id}`,
+        title: `${firearm.make} ${firearm.model} · ${firearm.serial_number}`,
+        detail: `Condition: ${firearm.condition_status ?? "Review required"}.`,
         href: "/firearms",
-        priority: firearm.outOfService ? "Critical" : "High",
+        tone: "red",
         icon: Wrench,
       });
-    }
+    });
 
-    for (const rangeDay of incompletePackets.slice(0, 6)) {
+    incompletePackets.forEach((day) => {
       items.push({
-        id: `packet-${rangeDay.id}`,
-        title: `Packet not ready · ${rangeDay.title}`,
-        detail: `${formatDate(rangeDay.date)} · Packet status: ${rangeDay.packetStatus ?? "Needs Setup"}.`,
-        module: "Range",
+        id: `packet-${day.id}`,
+        title: `Packet not ready · ${day.title}`,
+        detail: `${formatDate(day.date)} · ${day.packetStatus ?? "Needs Setup"}`,
         href: "/range-days",
-        priority: "Medium",
+        tone: "amber",
         icon: ClipboardList,
       });
-    }
+    });
 
-    for (const officer of officerSummaries) {
-      if (officer.status === "Needs Day" || officer.status === "No Record") {
-        items.push({
-          id: `day-${officer.officerId}`,
-          title: `${officer.officerName} · Day qualification gap`,
-          detail: officer.statusReason,
-          module: "Qualifications",
-          href: "/qualifications",
-          priority: "High",
-          icon: Sun,
-        });
-      } else if (officer.status === "Needs Night") {
-        items.push({
-          id: `night-${officer.officerId}`,
-          title: `${officer.officerName} · Night qualification gap`,
-          detail: officer.statusReason,
-          module: "Qualifications",
-          href: "/qualifications",
-          priority: "High",
-          icon: Moon,
-        });
-      }
-    }
-
-    for (const officer of decliningOfficers) {
+    declining.forEach((officer) => {
       items.push({
         id: `trend-${officer.officerId}`,
         title: `${officer.officerName} · Declining score trend`,
-        detail: `Scores are trending down${typeof officer.trendDelta === "number" ? ` by ${Math.abs(officer.trendDelta)} points` : ""}.`,
-        module: "Analytics",
+        detail:
+          typeof officer.trendDelta === "number"
+            ? `Scores declined by ${Math.abs(officer.trendDelta)} points.`
+            : "Scores show a declining pattern.",
         href: "/analytics",
-        priority: "Medium",
+        tone: "amber",
         icon: TrendingDown,
       });
-    }
+    });
 
-    return items
-      .sort((a, b) => getPriorityValue(a.priority) - getPriorityValue(b.priority))
-      .slice(0, 8);
-  }, [decliningOfficers, firearmAlerts, incompletePackets, officerSummaries]);
+    return items.slice(0, 8);
+  }, [declining, firearmAlerts, incompletePackets, officerSummaries]);
 
   const qualificationTone: Tone =
     failedOrOverdueCount > 0 || needsDayCount > 0
@@ -785,10 +558,6 @@ export default function DashboardPage() {
       : needsNightCount > 0
         ? "amber"
         : "green";
-  const rangeTone: Tone = incompletePackets.length > 0 ? "amber" : "green";
-  const firearmTone: Tone = firearmAlerts.length > 0 ? "red" : "green";
-  const trendTone: Tone = decliningOfficers.length > 0 ? "amber" : "blue";
-  const recordTone: Tone = incompletePackets.length > 0 ? "amber" : "green";
 
   return (
     <TracePointShell activePage="Command Dashboard">
@@ -800,9 +569,8 @@ export default function DashboardPage() {
                 TracePoint Command Pulse
               </h1>
               <p className="mt-1 max-w-4xl text-[12px] leading-5 text-slate-500">
-                A command-level pulse check for firearms readiness, qualification
-                gaps, range-day records, firearm reliability, and emerging training
-                trends.
+                Firearm readiness, qualification gaps, range records, and
+                emerging training concerns.
               </p>
             </div>
 
@@ -814,7 +582,6 @@ export default function DashboardPage() {
                 <CalendarDays size={14} />
                 Plan Range Day
               </Link>
-
               <Link
                 href="/analytics"
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
@@ -826,10 +593,16 @@ export default function DashboardPage() {
           </div>
         </header>
 
+        {loadError && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] text-red-200">
+            {loadError}
+          </div>
+        )}
+
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <PulseCard
             title="Qualification Readiness"
-            value={`${currentOfficerCount}/${MOCK_USERS.length}`}
+            value={loading ? "—" : `${currentCount}/${personnel.length}`}
             label="Officers current"
             detail={`${needsDayCount} need day/no record · ${needsNightCount} need night · ${failedOrOverdueCount} failed/overdue.`}
             icon={Shield}
@@ -837,222 +610,93 @@ export default function DashboardPage() {
           />
           <PulseCard
             title="Range Readiness"
-            value={upcomingRangeDays.length}
+            value={loading ? "—" : upcomingRangeDays.length}
             label="Upcoming range days"
-            detail={`${incompletePackets.length} active packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
+            detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
             icon={CalendarDays}
-            tone={rangeTone}
+            tone={incompletePackets.length > 0 ? "amber" : "green"}
           />
           <PulseCard
             title="Firearm Reliability"
-            value={firearmAlerts.length}
+            value={loading ? "—" : firearmAlerts.length}
             label="Weapons flagged"
-            detail={`${workspace.malfunctions.length} malfunction record${workspace.malfunctions.length === 1 ? "" : "s"} in the workspace.`}
+            detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
             icon={Crosshair}
-            tone={firearmTone}
+            tone={firearmAlerts.length > 0 ? "red" : "green"}
           />
           <PulseCard
             title="Records Health"
-            value={readyPackets}
-            label="Packets ready"
-            detail={`${completedRangeDays} completed/locked range day${completedRangeDays === 1 ? "" : "s"} · ${workspace.rangeDays.length} total saved.`}
+            value={loading ? "—" : workspace.rangeDays.length}
+            label="Range days saved"
+            detail={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills.`}
             icon={FileText}
-            tone={recordTone}
+            tone={incompletePackets.length > 0 ? "amber" : "green"}
           />
           <PulseCard
             title="Performance Signal"
-            value={averageScore ?? "—"}
+            value={loading ? "—" : averageScore ?? "—"}
             label="Average score"
-            detail={`${decliningOfficers.length} declining · ${improvingOfficerCount} improving · ${drillAnalytics.length} drill signal${drillAnalytics.length === 1 ? "" : "s"}.`}
+            detail={`${declining.length} declining · ${improvingCount} improving.`}
             icon={TrendingUp}
-            tone={trendTone}
+            tone={declining.length > 0 ? "amber" : "blue"}
           />
         </section>
 
         <section className="grid gap-5 xl:grid-cols-[1fr_430px]">
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h2 className="flex items-center gap-2 text-[18px] font-bold text-white">
                   <Activity size={18} className="text-blue-400" />
                   Critical Attention
                 </h2>
-                <p className="mt-1 text-[12px] leading-5 text-slate-500">
-                  The highest-priority qualification, firearm, range packet, and
-                  performance items requiring command or training staff review.
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Live qualification, firearm, range-packet, and performance
+                  items requiring review.
                 </p>
               </div>
-
               <StatusPill
-                label={`${criticalItems.length} active item${criticalItems.length === 1 ? "" : "s"}`}
-                tone={criticalItems.length > 0 ? "amber" : "green"}
+                label={`${attentionItems.length} active`}
+                tone={attentionItems.length > 0 ? "amber" : "green"}
               />
             </div>
 
-            {criticalItems.length === 0 ? (
-              <EmptyPanel message="No critical command attention items are currently identified from the saved workspace." />
+            {attentionItems.length === 0 ? (
+              <EmptyPanel message="No command attention items are currently identified." />
             ) : (
               <div className="space-y-3">
-                {criticalItems.map((item) => (
-                  <CriticalItemRow key={item.id} item={item} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-5">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-              <h2 className="text-[17px] font-bold text-white">Module Snapshot</h2>
-              <p className="mt-1 text-[12px] text-slate-500">
-                Fast access to each TracePoint operating area without turning the
-                dashboard into a full report.
-              </p>
-
-              <div className="mt-4 space-y-3">
-                <SnapshotLink
-                  title="Range & Training"
-                  href="/range-days"
-                  icon={CalendarDays}
-                  primary={`${activeRangeDays.length} active range day${activeRangeDays.length === 1 ? "" : "s"}`}
-                  secondary={`${rosterAssignments} roster assignments · ${plannedDrills} planned drills`}
-                  tone={rangeTone}
-                />
-                <SnapshotLink
-                  title="Qualifications"
-                  href="/qualifications"
-                  icon={Shield}
-                  primary={`${currentOfficerCount} current · ${needsDayCount + needsNightCount + failedOrOverdueCount} gap${needsDayCount + needsNightCount + failedOrOverdueCount === 1 ? "" : "s"}`}
-                  secondary={`${qualificationResults.length} qualification result${qualificationResults.length === 1 ? "" : "s"} saved`}
-                  tone={qualificationTone}
-                />
-                <SnapshotLink
-                  title="Firearms"
-                  href="/firearms"
-                  icon={Crosshair}
-                  primary={`${firearmAlerts.length} firearm alert${firearmAlerts.length === 1 ? "" : "s"}`}
-                  secondary={`${MOCK_FIREARMS.length} firearms loaded · ${workspace.malfunctions.length} malfunction records`}
-                  tone={firearmTone}
-                />
-                <SnapshotLink
-                  title="Analytics"
-                  href="/analytics"
-                  icon={BarChart3}
-                  primary={`${decliningOfficers.length} declining · ${improvingOfficerCount} improving`}
-                  secondary={`${drillAnalytics.length} drill/course signal${drillAnalytics.length === 1 ? "" : "s"}`}
-                  tone={trendTone}
-                />
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-              <h2 className="text-[17px] font-bold text-white">Qualification Snapshot</h2>
-              <p className="mt-1 text-[12px] text-slate-500">
-                Day and night are shown together so the readiness picture stays balanced.
-              </p>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3">
-                  <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-emerald-300">
-                    <CheckCircle2 size={13} /> Current
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-white">
-                    {currentOfficerCount}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.06] p-3">
-                  <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-blue-300">
-                    <Sun size={13} /> Need Day
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-white">
-                    {needsDayCount}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
-                  <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-amber-300">
-                    <Moon size={13} /> Need Night
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-white">
-                    {needsNightCount}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.06] p-3">
-                  <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-red-300">
-                    <AlertTriangle size={13} /> Failed/Overdue
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-white">
-                    {failedOrOverdueCount}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-5 xl:grid-cols-2">
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[17px] font-bold text-white">
-                  Upcoming Range Days
-                </h2>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  The next few scheduled events and their packet readiness.
-                </p>
-              </div>
-              <StatusPill label={`${upcomingRangeDays.length} upcoming`} />
-            </div>
-
-            {upcomingRangeDays.length === 0 ? (
-              <EmptyPanel message="No upcoming range days are currently saved." />
-            ) : (
-              <div className="space-y-3">
-                {upcomingRangeDays.map((rangeDay) => {
-                  const rosterCount = workspace.rangeRoster.filter(
-                    (entry) => entry.rangeDayId === rangeDay.id,
-                  ).length;
-                  const drillCount = workspace.rangeDayDrills.filter(
-                    (drill) => drill.rangeDayId === rangeDay.id,
-                  ).length;
+                {attentionItems.map((item) => {
+                  const Icon = item.icon;
 
                   return (
                     <Link
-                      key={rangeDay.id}
-                      href="/range-days"
-                      className="group block rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40 hover:bg-slate-800/70"
+                      key={item.id}
+                      href={item.href}
+                      className={`group flex items-start justify-between gap-3 rounded-2xl border p-3 transition hover:border-blue-500/40 ${toneClasses(
+                        item.tone,
+                      )}`}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex gap-3">
+                        <div
+                          className={`h-fit rounded-xl border p-2 ${toneClasses(
+                            item.tone,
+                          )}`}
+                        >
+                          <Icon size={15} />
+                        </div>
                         <div>
-                          <div className="mb-2 flex flex-wrap gap-2">
-                            <StatusPill label={rangeDay.status} />
-                            <StatusPill
-                              label={rangeDay.packetStatus ?? "Needs Setup"}
-                              tone={
-                                rangeDay.packetStatus === "Ready"
-                                  ? "green"
-                                  : "amber"
-                              }
-                            />
-                          </div>
-                          <p className="text-[14px] font-bold text-white">
-                            {rangeDay.title}
+                          <p className="text-[13px] font-bold text-white">
+                            {item.title}
                           </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {formatDate(rangeDay.date)} · {rangeDay.startTime ?? ""}
-                            {rangeDay.endTime ? `-${rangeDay.endTime}` : ""} · {rangeDay.location}
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            {item.detail}
                           </p>
                         </div>
-                        <ChevronRight
-                          size={16}
-                          className="mt-1 text-slate-600 group-hover:text-blue-300"
-                        />
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-500">
-                        <span>{rosterCount} officers</span>
-                        <span>·</span>
-                        <span>{drillCount} drills</span>
-                        <span>·</span>
-                        <span>Lead: {getUserName(rangeDay.leadInstructorId)}</span>
-                      </div>
+                      <ChevronRight
+                        size={15}
+                        className="mt-1 text-slate-600 group-hover:text-blue-300"
+                      />
                     </Link>
                   );
                 })}
@@ -1060,83 +704,139 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[17px] font-bold text-white">
-                  Analytics Watchlist
-                </h2>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  Trend signals and weaker drills from saved scores.
-                </p>
+          <div className="space-y-5">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+              <h2 className="text-[17px] font-bold text-white">
+                Qualification Snapshot
+              </h2>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {[
+                  ["Current", currentCount, CheckCircle2, "green" as Tone],
+                  ["Need Day", needsDayCount, Sun, "blue" as Tone],
+                  ["Need Night", needsNightCount, Moon, "amber" as Tone],
+                  [
+                    "Failed/Overdue",
+                    failedOrOverdueCount,
+                    AlertTriangle,
+                    "red" as Tone,
+                  ],
+                ].map(([label, value, Icon, tone]) => {
+                  const MetricIcon = Icon as typeof Shield;
+
+                  return (
+                    <div
+                      key={String(label)}
+                      className={`rounded-2xl border p-3 ${toneClasses(
+                        tone as Tone,
+                      )}`}
+                    >
+                      <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest">
+                        <MetricIcon size={13} />
+                        {String(label)}
+                      </p>
+                      <p className="mt-1 text-2xl font-bold text-white">
+                        {Number(value)}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
-              <Link
-                href="/analytics"
-                className="rounded-xl border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-              >
-                Open Analytics
-              </Link>
             </div>
 
-            {drillAnalytics.length === 0 && decliningOfficers.length === 0 ? (
-              <EmptyPanel message="Enter more scored qualifications and drills to generate trend signals." />
-            ) : (
-              <div className="space-y-3">
-                {decliningOfficers.slice(0, 3).map((officer) => (
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+              <h2 className="text-[17px] font-bold text-white">
+                Module Snapshot
+              </h2>
+              <div className="mt-4 space-y-2">
+                {[
+                  [
+                    "Range & Training",
+                    "/range-days",
+                    `${activeRangeDays.length} active range days`,
+                  ],
+                  [
+                    "Qualifications",
+                    "/qualifications",
+                    `${qualificationResults.length} qualification results`,
+                  ],
+                  [
+                    "Firearms",
+                    "/firearms",
+                    `${firearms.length} active firearms`,
+                  ],
+                  [
+                    "Analytics",
+                    "/analytics",
+                    `${declining.length} declining trends`,
+                  ],
+                ].map(([title, href, detail]) => (
                   <Link
-                    key={`decline-${officer.officerId}`}
-                    href="/analytics"
-                    className="group flex items-start justify-between gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 transition hover:border-amber-500/40"
+                    key={title}
+                    href={href}
+                    className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 transition hover:border-blue-500/40"
                   >
-                    <div className="flex gap-3">
-                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2 text-amber-300">
-                        <TrendingDown size={15} />
-                      </div>
-                      <div>
-                        <p className="text-[13px] font-bold text-white">
-                          {officer.officerName} · Declining Trend
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          Scores are trending down{typeof officer.trendDelta === "number" ? ` by ${Math.abs(officer.trendDelta)} points` : ""}.
-                        </p>
-                      </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-white">
+                        {title}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {detail}
+                      </p>
                     </div>
-                    <ChevronRight
-                      size={15}
-                      className="mt-1 text-slate-600 group-hover:text-amber-200"
-                    />
-                  </Link>
-                ))}
-
-                {drillAnalytics.slice(0, 4).map((drill) => (
-                  <Link
-                    key={drill.drillId}
-                    href="/analytics"
-                    className="group flex items-start justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40 hover:bg-slate-800/70"
-                  >
-                    <div className="flex gap-3">
-                      <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-2 text-blue-300">
-                        <Target size={15} />
-                      </div>
-                      <div>
-                        <p className="text-[13px] font-bold text-white">
-                          {drill.drillName}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {drill.resultCount} result{drill.resultCount === 1 ? "" : "s"} · {drill.passRate}% pass rate
-                          {typeof drill.averageScore === "number" ? ` · ${drill.averageScore} avg score` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight
-                      size={15}
-                      className="mt-1 text-slate-600 group-hover:text-blue-300"
-                    />
+                    <ChevronRight size={15} className="text-slate-600" />
                   </Link>
                 ))}
               </div>
-            )}
+            </div>
           </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[17px] font-bold text-white">
+                Upcoming Range Days
+              </h2>
+              <p className="mt-1 text-[12px] text-slate-500">
+                Scheduled events and packet readiness.
+              </p>
+            </div>
+            <StatusPill label={`${upcomingRangeDays.length} upcoming`} />
+          </div>
+
+          {upcomingRangeDays.length === 0 ? (
+            <EmptyPanel message="No upcoming range days are currently saved." />
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {upcomingRangeDays.map((day) => (
+                <Link
+                  key={day.id}
+                  href="/range-days"
+                  className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="mb-2 flex gap-2">
+                        <StatusPill label={day.status} />
+                        <StatusPill
+                          label={day.packetStatus ?? "Needs Setup"}
+                          tone={day.packetStatus === "Ready" ? "green" : "amber"}
+                        />
+                      </div>
+                      <p className="text-[14px] font-bold text-white">
+                        {day.title}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {formatDate(day.date)} · {day.location}
+                      </p>
+                    </div>
+                    <ChevronRight size={15} className="text-slate-600" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </TracePointShell>
