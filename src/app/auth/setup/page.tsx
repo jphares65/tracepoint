@@ -19,7 +19,13 @@ type SetupPageProps = {
 };
 
 function safeNextPath(value?: string) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.startsWith("/auth/setup") ||
+    value.startsWith("/login")
+  ) {
     return "/";
   }
 
@@ -48,7 +54,10 @@ async function completeAccountSetup(formData: FormData) {
   const confirmPassword = textValue(formData, "confirmPassword");
 
   if (!password || !confirmPassword) {
-    setupRedirectWithError("Password and confirmation are required.", nextPath);
+    setupRedirectWithError(
+      "Password and confirmation are required.",
+      nextPath,
+    );
   }
 
   if (password.length < 8) {
@@ -70,7 +79,11 @@ async function completeAccountSetup(formData: FormData) {
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    redirect(`/login?next=${encodeURIComponent("/auth/setup")}`);
+    redirect(
+      `/login?error=${encodeURIComponent(
+        "Your setup session has expired. Please sign in normally.",
+      )}`,
+    );
   }
 
   const { error } = await supabase.auth.updateUser({
@@ -116,14 +129,17 @@ async function createInitialDepartment(formData: FormData) {
     redirect("/login");
   }
 
-  const { error } = await supabase.rpc("create_department_with_owner", {
-    p_name: name,
-    p_slug: slug,
-    p_short_name: shortName || null,
-    p_badge_number: badgeNumber || null,
-    p_rank_title: rankTitle || null,
-    p_unit_name: unitName || null,
-  });
+  const { error } = await supabase.rpc(
+    "create_department_with_owner",
+    {
+      p_name: name,
+      p_slug: slug,
+      p_short_name: shortName || null,
+      p_badge_number: badgeNumber || null,
+      p_rank_title: rankTitle || null,
+      p_unit_name: unitName || null,
+    },
+  );
 
   if (error) {
     setupRedirectWithError(error.message, nextPath);
@@ -201,8 +217,9 @@ function PasswordSetupView({
           </h1>
 
           <p className="mt-4 text-sm leading-6 text-slate-400">
-            Your department membership is already active. Set your password to
-            finish account setup and continue into TracePoint.
+            Your department membership is already active. Set your
+            password to finish account setup and continue into
+            TracePoint.
           </p>
 
           <div className="mt-8 space-y-4">
@@ -273,8 +290,15 @@ function PasswordSetupView({
 
           <ErrorNotice message={error} />
 
-          <form action={completeAccountSetup} className="mt-7 space-y-5">
-            <input type="hidden" name="next" value={nextPath} />
+          <form
+            action={completeAccountSetup}
+            className="mt-7 space-y-5"
+          >
+            <input
+              type="hidden"
+              name="next"
+              value={nextPath}
+            />
 
             <label className="block">
               <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
@@ -340,16 +364,32 @@ function InitialDepartmentSetupView({
           </h1>
 
           <p className="mt-4 text-sm leading-6 text-slate-400">
-            This creates the first secure tenant and assigns your signed-in
-            account as its administrator.
+            This creates the first secure tenant and assigns your
+            signed-in account as its administrator.
           </p>
 
           <div className="mt-8 space-y-4">
             {[
-              [Building2, "Department tenant", "Separates agency records"],
-              [Users, "Administrator membership", "Creates your first role"],
-              [ShieldCheck, "RLS enforcement", "Applies department access"],
-              [Database, "Shared data", "Replaces browser-only storage"],
+              [
+                Building2,
+                "Department tenant",
+                "Separates agency records",
+              ],
+              [
+                Users,
+                "Administrator membership",
+                "Creates your first role",
+              ],
+              [
+                ShieldCheck,
+                "RLS enforcement",
+                "Applies department access",
+              ],
+              [
+                Database,
+                "Shared data",
+                "Replaces browser-only storage",
+              ],
             ].map(([Icon, title, description]) => {
               const ItemIcon = Icon as typeof Building2;
 
@@ -396,8 +436,15 @@ function InitialDepartmentSetupView({
 
           <ErrorNotice message={error} />
 
-          <form action={createInitialDepartment} className="mt-7 space-y-5">
-            <input type="hidden" name="next" value={nextPath} />
+          <form
+            action={createInitialDepartment}
+            className="mt-7 space-y-5"
+          >
+            <input
+              type="hidden"
+              name="next"
+              value={nextPath}
+            />
 
             <div className="grid gap-5 sm:grid-cols-2">
               <label className="sm:col-span-2">
@@ -503,7 +550,11 @@ export default async function SetupPage({
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    redirect(`/login?next=${encodeURIComponent("/auth/setup")}`);
+    redirect(
+      `/login?error=${encodeURIComponent(
+        "Your invitation or setup session has expired. Please sign in normally.",
+      )}`,
+    );
   }
 
   const { data: membership } = await supabase
