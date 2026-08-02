@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import AssignPasswordModal from "./AssignPasswordModal";
 import { createClient } from "@/lib/supabase/client";
 import {
   buildAppearancePreferences,
@@ -721,6 +722,8 @@ export default function AdminSettingsPage() {
   const [passwordResetEmail, setPasswordResetEmail] = useState<string | null>(
     null,
   );
+  const [passwordAssignmentMember, setPasswordAssignmentMember] =
+    useState<MemberRow | null>(null);
   const availableTabs = useMemo(() => {
     const items: Array<{
       id: TabId;
@@ -2170,6 +2173,21 @@ export default function AdminSettingsPage() {
                           </p>
                         </div>
 
+                        <button
+                          type="button"
+                          onClick={() => setPasswordAssignmentMember(member)}
+                          disabled={
+                            !canManageUsers ||
+                            !member.is_active ||
+                            (member.role_codes.includes("administrator") &&
+                              !canAdminister)
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-3.5 py-2 text-sm font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Lock size={14} />
+                          Assign Password
+                        </button>
+
                         {member.email ? (
                           <button
                             type="button"
@@ -3116,6 +3134,23 @@ export default function AdminSettingsPage() {
             </button>
           </div>
         </Modal>
+      ) : null}
+
+      {passwordAssignmentMember && departmentId ? (
+        <AssignPasswordModal
+          departmentId={departmentId}
+          userId={passwordAssignmentMember.user_id}
+          userName={passwordAssignmentMember.full_name}
+          userEmail={passwordAssignmentMember.email}
+          onClose={() => setPasswordAssignmentMember(null)}
+          onSuccess={(message) => {
+            showNotice("success", message);
+            setPasswordAssignmentMember(null);
+          }}
+          onError={(message) => {
+            showNotice("error", message);
+          }}
+        />
       ) : null}
     </TracePointShell>
   );
