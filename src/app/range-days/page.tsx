@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
@@ -183,6 +183,10 @@ type LiveFirearm = {
   asset_number?: string | null;
   condition_status?: string | null;
   is_active?: boolean;
+  active_assignment?: {
+    assigned_to_user_id: string;
+    assigned_to_name?: string | null;
+  } | null;
 };
 
 type DrillLifecycleSummary = {
@@ -1065,6 +1069,21 @@ function getUserName(userId: string) {
   );
 }
 
+function formatRangeFirearmType(type?: string | null) {
+  switch (type) {
+    case "handgun":
+      return "Handgun";
+    case "rifle":
+      return "Rifle";
+    case "shotgun":
+      return "Shotgun";
+    case "less_lethal":
+      return "Less Lethal";
+    default:
+      return "Other";
+  }
+}
+
 function getFirearmName(firearmId?: string) {
   if (!firearmId) return "No firearm selected";
 
@@ -1072,7 +1091,7 @@ function getFirearmName(firearmId?: string) {
 
   if (!firearm) return "Unknown firearm";
 
-  return `${firearm.make} ${firearm.model} (${firearm.serial_number})`;
+  return `${formatRangeFirearmType(firearm.firearm_type)} — ${firearm.make} ${firearm.model}`;
 }
 
 function StatusPill({
@@ -1294,13 +1313,13 @@ function PrintableRangePacket({
                   <tr key={drill.id}>
                     <td>
                       <strong>{drill.name}</strong>
-                      {drill.description ? <span> — {drill.description}</span> : null}
+                      {drill.description ? <span> â€” {drill.description}</span> : null}
                     </td>
                     <td>{drill.category}</td>
                     <td>{getScoringFormat(drill)}</td>
                     <td>{getEffectiveRunCount(drill)}</td>
-                    <td>{drill.roundCount ?? "—"}</td>
-                    <td>{drill.isDepartmentStandard ? getDepartmentStandardRequirementLabel(drill) : "—"}</td>
+                    <td>{drill.roundCount ?? "â€”"}</td>
+                    <td>{drill.isDepartmentStandard ? getDepartmentStandardRequirementLabel(drill) : "â€”"}</td>
                   </tr>
                 ))
               )}
@@ -2824,7 +2843,7 @@ export default function RangeDaysPage() {
             <StatCard
               label="Scheduled"
               value={filteredRangeDays.length}
-              sub={`${activeRangeDayCount} active · ${archivedRangeDayCount} archived`}
+              sub={`${activeRangeDayCount} active Â· ${archivedRangeDayCount} archived`}
             />
             <StatCard
               label="Roster Slots"
@@ -3014,7 +3033,7 @@ export default function RangeDaysPage() {
                   <div className="space-y-2 text-[12px] text-slate-400">
                     <p className="flex items-center gap-2">
                       <CalendarDays size={13} className="text-slate-600" />
-                      {formatDate(rangeDay.date)} · {rangeDay.startTime}-
+                      {formatDate(rangeDay.date)} Â· {rangeDay.startTime}-
                       {rangeDay.endTime}
                     </p>
 
@@ -3912,7 +3931,7 @@ export default function RangeDaysPage() {
                             {drill.departmentStandardName || drill.name}
                           </p>
                           <p className="mt-1 text-[11px] text-blue-200">
-                            {getDepartmentStandardRequirementLabel(drill)} · {drill.departmentStandardAppliesTo || "Agency configured"}
+                            {getDepartmentStandardRequirementLabel(drill)} Â· {drill.departmentStandardAppliesTo || "Agency configured"}
                           </p>
                         </div>
                       ))
@@ -4033,11 +4052,17 @@ export default function RangeDaysPage() {
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
                       >
                         <option value="">No firearm selected</option>
-                        {firearms.map((firearm) => (
-                          <option key={firearm.id} value={firearm.id}>
-                            {getFirearmName(firearm.id)}
-                          </option>
-                        ))}
+                        {firearms
+                          .filter(
+                            (firearm) =>
+                              firearm.active_assignment
+                                ?.assigned_to_user_id === entry.officerId,
+                          )
+                          .map((firearm) => (
+                            <option key={firearm.id} value={firearm.id}>
+                              {getFirearmName(firearm.id)}
+                            </option>
+                          ))}
                       </select>
 
                       <button
@@ -4819,7 +4844,7 @@ export default function RangeDaysPage() {
                                     : scoringFormat === "Completion" ||
                                         scoringFormat === "Pass/Fail" ||
                                         scoringFormat === "Notes Only"
-                                      ? "—"
+                                      ? "â€”"
                                       : "Score"
                               }
                               disabled={
@@ -4888,7 +4913,7 @@ export default function RangeDaysPage() {
                                       : "Pending"}
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-slate-600">—</span>
+                                <span className="text-[11px] text-slate-600">â€”</span>
                               )}
                             </div>
 
@@ -4969,7 +4994,7 @@ export default function RangeDaysPage() {
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                 >
                   <Save size={14} />
-                  Save All — {getRunLabel(selectedDrill, selectedRunNumber)}
+                  Save All â€” {getRunLabel(selectedDrill, selectedRunNumber)}
                 </button>
               </div>
             </div>
@@ -5020,7 +5045,7 @@ export default function RangeDaysPage() {
                               {getFirearmName(malfunction.firearmId)}
                             </p>
                             <p className="text-[11px] text-amber-300">
-                              {malfunction.type} · Armorer inspection required
+                              {malfunction.type} Â· Armorer inspection required
                             </p>
                             {malfunction.notes && (
                               <p className="mt-1 text-[11px] text-slate-400">
@@ -5066,7 +5091,7 @@ export default function RangeDaysPage() {
                                 {getUserName(result.officerId)}
                               </p>
                               <p className="text-[11px] text-slate-500">
-                                {drill?.name} · {getRunLabel(drill, result.runNumber)}
+                                {drill?.name} Â· {getRunLabel(drill, result.runNumber)}
                               </p>
                             </div>
 
@@ -5078,7 +5103,7 @@ export default function RangeDaysPage() {
                           </div>
 
                           <p className="mt-2 text-[11px] text-slate-400">
-                            Result: {formatResultMetric(result, drill) || "—"} · Passed: {typeof result.passed === "boolean" ? result.passed ? "Yes" : "No" : "—"} · Completed: {result.completed ? "Yes" : "No"} · Standard: {typeof result.departmentStandardPassed === "boolean" ? result.departmentStandardPassed ? "Met" : "Failed" : "—"}
+                            Result: {formatResultMetric(result, drill) || "â€”"} Â· Passed: {typeof result.passed === "boolean" ? result.passed ? "Yes" : "No" : "â€”"} Â· Completed: {result.completed ? "Yes" : "No"} Â· Standard: {typeof result.departmentStandardPassed === "boolean" ? result.departmentStandardPassed ? "Met" : "Failed" : "â€”"}
                           </p>
 
                           {result.notes && (
@@ -5212,3 +5237,4 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
