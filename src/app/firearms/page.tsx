@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   CheckCircle2,
   ClipboardList,
   Crosshair,
@@ -48,6 +49,9 @@ type ArmoryFirearm = {
   condition_status?: FirearmStatus | string | null;
   notes?: string | null;
   is_active: boolean;
+  archived_at?: string | null;
+  archived_by_user_id?: string | null;
+  archive_reason?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   active_assignment?: ActiveAssignment | null;
@@ -194,6 +198,7 @@ export default function FirearmsPage() {
     null,
   );
   const [query, setQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"All" | FirearmStatus>(
     "All",
   );
@@ -212,6 +217,17 @@ export default function FirearmsPage() {
     useState("");
   const [statusDraft, setStatusDraft] = useState<FirearmStatus>("In Service");
   const [statusNotes, setStatusNotes] = useState("");
+  const [archiveReason, setArchiveReason] = useState("");
+
+  const [editMake, setEditMake] = useState("");
+  const [editModel, setEditModel] = useState("");
+  const [editSerialNumber, setEditSerialNumber] = useState("");
+  const [editFirearmType, setEditFirearmType] =
+    useState<FirearmType>("handgun");
+  const [editCaliber, setEditCaliber] = useState("");
+  const [editAssetNumber, setEditAssetNumber] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editChangeNote, setEditChangeNote] = useState("");
 
   const selectedFirearm = useMemo(
     () => firearms.find((firearm) => firearm.id === selectedFirearmId) ?? null,
@@ -228,19 +244,20 @@ export default function FirearmsPage() {
   }, [firearms, query, statusFilter]);
 
   const inventoryCounts = useMemo(() => {
-    const assigned = firearms.filter(
+    const activeFirearms = firearms.filter((firearm) => firearm.is_active);
+    const assigned = activeFirearms.filter(
       (firearm) => firearm.active_assignment,
     ).length;
-    const outOfService = firearms.filter((firearm) =>
+    const outOfService = activeFirearms.filter((firearm) =>
       ["Out of Service", "Maintenance", "Inspection Required"].includes(
         normalizeStatus(firearm.condition_status),
       ),
     ).length;
 
     return {
-      total: firearms.length,
+      total: activeFirearms.length,
       assigned,
-      available: Math.max(firearms.length - assigned, 0),
+      available: Math.max(activeFirearms.length - assigned, 0),
       outOfService,
     };
   }, [firearms]);
@@ -250,10 +267,13 @@ export default function FirearmsPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/armory/firearms", {
-        method: "GET",
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/armory/firearms?includeArchived=${showArchived}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
 
       if (!response.ok) {
         throw new Error(await readError(response));
@@ -287,7 +307,7 @@ export default function FirearmsPage() {
   useEffect(() => {
     void loadArmory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     if (!selectedFirearm) return;
@@ -302,6 +322,22 @@ export default function FirearmsPage() {
     setMagazineDiscrepancyReason("");
     setStatusDraft(normalizeStatus(selectedFirearm.condition_status));
     setStatusNotes("");
+    setArchiveReason("");
+
+    setEditMake(selectedFirearm.make);
+    setEditModel(selectedFirearm.model);
+    setEditSerialNumber(selectedFirearm.serial_number);
+    setEditFirearmType(
+      FIREARM_TYPES.some(
+        (item) => item.value === selectedFirearm.firearm_type,
+      )
+        ? (selectedFirearm.firearm_type as FirearmType)
+        : "other",
+    );
+    setEditCaliber(selectedFirearm.caliber ?? "");
+    setEditAssetNumber(selectedFirearm.asset_number ?? "");
+    setEditNotes(selectedFirearm.notes ?? "");
+    setEditChangeNote("");
   }, [selectedFirearm]);
 
   async function handleAddFirearm() {
@@ -488,6 +524,172 @@ export default function FirearmsPage() {
     }
   }
 
+  async function handleEditFirearm() {
+    if (!selectedFirearm) return;
+
+    if (
+      !editMake.trim() ||
+      !editModel.trim() ||
+      !editSerialNumber.trim()
+    ) {
+      setError("Make, model, and serial number are required.");
+      return;
+    }
+
+    if (!editChangeNote.trim()) {
+      setError("Enter a reason for the firearm changes.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/armory/firearms/${selectedFirearm.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            make: editMake,
+            model: editModel,
+            serialNumber: editSerialNumber,
+            firearmType: editFirearmType,
+            caliber: editCaliber,
+            assetNumber: editAssetNumber,
+            notes: editNotes,
+            changeNote: editChangeNote,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      setMessage("Firearm details updated and recorded in the audit log.");
+      setEditChangeNote("");
+
+      await loadArmory({ preserveSelection: true });
+    } catch (editError) {
+      setError(
+        editError instanceof Error
+          ? editError.message
+          : "The firearm could not be updated.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRestoreFirearm() {
+    if (!selectedFirearm) return;
+
+    const confirmed = window.confirm(
+      `Restore ${getFirearmLabel(selectedFirearm)} (${selectedFirearm.serial_number})?
+
+The firearm will return to active inventory and may again be used in operational workflows.`,
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/armory/firearms/${selectedFirearm.id}/restore`,
+        {
+          method: "PATCH",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      setMessage("Firearm restored to active inventory.");
+      setSelectedFirearmId(null);
+
+      await loadArmory();
+    } catch (restoreError) {
+      setError(
+        restoreError instanceof Error
+          ? restoreError.message
+          : "The firearm could not be restored.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleArchiveFirearm() {
+    if (!selectedFirearm) return;
+
+    const reason = archiveReason.trim();
+
+    if (!reason) {
+      setError("Enter a reason before archiving the firearm.");
+      return;
+    }
+
+    if (selectedFirearm.active_assignment) {
+      setError(
+        "This firearm is currently assigned. Record its return before archiving it.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Archive ${getFirearmLabel(selectedFirearm)} (${selectedFirearm.serial_number})?
+
+The firearm will be removed from active inventory and future operational selections. Historical records will remain preserved.`,
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/armory/firearms/${selectedFirearm.id}/archive`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            archiveReason: reason,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      setArchiveReason("");
+      setSelectedFirearmId(null);
+      setMessage("Firearm archived. Historical records remain preserved.");
+
+      await loadArmory();
+    } catch (archiveError) {
+      setError(
+        archiveError instanceof Error
+          ? archiveError.message
+          : "The firearm could not be archived.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <TracePointShell activePage="Armory">
       <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
@@ -581,6 +783,18 @@ export default function FirearmsPage() {
                       </option>
                     ))}
                   </select>
+
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={showArchived}
+                      onChange={(event) =>
+                        setShowArchived(event.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+                    />
+                    Show Archived
+                  </label>
                 </div>
               </div>
 
@@ -695,6 +909,23 @@ export default function FirearmsPage() {
                       <p className="mt-1 font-mono text-xs text-slate-500">
                         Serial: {selectedFirearm.serial_number}
                       </p>
+
+                      {!selectedFirearm.is_active && (
+                        <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-900 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-300">
+                            Archived
+                          </p>
+                          <p className="mt-1 text-sm text-slate-400">
+                            {selectedFirearm.archive_reason ||
+                              "No archive reason recorded."}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            Archived{" "}
+                            {formatDateTime(selectedFirearm.archived_at)}
+                          </p>
+                        </div>
+                      )}
+
                       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -923,6 +1154,151 @@ export default function FirearmsPage() {
                       )}
                     </div>
 
+                    <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
+                      <div className="flex items-center gap-2">
+                        <Save className="h-5 w-5 text-slate-400" />
+                        <h3 className="font-bold text-white">
+                          Edit Firearm Details
+                        </h3>
+                      </div>
+
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Every saved change requires a reason and is permanently
+                        recorded in the immutable audit log.
+                      </p>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Make
+                          </span>
+                          <input
+                            value={editMake}
+                            onChange={(event) =>
+                              setEditMake(event.target.value)
+                            }
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                          />
+                        </label>
+
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Model
+                          </span>
+                          <input
+                            value={editModel}
+                            onChange={(event) =>
+                              setEditModel(event.target.value)
+                            }
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                          />
+                        </label>
+
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Serial Number
+                          </span>
+                          <input
+                            value={editSerialNumber}
+                            onChange={(event) =>
+                              setEditSerialNumber(event.target.value)
+                            }
+                            className="w-full rounded-2xl border border-amber-900/70 bg-amber-950/10 px-3 py-2 text-sm outline-none focus:border-amber-500"
+                          />
+                        </label>
+
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Firearm Type
+                          </span>
+                          <select
+                            value={editFirearmType}
+                            onChange={(event) =>
+                              setEditFirearmType(
+                                event.target.value as FirearmType,
+                              )
+                            }
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                          >
+                            {FIREARM_TYPES.map((type) => (
+                              <option key={type.value} value={type.value}>
+                                {type.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Caliber
+                          </span>
+                          <input
+                            value={editCaliber}
+                            onChange={(event) =>
+                              setEditCaliber(event.target.value)
+                            }
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                          />
+                        </label>
+
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Asset Number
+                          </span>
+                          <input
+                            value={editAssetNumber}
+                            onChange={(event) =>
+                              setEditAssetNumber(event.target.value)
+                            }
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                          />
+                        </label>
+                      </div>
+
+                      <label className="mt-3 block space-y-1">
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Firearm Notes
+                        </span>
+                        <textarea
+                          value={editNotes}
+                          onChange={(event) =>
+                            setEditNotes(event.target.value)
+                          }
+                          rows={3}
+                          className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                        />
+                      </label>
+
+                      <label className="mt-3 block space-y-1">
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">
+                          Reason for Change
+                        </span>
+                        <textarea
+                          value={editChangeNote}
+                          onChange={(event) =>
+                            setEditChangeNote(event.target.value)
+                          }
+                          rows={3}
+                          placeholder="Explain why these firearm details are being corrected or updated..."
+                          className="w-full rounded-2xl border border-blue-900/70 bg-blue-950/20 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleEditFirearm()}
+                        disabled={saving || !editChangeNote.trim()}
+                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {saving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        Save Firearm Changes
+                      </button>
+                    </div>
+
                     <div className="rounded-3xl border border-slate-200 p-4">
                       <div className="flex items-center gap-2">
                         <Wrench className="h-5 w-5 text-slate-500" />
@@ -973,6 +1349,94 @@ export default function FirearmsPage() {
                         </button>
                       </div>
                     </div>
+
+                    {!selectedFirearm.is_active ? (
+                      <div className="rounded-3xl border border-blue-900/70 bg-blue-950/20 p-4">
+                        <div className="flex items-center gap-2">
+                          <RotateCcw className="h-5 w-5 text-blue-400" />
+                          <h3 className="font-bold text-white">
+                            Restore Firearm
+                          </h3>
+                        </div>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-400">
+                          Return this firearm to active inventory. Its prior
+                          archive information and historical records remain part
+                          of the system history.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => void handleRestoreFirearm()}
+                          disabled={saving}
+                          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {saving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-4 w-4" />
+                          )}
+                          Restore Firearm
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="rounded-3xl border border-red-900/70 bg-red-950/20 p-4">
+                        <div className="flex items-center gap-2">
+                          <Archive className="h-5 w-5 text-red-400" />
+                          <h3 className="font-bold text-white">
+                            Archive Firearm
+                          </h3>
+                        </div>
+
+                        <p className="mt-2 text-sm leading-6 text-slate-400">
+                          Remove this firearm from active inventory and future
+                          operational selections while preserving its assignments,
+                          qualifications, inspections, maintenance, and other
+                          historical records.
+                        </p>
+
+                        {selectedFirearm.active_assignment ? (
+                          <div className="mt-4 rounded-2xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">
+                            This firearm is currently assigned to{" "}
+                            <span className="font-bold">
+                              {selectedFirearm.active_assignment.assigned_to_name}
+                            </span>
+                            . Record its return before archiving it.
+                          </div>
+                        ) : (
+                          <div className="mt-4 flex flex-col gap-3">
+                            <label className="space-y-1">
+                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
+                                Archive Reason
+                              </span>
+                              <textarea
+                                value={archiveReason}
+                                onChange={(event) =>
+                                  setArchiveReason(event.target.value)
+                                }
+                                rows={3}
+                                placeholder="Example: Replaced during department-wide transition to new duty firearms."
+                                className="w-full rounded-2xl border border-red-900/70 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-red-500"
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => void handleArchiveFirearm()}
+                              disabled={saving || !archiveReason.trim()}
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {saving ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Archive className="h-4 w-4" />
+                              )}
+                              Archive Firearm
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1125,6 +1589,9 @@ export default function FirearmsPage() {
     </TracePointShell>
   );
 }
+
+
+
 
 
 

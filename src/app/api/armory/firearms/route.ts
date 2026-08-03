@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -141,7 +141,10 @@ function responseError(error: unknown, fallback: string) {
   );
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const includeArchived =
+    request.nextUrl.searchParams.get("includeArchived") === "true";
+
   const resolved = await resolveServerAccess();
 
   if (!resolved.ok) {
@@ -197,12 +200,19 @@ export async function GET() {
       let firearmsQuery = context.admin
         .from("firearms")
         .select(
-          "id,department_id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,is_active,created_at,updated_at",
+          "id,department_id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,is_active,archived_at,archived_by_user_id,archive_reason,created_at,updated_at",
         )
         .eq("department_id", context.departmentId)
-        .eq("is_active", true)
         .order("make", { ascending: true })
         .order("model", { ascending: true });
+
+      if (!includeArchived) {
+        firearmsQuery = firearmsQuery.eq("is_active", true);
+      }
+
+      if (!canViewAll) {
+        firearmsQuery = firearmsQuery.eq("is_active", true);
+      }
 
       if (!canViewAll) {
         firearmsQuery = firearmsQuery.in("id", firearmIds);
@@ -455,3 +465,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
