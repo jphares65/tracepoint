@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+﻿import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
@@ -130,11 +130,18 @@ export async function updateSession(request: NextRequest) {
     const requestedNext =
       request.nextUrl.searchParams.get("next") || "/";
 
+    const safeNext =
+      requestedNext.startsWith("/") &&
+      !requestedNext.startsWith("//") &&
+      !requestedNext.startsWith("/login") &&
+      !requestedNext.startsWith("/auth/setup")
+        ? requestedNext
+        : "/";
+
     return redirectWithCookies(
       request,
       response,
-      "/auth/setup",
-      { next: requestedNext },
+      safeNext,
     );
   }
 
@@ -238,3 +245,4 @@ export async function updateSession(request: NextRequest) {
 
   return response;
 }
+
