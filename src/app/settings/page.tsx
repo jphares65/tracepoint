@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   type ChangeEvent,
@@ -139,12 +139,15 @@ type InviteDraft = {
 };
 
 type AuditEvent = {
-  id: number;
-  actor_user_id: string | null;
+  id: string;
+  changed_by_user_id: string;
   action: string;
   entity_type: string;
-  entity_id: string | null;
-  summary: string | null;
+  entity_id: string;
+  change_note: string;
+  changed_fields: string[];
+  old_values: Record<string, unknown>;
+  new_values: Record<string, unknown>;
   created_at: string;
 };
 
@@ -1080,34 +1083,32 @@ export default function AdminSettingsPage() {
       );
 
       if (canViewAudit) {
-        const { data: auditData, error: auditError } = await supabase
-          .from("audit_events")
-          .select(
-            "id,actor_user_id,action,entity_type,entity_id,summary,created_at",
-          )
-          .eq("department_id", departmentId)
-          .order("created_at", { ascending: false })
-          .limit(50);
+        const auditResponse = await fetch(
+          "/api/settings/audit-log?limit=100",
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
 
-        if (auditError) throw auditError;
+        const auditPayload = (await auditResponse
+          .json()
+          .catch(() => ({}))) as {
+          events?: AuditEvent[];
+          error?: string;
+        };
+
+        if (!auditResponse.ok) {
+          throw new Error(
+            auditPayload.error ||
+              "The audit log could not be loaded.",
+          );
+        }
 
         setAuditEvents(
-          (auditData ?? []).map((row) => ({
-            id: numberValue(row.id),
-            actor_user_id:
-              typeof row.actor_user_id === "string"
-                ? row.actor_user_id
-                : null,
-            action: String(row.action ?? ""),
-            entity_type: String(row.entity_type ?? ""),
-            entity_id:
-              typeof row.entity_id === "string"
-                ? row.entity_id
-                : null,
-            summary:
-              typeof row.summary === "string" ? row.summary : null,
-            created_at: String(row.created_at ?? ""),
-          })),
+          Array.isArray(auditPayload.events)
+            ? auditPayload.events
+            : [],
         );
       }
     } catch (error) {
@@ -1640,18 +1641,32 @@ export default function AdminSettingsPage() {
     setSavingSection("audit-export");
 
     try {
-      const { data, error } = await supabase
-        .from("audit_events")
-        .select(
-          "id,actor_user_id,action,entity_type,entity_id,summary,created_at",
-        )
-        .eq("department_id", departmentId)
-        .order("created_at", { ascending: false })
-        .limit(5000);
+      const response = await fetch(
+        "/api/settings/audit-log?limit=5000",
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
 
-      if (error) throw error;
+      const payload = (await response
+        .json()
+        .catch(() => ({}))) as {
+        events?: AuditEvent[];
+        error?: string;
+      };
 
-      const rows = data ?? [];
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+            "The audit log could not be exported.",
+        );
+      }
+
+      const rows = Array.isArray(payload.events)
+        ? payload.events
+        : [];
+
       const escape = (value: unknown) =>
         `"${String(value ?? "").replaceAll('"', '""')}"`;
 
@@ -1661,8 +1676,11 @@ export default function AdminSettingsPage() {
           "Action",
           "Entity Type",
           "Entity ID",
-          "Actor User ID",
-          "Summary",
+          "Changed By User ID",
+          "Change Reason",
+          "Changed Fields",
+          "Old Values",
+          "New Values",
         ]
           .map(escape)
           .join(","),
@@ -1672,8 +1690,11 @@ export default function AdminSettingsPage() {
             row.action,
             row.entity_type,
             row.entity_id,
-            row.actor_user_id,
-            row.summary,
+            row.changed_by_user_id,
+            row.change_note,
+            row.changed_fields.join("; "),
+            JSON.stringify(row.old_values),
+            JSON.stringify(row.new_values),
           ]
             .map(escape)
             .join(","),
@@ -1683,13 +1704,18 @@ export default function AdminSettingsPage() {
       const blob = new Blob([csv], {
         type: "text/csv;charset=utf-8",
       });
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
+
       link.href = url;
       link.download = `tracepoint-audit-${new Date()
         .toISOString()
         .slice(0, 10)}.csv`;
+
+      document.body.appendChild(link);
       link.click();
+      link.remove();
       URL.revokeObjectURL(url);
 
       showNotice("success", "Audit log exported.");
@@ -1754,9 +1780,9 @@ export default function AdminSettingsPage() {
                 {members.length} department member
                 {members.length === 1 ? "" : "s"}
               </span>
-              <span>·</span>
+              <span>Â·</span>
               <span>{roles.length} available roles</span>
-              <span>·</span>
+              <span>Â·</span>
               <span className="inline-flex items-center gap-1.5 text-slate-500">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 Supabase connected
@@ -2694,7 +2720,7 @@ export default function AdminSettingsPage() {
 
             <SettingsCard
               title="Recent Administrative Activity"
-              description="The latest department audit events recorded by Supabase."
+              description="Immutable department audit records showing who changed a record, what changed, and why."
               action={
                 <button
                   type="button"
@@ -2714,37 +2740,100 @@ export default function AdminSettingsPage() {
               <div className="space-y-3">
                 {auditEvents.map((event) => {
                   const actor = members.find(
-                    (member) => member.user_id === event.actor_user_id,
+                    (member) =>
+                      member.user_id === event.changed_by_user_id,
                   );
 
                   return (
                     <article
                       key={event.id}
-                      className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3"
+                      className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <FileText
                               size={14}
                               className="shrink-0 text-blue-400"
                             />
-                            <p className="text-sm font-medium text-slate-200">
-                              {event.summary ||
-                                `${humanize(event.action)} · ${humanize(
-                                  event.entity_type,
-                                )}`}
+
+                            <p className="text-sm font-semibold text-slate-200">
+                              {humanize(event.action)}
                             </p>
+
+                            <StatusPill
+                              label={humanize(event.entity_type)}
+                              tone="blue"
+                            />
                           </div>
-                          <p className="mt-1 text-xs text-slate-600">
-                            {actor?.full_name || "System"} ·{" "}
-                            {humanize(event.action)}
+
+                          <p className="mt-2 text-xs text-slate-500">
+                            Changed by{" "}
+                            <span className="font-semibold text-slate-300">
+                              {actor?.full_name ||
+                                event.changed_by_user_id}
+                            </span>
                           </p>
+
+                          <p className="mt-2 text-sm leading-6 text-slate-300">
+                            {event.change_note}
+                          </p>
+
+                          {event.changed_fields.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {event.changed_fields.map((field) => (
+                                <span
+                                  key={field}
+                                  className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[10px] font-semibold text-slate-400"
+                                >
+                                  {humanize(field)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
+
                         <time className="shrink-0 text-[11px] text-slate-600">
                           {formatDateTime(event.created_at)}
                         </time>
                       </div>
+
+                      {event.changed_fields.length > 0 ? (
+                        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-800">
+                          <div className="grid grid-cols-[0.8fr_1fr_1fr] border-b border-slate-800 bg-slate-900/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                            <span>Field</span>
+                            <span>Previous</span>
+                            <span>Updated</span>
+                          </div>
+
+                          {event.changed_fields.map((field) => (
+                            <div
+                              key={field}
+                              className="grid grid-cols-[0.8fr_1fr_1fr] gap-3 border-b border-slate-800/70 px-3 py-2.5 text-xs last:border-b-0"
+                            >
+                              <span className="font-semibold text-slate-400">
+                                {humanize(field)}
+                              </span>
+
+                              <span className="break-words text-slate-600">
+                                {String(
+                                  event.old_values[field] ?? "—",
+                                )}
+                              </span>
+
+                              <span className="break-words text-slate-300">
+                                {String(
+                                  event.new_values[field] ?? "—",
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <p className="mt-3 break-all text-[10px] text-slate-700">
+                        Record: {event.entity_id}
+                      </p>
                     </article>
                   );
                 })}
@@ -2756,7 +2845,7 @@ export default function AdminSettingsPage() {
                       className="mx-auto text-slate-600"
                     />
                     <p className="mt-3 text-sm text-slate-400">
-                      No audit events are available yet.
+                      No immutable audit records are available yet.
                     </p>
                   </div>
                 ) : null}
@@ -3155,6 +3244,7 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
+
 
 
 
