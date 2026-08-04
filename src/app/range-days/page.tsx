@@ -5470,7 +5470,7 @@ export default function RangeDaysPage() {
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                 >
                   <Save size={14} />
-                  Save All â€” {getRunLabel(selectedDrill, selectedRunNumber)}
+                  Save All - {getRunLabel(selectedDrill, selectedRunNumber)}
                 </button>
               </div>
                 );
@@ -5821,6 +5821,7 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
 
 
 
