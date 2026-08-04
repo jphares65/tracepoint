@@ -148,6 +148,7 @@ type ExtendedDrillRunResult = DrillRunResult & {
 
 type BatchScoreRow = {
   officerId: string;
+  firearmId?: string;
   metricValue: string;
   passed?: boolean;
   completed?: boolean;
@@ -2435,6 +2436,7 @@ export default function RangeDaysPage() {
     setBatchScoreRows((current) => {
       const existing = current[officerId] ?? {
         officerId,
+        firearmId: "",
         metricValue: "",
         notes: "",
         malfunctionOccurred: false,
@@ -2511,7 +2513,8 @@ export default function RangeDaysPage() {
 
       if (!hasEntry) return [];
 
-      const firearmId = entry.assignedFirearmIds[0];
+      const firearmId =
+        row.firearmId || entry.assignedFirearmIds[0] || undefined;
       const resultId = `result-${now}-${index}`;
       const automaticPass = getAutomaticPassValue(
         selectedDrill,
@@ -4801,6 +4804,7 @@ export default function RangeDaysPage() {
                       attendingRoster.map((entry) => {
                         const row = batchScoreRows[entry.officerId] ?? {
                           officerId: entry.officerId,
+                          firearmId: entry.assignedFirearmIds[0] ?? "",
                           metricValue: "",
                           notes: "",
                           malfunctionOccurred: false,
@@ -4826,9 +4830,36 @@ export default function RangeDaysPage() {
                               <p className="font-semibold text-white">
                                 {getUserName(entry.officerId)}
                               </p>
-                              <p className="mt-0.5 text-[10px] text-slate-500">
-                                {getFirearmName(entry.assignedFirearmIds[0])}
-                              </p>
+                              {entry.assignedFirearmIds.length > 0 ? (
+                                <select
+                                  value={
+                                    row.firearmId ||
+                                    entry.assignedFirearmIds[0] ||
+                                    ""
+                                  }
+                                  onChange={(event) =>
+                                    updateBatchScoreRow(entry.officerId, {
+                                      firearmId: event.target.value,
+                                    })
+                                  }
+                                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-slate-300 outline-none focus:border-blue-500"
+                                >
+                                  {entry.assignedFirearmIds.map(
+                                    (firearmId) => (
+                                      <option
+                                        key={firearmId}
+                                        value={firearmId}
+                                      >
+                                        {getFirearmName(firearmId)}
+                                      </option>
+                                    ),
+                                  )}
+                                </select>
+                              ) : (
+                                <p className="mt-1 text-[10px] font-medium text-amber-300">
+                                  No assigned firearm
+                                </p>
+                              )}
                             </div>
 
                             <input
@@ -5237,4 +5268,5 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
 
