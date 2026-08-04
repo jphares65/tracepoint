@@ -5130,44 +5130,132 @@ export default function RangeDaysPage() {
                           passed: row.passed,
                         });
 
+                        const selectedFirearmId =
+                          row.firearmId ||
+                          entry.assignedFirearmIds[0] ||
+                          "";
+
+                        const selectedFirearm =
+                          activeFirearmDirectory.find(
+                            (firearm) =>
+                              firearm.id === selectedFirearmId,
+                          );
+
+                        const expectedFirearmType =
+                          normalizeFirearmType(
+                            selectedDrill.firearmType,
+                          );
+
+                        const selectedFirearmType =
+                          normalizeFirearmType(
+                            selectedFirearm?.firearm_type,
+                          );
+
+                        const metricEntered =
+                          row.metricValue.trim().length > 0;
+
+                        const hasEnteredResult =
+                          metricEntered ||
+                          typeof row.passed === "boolean" ||
+                          typeof row.completed === "boolean" ||
+                          Boolean(row.notes.trim()) ||
+                          row.malfunctionOccurred;
+
+                        const firearmMissing =
+                          hasEnteredResult &&
+                          !selectedFirearmId;
+
+                        const firearmMismatch =
+                          Boolean(selectedFirearmId) &&
+                          Boolean(expectedFirearmType) &&
+                          expectedFirearmType !== "any" &&
+                          selectedFirearmType !==
+                            expectedFirearmType;
+
                         return (
                           <div
                             key={entry.officerId}
-                            className="grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 px-3 py-3 text-[12px]"
+                            className={`grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 px-3 py-3 text-[12px] transition ${
+                              firearmMissing
+                                ? "bg-red-500/[0.08] ring-1 ring-inset ring-red-500/30"
+                                : firearmMismatch
+                                  ? "bg-amber-500/[0.06] ring-1 ring-inset ring-amber-500/20"
+                                  : ""
+                            }`}
                           >
                             <div>
                               <p className="font-semibold text-white">
                                 {getUserName(entry.officerId)}
                               </p>
+
                               {entry.assignedFirearmIds.length > 0 ? (
-                                <select
-                                  value={
-                                    row.firearmId ||
-                                    entry.assignedFirearmIds[0] ||
-                                    ""
-                                  }
-                                  onChange={(event) =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      firearmId: event.target.value,
-                                    })
-                                  }
-                                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-slate-300 outline-none focus:border-blue-500"
-                                >
-                                  {entry.assignedFirearmIds.map(
-                                    (firearmId) => (
-                                      <option
-                                        key={firearmId}
-                                        value={firearmId}
-                                      >
-                                        {getFirearmName(firearmId)}
-                                      </option>
-                                    ),
+                                <>
+                                  <select
+                                    value={selectedFirearmId}
+                                    onChange={(event) =>
+                                      updateBatchScoreRow(
+                                        entry.officerId,
+                                        {
+                                          firearmId:
+                                            event.target.value,
+                                        },
+                                      )
+                                    }
+                                    className={`mt-1 w-full rounded-lg border bg-slate-950 px-2 py-1 text-[10px] text-slate-300 outline-none ${
+                                      firearmMismatch
+                                        ? "border-amber-500/60 focus:border-amber-400"
+                                        : "border-slate-700 focus:border-blue-500"
+                                    }`}
+                                  >
+                                    {entry.assignedFirearmIds.map(
+                                      (firearmId) => (
+                                        <option
+                                          key={firearmId}
+                                          value={firearmId}
+                                        >
+                                          {getFirearmName(
+                                            firearmId,
+                                          )}
+                                        </option>
+                                      ),
+                                    )}
+                                  </select>
+
+                                  {firearmMismatch ? (
+                                    <div className="mt-1.5 flex items-start gap-1.5 text-[10px] leading-4 text-amber-300">
+                                      <AlertTriangle
+                                        size={11}
+                                        className="mt-0.5 flex-shrink-0"
+                                      />
+                                      <span>
+                                        Expected{" "}
+                                        {formatRangeFirearmType(
+                                          selectedDrill.firearmType,
+                                        )}
+                                        {" / "}
+                                        selected{" "}
+                                        {formatRangeFirearmType(
+                                          selectedFirearm?.firearm_type,
+                                        )}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <p className="mt-1 text-[10px] text-emerald-400/80">
+                                      Firearm matches activity
+                                    </p>
                                   )}
-                                </select>
+                                </>
                               ) : (
-                                <p className="mt-1 text-[10px] font-medium text-amber-300">
-                                  No assigned firearm
-                                </p>
+                                <div className="mt-1.5 flex items-start gap-1.5 text-[10px] font-medium leading-4 text-red-300">
+                                  <AlertTriangle
+                                    size={11}
+                                    className="mt-0.5 flex-shrink-0"
+                                  />
+                                  <span>
+                                    No firearm selected for this
+                                    officer
+                                  </span>
+                                </div>
                               )}
                             </div>
 
@@ -5322,21 +5410,71 @@ export default function RangeDaysPage() {
                 </div>
               )}
 
+              {(() => {
+                const scoredRowsWithoutFirearms =
+                  attendingRoster.filter((entry) => {
+                    const row =
+                      batchScoreRows[entry.officerId];
+
+                    if (!row) return false;
+
+                    const metricEntered =
+                      row.metricValue.trim().length > 0;
+
+                    const hasEnteredResult =
+                      metricEntered ||
+                      typeof row.passed === "boolean" ||
+                      typeof row.completed === "boolean" ||
+                      Boolean(row.notes.trim()) ||
+                      row.malfunctionOccurred;
+
+                    const firearmId =
+                      row.firearmId ||
+                      entry.assignedFirearmIds[0];
+
+                    return hasEnteredResult && !firearmId;
+                  });
+
+                const saveBlockedByMissingFirearms =
+                  scoredRowsWithoutFirearms.length > 0;
+
+                return (
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-[11px] text-slate-500">
-                  Scores are saved as one drill/run batch while retaining individual officer records.
-                </p>
+                <div>
+                  <p className="text-[11px] text-slate-500">
+                    Scores are saved as one drill/run batch while retaining individual officer records.
+                  </p>
+
+                  {saveBlockedByMissingFirearms ? (
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-red-300">
+                      <AlertTriangle size={12} />
+                      Select a firearm for{" "}
+                      {scoredRowsWithoutFirearms
+                        .map((entry) =>
+                          getUserName(entry.officerId),
+                        )
+                        .join(", ")}
+                      {" "}before saving.
+                    </p>
+                  ) : null}
+                </div>
 
                 <button
                   type="button"
                   onClick={handleSaveBatchResults}
-                  disabled={!selectedDrill || attendingRoster.length === 0}
+                  disabled={
+                    !selectedDrill ||
+                    attendingRoster.length === 0 ||
+                    saveBlockedByMissingFirearms
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                 >
                   <Save size={14} />
                   Save All â€” {getRunLabel(selectedDrill, selectedRunNumber)}
                 </button>
               </div>
+                );
+              })()}
             </div>
           )}
 
@@ -5683,6 +5821,7 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
 
 
 
