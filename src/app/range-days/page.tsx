@@ -1095,6 +1095,41 @@ function getFirearmName(firearmId?: string) {
   return `${formatRangeFirearmType(firearm.firearm_type)} — ${firearm.make} ${firearm.model}`;
 }
 
+function normalizeFirearmType(value?: string | null) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+}
+
+function getPreferredFirearmId(
+  firearmIds: string[],
+  drillFirearmType?: DrillTemplate["firearmType"],
+) {
+  if (firearmIds.length === 0) return undefined;
+
+  const normalizedDrillType = normalizeFirearmType(drillFirearmType);
+
+  if (!normalizedDrillType || normalizedDrillType === "any") {
+    return firearmIds[0];
+  }
+
+  const matchingFirearm = firearmIds
+    .map((firearmId) =>
+      activeFirearmDirectory.find(
+        (firearm) => firearm.id === firearmId,
+      ),
+    )
+    .find(
+      (firearm) =>
+        normalizeFirearmType(firearm?.firearm_type) ===
+        normalizedDrillType,
+    );
+
+  return matchingFirearm?.id ?? firearmIds[0];
+}
+
 function StatusPill({
   label,
   tone = "blue",
@@ -2015,8 +2050,16 @@ export default function RangeDaysPage() {
         }
       }
 
+      const preferredFirearmId =
+        existingResult?.firearmId ||
+        getPreferredFirearmId(
+          entry.assignedFirearmIds,
+          selectedDrill.firearmType,
+        );
+
       nextRows[entry.officerId] = {
         officerId: entry.officerId,
+        firearmId: preferredFirearmId,
         metricValue,
         passed:
           existingResult?.finalPassed ?? existingResult?.passed ?? undefined,
@@ -5268,5 +5311,6 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
 
 
