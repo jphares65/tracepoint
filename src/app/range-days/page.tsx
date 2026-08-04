@@ -2459,16 +2459,26 @@ export default function RangeDaysPage() {
     );
   }
 
-  function handleChangeRosterFirearm(rosterEntryId: string, firearmId: string) {
+  function handleToggleRosterFirearm(
+    rosterEntryId: string,
+    firearmId: string,
+  ) {
     setRangeRoster((current) =>
-      current.map((entry) =>
-        entry.id === rosterEntryId
-          ? {
-              ...entry,
-              assignedFirearmIds: firearmId ? [firearmId] : [],
-            }
-          : entry,
-      ),
+      current.map((entry) => {
+        if (entry.id !== rosterEntryId) return entry;
+
+        const alreadySelected =
+          entry.assignedFirearmIds.includes(firearmId);
+
+        return {
+          ...entry,
+          assignedFirearmIds: alreadySelected
+            ? entry.assignedFirearmIds.filter(
+                (id) => id !== firearmId,
+              )
+            : [...entry.assignedFirearmIds, firearmId],
+        };
+      }),
     );
   }
 
@@ -2525,6 +2535,59 @@ export default function RangeDaysPage() {
     if (rosterToScore.length === 0) {
       setSaveMessage("Mark at least one rostered officer present before scoring.");
       return;
+    }
+
+    const expectedFirearmType = normalizeFirearmType(
+      selectedDrill.firearmType,
+    );
+
+    if (
+      expectedFirearmType &&
+      expectedFirearmType !== "any"
+    ) {
+      const mismatchedOfficers = rosterToScore.flatMap(
+        (entry) => {
+          const row = batchScoreRows[entry.officerId];
+          const firearmId =
+            row?.firearmId ||
+            entry.assignedFirearmIds[0];
+
+          if (!firearmId) return [];
+
+          const firearm = activeFirearmDirectory.find(
+            (item) => item.id === firearmId,
+          );
+
+          const selectedType = normalizeFirearmType(
+            firearm?.firearm_type,
+          );
+
+          return selectedType !== expectedFirearmType
+            ? [getUserName(entry.officerId)]
+            : [];
+        },
+      );
+
+      if (mismatchedOfficers.length > 0) {
+        const proceed = window.confirm(
+          [
+            `The selected firearm does not match the ${selectedDrill.firearmType} drill for:`,
+            "",
+            ...mismatchedOfficers.map(
+              (name) => `• ${name}`,
+            ),
+            "",
+            "Save these results anyway?",
+          ].join("\n"),
+        );
+
+        if (!proceed) {
+          setSaveMessage(
+            "Results were not saved. Review the selected firearms.",
+          );
+          return;
+        }
+      }
     }
 
     const existingResultsBeingReplaced = results.filter(
@@ -4078,7 +4141,11 @@ export default function RangeDaysPage() {
                           {getUserName(entry.officerId)}
                         </p>
                         <p className="mt-1 text-[11px] text-slate-500">
-                          {getFirearmName(entry.assignedFirearmIds[0])}
+                          {entry.assignedFirearmIds.length > 0
+                            ? entry.assignedFirearmIds
+                                .map(getFirearmName)
+                                .join(" · ")
+                            : "No firearms selected"}
                         </p>
                       </div>
 
@@ -4090,26 +4157,67 @@ export default function RangeDaysPage() {
                     </button>
 
                     <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-                      <select
-                        value={entry.assignedFirearmIds[0] ?? ""}
-                        onChange={(event) =>
-                          handleChangeRosterFirearm(entry.id, event.target.value)
-                        }
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                      >
-                        <option value="">No firearm selected</option>
-                        {firearms
-                          .filter(
+                      <div className="rounded-xl border border-slate-700 bg-slate-950 p-2">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                          Firearms for this range day
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+                          {firearms
+                            .filter(
+                              (firearm) =>
+                                firearm.active_assignment
+                                  ?.assigned_to_user_id ===
+                                entry.officerId,
+                            )
+                            .map((firearm) => {
+                              const selected =
+                                entry.assignedFirearmIds.includes(
+                                  firearm.id,
+                                );
+
+                              return (
+                                <button
+                                  key={firearm.id}
+                                  type="button"
+                                  onClick={() =>
+                                    handleToggleRosterFirearm(
+                                      entry.id,
+                                      firearm.id,
+                                    )
+                                  }
+                                  className={`rounded-xl border px-3 py-2 text-left text-[11px] font-semibold transition ${
+                                    selected
+                                      ? "border-blue-500/60 bg-blue-500/15 text-blue-200"
+                                      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-white"
+                                  }`}
+                                >
+                                  <span className="block">
+                                    {getFirearmName(firearm.id)}
+                                  </span>
+
+                                  <span className="mt-0.5 block text-[9px] font-normal uppercase tracking-wide opacity-60">
+                                    {selected
+                                      ? "Included"
+                                      : "Add to range day"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+
+                          {firearms.filter(
                             (firearm) =>
                               firearm.active_assignment
-                                ?.assigned_to_user_id === entry.officerId,
-                          )
-                          .map((firearm) => (
-                            <option key={firearm.id} value={firearm.id}>
-                              {getFirearmName(firearm.id)}
-                            </option>
-                          ))}
-                      </select>
+                                ?.assigned_to_user_id ===
+                              entry.officerId,
+                          ).length === 0 ? (
+                            <p className="px-1 py-1 text-[11px] text-amber-300">
+                              No active firearms are assigned to this
+                              officer.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
 
                       <button
                         type="button"
@@ -5311,6 +5419,7 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
 
 
 
