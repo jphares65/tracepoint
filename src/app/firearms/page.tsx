@@ -847,7 +847,7 @@ The firearm will be removed from active inventory and future operational selecti
                                 <p className="text-xs text-slate-500">
                                   {formatFirearmType(firearm.firearm_type)}
                                   {firearm.caliber
-                                    ? ` â€¢ ${firearm.caliber}`
+                                    ? ` | ${firearm.caliber}`
                                     : ""}
                                 </p>
                               </td>
@@ -1589,6 +1589,7 @@ The firearm will be removed from active inventory and future operational selecti
     </TracePointShell>
   );
 }
+
 
 
 
