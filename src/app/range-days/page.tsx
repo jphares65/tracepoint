@@ -1174,6 +1174,56 @@ function StatCard({
   );
 }
 
+type RangeActivitySummary = {
+  key: string;
+  drill: ExtendedRangeDayDrill;
+  runNumber: number;
+  results: ExtendedDrillRunResult[];
+};
+
+function buildRangeActivitySummaries({
+  drills,
+  results,
+}: {
+  drills: ExtendedRangeDayDrill[];
+  results: ExtendedDrillRunResult[];
+}) {
+  const summaries = new Map<string, RangeActivitySummary>();
+
+  for (const result of results) {
+    const drill = drills.find(
+      (item) => item.id === result.drillId,
+    );
+
+    if (!drill) continue;
+
+    const key = `${result.drillId}-${result.runNumber}`;
+    const existing = summaries.get(key);
+
+    if (existing) {
+      existing.results.push(result);
+      continue;
+    }
+
+    summaries.set(key, {
+      key,
+      drill,
+      runNumber: result.runNumber,
+      results: [result],
+    });
+  }
+
+  return Array.from(summaries.values()).sort((left, right) => {
+    const drillComparison = left.drill.name.localeCompare(
+      right.drill.name,
+    );
+
+    return drillComparison !== 0
+      ? drillComparison
+      : left.runNumber - right.runNumber;
+  });
+}
+
 
 type PrintableRangePacketProps = {
   rangeDay: PlannedRangeDay;
@@ -1317,7 +1367,13 @@ function PrintableRangePacket({
                   <tr key={entry.id}>
                     <td>{getUserName(entry.officerId)}</td>
                     <td>{entry.attended ? "Present" : "Not marked"}</td>
-                    <td>{getFirearmName(entry.assignedFirearmIds[0])}</td>
+                    <td>
+                      {entry.assignedFirearmIds.length > 0
+                        ? entry.assignedFirearmIds
+                            .map(getFirearmName)
+                            .join("; ")
+                        : "No firearms selected"}
+                    </td>
                     <td />
                   </tr>
                 ))
@@ -1389,7 +1445,15 @@ function PrintableRangePacket({
                 scoreRows.map(({ id, entry, drill, runNumber, result }) => (
                   <tr key={id}>
                     <td>{getUserName(entry.officerId)}</td>
-                    <td>{getFirearmName(entry.assignedFirearmIds[0])}</td>
+                    <td>
+                      {getFirearmName(
+                        result?.firearmId ||
+                          getPreferredFirearmId(
+                            entry.assignedFirearmIds,
+                            drill.firearmType,
+                          ),
+                      )}
+                    </td>
                     <td>{drill.name}</td>
                     <td>{getRunLabel(drill, runNumber)}</td>
                     <td>{formatResultMetric(result, drill)}</td>
@@ -1636,6 +1700,15 @@ export default function RangeDaysPage() {
     [selectedRoster, selectedDrills, selectedRangeResults],
   );
 
+  const selectedActivitySummaries = useMemo(
+    () =>
+      buildRangeActivitySummaries({
+        drills: selectedDrills,
+        results: selectedRangeResults,
+      }),
+    [selectedDrills, selectedRangeResults],
+  );
+
   const selectedDepartmentStandardDrills = useMemo(
     () => selectedDrills.filter((drill) => drill.isDepartmentStandard),
     [selectedDrills],
@@ -1655,8 +1728,45 @@ export default function RangeDaysPage() {
     if (!selectedRangeDay) return [];
 
     const officersWithoutFirearms = selectedRoster.filter(
-      (entry) => !entry.assignedFirearmIds[0],
+      (entry) => entry.assignedFirearmIds.length === 0,
     ).length;
+
+    const requiredDrillFirearmTypes = Array.from(
+      new Set(
+        selectedDrills
+          .map((drill) =>
+            normalizeFirearmType(drill.firearmType),
+          )
+          .filter(
+            (type) => Boolean(type) && type !== "any",
+          ),
+      ),
+    );
+
+    const officersMissingRequiredFirearmTypes =
+      selectedRoster.filter((entry) => {
+        if (entry.assignedFirearmIds.length === 0) {
+          return false;
+        }
+
+        const officerFirearmTypes = new Set(
+          entry.assignedFirearmIds
+            .map((firearmId) =>
+              activeFirearmDirectory.find(
+                (firearm) => firearm.id === firearmId,
+              ),
+            )
+            .map((firearm) =>
+              normalizeFirearmType(firearm?.firearm_type),
+            )
+            .filter(Boolean),
+        );
+
+        return requiredDrillFirearmTypes.some(
+          (requiredType) =>
+            !officerFirearmTypes.has(requiredType),
+        );
+      }).length;
 
     const unpackedRequiredEquipment = getRangeDayEquipment(selectedRangeDay).filter(
       (item) => item.required && !item.packed,
@@ -1694,9 +1804,25 @@ export default function RangeDaysPage() {
         label: "Firearm assignment",
         detail:
           officersWithoutFirearms === 0
-            ? "Each rostered officer has a firearm assignment"
+            ? "Each rostered officer has at least one firearm selected"
             : `${officersWithoutFirearms} officer${officersWithoutFirearms === 1 ? "" : "s"} missing firearm assignment`,
-        status: officersWithoutFirearms === 0 ? "ready" : "critical",
+        status:
+          officersWithoutFirearms === 0
+            ? "ready"
+            : "critical",
+      },
+      {
+        label: "Firearm / drill compatibility",
+        detail:
+          requiredDrillFirearmTypes.length === 0
+            ? "No drill-specific firearm types are required"
+            : officersMissingRequiredFirearmTypes === 0
+              ? "Rostered officers have firearms matching the planned drill types"
+              : `${officersMissingRequiredFirearmTypes} officer${officersMissingRequiredFirearmTypes === 1 ? "" : "s"} missing a firearm type required by the planned drills`,
+        status:
+          officersMissingRequiredFirearmTypes === 0
+            ? "ready"
+            : "warning",
       },
       {
         label: "Planned drills",
@@ -2534,6 +2660,38 @@ export default function RangeDaysPage() {
 
     if (rosterToScore.length === 0) {
       setSaveMessage("Mark at least one rostered officer present before scoring.");
+      return;
+    }
+
+    const officersWithEntriesButNoFirearm =
+      rosterToScore.flatMap((entry) => {
+        const row = batchScoreRows[entry.officerId];
+
+        if (!row) return [];
+
+        const metricEntered =
+          row.metricValue.trim().length > 0;
+
+        const hasEntry =
+          metricEntered ||
+          typeof row.passed === "boolean" ||
+          typeof row.completed === "boolean" ||
+          Boolean(row.notes.trim()) ||
+          row.malfunctionOccurred;
+
+        const firearmId =
+          row.firearmId ||
+          entry.assignedFirearmIds[0];
+
+        return hasEntry && !firearmId
+          ? [getUserName(entry.officerId)]
+          : [];
+      });
+
+    if (officersWithEntriesButNoFirearm.length > 0) {
+      setSaveMessage(
+        `Select a firearm before saving results for: ${officersWithEntriesButNoFirearm.join(", ")}.`,
+      );
       return;
     }
 
@@ -5251,49 +5409,155 @@ export default function RangeDaysPage() {
                   Saved Drill Runs
                 </h3>
 
-                <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
-                  {selectedRangeResults.length === 0 ? (
+                <div className="max-h-[720px] space-y-4 overflow-y-auto pr-1">
+                  {selectedActivitySummaries.length === 0 ? (
                     <p className="text-[12px] text-slate-500">
                       No drill runs entered yet.
                     </p>
                   ) : (
-                    selectedRangeResults.map((result) => {
-                      const drill = selectedDrills.find(
-                        (item) => item.id === result.drillId,
-                      );
+                    selectedActivitySummaries.map((activity) => {
+                      const passedCount =
+                        activity.results.filter(
+                          (result) =>
+                            result.finalPassed === true ||
+                            result.passed === true,
+                        ).length;
+
+                      const failedCount =
+                        activity.results.filter(
+                          (result) =>
+                            result.finalPassed === false ||
+                            result.passed === false,
+                        ).length;
+
+                      const malfunctionCount =
+                        activity.results.filter(
+                          (result) =>
+                            Boolean(
+                              result.malfunctionIds?.length,
+                            ),
+                        ).length;
 
                       return (
-                        <div
-                          key={result.id}
-                          className="rounded-2xl border border-slate-800 bg-slate-950/50 px-3 py-3"
+                        <section
+                          key={activity.key}
+                          className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-[12px] font-semibold text-white">
-                                {getUserName(result.officerId)}
-                              </p>
-                              <p className="text-[11px] text-slate-500">
-                                {drill?.name} Â· {getRunLabel(drill, result.runNumber)}
-                              </p>
+                          <header className="border-b border-slate-800 bg-slate-950/70 px-4 py-3">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-[13px] font-semibold text-white">
+                                  {activity.drill.name}
+                                </p>
+
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  {getRunLabel(
+                                    activity.drill,
+                                    activity.runNumber,
+                                  )}{" "}
+                                  ·{" "}
+                                  {activity.drill.firearmType ||
+                                    "Any firearm"}{" "}
+                                  ·{" "}
+                                  {getScoringFormat(
+                                    activity.drill,
+                                  )}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5">
+                                <StatusPill
+                                  label={`${activity.results.length} result${activity.results.length === 1 ? "" : "s"}`}
+                                  tone="slate"
+                                />
+
+                                {passedCount > 0 ? (
+                                  <StatusPill
+                                    label={`${passedCount} passed`}
+                                    tone="green"
+                                  />
+                                ) : null}
+
+                                {failedCount > 0 ? (
+                                  <StatusPill
+                                    label={`${failedCount} failed`}
+                                    tone="red"
+                                  />
+                                ) : null}
+
+                                {malfunctionCount > 0 ? (
+                                  <StatusPill
+                                    label={`${malfunctionCount} malfunction${malfunctionCount === 1 ? "" : "s"}`}
+                                    tone="amber"
+                                  />
+                                ) : null}
+                              </div>
                             </div>
+                          </header>
 
-                            {result.malfunctionIds?.length ? (
-                              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
-                                Malfunction
-                              </span>
-                            ) : null}
+                          <div className="divide-y divide-slate-800">
+                            {activity.results.map((result) => (
+                              <div
+                                key={result.id}
+                                className="px-4 py-3"
+                              >
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-[12px] font-semibold text-white">
+                                      {getUserName(
+                                        result.officerId,
+                                      )}
+                                    </p>
+
+                                    <p className="mt-1 text-[11px] text-slate-500">
+                                      {getFirearmName(
+                                        result.firearmId,
+                                      )}
+                                    </p>
+                                  </div>
+
+                                  {result.malfunctionIds?.length ? (
+                                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                                      Malfunction
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <p className="mt-2 text-[11px] text-slate-400">
+                                  Result:{" "}
+                                  {formatResultMetric(
+                                    result,
+                                    activity.drill,
+                                  ) || "—"}{" "}
+                                  · Passed:{" "}
+                                  {typeof result.passed ===
+                                  "boolean"
+                                    ? result.passed
+                                      ? "Yes"
+                                      : "No"
+                                    : "—"}{" "}
+                                  · Completed:{" "}
+                                  {result.completed
+                                    ? "Yes"
+                                    : "No"}{" "}
+                                  · Standard:{" "}
+                                  {typeof result.departmentStandardPassed ===
+                                  "boolean"
+                                    ? result.departmentStandardPassed
+                                      ? "Met"
+                                      : "Failed"
+                                    : "—"}
+                                </p>
+
+                                {result.notes ? (
+                                  <p className="mt-1 text-[11px] text-slate-500">
+                                    {result.notes}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ))}
                           </div>
-
-                          <p className="mt-2 text-[11px] text-slate-400">
-                            Result: {formatResultMetric(result, drill) || "â€”"} Â· Passed: {typeof result.passed === "boolean" ? result.passed ? "Yes" : "No" : "â€”"} Â· Completed: {result.completed ? "Yes" : "No"} Â· Standard: {typeof result.departmentStandardPassed === "boolean" ? result.departmentStandardPassed ? "Met" : "Failed" : "â€”"}
-                          </p>
-
-                          {result.notes && (
-                            <p className="mt-1 text-[11px] text-slate-500">
-                              {result.notes}
-                            </p>
-                          )}
-                        </div>
+                        </section>
                       );
                     })
                   )}
@@ -5419,6 +5683,7 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
 
 
 
