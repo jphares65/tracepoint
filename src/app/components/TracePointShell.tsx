@@ -145,8 +145,6 @@ function isActivePage(activePage: string, itemLabel: string) {
       itemLabel === "Armory") ||
     (activePage === "Off-Duty" &&
       itemLabel === "Off-Duty Firearms") ||
-    (activePage === "Training Alerts" &&
-      itemLabel === "Training Alerts") ||
     ((activePage === "Training" ||
       activePage === "Qualifications" ||
       activePage === "Qualification History" ||
@@ -529,5 +527,6 @@ export default function TracePointShell({
     </div>
   );
 }
+
 
 
