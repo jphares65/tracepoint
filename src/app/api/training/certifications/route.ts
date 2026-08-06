@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -36,16 +36,45 @@ async function getContext() {
   if (!membership?.department_id) return { error: "No active department membership was found.", status: 403 } as const;
 
   const departmentId = String(membership.department_id);
-  const { data: allowed } = await admin.rpc("has_department_permission", {
-    p_department_id: departmentId,
-    p_permission_code: "manage_qualifications",
-  });
-  const { data: administrator } = await admin.rpc("has_department_permission", {
-    p_department_id: departmentId,
-    p_permission_code: "administer_department",
-  });
+  const [{ data: allowed }, { data: administrator }, { data: roles }] =
+    await Promise.all([
+      admin.rpc("has_department_permission", {
+        p_department_id: departmentId,
+        p_permission_code: "manage_qualifications",
+      }),
+      admin.rpc("has_department_permission", {
+        p_department_id: departmentId,
+        p_permission_code: "administer_department",
+      }),
+      admin
+        .from("department_membership_roles")
+        .select("role_code")
+        .eq("department_id", departmentId)
+        .eq("user_id", user.id),
+    ]);
 
-  return { admin, user, departmentId, canManage: Boolean(allowed || administrator) } as const;
+  const roleCodes = (roles ?? []).map((row: any) =>
+    String(row.role_code).toLowerCase(),
+  );
+
+  const canManageByRole = roleCodes.some((role: string) =>
+    [
+      "chief",
+      "administrator",
+      "department_admin",
+      "admin",
+      "range_master",
+      "instructor",
+      "training_officer",
+    ].includes(role),
+  );
+
+  return {
+    admin,
+    user,
+    departmentId,
+    canManage: Boolean(allowed || administrator || canManageByRole),
+  } as const;
 }
 
 export async function GET() {
@@ -96,3 +125,4 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ certification: data }, { status: 201 });
 }
+
