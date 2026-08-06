@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  GraduationCap,
   X,
 } from "lucide-react";
 
@@ -104,28 +105,19 @@ const NAV_ITEMS: NavigationItem[] = [
     },
   },
   {
-    label: "Qualification History",
-    href: "/qualifications",
-    icon: ShieldCheck,
+    label: "Training",
+    href: "/training",
+    icon: GraduationCap,
     requirement: {
       anyOf: [
         "manage_qualifications",
-        "score_range_days",
-        "view_analytics",
-      ],
-    },
-  },
-  {
-    label: "Range & Training",
-    href: "/range-days",
-    icon: CalendarRange,
-    requirement: {
-      anyOf: [
         "manage_range_days",
         "score_range_days",
+        "view_analytics",
         "view_command_dashboard",
       ],
     },
+  },
   },
   {
     label: "Settings",
@@ -156,11 +148,11 @@ function isActivePage(activePage: string, itemLabel: string) {
       itemLabel === "Off-Duty Firearms") ||
     (activePage === "Training Alerts" &&
       itemLabel === "Training Alerts") ||
-    ((activePage === "Qualifications" ||
-      activePage === "Qualification History") &&
-      itemLabel === "Qualification History") ||
-    (activePage === "Range Days" &&
-      itemLabel === "Range & Training")
+    ((activePage === "Training" ||
+      activePage === "Qualifications" ||
+      activePage === "Qualification History" ||
+      activePage === "Range Days") &&
+      itemLabel === "Training")
   );
 }
 

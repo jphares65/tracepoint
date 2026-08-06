@@ -56,6 +56,7 @@ export type Database = {
       qualification_courses: GenericTable;
       qualification_course_versions: GenericTable;
       qualification_results: GenericTable;
+      training_certifications: GenericTable;
       instructor_observations: GenericTable;
       remedial_training_recommendations: GenericTable;
       range_packets: GenericTable;

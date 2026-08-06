@@ -80,6 +80,18 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
     },
   },
   {
+    prefix: "/training",
+    requirement: {
+      anyOf: [
+        "manage_qualifications",
+        "manage_range_days",
+        "score_range_days",
+        "view_analytics",
+        "view_command_dashboard",
+        "administer_department",
+      ],
+    },
+  },  {
     prefix: "/training-alerts",
     requirement: {
       anyOf: [

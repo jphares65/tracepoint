@@ -1,10 +1,10 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
 type Priority = "Critical" | "High" | "Normal";
-type Source = "Personal Rifle" | "Ammunition" | "Inspection" | "Range";
+type Source = "Personal Rifle" | "Ammunition" | "Inspection" | "Range" | "Training";
 
 type GeneratedAlert = {
   key: string;
@@ -248,6 +248,54 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
   return alerts;
 }
 
+async function collectTrainingCertifications(context: any): Promise<GeneratedAlert[]> {
+  const { data: rows, error } = await context.admin
+    .from("training_certifications")
+    .select("id,user_id,certification_title,expiration_date,reminder_days")
+    .eq("department_id", context.departmentId)
+    .eq("is_active", true)
+    .not("expiration_date", "is", null);
+
+  if (error) throw new Error(error.message);
+
+  const alerts: GeneratedAlert[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (const row of rows ?? []) {
+    const expirationDate = text(row.expiration_date);
+    const expiresAt = dateValue(expirationDate);
+    if (!expiresAt) continue;
+
+    const daysRemaining = Math.ceil((expiresAt - today.getTime()) / 86400000);
+    const reminders = Array.isArray(row.reminder_days)
+      ? row.reminder_days.map(Number).filter(Number.isFinite)
+      : [180, 90, 60, 30, 14, 7, 0];
+
+    const isOwner = text(row.user_id) === context.user.id;
+    if (!isOwner && !context.canManageRange) continue;
+
+    const reminderReached = daysRemaining <= 0 || reminders.some((day: number) => daysRemaining <= day);
+    if (!reminderReached) continue;
+
+    const title = text(row.certification_title) || "Training Certification";
+    const expired = daysRemaining < 0;
+    alerts.push({
+      key: `training-certification-${text(row.id)}`,
+      source: "Training",
+      kind: expired ? "training_certification_expired" : "training_certification_expiring",
+      title: expired ? `${title} Expired` : `${title} Renewal Due`,
+      detail: expired
+        ? `This certification expired on ${expirationDate}.`
+        : `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remain before expiration on ${expirationDate}.`,
+      href: "/training/certifications",
+      priority: expired ? "Critical" : daysRemaining <= 30 ? "High" : "Normal",
+      createdAt: expirationDate,
+    });
+  }
+
+  return alerts;
+}
 async function getPreferences(context: any) {
   const { data, error } = await context.admin
     .from("notification_preferences")
@@ -268,6 +316,7 @@ async function getPreferences(context: any) {
       Ammunition: true,
       Inspection: true,
       Range: true,
+      Training: true,
       ...(data?.source_preferences ?? {}),
     },
   };
@@ -290,11 +339,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const preferences = await getPreferences(context);
-    const [rifles, ammunition, firearms, range] = await Promise.all([
+    const [rifles, ammunition, firearms, range, training] = await Promise.all([
       internalJson(request, "/api/armory/personal-rifles/inbox"),
       internalJson(request, "/api/pilot/ammunition"),
       internalJson(request, "/api/armory/firearms"),
       internalJson(request, "/api/pilot/range-workspace"),
+      collectTrainingCertifications(context)
+        .then((items) => ({ ok: true, items, error: "" }))
+        .catch((error) => ({ ok: false, items: [] as GeneratedAlert[], error: error instanceof Error ? error.message : "Unavailable" })),
     ]);
 
     const generated: GeneratedAlert[] = [];
@@ -312,6 +364,9 @@ export async function GET(request: NextRequest) {
 
     if (range.ok) { successful.add("Range"); generated.push(...collectRange(range.payload, context)); }
     else sourceErrors.push({ source: "Range", error: range.error || "Unavailable" });
+
+    if (training.ok) { successful.add("Training"); generated.push(...training.items); }
+    else sourceErrors.push({ source: "Training", error: training.error || "Unavailable" });
 
     const filtered = preferences.in_app_enabled
       ? generated.filter((item) => preferences.source_preferences[item.source] !== false)
