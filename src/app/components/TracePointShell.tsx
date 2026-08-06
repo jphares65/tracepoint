@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -117,7 +117,6 @@ const NAV_ITEMS: NavigationItem[] = [
         "view_command_dashboard",
       ],
     },
-  },
   },
   {
     label: "Settings",
