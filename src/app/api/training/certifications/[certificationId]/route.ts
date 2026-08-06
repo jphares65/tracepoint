@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -18,11 +18,46 @@ async function contextForRequest() {
   const { data: membership } = await admin.from("department_memberships").select("department_id").eq("user_id", user.id).eq("is_active", true).limit(1).maybeSingle();
   if (!membership?.department_id) return { error: "No active department membership was found.", status: 403 } as const;
   const departmentId = String(membership.department_id);
-  const [{ data: manager }, { data: administrator }] = await Promise.all([
-    admin.rpc("has_department_permission", { p_department_id: departmentId, p_permission_code: "manage_qualifications" }),
-    admin.rpc("has_department_permission", { p_department_id: departmentId, p_permission_code: "administer_department" }),
-  ]);
-  if (!manager && !administrator) return { error: "You do not have permission to manage certifications.", status: 403 } as const;
+  const [{ data: manager }, { data: administrator }, { data: roles }] =
+    await Promise.all([
+      admin.rpc("has_department_permission", {
+        p_department_id: departmentId,
+        p_permission_code: "manage_qualifications",
+      }),
+      admin.rpc("has_department_permission", {
+        p_department_id: departmentId,
+        p_permission_code: "administer_department",
+      }),
+      admin
+        .from("department_membership_roles")
+        .select("role_code")
+        .eq("department_id", departmentId)
+        .eq("user_id", user.id),
+    ]);
+
+  const roleCodes = (roles ?? []).map((row: any) =>
+    String(row.role_code).toLowerCase(),
+  );
+
+  const canManageByRole = roleCodes.some((role: string) =>
+    [
+      "chief",
+      "administrator",
+      "department_admin",
+      "admin",
+      "range_master",
+      "instructor",
+      "training_officer",
+    ].includes(role),
+  );
+
+  if (!manager && !administrator && !canManageByRole) {
+    return {
+      error: "You do not have permission to manage certifications.",
+      status: 403,
+    } as const;
+  }
+
   return { admin, user, departmentId } as const;
 }
 
@@ -65,3 +100,4 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
