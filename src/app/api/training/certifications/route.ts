@@ -81,20 +81,80 @@ export async function GET() {
   const context = await getContext();
   if ("error" in context) return NextResponse.json({ error: context.error }, { status: context.status });
 
-  const [{ data: certifications, error }, { data: members, error: memberError }] = await Promise.all([
-    context.admin
-      .from("training_certifications")
-      .select("*")
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true)
-      .order("expiration_date", { ascending: true, nullsFirst: false }),
-    context.admin.rpc("get_department_members", { p_department_id: context.departmentId }),
-  ]);
+  const { data: certifications, error } = await context.admin
+    .from("training_certifications")
+    .select("*")
+    .eq("department_id", context.departmentId)
+    .eq("is_active", true)
+    .order("expiration_date", { ascending: true, nullsFirst: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (memberError) return NextResponse.json({ error: memberError.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
-  return NextResponse.json({ certifications: certifications ?? [], members: members ?? [], canManage: context.canManage });
+  const { data: memberships, error: membershipError } = await context.admin
+    .from("department_memberships")
+    .select("user_id,badge_number,rank_title,is_active")
+    .eq("department_id", context.departmentId)
+    .eq("is_active", true);
+
+  if (membershipError) {
+    return NextResponse.json(
+      { error: membershipError.message },
+      { status: 500 },
+    );
+  }
+
+  const userIds = (memberships ?? []).map((row: any) =>
+    String(row.user_id),
+  );
+
+  let profiles: any[] = [];
+
+  if (userIds.length > 0) {
+    const { data: profileRows, error: profileError } = await context.admin
+      .from("profiles")
+      .select("id,full_name")
+      .in("id", userIds);
+
+    if (profileError) {
+      return NextResponse.json(
+        { error: profileError.message },
+        { status: 500 },
+      );
+    }
+
+    profiles = profileRows ?? [];
+  }
+
+  const profilesById = new Map(
+    profiles.map((profile: any) => [String(profile.id), profile]),
+  );
+
+  const members = (memberships ?? [])
+    .map((membership: any) => {
+      const profile = profilesById.get(String(membership.user_id));
+
+      return {
+        user_id: String(membership.user_id),
+        full_name:
+          profile?.full_name ||
+          membership.rank_title ||
+          "Unnamed Officer",
+        badge_number: membership.badge_number ?? null,
+        rank_title: membership.rank_title ?? null,
+        is_active: membership.is_active ?? true,
+      };
+    })
+    .sort((left: any, right: any) =>
+      left.full_name.localeCompare(right.full_name),
+    );
+
+  return NextResponse.json({
+    certifications: certifications ?? [],
+    members,
+    canManage: context.canManage,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -125,4 +185,5 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ certification: data }, { status: 201 });
 }
+
 

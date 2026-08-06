@@ -69,19 +69,6 @@ const NAV_ITEMS: NavigationItem[] = [
     requirement: { anyOf: ["view_analytics"] },
   },
   {
-    label: "Training Alerts",
-    href: "/training-alerts",
-    icon: BellRing,
-    requirement: {
-      anyOf: [
-        "view_analytics",
-        "manage_qualifications",
-        "score_range_days",
-        "view_command_dashboard",
-      ],
-    },
-  },
-  {
     label: "Armory",
     href: "/firearms",
     icon: Crosshair,
@@ -527,6 +514,7 @@ export default function TracePointShell({
     </div>
   );
 }
+
 
 
 
