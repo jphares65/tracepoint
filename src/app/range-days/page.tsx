@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
+import QualificationEvidence from "@/app/components/QualificationEvidence";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -5093,7 +5094,299 @@ export default function RangeDaysPage() {
               )}
 
               {selectedDrill && (
-                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-800">
+                <div className="mt-4 space-y-3 lg:hidden">
+                  {attendingRoster.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-[12px] text-slate-500">
+                      Mark at least one rostered officer present before scoring.
+                    </div>
+                  ) : (
+                    attendingRoster.map((entry) => {
+                      const row = batchScoreRows[entry.officerId] ?? {
+                        officerId: entry.officerId,
+                        firearmId: entry.assignedFirearmIds[0] ?? "",
+                        metricValue: "",
+                        notes: "",
+                        malfunctionOccurred: false,
+                        malfunctionType: "Failure to Feed" as MalfunctionType,
+                        malfunctionNotes: "",
+                      };
+
+                      const scoringFormat = getScoringFormat(selectedDrill);
+                      const selectedFirearmId =
+                        row.firearmId ||
+                        entry.assignedFirearmIds[0] ||
+                        "";
+                      const selectedFirearm = activeFirearmDirectory.find(
+                        (firearm) => firearm.id === selectedFirearmId,
+                      );
+                      const expectedFirearmType = normalizeFirearmType(
+                        selectedDrill.firearmType,
+                      );
+                      const selectedFirearmType = normalizeFirearmType(
+                        selectedFirearm?.firearm_type,
+                      );
+                      const firearmMismatch =
+                        Boolean(selectedFirearmId) &&
+                        Boolean(expectedFirearmType) &&
+                        expectedFirearmType !== "any" &&
+                        selectedFirearmType !== expectedFirearmType;
+
+                      const existingResult = selectedRangeResults.find(
+                        (result) =>
+                          result.officerId === entry.officerId &&
+                          result.drillId === selectedDrill.id &&
+                          result.runNumber === selectedRunNumber,
+                      );
+
+                      return (
+                        <div
+                          key={entry.officerId}
+                          className={`rounded-2xl border p-4 ${
+                            firearmMismatch
+                              ? "border-amber-500/30 bg-amber-500/[0.05]"
+                              : "border-slate-800 bg-slate-950/35"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-[15px] font-bold text-white">
+                                {getUserName(entry.officerId)}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                {getRunLabel(selectedDrill, selectedRunNumber)}
+                              </p>
+                            </div>
+                            {existingResult ? (
+                              <StatusPill label="Saved" tone="green" />
+                            ) : (
+                              <StatusPill label="Not Saved" tone="slate" />
+                            )}
+                          </div>
+
+                          <div className="mt-4">
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                              Firearm
+                            </label>
+                            {entry.assignedFirearmIds.length > 0 ? (
+                              <select
+                                value={selectedFirearmId}
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    firearmId: event.target.value,
+                                  })
+                                }
+                                className={`w-full rounded-xl border bg-slate-950 px-3 py-3 text-[13px] text-white outline-none ${
+                                  firearmMismatch
+                                    ? "border-amber-500/60 focus:border-amber-400"
+                                    : "border-slate-700 focus:border-blue-500"
+                                }`}
+                              >
+                                {entry.assignedFirearmIds.map((firearmId) => (
+                                  <option key={firearmId} value={firearmId}>
+                                    {getFirearmName(firearmId)}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3 py-3 text-[12px] text-red-300">
+                                <AlertTriangle size={14} />
+                                No firearm selected for this officer.
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                {scoringFormat === "Time"
+                                  ? "Seconds"
+                                  : scoringFormat === "Hit Count"
+                                    ? "Hits"
+                                    : "Score"}
+                              </label>
+                              <input
+                                inputMode="decimal"
+                                value={row.metricValue}
+                                onChange={(event) =>
+                                  handleMetricChange(
+                                    entry.officerId,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={
+                                  scoringFormat === "Time"
+                                    ? "Seconds"
+                                    : scoringFormat === "Hit Count"
+                                      ? "Hits"
+                                      : scoringFormat === "Completion" ||
+                                          scoringFormat === "Pass/Fail" ||
+                                          scoringFormat === "Notes Only"
+                                        ? "—"
+                                        : "Score"
+                                }
+                                disabled={
+                                  scoringFormat === "Completion" ||
+                                  scoringFormat === "Pass/Fail" ||
+                                  scoringFormat === "Notes Only"
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[16px] font-semibold text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                Result
+                              </label>
+                              <select
+                                value={
+                                  typeof row.passed === "boolean"
+                                    ? row.passed
+                                      ? "pass"
+                                      : "fail"
+                                    : ""
+                                }
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    passed:
+                                      event.target.value === ""
+                                        ? undefined
+                                        : event.target.value === "pass",
+                                  })
+                                }
+                                disabled={scoringFormat === "Notes Only"}
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[13px] text-white outline-none disabled:text-slate-600 focus:border-blue-500"
+                              >
+                                <option value="">Auto</option>
+                                <option value="pass">Pass</option>
+                                <option value="fail">Fail</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  completed: !(row.completed ?? true),
+                                })
+                              }
+                              className={`rounded-xl border px-3 py-3 text-[12px] font-semibold ${
+                                row.completed ?? true
+                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                  : "border-slate-700 text-slate-400"
+                              }`}
+                            >
+                              {row.completed ?? true ? "Complete" : "Incomplete"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  malfunctionOccurred:
+                                    !row.malfunctionOccurred,
+                                })
+                              }
+                              className={`rounded-xl border px-3 py-3 text-[12px] font-semibold ${
+                                row.malfunctionOccurred
+                                  ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                  : "border-slate-700 text-slate-400"
+                              }`}
+                            >
+                              {row.malfunctionOccurred
+                                ? "Malfunction Logged"
+                                : "No Malfunction"}
+                            </button>
+                          </div>
+
+                          <div className="mt-3">
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                              Instructor Notes
+                            </label>
+                            <input
+                              value={row.notes}
+                              onChange={(event) =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  notes: event.target.value,
+                                })
+                              }
+                              placeholder="Optional notes"
+                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[13px] text-white outline-none focus:border-blue-500"
+                            />
+                          </div>
+
+                          {row.malfunctionOccurred ? (
+                            <div className="mt-3 space-y-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
+                              <select
+                                value={row.malfunctionType}
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    malfunctionType:
+                                      event.target.value as MalfunctionType,
+                                  })
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[12px] text-white outline-none focus:border-blue-500"
+                              >
+                                {MALFUNCTION_TYPES.map((type) => (
+                                  <option key={type} value={type}>
+                                    {type}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                value={row.malfunctionNotes}
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    malfunctionNotes: event.target.value,
+                                  })
+                                }
+                                placeholder="Malfunction notes"
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[12px] text-white outline-none focus:border-blue-500"
+                              />
+                            </div>
+                          ) : null}
+
+                          {isQualificationDrill(selectedDrill) ? (
+                            <div className="mt-4 border-t border-slate-800 pt-3">
+                              {existingResult ? (
+                                <QualificationEvidence
+                                  qualificationResultId={existingResult.id}
+                                />
+                              ) : (
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-3">
+                                  <p className="text-[11px] font-semibold text-slate-300">
+                                    Target photo
+                                  </p>
+                                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                                    Save this scoring batch first, then take or upload the Q-target photo here.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {attendingRoster.length > 0 ? (
+                    <div className="sticky bottom-3 z-20 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveBatchResults}
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3.5 text-[14px] font-bold text-white shadow-xl shadow-black/30 hover:bg-blue-500"
+                      >
+                        <Save size={16} />
+                        Save {getRunLabel(selectedDrill, selectedRunNumber)}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {selectedDrill && (
+                <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-slate-800 lg:block">
                   <div className="min-w-[1040px] divide-y divide-slate-800">
                     <div className="grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       <span>Officer</span>
