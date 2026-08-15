@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Award, BellRing, BookOpenCheck, CalendarRange, ClipboardCheck, History } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
@@ -84,3 +84,4 @@ export default function TrainingPage() {
     </TracePointShell>
   );
 }
+

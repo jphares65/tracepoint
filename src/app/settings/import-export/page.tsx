@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
@@ -1329,7 +1329,7 @@ export default function ImportWizardPage() {
                 <div>
                   <h2 className="text-xl font-bold text-white">Field Mapping</h2>
                   <p className="mt-2 text-sm text-slate-300">
-                    {fileName} • {parsedCsv.rows.length} row
+                    {fileName} â€¢ {parsedCsv.rows.length} row
                     {parsedCsv.rows.length === 1 ? "" : "s"} detected.
                   </p>
                 </div>
@@ -1607,3 +1607,4 @@ export default function ImportWizardPage() {
     </TracePointShell>
   );
 }
+

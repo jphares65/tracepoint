@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
+import QualificationEvidence from "@/app/components/QualificationEvidence";
 import {
   AlertTriangle,
   CalendarDays,
@@ -756,43 +757,49 @@ function CurrentQualificationCard({
 
 function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) {
   return (
-    <div className="grid gap-3 border-b border-slate-800/80 px-4 py-4 last:border-b-0 lg:grid-cols-[150px_minmax(0,1fr)_110px_180px] lg:items-center">
-      <div>
-        <p className="text-[12px] font-semibold text-white">{formatDate(event.date)}</p>
-        <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">
-          {event.runLabel}
-        </p>
-      </div>
-
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-[13px] font-semibold text-slate-200">{event.drillName}</p>
-          {event.passed === true && <StatusPill label="Pass" tone="green" />}
-          {event.passed === false && <StatusPill label="Fail" tone="red" />}
-          {event.passed === undefined && event.completed && <StatusPill label="Complete" tone="green" />}
-          {event.malfunctionCount > 0 && <StatusPill label="Malfunction" tone="amber" />}
-        </div>
-        <p className="mt-1 truncate text-[11px] text-slate-500">
-          {event.rangeDayTitle} · {event.location} · Instructor: {getUserName(event.instructorId)}
-        </p>
-        {event.notes && <p className="mt-2 text-[11px] text-slate-400">{event.notes}</p>}
-      </div>
-
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Score</p>
-        <p className="mt-1 text-[13px] font-semibold text-white">{event.score ?? "—"}</p>
-      </div>
-
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Firearm</p>
-        <p className="mt-1 text-[12px] font-semibold text-slate-300">
-          {getFirearmShortName(event.firearmId)}
-        </p>
-        {(event.deficiencyObserved || event.remedialTrainingRecommended) && (
-          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-300">
-            {event.remedialTrainingRecommended ? "Remediation recommended" : "Deficiency recorded"}
+    <div className="border-b border-slate-800/80 last:border-b-0">
+      <div className="grid gap-3 px-4 py-4 lg:grid-cols-[150px_minmax(0,1fr)_110px_180px] lg:items-center">
+        <div>
+          <p className="text-[12px] font-semibold text-white">{formatDate(event.date)}</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">
+            {event.runLabel}
           </p>
-        )}
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-[13px] font-semibold text-slate-200">{event.drillName}</p>
+            {event.passed === true && <StatusPill label="Pass" tone="green" />}
+            {event.passed === false && <StatusPill label="Fail" tone="red" />}
+            {event.passed === undefined && event.completed && <StatusPill label="Complete" tone="green" />}
+            {event.malfunctionCount > 0 && <StatusPill label="Malfunction" tone="amber" />}
+          </div>
+          <p className="mt-1 truncate text-[11px] text-slate-500">
+            {event.rangeDayTitle} · {event.location} · Instructor: {getUserName(event.instructorId)}
+          </p>
+          {event.notes && <p className="mt-2 text-[11px] text-slate-400">{event.notes}</p>}
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Score</p>
+          <p className="mt-1 text-[13px] font-semibold text-white">{event.score ?? "—"}</p>
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-slate-600">Firearm</p>
+          <p className="mt-1 text-[12px] font-semibold text-slate-300">
+            {getFirearmShortName(event.firearmId)}
+          </p>
+          {(event.deficiencyObserved || event.remedialTrainingRecommended) && (
+            <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-300">
+              {event.remedialTrainingRecommended ? "Remediation recommended" : "Deficiency recorded"}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="px-4 pb-4">
+        <QualificationEvidence qualificationResultId={event.id} />
       </div>
     </div>
   );
@@ -1128,3 +1135,4 @@ export default function QualificationsPage() {
     </TracePointShell>
   );
 }
+

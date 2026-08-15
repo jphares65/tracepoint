@@ -1,4 +1,4 @@
-import type { TracePointUser, UserRole } from "./types";
+﻿import type { TracePointUser, UserRole } from "./types";
 
 const COMMAND_ROLES: UserRole[] = ["Supervisor", "Admin", "Command"];
 const FIREARMS_MANAGEMENT_ROLES: UserRole[] = ["Armorer", "Admin", "Command"];

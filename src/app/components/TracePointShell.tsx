@@ -9,6 +9,7 @@ import {
   BarChart3,
   BellRing,
   CalendarRange,
+  ChevronDown,
   Crosshair,
   House,
   LogOut,
@@ -41,36 +42,54 @@ type TracePointShellProps = {
   children: ReactNode;
 };
 
-type NavigationItem = {
+type NavigationLeaf = {
   label: string;
   href: string;
-  icon: typeof House;
+  icon?: typeof House;
   requirement?: PermissionRequirement;
 };
+
+type NavigationGroup = {
+  label: string;
+  icon: typeof House;
+  requirement?: PermissionRequirement;
+  children: readonly NavigationLeaf[];
+};
+
+type NavigationEntry = NavigationLeaf | NavigationGroup;
 
 type DepartmentAppearanceRow = {
   accent_color?: string | null;
   login_theme?: string | null;
 };
 
-const NAV_ITEMS: NavigationItem[] = [
+const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
-  { label: "Notifications", href: "/notifications", icon: BellRing },
   {
-    label: "Command Dashboard",
-    href: "/command-dashboard",
+    label: "Command",
     icon: Activity,
-    requirement: { anyOf: ["view_command_dashboard"] },
-  },
-  {
-    label: "Analytics",
-    href: "/analytics",
-    icon: BarChart3,
-    requirement: { anyOf: ["view_analytics"] },
+    children: [
+      {
+        label: "Command Dashboard",
+        href: "/command-dashboard",
+        icon: Activity,
+        requirement: { anyOf: ["view_command_dashboard"] },
+      },
+      {
+        label: "Analytics",
+        href: "/analytics",
+        icon: BarChart3,
+        requirement: { anyOf: ["view_analytics"] },
+      },
+      {
+        label: "Notifications",
+        href: "/notifications",
+        icon: BellRing,
+      },
+    ],
   },
   {
     label: "Armory",
-    href: "/firearms",
     icon: Crosshair,
     requirement: {
       anyOf: [
@@ -79,21 +98,49 @@ const NAV_ITEMS: NavigationItem[] = [
         "view_command_dashboard",
       ],
     },
+    children: [
+      {
+        label: "Department Firearms",
+        href: "/firearms",
+        icon: Crosshair,
+      },
+      {
+        label: "Personally Owned Rifles",
+        href: "/firearms/personal-rifles",
+        icon: ShieldCheck,
+      },
+      {
+        label: "Maintenance & Inspections",
+        href: "/firearms/inspections",
+        icon: ShieldCheck,
+        requirement: {
+          anyOf: [
+            "manage_inspections",
+            "manage_firearms",
+            "view_command_dashboard",
+          ],
+        },
+      },
+      {
+        label: "Ammunition",
+        href: "/firearms/ammunition",
+        icon: Crosshair,
+        requirement: {
+          anyOf: ["manage_firearms", "view_command_dashboard"],
+        },
+      },
+      {
+        label: "Reconciliation",
+        href: "/firearms/ammunition/reconciliation",
+        icon: ShieldCheck,
+        requirement: {
+          anyOf: ["manage_firearms", "view_command_dashboard"],
+        },
+      },
+    ],
   },
   {
-    label: "Off-Duty Firearms",
-    href: "/off-duty-firearms",
-    icon: Shield,
-    requirement: {
-      anyOf: [
-        "submit_off_duty_requests",
-        "review_off_duty_requests",
-      ],
-    },
-  },
-  {
-    label: "Training",
-    href: "/training",
+    label: "Range & Training",
     icon: GraduationCap,
     requirement: {
       anyOf: [
@@ -104,40 +151,98 @@ const NAV_ITEMS: NavigationItem[] = [
         "view_command_dashboard",
       ],
     },
+    children: [
+      {
+        label: "Range Days",
+        href: "/range-days",
+        icon: CalendarRange,
+        requirement: {
+          anyOf: ["manage_range_days", "score_range_days", "view_command_dashboard"],
+        },
+      },
+      {
+        label: "Qualifications",
+        href: "/qualifications",
+        icon: ShieldCheck,
+        requirement: {
+          anyOf: ["manage_qualifications", "score_range_days", "view_analytics"],
+        },
+      },
+      {
+        label: "Certifications",
+        href: "/training/certifications",
+        icon: ShieldCheck,
+      },
+      {
+        label: "Training Alerts",
+        href: "/training-alerts",
+        icon: BellRing,
+      },
+    ],
   },
   {
-    label: "Settings",
-    href: "/settings",
+    label: "Off-Duty Firearms",
+    icon: Shield,
+    requirement: {
+      anyOf: ["submit_off_duty_requests", "review_off_duty_requests"],
+    },
+    children: [
+      {
+        label: "Requests & Approvals",
+        href: "/off-duty-firearms",
+        icon: Shield,
+      },
+    ],
+  },
+  {
+    label: "Administration",
     icon: Settings,
     requirement: {
       anyOf: ["manage_users", "administer_department"],
     },
+    children: [
+      {
+        label: "Settings",
+        href: "/settings",
+        icon: Settings,
+      },
+      {
+        label: "Import / Export",
+        href: "/settings/import-export",
+        icon: BarChart3,
+      },
+      {
+        label: "Import Wizard",
+        href: "/import",
+        icon: CalendarRange,
+      },
+    ],
   },
 ];
 
-function getNavItems(permissions: TracePointPermission[]) {
-  return NAV_ITEMS.filter((item) =>
-    meetsPermissionRequirement(permissions, item.requirement),
+function isNavigationGroup(item: NavigationEntry): item is NavigationGroup {
+  return "children" in item;
+}
+
+function getVisibleChildren(
+  group: NavigationGroup,
+  permissions: TracePointPermission[],
+) {
+  return group.children.filter((child) =>
+    meetsPermissionRequirement(permissions, child.requirement),
   );
 }
 
-function isActivePage(activePage: string, itemLabel: string) {
-  return (
-    activePage === itemLabel ||
-    (activePage === "Dashboard" &&
-      itemLabel === "Command Dashboard") ||
-    ((activePage === "Firearms Repository" ||
-      activePage === "Firearms" ||
-      activePage === "Armory") &&
-      itemLabel === "Armory") ||
-    (activePage === "Off-Duty" &&
-      itemLabel === "Off-Duty Firearms") ||
-    ((activePage === "Training" ||
-      activePage === "Qualifications" ||
-      activePage === "Qualification History" ||
-      activePage === "Range Days") &&
-      itemLabel === "Training")
-  );
+function getNavItems(permissions: TracePointPermission[]) {
+  return NAV_ITEMS.filter((item) => {
+    if (!meetsPermissionRequirement(permissions, item.requirement)) {
+      return false;
+    }
+
+    if (!isNavigationGroup(item)) return true;
+
+    return getVisibleChildren(item, permissions).length > 0;
+  });
 }
 
 function isActiveRoute(pathname: string, href: string) {
@@ -146,14 +251,48 @@ function isActiveRoute(pathname: string, href: string) {
 
   if (normalizedHref === "/") return normalizedPath === "/";
 
+  if (normalizedHref === "/firearms") {
+    if (normalizedPath === "/firearms") return true;
+
+    const armoryWorkspacePrefixes = [
+      "/firearms/personal-rifles",
+      "/firearms/inspections",
+      "/firearms/ammunition",
+    ];
+
+    if (armoryWorkspacePrefixes.some((prefix) => normalizedPath.startsWith(prefix))) {
+      return false;
+    }
+
+    return /^\/firearms\/[^/]+$/.test(normalizedPath);
+  }
+
+  if (
+    normalizedHref === "/training" ||
+    normalizedHref === "/settings" ||
+    normalizedHref === "/firearms/ammunition"
+  ) {
+    return normalizedPath === normalizedHref;
+  }
+
   return (
     normalizedPath === normalizedHref ||
     normalizedPath.startsWith(`${normalizedHref}/`)
   );
 }
 
+function groupContainsPath(
+  pathname: string,
+  group: NavigationGroup,
+  permissions: TracePointPermission[],
+) {
+  return getVisibleChildren(group, permissions).some((child) =>
+    isActiveRoute(pathname, child.href),
+  );
+}
+
 function NavigationLinks({
-  activePage,
+  activePage: _activePage,
   pathname,
   permissions,
   onNavigate,
@@ -164,48 +303,157 @@ function NavigationLinks({
   onNavigate?: () => void;
 }) {
   const navItems = getNavItems(permissions);
+  const activeGroupLabel = navItems.find(
+    (item): item is NavigationGroup =>
+      isNavigationGroup(item) && groupContainsPath(pathname, item, permissions),
+  )?.label;
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    () => new Set(activeGroupLabel ? [activeGroupLabel] : []),
+  );
+
+  useEffect(() => {
+    if (!activeGroupLabel) return;
+
+    setOpenGroups((current) => {
+      if (current.has(activeGroupLabel)) return current;
+      const next = new Set(current);
+      next.add(activeGroupLabel);
+      return next;
+    });
+  }, [activeGroupLabel]);
+
+  function toggleGroup(label: string) {
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
 
   return (
-    <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-5">
+    <nav className="flex-1 overflow-y-auto px-3 py-5">
       <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-600">
         Navigation
       </p>
 
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        const active =
-          isActivePage(activePage, item.label) ||
-          isActiveRoute(pathname, item.href);
+      <div className="space-y-1.5">
+        {navItems.map((item) => {
+          if (!isNavigationGroup(item)) {
+            const Icon = item.icon ?? House;
+            const active = isActiveRoute(pathname, item.href);
 
-        return (
-          <Link
-            key={item.label}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={`group relative flex items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] transition-all duration-200 ${
-              active
-                ? "bg-blue-600/20 text-blue-200"
-                : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
-            }`}
-          >
-            {active && (
-              <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-blue-500" />
-            )}
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                onClick={onNavigate}
+                aria-current={active ? "page" : undefined}
+                className={`group relative flex items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] transition-all duration-200 ${
+                  active
+                    ? "bg-blue-600/20 text-blue-200"
+                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                }`}
+              >
+                {active && (
+                  <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-blue-500" />
+                )}
+                <Icon
+                  size={17}
+                  className={
+                    active
+                      ? "text-blue-400"
+                      : "text-slate-600 group-hover:text-slate-400"
+                  }
+                />
+                <span className="truncate font-medium">{item.label}</span>
+              </Link>
+            );
+          }
 
-            <Icon
-              size={17}
-              className={
-                active
-                  ? "text-blue-400"
-                  : "text-slate-600 group-hover:text-slate-400"
-              }
-            />
+          const Icon = item.icon;
+          const visibleChildren = getVisibleChildren(item, permissions);
+          const active = groupContainsPath(pathname, item, permissions);
+          const open = openGroups.has(item.label);
 
-            <span className="truncate">{item.label}</span>
-          </Link>
-        );
-      })}
+          return (
+            <div key={item.label} className="space-y-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(item.label)}
+                aria-expanded={open}
+                className={`group relative flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-[13px] transition-all duration-200 ${
+                  active
+                    ? "bg-blue-600/10 text-blue-100"
+                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                }`}
+              >
+                {active && (
+                  <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-blue-500" />
+                )}
+                <Icon
+                  size={17}
+                  className={
+                    active
+                      ? "text-blue-400"
+                      : "text-slate-600 group-hover:text-slate-400"
+                  }
+                />
+                <span className="min-w-0 flex-1 truncate font-semibold">
+                  {item.label}
+                </span>
+                <ChevronDown
+                  size={15}
+                  className={`shrink-0 text-slate-600 transition-transform duration-200 ${
+                    open ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {open && (
+                <div className="ml-4 space-y-1 border-l border-slate-800/90 pl-3">
+                  {visibleChildren.map((child) => {
+                    const ChildIcon = child.icon;
+                    const childActive = isActiveRoute(pathname, child.href);
+
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        onClick={onNavigate}
+                        aria-current={childActive ? "page" : undefined}
+                        className={`group flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-[12px] transition ${
+                          childActive
+                            ? "bg-blue-500/15 font-semibold text-blue-200"
+                            : "text-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                        }`}
+                      >
+                        {ChildIcon ? (
+                          <ChildIcon
+                            size={14}
+                            className={
+                              childActive
+                                ? "text-blue-400"
+                                : "text-slate-700 group-hover:text-slate-500"
+                            }
+                          />
+                        ) : (
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              childActive ? "bg-blue-400" : "bg-slate-700"
+                            }`}
+                          />
+                        )}
+                        <span className="truncate">{child.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </nav>
   );
 }
@@ -514,6 +762,7 @@ export default function TracePointShell({
     </div>
   );
 }
+
 
 
 

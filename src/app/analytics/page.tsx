@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
@@ -596,3 +596,4 @@ export default function AnalyticsPage() {
     </TracePointShell>
   );
 }
+

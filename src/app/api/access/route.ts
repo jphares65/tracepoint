@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -20,3 +20,4 @@ export async function GET() {
     { headers: { "Cache-Control": "no-store" } },
   );
 }
+

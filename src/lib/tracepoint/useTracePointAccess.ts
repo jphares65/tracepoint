@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -161,3 +161,4 @@ export function useTracePointAccess(): TracePointAccess {
     refresh: loadAccess,
   };
 }
+

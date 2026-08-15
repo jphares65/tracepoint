@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
   getPersonalRifleAccess,
@@ -161,3 +161,4 @@ export async function GET() {
     );
   }
 }
+

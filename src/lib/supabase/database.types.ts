@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bootstrap Supabase type map.
  *
  * After the migration has been pushed, replace this file with generated types:
@@ -267,3 +267,4 @@ export type Database = {
     CompositeTypes: Record<string, never>;
   };
 };
+

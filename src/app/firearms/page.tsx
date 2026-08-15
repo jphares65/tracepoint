@@ -17,8 +17,9 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
+import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import FirearmAttachments from "@/app/components/FirearmAttachments";
 
 type ArmoryMember = {
   user_id: string;
@@ -71,6 +72,7 @@ type FirearmStatus =
   | "Retired";
 
 type FirearmType = "handgun" | "rifle" | "shotgun" | "less_lethal" | "other";
+type FirearmWorkspaceTab = "custody" | "documents" | "edit" | "status";
 
 type NewFirearmForm = {
   make: string;
@@ -191,6 +193,30 @@ async function readError(response: Response) {
   }
 }
 
+function StatInline({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: number;
+  tone?: "slate" | "emerald" | "sky" | "red";
+}) {
+  const valueClass = {
+    slate: "text-white",
+    emerald: "text-emerald-300",
+    sky: "text-sky-300",
+    red: "text-red-300",
+  }[tone];
+
+  return (
+    <div className="min-w-[58px] text-center">
+      <p className={`text-lg font-black leading-none ${valueClass}`}>{value}</p>
+      <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    </div>
+  );
+}
+
 export default function FirearmsPage() {
   const [firearms, setFirearms] = useState<ArmoryFirearm[]>([]);
   const [members, setMembers] = useState<ArmoryMember[]>([]);
@@ -202,8 +228,10 @@ export default function FirearmsPage() {
   const [statusFilter, setStatusFilter] = useState<"All" | FirearmStatus>(
     "All",
   );
+  const [workspaceTab, setWorkspaceTab] = useState<FirearmWorkspaceTab>("custody");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showAddFirearm, setShowAddFirearm] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -236,12 +264,13 @@ export default function FirearmsPage() {
 
   const filteredFirearms = useMemo(() => {
     return sortFirearms(firearms).filter((firearm) => {
+      const archiveMatches = showArchived ? !firearm.is_active : firearm.is_active;
       const status = normalizeStatus(firearm.condition_status);
       const statusMatches = statusFilter === "All" || status === statusFilter;
 
-      return statusMatches && matchesSearch(firearm, query);
+      return archiveMatches && statusMatches && matchesSearch(firearm, query);
     });
-  }, [firearms, query, statusFilter]);
+  }, [firearms, query, showArchived, statusFilter]);
 
   const inventoryCounts = useMemo(() => {
     const activeFirearms = firearms.filter((firearm) => firearm.is_active);
@@ -280,18 +309,21 @@ export default function FirearmsPage() {
       }
 
       const payload = (await response.json()) as ArmoryPayload;
+      const loadedFirearms = Array.isArray(payload.firearms) ? payload.firearms : [];
+      const viewFirearms = loadedFirearms.filter((firearm) =>
+        showArchived ? !firearm.is_active : firearm.is_active,
+      );
 
-      setFirearms(Array.isArray(payload.firearms) ? payload.firearms : []);
+      setFirearms(loadedFirearms);
       setMembers(Array.isArray(payload.members) ? payload.members : []);
 
       if (!options?.preserveSelection) {
-        const firstFirearm = payload.firearms?.[0];
-        setSelectedFirearmId(firstFirearm?.id ?? null);
+        setSelectedFirearmId(viewFirearms[0]?.id ?? null);
       } else if (
         selectedFirearmId &&
-        !payload.firearms?.some((firearm) => firearm.id === selectedFirearmId)
+        !viewFirearms.some((firearm) => firearm.id === selectedFirearmId)
       ) {
-        setSelectedFirearmId(payload.firearms?.[0]?.id ?? null);
+        setSelectedFirearmId(viewFirearms[0]?.id ?? null);
       }
     } catch (loadError) {
       setError(
@@ -692,47 +724,22 @@ The firearm will be removed from active inventory and future operational selecti
 
   return (
     <TracePointShell activePage="Armory">
-      <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
+      <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-5 lg:p-6">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
           <ArmorySectionShell
             title="Department Firearms"
-            description="Department-owned inventory, assignments, returns, magazine accountability, and firearm condition."
+            description="Inventory, custody, condition, documents, and accountability."
+            actions={
+              <button
+                type="button"
+                onClick={() => setShowAddFirearm((current) => !current)}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-slate-200"
+              >
+                <Plus className="h-4 w-4" />
+                {showAddFirearm ? "Close Add Form" : "Add Firearm"}
+              </button>
+            }
           />
-
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Inventory
-              </p>
-              <p className="mt-2 text-3xl font-bold text-white">
-                {inventoryCounts.total}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-                Assigned
-              </p>
-              <p className="mt-2 text-3xl font-bold text-emerald-200">
-                {inventoryCounts.assigned}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-sky-800 bg-sky-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">
-                Available
-              </p>
-              <p className="mt-2 text-3xl font-bold text-sky-200">
-                {inventoryCounts.available}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">
-                Needs Attention
-              </p>
-              <p className="mt-2 text-3xl font-bold text-red-200">
-                {inventoryCounts.outOfService}
-              </p>
-            </div>
-          </section>
 
           {(error || message) && (
             <section
@@ -748,22 +755,34 @@ The firearm will be removed from active inventory and future operational selecti
 
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]">
             <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-white">Inventory</h2>
-                  <p className="text-sm text-slate-500">
-                    Select a firearm to manage custody and condition.
-                  </p>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-white">Inventory</h2>
+                    <p className="text-sm text-slate-500">
+                      Select a firearm to manage custody and condition.
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-1.5">
+                    <StatInline label="Inventory" value={inventoryCounts.total} />
+                    <span className="h-6 w-px bg-slate-800" />
+                    <StatInline label="Assigned" value={inventoryCounts.assigned} tone="emerald" />
+                    <span className="h-6 w-px bg-slate-800" />
+                    <StatInline label="Available" value={inventoryCounts.available} tone="sky" />
+                    <span className="h-6 w-px bg-slate-800" />
+                    <StatInline label="Attention" value={inventoryCounts.outOfService} tone="red" />
+                  </div>
                 </div>
 
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <label className="relative">
+                <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_180px_150px]">
+                  <label className="relative min-w-0">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder="Search firearms..."
-                      className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-slate-500 sm:w-64"
+                      className="w-full min-w-0 rounded-2xl border border-slate-800 bg-slate-900/90 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-slate-500"
                     />
                   </label>
 
@@ -774,7 +793,7 @@ The firearm will be removed from active inventory and future operational selecti
                         event.target.value as "All" | FirearmStatus,
                       )
                     }
-                    className="rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-medium text-slate-200 outline-none transition focus:border-slate-500"
+                    className="w-full min-w-0 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-medium text-slate-200 outline-none transition focus:border-slate-500"
                   >
                     <option value="All">All Statuses</option>
                     {FIREARM_STATUSES.map((status) => (
@@ -784,7 +803,7 @@ The firearm will be removed from active inventory and future operational selecti
                     ))}
                   </select>
 
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300">
+                  <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300">
                     <input
                       type="checkbox"
                       checked={showArchived}
@@ -793,7 +812,7 @@ The firearm will be removed from active inventory and future operational selecti
                       }
                       className="h-4 w-4 rounded border-slate-700 bg-slate-950"
                     />
-                    Show Archived
+                    Archived Only
                   </label>
                 </div>
               </div>
@@ -962,6 +981,35 @@ The firearm will be removed from active inventory and future operational selecti
                       </div>
                     </div>
 
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-1.5">
+                      <div className="grid grid-cols-4 gap-1">
+                        {([
+                          ["custody", "Custody"],
+                          ["documents", "Documents"],
+                          ["edit", "Edit"],
+                          ["status", "Status"],
+                        ] as const).map(([tab, label]) => (
+                          <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setWorkspaceTab(tab)}
+                            className={`rounded-xl px-2 py-2 text-xs font-bold transition ${
+                              workspaceTab === tab
+                                ? "bg-blue-600 text-white shadow-sm"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {workspaceTab === "documents" && (
+                      <FirearmAttachments firearmId={selectedFirearm.id} />
+                    )}
+
+                    {workspaceTab === "custody" && (
                     <div className="rounded-3xl border border-slate-200 p-4">
                       <div className="flex items-center gap-2">
                         <ClipboardList className="h-5 w-5 text-slate-500" />
@@ -1153,7 +1201,9 @@ The firearm will be removed from active inventory and future operational selecti
                         </div>
                       )}
                     </div>
+                    )}
 
+                    {workspaceTab === "edit" && (
                     <div className="rounded-3xl border border-slate-800 bg-slate-950/30 p-4">
                       <div className="flex items-center gap-2">
                         <Save className="h-5 w-5 text-slate-400" />
@@ -1298,7 +1348,10 @@ The firearm will be removed from active inventory and future operational selecti
                         Save Firearm Changes
                       </button>
                     </div>
+                    )}
 
+                    {workspaceTab === "status" && (
+                      <div className="flex flex-col gap-5">
                     <div className="rounded-3xl border border-slate-200 p-4">
                       <div className="flex items-center gap-2">
                         <Wrench className="h-5 w-5 text-slate-500" />
@@ -1437,14 +1490,23 @@ The firearm will be removed from active inventory and future operational selecti
                         )}
                       </div>
                     )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <Plus className="h-5 w-5 text-slate-500" />
-                  <h2 className="text-lg font-bold text-white">Add Firearm</h2>
+              {showAddFirearm && (
+              <div className="rounded-[2rem] border border-slate-700 bg-slate-900/90 p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Plus className="h-5 w-5 text-slate-400" />
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Add Firearm</h2>
+                      <p className="text-xs text-slate-500">Create a new department-owned firearm record.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setShowAddFirearm(false)} className="rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-slate-800">Close</button>
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1576,12 +1638,13 @@ The firearm will be removed from active inventory and future operational selecti
                 )}
 
                 {firearms.length > 0 && (
-                  <div className="mt-4 flex gap-2 rounded-2xl border border-emerald-800 bg-emerald-950/40 p-3 text-xs font-medium text-emerald-800">
+                  <div className="mt-4 flex gap-2 rounded-2xl border border-emerald-800 bg-emerald-950/40 p-3 text-xs font-medium text-emerald-300">
                     <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
                     Armory inventory is loading from Supabase.
                   </div>
                 )}
               </div>
+              )}
             </div>
           </section>
         </div>
@@ -1589,6 +1652,7 @@ The firearm will be removed from active inventory and future operational selecti
     </TracePointShell>
   );
 }
+
 
 
 

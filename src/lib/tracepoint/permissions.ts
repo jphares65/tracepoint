@@ -1,4 +1,4 @@
-export const TRACEPOINT_PERMISSIONS = [
+﻿export const TRACEPOINT_PERMISSIONS = [
   "view_command_dashboard",
   "view_analytics",
   "manage_users",
@@ -198,3 +198,4 @@ export function getRoutePermissionRequirement(
 
   return rule?.requirement;
 }
+

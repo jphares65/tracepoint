@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export type TracePointAccentColor =
   | "blue"
@@ -141,3 +141,4 @@ export function persistAndApplyAppearance(
   applyAppearanceToDocument(preferences);
   broadcastAppearancePreferences(preferences);
 }
+

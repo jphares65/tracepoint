@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export type VerificationMode =
   | "Manual"
@@ -561,3 +561,4 @@ export function withLegacyAmmunitionProjection(
     transactions,
   };
 }
+

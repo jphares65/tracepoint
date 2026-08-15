@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+﻿import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
 export type PersonalRifleRules = {
@@ -270,3 +270,4 @@ export async function recordPersonalRifleHistory(
 
   if (error) throw new Error(error.message);
 }
+

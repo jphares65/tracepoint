@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export type TrainingAlertSeverity = "Low" | "Medium" | "High";
 
@@ -229,3 +229,4 @@ export function buildRemediationFromAlert(
     ],
   };
 }
+

@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import {
   ArrowLeft,
   Home,
@@ -77,3 +77,4 @@ export default async function UnauthorizedPage({
     </main>
   );
 }
+

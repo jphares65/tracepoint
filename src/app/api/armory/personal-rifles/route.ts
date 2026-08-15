@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
   cleanPersonalRifleText,
@@ -263,3 +263,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

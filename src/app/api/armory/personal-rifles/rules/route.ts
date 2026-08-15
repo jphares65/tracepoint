@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
   DEFAULT_PERSONAL_RIFLE_RULES,
@@ -127,3 +127,4 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+

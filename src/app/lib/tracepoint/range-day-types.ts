@@ -1,4 +1,4 @@
-import type { Firearm, ScoringMode } from "./types";
+﻿import type { Firearm, ScoringMode } from "./types";
 
 export type RangeDayStatus =
   | "Planned"

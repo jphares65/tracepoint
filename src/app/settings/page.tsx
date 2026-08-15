@@ -1780,9 +1780,9 @@ export default function AdminSettingsPage() {
                 {members.length} department member
                 {members.length === 1 ? "" : "s"}
               </span>
-              <span>Â·</span>
+              <span>·</span>
               <span>{roles.length} available roles</span>
-              <span>Â·</span>
+              <span>·</span>
               <span className="inline-flex items-center gap-1.5 text-slate-500">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 Supabase connected
@@ -3244,6 +3244,7 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
+
 
 
 

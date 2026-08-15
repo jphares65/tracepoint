@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -59,3 +59,4 @@ export default function ArmoryPageHeader({
     </section>
   );
 }
+

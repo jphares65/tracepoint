@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export type TracePointRole =
   | "Officer"
@@ -66,3 +66,4 @@ export const CHIEF_PROFILE: TracePointUserProfile = {
 export function hasPermission(permission: TracePointPermission) {
   return CURRENT_USER_PROFILE.permissions.includes(permission);
 }
+
