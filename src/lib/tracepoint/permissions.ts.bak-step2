@@ -7,8 +7,6 @@
   "manage_range_days",
   "score_range_days",
   "manage_qualifications",
-  "manage_certifications",
-  "manage_equipment",
   "submit_off_duty_requests",
   "review_off_duty_requests",
   "view_audit_log",
@@ -86,8 +84,6 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
     requirement: {
       anyOf: [
         "manage_qualifications",
-  "manage_certifications",
-  "manage_equipment",
         "manage_range_days",
         "score_range_days",
         "view_analytics",
@@ -101,8 +97,6 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
       anyOf: [
         "view_analytics",
         "manage_qualifications",
-  "manage_certifications",
-  "manage_equipment",
         "score_range_days",
         "view_command_dashboard",
         "administer_department",
@@ -125,8 +119,6 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
     requirement: {
       anyOf: [
         "manage_qualifications",
-  "manage_certifications",
-  "manage_equipment",
         "score_range_days",
         "view_analytics",
         "administer_department",
@@ -206,6 +198,4 @@ export function getRoutePermissionRequirement(
 
   return rule?.requirement;
 }
-
-
 

@@ -81,7 +81,7 @@ export const DEFAULT_TRAINING_ALERTS: TrainingAlert[] = [
     status: "New",
     title: "Qualification record requires review",
     basis:
-      "Saved range data indicates this officer has qualification information requiring instructor review.",
+      "Saved pilot range data indicates this officer has qualification information requiring instructor review.",
     recommendedAction:
       "Review the officer's qualification history and determine whether follow-up training is needed.",
     createdAt: "2026-07-02",
@@ -95,7 +95,7 @@ export const DEFAULT_TRAINING_ALERTS: TrainingAlert[] = [
       "Range Day Workspace",
     ],
     auditLog: [
-      "Automated alert based on department personnel and training data.",
+      "Default alert aligned to pilot personnel data.",
     ],
   },
   {
@@ -108,7 +108,7 @@ export const DEFAULT_TRAINING_ALERTS: TrainingAlert[] = [
     status: "New",
     title: "Drill performance trend requires review",
     basis:
-      "Saved range data indicates a drill-performance trend that should be reviewed by training staff.",
+      "Saved pilot range data indicates a drill-performance trend that should be reviewed by training staff.",
     recommendedAction:
       "Review the related drill results and determine whether remediation should be assigned.",
     createdAt: "2026-07-02",
@@ -122,7 +122,7 @@ export const DEFAULT_TRAINING_ALERTS: TrainingAlert[] = [
       "Instructor Notes",
     ],
     auditLog: [
-      "Automated alert based on department personnel and training data.",
+      "Default alert aligned to pilot personnel data.",
     ],
   },
   {
@@ -135,7 +135,7 @@ export const DEFAULT_TRAINING_ALERTS: TrainingAlert[] = [
     status: "Acknowledged",
     title: "Instructor note pending documentation",
     basis:
-      "Instructor notes should be reviewed and finalized as part of the training workflow.",
+      "Instructor notes should be reviewed and finalized as part of the pilot workflow.",
     recommendedAction:
       "Confirm notes are complete and linked to the appropriate range day or drill record.",
     createdAt: "2026-07-02",
@@ -148,7 +148,7 @@ export const DEFAULT_TRAINING_ALERTS: TrainingAlert[] = [
       "Range Day Workspace",
     ],
     auditLog: [
-      "Automated alert based on department personnel and training data.",
+      "Default alert aligned to pilot personnel data.",
     ],
   },
 ];
@@ -229,5 +229,4 @@ export function buildRemediationFromAlert(
     ],
   };
 }
-
 

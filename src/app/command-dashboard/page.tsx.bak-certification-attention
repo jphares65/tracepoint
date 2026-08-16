@@ -6,7 +6,6 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  Boxes,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -125,47 +124,6 @@ type CertificationReadinessPayload = {
   summary: CertificationReadinessSummary;
   rows: CertificationReadinessRow[];
 };
-type EquipmentReadinessSummary = {
-  totalRequiredChecks: number;
-  current: number;
-  dueSoon: number;
-  expired: number;
-  inspectionDueSoon: number;
-  inspectionOverdue: number;
-  missing: number;
-  outOfService: number;
-  ready: number;
-  notReady: number;
-  readinessPercent: number;
-};
-
-type EquipmentReadinessRow = {
-  userId: string;
-  officerName: string;
-  badgeNumber?: string | null;
-  rankTitle?: string | null;
-  equipmentTypeId: string;
-  equipmentName: string;
-  equipmentCategory: string;
-  requiredQuantity: number;
-  assignedQuantity: number;
-  readyQuantity: number;
-  status:
-    | "current"
-    | "due_soon"
-    | "expired"
-    | "inspection_due_soon"
-    | "inspection_overdue"
-    | "missing"
-    | "out_of_service";
-  statusReason: string;
-};
-
-type EquipmentReadinessPayload = {
-  scope: "department" | "self";
-  summary: EquipmentReadinessSummary;
-  rows: EquipmentReadinessRow[];
-};
 
 const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
 const DEFAULT_QUALIFICATION_VALID_DAYS = 365;
@@ -222,14 +180,12 @@ async function loadDashboardData() {
     workspaceResponse,
     rulesResponse,
     certificationReadinessResponse,
-    equipmentReadinessResponse,
   ] = await Promise.all([
     fetch("/api/pilot/personnel", { cache: "no-store" }),
     fetch("/api/armory/firearms", { cache: "no-store" }),
     fetch("/api/pilot/range-workspace", { cache: "no-store" }),
     fetch("/api/settings/current-rules", { cache: "no-store" }),
     fetch("/api/readiness/certifications", { cache: "no-store" }),
-    fetch("/api/readiness/equipment", { cache: "no-store" }),
   ]);
 
   const personnelPayload = personnelResponse.ok
@@ -271,27 +227,6 @@ async function loadDashboardData() {
           rows: [],
         };
 
-
-  const equipmentReadinessPayload =
-    equipmentReadinessResponse.ok
-      ? ((await equipmentReadinessResponse.json()) as EquipmentReadinessPayload)
-      : {
-          scope: "department" as const,
-          summary: {
-            totalRequiredChecks: 0,
-            current: 0,
-            dueSoon: 0,
-            expired: 0,
-            inspectionDueSoon: 0,
-            inspectionOverdue: 0,
-            missing: 0,
-            outOfService: 0,
-            ready: 0,
-            notReady: 0,
-            readinessPercent: 100,
-          },
-          rows: [],
-        };
   return {
     personnel: Array.isArray(personnelPayload.personnel)
       ? personnelPayload.personnel
@@ -308,7 +243,6 @@ async function loadDashboardData() {
     qualificationDueSoonDays:
       Number(rulesPayload.rules?.qualification_due_soon_days) || 30,
     certificationReadiness: certificationReadinessPayload,
-    equipmentReadiness: equipmentReadinessPayload,
   };
 }
 
@@ -453,25 +387,6 @@ export default function DashboardPage() {
       },
       rows: [],
     });
-  const [equipmentReadiness, setEquipmentReadiness] =
-    useState<EquipmentReadinessPayload>({
-      scope: "department",
-      summary: {
-        totalRequiredChecks: 0,
-        current: 0,
-        dueSoon: 0,
-        expired: 0,
-        inspectionDueSoon: 0,
-        inspectionOverdue: 0,
-        missing: 0,
-        outOfService: 0,
-        ready: 0,
-        notReady: 0,
-        readinessPercent: 100,
-      },
-      rows: [],
-    });
-
 const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -489,7 +404,6 @@ const [loading, setLoading] = useState(true);
         setQualificationValidDays(data.qualificationValidDays);
         setQualificationDueSoonDays(data.qualificationDueSoonDays);
         setCertificationReadiness(data.certificationReadiness);
-        setEquipmentReadiness(data.equipmentReadiness);
       } catch (error) {
         console.error("Could not load command dashboard.", error);
         if (mounted) {
@@ -687,72 +601,7 @@ const [loading, setLoading] = useState(true);
           icon: ShieldAlert,
         });
       }
-    });    certificationReadiness.rows.forEach((row) => {
-      if (row.status === "current") return;
-
-      items.push({
-        id: `certification-${row.userId}-${row.certificationTypeId}`,
-        title: `${row.officerName} · ${row.certificationName}`,
-        detail: row.statusReason,
-        href: "/training/certifications",
-        tone: row.status === "due_soon" ? "amber" : "red",
-        icon: ShieldCheck,
-      });
     });
-    const equipmentAttentionGroups = new Map<
-      string,
-      {
-        equipmentName: string;
-        status: EquipmentReadinessRow["status"];
-        count: number;
-      }
-    >();
-
-    equipmentReadiness.rows.forEach((row) => {
-      if (row.status === "current") return;
-
-      const key = `${row.equipmentTypeId}-${row.status}`;
-      const existing = equipmentAttentionGroups.get(key);
-
-      if (existing) {
-        existing.count += 1;
-      } else {
-        equipmentAttentionGroups.set(key, {
-          equipmentName: row.equipmentName,
-          status: row.status,
-          count: 1,
-        });
-      }
-    });
-
-    equipmentAttentionGroups.forEach((group, key) => {
-      const labels: Record<EquipmentReadinessRow["status"], string> = {
-        current: "Current",
-        due_soon: "Expiration Due Soon",
-        expired: "Expired",
-        inspection_due_soon: "Inspection Due Soon",
-        inspection_overdue: "Inspection Overdue",
-        missing: "Missing",
-        out_of_service: "Out of Service",
-      };
-
-      const warning =
-        group.status === "due_soon" ||
-        group.status === "inspection_due_soon";
-
-      items.push({
-        id: `equipment-${key}`,
-        title: `${group.equipmentName} · ${labels[group.status]}`,
-        detail: `${group.count} officer${
-          group.count === 1 ? "" : "s"
-        } affected. Review Equipment Readiness for details.`,
-        href: "/equipment",
-        tone: warning ? "amber" : "red",
-        icon: Boxes,
-      });
-    });
-
-
 
     firearmAlerts.forEach((firearm) => {
       items.push({
@@ -791,14 +640,7 @@ const [loading, setLoading] = useState(true);
     });
 
     return items.slice(0, 8);
-    }, [
-    certificationReadiness.rows,
-    equipmentReadiness.rows,
-    declining,
-    firearmAlerts,
-    incompletePackets,
-    officerSummaries,
-  ]);
+  }, [declining, firearmAlerts, incompletePackets, officerSummaries]);
 
   const qualificationTone: Tone =
     failedOrOverdueCount > 0 || needsDayCount > 0
@@ -826,7 +668,8 @@ const [loading, setLoading] = useState(true);
                 TracePoint Command Pulse
               </h1>
               <p className="mt-1 max-w-4xl text-[12px] leading-5 text-slate-500">
-                Operational readiness across qualifications, certifications, equipment, firearms, range activity, and training.
+                Firearm readiness, qualification gaps, range records, and
+                emerging training concerns.
               </p>
             </div>
 
@@ -855,7 +698,7 @@ const [loading, setLoading] = useState(true);
           </div>
         )}
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           <PulseCard
             title="Qualification Readiness"
             value={loading ? "—" : `${currentCount}/${personnel.length}`}
@@ -885,29 +728,6 @@ const [loading, setLoading] = useState(true);
             icon={ShieldCheck}
             tone={certificationTone}
           />
-          <PulseCard
-            title="Equipment Readiness"
-            value={
-              loading
-                ? "—"
-                : equipmentReadiness.summary.totalRequiredChecks === 0
-                  ? "—"
-                  : `${equipmentReadiness.summary.readinessPercent}%`
-            }
-            label={
-              equipmentReadiness.summary.totalRequiredChecks === 0
-                ? "No requirements configured"
-                : "Required checks ready"
-            }
-            detail={
-              equipmentReadiness.summary.totalRequiredChecks === 0
-                ? "Configure required equipment to begin agency readiness tracking."
-                : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
-            }
-            icon={Boxes}
-            tone={equipmentTone}
-          />
-
 
           <PulseCard
             title="Range Readiness"
@@ -952,7 +772,8 @@ const [loading, setLoading] = useState(true);
                   Critical Attention
                 </h2>
                 <p className="mt-1 text-[12px] text-slate-500">
-                  Live qualification, certification, equipment, firearm, range-packet, and performance items requiring review.
+                  Live qualification, firearm, range-packet, and performance
+                  items requiring review.
                 </p>
               </div>
               <StatusPill
@@ -1024,18 +845,7 @@ const [loading, setLoading] = useState(true);
                 ].map(([label, value, Icon, tone]) => {
                   const MetricIcon = Icon as typeof Shield;
 
-                
-  const equipmentTone: Tone =
-    equipmentReadiness.summary.expired > 0 ||
-    equipmentReadiness.summary.missing > 0 ||
-    equipmentReadiness.summary.inspectionOverdue > 0 ||
-    equipmentReadiness.summary.outOfService > 0
-      ? "red"
-      : equipmentReadiness.summary.dueSoon > 0 ||
-          equipmentReadiness.summary.inspectionDueSoon > 0
-        ? "amber"
-        : "green";
-  return (
+                  return (
                     <div
                       key={String(label)}
                       className={`rounded-2xl border p-3 ${toneClasses(
@@ -1075,13 +885,6 @@ const [loading, setLoading] = useState(true);
                     "Firearms",
                     "/firearms",
                     `${firearms.length} active firearms`,
-                  ],
-                  [
-                    "Equipment Readiness",
-                    "/equipment",
-                    equipmentReadiness.summary.totalRequiredChecks === 0
-                      ? "No requirements configured"
-                      : `${equipmentReadiness.summary.notReady} readiness exceptions`,
                   ],
                   [
                     "Analytics",
@@ -1160,8 +963,6 @@ const [loading, setLoading] = useState(true);
     </TracePointShell>
   );
 }
-
-
 
 
 

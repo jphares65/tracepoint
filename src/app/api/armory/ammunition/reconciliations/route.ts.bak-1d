@@ -3,107 +3,49 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
-type ReconciliationCycleRules = {
-  spring_cycle_start: string;
-  spring_cycle_end: string;
-  fall_cycle_start: string;
-  fall_cycle_end: string;
-};
-
-const DEFAULT_CYCLE_RULES: ReconciliationCycleRules = {
-  spring_cycle_start: "04-01",
-  spring_cycle_end: "06-30",
-  fall_cycle_start: "09-01",
-  fall_cycle_end: "11-30",
-};
-
-function localDateString(now: Date) {
+function currentCycle(now = new Date()) {
   const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+  const month = now.getMonth() + 1;
 
-function currentCycle(
-  rules: ReconciliationCycleRules,
-  now = new Date(),
-) {
-  const year = now.getFullYear();
-  const today = localDateString(now);
-
-  const cycles = [
-    {
-      name: "Spring" as const,
-      year,
-      start: `${year}-${rules.spring_cycle_start}`,
-      end: `${year}-${rules.spring_cycle_end}`,
-    },
-    {
-      name: "Fall" as const,
-      year,
-      start: `${year}-${rules.fall_cycle_start}`,
-      end: `${year}-${rules.fall_cycle_end}`,
-    },
-  ];
-
-  const openCycle = cycles.find(
-    (cycle) => today >= cycle.start && today <= cycle.end,
-  );
-
-  if (openCycle) {
+  if (month >= 4 && month <= 6) {
     return {
-      ...openCycle,
+      name: "Spring",
+      year,
+      start: `${year}-04-01`,
+      end: `${year}-06-30`,
       isOpen: true,
     };
   }
 
-  const futureCycles = [
-    ...cycles.filter((cycle) => cycle.start > today),
-    {
-      name: "Spring" as const,
-      year: year + 1,
-      start: `${year + 1}-${rules.spring_cycle_start}`,
-      end: `${year + 1}-${rules.spring_cycle_end}`,
-    },
-    {
-      name: "Fall" as const,
-      year: year + 1,
-      start: `${year + 1}-${rules.fall_cycle_start}`,
-      end: `${year + 1}-${rules.fall_cycle_end}`,
-    },
-  ].sort((left, right) => left.start.localeCompare(right.start));
+  if (month >= 9 && month <= 11) {
+    return {
+      name: "Fall",
+      year,
+      start: `${year}-09-01`,
+      end: `${year}-11-30`,
+      isOpen: true,
+    };
+  }
 
-  const nextCycle = futureCycles[0];
+  const next =
+    month < 4
+      ? { name: "Spring", year }
+      : month < 9
+        ? { name: "Fall", year }
+        : { name: "Spring", year: year + 1 };
 
   return {
-    ...nextCycle,
+    name: next.name,
+    year: next.year,
+    start:
+      next.name === "Spring"
+        ? `${next.year}-04-01`
+        : `${next.year}-09-01`,
+    end:
+      next.name === "Spring"
+        ? `${next.year}-06-30`
+        : `${next.year}-11-30`,
     isOpen: false,
-  };
-}
-
-async function reconciliationCycleRules(
-  admin: any,
-  departmentId: string,
-): Promise<ReconciliationCycleRules> {
-  const { data, error } = await admin
-    .from("department_rules")
-    .select(
-      "spring_cycle_start,spring_cycle_end,fall_cycle_start,fall_cycle_end",
-    )
-    .eq("department_id", departmentId)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-
-  return {
-    spring_cycle_start:
-      data?.spring_cycle_start ?? DEFAULT_CYCLE_RULES.spring_cycle_start,
-    spring_cycle_end:
-      data?.spring_cycle_end ?? DEFAULT_CYCLE_RULES.spring_cycle_end,
-    fall_cycle_start:
-      data?.fall_cycle_start ?? DEFAULT_CYCLE_RULES.fall_cycle_start,
-    fall_cycle_end:
-      data?.fall_cycle_end ?? DEFAULT_CYCLE_RULES.fall_cycle_end,
   };
 }
 
@@ -374,14 +316,11 @@ export async function GET() {
       );
     }
 
-    const cycleRules = await reconciliationCycleRules(admin, departmentId);
-    const cycle = currentCycle(cycleRules);
-
     return NextResponse.json({
       ...(await loadReconciliation(
         admin,
         departmentId,
-        cycle,
+        currentCycle(),
       )),
       access,
     });
@@ -411,7 +350,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as any;
   const action = String(body.action ?? "");
   const items = Array.isArray(body.items) ? body.items : [];
-
+  const cycle = currentCycle();
 
   if (!["save", "submit", "certify"].includes(action)) {
     return NextResponse.json(
@@ -443,9 +382,6 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       );
     }
-
-    const cycleRules = await reconciliationCycleRules(admin, departmentId);
-    const cycle = currentCycle(cycleRules);
 
     if (action === "certify" && !access.canCertify) {
       return NextResponse.json(
@@ -624,5 +560,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 

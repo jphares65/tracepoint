@@ -166,19 +166,6 @@ function priorityCard(priority: Priority) {
   }
   return "border-slate-800 bg-slate-950/45";
 }
-function isConditionBasedReadiness(item: NotificationItem) {
-  return [
-    "required_certification_missing",
-    "required_certification_expired",
-    "required_certification_due_soon",
-    "required_equipment_missing",
-    "required_equipment_expired",
-    "equipment_inspection_overdue",
-    "required_equipment_out_of_service",
-    "equipment_expiration_due_soon",
-    "equipment_inspection_due_soon",
-  ].includes(item.kind);
-}
 
 function PriorityIcon({ priority }: { priority: Priority }) {
   if (priority === "Critical") {
@@ -595,19 +582,17 @@ export default function OfficerHomePage() {
                             Open
                             <ChevronRight size={13} />
                           </Link>
-                                                    {!isConditionBasedReadiness(item) ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void updateNotification("acknowledge", item)
-                              }
-                              disabled={savingId === item.id}
-                              className="inline-flex items-center gap-2 rounded-lg border border-emerald-700 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 disabled:opacity-50"
-                            >
-                              <Check size={13} />
-                              Acknowledge
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void updateNotification("acknowledge", item)
+                            }
+                            disabled={savingId === item.id}
+                            className="inline-flex items-center gap-2 rounded-lg border border-emerald-700 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 disabled:opacity-50"
+                          >
+                            <Check size={13} />
+                            Acknowledge
+                          </button>
                           <button
                             type="button"
                             onClick={() => void updateNotification("snooze", item)}
@@ -631,6 +616,4 @@ export default function OfficerHomePage() {
     </TracePointShell>
   );
 }
-
-
 

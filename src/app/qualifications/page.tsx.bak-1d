@@ -114,8 +114,8 @@ type OfficerHistory = {
 };
 
 const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
-const DEFAULT_QUALIFICATION_VALID_DAYS = 365;
-const DEFAULT_QUALIFICATION_DUE_SOON_DAYS = 30;
+const QUALIFICATION_VALID_DAYS = 365;
+const DUE_SOON_DAYS = 335;
 
 const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   rangeDays: [],
@@ -387,8 +387,6 @@ function evaluateOfficerStatus(
   lastDayQualification: OfficerQualificationEvent | undefined,
   lastNightQualification: OfficerQualificationEvent | undefined,
   failedQualifications: OfficerQualificationEvent[],
-  qualificationValidDays: number,
-  qualificationDueSoonDays: number,
 ): {
   status: QualificationStatus;
   statusReason: string;
@@ -444,7 +442,7 @@ function evaluateOfficerStatus(
     };
   }
 
-  if (daysSinceOldestRequired > qualificationValidDays) {
+  if (daysSinceOldestRequired > QUALIFICATION_VALID_DAYS) {
     return {
       status: "Overdue",
       statusReason: `Oldest required qualification is ${daysSinceOldestRequired} days old.`,
@@ -452,15 +450,10 @@ function evaluateOfficerStatus(
     };
   }
 
-  const dueSoonThreshold = Math.max(
-    0,
-    qualificationValidDays - qualificationDueSoonDays,
-  );
-
-  if (daysSinceOldestRequired >= dueSoonThreshold) {
+  if (daysSinceOldestRequired >= DUE_SOON_DAYS) {
     return {
       status: "Due Soon",
-      statusReason: `Qualification is approaching the ${qualificationValidDays}-day validity limit.`,
+      statusReason: `Qualification cycle is approaching ${QUALIFICATION_VALID_DAYS} days.`,
       daysSinceLastQualification: daysSinceOldestRequired,
     };
   }
@@ -472,12 +465,7 @@ function evaluateOfficerStatus(
   };
 }
 
-function buildOfficerHistories(
-  workspace: StoredRangeDayWorkspace,
-  personnel: PilotPersonnel[],
-  qualificationValidDays: number,
-  qualificationDueSoonDays: number,
-) {
+function buildOfficerHistories(workspace: StoredRangeDayWorkspace, personnel: PilotPersonnel[]) {
   const rangeDayById = new Map(
     workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
   );
@@ -620,8 +608,6 @@ function buildOfficerHistories(
       lastDayQualification,
       lastNightQualification,
       failedQualifications,
-      qualificationValidDays,
-      qualificationDueSoonDays,
     );
 
     return {
@@ -822,12 +808,6 @@ function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) 
 export default function QualificationsPage() {
   const [workspace, setWorkspace] = useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
   const [personnel, setPersonnel] = useState<PilotPersonnel[]>(EMPTY_PERSONNEL);
-  const [qualificationValidDays, setQualificationValidDays] = useState(
-    DEFAULT_QUALIFICATION_VALID_DAYS,
-  );
-  const [qualificationDueSoonDays, setQualificationDueSoonDays] = useState(
-    DEFAULT_QUALIFICATION_DUE_SOON_DAYS,
-  );
   const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<OfficerStatusFilter>("All");
@@ -862,60 +842,6 @@ export default function QualificationsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadQualificationRules() {
-      try {
-        const response = await fetch("/api/settings/current-rules", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error("Unable to load qualification rules.");
-        }
-
-        const payload = (await response.json()) as {
-          rules?: {
-            qualification_valid_days?: number;
-            qualification_due_soon_days?: number;
-          };
-        };
-
-        if (!isMounted) return;
-
-        const validDays = Number(
-          payload.rules?.qualification_valid_days,
-        );
-
-        const dueSoonDays = Number(
-          payload.rules?.qualification_due_soon_days,
-        );
-
-        setQualificationValidDays(
-          Number.isFinite(validDays) && validDays > 0
-            ? validDays
-            : DEFAULT_QUALIFICATION_VALID_DAYS,
-        );
-
-        setQualificationDueSoonDays(
-          Number.isFinite(dueSoonDays) && dueSoonDays >= 0
-            ? dueSoonDays
-            : DEFAULT_QUALIFICATION_DUE_SOON_DAYS,
-        );
-      } catch (error) {
-        console.warn("Could not load qualification rules.", error);
-      }
-    }
-
-    void loadQualificationRules();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
     async function loadWorkspace() {
       const remoteWorkspace = await loadRemoteRangeDayWorkspace();
       const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace();
@@ -932,19 +858,8 @@ export default function QualificationsPage() {
   }, []);
 
   const officerHistories = useMemo(
-    () =>
-      buildOfficerHistories(
-        workspace,
-        personnel,
-        qualificationValidDays,
-        qualificationDueSoonDays,
-      ),
-    [
-      personnel,
-      qualificationDueSoonDays,
-      qualificationValidDays,
-      workspace,
-    ],
+    () => buildOfficerHistories(workspace, personnel),
+    [personnel, workspace],
   );
 
   const filteredHistories = useMemo(() => {
@@ -1142,7 +1057,7 @@ export default function QualificationsPage() {
                 <section className="border-b border-slate-800 p-4 sm:p-5">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h3 className="text-[13px] font-bold text-white">Current Qualification Status</h3>
-                    <p className="text-[11px] text-slate-600">{qualificationValidDays}-day qualification validity</p>
+                    <p className="text-[11px] text-slate-600">365-day qualification cycle</p>
                   </div>
                   <div className="grid gap-3 md:grid-cols-3">
                     <CurrentQualificationCard label="Day Qualification" icon={<Sun size={14} className="text-amber-300" />} event={selectedHistory.lastDayQualification} emptyText="Missing" />
@@ -1220,5 +1135,4 @@ export default function QualificationsPage() {
     </TracePointShell>
   );
 }
-
 

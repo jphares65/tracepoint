@@ -87,8 +87,6 @@ type RulesForm = {
   fall_cycle_start: string;
   fall_cycle_end: string;
   require_rifle_familiarization: boolean;
-  qualification_valid_days: number;
-  qualification_due_soon_days: number;
   inspection_interval_days: number;
   battery_check_interval_days: number;
   off_duty_renewal_days: number;
@@ -175,8 +173,6 @@ const EMPTY_RULES: RulesForm = {
   fall_cycle_start: "09-01",
   fall_cycle_end: "11-30",
   require_rifle_familiarization: true,
-  qualification_valid_days: 365,
-  qualification_due_soon_days: 30,
   inspection_interval_days: 180,
   battery_check_interval_days: 180,
   off_duty_renewal_days: 365,
@@ -947,14 +943,6 @@ export default function AdminSettingsPage() {
               ),
               require_rifle_familiarization: Boolean(
                 rulesData.require_rifle_familiarization,
-              ),
-              qualification_valid_days: numberValue(
-                rulesData.qualification_valid_days,
-                EMPTY_RULES.qualification_valid_days,
-              ),
-              qualification_due_soon_days: numberValue(
-                rulesData.qualification_due_soon_days,
-                EMPTY_RULES.qualification_due_soon_days,
               ),
               inspection_interval_days: numberValue(
                 rulesData.inspection_interval_days,
@@ -1903,7 +1891,7 @@ export default function AdminSettingsPage() {
                       </h3>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
                         Upload CSV files, map fields, validate records, preview
-                        rows, and import supported data.
+                        rows, and import supported pilot data.
                       </p>
                     </div>
                   </div>
@@ -1938,8 +1926,8 @@ export default function AdminSettingsPage() {
             </SettingsCard>
 
             <SettingsCard
-              title="Import Support"
-              description="Current supported import capabilities."
+              title="Pilot Import Support"
+              description="Current import scope for the Readington pilot build."
             >
               <div className="space-y-3 text-sm text-slate-400">
                 <div className="rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4">
@@ -1947,14 +1935,14 @@ export default function AdminSettingsPage() {
                     Firearms import is live.
                   </p>
                   <p className="mt-1 text-xs leading-5 text-emerald-200/80">
-                    CSV firearm rows can be imported directly into the Armory
+                    CSV firearm rows can be imported into the live Armory pilot
                     records.
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-4">
                   <p className="font-semibold text-amber-200">
-                    Personnel and qualification history currently support preview and validation.
+                    Personnel and qualification history are preview-only.
                   </p>
                   <p className="mt-1 text-xs leading-5 text-amber-200/80">
                     Those workflows validate and preview data until the final
@@ -2420,7 +2408,7 @@ export default function AdminSettingsPage() {
 
             <SettingsCard
               title="Training Requirements"
-              description="Agency-defined qualification validity, alert windows, inspection intervals, and related training requirements."
+              description="Agency-level compliance intervals used by future automated alerts."
             >
               <div className="space-y-4">
                 <ToggleRow
@@ -2434,42 +2422,6 @@ export default function AdminSettingsPage() {
                     }))
                   }
                 />
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <NumberInput
-                    label="Qualification validity"
-                    value={rules.qualification_valid_days}
-                    min={1}
-                    max={3650}
-                    hint="Days"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        qualification_valid_days: value,
-                      }))
-                    }
-                  />
-
-                  <NumberInput
-                    label="Due soon warning"
-                    value={rules.qualification_due_soon_days}
-                    min={0}
-                    max={Math.max(0, rules.qualification_valid_days - 1)}
-                    hint="Days before expiration"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        qualification_due_soon_days: Math.min(
-                          value,
-                          Math.max(
-                            0,
-                            current.qualification_valid_days - 1,
-                          ),
-                        ),
-                      }))
-                    }
-                  />
-                </div>
 
                 <div className="grid gap-4 sm:grid-cols-3">
                   <NumberInput
@@ -2676,7 +2628,7 @@ export default function AdminSettingsPage() {
                     : "Upload department patch"}
                 </p>
                 <p className="mt-1 max-w-xs text-xs leading-5 text-slate-600">
-                  Used in the sidebar, login experience, and generated report
+                  Used in future sidebar, login, and generated report
                   branding.
                 </p>
 
@@ -3292,8 +3244,6 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
-
-
 
 
 

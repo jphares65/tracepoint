@@ -8,7 +8,7 @@ import {
 } from "@/lib/tracepoint/certification-readiness";
 
 type Priority = "Critical" | "High" | "Normal";
-type Source = "Personal Rifle" | "Ammunition" | "Inspection" | "Range" | "Training" | "Equipment";
+type Source = "Personal Rifle" | "Ammunition" | "Inspection" | "Range" | "Training";
 
 type GeneratedAlert = {
   key: string;
@@ -28,17 +28,6 @@ type ExistingNotificationEvent = {
   acknowledged_at?: string | null;
   snoozed_until?: string | null;
 };
-const CONDITION_BASED_NOTIFICATION_KINDS = new Set([
-  "required_certification_missing",
-  "required_certification_expired",
-  "required_certification_due_soon",
-  "required_equipment_missing",
-  "required_equipment_expired",
-  "equipment_inspection_overdue",
-  "required_equipment_out_of_service",
-  "equipment_expiration_due_soon",
-  "equipment_inspection_due_soon",
-]);
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -113,8 +102,7 @@ async function getContext() {
       .in("role_code", roleCodes)
       .in("permission_code", [
         "manage_certifications",
-        
-        "manage_equipment","view_command_dashboard",
+        "view_command_dashboard",
         "view_analytics",
         "administer_department",
       ]);
@@ -539,136 +527,6 @@ async function collectCertificationReadiness(
 
   return alerts;
 }
-
-function collectEquipmentReadiness(
-  payload: any,
-  context: any,
-): GeneratedAlert[] {
-  const rows = Array.isArray(payload?.rows)
-    ? payload.rows
-    : [];
-
-  const departmentScope =
-    text(payload?.scope) === "department" &&
-    context.canViewDepartmentReadiness;
-
-  const alerts: GeneratedAlert[] = [];
-
-  for (const row of rows) {
-    const status = text(row.status);
-
-    if (!status || status === "current") continue;
-
-    const userId = text(row.userId);
-    const equipmentTypeId = text(row.equipmentTypeId);
-
-    if (!userId || !equipmentTypeId) continue;
-
-    const equipmentName =
-      text(row.equipmentName) || "Required Equipment";
-
-    const officerPrefix =
-      departmentScope &&
-      userId !== context.user.id
-        ? `${text(row.officerName) || "Officer"} · `
-        : "";
-
-    const base = {
-      key: `equipment-readiness-${userId}-${equipmentTypeId}`,
-      source: "Equipment" as Source,
-      href: "/equipment",
-    };
-
-    if (status === "missing") {
-      alerts.push({
-        ...base,
-        kind: "required_equipment_missing",
-        title: `${officerPrefix}${equipmentName} Missing`,
-        detail:
-          text(row.statusReason) ||
-          "Required equipment is not currently assigned.",
-        priority: "Critical",
-        createdAt: null,
-      });
-      continue;
-    }
-
-    if (status === "expired") {
-      alerts.push({
-        ...base,
-        kind: "required_equipment_expired",
-        title: `${officerPrefix}${equipmentName} Expired`,
-        detail: text(row.statusReason),
-        priority: "Critical",
-        createdAt:
-          row.assets?.find(
-            (asset: any) => text(asset.status) === "expired",
-          )?.expirationDate ?? null,
-      });
-      continue;
-    }
-
-    if (status === "inspection_overdue") {
-      alerts.push({
-        ...base,
-        kind: "equipment_inspection_overdue",
-        title: `${officerPrefix}${equipmentName} Inspection Overdue`,
-        detail: text(row.statusReason),
-        priority: "Critical",
-        createdAt:
-          row.assets?.find(
-            (asset: any) =>
-              text(asset.status) === "inspection_overdue",
-          )?.nextInspectionDate ?? null,
-      });
-      continue;
-    }
-
-    if (status === "out_of_service") {
-      alerts.push({
-        ...base,
-        kind: "required_equipment_out_of_service",
-        title: `${officerPrefix}${equipmentName} Out of Service`,
-        detail: text(row.statusReason),
-        priority: "Critical",
-        createdAt: null,
-      });
-      continue;
-    }
-
-    if (status === "due_soon") {
-      alerts.push({
-        ...base,
-        kind: "equipment_expiration_due_soon",
-        title: `${officerPrefix}${equipmentName} Expiring Soon`,
-        detail: text(row.statusReason),
-        priority: "High",
-        createdAt:
-          row.assets?.find(
-            (asset: any) => text(asset.status) === "due_soon",
-          )?.expirationDate ?? null,
-      });
-      continue;
-    }
-
-    if (status === "inspection_due_soon") {
-      alerts.push({
-        ...base,
-        kind: "equipment_inspection_due_soon",
-        title: `${officerPrefix}${equipmentName} Inspection Due Soon`,
-        detail: text(row.statusReason),
-        priority: "High",
-        createdAt:
-          row.assets?.find(
-            (asset: any) =>
-              text(asset.status) === "inspection_due_soon",
-          )?.nextInspectionDate ?? null,
-      });
-    }
-  }
-
-  return alerts;
-}
 async function getPreferences(context: any) {
   const { data, error } = await context.admin
     .from("notification_preferences")
@@ -690,8 +548,7 @@ async function getPreferences(context: any) {
       Inspection: true,
       Range: true,
       Training: true,
-      
-      Equipment: true,...(data?.source_preferences ?? {}),
+      ...(data?.source_preferences ?? {}),
     },
   };
 }
@@ -713,36 +570,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const preferences = await getPreferences(context);
-    const [
-      rifles,
-      ammunition,
-      firearms,
-      range,
-      training,
-      equipment,
-    ] = await Promise.all([
+    const [rifles, ammunition, firearms, range, training] = await Promise.all([
       internalJson(request, "/api/armory/personal-rifles/inbox"),
       internalJson(request, "/api/pilot/ammunition"),
       internalJson(request, "/api/armory/firearms"),
       internalJson(request, "/api/pilot/range-workspace"),
       collectCertificationReadiness(context)
-        .then((items) => ({
-          ok: true,
-          items,
-          error: "",
-        }))
-        .catch((error) => ({
-          ok: false,
-          items: [] as GeneratedAlert[],
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unavailable",
-        })),
-      internalJson(
-        request,
-        "/api/readiness/equipment",
-      ),
+        .then((items) => ({ ok: true, items, error: "" }))
+        .catch((error) => ({ ok: false, items: [] as GeneratedAlert[], error: error instanceof Error ? error.message : "Unavailable" })),
     ]);
 
     const generated: GeneratedAlert[] = [];
@@ -764,22 +599,6 @@ export async function GET(request: NextRequest) {
     if (training.ok) { successful.add("Training"); generated.push(...training.items); }
     else sourceErrors.push({ source: "Training", error: training.error || "Unavailable" });
 
-
-    if (equipment.ok) {
-      successful.add("Equipment");
-
-      generated.push(
-        ...collectEquipmentReadiness(
-          equipment.payload,
-          context,
-        ),
-      );
-    } else {
-      sourceErrors.push({
-        source: "Equipment",
-        error: equipment.error || "Unavailable",
-      });
-    }
     const filtered = preferences.in_app_enabled
       ? generated.filter((item) => preferences.source_preferences[item.source] !== false)
       : [];
@@ -914,41 +733,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "A valid action and notification ID are required." }, { status: 400 });
   }
 
-  const { data: notification, error: notificationError } = await context.admin
-    .from("notification_events")
-    .select("id,kind")
-    .eq("id", id)
-    .eq("department_id", context.departmentId)
-    .eq("user_id", context.user.id)
-    .maybeSingle();
-
-  if (notificationError) {
-    return NextResponse.json(
-      { error: notificationError.message },
-      { status: 500 },
-    );
-  }
-
-  if (!notification) {
-    return NextResponse.json(
-      { error: "Notification was not found." },
-      { status: 404 },
-    );
-  }
-
-  if (
-    action === "acknowledge" &&
-    CONDITION_BASED_NOTIFICATION_KINDS.has(String(notification.kind))
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "This readiness alert remains open until the underlying condition is resolved. You may snooze it temporarily.",
-      },
-      { status: 409 },
-    );
-  }
-
   const now = new Date().toISOString();
   const patch = action === "acknowledge"
     ? { acknowledged_at: now, updated_at: now }
@@ -968,8 +752,6 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
-
-
 
 
 

@@ -1903,7 +1903,7 @@ export default function AdminSettingsPage() {
                       </h3>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
                         Upload CSV files, map fields, validate records, preview
-                        rows, and import supported data.
+                        rows, and import supported pilot data.
                       </p>
                     </div>
                   </div>
@@ -1938,8 +1938,8 @@ export default function AdminSettingsPage() {
             </SettingsCard>
 
             <SettingsCard
-              title="Import Support"
-              description="Current supported import capabilities."
+              title="Pilot Import Support"
+              description="Current import scope for the Readington pilot build."
             >
               <div className="space-y-3 text-sm text-slate-400">
                 <div className="rounded-2xl border border-emerald-800 bg-emerald-950/30 p-4">
@@ -1947,14 +1947,14 @@ export default function AdminSettingsPage() {
                     Firearms import is live.
                   </p>
                   <p className="mt-1 text-xs leading-5 text-emerald-200/80">
-                    CSV firearm rows can be imported directly into the Armory
+                    CSV firearm rows can be imported into the live Armory pilot
                     records.
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-4">
                   <p className="font-semibold text-amber-200">
-                    Personnel and qualification history currently support preview and validation.
+                    Personnel and qualification history are preview-only.
                   </p>
                   <p className="mt-1 text-xs leading-5 text-amber-200/80">
                     Those workflows validate and preview data until the final
@@ -2676,7 +2676,7 @@ export default function AdminSettingsPage() {
                     : "Upload department patch"}
                 </p>
                 <p className="mt-1 max-w-xs text-xs leading-5 text-slate-600">
-                  Used in the sidebar, login experience, and generated report
+                  Used in future sidebar, login, and generated report
                   branding.
                 </p>
 
@@ -3292,7 +3292,6 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
-
 
 
 
