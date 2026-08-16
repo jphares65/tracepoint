@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   BarChart3,
+  Boxes,
   BellRing,
   CalendarRange,
   ChevronDown,
@@ -179,7 +180,12 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         icon: BellRing,
       },
     ],
+  },  {
+    label: "Equipment Readiness",
+    href: "/equipment",
+    icon: Boxes,
   },
+
   {
     label: "Off-Duty Firearms",
     icon: Shield,
@@ -762,6 +768,8 @@ export default function TracePointShell({
     </div>
   );
 }
+
+
 
 
 

@@ -816,6 +816,18 @@ const [loading, setLoading] = useState(true);
         ? "amber"
         : "green";
 
+  const equipmentTone: Tone =
+    equipmentReadiness.summary.expired > 0 ||
+    equipmentReadiness.summary.missing > 0 ||
+    equipmentReadiness.summary.inspectionOverdue > 0 ||
+    equipmentReadiness.summary.outOfService > 0
+      ? "red"
+      : equipmentReadiness.summary.dueSoon > 0 ||
+          equipmentReadiness.summary.inspectionDueSoon > 0
+        ? "amber"
+        : "green";
+
+
   return (
     <TracePointShell activePage="Command Dashboard">
       <div className="mx-auto w-full max-w-[1600px] space-y-5">
@@ -1025,16 +1037,7 @@ const [loading, setLoading] = useState(true);
                   const MetricIcon = Icon as typeof Shield;
 
                 
-  const equipmentTone: Tone =
-    equipmentReadiness.summary.expired > 0 ||
-    equipmentReadiness.summary.missing > 0 ||
-    equipmentReadiness.summary.inspectionOverdue > 0 ||
-    equipmentReadiness.summary.outOfService > 0
-      ? "red"
-      : equipmentReadiness.summary.dueSoon > 0 ||
-          equipmentReadiness.summary.inspectionDueSoon > 0
-        ? "amber"
-        : "green";
+  
   return (
                     <div
                       key={String(label)}
@@ -1160,6 +1163,8 @@ const [loading, setLoading] = useState(true);
     </TracePointShell>
   );
 }
+
+
 
 
 
