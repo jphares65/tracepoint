@@ -2,6 +2,11 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type RemediationPayload = {
   remediations?: unknown;
@@ -41,6 +46,21 @@ function normalizeRemediations(value: unknown) {
 }
 
 export async function GET() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "range_training",
+    "Range & Training",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -87,6 +107,21 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "range_training",
+    "Range & Training",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -167,6 +202,7 @@ export async function PUT(request: Request) {
     );
   }
 }
+
 
 
 

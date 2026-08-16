@@ -3,6 +3,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
+import {
+  accessFailureResponse,
+  featureDisabledResponse,
+  hasServerFeature,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
+
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
   drillLibrary?: unknown[];
@@ -72,6 +80,21 @@ async function getActiveDepartmentId(admin: any, userId: string) {
 }
 
 export async function GET() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const canReadWorkspace =
+    hasServerFeature(resolved.context, "range_training") ||
+    hasServerFeature(resolved.context, "qualifications");
+
+  if (!canReadWorkspace) {
+    return featureDisabledResponse(
+      "Range & Training and Qualifications",
+    );
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -119,6 +142,21 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "range_training",
+    "Range & Training",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -182,6 +220,7 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
 
 
 

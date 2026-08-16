@@ -2,6 +2,11 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type Workspace = {
   rangeDays?: any[];
@@ -493,6 +498,21 @@ function buildPerformanceSummary(workspace: Required<Workspace>, officerLabels: 
 }
 
 export async function GET() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "range_training",
+    "Range & Training",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -540,4 +560,5 @@ export async function GET() {
     );
   }
 }
+
 

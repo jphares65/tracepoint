@@ -2,6 +2,11 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type ReconciliationCycleRules = {
   spring_cycle_start: string;
@@ -341,6 +346,21 @@ async function loadReconciliation(
 }
 
 export async function GET() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "ammunition",
+    "Ammunition",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error } = await getUser();
 
   if (!user) {
@@ -399,6 +419,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "ammunition",
+    "Ammunition",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error } = await getUser();
 
   if (!user) {
@@ -624,5 +659,6 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 

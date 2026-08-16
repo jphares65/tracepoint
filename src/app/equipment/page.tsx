@@ -280,8 +280,9 @@ export default function EquipmentPage() {
 
   const [showAssetForm, setShowAssetForm] =
     useState(false);
-
-  const [typeForm, setTypeForm] = useState({
+  const [activeView, setActiveView] =
+    useState<"equipment" | "readiness">("equipment");
+const [typeForm, setTypeForm] = useState({
     name: "",
     category: "General",
     description: "",
@@ -683,78 +684,98 @@ export default function EquipmentPage() {
     }
   }
 
+    const assetReadinessMap = useMemo(() => {
+    const map = new Map<string, ReadinessStatus>();
+
+    readiness.rows.forEach((row) => {
+      row.assets.forEach((asset) => {
+        map.set(asset.assetId, asset.status);
+      });
+    });
+
+    return map;
+  }, [readiness.rows]);
+
+  const filteredAssets = useMemo(() => {
+    const normalized = search.trim().toLowerCase();
+
+    if (!normalized) return assets;
+
+    return assets.filter((asset) => {
+      const type = typeMap.get(asset.equipment_type_id);
+      const member = asset.assigned_user_id
+        ? memberMap.get(asset.assigned_user_id)
+        : undefined;
+
+      return [
+        type?.name,
+        type?.category,
+        member?.fullName,
+        member?.badgeNumber,
+        member?.rankTitle,
+        asset.manufacturer,
+        asset.model,
+        asset.serial_number,
+        asset.lot_number,
+        asset.lifecycle_status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized);
+    });
+  }, [assets, memberMap, search, typeMap]);
   const summary = readiness.summary;
 
+  const criticalCount =
+    summary.expired +
+    summary.inspectionOverdue;
+
+  const unavailableCount =
+    summary.missing +
+    summary.outOfService;
+
   return (
-    <TracePointShell activePage="Equipment Readiness">
+    <TracePointShell activePage="Equipment">
       <div className="mx-auto w-full max-w-[1600px] space-y-5">
         <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
-                Operational Readiness
+                Readiness
               </p>
 
               <h1 className="mt-1 text-2xl font-bold text-white">
-                Equipment Readiness
+                Equipment
               </h1>
 
-              <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-400">
-                Track assigned operational equipment,
-                expirations, inspections, and agency
-                readiness requirements.
+              <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
+                Track issued equipment, assignments, expirations,
+                inspections, and officer readiness.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {canManage ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowAssetForm(true)
-                    }
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500"
-                  >
-                    <PackagePlus size={15} />
-                    Add Equipment
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowTypeForm(true)
-                    }
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                  >
-                    <Settings2 size={15} />
-                    Equipment Type
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowRequirementForm(true)
-                    }
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                  >
-                    <Plus size={15} />
-                    Requirement
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => setShowAssetForm(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
+                >
+                  <PackagePlus size={15} />
+                  Add Equipment
+                </button>
               ) : null}
 
               <button
                 type="button"
                 onClick={() => void loadAll()}
                 disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-white disabled:opacity-50"
               >
                 <RefreshCw
-                  size={15}
-                  className={
-                    loading ? "animate-spin" : ""
-                  }
+                  size={14}
+                  className={loading ? "animate-spin" : ""}
                 />
                 Refresh
               </button>
@@ -768,30 +789,11 @@ export default function EquipmentPage() {
           </div>
         ) : null}
 
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <SummaryCard
-            label="Readiness"
-            value={
-              summary.totalRequiredChecks === 0
-                ? "—"
-                : `${summary.readinessPercent}%`
-            }
-            detail={
-              summary.totalRequiredChecks === 0
-                ? "No equipment requirements configured"
-                : `${summary.ready} of ${summary.totalRequiredChecks} checks ready`
-            }
-            tone={
-              summary.notReady > 0
-                ? "red"
-                : "green"
-            }
-          />
-
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <SummaryCard
             label="Current"
             value={summary.current}
-            detail="Fully current"
+            detail="Required equipment currently ready"
             tone="green"
           />
 
@@ -806,56 +808,46 @@ export default function EquipmentPage() {
           />
 
           <SummaryCard
-            label="Missing"
-            value={summary.missing}
-            detail="Required equipment not assigned"
-            tone={
-              summary.missing > 0 ? "red" : "slate"
-            }
+            label="Expired / Overdue"
+            value={criticalCount}
+            detail="Expired equipment or overdue inspections"
+            tone={criticalCount > 0 ? "red" : "slate"}
           />
 
           <SummaryCard
-            label="Expired"
-            value={summary.expired}
-            detail="Past expiration date"
-            tone={
-              summary.expired > 0 ? "red" : "slate"
-            }
-          />
-
-          <SummaryCard
-            label="Inspection Overdue"
-            value={summary.inspectionOverdue}
-            detail="Required inspection overdue"
-            tone={
-              summary.inspectionOverdue > 0
-                ? "red"
-                : "slate"
-            }
-          />
-
-          <SummaryCard
-            label="Out of Service"
-            value={summary.outOfService}
-            detail="Assigned but unavailable"
-            tone={
-              summary.outOfService > 0
-                ? "red"
-                : "slate"
-            }
+            label="Missing / OOS"
+            value={unavailableCount}
+            detail="Required equipment unavailable"
+            tone={unavailableCount > 0 ? "red" : "slate"}
           />
         </section>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
+        <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
           <div className="flex flex-col gap-3 border-b border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="font-bold text-white">
-                Readiness Status
-              </h2>
+            <div className="flex rounded-xl border border-slate-800 bg-slate-950 p-1">
+              <button
+                type="button"
+                onClick={() => setActiveView("equipment")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  activeView === "equipment"
+                    ? "bg-slate-800 text-white"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Equipment
+              </button>
 
-              <p className="mt-1 text-xs text-slate-500">
-                Required equipment status by officer.
-              </p>
+              <button
+                type="button"
+                onClick={() => setActiveView("readiness")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  activeView === "readiness"
+                    ? "bg-slate-800 text-white"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Officer Readiness
+              </button>
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -864,49 +856,226 @@ export default function EquipmentPage() {
                 onChange={(event) =>
                   setSearch(event.target.value)
                 }
-                placeholder="Search officer or equipment..."
-                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                placeholder={
+                  activeView === "equipment"
+                    ? "Search equipment, officer, serial..."
+                    : "Search officer or equipment..."
+                }
+                className="min-w-[250px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
               />
 
-              <select
-                value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(
-                    event.target.value as StatusFilter,
-                  )
-                }
-                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-              >
-                <option value="all">
-                  All statuses
-                </option>
-                <option value="current">
-                  Current
-                </option>
-                <option value="due_soon">
-                  Due Soon
-                </option>
-                <option value="inspection_due_soon">
-                  Inspection Due Soon
-                </option>
-                <option value="missing">
-                  Missing
-                </option>
-                <option value="expired">
-                  Expired
-                </option>
-                <option value="inspection_overdue">
-                  Inspection Overdue
-                </option>
-                <option value="out_of_service">
-                  Out of Service
-                </option>
-              </select>
+              {activeView === "readiness" ? (
+                <select
+                  value={statusFilter}
+                  onChange={(event) =>
+                    setStatusFilter(
+                      event.target.value as StatusFilter,
+                    )
+                  }
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="current">Current</option>
+                  <option value="due_soon">Due Soon</option>
+                  <option value="inspection_due_soon">
+                    Inspection Due Soon
+                  </option>
+                  <option value="missing">Missing</option>
+                  <option value="expired">Expired</option>
+                  <option value="inspection_overdue">
+                    Inspection Overdue
+                  </option>
+                  <option value="out_of_service">
+                    Out of Service
+                  </option>
+                </select>
+              ) : null}
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex min-h-[260px] items-center justify-center">
+          {activeView === "equipment" ? (
+            loading ? (
+              <div className="flex min-h-[280px] items-center justify-center">
+                <RefreshCw
+                  size={24}
+                  className="animate-spin text-blue-300"
+                />
+              </div>
+            ) : filteredAssets.length === 0 ? (
+              <div className="flex min-h-[240px] flex-col items-center justify-center p-6 text-center">
+                <Boxes size={34} className="text-slate-600" />
+                <p className="mt-3 font-semibold text-white">
+                  No equipment found
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  No equipment records match the current search.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1050px] text-left">
+                  <thead className="border-b border-slate-800 bg-slate-950/40">
+                    <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      <th className="px-4 py-3">Equipment</th>
+                      <th className="px-4 py-3">Assigned To</th>
+                      <th className="px-4 py-3">Serial / Lot</th>
+                      <th className="px-4 py-3">Expires</th>
+                      <th className="px-4 py-3">Inspection</th>
+                      <th className="px-4 py-3">Status</th>
+                      {canManage ? (
+                        <th className="px-4 py-3 text-right">
+                          Actions
+                        </th>
+                      ) : null}
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-800">
+                    {filteredAssets.map((asset) => {
+                      const type =
+                        typeMap.get(asset.equipment_type_id);
+
+                      const member = asset.assigned_user_id
+                        ? memberMap.get(asset.assigned_user_id)
+                        : undefined;
+
+                      const readinessStatus =
+                        assetReadinessMap.get(asset.id);
+
+                      return (
+                        <tr
+                          key={asset.id}
+                          className="align-top transition hover:bg-slate-950/40"
+                        >
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-semibold text-white">
+                              {type?.name ?? "Equipment"}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {[asset.manufacturer, asset.model]
+                                .filter(Boolean)
+                                .join(" ") || "No make/model recorded"}
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <p className="text-xs font-medium text-slate-300">
+                              {member?.fullName ?? "Unassigned"}
+                            </p>
+                            <p className="mt-1 text-[10px] text-slate-500">
+                              {member?.badgeNumber
+                                ? `Badge ${member.badgeNumber}`
+                                : ""}
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-3 text-xs text-slate-400">
+                            <div>
+                              {asset.serial_number
+                                ? `SN ${asset.serial_number}`
+                                : "—"}
+                            </div>
+
+                            {asset.lot_number ? (
+                              <div className="mt-1 text-[10px] text-slate-500">
+                                Lot {asset.lot_number}
+                              </div>
+                            ) : null}
+                          </td>
+
+                          <td className="px-4 py-3 text-xs text-slate-400">
+                            {formatDate(asset.expiration_date)}
+                          </td>
+
+                          <td className="px-4 py-3 text-xs text-slate-400">
+                            {formatDate(asset.next_inspection_date)}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {asset.lifecycle_status === "removed" ? (
+                              <span className="inline-flex rounded-full border border-slate-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                Removed
+                              </span>
+                            ) : asset.lifecycle_status ===
+                              "out_of_service" ? (
+                              <span className="inline-flex rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-red-300">
+                                Out of Service
+                              </span>
+                            ) : readinessStatus ? (
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(
+                                  readinessStatus,
+                                )}`}
+                              >
+                                {statusLabel(readinessStatus)}
+                              </span>
+                            ) : (
+                              <span className="inline-flex rounded-full border border-slate-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+                                Active
+                              </span>
+                            )}
+                          </td>
+
+                          {canManage ? (
+                            <td className="px-4 py-3">
+                              {asset.lifecycle_status !== "removed" ? (
+                                <div className="flex justify-end gap-2">
+                                  {asset.lifecycle_status === "active" ? (
+                                    <button
+                                      type="button"
+                                      disabled={saving}
+                                      onClick={() =>
+                                        void updateAssetStatus(
+                                          asset,
+                                          "out_of_service",
+                                        )
+                                      }
+                                      className="rounded-lg border border-amber-700 px-2 py-1.5 text-[10px] font-semibold text-amber-300"
+                                    >
+                                      OOS
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={saving}
+                                      onClick={() =>
+                                        void updateAssetStatus(
+                                          asset,
+                                          "active",
+                                        )
+                                      }
+                                      className="rounded-lg border border-emerald-700 px-2 py-1.5 text-[10px] font-semibold text-emerald-300"
+                                    >
+                                      Return
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() =>
+                                      void updateAssetStatus(
+                                        asset,
+                                        "removed",
+                                      )
+                                    }
+                                    className="rounded-lg border border-red-800 px-2 py-1.5 text-[10px] font-semibold text-red-300"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ) : null}
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : loading ? (
+            <div className="flex min-h-[280px] items-center justify-center">
               <RefreshCw
                 size={24}
                 className="animate-spin text-blue-300"
@@ -918,327 +1087,83 @@ export default function EquipmentPage() {
                 size={34}
                 className="text-emerald-400"
               />
-
               <p className="mt-3 font-semibold text-white">
                 No readiness issues found
               </p>
-
               <p className="mt-1 text-xs text-slate-500">
-                No equipment rows match the current
-                filters.
+                No officer readiness rows match the current filters.
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-800">
-              {filteredReadiness.map((row) => (
-                <div
-                  key={`${row.userId}-${row.equipmentTypeId}`}
-                  className="grid gap-3 p-4 lg:grid-cols-[1.3fr_1fr_140px_2fr]"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <UserRound
-                        size={15}
-                        className="text-slate-500"
-                      />
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left">
+                <thead className="border-b border-slate-800 bg-slate-950/40">
+                  <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3">Officer</th>
+                    <th className="px-4 py-3">Equipment</th>
+                    <th className="px-4 py-3">Ready</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Reason</th>
+                  </tr>
+                </thead>
 
-                      <p className="text-sm font-semibold text-white">
-                        {row.officerName}
-                      </p>
-                    </div>
-
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      {[
-                        row.rankTitle,
-                        row.badgeNumber
-                          ? `Badge ${row.badgeNumber}`
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-slate-200">
-                      {row.equipmentName}
-                    </p>
-
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      {row.equipmentCategory} ·{" "}
-                      {row.readyQuantity}/
-                      {row.requiredQuantity} ready
-                    </p>
-                  </div>
-
-                  <div>
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(
-                        row.status,
-                      )}`}
+                <tbody className="divide-y divide-slate-800">
+                  {filteredReadiness.map((row) => (
+                    <tr
+                      key={`${row.userId}-${row.equipmentTypeId}`}
+                      className="align-top transition hover:bg-slate-950/40"
                     >
-                      {statusLabel(row.status)}
-                    </span>
-                  </div>
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-semibold text-white">
+                          {row.officerName}
+                        </p>
 
-                  <div>
-                    <p className="text-xs leading-5 text-slate-400">
-                      {row.statusReason}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {[
+                            row.rankTitle,
+                            row.badgeNumber
+                              ? `Badge ${row.badgeNumber}`
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <p className="text-xs font-medium text-slate-300">
+                          {row.equipmentName}
+                        </p>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {row.equipmentCategory}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-3 text-xs text-slate-400">
+                        {row.readyQuantity}/{row.requiredQuantity}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(
+                            row.status,
+                          )}`}
+                        >
+                          {statusLabel(row.status)}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-xs leading-5 text-slate-400">
+                        {row.statusReason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
-
-        <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70">
-            <div className="border-b border-slate-800 p-4">
-              <h2 className="font-bold text-white">
-                Equipment Inventory
-              </h2>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Assigned and unassigned operational
-                equipment.
-              </p>
-            </div>
-
-            <div className="divide-y divide-slate-800">
-              {assets.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-500">
-                  No equipment records have been created.
-                </div>
-              ) : (
-                assets.map((asset) => {
-                  const type = typeMap.get(
-                    asset.equipment_type_id,
-                  );
-
-                  const member = asset.assigned_user_id
-                    ? memberMap.get(
-                        asset.assigned_user_id,
-                      )
-                    : undefined;
-
-                  return (
-                    <div
-                      key={asset.id}
-                      className="p-4"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Boxes
-                              size={15}
-                              className="text-blue-300"
-                            />
-
-                            <p className="text-sm font-semibold text-white">
-                              {type?.name ??
-                                "Equipment"}
-                            </p>
-
-                            <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[9px] uppercase text-slate-500">
-                              {asset.lifecycle_status.replaceAll(
-                                "_",
-                                " ",
-                              )}
-                            </span>
-                          </div>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            {[
-                              asset.manufacturer,
-                              asset.model,
-                            ]
-                              .filter(Boolean)
-                              .join(" ") || "No model recorded"}
-                          </p>
-
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            {asset.serial_number
-                              ? `SN ${asset.serial_number}`
-                              : "No serial"}
-                            {asset.lot_number
-                              ? ` · Lot ${asset.lot_number}`
-                              : ""}
-                          </p>
-
-                          <p className="mt-2 text-[10px] text-slate-500">
-                            Assigned:{" "}
-                            {member?.fullName ??
-                              "Unassigned"}
-                          </p>
-
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            Expires:{" "}
-                            {formatDate(
-                              asset.expiration_date,
-                            )}
-                            {" · "}
-                            Next inspection:{" "}
-                            {formatDate(
-                              asset.next_inspection_date,
-                            )}
-                          </p>
-                        </div>
-
-                        {canManage &&
-                        asset.lifecycle_status !==
-                          "removed" ? (
-                          <div className="flex flex-wrap gap-2">
-                            {asset.lifecycle_status ===
-                            "active" ? (
-                              <button
-                                type="button"
-                                disabled={saving}
-                                onClick={() =>
-                                  void updateAssetStatus(
-                                    asset,
-                                    "out_of_service",
-                                  )
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-700 px-2.5 py-1.5 text-[10px] font-semibold text-amber-300"
-                              >
-                                <Wrench size={12} />
-                                Out of Service
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={saving}
-                                onClick={() =>
-                                  void updateAssetStatus(
-                                    asset,
-                                    "active",
-                                  )
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-700 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300"
-                              >
-                                <CheckCircle2
-                                  size={12}
-                                />
-                                Return to Service
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                void updateAssetStatus(
-                                  asset,
-                                  "removed",
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-800 px-2.5 py-1.5 text-[10px] font-semibold text-red-300"
-                            >
-                              <ShieldAlert size={12} />
-                              Remove
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70">
-              <div className="border-b border-slate-800 p-4">
-                <h2 className="font-bold text-white">
-                  Equipment Types
-                </h2>
-              </div>
-
-              <div className="divide-y divide-slate-800">
-                {types.map((type) => {
-                  const requirement =
-                    requirementMap.get(type.id);
-
-                  return (
-                    <div
-                      key={type.id}
-                      className="p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-white">
-                            {type.name}
-                          </p>
-
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            {type.category}
-                          </p>
-                        </div>
-
-                        <span
-                          className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase ${
-                            requirement?.is_required &&
-                            requirement?.is_active
-                              ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
-                              : "border-slate-700 text-slate-500"
-                          }`}
-                        >
-                          {requirement?.is_required &&
-                          requirement?.is_active
-                            ? "Required"
-                            : "Optional"}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] text-slate-500">
-                        <div>
-                          Expiration:{" "}
-                          {type.expiration_required
-                            ? "Tracked"
-                            : "Not required"}
-                        </div>
-
-                        <div>
-                          Inspection:{" "}
-                          {type.inspection_required
-                            ? "Tracked"
-                            : "Not required"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.05] p-4">
-              <div className="flex gap-3">
-                <AlertTriangle
-                  size={18}
-                  className="mt-0.5 text-blue-300"
-                />
-
-                <div>
-                  <p className="text-sm font-semibold text-white">
-                    Configurable readiness
-                  </p>
-
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Equipment requirements, validity
-                    periods, inspection intervals, and
-                    warning windows are agency-controlled.
-                    TracePoint does not hard-code a
-                    jurisdiction&apos;s standards.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {showTypeForm && canManage ? (
+{showTypeForm && canManage ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
@@ -1840,3 +1765,7 @@ export default function EquipmentPage() {
     </TracePointShell>
   );
 }
+
+
+
+

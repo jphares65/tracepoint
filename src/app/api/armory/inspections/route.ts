@@ -1,5 +1,11 @@
 ﻿import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import {
+  accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 export const dynamic = "force-dynamic";
 
@@ -34,26 +40,6 @@ type InspectionPayload = {
   checklist?: ChecklistItemPayload[];
 };
 
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_SERVICE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      "Missing Supabase server configuration. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
-    );
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-}
-
 function getStatusForInspectionResult(result: InspectionPayload["result"]) {
   if (result === "Failed") return "Inspection Required";
   if (result === "Needs Maintenance") return "Maintenance";
@@ -64,8 +50,26 @@ function getStatusForInspectionResult(result: InspectionPayload["result"]) {
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
+    const resolved = await resolveServerAccess();
 
+    if (!resolved.ok) {
+      return accessFailureResponse(resolved);
+    }
+
+    const context = resolved.context;
+
+    const featureError = requireServerFeature(
+      context,
+      "firearms",
+      "Firearms",
+    );
+
+    if (featureError) {
+      return featureError;
+    }
+
+    const supabase = context.admin;
+    const departmentId = context.departmentId;
     const { data, error } = await supabase
       .from("firearm_inspections")
       .select(
@@ -90,6 +94,7 @@ export async function GET() {
         )
       `,
       )
+      .eq("department_id", departmentId)
       .order("inspection_date", { ascending: false })
       .limit(100);
 
@@ -113,7 +118,36 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabaseAdmin();
+    const resolved = await resolveServerAccess();
+
+    if (!resolved.ok) {
+      return accessFailureResponse(resolved);
+    }
+
+    const context = resolved.context;
+
+    const featureError = requireServerFeature(
+      context,
+      "firearms",
+      "Firearms",
+    );
+
+    if (featureError) {
+      return featureError;
+    }
+
+    if (
+      !hasAnyServerPermission(context, [
+        "manage_inspections",
+        "manage_firearms",
+      ])
+    ) {
+      return permissionDeniedResponse(
+        "Inspection-management permission is required to record a firearm inspection.",
+      );
+    }
+
+    const supabase = context.admin;
     const body = (await request.json()) as InspectionPayload;
 
     if (!body.firearmId) {
@@ -141,6 +175,7 @@ export async function POST(request: Request) {
       .from("firearms")
       .select("id, department_id, condition_status")
       .eq("id", body.firearmId)
+      .eq("department_id", context.departmentId)
       .single();
 
     if (firearmError || !firearm) {
@@ -255,3 +290,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

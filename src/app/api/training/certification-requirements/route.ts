@@ -2,6 +2,11 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -77,6 +82,21 @@ async function getContext() {
 }
 
 export async function POST(request: NextRequest) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "certifications",
+    "Certifications",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const context = await getContext();
 
   if ("error" in context) {
@@ -195,3 +215,4 @@ export async function POST(request: NextRequest) {
     requirement: data,
   });
 }
+

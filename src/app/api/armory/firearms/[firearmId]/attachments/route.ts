@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
+  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
@@ -41,7 +42,17 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
   const context = resolved.context;
-  if (!hasAnyServerPermission(context, ["manage_firearms"])) {
+  
+  const featureError = requireServerFeature(
+    context,
+    "firearms",
+    "Firearms",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
+if (!hasAnyServerPermission(context, ["manage_firearms"])) {
     return permissionDeniedResponse("Firearm-management permission is required to upload documents.");
   }
   const { firearmId } = await routeContext.params;
@@ -81,3 +92,4 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   });
   return NextResponse.json({ attachment: inserted.data }, { status: 201 });
 }
+

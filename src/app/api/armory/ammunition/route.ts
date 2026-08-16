@@ -2,6 +2,11 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -136,6 +141,21 @@ async function loadLedger(admin: any, departmentId: string) {
 }
 
 export async function GET() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "ammunition",
+    "Ammunition",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -177,6 +197,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "ammunition",
+    "Ammunition",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const { user, error: authError } = await getCurrentUser();
 
   if (authError || !user) {
@@ -383,4 +418,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 

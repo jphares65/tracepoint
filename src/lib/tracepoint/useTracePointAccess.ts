@@ -26,7 +26,10 @@ export type TracePointAccess = {
   roleLabels: string[];
   primaryRoleLabel: string;
   permissions: TracePointPermission[];
+  isSuperAdmin: boolean;
+  enabledFeatures: string[];
   hasPermission: (permission: TracePointPermission) => boolean;
+  isFeatureEnabled: (featureCode: string) => boolean;
   hasAnyPermission: (
     permissions: readonly TracePointPermission[],
   ) => boolean;
@@ -39,6 +42,7 @@ type AccessPayload = Omit<
   | "error"
   | "hasPermission"
   | "hasAnyPermission"
+  | "isFeatureEnabled"
   | "refresh"
 >;
 
@@ -57,6 +61,8 @@ const EMPTY_ACCESS: AccessPayload = {
   roleLabels: [],
   primaryRoleLabel: "Member",
   permissions: [],
+  isSuperAdmin: false,
+  enabledFeatures: [],
 };
 
 async function readError(response: Response) {
@@ -131,11 +137,20 @@ export function useTracePointAccess(): TracePointAccess {
     };
   }, [loadAccess]);
 
+  const featureSet = useMemo(
+    () => new Set(access.enabledFeatures),
+    [access.enabledFeatures],
+  );
   const permissionSet = useMemo(
     () => new Set(access.permissions),
     [access.permissions],
   );
 
+  const isFeatureEnabled = useCallback(
+    (featureCode: string) =>
+      access.isSuperAdmin || featureSet.has(featureCode),
+    [access.isSuperAdmin, featureSet],
+  );
   const hasPermission = useCallback(
     (permission: TracePointPermission) =>
       permissionSet.has("administer_department") ||
@@ -158,7 +173,10 @@ export function useTracePointAccess(): TracePointAccess {
     ...access,
     hasPermission,
     hasAnyPermission,
+    isFeatureEnabled,
     refresh: loadAccess,
   };
 }
+
+
 

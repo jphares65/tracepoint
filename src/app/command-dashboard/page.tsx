@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
 import type {
   DrillRunResult,
@@ -301,7 +302,9 @@ async function loadDashboardData() {
       : [],
     workspace: workspacePayload.workspace
       ? normalizeWorkspace(workspacePayload.workspace)
-      : loadStoredWorkspace(),
+      : workspaceResponse.ok
+        ? loadStoredWorkspace()
+        : EMPTY_WORKSPACE,
     qualificationValidDays:
       Number(rulesPayload.rules?.qualification_valid_days) ||
       DEFAULT_QUALIFICATION_VALID_DAYS,
@@ -431,6 +434,19 @@ function EmptyPanel({ message }: { message: string }) {
 }
 
 export default function DashboardPage() {
+  const { enabledFeatures } = useTracePointAccess();
+  const featureSet = useMemo(
+    () => new Set(enabledFeatures),
+    [enabledFeatures],
+  );
+
+  const hasQualifications = featureSet.has("qualifications");
+  const hasCertifications = featureSet.has("certifications");
+  const hasEquipment = featureSet.has("equipment_readiness");
+  const hasRangeTraining = featureSet.has("range_training");
+  const hasFirearms = featureSet.has("firearms");
+  const hasAnalytics = featureSet.has("analytics");
+
   const [personnel, setPersonnel] = useState<PilotPersonnel[]>([]);
   const [firearms, setFirearms] = useState<LiveFirearm[]>([]);
   const [workspace, setWorkspace] =
@@ -668,146 +684,166 @@ const [loading, setLoading] = useState(true);
   const attentionItems = useMemo<AttentionItem[]>(() => {
     const items: AttentionItem[] = [];
 
-    officerSummaries.forEach((officer) => {
-      if (
-        officer.status === "Failed" ||
-        officer.status === "Overdue" ||
-        officer.status === "Needs Day" ||
-        officer.status === "Needs Night"
-      ) {
+    if (hasQualifications) {
+      officerSummaries.forEach((officer) => {
+        if (
+          officer.status === "Failed" ||
+          officer.status === "Overdue" ||
+          officer.status === "Needs Day" ||
+          officer.status === "Needs Night"
+        ) {
+          items.push({
+            id: `qualification-${officer.officerId}`,
+            title: `${officer.officerName} · ${officer.status}`,
+            detail: officer.statusReason,
+            href: "/qualifications",
+            tone:
+              officer.status === "Failed" || officer.status === "Overdue"
+                ? "red"
+                : "amber",
+            icon: ShieldAlert,
+          });
+        }
+      });
+    }
+
+    if (hasCertifications) {
+      certificationReadiness.rows.forEach((row) => {
+        if (row.status === "current") return;
+
         items.push({
-          id: `qualification-${officer.officerId}`,
-          title: `${officer.officerName} · ${officer.status}`,
-          detail: officer.statusReason,
-          href: "/qualifications",
-          tone:
-            officer.status === "Failed" || officer.status === "Overdue"
-              ? "red"
-              : "amber",
-          icon: ShieldAlert,
+          id: `certification-${row.userId}-${row.certificationTypeId}`,
+          title: `${row.officerName} · ${row.certificationName}`,
+          detail: row.statusReason,
+          href: "/training/certifications",
+          tone: row.status === "due_soon" ? "amber" : "red",
+          icon: ShieldCheck,
         });
-      }
-    });    certificationReadiness.rows.forEach((row) => {
-      if (row.status === "current") return;
-
-      items.push({
-        id: `certification-${row.userId}-${row.certificationTypeId}`,
-        title: `${row.officerName} · ${row.certificationName}`,
-        detail: row.statusReason,
-        href: "/training/certifications",
-        tone: row.status === "due_soon" ? "amber" : "red",
-        icon: ShieldCheck,
       });
-    });
-    const equipmentAttentionGroups = new Map<
-      string,
-      {
-        equipmentName: string;
-        status: EquipmentReadinessRow["status"];
-        count: number;
-      }
-    >();
+    }
 
-    equipmentReadiness.rows.forEach((row) => {
-      if (row.status === "current") return;
+    if (hasEquipment) {
+      const equipmentAttentionGroups = new Map<
+        string,
+        {
+          equipmentName: string;
+          status: EquipmentReadinessRow["status"];
+          count: number;
+        }
+      >();
 
-      const key = `${row.equipmentTypeId}-${row.status}`;
-      const existing = equipmentAttentionGroups.get(key);
+      equipmentReadiness.rows.forEach((row) => {
+        if (row.status === "current") return;
 
-      if (existing) {
-        existing.count += 1;
-      } else {
-        equipmentAttentionGroups.set(key, {
-          equipmentName: row.equipmentName,
-          status: row.status,
-          count: 1,
+        const key = `${row.equipmentTypeId}-${row.status}`;
+        const existing = equipmentAttentionGroups.get(key);
+
+        if (existing) {
+          existing.count += 1;
+        } else {
+          equipmentAttentionGroups.set(key, {
+            equipmentName: row.equipmentName,
+            status: row.status,
+            count: 1,
+          });
+        }
+      });
+
+      equipmentAttentionGroups.forEach((group, key) => {
+        const labels: Record<EquipmentReadinessRow["status"], string> = {
+          current: "Current",
+          due_soon: "Expiration Due Soon",
+          expired: "Expired",
+          inspection_due_soon: "Inspection Due Soon",
+          inspection_overdue: "Inspection Overdue",
+          missing: "Missing",
+          out_of_service: "Out of Service",
+        };
+
+        const warning =
+          group.status === "due_soon" ||
+          group.status === "inspection_due_soon";
+
+        items.push({
+          id: `equipment-${key}`,
+          title: `${group.equipmentName} · ${labels[group.status]}`,
+          detail: `${group.count} officer${
+            group.count === 1 ? "" : "s"
+          } affected. Review Equipment Readiness for details.`,
+          href: "/equipment",
+          tone: warning ? "amber" : "red",
+          icon: Boxes,
         });
-      }
-    });
-
-    equipmentAttentionGroups.forEach((group, key) => {
-      const labels: Record<EquipmentReadinessRow["status"], string> = {
-        current: "Current",
-        due_soon: "Expiration Due Soon",
-        expired: "Expired",
-        inspection_due_soon: "Inspection Due Soon",
-        inspection_overdue: "Inspection Overdue",
-        missing: "Missing",
-        out_of_service: "Out of Service",
-      };
-
-      const warning =
-        group.status === "due_soon" ||
-        group.status === "inspection_due_soon";
-
-      items.push({
-        id: `equipment-${key}`,
-        title: `${group.equipmentName} · ${labels[group.status]}`,
-        detail: `${group.count} officer${
-          group.count === 1 ? "" : "s"
-        } affected. Review Equipment Readiness for details.`,
-        href: "/equipment",
-        tone: warning ? "amber" : "red",
-        icon: Boxes,
       });
-    });
+    }
 
-
-
-    firearmAlerts.forEach((firearm) => {
-      items.push({
-        id: `firearm-${firearm.id}`,
-        title: `${firearm.make} ${firearm.model} · ${firearm.serial_number}`,
-        detail: `Condition: ${firearm.condition_status ?? "Review required"}.`,
-        href: "/firearms",
-        tone: "red",
-        icon: Wrench,
+    if (hasFirearms) {
+      firearmAlerts.forEach((firearm) => {
+        items.push({
+          id: `firearm-${firearm.id}`,
+          title: `${firearm.make} ${firearm.model} · ${firearm.serial_number}`,
+          detail: `Condition: ${firearm.condition_status ?? "Review required"}.`,
+          href: "/firearms",
+          tone: "red",
+          icon: Wrench,
+        });
       });
-    });
+    }
 
-    incompletePackets.forEach((day) => {
-      items.push({
-        id: `packet-${day.id}`,
-        title: `Packet not ready · ${day.title}`,
-        detail: `${formatDate(day.date)} · ${day.packetStatus ?? "Needs Setup"}`,
-        href: "/range-days",
-        tone: "amber",
-        icon: ClipboardList,
+    if (hasRangeTraining) {
+      incompletePackets.forEach((day) => {
+        items.push({
+          id: `packet-${day.id}`,
+          title: `Packet not ready · ${day.title}`,
+          detail: `${formatDate(day.date)} · ${
+            day.packetStatus ?? "Needs Setup"
+          }`,
+          href: "/range-days",
+          tone: "amber",
+          icon: ClipboardList,
+        });
       });
-    });
+    }
 
-    declining.forEach((officer) => {
-      items.push({
-        id: `trend-${officer.officerId}`,
-        title: `${officer.officerName} · Declining score trend`,
-        detail:
-          typeof officer.trendDelta === "number"
-            ? `Scores declined by ${Math.abs(officer.trendDelta)} points.`
-            : "Scores show a declining pattern.",
-        href: "/analytics",
-        tone: "amber",
-        icon: TrendingDown,
+    if (hasAnalytics && hasRangeTraining) {
+      declining.forEach((officer) => {
+        items.push({
+          id: `trend-${officer.officerId}`,
+          title: `${officer.officerName} · Declining score trend`,
+          detail:
+            typeof officer.trendDelta === "number"
+              ? `Scores declined by ${Math.abs(
+                  officer.trendDelta,
+                )} points.`
+              : "Scores show a declining pattern.",
+          href: "/analytics",
+          tone: "amber",
+          icon: TrendingDown,
+        });
       });
-    });
+    }
 
     return items.slice(0, 8);
-    }, [
+  }, [
     certificationReadiness.rows,
     equipmentReadiness.rows,
     declining,
     firearmAlerts,
     incompletePackets,
     officerSummaries,
+    hasQualifications,
+    hasCertifications,
+    hasEquipment,
+    hasFirearms,
+    hasRangeTraining,
+    hasAnalytics,
   ]);
-
   const qualificationTone: Tone =
-    failedOrOverdueCount > 0 || needsDayCount > 0
+    failedOrOverdueCount > 0
       ? "red"
-      : needsNightCount > 0
+      : needsDayCount > 0 || needsNightCount > 0
         ? "amber"
         : "green";
-
-  
   const certificationTone: Tone =
     certificationReadiness.summary.expired > 0 ||
     certificationReadiness.summary.missing > 0
@@ -843,20 +879,25 @@ const [loading, setLoading] = useState(true);
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Link
-                href="/range-days"
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
-              >
-                <CalendarDays size={14} />
-                Plan Range Day
-              </Link>
-              <Link
-                href="/analytics"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-              >
-                <BarChart3 size={14} />
-                View Analytics
-              </Link>
+              {hasRangeTraining && (
+                <Link
+                  href="/range-days"
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                >
+                  <CalendarDays size={14} />
+                  Plan Range Day
+                </Link>
+              )}
+
+              {hasAnalytics && hasRangeTraining && (
+                <Link
+                  href="/analytics"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                >
+                  <BarChart3 size={14} />
+                  View Analytics
+                </Link>
+              )}
             </div>
           </div>
         </header>
@@ -868,91 +909,108 @@ const [loading, setLoading] = useState(true);
         )}
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-          <PulseCard
-            title="Qualification Readiness"
-            value={loading ? "—" : `${currentCount}/${personnel.length}`}
-            label="Officers current"
-            detail={`${needsDayCount} need day/no record · ${needsNightCount} need night · ${failedOrOverdueCount} failed/overdue.`}
-            icon={Shield}
-            tone={qualificationTone}
-          />          <PulseCard
-            title="Certification Readiness"
-            value={
-              loading
-                ? "—"
-                : certificationReadiness.summary.totalRequiredChecks === 0
-                  ? "—"
-                  : `${certificationReadiness.summary.readinessPercent}%`
-            }
-            label={
-              certificationReadiness.summary.totalRequiredChecks === 0
-                ? "No requirements configured"
-                : "Required checks ready"
-            }
-            detail={
-              certificationReadiness.summary.totalRequiredChecks === 0
-                ? "Configure required certifications to begin agency readiness tracking."
-                : `${certificationReadiness.summary.dueSoon} due soon · ${certificationReadiness.summary.expired} expired · ${certificationReadiness.summary.missing} missing.`
-            }
-            icon={ShieldCheck}
-            tone={certificationTone}
-          />
-          <PulseCard
-            title="Equipment Readiness"
-            value={
-              loading
-                ? "—"
-                : equipmentReadiness.summary.totalRequiredChecks === 0
-                  ? "—"
-                  : `${equipmentReadiness.summary.readinessPercent}%`
-            }
-            label={
-              equipmentReadiness.summary.totalRequiredChecks === 0
-                ? "No requirements configured"
-                : "Required checks ready"
-            }
-            detail={
-              equipmentReadiness.summary.totalRequiredChecks === 0
-                ? "Configure required equipment to begin agency readiness tracking."
-                : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
-            }
-            icon={Boxes}
-            tone={equipmentTone}
-          />
+          {hasQualifications && (
+            <PulseCard
+              title="Qualification Readiness"
+              value={loading ? "—" : `${currentCount}/${personnel.length}`}
+              label="Officers current"
+              detail={`${needsDayCount} need day/no record · ${needsNightCount} need night · ${failedOrOverdueCount} failed/overdue.`}
+              icon={Shield}
+              tone={qualificationTone}
+            />
+          )}
 
+          {hasCertifications && (
+            <PulseCard
+              title="Certification Readiness"
+              value={
+                loading
+                  ? "—"
+                  : certificationReadiness.summary.totalRequiredChecks === 0
+                    ? "—"
+                    : `${certificationReadiness.summary.readinessPercent}%`
+              }
+              label={
+                certificationReadiness.summary.totalRequiredChecks === 0
+                  ? "No requirements configured"
+                  : "Required checks ready"
+              }
+              detail={
+                certificationReadiness.summary.totalRequiredChecks === 0
+                  ? "Configure required certifications to begin agency readiness tracking."
+                  : `${certificationReadiness.summary.dueSoon} due soon · ${certificationReadiness.summary.expired} expired · ${certificationReadiness.summary.missing} missing.`
+              }
+              icon={ShieldCheck}
+              tone={certificationTone}
+            />
+          )}
 
-          <PulseCard
-            title="Range Readiness"
-            value={loading ? "—" : upcomingRangeDays.length}
-            label="Upcoming range days"
-            detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
-            icon={CalendarDays}
-            tone={incompletePackets.length > 0 ? "amber" : "green"}
-          />
-          <PulseCard
-            title="Firearm Reliability"
-            value={loading ? "—" : firearmAlerts.length}
-            label="Weapons flagged"
-            detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
-            icon={Crosshair}
-            tone={firearmAlerts.length > 0 ? "red" : "green"}
-          />
-          <PulseCard
-            title="Records Health"
-            value={loading ? "—" : workspace.rangeDays.length}
-            label="Range days saved"
-            detail={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills.`}
-            icon={FileText}
-            tone={incompletePackets.length > 0 ? "amber" : "green"}
-          />
-          <PulseCard
-            title="Performance Signal"
-            value={loading ? "—" : averageScore ?? "—"}
-            label="Average score"
-            detail={`${declining.length} declining · ${improvingCount} improving.`}
-            icon={TrendingUp}
-            tone={declining.length > 0 ? "amber" : "blue"}
-          />
+          {hasEquipment && (
+            <PulseCard
+              title="Equipment Readiness"
+              value={
+                loading
+                  ? "—"
+                  : equipmentReadiness.summary.totalRequiredChecks === 0
+                    ? "—"
+                    : `${equipmentReadiness.summary.readinessPercent}%`
+              }
+              label={
+                equipmentReadiness.summary.totalRequiredChecks === 0
+                  ? "No requirements configured"
+                  : "Required checks ready"
+              }
+              detail={
+                equipmentReadiness.summary.totalRequiredChecks === 0
+                  ? "Configure required equipment to begin agency readiness tracking."
+                  : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
+              }
+              icon={Boxes}
+              tone={equipmentTone}
+            />
+          )}
+
+          {hasRangeTraining && (
+            <>
+              <PulseCard
+                title="Range Readiness"
+                value={loading ? "—" : upcomingRangeDays.length}
+                label="Upcoming range days"
+                detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
+                icon={CalendarDays}
+                tone={incompletePackets.length > 0 ? "amber" : "green"}
+              />
+
+              <PulseCard
+                title="Records Health"
+                value={loading ? "—" : workspace.rangeDays.length}
+                label="Range days saved"
+                detail={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills.`}
+                icon={FileText}
+                tone={incompletePackets.length > 0 ? "amber" : "green"}
+              />
+
+              <PulseCard
+                title="Performance Signal"
+                value={loading ? "—" : averageScore ?? "—"}
+                label="Average score"
+                detail={`${declining.length} declining · ${improvingCount} improving.`}
+                icon={TrendingUp}
+                tone={declining.length > 0 ? "amber" : "blue"}
+              />
+            </>
+          )}
+
+          {hasFirearms && (
+            <PulseCard
+              title="Firearm Reliability"
+              value={loading ? "—" : firearmAlerts.length}
+              label="Weapons flagged"
+              detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
+              icon={Crosshair}
+              tone={firearmAlerts.length > 0 ? "red" : "green"}
+            />
+          )}
         </section>
 
         <section className="grid gap-5 xl:grid-cols-[1fr_430px]">
@@ -1064,55 +1122,73 @@ const [loading, setLoading] = useState(true);
               </h2>
               <div className="mt-4 space-y-2">
                 {[
-                  [
-                    "Range & Training",
-                    "/range-days",
-                    `${activeRangeDays.length} active range days`,
-                  ],
-                  [
-                    "Qualifications",
-                    "/qualifications",
-                    `${qualificationResults.length} qualification results`,
-                  ],
-                  [
-                    "Firearms",
-                    "/firearms",
-                    `${firearms.length} active firearms`,
-                  ],
-                  [
-                    "Equipment Readiness",
-                    "/equipment",
-                    equipmentReadiness.summary.totalRequiredChecks === 0
-                      ? "No requirements configured"
-                      : `${equipmentReadiness.summary.notReady} readiness exceptions`,
-                  ],
-                  [
-                    "Analytics",
-                    "/analytics",
-                    `${declining.length} declining trends`,
-                  ],
-                ].map(([title, href, detail]) => (
-                  <Link
-                    key={title}
-                    href={href}
-                    className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 transition hover:border-blue-500/40"
-                  >
-                    <div>
-                      <p className="text-[13px] font-semibold text-white">
-                        {title}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        {detail}
-                      </p>
-                    </div>
-                    <ChevronRight size={15} className="text-slate-600" />
-                  </Link>
-                ))}
+                  hasRangeTraining
+                    ? [
+                        "Range & Training",
+                        "/range-days",
+                        `${activeRangeDays.length} active range days`,
+                      ]
+                    : null,
+                  hasQualifications
+                    ? [
+                        "Qualifications",
+                        "/qualifications",
+                        `${qualificationResults.length} qualification results`,
+                      ]
+                    : null,
+                  hasFirearms
+                    ? [
+                        "Firearms",
+                        "/firearms",
+                        `${firearms.length} active firearms`,
+                      ]
+                    : null,
+                  hasEquipment
+                    ? [
+                        "Equipment Readiness",
+                        "/equipment",
+                        equipmentReadiness.summary.totalRequiredChecks === 0
+                          ? "No requirements configured"
+                          : `${equipmentReadiness.summary.notReady} readiness exceptions`,
+                      ]
+                    : null,
+                  hasAnalytics && hasRangeTraining
+                    ? [
+                        "Analytics",
+                        "/analytics",
+                        `${declining.length} declining trends`,
+                      ]
+                    : null,
+                ]
+                  .filter(
+                    (
+                      item,
+                    ): item is [string, string, string] =>
+                      item !== null,
+                  )
+                  .map(([title, href, detail]) => (
+                    <Link
+                      key={title}
+                      href={href}
+                      className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 transition hover:border-blue-500/40"
+                    >
+                      <div>
+                        <p className="text-[13px] font-semibold text-white">
+                          {title}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {detail}
+                        </p>
+                      </div>
+                      <ChevronRight size={15} className="text-slate-600" />
+                    </Link>
+                  ))}
               </div>
+
             </div>
           </div>
         </section>
-
+        {hasRangeTraining && (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -1159,10 +1235,23 @@ const [loading, setLoading] = useState(true);
             </div>
           )}
         </section>
+        )}
       </div>
     </TracePointShell>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -92,13 +92,47 @@ export async function getPersonalRifleRequestContext() {
     };
   }
 
+  const departmentId = membership?.department_id ?? null;
+
+  if (!departmentId) {
+    return {
+      user,
+      admin,
+      departmentId: null,
+      error: "No active department membership was found.",
+    };
+  }
+
+  const { data: entitlement, error: entitlementError } = await admin
+    .from("department_features")
+    .select("is_enabled")
+    .eq("department_id", departmentId)
+    .eq("feature_code", "firearms")
+    .maybeSingle();
+
+  if (entitlementError) {
+    return {
+      user,
+      admin,
+      departmentId,
+      error: entitlementError.message,
+    };
+  }
+
+  if (entitlement?.is_enabled !== true) {
+    return {
+      user,
+      admin,
+      departmentId,
+      error: "Firearms is not enabled for this agency.",
+    };
+  }
+
   return {
     user,
     admin,
-    departmentId: membership?.department_id ?? null,
-    error: membership?.department_id
-      ? null
-      : "No active department membership was found.",
+    departmentId,
+    error: null,
   };
 }
 
@@ -270,4 +304,5 @@ export async function recordPersonalRifleHistory(
 
   if (error) throw new Error(error.message);
 }
+
 

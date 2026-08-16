@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
+  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
@@ -47,7 +48,17 @@ export async function POST(
 
   const context = resolved.context;
 
-  if (
+  
+  const featureError = requireServerFeature(
+    context,
+    "firearms",
+    "Firearms",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
+if (
     !hasAnyServerPermission(context, ["manage_firearms"])
   ) {
     return permissionDeniedResponse(
@@ -203,7 +214,17 @@ export async function PATCH(
 
   const context = resolved.context;
 
-  if (
+  
+  const featureError = requireServerFeature(
+    context,
+    "firearms",
+    "Firearms",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
+if (
     !hasAnyServerPermission(context, ["manage_firearms"])
   ) {
     return permissionDeniedResponse(
@@ -321,3 +342,4 @@ export async function PATCH(
     );
   }
 }
+

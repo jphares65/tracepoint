@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
+  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
@@ -152,6 +153,16 @@ export async function GET(request: NextRequest) {
   }
 
   const context = resolved.context;
+
+  const featureError = requireServerFeature(
+    context,
+    "firearms",
+    "Firearms",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const canViewAll = hasAnyServerPermission(context, [
     "manage_firearms",
     "manage_inspections",
@@ -281,6 +292,16 @@ export async function POST(request: NextRequest) {
   }
 
   const context = resolved.context;
+
+  const featureError = requireServerFeature(
+    context,
+    "firearms",
+    "Firearms",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
 
   if (!hasAnyServerPermission(context, ["manage_firearms"])) {
     return permissionDeniedResponse(
@@ -465,5 +486,6 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 

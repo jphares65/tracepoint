@@ -2,6 +2,11 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -107,6 +112,21 @@ export async function PATCH(
     params: Promise<{ certificationId: string }>;
   },
 ) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "certifications",
+    "Certifications",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const context = await contextForRequest();
 
   if ("error" in context) {
@@ -280,6 +300,21 @@ export async function DELETE(
     params: Promise<{ certificationId: string }>;
   },
 ) {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "certifications",
+    "Certifications",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
   const context = await contextForRequest();
 
   if ("error" in context) {
@@ -320,3 +355,4 @@ export async function DELETE(
 
   return NextResponse.json({ ok: true });
 }
+

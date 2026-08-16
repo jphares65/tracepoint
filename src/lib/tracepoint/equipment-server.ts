@@ -1,123 +1,60 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  hasAnyServerPermission,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 export async function getEquipmentServerContext() {
-  const supabase = await createServerClient();
+  const resolved = await resolveServerAccess();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  if (!resolved.ok) {
     return {
-      error: NextResponse.json(
-        { error: "You must be signed in." },
-        { status: 401 },
-      ),
+      error: accessFailureResponse(resolved),
     } as const;
   }
 
-  const admin = createAdminClient() as any;
+  const access = resolved.context;
 
-  const { data: membership, error: membershipError } =
-    await admin
-      .from("department_memberships")
-      .select("department_id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-  if (membershipError) {
-    return {
-      error: NextResponse.json(
-        { error: membershipError.message },
-        { status: 500 },
-      ),
-    } as const;
-  }
-
-  if (!membership?.department_id) {
-    return {
-      error: NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      ),
-    } as const;
-  }
-
-  const departmentId = String(membership.department_id);
-
-  const { data: roles, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", user.id);
-
-  if (roleError) {
-    return {
-      error: NextResponse.json(
-        { error: roleError.message },
-        { status: 500 },
-      ),
-    } as const;
-  }
-
-  const roleCodes = (roles ?? []).map((row: any) =>
-    String(row.role_code),
+  const featureError = requireServerFeature(
+    access,
+    "equipment_readiness",
+    "Equipment Readiness",
   );
 
-  let permissionRows: any[] = [];
-
-  if (roleCodes.length > 0) {
-    const { data, error } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes)
-      .in("permission_code", [
-        "manage_equipment",
-        "administer_department",
-        "view_command_dashboard",
-        "view_analytics",
-      ]);
-
-    if (error) {
-      return {
-        error: NextResponse.json(
-          { error: error.message },
-          { status: 500 },
-        ),
-      } as const;
-    }
-
-    permissionRows = data ?? [];
+  if (featureError) {
+    return {
+      error: featureError,
+    } as const;
   }
-
-  const permissions = new Set(
-    permissionRows.map((row: any) =>
-      String(row.permission_code),
-    ),
-  );
 
   return {
-    admin,
-    user,
-    departmentId,
-    canManage:
-      permissions.has("manage_equipment") ||
-      permissions.has("administer_department"),
-    canViewDepartment:
-      permissions.size > 0,
+    admin: access.admin,
+    user: access.user,
+    departmentId: access.departmentId,
+    canManage: hasAnyServerPermission(access, [
+      "manage_equipment",
+    ]),
+    canViewDepartment: hasAnyServerPermission(access, [
+      "manage_equipment",
+      "view_command_dashboard",
+      "view_analytics",
+    ]),
   } as const;
 }
 
 export function equipmentPermissionDenied() {
   return NextResponse.json(
-    { error: "You do not have permission to manage equipment." },
-    { status: 403 },
+    {
+      error:
+        "You do not have permission to manage equipment.",
+    },
+    {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    },
   );
 }
 

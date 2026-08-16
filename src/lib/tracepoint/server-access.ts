@@ -37,6 +37,8 @@ export type ServerAccessPayload = {
   roleLabels: string[];
   primaryRoleLabel: string;
   permissions: TracePointPermission[];
+  isSuperAdmin: boolean;
+  enabledFeatures: string[];
 };
 
 export type ServerAccessContext = ServerAccessPayload & {
@@ -167,22 +169,37 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
     departmentResult,
     profileResult,
     membershipRolesResult,
+    platformAdminResult,
+    departmentFeaturesResult,
   ] = await Promise.all([
     admin
       .from("departments")
       .select("name,short_name,patch_url")
       .eq("id", departmentId)
       .maybeSingle(),
+
     admin
       .from("profiles")
       .select("full_name")
       .eq("id", user.id)
       .maybeSingle(),
+
     admin
       .from("department_membership_roles")
       .select("role_code")
       .eq("department_id", departmentId)
       .eq("user_id", user.id),
+
+    admin
+      .from("platform_admins")
+      .select("is_active")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+
+    admin
+      .from("department_features")
+      .select("feature_code,is_enabled")
+      .eq("department_id", departmentId),
   ]);
 
   if (departmentResult.error) {
@@ -198,7 +215,22 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
       ok: false,
       status: 500,
       error: membershipRolesResult.error.message,
+    }
+  if (platformAdminResult.error) {
+    return {
+      ok: false,
+      status: 500,
+      error: platformAdminResult.error.message,
     };
+  }
+
+  if (departmentFeaturesResult.error) {
+    return {
+      ok: false,
+      status: 500,
+      error: departmentFeaturesResult.error.message,
+    };
+  };
   }
 
   const roleCodes = uniqueStrings(
@@ -276,6 +308,14 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
     permissions.push("administer_department");
   }
 
+  const isSuperAdmin =
+    platformAdminResult.data?.is_active === true;
+
+  const enabledFeatures = uniqueStrings(
+    (departmentFeaturesResult.data ?? [])
+      .filter((row: any) => row.is_enabled !== false)
+      .map((row: any) => row.feature_code),
+  );
   const profile = profileResult.data as ProfileRow | null;
   const department = departmentResult.data as DepartmentRow | null;
   const metadataName = clean(user.user_metadata?.full_name);
@@ -312,6 +352,8 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
           primaryRoleCode
         : "Member",
       permissions,
+      isSuperAdmin,
+      enabledFeatures,
     },
   };
 }
@@ -371,6 +413,42 @@ export function permissionDeniedResponse(
       status: 403,
       headers: { "Cache-Control": "no-store" },
     },
+  );
+}
+
+export function hasServerFeature(
+  context: ServerAccessContext,
+  featureCode: string,
+) {
+  return context.enabledFeatures.includes(featureCode);
+}
+
+export function featureDisabledResponse(
+  featureName = "This TracePoint module",
+) {
+  return NextResponse.json(
+    {
+      error: `${featureName} is not enabled for this agency.`,
+      code: "FEATURE_NOT_ENABLED",
+    },
+    {
+      status: 403,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
+}
+
+export function requireServerFeature(
+  context: ServerAccessContext,
+  featureCode: string,
+  featureName?: string,
+) {
+  if (hasServerFeature(context, featureCode)) {
+    return null;
+  }
+
+  return featureDisabledResponse(
+    featureName ?? "This TracePoint module",
   );
 }
 

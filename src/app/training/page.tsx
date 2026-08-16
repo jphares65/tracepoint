@@ -1,7 +1,12 @@
 ﻿import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Award, BellRing, BookOpenCheck, CalendarRange, ClipboardCheck, History } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import {
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 const cards = [
   {
@@ -43,7 +48,23 @@ const cards = [
   },
 ];
 
-export default function TrainingPage() {
+export default async function TrainingPage() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    redirect("/");
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "range_training",
+    "Range & Training",
+  );
+
+  if (featureError) {
+    redirect("/");
+  }
+
   return (
     <TracePointShell activePage="Training">
       <div className="mx-auto max-w-7xl px-6 py-8">
@@ -84,4 +105,5 @@ export default function TrainingPage() {
     </TracePointShell>
   );
 }
+
 

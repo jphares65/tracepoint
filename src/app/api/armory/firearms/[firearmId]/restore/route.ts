@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
+  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
@@ -33,7 +34,17 @@ export async function PATCH(
 
   const context = resolved.context;
 
-  if (!hasAnyServerPermission(context, ["manage_firearms"])) {
+  
+  const featureError = requireServerFeature(
+    context,
+    "firearms",
+    "Firearms",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
+if (!hasAnyServerPermission(context, ["manage_firearms"])) {
     return permissionDeniedResponse(
       "Firearm-management permission is required to restore a firearm.",
     );
@@ -108,3 +119,4 @@ export async function PATCH(
     );
   }
 }
+

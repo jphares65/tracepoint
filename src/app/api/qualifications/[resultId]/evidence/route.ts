@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
+  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
@@ -52,6 +53,16 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
 
+  const featureError = requireServerFeature(
+    resolved.context,
+    "qualifications",
+    "Qualifications",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
+
   const { resultId } = await routeContext.params;
   const { admin, departmentId } = resolved.context;
 
@@ -85,6 +96,16 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
 export async function POST(request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "qualifications",
+    "Qualifications",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
 
   const context = resolved.context;
   if (!hasAnyServerPermission(context, ["manage_qualifications", "manage_range_days"])) {
@@ -188,3 +209,4 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
 
   return NextResponse.json({ attachment: inserted.data }, { status: 201 });
 }
+
