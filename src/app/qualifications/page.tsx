@@ -21,6 +21,10 @@ import {
 } from "lucide-react";
 
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
+import {
+  evaluateQualificationReadiness,
+  type QualificationReadinessStatus,
+} from "@/lib/tracepoint/qualification-readiness";
 
 import type {
   DrillRunResult,
@@ -30,13 +34,7 @@ import type {
   RangeRosterEntry,
 } from "@/app/lib/tracepoint/range-day-types";
 
-type QualificationStatus =
-  | "Current"
-  | "Due Soon"
-  | "Overdue"
-  | "Missing Night"
-  | "Failed"
-  | "No Record";
+type QualificationStatus = QualificationReadinessStatus;
 
 type OfficerStatusFilter = "All" | QualificationStatus;
 
@@ -113,7 +111,6 @@ type OfficerHistory = {
   daysSinceLastQualification?: number;
 };
 
-const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
 const DEFAULT_QUALIFICATION_VALID_DAYS = 365;
 const DEFAULT_QUALIFICATION_DUE_SOON_DAYS = 30;
 
@@ -135,42 +132,11 @@ const STATUS_FILTERS: OfficerStatusFilter[] = [
   "Current",
   "Due Soon",
   "Overdue",
+  "Missing Day",
   "Missing Night",
   "Failed",
   "No Record",
 ];
-
-function loadStoredRangeDayWorkspace(): StoredRangeDayWorkspace | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const storedWorkspace = window.localStorage.getItem(
-      RANGE_DAY_WORKSPACE_STORAGE_KEY,
-    );
-
-    if (!storedWorkspace) return null;
-
-    const parsed = JSON.parse(
-      storedWorkspace,
-    ) as Partial<StoredRangeDayWorkspace>;
-
-    return {
-      rangeDays: Array.isArray(parsed.rangeDays) ? parsed.rangeDays : [],
-      drillLibrary: Array.isArray(parsed.drillLibrary) ? parsed.drillLibrary : [],
-      rangeDayDrills: Array.isArray(parsed.rangeDayDrills)
-        ? parsed.rangeDayDrills
-        : [],
-      rangeRoster: Array.isArray(parsed.rangeRoster) ? parsed.rangeRoster : [],
-      results: Array.isArray(parsed.results) ? parsed.results : [],
-      malfunctions: Array.isArray(parsed.malfunctions)
-        ? parsed.malfunctions
-        : [],
-    };
-  } catch (error) {
-    console.warn("Could not load saved range day workspace.", error);
-    return null;
-  }
-}
 
 
 async function loadPilotPersonnel() {
@@ -247,11 +213,6 @@ async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | 
         ? payload.workspace.malfunctions
         : [],
     };
-
-    window.localStorage.setItem(
-      RANGE_DAY_WORKSPACE_STORAGE_KEY,
-      JSON.stringify(workspace),
-    );
 
     return workspace;
   } catch (error) {
@@ -381,95 +342,6 @@ function StatusPill({
       {label}
     </span>
   );
-}
-
-function evaluateOfficerStatus(
-  lastDayQualification: OfficerQualificationEvent | undefined,
-  lastNightQualification: OfficerQualificationEvent | undefined,
-  failedQualifications: OfficerQualificationEvent[],
-  qualificationValidDays: number,
-  qualificationDueSoonDays: number,
-): {
-  status: QualificationStatus;
-  statusReason: string;
-  daysSinceLastQualification?: number;
-} {
-  const newestFailure = failedQualifications[0];
-  const newestPassed = [lastDayQualification, lastNightQualification]
-    .filter(Boolean)
-    .sort((a, b) => getDateValue(b?.date) - getDateValue(a?.date))[0];
-
-  if (newestFailure && getDateValue(newestFailure.date) >= getDateValue(newestPassed?.date)) {
-    return {
-      status: "Failed",
-      statusReason: `Most recent qualification issue: ${newestFailure.runLabel} on ${formatDate(newestFailure.date)}.`,
-      daysSinceLastQualification: getDaysSince(newestFailure.date),
-    };
-  }
-
-  if (!lastDayQualification && !lastNightQualification) {
-    return {
-      status: "No Record",
-      statusReason: "No recorded qualification result found in saved range days.",
-    };
-  }
-
-  if (!lastNightQualification) {
-    return {
-      status: "Missing Night",
-      statusReason: "Day qualification exists, but no night qualification is recorded.",
-      daysSinceLastQualification: getDaysSince(lastDayQualification?.date),
-    };
-  }
-
-  if (!lastDayQualification) {
-    return {
-      status: "Missing Night",
-      statusReason: "Night qualification exists, but no day qualification is recorded.",
-      daysSinceLastQualification: getDaysSince(lastNightQualification.date),
-    };
-  }
-
-  const oldestRequiredDate =
-    getDateValue(lastDayQualification.date) < getDateValue(lastNightQualification.date)
-      ? lastDayQualification.date
-      : lastNightQualification.date;
-
-  const daysSinceOldestRequired = getDaysSince(oldestRequiredDate);
-
-  if (daysSinceOldestRequired === undefined) {
-    return {
-      status: "No Record",
-      statusReason: "Qualification dates could not be evaluated.",
-    };
-  }
-
-  if (daysSinceOldestRequired > qualificationValidDays) {
-    return {
-      status: "Overdue",
-      statusReason: `Oldest required qualification is ${daysSinceOldestRequired} days old.`,
-      daysSinceLastQualification: daysSinceOldestRequired,
-    };
-  }
-
-  const dueSoonThreshold = Math.max(
-    0,
-    qualificationValidDays - qualificationDueSoonDays,
-  );
-
-  if (daysSinceOldestRequired >= dueSoonThreshold) {
-    return {
-      status: "Due Soon",
-      statusReason: `Qualification is approaching the ${qualificationValidDays}-day validity limit.`,
-      daysSinceLastQualification: daysSinceOldestRequired,
-    };
-  }
-
-  return {
-    status: "Current",
-    statusReason: "Day and night qualification records are present and within the current cycle.",
-    daysSinceLastQualification: daysSinceOldestRequired,
-  };
 }
 
 function buildOfficerHistories(
@@ -616,13 +488,13 @@ function buildOfficerHistories(
       (event) => event.passed === false,
     );
 
-    const evaluatedStatus = evaluateOfficerStatus(
+    const evaluatedStatus = evaluateQualificationReadiness({
       lastDayQualification,
       lastNightQualification,
       failedQualifications,
       qualificationValidDays,
       qualificationDueSoonDays,
-    );
+    });
 
     return {
       officerId: officer.id,
@@ -918,10 +790,9 @@ export default function QualificationsPage() {
 
     async function loadWorkspace() {
       const remoteWorkspace = await loadRemoteRangeDayWorkspace();
-      const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace();
-      if (!isMounted || !storedWorkspace) return;
+      if (!isMounted || !remoteWorkspace) return;
 
-      setWorkspace(storedWorkspace);
+      setWorkspace(remoteWorkspace);
       setHasStoredWorkspace(true);
     }
 

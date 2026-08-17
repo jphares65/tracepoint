@@ -1,7 +1,11 @@
 ﻿import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  hasAnyServerPermission,
+  requireServerFeature,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 import {
   evaluateEquipmentReadiness,
@@ -17,101 +21,34 @@ function text(value: unknown) {
 }
 
 export async function GET() {
-  const supabase = await createServerClient();
+  const access = await resolveServerAccess();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json(
-      { error: "You must be signed in." },
-      { status: 401 },
-    );
+  if (!access.ok) {
+    return accessFailureResponse(access);
   }
 
-  const admin = createAdminClient() as any;
+  const context = access.context;
 
-  const { data: membership, error: membershipError } =
-    await admin
-      .from("department_memberships")
-      .select(
-        "department_id,user_id,badge_number,rank_title,is_active",
-      )
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-  if (membershipError) {
-    return NextResponse.json(
-      { error: membershipError.message },
-      { status: 500 },
-    );
-  }
-
-  if (!membership?.department_id) {
-    return NextResponse.json(
-      {
-        error:
-          "No active department membership was found.",
-      },
-      { status: 403 },
-    );
-  }
-
-  const departmentId = String(
-    membership.department_id,
+  const featureError = requireServerFeature(
+    context,
+    "equipment_readiness",
+    "Equipment Readiness",
   );
 
-  const { data: roleRows, error: rolesError } =
-    await admin
-      .from("department_membership_roles")
-      .select("role_code")
-      .eq("department_id", departmentId)
-      .eq("user_id", user.id);
-
-  if (rolesError) {
-    return NextResponse.json(
-      { error: rolesError.message },
-      { status: 500 },
-    );
+  if (featureError) {
+    return featureError;
   }
 
-  const roleCodes = (roleRows ?? []).map(
-    (row: any) => String(row.role_code),
-  );
+  const admin = context.admin;
+  const departmentId = context.departmentId;
+  const userId = context.userId;
 
-  let permissionRows: any[] = [];
-
-  if (roleCodes.length > 0) {
-    const {
-      data,
-      error: permissionsError,
-    } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes)
-      .in("permission_code", [
-        "manage_equipment",
-        "administer_department",
-        "view_command_dashboard",
-        "view_analytics",
-      ]);
-
-    if (permissionsError) {
-      return NextResponse.json(
-        { error: permissionsError.message },
-        { status: 500 },
-      );
-    }
-
-    permissionRows = data ?? [];
-  }
-
-  const canViewDepartment =
-    permissionRows.length > 0;
+  const canViewDepartment = hasAnyServerPermission(context, [
+    "manage_equipment",
+    "administer_department",
+    "view_command_dashboard",
+    "view_analytics",
+  ]);
 
   let membersQuery = admin
     .from("department_memberships")
@@ -143,15 +80,9 @@ export async function GET() {
     .neq("lifecycle_status", "removed");
 
   if (!canViewDepartment) {
-    membersQuery = membersQuery.eq(
-      "user_id",
-      user.id,
-    );
+    membersQuery = membersQuery.eq("user_id", userId);
 
-    assetsQuery = assetsQuery.eq(
-      "assigned_user_id",
-      user.id,
-    );
+    assetsQuery = assetsQuery.eq("assigned_user_id", userId);
   }
 
   const [

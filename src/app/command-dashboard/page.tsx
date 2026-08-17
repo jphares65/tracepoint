@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -26,6 +26,10 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
+import {
+  evaluateQualificationReadiness,
+  type QualificationReadinessStatus,
+} from "@/lib/tracepoint/qualification-readiness";
 import type {
   DrillRunResult,
   DrillTemplate,
@@ -69,13 +73,7 @@ type StoredRangeDayWorkspace = {
   malfunctions: FirearmMalfunction[];
 };
 
-type ReadinessStatus =
-  | "Current"
-  | "Needs Day"
-  | "Needs Night"
-  | "Failed"
-  | "Overdue"
-  | "No Record";
+type ReadinessStatus = QualificationReadinessStatus;
 
 type Tone = "blue" | "green" | "amber" | "red" | "slate";
 
@@ -168,7 +166,6 @@ type EquipmentReadinessPayload = {
   rows: EquipmentReadinessRow[];
 };
 
-const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
 const DEFAULT_QUALIFICATION_VALID_DAYS = 365;
 
 const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
@@ -199,21 +196,6 @@ function normalizeWorkspace(
       ? workspace.malfunctions
       : [],
   };
-}
-
-function loadStoredWorkspace() {
-  if (typeof window === "undefined") return EMPTY_WORKSPACE;
-
-  try {
-    const raw = window.localStorage.getItem(RANGE_DAY_WORKSPACE_STORAGE_KEY);
-    if (!raw) return EMPTY_WORKSPACE;
-
-    return normalizeWorkspace(
-      JSON.parse(raw) as Partial<StoredRangeDayWorkspace>,
-    );
-  } catch {
-    return EMPTY_WORKSPACE;
-  }
 }
 
 async function loadDashboardData() {
@@ -302,9 +284,7 @@ async function loadDashboardData() {
       : [],
     workspace: workspacePayload.workspace
       ? normalizeWorkspace(workspacePayload.workspace)
-      : workspaceResponse.ok
-        ? loadStoredWorkspace()
-        : EMPTY_WORKSPACE,
+      : EMPTY_WORKSPACE,
     qualificationValidDays:
       Number(rulesPayload.rules?.qualification_valid_days) ||
       DEFAULT_QUALIFICATION_VALID_DAYS,
@@ -353,9 +333,13 @@ function formatDate(date?: string) {
 function isQualificationDrill(drill?: RangeDayDrill | null) {
   if (!drill) return false;
 
+  const name = drill.name.toLowerCase();
+
+  if (name.includes("rifle")) return false;
+
   return (
     drill.category === "Qualification" ||
-    drill.name.toLowerCase().includes("qualification")
+    name.includes("qualification")
   );
 }
 
@@ -554,37 +538,42 @@ const [loading, setLoading] = useState(true);
       const passed = results.filter(isPassed);
       const day = passed.find((result) => result.runNumber === 1);
       const night = passed.find((result) => result.runNumber === 2);
-      const latest = results[0];
-      const latestPassed = passed[0];
-      const latestPassedDate = latestPassed
-        ? rangeDaysById.get(latestPassed.rangeDayId)?.date
+      const failedQualifications = results
+        .filter((result) => result.passed === false)
+        .map((result) => ({
+          date: rangeDaysById.get(result.rangeDayId)?.date ?? "",
+          runLabel:
+            result.runNumber === 1
+              ? "Day Qualification"
+              : result.runNumber === 2
+                ? "Night Qualification"
+                : `Run ${result.runNumber ?? 1}`,
+        }));
+
+      const lastDayQualification = day
+        ? {
+            date: rangeDaysById.get(day.rangeDayId)?.date ?? "",
+            runLabel: "Day Qualification",
+          }
         : undefined;
-      const daysSince = getDaysSince(latestPassedDate);
 
-      let status: ReadinessStatus = "No Record";
-      let statusReason = "No passing qualification record is recorded.";
+      const lastNightQualification = night
+        ? {
+            date: rangeDaysById.get(night.rangeDayId)?.date ?? "",
+            runLabel: "Night Qualification",
+          }
+        : undefined;
 
-      if (latest?.passed === false) {
-        status = "Failed";
-        statusReason = "The most recent qualification result is marked failed.";
-      } else if (!day && !night) {
-        status = "No Record";
-      } else if (!day) {
-        status = "Needs Day";
-        statusReason = "No passing day qualification is recorded.";
-      } else if (!night) {
-        status = "Needs Night";
-        statusReason = "No passing night qualification is recorded.";
-      } else if (
-        typeof daysSince === "number" &&
-        daysSince > qualificationValidDays
-      ) {
-        status = "Overdue";
-        statusReason = `${daysSince} days since the last passing qualification.`;
-      } else {
-        status = "Current";
-        statusReason = "Day and night qualification records are current.";
-      }
+      const evaluatedStatus = evaluateQualificationReadiness({
+        lastDayQualification,
+        lastNightQualification,
+        failedQualifications,
+        qualificationValidDays,
+        qualificationDueSoonDays,
+      });
+
+      const status = evaluatedStatus.status;
+      const statusReason = evaluatedStatus.statusReason;
 
       const scored = [...results]
         .filter((result) => typeof result.score === "number")
@@ -654,12 +643,16 @@ const [loading, setLoading] = useState(true);
   const currentCount = officerSummaries.filter(
     (officer) => officer.status === "Current",
   ).length;
-  const needsDayCount = officerSummaries.filter(
+  const missingDayCount = officerSummaries.filter(
     (officer) =>
-      officer.status === "Needs Day" || officer.status === "No Record",
+      officer.status === "Missing Day" || officer.status === "No Record",
   ).length;
-  const needsNightCount = officerSummaries.filter(
-    (officer) => officer.status === "Needs Night",
+  const missingNightCount = officerSummaries.filter(
+    (officer) => officer.status === "Missing Night",
+  ).length;
+
+  const dueSoonCount = officerSummaries.filter(
+    (officer) => officer.status === "Due Soon",
   ).length;
   const failedOrOverdueCount = officerSummaries.filter(
     (officer) => officer.status === "Failed" || officer.status === "Overdue",
@@ -689,12 +682,12 @@ const [loading, setLoading] = useState(true);
         if (
           officer.status === "Failed" ||
           officer.status === "Overdue" ||
-          officer.status === "Needs Day" ||
-          officer.status === "Needs Night"
+          officer.status === "Missing Day" ||
+          officer.status === "Missing Night"
         ) {
           items.push({
             id: `qualification-${officer.officerId}`,
-            title: `${officer.officerName} · ${officer.status}`,
+            title: `${officer.officerName} ï¿½ ${officer.status}`,
             detail: officer.statusReason,
             href: "/qualifications",
             tone:
@@ -713,7 +706,7 @@ const [loading, setLoading] = useState(true);
 
         items.push({
           id: `certification-${row.userId}-${row.certificationTypeId}`,
-          title: `${row.officerName} · ${row.certificationName}`,
+          title: `${row.officerName} ï¿½ ${row.certificationName}`,
           detail: row.statusReason,
           href: "/training/certifications",
           tone: row.status === "due_soon" ? "amber" : "red",
@@ -766,7 +759,7 @@ const [loading, setLoading] = useState(true);
 
         items.push({
           id: `equipment-${key}`,
-          title: `${group.equipmentName} · ${labels[group.status]}`,
+          title: `${group.equipmentName} ï¿½ ${labels[group.status]}`,
           detail: `${group.count} officer${
             group.count === 1 ? "" : "s"
           } affected. Review Equipment Readiness for details.`,
@@ -781,7 +774,7 @@ const [loading, setLoading] = useState(true);
       firearmAlerts.forEach((firearm) => {
         items.push({
           id: `firearm-${firearm.id}`,
-          title: `${firearm.make} ${firearm.model} · ${firearm.serial_number}`,
+          title: `${firearm.make} ${firearm.model} ï¿½ ${firearm.serial_number}`,
           detail: `Condition: ${firearm.condition_status ?? "Review required"}.`,
           href: "/firearms",
           tone: "red",
@@ -794,8 +787,8 @@ const [loading, setLoading] = useState(true);
       incompletePackets.forEach((day) => {
         items.push({
           id: `packet-${day.id}`,
-          title: `Packet not ready · ${day.title}`,
-          detail: `${formatDate(day.date)} · ${
+          title: `Packet not ready ï¿½ ${day.title}`,
+          detail: `${formatDate(day.date)} ï¿½ ${
             day.packetStatus ?? "Needs Setup"
           }`,
           href: "/range-days",
@@ -809,7 +802,7 @@ const [loading, setLoading] = useState(true);
       declining.forEach((officer) => {
         items.push({
           id: `trend-${officer.officerId}`,
-          title: `${officer.officerName} · Declining score trend`,
+          title: `${officer.officerName} ï¿½ Declining score trend`,
           detail:
             typeof officer.trendDelta === "number"
               ? `Scores declined by ${Math.abs(
@@ -841,7 +834,9 @@ const [loading, setLoading] = useState(true);
   const qualificationTone: Tone =
     failedOrOverdueCount > 0
       ? "red"
-      : needsDayCount > 0 || needsNightCount > 0
+      : missingDayCount > 0 ||
+          missingNightCount > 0 ||
+          dueSoonCount > 0
         ? "amber"
         : "green";
   const certificationTone: Tone =
@@ -912,9 +907,9 @@ const [loading, setLoading] = useState(true);
           {hasQualifications && (
             <PulseCard
               title="Qualification Readiness"
-              value={loading ? "—" : `${currentCount}/${personnel.length}`}
+              value={loading ? "ï¿½" : `${currentCount}/${personnel.length}`}
               label="Officers current"
-              detail={`${needsDayCount} need day/no record · ${needsNightCount} need night · ${failedOrOverdueCount} failed/overdue.`}
+              detail={`${missingDayCount} missing day/no record ? ${missingNightCount} missing night ? ${dueSoonCount} due soon ? ${failedOrOverdueCount} failed/overdue.`}
               icon={Shield}
               tone={qualificationTone}
             />
@@ -925,9 +920,9 @@ const [loading, setLoading] = useState(true);
               title="Certification Readiness"
               value={
                 loading
-                  ? "—"
+                  ? "ï¿½"
                   : certificationReadiness.summary.totalRequiredChecks === 0
-                    ? "—"
+                    ? "ï¿½"
                     : `${certificationReadiness.summary.readinessPercent}%`
               }
               label={
@@ -938,7 +933,7 @@ const [loading, setLoading] = useState(true);
               detail={
                 certificationReadiness.summary.totalRequiredChecks === 0
                   ? "Configure required certifications to begin agency readiness tracking."
-                  : `${certificationReadiness.summary.dueSoon} due soon · ${certificationReadiness.summary.expired} expired · ${certificationReadiness.summary.missing} missing.`
+                  : `${certificationReadiness.summary.dueSoon} due soon ï¿½ ${certificationReadiness.summary.expired} expired ï¿½ ${certificationReadiness.summary.missing} missing.`
               }
               icon={ShieldCheck}
               tone={certificationTone}
@@ -950,9 +945,9 @@ const [loading, setLoading] = useState(true);
               title="Equipment Readiness"
               value={
                 loading
-                  ? "—"
+                  ? "ï¿½"
                   : equipmentReadiness.summary.totalRequiredChecks === 0
-                    ? "—"
+                    ? "ï¿½"
                     : `${equipmentReadiness.summary.readinessPercent}%`
               }
               label={
@@ -963,7 +958,7 @@ const [loading, setLoading] = useState(true);
               detail={
                 equipmentReadiness.summary.totalRequiredChecks === 0
                   ? "Configure required equipment to begin agency readiness tracking."
-                  : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
+                  : `${equipmentReadiness.summary.missing} missing ï¿½ ${equipmentReadiness.summary.expired} expired ï¿½ ${equipmentReadiness.summary.inspectionOverdue} inspection overdue ï¿½ ${equipmentReadiness.summary.outOfService} out of service.`
               }
               icon={Boxes}
               tone={equipmentTone}
@@ -974,7 +969,7 @@ const [loading, setLoading] = useState(true);
             <>
               <PulseCard
                 title="Range Readiness"
-                value={loading ? "—" : upcomingRangeDays.length}
+                value={loading ? "ï¿½" : upcomingRangeDays.length}
                 label="Upcoming range days"
                 detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
                 icon={CalendarDays}
@@ -983,18 +978,18 @@ const [loading, setLoading] = useState(true);
 
               <PulseCard
                 title="Records Health"
-                value={loading ? "—" : workspace.rangeDays.length}
+                value={loading ? "ï¿½" : workspace.rangeDays.length}
                 label="Range days saved"
-                detail={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills.`}
+                detail={`${workspace.rangeRoster.length} roster assignments ï¿½ ${workspace.rangeDayDrills.length} planned drills.`}
                 icon={FileText}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
 
               <PulseCard
                 title="Performance Signal"
-                value={loading ? "—" : averageScore ?? "—"}
+                value={loading ? "ï¿½" : averageScore ?? "ï¿½"}
                 label="Average score"
-                detail={`${declining.length} declining · ${improvingCount} improving.`}
+                detail={`${declining.length} declining ï¿½ ${improvingCount} improving.`}
                 icon={TrendingUp}
                 tone={declining.length > 0 ? "amber" : "blue"}
               />
@@ -1004,7 +999,7 @@ const [loading, setLoading] = useState(true);
           {hasFirearms && (
             <PulseCard
               title="Firearm Reliability"
-              value={loading ? "—" : firearmAlerts.length}
+              value={loading ? "ï¿½" : firearmAlerts.length}
               label="Weapons flagged"
               detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
               icon={Crosshair}
@@ -1083,8 +1078,9 @@ const [loading, setLoading] = useState(true);
               <div className="mt-4 grid grid-cols-2 gap-3">
                 {[
                   ["Current", currentCount, CheckCircle2, "green" as Tone],
-                  ["Need Day", needsDayCount, Sun, "blue" as Tone],
-                  ["Need Night", needsNightCount, Moon, "amber" as Tone],
+                  ["Missing Day", missingDayCount, Sun, "blue" as Tone],
+                  ["Missing Night", missingNightCount, Moon, "amber" as Tone],
+                  ["Due Soon", dueSoonCount, CalendarDays, "amber" as Tone],
                   [
                     "Failed/Overdue",
                     failedOrOverdueCount,
@@ -1225,7 +1221,7 @@ const [loading, setLoading] = useState(true);
                         {day.title}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        {formatDate(day.date)} · {day.location}
+                        {formatDate(day.date)} ï¿½ {day.location}
                       </p>
                     </div>
                     <ChevronRight size={15} className="text-slate-600" />
@@ -1240,6 +1236,10 @@ const [loading, setLoading] = useState(true);
     </TracePointShell>
   );
 }
+
+
+
+
 
 
 

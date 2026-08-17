@@ -1,14 +1,27 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  hasAnyServerPermission,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 import {
   evaluateCertificationReadiness,
 } from "@/lib/tracepoint/certification-readiness";
 
+import {
+  evaluateQualificationReadiness,
+} from "@/lib/tracepoint/qualification-readiness";
+
 type Priority = "Critical" | "High" | "Normal";
-type Source = "Personal Rifle" | "Ammunition" | "Inspection" | "Range" | "Training" | "Equipment";
+type Source =
+  | "Personal Rifle"
+  | "Ammunition"
+  | "Inspection"
+  | "Range"
+  | "Training"
+  | "Qualifications"
+  | "Equipment";
 
 type GeneratedAlert = {
   key: string;
@@ -32,6 +45,12 @@ const CONDITION_BASED_NOTIFICATION_KINDS = new Set([
   "required_certification_missing",
   "required_certification_expired",
   "required_certification_due_soon",
+  "qualification_no_record",
+  "qualification_missing_day",
+  "qualification_missing_night",
+  "qualification_failed",
+  "qualification_overdue",
+  "qualification_due_soon",
   "required_equipment_missing",
   "required_equipment_expired",
   "equipment_inspection_overdue",
@@ -70,72 +89,49 @@ function dateValue(value?: string | null) {
 }
 
 async function getContext() {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "You must be signed in.", status: 401 } as const;
+  const access = await resolveServerAccess();
 
-  const admin = createAdminClient() as any;
-  const { data: membership, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) return { error: error.message, status: 500 } as const;
-  if (!membership?.department_id) {
-    return { error: "No active department membership was found.", status: 403 } as const;
+  if (!access.ok) {
+    return {
+      error: access.error,
+      status: access.status,
+    } as const;
   }
 
-  const departmentId = String(membership.department_id);
-  const { data: roles } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", user.id);
+  const accessContext = access.context;
 
-  const roleCodes = (roles ?? []).map((row: any) => String(row.role_code));
-  const canManageArmory = roleCodes.some((role: string) =>
-    ["chief", "administrator", "department_admin", "admin", "armorer", "range_master"].includes(role),
-  );
-    const canManageRange = roleCodes.some((role: string) =>
-    ["chief", "administrator", "department_admin", "admin", "range_master", "instructor", "supervisor", "command_staff"].includes(role),
+  const canManageArmory = hasAnyServerPermission(
+    accessContext,
+    [
+      "manage_firearms",
+      "manage_inspections",
+      "view_command_dashboard",
+    ],
   );
 
-  let readinessPermissionRows: Array<{ permission_code?: string | null }> = [];
+  const canManageRange = hasAnyServerPermission(
+    accessContext,
+    [
+      "manage_range_days",
+      "score_range_days",
+      "manage_qualifications",
+      "view_command_dashboard",
+    ],
+  );
 
-  if (roleCodes.length > 0) {
-    const { data, error: readinessPermissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes)
-      .in("permission_code", [
-        "manage_certifications",
-        
-        "manage_equipment","view_command_dashboard",
-        "view_analytics",
-        "administer_department",
-      ]);
-
-    if (readinessPermissionError) {
-      return {
-        error: readinessPermissionError.message,
-        status: 500,
-      } as const;
-    }
-
-    readinessPermissionRows = data ?? [];
-  }
-
-  const canViewDepartmentReadiness =
-    readinessPermissionRows.length > 0;
+  const canViewDepartmentReadiness = hasAnyServerPermission(
+    accessContext,
+    [
+      "manage_qualifications",
+      "manage_certifications",
+      "manage_equipment",
+      "view_command_dashboard",
+      "view_analytics",
+    ],
+  );
 
   return {
-    admin,
-    user,
-    departmentId,
+    ...accessContext,
     canManageArmory,
     canManageRange,
     canViewDepartmentReadiness,
@@ -233,7 +229,7 @@ function collectInspections(payload: any, context: any): GeneratedAlert[] {
       source: "Inspection",
       kind: status === "Out of Service" ? "firearm_out_of_service" : status === "Maintenance" ? "firearm_maintenance" : "firearm_inspection_required",
       title: status === "Out of Service" ? "Firearm Out of Service" : status === "Maintenance" ? "Firearm Maintenance Required" : "Firearm Inspection Required",
-      detail: `${name} Ã‚· SN ${serial} Ã‚· ${status}`,
+      detail: `${name} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· SN ${serial} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· ${status}`,
       href: id ? `/firearms/${id}` : "/firearms/inspections",
       priority: status === "Out of Service" ? "Critical" : "High",
       createdAt: text(firearm.updated_at) || null,
@@ -274,7 +270,7 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
         source: "Range",
         kind: isInstructor ? "range_instructor_assignment" : "range_officer_assignment",
         title: isInstructor ? "Instructor Range Assignment" : "Upcoming Range Assignment",
-        detail: `${title} Ã‚· ${date} Ã‚· ${location}`,
+        detail: `${title} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· ${date} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· ${location}`,
         href: "/range-days",
         priority: "Normal",
         createdAt: date,
@@ -489,7 +485,7 @@ async function collectCertificationReadiness(
     const officerPrefix =
       context.canViewDepartmentReadiness &&
       row.userId !== context.user.id
-        ? `${row.officerName} · `
+        ? `${row.officerName} Ã‚Â· `
         : "";
 
     if (row.status === "missing") {
@@ -540,6 +536,297 @@ async function collectCertificationReadiness(
   return alerts;
 }
 
+function collectQualificationReadiness(
+  rangePayload: any,
+  personnelPayload: any,
+  rulesPayload: any,
+  context: any,
+): GeneratedAlert[] {
+  const workspace = rangePayload?.workspace ?? rangePayload ?? {};
+  const rangeDays = list(workspace, "rangeDays", "range_days");
+  const drills = list(workspace, "rangeDayDrills", "range_day_drills");
+  const results = list(workspace, "results");
+
+  const personnel =
+    [personnelPayload?.personnel, personnelPayload?.items]
+      .find(Array.isArray) ?? [];
+
+  const rules = rulesPayload?.rules ?? {};
+
+  const qualificationValidDays =
+    Number(rules.qualification_valid_days) || 365;
+
+  const qualificationDueSoonDays =
+    Number(rules.qualification_due_soon_days) || 30;
+
+  const rangeDaysById = new Map(
+    rangeDays.map((day: any) => [text(day.id), day]),
+  );
+
+  const drillsById = new Map(
+    drills.map((drill: any) => [text(drill.id), drill]),
+  );
+
+  function isQualificationDrill(drill: any) {
+    const category = text(drill?.category).toLowerCase();
+    const name = text(drill?.name).toLowerCase();
+
+    return (
+      category === "qualification" ||
+      name.includes("qualification")
+    );
+  }
+
+  function isRifleDrill(drill: any) {
+    const name = text(drill?.name).toLowerCase();
+    const category = text(drill?.category).toLowerCase();
+    const firearmType = text(
+      get(drill, "firearmType", "firearm_type"),
+    ).toLowerCase();
+
+    return (
+      name.includes("rifle") ||
+      category.includes("rifle") ||
+      firearmType.includes("rifle")
+    );
+  }
+
+  function resultOfficerId(result: any) {
+    return text(get(result, "officerId", "officer_id"));
+  }
+
+  function resultDrillId(result: any) {
+    return text(get(result, "drillId", "drill_id"));
+  }
+
+  function resultRangeDayId(result: any) {
+    return text(get(result, "rangeDayId", "range_day_id"));
+  }
+
+  function resultRunNumber(result: any) {
+    return Number(
+      get(result, "runNumber", "run_number") ?? 1,
+    );
+  }
+
+  function isPassed(result: any) {
+    return typeof result?.passed === "boolean"
+      ? result.passed
+      : result?.completed === true;
+  }
+
+  const qualificationResults = results.filter((result: any) => {
+    const drill = drillsById.get(resultDrillId(result));
+
+    return (
+      isQualificationDrill(drill) &&
+      !isRifleDrill(drill)
+    );
+  });
+
+  const alerts: GeneratedAlert[] = [];
+
+  for (const person of personnel) {
+    if (
+      person?.isActive === false ||
+      person?.is_active === false
+    ) {
+      continue;
+    }
+
+    const officerId = text(person.id);
+    const userId = text(get(person, "userId", "user_id"));
+
+    if (!officerId) continue;
+
+    if (
+      !context.canViewDepartmentReadiness &&
+      userId !== context.user.id
+    ) {
+      continue;
+    }
+
+    const officerName =
+      text(
+        get(
+          person,
+          "displayName",
+          "display_name",
+          "fullName",
+          "full_name",
+          "name",
+        ),
+      ) || "Officer";
+
+    const officerResults = qualificationResults
+      .filter(
+        (result: any) =>
+          resultOfficerId(result) === officerId,
+      )
+      .sort(
+        (a: any, b: any) =>
+          dateValue(
+            get(
+              rangeDaysById.get(resultRangeDayId(b)),
+              "date",
+            ),
+          ) -
+          dateValue(
+            get(
+              rangeDaysById.get(resultRangeDayId(a)),
+              "date",
+            ),
+          ),
+      );
+
+    const passed = officerResults.filter(isPassed);
+
+    const day = passed.find(
+      (result: any) => resultRunNumber(result) === 1,
+    );
+
+    const night = passed.find(
+      (result: any) => resultRunNumber(result) === 2,
+    );
+
+    const failedQualifications = officerResults
+      .filter(
+        (result: any) => result?.passed === false,
+      )
+      .map((result: any) => {
+        const runNumber = resultRunNumber(result);
+
+        return {
+          date:
+            text(
+              get(
+                rangeDaysById.get(
+                  resultRangeDayId(result),
+                ),
+                "date",
+              ),
+            ) || "",
+          runLabel:
+            runNumber === 1
+              ? "Day Qualification"
+              : runNumber === 2
+                ? "Night Qualification"
+                : `Run ${runNumber}`,
+        };
+      });
+
+    const lastDayQualification = day
+      ? {
+          date:
+            text(
+              get(
+                rangeDaysById.get(
+                  resultRangeDayId(day),
+                ),
+                "date",
+              ),
+            ) || "",
+          runLabel: "Day Qualification",
+        }
+      : undefined;
+
+    const lastNightQualification = night
+      ? {
+          date:
+            text(
+              get(
+                rangeDaysById.get(
+                  resultRangeDayId(night),
+                ),
+                "date",
+              ),
+            ) || "",
+          runLabel: "Night Qualification",
+        }
+      : undefined;
+
+    const readiness = evaluateQualificationReadiness({
+      lastDayQualification,
+      lastNightQualification,
+      failedQualifications,
+      qualificationValidDays,
+      qualificationDueSoonDays,
+    });
+
+    if (readiness.status === "Current") continue;
+
+    const officerPrefix =
+      context.canViewDepartmentReadiness &&
+      userId !== context.user.id
+        ? `${officerName} - `
+        : "";
+
+    const base = {
+      key: `qualification-readiness-${userId || officerId}`,
+      source: "Qualifications" as Source,
+      href: "/qualifications",
+      detail: readiness.statusReason,
+    };
+
+    const createdAt =
+      readiness.status === "Failed"
+        ? failedQualifications[0]?.date ?? null
+        : lastDayQualification &&
+            lastNightQualification
+          ? dateValue(lastDayQualification.date) <
+            dateValue(lastNightQualification.date)
+            ? lastDayQualification.date
+            : lastNightQualification.date
+          : lastDayQualification?.date ??
+            lastNightQualification?.date ??
+            null;
+
+    const config = {
+      "No Record": {
+        kind: "qualification_no_record",
+        title: "Qualification Record Missing",
+        priority: "Critical" as Priority,
+      },
+      "Missing Day": {
+        kind: "qualification_missing_day",
+        title: "Day Qualification Missing",
+        priority: "Critical" as Priority,
+      },
+      "Missing Night": {
+        kind: "qualification_missing_night",
+        title: "Night Qualification Missing",
+        priority: "Critical" as Priority,
+      },
+      Failed: {
+        kind: "qualification_failed",
+        title: "Qualification Failed",
+        priority: "Critical" as Priority,
+      },
+      Overdue: {
+        kind: "qualification_overdue",
+        title: "Qualification Overdue",
+        priority: "Critical" as Priority,
+      },
+      "Due Soon": {
+        kind: "qualification_due_soon",
+        title: "Qualification Due Soon",
+        priority: "High" as Priority,
+      },
+    }[readiness.status];
+
+    if (!config) continue;
+
+    alerts.push({
+      ...base,
+      kind: config.kind,
+      title: `${officerPrefix}${config.title}`,
+      priority: config.priority,
+      createdAt,
+    });
+  }
+
+  return alerts;
+}
 function collectEquipmentReadiness(
   payload: any,
   context: any,
@@ -570,7 +857,7 @@ function collectEquipmentReadiness(
     const officerPrefix =
       departmentScope &&
       userId !== context.user.id
-        ? `${text(row.officerName) || "Officer"} · `
+        ? `${text(row.officerName) || "Officer"} Ã‚Â· `
         : "";
 
     const base = {
@@ -690,7 +977,7 @@ async function getPreferences(context: any) {
       Inspection: true,
       Range: true,
       Training: true,
-      
+      Qualifications: true,
       Equipment: true,...(data?.source_preferences ?? {}),
     },
   };
@@ -720,6 +1007,8 @@ export async function GET(request: NextRequest) {
       range,
       training,
       equipment,
+      personnel,
+      rules,
     ] = await Promise.all([
       internalJson(request, "/api/armory/personal-rifles/inbox"),
       internalJson(request, "/api/pilot/ammunition"),
@@ -743,6 +1032,8 @@ export async function GET(request: NextRequest) {
         request,
         "/api/readiness/equipment",
       ),
+      internalJson(request, "/api/pilot/personnel"),
+      internalJson(request, "/api/settings/current-rules"),
     ]);
 
     const generated: GeneratedAlert[] = [];
@@ -760,6 +1051,27 @@ export async function GET(request: NextRequest) {
 
     if (range.ok) { successful.add("Range"); generated.push(...collectRange(range.payload, context)); }
     else sourceErrors.push({ source: "Range", error: range.error || "Unavailable" });
+
+    if (range.ok && personnel.ok && rules.ok) {
+      successful.add("Qualifications");
+      generated.push(
+        ...collectQualificationReadiness(
+          range.payload,
+          personnel.payload,
+          rules.payload,
+          context,
+        ),
+      );
+    } else {
+      sourceErrors.push({
+        source: "Qualifications",
+        error:
+          range.error ||
+          personnel.error ||
+          rules.error ||
+          "Unavailable",
+      });
+    }
 
     if (training.ok) { successful.add("Training"); generated.push(...training.items); }
     else sourceErrors.push({ source: "Training", error: training.error || "Unavailable" });
