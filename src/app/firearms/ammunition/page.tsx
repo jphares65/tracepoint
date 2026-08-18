@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -1636,7 +1636,7 @@ export default function ArmoryAmmunitionPage() {
                             </div>
                           </div>
                           <p className="mt-2 text-xs text-slate-500">
-                            {formatNumber(item.quantityBefore)} â†’{" "}
+                            {formatNumber(item.quantityBefore)} →{" "}
                             {formatNumber(item.quantityAfter)}
                             {item.reference ? ` · ${item.reference}` : ""}
                           </p>

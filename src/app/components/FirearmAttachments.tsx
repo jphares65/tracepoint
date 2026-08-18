@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Archive, Download, FileImage, FileText, Loader2, Paperclip, Upload } from "lucide-react";
@@ -102,12 +102,12 @@ export default function FirearmAttachments({ firearmId }: { firearmId: string })
 
       {error && <p className="mt-3 rounded-2xl border border-red-900 bg-red-950/30 p-3 text-xs text-red-300">{error}</p>}
       <div className="mt-4 space-y-2">
-        {loading ? <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-4 w-4 animate-spin"/>Loading documentsâ€¦</div> : items.length === 0 ?
+        {loading ? <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-4 w-4 animate-spin"/>Loading documents…</div> : items.length === 0 ?
           <div className="rounded-2xl border border-dashed border-slate-800 p-4 text-center text-xs text-slate-500">No documents attached yet.</div> :
           items.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
             {item.mime_type.startsWith("image/") ? <FileImage className="h-5 w-5 shrink-0 text-slate-400"/> : <FileText className="h-5 w-5 shrink-0 text-slate-400"/>}
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-100">{item.file_name}</p>
-              <p className="text-[11px] text-slate-500">{label(item.attachment_type)} â€¢ {size(item.file_size)} â€¢ {new Date(item.uploaded_at).toLocaleDateString()}</p>
+              <p className="text-[11px] text-slate-500">{label(item.attachment_type)} • {size(item.file_size)} • {new Date(item.uploaded_at).toLocaleDateString()}</p>
               {item.description && <p className="mt-1 text-xs text-slate-400">{item.description}</p>}</div>
             <a href={`/api/attachments/${item.id}/download`} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" title="Download"><Download className="h-4 w-4"/></a>
             <button type="button" onClick={() => void archive(item)} className="rounded-xl border border-slate-700 p-2 text-slate-400 hover:border-red-900 hover:text-red-300" title="Archive"><Archive className="h-4 w-4"/></button>

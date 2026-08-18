@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -1306,7 +1306,7 @@ export default function PersonalRiflesPage() {
                                     {entry.action}
                                   </p>
                                   <p className="mt-1 text-xs text-slate-500">
-                                    {entry.actor_name} · {entry.from_status ?? "New"} â†’{" "}
+                                    {entry.actor_name} · {entry.from_status ?? "New"} →{" "}
                                     {entry.to_status}
                                   </p>
                                 </div>

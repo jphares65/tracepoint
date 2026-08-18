@@ -710,6 +710,10 @@ export default function TracePointShell({
 }: TracePointShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [switchingDepartmentId, setSwitchingDepartmentId] =
+    useState<string | null>(null);
+  const [departmentSelectionError, setDepartmentSelectionError] =
+    useState<string | null>(null);
   const [appearance, setAppearance] =
     useState<TracePointAppearancePreferences>(
       getStoredAppearancePreferences,
@@ -717,6 +721,9 @@ export default function TracePointShell({
 
   const {
     loading,
+    error: accessError,
+    requiresDepartmentSelection,
+    availableDepartments,
     departmentId,
     departmentShortName,
     departmentPatchUrl,
@@ -724,6 +731,7 @@ export default function TracePointShell({
     permissions,
     enabledFeatures,
     isSuperAdmin,
+    refresh: refreshAccess,
   } = useTracePointAccess();
 
   useEffect(() => {
@@ -791,6 +799,147 @@ export default function TracePointShell({
       active = false;
     };
   }, [departmentId]);
+
+  async function selectDepartment(nextDepartmentId: string) {
+    if (!nextDepartmentId || switchingDepartmentId) return;
+
+    setSwitchingDepartmentId(nextDepartmentId);
+    setDepartmentSelectionError(null);
+
+    try {
+      const response = await fetch("/api/active-department", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          departmentId: nextDepartmentId,
+        }),
+      });
+
+      if (!response.ok) {
+        let message = "Agency could not be selected.";
+
+        try {
+          const payload = (await response.json()) as {
+            error?: string;
+          };
+
+          if (payload.error) {
+            message = payload.error;
+          }
+        } catch {}
+
+        throw new Error(message);
+      }
+
+      await refreshAccess();
+    } catch (selectionError) {
+      setDepartmentSelectionError(
+        selectionError instanceof Error
+          ? selectionError.message
+          : "Agency could not be selected.",
+      );
+    } finally {
+      setSwitchingDepartmentId(null);
+    }
+  }
+
+  if (requiresDepartmentSelection) {
+    return (
+      <div className="min-h-screen bg-slate-950 px-4 py-10 text-white">
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-8 flex justify-center">
+            <BrandHeader />
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-400">
+              TracePoint
+            </div>
+
+            <h1 className="mt-2 text-2xl font-bold text-white">
+              Choose Agency
+            </h1>
+
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Your account belongs to more than one agency. Select the agency you want to work in.
+            </p>
+
+            {departmentSelectionError ? (
+              <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {departmentSelectionError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 space-y-3">
+              {availableDepartments.map((department) => {
+                const selecting =
+                  switchingDepartmentId === department.departmentId;
+
+                return (
+                  <button
+                    key={department.departmentId}
+                    type="button"
+                    disabled={switchingDepartmentId !== null}
+                    onClick={() =>
+                      void selectDepartment(department.departmentId)
+                    }
+                    className="flex w-full items-center justify-between gap-4 rounded-xl border border-slate-700 bg-slate-950 px-4 py-4 text-left transition hover:border-blue-500/60 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white">
+                        {department.departmentName}
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-400">
+                        {[
+                          department.rankTitle,
+                          department.unitName,
+                          department.badgeNumber
+                            ? `Badge ${department.badgeNumber}`
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ? ") || "Active membership"}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-sm font-semibold text-blue-300">
+                      {selecting ? "Opening..." : "Enter"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loading && accessError && !departmentId) {
+    return (
+      <div className="min-h-screen bg-slate-950 px-4 py-10 text-white">
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-8 flex justify-center">
+            <BrandHeader />
+          </div>
+
+          <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-6">
+            <h1 className="text-lg font-bold text-white">
+              TracePoint Access Error
+            </h1>
+
+            <p className="mt-2 text-sm text-red-100">
+              {accessError}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

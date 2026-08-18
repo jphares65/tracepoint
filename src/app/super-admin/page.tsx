@@ -137,6 +137,37 @@ export default function SuperAdminPage() {
     [payload, departmentId],
   );
 
+
+  async function enterSelectedDepartment() {
+    if (!departmentId) return;
+
+    setError(null);
+
+    try {
+      const response = await fetch("/api/active-department", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ departmentId }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      await access.refresh();
+      window.location.href = "/command-dashboard";
+    } catch (enterError) {
+      setError(
+        enterError instanceof Error
+          ? enterError.message
+          : "Agency could not be entered.",
+      );
+    }
+  }
+
   async function setFeatureEnabled(
     featureCode: string,
     isEnabled: boolean,
@@ -309,6 +340,15 @@ export default function SuperAdminPage() {
               ),
             )}
           </select>
+
+          <button
+            type="button"
+            onClick={enterSelectedDepartment}
+            disabled={loading || !departmentId}
+            className="mt-3 inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Enter Agency
+          </button>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">

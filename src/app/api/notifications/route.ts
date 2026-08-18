@@ -229,7 +229,7 @@ function collectInspections(payload: any, context: any): GeneratedAlert[] {
       source: "Inspection",
       kind: status === "Out of Service" ? "firearm_out_of_service" : status === "Maintenance" ? "firearm_maintenance" : "firearm_inspection_required",
       title: status === "Out of Service" ? "Firearm Out of Service" : status === "Maintenance" ? "Firearm Maintenance Required" : "Firearm Inspection Required",
-      detail: `${name} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· SN ${serial} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· ${status}`,
+      detail: `${name} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· SN ${serial} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· ${status}`,
       href: id ? `/firearms/${id}` : "/firearms/inspections",
       priority: status === "Out of Service" ? "Critical" : "High",
       createdAt: text(firearm.updated_at) || null,
@@ -270,7 +270,7 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
         source: "Range",
         kind: isInstructor ? "range_instructor_assignment" : "range_officer_assignment",
         title: isInstructor ? "Instructor Range Assignment" : "Upcoming Range Assignment",
-        detail: `${title} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· ${date} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· ${location}`,
+        detail: `${title} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· ${date} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· ${location}`,
         href: "/range-days",
         priority: "Normal",
         createdAt: date,
@@ -485,7 +485,7 @@ async function collectCertificationReadiness(
     const officerPrefix =
       context.canViewDepartmentReadiness &&
       row.userId !== context.user.id
-        ? `${row.officerName} Ã‚Â· `
+        ? `${row.officerName} Ãƒâ€š· `
         : "";
 
     if (row.status === "missing") {
@@ -857,7 +857,7 @@ function collectEquipmentReadiness(
     const officerPrefix =
       departmentScope &&
       userId !== context.user.id
-        ? `${text(row.officerName) || "Officer"} Ã‚Â· `
+        ? `${text(row.officerName) || "Officer"} Ãƒâ€š· `
         : "";
 
     const base = {

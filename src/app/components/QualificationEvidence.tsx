@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRef, useState } from "react";
 import { Archive, Camera, ChevronDown, Download, Image as ImageIcon, Loader2, Upload } from "lucide-react";
@@ -198,7 +198,7 @@ export default function QualificationEvidence({
           <div className="mt-3 space-y-2">
             {loading ? (
               <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                <Loader2 size={13} className="animate-spin" /> Loading target evidenceâ€¦
+                <Loader2 size={13} className="animate-spin" /> Loading target evidence…
               </div>
             ) : items.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-800 px-3 py-4 text-center text-[10px] text-slate-600">

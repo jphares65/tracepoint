@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
@@ -2733,7 +2733,7 @@ export default function RangeDaysPage() {
             `The selected firearm does not match the ${selectedDrill.firearmType} drill for:`,
             "",
             ...mismatchedOfficers.map(
-              (name) => `â€¢ ${name}`,
+              (name) => `• ${name}`,
             ),
             "",
             "Save these results anyway?",

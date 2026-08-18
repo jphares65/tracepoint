@@ -428,86 +428,35 @@ export async function PATCH(
           { status: 400 },
         );
       }
-      const { error: updateError } = await context.admin
-        .from("off_duty_firearm_requests")
-        .update({
-          make,
-          model,
-          firearm_type: firearmType,
-          serial_number: serial,
-          caliber,
-          capacity: cleanText(body.capacity),
-          optic: cleanText(body.optic),
-          weapon_light: cleanText(body.weaponLight),
-          holster: cleanText(body.holster),
-          proof_ownership: body.proofOwnership === true,
-          qualification_reviewed: body.qualificationReviewed === true,
-          inspection_reviewed: body.inspectionReviewed === true,
-          policy_acknowledged: true,
-          officer_notes: cleanText(body.officerNotes),
-          request_status: "Pending Command Review",
-          authorization_status: "Not Authorized",
-          compliance_status: "At Risk",
-          submitted_at: now,
-          reviewed_at: null,
-          reviewed_by_user_id: null,
-          approval_effective_date: null,
-          approval_expiration_date: null,
-          decision_notes: null,
-          updated_at: now,
-        })
-        .eq("id", requestId)
-        .eq("department_id", context.departmentId)
-        .eq("officer_user_id", context.userId);
+      const { error: resubmitError } = await context.admin.rpc(
+        "resubmit_off_duty_firearm_request",
+        {
+          p_department_id: context.departmentId,
+          p_request_id: requestId,
+          p_officer_user_id: context.userId,
+          p_actor_name: context.fullName,
+          p_actor_role: context.primaryRoleLabel,
+          p_make: make,
+          p_model: model,
+          p_firearm_type: firearmType,
+          p_serial_number: serial,
+          p_caliber: caliber,
+          p_capacity: cleanText(body.capacity),
+          p_optic: cleanText(body.optic),
+          p_weapon_light: cleanText(body.weaponLight),
+          p_holster: cleanText(body.holster),
+          p_proof_ownership: body.proofOwnership === true,
+          p_qualification_reviewed:
+            body.qualificationReviewed === true,
+          p_inspection_reviewed:
+            body.inspectionReviewed === true,
+          p_policy_acknowledged: true,
+          p_officer_notes: cleanText(body.officerNotes),
+        },
+      );
 
-      if (updateError) throw new Error(updateError.message);
-
-      const { error: historyError } = await context.admin
-        .from("off_duty_firearm_history")
-        .insert({
-          department_id: context.departmentId,
-          request_id: requestId,
-          action: "Resubmitted",
-          actor_user_id: context.userId,
-          actor_name: context.fullName,
-          actor_role: context.primaryRoleLabel,
-          notes: "Corrected request resubmitted for command review.",
-          created_at: now,
-        });
-
-      if (historyError) {
-        await context.admin
-          .from("off_duty_firearm_requests")
-          .update({
-            request_status: existing.request_status,
-            authorization_status: existing.authorization_status,
-            compliance_status: existing.compliance_status,
-            submitted_at: existing.submitted_at,
-            reviewed_at: existing.reviewed_at,
-            reviewed_by_user_id: existing.reviewed_by_user_id,
-            approval_effective_date: existing.approval_effective_date,
-            approval_expiration_date: existing.approval_expiration_date,
-            decision_notes: existing.decision_notes,
-            make: existing.make,
-            model: existing.model,
-            firearm_type: existing.firearm_type,
-            serial_number: existing.serial_number,
-            caliber: existing.caliber,
-            capacity: existing.capacity,
-            optic: existing.optic,
-            weapon_light: existing.weapon_light,
-            holster: existing.holster,
-            proof_ownership: existing.proof_ownership,
-            qualification_reviewed: existing.qualification_reviewed,
-            inspection_reviewed: existing.inspection_reviewed,
-            policy_acknowledged: existing.policy_acknowledged,
-            officer_notes: existing.officer_notes,
-            updated_at: existing.updated_at,
-          })
-          .eq("id", requestId)
-          .eq("department_id", context.departmentId);
-
-        throw new Error(historyError.message);
+      if (resubmitError) {
+        throw new Error(resubmitError.message);
       }
 
       try {

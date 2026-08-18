@@ -1,5 +1,6 @@
 ﻿import "server-only";
 
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -145,7 +146,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
 
   const memberships = (membershipRows ?? []) as MembershipRow[];
 
-  if (memberships.length === 0 || !memberships[0]?.department_id) {
+  if (memberships.length === 0) {
     return {
       ok: false,
       status: 403,
@@ -153,16 +154,31 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
     };
   }
 
-  if (memberships.length > 1) {
+  const cookieStore = await cookies();
+  const selectedDepartmentId =
+    clean(cookieStore.get("tracepoint_department_id")?.value);
+
+  let membership: MembershipRow | undefined;
+
+  if (selectedDepartmentId) {
+    membership = memberships.find(
+      (row) => clean(row.department_id) === selectedDepartmentId,
+    );
+  }
+
+  if (!membership && memberships.length === 1) {
+    membership = memberships[0];
+  }
+
+  if (!membership) {
     return {
       ok: false,
       status: 409,
       error:
-        "Multiple active department memberships were found. An administrator must resolve the account before access can continue.",
+        "Multiple active department memberships were found. Select an active agency before access can continue.",
     };
   }
 
-  const membership = memberships[0];
   const departmentId = String(membership.department_id);
 
   const [

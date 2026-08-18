@@ -43,21 +43,70 @@ function isCommandReviewer(context: any) {
   );
 }
 
-async function loadProfiles(admin: any, userIds: string[]) {
-  if (userIds.length === 0) return new Map<string, string>();
+async function loadOfficerIdentities(
+  admin: any,
+  departmentId: string,
+  userIds: string[],
+) {
+  if (userIds.length === 0) {
+    return new Map<
+      string,
+      { name: string; badge: string; unit: string }
+    >();
+  }
 
-  const { data, error } = await admin
-    .from("profiles")
-    .select("id,full_name")
-    .in("id", userIds);
+  const [profilesResult, membershipsResult] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id,full_name")
+      .in("id", userIds),
 
-  if (error) throw new Error(error.message);
+    admin
+      .from("department_memberships")
+      .select("user_id,badge_number,unit_name")
+      .eq("department_id", departmentId)
+      .eq("is_active", true)
+      .in("user_id", userIds),
+  ]);
 
-  return new Map(
-    (data ?? []).map((row: any) => [
-      String(row.id),
-      cleanText(row.full_name) ?? "Unknown User",
-    ]),
+  if (profilesResult.error) {
+    throw new Error(profilesResult.error.message);
+  }
+
+  if (membershipsResult.error) {
+    throw new Error(membershipsResult.error.message);
+  }
+
+  const membershipMap = new Map<
+    string,
+    { badge: string; unit: string }
+  >(
+    (membershipsResult.data ?? []).map((row: any) => [
+      String(row.user_id),
+      {
+        badge: cleanText(row.badge_number) ?? "",
+        unit: cleanText(row.unit_name) ?? "",
+      },
+    ] as const),
+  );
+
+  return new Map<
+    string,
+    { name: string; badge: string; unit: string }
+  >(
+    (profilesResult.data ?? []).map((row: any) => {
+      const userId = String(row.id);
+      const membership = membershipMap.get(userId);
+
+      return [
+        userId,
+        {
+          name: cleanText(row.full_name) ?? "Unknown User",
+          badge: membership?.badge ?? "",
+          unit: membership?.unit ?? "",
+        },
+      ] as const;
+    }),
   );
 }
 
@@ -196,7 +245,11 @@ async function loadRequests(context: any) {
     ),
   );
 
-  const profileNames = await loadProfiles(context.admin, userIds);
+  const officerIdentities = await loadOfficerIdentities(
+    context.admin,
+    context.departmentId,
+    userIds,
+  );
 
   const historyByRequest = new Map<string, any[]>();
 
@@ -289,15 +342,11 @@ async function loadRequests(context: any) {
         id: String(row.id),
     officerId: String(row.officer_user_id),
     officer:
-      profileNames.get(String(row.officer_user_id)) ?? "Unknown Officer",
+      officerIdentities.get(String(row.officer_user_id))?.name ?? "Unknown Officer",
     badge:
-      String(row.officer_user_id) === context.userId
-        ? context.badgeNumber
-        : "",
+      officerIdentities.get(String(row.officer_user_id))?.badge ?? "",
     unit:
-      String(row.officer_user_id) === context.userId
-        ? context.unitName
-        : "",
+      officerIdentities.get(String(row.officer_user_id))?.unit ?? "",
     make: row.make,
     model: row.model,
     firearmType: row.firearm_type,
@@ -317,7 +366,7 @@ async function loadRequests(context: any) {
     submittedAt: row.submitted_at,
     reviewedAt: row.reviewed_at ?? undefined,
     reviewedBy: row.reviewed_by_user_id
-      ? profileNames.get(String(row.reviewed_by_user_id)) ?? "Unknown Reviewer"
+      ? officerIdentities.get(String(row.reviewed_by_user_id))?.name ?? "Unknown Reviewer"
       : undefined,
     approvalDate: row.approval_effective_date ?? undefined,
     approvalExpires: row.approval_expiration_date ?? undefined,
@@ -545,64 +594,44 @@ export async function POST(request: NextRequest) {
   const now = new Date().toISOString();
 
   try {
-    const { data: created, error: insertError } = await context.admin
-      .from("off_duty_firearm_requests")
-      .insert({
-        department_id: context.departmentId,
-        officer_user_id: context.userId,
-        make,
-        model,
-        firearm_type: firearmType,
-        serial_number: serial,
-        caliber,
-        capacity: cleanText(body.capacity),
-        optic: cleanText(body.optic),
-        weapon_light: cleanText(body.weaponLight),
-        holster: cleanText(body.holster),
-        proof_ownership: body.proofOwnership === true,
-        qualification_reviewed: body.qualificationReviewed === true,
-        inspection_reviewed: body.inspectionReviewed === true,
-        policy_acknowledged: true,
-        officer_notes: cleanText(body.officerNotes),
-        request_status: "Pending Command Review",
-        authorization_status: "Not Authorized",
-        inspection_status: "Not Inspected",
-        compliance_status: "At Risk",
-        submitted_at: now,
-        created_at: now,
-        updated_at: now,
-      })
-      .select("id")
-      .single();
+    const { data: createdRequestId, error: submitError } =
+      await context.admin.rpc(
+        "submit_off_duty_firearm_request",
+        {
+          p_department_id: context.departmentId,
+          p_officer_user_id: context.userId,
+          p_actor_name: context.fullName,
+          p_actor_role: context.primaryRoleLabel,
+          p_make: make,
+          p_model: model,
+          p_firearm_type: firearmType,
+          p_serial_number: serial,
+          p_caliber: caliber,
+          p_capacity: cleanText(body.capacity),
+          p_optic: cleanText(body.optic),
+          p_weapon_light: cleanText(body.weaponLight),
+          p_holster: cleanText(body.holster),
+          p_proof_ownership: body.proofOwnership === true,
+          p_qualification_reviewed:
+            body.qualificationReviewed === true,
+          p_inspection_reviewed:
+            body.inspectionReviewed === true,
+          p_policy_acknowledged: true,
+          p_officer_notes: cleanText(body.officerNotes),
+        },
+      );
 
-    if (insertError) {
-      throw new Error(insertError.message);
+    if (submitError) {
+      throw new Error(submitError.message);
     }
 
-    const requestId = String(created.id);
-
-    const { error: historyError } = await context.admin
-      .from("off_duty_firearm_history")
-      .insert({
-        department_id: context.departmentId,
-        request_id: requestId,
-        action: "Submitted",
-        actor_user_id: context.userId,
-        actor_name: context.fullName,
-        actor_role: context.primaryRoleLabel,
-        notes: "Submitted for off-duty carry authorization.",
-        created_at: now,
-      });
-
-    if (historyError) {
-      await context.admin
-        .from("off_duty_firearm_requests")
-        .delete()
-        .eq("id", requestId)
-        .eq("department_id", context.departmentId);
-
-      throw new Error(historyError.message);
+    if (!createdRequestId) {
+      throw new Error(
+        "The off-duty firearm request was not created.",
+      );
     }
+
+    const requestId = String(createdRequestId);
 
     try {
       await createCommandNotifications(
