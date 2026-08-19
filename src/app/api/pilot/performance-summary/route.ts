@@ -58,6 +58,7 @@ type RangeDayRow = {
   range_date: string;
   status: string;
   range_type: string;
+  packet_status: string;
 };
 
 type RangeDayDrillRow = {
@@ -729,7 +730,7 @@ export async function GET() {
       admin
         .from("range_days")
         .select(
-          "id, title, range_date, status, range_type",
+          "id, title, range_date, status, range_type, packet_status",
         )
         .eq("department_id", departmentId),
 
@@ -909,7 +910,7 @@ export async function GET() {
 
         drillPerformance:
           drillResults.length === 0
-            ? "Ã¢â‚¬â€"
+            ? "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"
             : `${
                 averageChange > 0 ? "+" : ""
               }${averageChange.toFixed(1)}`,
