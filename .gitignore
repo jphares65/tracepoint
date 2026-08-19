@@ -45,3 +45,7 @@ next-env.d.ts
 *.encoding-backup-*
 armory-navigation-files-*/
 rifle-inbox-files-*/
+
+# Local backup/temp files
+*.bak-*
+supabase/.temp/
