@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
   hasAnyServerPermission,
@@ -229,7 +229,7 @@ function collectInspections(payload: any, context: any): GeneratedAlert[] {
       source: "Inspection",
       kind: status === "Out of Service" ? "firearm_out_of_service" : status === "Maintenance" ? "firearm_maintenance" : "firearm_inspection_required",
       title: status === "Out of Service" ? "Firearm Out of Service" : status === "Maintenance" ? "Firearm Maintenance Required" : "Firearm Inspection Required",
-      detail: `${name} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· SN ${serial} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· ${status}`,
+      detail: `${name} | SN ${serial} | ${status}`,
       href: id ? `/firearms/${id}` : "/firearms/inspections",
       priority: status === "Out of Service" ? "Critical" : "High",
       createdAt: text(firearm.updated_at) || null,
@@ -270,7 +270,7 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
         source: "Range",
         kind: isInstructor ? "range_instructor_assignment" : "range_officer_assignment",
         title: isInstructor ? "Instructor Range Assignment" : "Upcoming Range Assignment",
-        detail: `${title} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· ${date} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€š· ${location}`,
+        detail: `${title} | ${date} | ${location}`,
         href: "/range-days",
         priority: "Normal",
         createdAt: date,
@@ -1263,6 +1263,7 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
 
 
 
