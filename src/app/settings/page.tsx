@@ -748,7 +748,6 @@ export default function AdminSettingsPage() {
   const [newUnitName, setNewUnitName] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
-  const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
   const [editingRoleCode, setEditingRoleCode] =
     useState<string | null>(null);
   const [rolePermissionDraft, setRolePermissionDraft] = useState<
@@ -1827,7 +1826,6 @@ export default function AdminSettingsPage() {
           unitName: inviteDraft.unitName,
           employeeNumber: inviteDraft.employeeNumber,
           roleCodes: inviteDraft.roleCodes,
-          groupIds: inviteGroupIds,
           groupIds: inviteGroupIds,
         }),
       });

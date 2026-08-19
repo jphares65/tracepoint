@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
 
     if (rolesError) throw rolesError;
 
-    const { error: groupsError } = await server.rpc(
+    const { error: groupsError } = await (server as any).rpc(
       "set_department_group_members",
       {
         p_department_id: departmentId,
@@ -314,5 +314,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 
