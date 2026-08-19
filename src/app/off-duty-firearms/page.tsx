@@ -1522,7 +1522,7 @@ export default function OffDutyFirearmsPage() {
                           : "text-slate-500 hover:text-slate-200"
                       }`}
                     >
-                      {mode}
+                      {mode === "Officer Portal" ? "My Requests" : "Department Review"}
                     </button>
                   ),
                 )}
@@ -1712,6 +1712,7 @@ export default function OffDutyFirearmsPage() {
     </TracePointShell>
   );
 }
+
 
 
 

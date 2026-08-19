@@ -25,22 +25,7 @@ function canManageOffDutyInspections(context: any) {
 }
 
 function isCommandReviewer(context: any) {
-  return (
-    context.roleCodes.some((role: string) =>
-      [
-        "chief",
-        "administrator",
-        "department_admin",
-        "admin",
-        "command_staff",
-      ].includes(role),
-    ) ||
-    hasAnyServerPermission(context, [
-      "review_off_duty_requests",
-      "manage_firearms",
-      "administer_department",
-    ])
-  );
+  return context.roleCodes.some((role: string) => role === "chief");
 }
 
 async function loadOfficerIdentities(
@@ -385,37 +370,7 @@ async function loadRequests(context: any) {
 }
 
 async function loadOffDutyReviewerUserIds(context: any) {
-  const legacyCommandRoles = [
-    "chief",
-    "administrator",
-    "department_admin",
-    "admin",
-    "command_staff",
-  ];
-
-  const { data: permissionRows, error: permissionError } =
-    await context.admin
-      .from("department_role_permissions")
-      .select("role_code,permission_code")
-      .eq("department_id", context.departmentId)
-      .in("permission_code", [
-        "review_off_duty_requests",
-        "manage_firearms",
-        "administer_department",
-      ]);
-
-  if (permissionError) {
-    throw new Error(permissionError.message);
-  }
-
-  const reviewerRoleCodes = Array.from(
-    new Set([
-      ...legacyCommandRoles,
-      ...(permissionRows ?? [])
-        .map((row: any) => String(row.role_code ?? ""))
-        .filter(Boolean),
-    ]),
-  );
+  const reviewerRoleCodes = ["chief"];
 
   if (reviewerRoleCodes.length === 0) {
     return [];
@@ -683,3 +638,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

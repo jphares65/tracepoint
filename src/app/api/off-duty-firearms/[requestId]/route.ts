@@ -16,27 +16,14 @@ type RouteContext = {
   params: Promise<{ requestId: string }>;
 };
 
-const COMMAND_ROLES = [
-  "chief",
-  "administrator",
-  "department_admin",
-  "admin",
-  "command_staff",
-];
+const COMMAND_ROLES = ["chief"];
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function isCommandReviewer(context: any) {
-  return (
-    context.roleCodes.some((role: string) => COMMAND_ROLES.includes(role)) ||
-    hasAnyServerPermission(context, [
-      "review_off_duty_requests",
-      "manage_firearms",
-      "administer_department",
-    ])
-  );
+  return context.roleCodes.some((role: string) => role === "chief");
 }
 
 async function loadRequest(context: any, requestId: string) {
@@ -251,14 +238,7 @@ async function loadOffDutyReviewerUserIds(context: any) {
     throw new Error(permissionError.message);
   }
 
-  const reviewerRoleCodes = Array.from(
-    new Set([
-      ...COMMAND_ROLES,
-      ...(permissionRows ?? [])
-        .map((row: any) => String(row.role_code ?? ""))
-        .filter(Boolean),
-    ]),
-  );
+  const reviewerRoleCodes = COMMAND_ROLES;
 
   const { data: membershipRows, error: membershipError } =
     await context.admin
@@ -631,3 +611,5 @@ export async function PATCH(
     );
   }
 }
+
+
