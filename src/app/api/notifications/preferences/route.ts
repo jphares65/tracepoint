@@ -1,30 +1,19 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { resolveServerAccess } from "@/lib/tracepoint/server-access";
 
-async function context() {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const admin = createAdminClient() as any;
-  const { data: membership } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  return membership?.department_id
-    ? { user, admin, departmentId: String(membership.department_id) }
-    : null;
-}
 
 export async function PUT(request: NextRequest) {
-  const resolved = await context();
-  if (!resolved) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const access = await resolveServerAccess();
+
+  if (!access.ok) {
+    return NextResponse.json(
+      { error: access.error },
+      { status: access.status },
+    );
+  }
+
+  const resolved = access.context;
 
   const body = await request.json().catch(() => ({})) as any;
   const digest = body.digest_mode === "Daily" || body.digest_mode === "Weekly" ? body.digest_mode : "Immediate";

@@ -134,7 +134,6 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
     )
     .eq("user_id", user.id)
     .eq("is_active", true)
-    .limit(2);
 
   if (membershipError) {
     return {

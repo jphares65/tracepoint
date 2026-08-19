@@ -1,5 +1,4 @@
-﻿import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 export type PersonalRifleRules = {
   allow_personally_owned_rifles: boolean;
@@ -59,67 +58,25 @@ export function getPersonalRifleDisplayName(
 }
 
 export async function getPersonalRifleRequestContext() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  const access = await resolveServerAccess();
 
-  if (error || !user) {
+  if (!access.ok) {
     return {
       user: null,
       admin: null,
       departmentId: null,
-      error: "You must be signed in to use Armory.",
+      error: access.error,
     };
   }
 
-  const admin = createAdminClient() as any;
-  const { data: membership, error: membershipError } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+  const {
+    user,
+    admin,
+    departmentId,
+    enabledFeatures,
+  } = access.context;
 
-  if (membershipError) {
-    return {
-      user,
-      admin,
-      departmentId: null,
-      error: membershipError.message,
-    };
-  }
-
-  const departmentId = membership?.department_id ?? null;
-
-  if (!departmentId) {
-    return {
-      user,
-      admin,
-      departmentId: null,
-      error: "No active department membership was found.",
-    };
-  }
-
-  const { data: entitlement, error: entitlementError } = await admin
-    .from("department_features")
-    .select("is_enabled")
-    .eq("department_id", departmentId)
-    .eq("feature_code", "firearms")
-    .maybeSingle();
-
-  if (entitlementError) {
-    return {
-      user,
-      admin,
-      departmentId,
-      error: entitlementError.message,
-    };
-  }
-
-  if (entitlement?.is_enabled !== true) {
+  if (!enabledFeatures.includes("firearms")) {
     return {
       user,
       admin,

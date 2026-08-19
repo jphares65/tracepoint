@@ -1,7 +1,5 @@
 ﻿import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import {
   accessFailureResponse,
   requireServerFeature,
@@ -11,35 +9,6 @@ import {
 type RemediationPayload = {
   remediations?: unknown;
 };
-
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in." };
-  }
-
-  return { user, error: null };
-}
-
-async function getActiveDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-
-  return data?.department_id ?? null;
-}
 
 function normalizeRemediations(value: unknown) {
   return Array.isArray(value) ? value : [];
@@ -61,24 +30,13 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
-  }
+  const {
+    admin,
+    user,
+    departmentId,
+  } = resolved.context;
 
   try {
-    const admin = createAdminClient() as any;
-    
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership found." },
-        { status: 404 },
-      );
-    }
-
     const { data, error } = await admin
       .from("pilot_remediation_workspaces")
       .select("remediations, updated_at")
@@ -122,11 +80,11 @@ export async function PUT(request: Request) {
   if (featureError) {
     return featureError;
   }
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
-  }
+  const {
+    admin,
+    user,
+    departmentId,
+  } = resolved.context;
 
   let payload: RemediationPayload;
 
@@ -142,17 +100,6 @@ export async function PUT(request: Request) {
   const remediations = normalizeRemediations(payload.remediations);
 
   try {
-    const admin = createAdminClient() as any;
-    
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership found." },
-        { status: 404 },
-      );
-    }
-
     const { error } = await admin
       .from("pilot_remediation_workspaces")
       .upsert(

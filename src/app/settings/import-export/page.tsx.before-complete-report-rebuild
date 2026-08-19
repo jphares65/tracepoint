@@ -2450,224 +2450,186 @@ export default function ImportWizardPage() {
     setExportError(null);
 
     try {
-      type JsonObject = Record<string, any>;
+      const [
+        personnelPayload,
+        rangePayload,
+        certificationPayload,
+        equipmentPayload,
+        equipmentTypesPayload,
+        offDutyPayload,
+        auditPayload,
+      ] = await Promise.all([
+        fetchJson<{
+          personnel?: Array<{
+            id: string;
+            userId: string;
+            displayName: string;
+            fullName: string;
+            email?: string | null;
+            badgeNumber?: string | null;
+            rankTitle?: string | null;
+          }>;
+          members?: Array<{
+            id: string;
+            userId: string;
+            displayName: string;
+            fullName: string;
+            email?: string | null;
+            badgeNumber?: string | null;
+            rankTitle?: string | null;
+          }>;
+        }>("/api/pilot/personnel"),
 
-      async function safeReportFetch(
-        name: string,
-        url: string,
-      ): Promise<{
-        name: string;
-        ok: boolean;
-        data: JsonObject;
-        error?: string;
-      }> {
-        try {
-          const data = await fetchJson<JsonObject>(url);
-
-          return {
-            name,
-            ok: true,
-            data,
+        fetchJson<{
+          workspace?: {
+            rangeDays?: Array<{
+            id: string;
+            title?: string;
+            status?: string;
+            date?: string;
+            location?: string;
+            notes?: string;
+          }>;
+          drillLibrary?: Array<{
+            id: string;
+            name?: string;
+            category?: string;
+          }>;
+          results?: Array<{
+            id: string;
+            rangeDayId: string;
+            drillId: string;
+            officerId: string;
+            instructorId?: string;
+            completed?: boolean;
+            passed?: boolean;
+            score?: number;
+            firearmId?: string;
+            deficiencyObserved?: boolean;
+            remedialTrainingRecommended?: boolean;
+            notes?: string;
+            }>;
           };
-        } catch (error) {
-          return {
-            name,
-            ok: false,
-            data: {},
-            error:
-              error instanceof Error
-                ? error.message
-                : `${name} could not be loaded.`,
-          };
-        }
-      }
+        }>("/api/pilot/range-workspace"),
 
-      const results = await Promise.all([
-        safeReportFetch(
-          "Personnel",
-          "/api/pilot/personnel",
-        ),
-        safeReportFetch(
-          "Range / Training",
-          "/api/pilot/range-workspace",
-        ),
-        safeReportFetch(
-          "Certifications",
-          "/api/training/certifications",
-        ),
-        safeReportFetch(
-          "Equipment",
-          "/api/equipment/assets",
-        ),
-        safeReportFetch(
-          "Equipment Types",
-          "/api/equipment/types",
-        ),
-        safeReportFetch(
-          "Off-Duty Firearms",
-          "/api/off-duty-firearms",
-        ),
-        safeReportFetch(
-          "Audit History",
-          "/api/settings/audit-log/export",
-        ),
-        safeReportFetch(
-          "Firearms",
-          "/api/armory/firearms",
-        ),
-        safeReportFetch(
-          "Ammunition",
-          "/api/pilot/ammunition",
-        ),
+        fetchJson<{
+          certifications?: Array<{
+            id: string;
+            user_id: string;
+            certification_type_id?: string | null;
+            certification_title: string;
+            issuing_organization?: string | null;
+            credential_number?: string | null;
+            issue_date?: string | null;
+            expiration_date?: string | null;
+            notes?: string | null;
+          }>;
+          members?: Array<{
+            user_id: string;
+            full_name: string;
+            badge_number?: string | null;
+            rank_title?: string | null;
+          }>;
+          certificationTypes?: Array<{
+            id: string;
+            name: string;
+            category: string;
+          }>;
+        }>("/api/training/certifications"),
+
+        fetchJson<{
+          items?: Array<{
+            id: string;
+            equipment_type_id: string;
+            manufacturer?: string | null;
+            model?: string | null;
+            serial_number?: string | null;
+            lot_number?: string | null;
+            assigned_user_id?: string | null;
+            issue_date?: string | null;
+            expiration_date?: string | null;
+            last_inspection_date?: string | null;
+            next_inspection_date?: string | null;
+            lifecycle_status:
+              | "active"
+              | "out_of_service"
+              | "removed";
+            notes?: string | null;
+          }>;
+          members?: Array<{
+            userId: string;
+            fullName: string;
+            badgeNumber?: string | null;
+            rankTitle?: string | null;
+          }>;
+        }>("/api/equipment/assets"),
+
+        fetchJson<{
+          items?: Array<{
+            id: string;
+            name: string;
+            category: string;
+          }>;
+        }>("/api/equipment/types"),
+
+        fetchJson<{
+          records?: Array<{
+            id: string;
+            officerId: string;
+            officer: string;
+            badge: string;
+            unit: string;
+            make: string;
+            model: string;
+            firearmType: string;
+            serial: string;
+            caliber: string;
+            requestStatus: string;
+            authorizationStatus: string;
+            submittedAt: string;
+            reviewedAt?: string;
+            reviewedBy?: string;
+            approvalDate?: string;
+            approvalExpires?: string;
+            decisionNotes?: string;
+            qualificationStatus: string;
+            qualificationReason: string;
+            inspectionStatus: string;
+            compliance: string;
+            officerNotes: string;
+            auditTrail?: Array<{
+              id: string;
+              action: string;
+              actor: string;
+              actorRole: string;
+              timestamp: string;
+              notes?: string;
+            }>;
+          }>;
+        }>("/api/off-duty-firearms"),
+
+        fetchJson<{
+          events?: Array<{
+            id: string;
+            entity_type?: string | null;
+            entity_id?: string | null;
+            action?: string | null;
+            changed_by_user_id?: string | null;
+            change_note?: string | null;
+            created_at?: string | null;
+          }>;
+        }>("/api/settings/audit-log/export"),
       ]);
 
-      const byName = new Map(
-        results.map((result) => [
-          result.name,
-          result,
-        ]),
-      );
-
-      const personnelData =
-        byName.get("Personnel")?.data ?? {};
-
-      const rangeData =
-        byName.get("Range / Training")?.data ?? {};
-
-      const certificationData =
-        byName.get("Certifications")?.data ?? {};
-
-      const equipmentData =
-        byName.get("Equipment")?.data ?? {};
-
-      const equipmentTypesData =
-        byName.get("Equipment Types")?.data ?? {};
-
-      const offDutyData =
-        byName.get("Off-Duty Firearms")?.data ?? {};
-
-      const auditData =
-        byName.get("Audit History")?.data ?? {};
-
-      const firearmsData =
-        byName.get("Firearms")?.data ?? {};
-
-      const ammunitionData =
-        byName.get("Ammunition")?.data ?? {};
+      const rangeWorkspace =
+        rangePayload.workspace ?? {};
 
       const personnel =
-        personnelData.personnel ??
-        personnelData.members ??
+        personnelPayload.personnel ??
+        personnelPayload.members ??
         [];
 
-      const workspace =
-        rangeData.workspace ??
-        rangeData;
-
-      const rangeDays =
-        workspace.rangeDays ?? [];
-
-      const drills =
-        workspace.drillLibrary ?? [];
-
-      const trainingResults =
-        workspace.results ?? [];
-
-      const certifications =
-        certificationData.certifications ?? [];
-
-      const equipment =
-        equipmentData.items ?? [];
-
-      const equipmentTypes =
-        equipmentTypesData.items ?? [];
-
-      const offDuty =
-        offDutyData.records ?? [];
-
-      const audit =
-        auditData.events ?? [];
-
-      const firearms =
-        firearmsData.firearms ??
-        firearmsData.items ??
-        [];
-
-      const ammunitionWorkspace =
-        ammunitionData.workspace ??
-        ammunitionData;
-
-      const dutyLots =
-        ammunitionWorkspace.dutyLots ?? [];
-
-      const trainingLots =
-        ammunitionWorkspace.trainingLots ?? [];
-
-      const selectedOfficerId =
-        reportOfficerId === "all"
-          ? null
-          : reportOfficerId;
-
-      function recordMatchesOfficer(
-        possibleIds: unknown[],
-      ) {
-        if (!selectedOfficerId) {
-          return true;
-        }
-
-        return possibleIds.some(
-          (value) =>
-            String(value ?? "") ===
-            selectedOfficerId,
-        );
-      }
-
-      function inDateRange(
-        value?: string | null,
-      ) {
-        if (
-          reportDateMode !== "custom" ||
-          !value
-        ) {
-          return true;
-        }
-
-        const parsed = new Date(
-          value.length === 10
-            ? `${value}T12:00:00`
-            : value,
-        );
-
-        if (
-          Number.isNaN(parsed.getTime())
-        ) {
-          return false;
-        }
-
-        if (reportStartDate) {
-          const start = new Date(
-            `${reportStartDate}T00:00:00`,
-          );
-
-          if (parsed < start) {
-            return false;
-          }
-        }
-
-        if (reportEndDate) {
-          const end = new Date(
-            `${reportEndDate}T23:59:59.999`,
-          );
-
-          if (parsed > end) {
-            return false;
-          }
-        }
-
-        return true;
-      }
-
-      const personnelMap = new Map<
+      const personnelById = new Map<
         string,
         {
           name: string;
@@ -2677,336 +2639,234 @@ export default function ImportWizardPage() {
       >();
 
       for (const member of personnel) {
-        const name =
-          member.fullName ??
-          member.displayName ??
-          member.full_name ??
-          member.name ??
-          member.userId ??
-          member.user_id ??
-          member.id ??
-          "Unknown Officer";
-
         const value = {
-          name: String(name),
-          badge: String(
-            member.badgeNumber ??
-              member.badge_number ??
-              "",
-          ),
-          rank: String(
-            member.rankTitle ??
-              member.rank_title ??
-              "",
-          ),
+          name:
+            member.fullName ||
+            member.displayName ||
+            member.userId,
+          badge: member.badgeNumber ?? "",
+          rank: member.rankTitle ?? "",
         };
 
-        for (const id of [
-          member.id,
-          member.userId,
-          member.user_id,
-        ]) {
-          if (id) {
-            personnelMap.set(
-              String(id),
-              value,
-            );
+        personnelById.set(member.id, value);
+        personnelById.set(member.userId, value);
+      }
+
+      for (const member of certificationPayload.members ?? []) {
+        personnelById.set(member.user_id, {
+          name: member.full_name,
+          badge: member.badge_number ?? "",
+          rank: member.rank_title ?? "",
+        });
+      }
+
+      for (const member of equipmentPayload.members ?? []) {
+        personnelById.set(member.userId, {
+          name: member.fullName,
+          badge: member.badgeNumber ?? "",
+          rank: member.rankTitle ?? "",
+        });
+      }
+
+      const selectedOfficer =
+        reportOfficerId === "all"
+          ? null
+          : reportOfficerId;
+
+      function inDateRange(value?: string | null) {
+        if (
+          reportDateMode !== "custom" ||
+          !value
+        ) {
+          return true;
+        }
+
+        const time = new Date(
+          value.length === 10
+            ? `${value}T12:00:00`
+            : value,
+        ).getTime();
+
+        if (!Number.isFinite(time)) {
+          return false;
+        }
+
+        if (reportStartDate) {
+          const start = new Date(
+            `${reportStartDate}T00:00:00`,
+          ).getTime();
+
+          if (time < start) {
+            return false;
           }
         }
-      }
 
-      for (
-        const member of
-        certificationData.members ?? []
-      ) {
-        const id =
-          member.user_id ??
-          member.userId;
+        if (reportEndDate) {
+          const end = new Date(
+            `${reportEndDate}T23:59:59.999`,
+          ).getTime();
 
-        if (id) {
-          personnelMap.set(
-            String(id),
-            {
-              name: String(
-                member.full_name ??
-                  member.fullName ??
-                  id,
-              ),
-              badge: String(
-                member.badge_number ??
-                  member.badgeNumber ??
-                  "",
-              ),
-              rank: String(
-                member.rank_title ??
-                  member.rankTitle ??
-                  "",
-              ),
-            },
-          );
+          if (time > end) {
+            return false;
+          }
         }
+
+        return true;
       }
 
-      for (
-        const member of
-        equipmentData.members ?? []
-      ) {
-        const id =
-          member.userId ??
-          member.user_id;
-
-        if (id) {
-          personnelMap.set(
-            String(id),
-            {
-              name: String(
-                member.fullName ??
-                  member.full_name ??
-                  id,
-              ),
-              badge: String(
-                member.badgeNumber ??
-                  member.badge_number ??
-                  "",
-              ),
-              rank: String(
-                member.rankTitle ??
-                  member.rank_title ??
-                  "",
-              ),
-            },
-          );
-        }
-      }
-
-      const rangeDaysById =
-        new Map<string, any>();
-
-      for (const rangeDay of rangeDays) {
-        if (rangeDay.id) {
-          rangeDaysById.set(
-            String(rangeDay.id),
+      const rangeDaysById = new Map(
+        (rangeWorkspace.rangeDays ?? []).map(
+          (rangeDay) => [
+            rangeDay.id,
             rangeDay,
-          );
-        }
-      }
+          ],
+        ),
+      );
 
-      const drillsById =
-        new Map<string, any>();
-
-      for (const drill of drills) {
-        if (drill.id) {
-          drillsById.set(
-            String(drill.id),
+      const drillsById = new Map(
+        (rangeWorkspace.drillLibrary ?? []).map(
+          (drill) => [
+            drill.id,
             drill,
-          );
+          ],
+        ),
+      );
+
+      const trainingResults = (
+        rangeWorkspace.results ?? []
+      ).filter((result) => {
+        if (
+          selectedOfficer &&
+          result.officerId !== selectedOfficer
+        ) {
+          return false;
         }
-      }
 
-      const equipmentTypesById =
-        new Map<string, any>();
+        const rangeDay =
+          rangeDaysById.get(result.rangeDayId);
 
-      for (const type of equipmentTypes) {
-        if (type.id) {
-          equipmentTypesById.set(
-            String(type.id),
-            type,
+        return inDateRange(rangeDay?.date);
+      });
+
+      const qualificationResults =
+        trainingResults.filter((result) => {
+          const drill =
+            drillsById.get(result.drillId);
+
+          const classification =
+            `${drill?.name ?? ""} ${drill?.category ?? ""}`
+              .toLowerCase();
+
+          return (
+            classification.includes(
+              "qualification",
+            ) ||
+            classification.includes(
+              "qualifying",
+            ) ||
+            classification.includes("rifle")
           );
+        });
+
+      const rangeDays = (
+        rangeWorkspace.rangeDays ?? []
+      ).filter((rangeDay) => {
+        if (!inDateRange(rangeDay.date)) {
+          return false;
         }
-      }
 
-      const filteredTraining =
-        trainingResults.filter(
-          (result: any) => {
-            if (
-              !recordMatchesOfficer([
-                result.officerId,
-                result.officer_id,
-                result.userId,
-                result.user_id,
-              ])
-            ) {
-              return false;
-            }
+        if (!selectedOfficer) {
+          return true;
+        }
 
-            const day =
-              rangeDaysById.get(
-                String(
-                  result.rangeDayId ??
-                    result.range_day_id ??
-                    "",
-                ),
-              );
-
-            return inDateRange(
-              day?.date ??
-                result.date ??
-                result.trainingDate,
-            );
-          },
+        return trainingResults.some(
+          (result) =>
+            result.rangeDayId === rangeDay.id &&
+            result.officerId === selectedOfficer,
         );
+      });
 
-      const filteredQualifications =
-        filteredTraining.filter(
-          (result: any) => {
-            const drill =
-              drillsById.get(
-                String(
-                  result.drillId ??
-                    result.drill_id ??
-                    "",
-                ),
-              );
+      const certifications = (
+        certificationPayload.certifications ??
+        []
+      ).filter((certification) => {
+        if (
+          selectedOfficer &&
+          certification.user_id !==
+            selectedOfficer
+        ) {
+          return false;
+        }
 
-            const classification =
-              `${drill?.name ?? ""} ${
-                drill?.category ?? ""
-              }`.toLowerCase();
-
-            return (
-              classification.includes(
-                "qualification",
-              ) ||
-              classification.includes(
-                "qualifying",
-              ) ||
-              classification.includes(
-                "rifle",
-              )
-            );
-          },
+        return inDateRange(
+          certification.issue_date ??
+            certification.expiration_date,
         );
+      });
 
-      const filteredRangeDays =
-        rangeDays.filter(
-          (rangeDay: any) => {
-            if (
-              !inDateRange(
-                rangeDay.date,
-              )
-            ) {
-              return false;
-            }
+      const equipmentTypesById = new Map(
+        (equipmentTypesPayload.items ?? []).map(
+          (type) => [type.id, type],
+        ),
+      );
 
-            if (!selectedOfficerId) {
-              return true;
-            }
+      const equipment = (
+        equipmentPayload.items ?? []
+      ).filter((asset) => {
+        if (
+          selectedOfficer &&
+          asset.assigned_user_id !==
+            selectedOfficer
+        ) {
+          return false;
+        }
 
-            return filteredTraining.some(
-              (result: any) =>
-                String(
-                  result.rangeDayId ??
-                    result.range_day_id ??
-                    "",
-                ) ===
-                String(rangeDay.id),
-            );
-          },
+        return inDateRange(
+          asset.issue_date ??
+            asset.expiration_date,
         );
+      });
 
-      const filteredCertifications =
-        certifications.filter(
-          (certification: any) => {
-            if (
-              !recordMatchesOfficer([
-                certification.user_id,
-                certification.userId,
-                certification.officerId,
-              ])
-            ) {
-              return false;
-            }
+      const offDuty = (
+        offDutyPayload.records ?? []
+      ).filter((record) => {
+        if (
+          selectedOfficer &&
+          record.officerId !== selectedOfficer
+        ) {
+          return false;
+        }
 
-            return inDateRange(
-              certification.issue_date ??
-                certification.issueDate ??
-                certification.expiration_date ??
-                certification.expirationDate,
-            );
-          },
+        if (!inDateRange(record.submittedAt)) {
+          return false;
+        }
+
+        if (
+          reportStatus !== "all" &&
+          record.requestStatus !== reportStatus
+        ) {
+          return false;
+        }
+
+        return true;
+      });
+
+      const audit = (
+        auditPayload.events ?? []
+      ).filter((event) => {
+        if (!inDateRange(event.created_at)) {
+          return false;
+        }
+
+        if (!selectedOfficer) {
+          return true;
+        }
+
+        return (
+          event.changed_by_user_id ===
+          selectedOfficer
         );
-
-      const filteredEquipment =
-        equipment.filter(
-          (asset: any) => {
-            if (
-              !recordMatchesOfficer([
-                asset.assigned_user_id,
-                asset.assignedUserId,
-                asset.userId,
-              ])
-            ) {
-              return false;
-            }
-
-            return inDateRange(
-              asset.issue_date ??
-                asset.issueDate ??
-                asset.expiration_date ??
-                asset.expirationDate,
-            );
-          },
-        );
-
-      const filteredOffDuty =
-        offDuty.filter(
-          (record: any) => {
-            if (
-              !recordMatchesOfficer([
-                record.officerId,
-                record.officer_id,
-                record.userId,
-              ])
-            ) {
-              return false;
-            }
-
-            if (
-              !inDateRange(
-                record.submittedAt ??
-                  record.submitted_at,
-              )
-            ) {
-              return false;
-            }
-
-            if (
-              reportStatus !== "all" &&
-              record.requestStatus !==
-                reportStatus
-            ) {
-              return false;
-            }
-
-            return true;
-          },
-        );
-
-      const filteredAudit =
-        audit.filter(
-          (event: any) => {
-            if (
-              !inDateRange(
-                event.created_at ??
-                  event.createdAt,
-              )
-            ) {
-              return false;
-            }
-
-            if (!selectedOfficerId) {
-              return true;
-            }
-
-            return (
-              String(
-                event.changed_by_user_id ??
-                  event.changedByUserId ??
-                  "",
-              ) === selectedOfficerId
-            );
-          },
-        );
+      });
 
       const {
         PDFDocument,
@@ -3014,51 +2874,39 @@ export default function ImportWizardPage() {
         rgb,
       } = await import("pdf-lib");
 
-      const pdf =
-        await PDFDocument.create();
+      const pdf = await PDFDocument.create();
 
-      const regular =
-        await pdf.embedFont(
-          StandardFonts.Helvetica,
-        );
+      const regularFont = await pdf.embedFont(
+        StandardFonts.Helvetica,
+      );
 
-      const bold =
-        await pdf.embedFont(
-          StandardFonts.HelveticaBold,
-        );
+      const boldFont = await pdf.embedFont(
+        StandardFonts.HelveticaBold,
+      );
 
       let logo:
-        | Awaited<
-            ReturnType<typeof pdf.embedPng>
-          >
+        | Awaited<ReturnType<typeof pdf.embedPng>>
         | null = null;
 
       try {
-        const logoResponse =
-          await fetch(
-            "/tracepoint-logo-dark.png",
-          );
+        const response = await fetch(
+          "/tracepoint-logo-dark.png",
+        );
 
-        if (logoResponse.ok) {
+        if (response.ok) {
           logo = await pdf.embedPng(
-            await logoResponse.arrayBuffer(),
+            await response.arrayBuffer(),
           );
         }
       } catch {
         logo = null;
       }
 
-      const WIDTH = 612;
-      const HEIGHT = 792;
-      const LEFT = 44;
-      const RIGHT = 44;
+      const PAGE_WIDTH = 612;
+      const PAGE_HEIGHT = 792;
+      const LEFT = 46;
+      const RIGHT = 46;
       const BOTTOM = 52;
-
-      const dark = rgb(
-        2 / 255,
-        6 / 255,
-        23 / 255,
-      );
 
       const textColor = rgb(
         15 / 255,
@@ -3066,31 +2914,26 @@ export default function ImportWizardPage() {
         42 / 255,
       );
 
-      const muted = rgb(
+      const mutedColor = rgb(
         71 / 255,
         85 / 255,
         105 / 255,
       );
 
-      const border = rgb(
+      const lineColor = rgb(
         203 / 255,
         213 / 255,
         225 / 255,
       );
 
-      const white = rgb(1, 1, 1);
+      let page = pdf.addPage([
+        PAGE_WIDTH,
+        PAGE_HEIGHT,
+      ]);
 
-      let page =
-        pdf.addPage([
-          WIDTH,
-          HEIGHT,
-        ]);
+      let y = 720;
 
-      let y = 630;
-
-      function clean(
-        value: unknown,
-      ) {
+      function safe(value: unknown) {
         if (
           value === null ||
           value === undefined ||
@@ -3102,9 +2945,7 @@ export default function ImportWizardPage() {
         return String(value);
       }
 
-      function dateText(
-        value?: string | null,
-      ) {
+      function prettyDate(value?: string | null) {
         if (!value) {
           return "—";
         }
@@ -3115,62 +2956,53 @@ export default function ImportWizardPage() {
             : value,
         );
 
-        if (
-          Number.isNaN(
-            date.getTime(),
-          )
-        ) {
+        if (Number.isNaN(date.getTime())) {
           return value;
         }
 
         return date.toLocaleDateString();
       }
 
-      function dateTimeText(
+      function prettyDateTime(
         value?: string | null,
       ) {
         if (!value) {
           return "—";
         }
 
-        const date =
-          new Date(value);
+        const date = new Date(value);
 
-        if (
-          Number.isNaN(
-            date.getTime(),
-          )
-        ) {
+        if (Number.isNaN(date.getTime())) {
           return value;
         }
 
         return date.toLocaleString();
       }
 
-      function wrapText(
+      function wrap(
         value: unknown,
-        maxWidth: number,
+        width: number,
         size: number,
-        font = regular,
+        font = regularFont,
       ) {
         const words =
-          clean(value).split(/\s+/);
+          safe(value).split(/\s+/);
 
         const lines: string[] = [];
         let current = "";
 
         for (const word of words) {
-          const test = current
+          const candidate = current
             ? `${current} ${word}`
             : word;
 
           if (
             font.widthOfTextAtSize(
-              test,
+              candidate,
               size,
-            ) <= maxWidth
+            ) <= width
           ) {
-            current = test;
+            current = candidate;
           } else {
             if (current) {
               lines.push(current);
@@ -3189,59 +3021,41 @@ export default function ImportWizardPage() {
           : [""];
       }
 
-      function drawMasthead() {
-        page.drawRectangle({
-          x: 0,
-          y: 652,
-          width: WIDTH,
-          height: 140,
-          color: dark,
-        });
-
+      function drawHeader() {
         if (logo) {
-          const dimensions =
-            logo.scale(0.16);
+          const scaled = logo.scale(0.13);
 
-          const maxWidth = 190;
+          const maxWidth = 170;
 
           const ratio =
-            dimensions.width >
-            maxWidth
-              ? maxWidth /
-                dimensions.width
+            scaled.width > maxWidth
+              ? maxWidth / scaled.width
               : 1;
 
           page.drawImage(logo, {
             x: LEFT,
-            y: 718,
-            width:
-              dimensions.width *
-              ratio,
-            height:
-              dimensions.height *
-              ratio,
+            y: 713,
+            width: scaled.width * ratio,
+            height: scaled.height * ratio,
           });
         } else {
-          page.drawText(
-            "TRACEPOINT",
-            {
-              x: LEFT,
-              y: 740,
-              size: 20,
-              font: bold,
-              color: white,
-            },
-          );
+          page.drawText("TRACEPOINT", {
+            x: LEFT,
+            y: 735,
+            size: 18,
+            font: boldFont,
+            color: textColor,
+          });
         }
 
         page.drawText(
           "COMPLETE TRACEPOINT REPORT",
           {
             x: LEFT,
-            y: 688,
-            size: 15,
-            font: bold,
-            color: white,
+            y: 680,
+            size: 16,
+            font: boldFont,
+            color: textColor,
           },
         );
 
@@ -3249,43 +3063,46 @@ export default function ImportWizardPage() {
           "Operational Accountability. Verified.",
           {
             x: LEFT,
-            y: 670,
+            y: 664,
             size: 8,
-            font: regular,
-            color: rgb(
-              203 / 255,
-              213 / 255,
-              225 / 255,
-            ),
+            font: boldFont,
+            color: mutedColor,
           },
         );
 
-        y = 630;
+        page.drawLine({
+          start: {
+            x: LEFT,
+            y: 652,
+          },
+          end: {
+            x: PAGE_WIDTH - RIGHT,
+            y: 652,
+          },
+          thickness: 0.7,
+          color: lineColor,
+        });
+
+        y = 632;
       }
 
-      function nextPage() {
-        page =
-          pdf.addPage([
-            WIDTH,
-            HEIGHT,
-          ]);
+      function newPage() {
+        page = pdf.addPage([
+          PAGE_WIDTH,
+          PAGE_HEIGHT,
+        ]);
 
-        drawMasthead();
+        drawHeader();
       }
 
-      function ensureSpace(
-        required: number,
-      ) {
-        if (
-          y - required <
-          BOTTOM
-        ) {
-          nextPage();
+      function ensureSpace(amount: number) {
+        if (y - amount < BOTTOM) {
+          newPage();
         }
       }
 
-      function write(
-        value: unknown,
+      function line(
+        value: string,
         options?: {
           bold?: boolean;
           size?: number;
@@ -3293,41 +3110,35 @@ export default function ImportWizardPage() {
         },
       ) {
         const size =
-          options?.size ?? 8;
+          options?.size ?? 8.5;
 
         const indent =
           options?.indent ?? 0;
 
-        const font =
+        const lines = wrap(
+          value,
+          PAGE_WIDTH -
+            LEFT -
+            RIGHT -
+            indent,
+          size,
           options?.bold
-            ? bold
-            : regular;
-
-        const lines =
-          wrapText(
-            value,
-            WIDTH -
-              LEFT -
-              RIGHT -
-              indent,
-            size,
-            font,
-          );
+            ? boldFont
+            : regularFont,
+        );
 
         ensureSpace(
-          lines.length *
-            (size + 4) +
-            3,
+          lines.length * (size + 4) + 2,
         );
 
         for (const row of lines) {
           page.drawText(row, {
-            x:
-              LEFT +
-              indent,
+            x: LEFT + indent,
             y,
             size,
-            font,
+            font: options?.bold
+              ? boldFont
+              : regularFont,
             color: textColor,
           });
 
@@ -3339,25 +3150,24 @@ export default function ImportWizardPage() {
         label: string,
         value: unknown,
       ) {
-        write(
-          `${label}: ${clean(
-            value,
-          )}`,
+        line(
+          `${label}: ${safe(value)}`,
+          {
+            size: 8.5,
+          },
         );
       }
 
-      function section(
-        title: string,
-      ) {
-        ensureSpace(34);
+      function heading(title: string) {
+        ensureSpace(32);
 
-        y -= 8;
+        y -= 6;
 
         page.drawText(title, {
           x: LEFT,
           y,
           size: 11,
-          font: bold,
+          font: boldFont,
           color: textColor,
         });
 
@@ -3369,24 +3179,20 @@ export default function ImportWizardPage() {
             y,
           },
           end: {
-            x:
-              WIDTH -
-              RIGHT,
+            x: PAGE_WIDTH - RIGHT,
             y,
           },
-          thickness: 0.7,
-          color: border,
+          thickness: 0.6,
+          color: lineColor,
         });
 
-        y -= 15;
+        y -= 14;
       }
 
-      function itemHeading(
-        value: string,
-      ) {
+      function subheading(title: string) {
         ensureSpace(24);
 
-        write(value, {
+        line(title, {
           bold: true,
           size: 9,
         });
@@ -3394,26 +3200,21 @@ export default function ImportWizardPage() {
         y -= 2;
       }
 
-      drawMasthead();
+      drawHeader();
 
-      const selectedOfficer =
-        selectedOfficerId
-          ? personnelMap.get(
-              selectedOfficerId,
+      const selectedOfficerIdentity =
+        selectedOfficer
+          ? personnelById.get(
+              selectedOfficer,
             )
           : null;
 
-      section(
-        "REPORT PARAMETERS",
-      );
+      heading("REPORT PARAMETERS");
 
       field(
         "Officer",
-        selectedOfficer
-          ?.name ??
-          (selectedOfficerId
-            ? selectedOfficerId
-            : "All Officers"),
+        selectedOfficerIdentity?.name ??
+          "All Officers",
       );
 
       field(
@@ -3422,13 +3223,13 @@ export default function ImportWizardPage() {
           ? "All Time"
           : `${
               reportStartDate
-                ? dateText(
+                ? prettyDate(
                     reportStartDate,
                   )
                 : "Beginning"
             } through ${
               reportEndDate
-                ? dateText(
+                ? prettyDate(
                     reportEndDate,
                   )
                 : "Present"
@@ -3440,823 +3241,590 @@ export default function ImportWizardPage() {
         new Date().toLocaleString(),
       );
 
-      section(
-        "EXECUTIVE SUMMARY",
-      );
-
-      field(
-        "Personnel Records",
-        personnel.length,
-      );
-
-      field(
-        "Firearms",
-        firearms.length,
-      );
-
-      field(
-        "Duty Ammunition Lots",
-        dutyLots.length,
-      );
-
-      field(
-        "Training Ammunition Lots",
-        trainingLots.length,
-      );
+      heading("EXECUTIVE SUMMARY");
 
       field(
         "Qualification Records",
-        filteredQualifications.length,
+        qualificationResults.length,
       );
 
       field(
         "Training Records",
-        filteredTraining.length,
+        trainingResults.length,
       );
 
       field(
         "Range Days",
-        filteredRangeDays.length,
+        rangeDays.length,
       );
 
       field(
         "Certifications",
-        filteredCertifications.length,
+        certifications.length,
       );
 
       field(
         "Equipment Assets",
-        filteredEquipment.length,
+        equipment.length,
       );
 
       field(
         "Off-Duty Firearm Requests",
-        filteredOffDuty.length,
+        offDuty.length,
       );
 
       field(
         "Audit Events",
-        filteredAudit.length,
+        audit.length,
       );
 
-      const failedSections =
-        results.filter(
-          (result) =>
-            !result.ok,
-        );
-
-      if (
-        failedSections.length
-      ) {
-        section(
-          "DATA AVAILABILITY",
-        );
-
-        write(
-          "The report was generated successfully, but the following sections could not be retrieved:",
-        );
-
-        for (
-          const failed of
-          failedSections
-        ) {
-          write(
-            `${failed.name}: ${
-              failed.error ??
-              "Unavailable"
-            }`,
-            {
-              indent: 10,
-            },
-          );
-        }
-      }
-
-      section(
-        "QUALIFICATION HISTORY",
-      );
-
-      if (
-        !filteredQualifications.length
-      ) {
-        write(
-          "No matching qualification records.",
-        );
-      }
-
-      for (
-        const result of
-        filteredQualifications
-      ) {
-        const day =
-          rangeDaysById.get(
-            String(
-              result.rangeDayId ??
-                result.range_day_id ??
-                "",
-            ),
-          );
-
-        const drill =
-          drillsById.get(
-            String(
-              result.drillId ??
-                result.drill_id ??
-                "",
-            ),
-          );
-
-        const officer =
-          personnelMap.get(
-            String(
-              result.officerId ??
-                result.officer_id ??
-                "",
-            ),
-          );
-
-        itemHeading(
-          `${dateText(
-            day?.date,
-          )} — ${
-            officer?.name ??
-            "Officer"
-          }`,
-        );
-
-        field(
-          "Course / Drill",
-          drill?.name,
-        );
-
-        field(
-          "Category",
-          drill?.category,
-        );
-
-        field(
-          "Score",
-          result.score,
-        );
-
-        field(
-          "Result",
-          result.passed === true
-            ? "Pass"
-            : result.passed === false
-              ? "Fail"
-              : result.completed
-                ? "Completed"
-                : "Incomplete",
-        );
-
-        if (
-          reportIncludeNotes &&
-          result.notes
-        ) {
-          field(
-            "Notes",
-            result.notes,
-          );
-        }
-
-        y -= 5;
-      }
-
-      section(
-        "TRAINING RECORDS",
-      );
-
-      if (
-        !filteredTraining.length
-      ) {
-        write(
-          "No matching training records.",
-        );
-      }
-
-      for (
-        const result of
-        filteredTraining
-      ) {
-        const day =
-          rangeDaysById.get(
-            String(
-              result.rangeDayId ??
-                result.range_day_id ??
-                "",
-            ),
-          );
-
-        const drill =
-          drillsById.get(
-            String(
-              result.drillId ??
-                result.drill_id ??
-                "",
-            ),
-          );
-
-        const officer =
-          personnelMap.get(
-            String(
-              result.officerId ??
-                result.officer_id ??
-                "",
-            ),
-          );
-
-        itemHeading(
-          `${dateText(
-            day?.date,
-          )} — ${
-            drill?.name ??
-            "Training Activity"
-          }`,
-        );
-
-        field(
-          "Officer",
-          officer?.name,
-        );
-
-        field(
-          "Range Day",
-          day?.title,
-        );
-
-        field(
-          "Location",
-          day?.location,
-        );
-
-        field(
-          "Score",
-          result.score,
-        );
-
-        field(
-          "Completed",
-          result.completed
-            ? "Yes"
-            : "No",
-        );
-
-        y -= 5;
-      }
-
-      section("RANGE DAYS");
-
-      if (
-        !filteredRangeDays.length
-      ) {
-        write(
-          "No matching range days.",
-        );
-      }
-
-      for (
-        const day of
-        filteredRangeDays
-      ) {
-        itemHeading(
-          `${dateText(
-            day.date,
-          )} — ${clean(
-            day.title,
-          )}`,
-        );
-
-        field(
-          "Status",
-          day.status,
-        );
-
-        field(
-          "Location",
-          day.location,
-        );
-
-        if (
-          reportIncludeNotes &&
-          day.notes
-        ) {
-          field(
-            "Notes",
-            day.notes,
-          );
-        }
-
-        y -= 5;
-      }
-
-      section(
-        "CERTIFICATIONS",
-      );
-
-      if (
-        !filteredCertifications.length
-      ) {
-        write(
-          "No matching certification records.",
-        );
-      }
-
-      for (
-        const certification of
-        filteredCertifications
-      ) {
-        const officer =
-          personnelMap.get(
-            String(
-              certification.user_id ??
-                certification.userId ??
-                "",
-            ),
-          );
-
-        itemHeading(
-          `${officer?.name ?? "Officer"} — ${
-            certification.certification_title ??
-            certification.title ??
-            "Certification"
-          }`,
-        );
-
-        field(
-          "Issuing Organization",
-          certification.issuing_organization ??
-            certification.issuingOrganization,
-        );
-
-        field(
-          "Credential Number",
-          certification.credential_number ??
-            certification.credentialNumber,
-        );
-
-        field(
-          "Issue Date",
-          dateText(
-            certification.issue_date ??
-              certification.issueDate,
-          ),
-        );
-
-        field(
-          "Expiration Date",
-          dateText(
-            certification.expiration_date ??
-              certification.expirationDate,
-          ),
-        );
-
-        if (
-          reportIncludeNotes &&
-          certification.notes
-        ) {
-          field(
-            "Notes",
-            certification.notes,
-          );
-        }
-
-        y -= 5;
-      }
-
-      section("EQUIPMENT");
-
-      if (
-        !filteredEquipment.length
-      ) {
-        write(
-          "No matching equipment records.",
-        );
-      }
-
-      for (
-        const asset of
-        filteredEquipment
-      ) {
-        const type =
-          equipmentTypesById.get(
-            String(
-              asset.equipment_type_id ??
-                asset.equipmentTypeId ??
-                "",
-            ),
-          );
-
-        const officer =
-          personnelMap.get(
-            String(
-              asset.assigned_user_id ??
-                asset.assignedUserId ??
-                "",
-            ),
-          );
-
-        itemHeading(
-          `${type?.name ?? "Equipment"} — ${
-            officer?.name ??
-            "Unassigned"
-          }`,
-        );
-
-        field(
-          "Manufacturer / Model",
-          [
-            asset.manufacturer,
-            asset.model,
-          ]
-            .filter(Boolean)
-            .join(" "),
-        );
-
-        field(
-          "Serial Number",
-          asset.serial_number ??
-            asset.serialNumber,
-        );
-
-        field(
-          "Lifecycle Status",
-          asset.lifecycle_status ??
-            asset.lifecycleStatus,
-        );
-
-        field(
-          "Issue Date",
-          dateText(
-            asset.issue_date ??
-              asset.issueDate,
-          ),
-        );
-
-        field(
-          "Expiration Date",
-          dateText(
-            asset.expiration_date ??
-              asset.expirationDate,
-          ),
-        );
-
-        if (
-          reportIncludeNotes &&
-          asset.notes
-        ) {
-          field(
-            "Notes",
-            asset.notes,
-          );
-        }
-
-        y -= 5;
-      }
-
-      section(
-        "OFF-DUTY FIREARMS",
-      );
-
-      if (
-        !filteredOffDuty.length
-      ) {
-        write(
-          "No matching off-duty firearm requests.",
-        );
-      }
-
-      for (
-        const record of
-        filteredOffDuty
-      ) {
-        itemHeading(
-          `${record.officer ?? "Officer"} — ${
-            record.make ?? ""
-          } ${
-            record.model ?? ""
-          }`,
-        );
-
-        field(
-          "Serial Number",
-          record.serial,
-        );
-
-        field(
-          "Caliber",
-          record.caliber,
-        );
-
-        field(
-          "Request Status",
-          record.requestStatus,
-        );
-
-        field(
-          "Authorization Status",
-          record.authorizationStatus,
-        );
-
-        field(
-          "Submitted",
-          dateTimeText(
-            record.submittedAt,
-          ),
-        );
-
-        field(
-          "Qualification Status",
-          record.qualificationStatus,
-        );
-
-        field(
-          "Inspection Status",
-          record.inspectionStatus,
-        );
-
-        field(
-          "Compliance",
-          record.compliance,
-        );
-
-        if (
-          reportIncludeNotes
-        ) {
-          field(
-            "Officer Notes",
-            record.officerNotes,
+      heading("QUALIFICATION HISTORY");
+
+      if (qualificationResults.length === 0) {
+        line("No matching qualification records.");
+      } else {
+        for (const result of qualificationResults) {
+          const rangeDay =
+            rangeDaysById.get(
+              result.rangeDayId,
+            );
+
+          const drill =
+            drillsById.get(
+              result.drillId,
+            );
+
+          const officer =
+            personnelById.get(
+              result.officerId,
+            );
+
+          subheading(
+            `${prettyDate(rangeDay?.date)} — ${officer?.name ?? result.officerId}`,
           );
 
           field(
-            "Decision Notes",
-            record.decisionNotes,
+            "Course / Drill",
+            drill?.name,
           );
-        }
 
-        if (
-          reportIncludeWorkflow &&
-          Array.isArray(
-            record.auditTrail,
-          )
-        ) {
-          for (
-            const event of
-            record.auditTrail
+          field(
+            "Category",
+            drill?.category,
+          );
+
+          field(
+            "Score",
+            result.score,
+          );
+
+          field(
+            "Result",
+            result.passed === true
+              ? "Pass"
+              : result.passed === false
+                ? "Fail"
+                : result.completed
+                  ? "Completed"
+                  : "Incomplete",
+          );
+
+          if (
+            reportIncludeNotes &&
+            result.notes
           ) {
-            write(
-              `${dateTimeText(
-                event.timestamp,
-              )} — ${
-                event.action ??
-                ""
-              } — ${
-                event.actor ??
-                ""
-              }`,
-              {
-                indent: 12,
-                size: 7.5,
-              },
+            field(
+              "Notes",
+              result.notes,
             );
           }
+
+          y -= 5;
         }
-
-        y -= 6;
       }
 
-      section(
-        "FIREARMS INVENTORY",
-      );
+      heading("TRAINING RECORDS");
 
-      if (!firearms.length) {
-        write(
-          "No firearm inventory records returned.",
-        );
-      }
+      if (trainingResults.length === 0) {
+        line("No matching training records.");
+      } else {
+        for (const result of trainingResults) {
+          const rangeDay =
+            rangeDaysById.get(
+              result.rangeDayId,
+            );
 
-      for (
-        const firearm of
-        firearms
-      ) {
-        itemHeading(
-          `${
-            firearm.make ??
-            "Firearm"
-          } ${
-            firearm.model ??
-            ""
-          }`,
-        );
+          const drill =
+            drillsById.get(
+              result.drillId,
+            );
 
-        field(
-          "Serial Number",
-          firearm.serial_number ??
-            firearm.serialNumber ??
-            firearm.serial,
-        );
+          const officer =
+            personnelById.get(
+              result.officerId,
+            );
 
-        field(
-          "Caliber",
-          firearm.caliber,
-        );
-
-        field(
-          "Status",
-          firearm.status ??
-            firearm.lifecycle_status,
-        );
-
-        y -= 4;
-      }
-
-      section("AMMUNITION");
-
-      field(
-        "Duty Lots",
-        dutyLots.length,
-      );
-
-      field(
-        "Training Lots",
-        trainingLots.length,
-      );
-
-      section(
-        "AUDIT HISTORY",
-      );
-
-      if (
-        !filteredAudit.length
-      ) {
-        write(
-          "No matching audit events.",
-        );
-      }
-
-      for (
-        const event of
-        filteredAudit
-      ) {
-        itemHeading(
-          `${dateTimeText(
-            event.created_at ??
-              event.createdAt,
-          )} — ${clean(
-            event.action,
-          )}`,
-        );
-
-        field(
-          "Entity Type",
-          event.entity_type ??
-            event.entityType,
-        );
-
-        field(
-          "Entity ID",
-          event.entity_id ??
-            event.entityId,
-        );
-
-        field(
-          "Changed By User ID",
-          event.changed_by_user_id ??
-            event.changedByUserId,
-        );
-
-        if (
-          reportIncludeNotes &&
-          (
-            event.change_note ??
-            event.changeNote
-          )
-        ) {
-          field(
-            "Change Note",
-            event.change_note ??
-              event.changeNote,
+          subheading(
+            `${prettyDate(rangeDay?.date)} — ${drill?.name ?? "Training Activity"}`,
           );
-        }
 
-        y -= 4;
+          field(
+            "Officer",
+            officer?.name ??
+              result.officerId,
+          );
+
+          field(
+            "Range Day",
+            rangeDay?.title,
+          );
+
+          field(
+            "Location",
+            rangeDay?.location,
+          );
+
+          field(
+            "Score",
+            result.score,
+          );
+
+          field(
+            "Completed",
+            result.completed
+              ? "Yes"
+              : "No",
+          );
+
+          field(
+            "Passed",
+            result.passed === undefined
+              ? "—"
+              : result.passed
+                ? "Yes"
+                : "No",
+          );
+
+          y -= 5;
+        }
       }
 
-      const pages =
-        pdf.getPages();
+      heading("RANGE DAYS");
+
+      if (rangeDays.length === 0) {
+        line("No matching range days.");
+      } else {
+        for (const rangeDay of rangeDays) {
+          subheading(
+            `${prettyDate(rangeDay.date)} — ${safe(rangeDay.title)}`,
+          );
+
+          field(
+            "Status",
+            rangeDay.status,
+          );
+
+          field(
+            "Location",
+            rangeDay.location,
+          );
+
+          const resultCount =
+            trainingResults.filter(
+              (result) =>
+                result.rangeDayId ===
+                rangeDay.id,
+            ).length;
+
+          field(
+            "Matching Training Results",
+            resultCount,
+          );
+
+          if (
+            reportIncludeNotes &&
+            rangeDay.notes
+          ) {
+            field(
+              "Notes",
+              rangeDay.notes,
+            );
+          }
+
+          y -= 5;
+        }
+      }
+
+      heading("CERTIFICATIONS");
+
+      if (certifications.length === 0) {
+        line("No matching certification records.");
+      } else {
+        for (const certification of certifications) {
+          const officer =
+            personnelById.get(
+              certification.user_id,
+            );
+
+          subheading(
+            `${officer?.name ?? certification.user_id} — ${certification.certification_title}`,
+          );
+
+          field(
+            "Issuing Organization",
+            certification.issuing_organization,
+          );
+
+          field(
+            "Credential Number",
+            certification.credential_number,
+          );
+
+          field(
+            "Issue Date",
+            prettyDate(
+              certification.issue_date,
+            ),
+          );
+
+          field(
+            "Expiration Date",
+            prettyDate(
+              certification.expiration_date,
+            ),
+          );
+
+          if (
+            reportIncludeNotes &&
+            certification.notes
+          ) {
+            field(
+              "Notes",
+              certification.notes,
+            );
+          }
+
+          y -= 5;
+        }
+      }
+
+      heading("EQUIPMENT");
+
+      if (equipment.length === 0) {
+        line("No matching equipment records.");
+      } else {
+        for (const asset of equipment) {
+          const type =
+            equipmentTypesById.get(
+              asset.equipment_type_id,
+            );
+
+          const officer =
+            asset.assigned_user_id
+              ? personnelById.get(
+                  asset.assigned_user_id,
+                )
+              : null;
+
+          subheading(
+            `${type?.name ?? "Equipment"} — ${
+              officer?.name ?? "Unassigned"
+            }`,
+          );
+
+          field(
+            "Manufacturer / Model",
+            [
+              asset.manufacturer,
+              asset.model,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          );
+
+          field(
+            "Serial Number",
+            asset.serial_number,
+          );
+
+          field(
+            "Lot Number",
+            asset.lot_number,
+          );
+
+          field(
+            "Lifecycle Status",
+            asset.lifecycle_status,
+          );
+
+          field(
+            "Issue Date",
+            prettyDate(asset.issue_date),
+          );
+
+          field(
+            "Expiration Date",
+            prettyDate(
+              asset.expiration_date,
+            ),
+          );
+
+          field(
+            "Last Inspection",
+            prettyDate(
+              asset.last_inspection_date,
+            ),
+          );
+
+          field(
+            "Next Inspection",
+            prettyDate(
+              asset.next_inspection_date,
+            ),
+          );
+
+          if (
+            reportIncludeNotes &&
+            asset.notes
+          ) {
+            field(
+              "Notes",
+              asset.notes,
+            );
+          }
+
+          y -= 5;
+        }
+      }
+
+      heading("OFF-DUTY FIREARMS");
+
+      if (offDuty.length === 0) {
+        line("No matching off-duty firearm records.");
+      } else {
+        for (const record of offDuty) {
+          subheading(
+            `${record.officer} — ${record.make} ${record.model}`,
+          );
+
+          field(
+            "Serial Number",
+            record.serial,
+          );
+
+          field(
+            "Caliber",
+            record.caliber,
+          );
+
+          field(
+            "Request Status",
+            record.requestStatus,
+          );
+
+          field(
+            "Authorization Status",
+            record.authorizationStatus,
+          );
+
+          field(
+            "Submitted",
+            prettyDateTime(
+              record.submittedAt,
+            ),
+          );
+
+          field(
+            "Approval Effective",
+            prettyDate(
+              record.approvalDate,
+            ),
+          );
+
+          field(
+            "Approval Expires",
+            prettyDate(
+              record.approvalExpires,
+            ),
+          );
+
+          field(
+            "Qualification Status",
+            record.qualificationStatus,
+          );
+
+          field(
+            "Inspection Status",
+            record.inspectionStatus,
+          );
+
+          field(
+            "Compliance",
+            record.compliance,
+          );
+
+          if (reportIncludeNotes) {
+            field(
+              "Officer Notes",
+              record.officerNotes,
+            );
+
+            field(
+              "Decision Notes",
+              record.decisionNotes,
+            );
+          }
+
+          if (
+            reportIncludeWorkflow &&
+            (record.auditTrail?.length ??
+              0) > 0
+          ) {
+            line(
+              "Workflow History",
+              {
+                bold: true,
+                size: 8,
+                indent: 8,
+              },
+            );
+
+            for (const event of record.auditTrail ?? []) {
+              line(
+                `${prettyDateTime(event.timestamp)} — ${event.action} — ${event.actor} (${event.actorRole})${
+                  reportIncludeNotes &&
+                  event.notes
+                    ? ` — ${event.notes}`
+                    : ""
+                }`,
+                {
+                  size: 7.5,
+                  indent: 14,
+                },
+              );
+            }
+          }
+
+          y -= 6;
+        }
+      }
+
+      heading("AUDIT HISTORY");
+
+      if (audit.length === 0) {
+        line("No matching audit events.");
+      } else {
+        for (const event of audit) {
+          subheading(
+            `${prettyDateTime(event.created_at)} — ${safe(event.action)}`,
+          );
+
+          field(
+            "Entity Type",
+            event.entity_type,
+          );
+
+          field(
+            "Entity ID",
+            event.entity_id,
+          );
+
+          field(
+            "Changed By User ID",
+            event.changed_by_user_id,
+          );
+
+          if (
+            reportIncludeNotes &&
+            event.change_note
+          ) {
+            field(
+              "Change Note",
+              event.change_note,
+            );
+          }
+
+          y -= 4;
+        }
+      }
+
+      const pages = pdf.getPages();
 
       for (
         let index = 0;
-        index <
-        pages.length;
+        index < pages.length;
         index += 1
       ) {
-        const footer =
-          pages[index];
+        const footer = pages[index];
 
         footer.drawLine({
           start: {
             x: LEFT,
-            y: 36,
+            y: 37,
           },
           end: {
-            x:
-              WIDTH -
-              RIGHT,
-            y: 36,
+            x: PAGE_WIDTH - RIGHT,
+            y: 37,
           },
           thickness: 0.5,
-          color: border,
+          color: lineColor,
         });
 
         footer.drawText(
           "TracePoint — Operational Accountability. Verified.",
           {
             x: LEFT,
-            y: 21,
+            y: 22,
             size: 7,
-            font: regular,
-            color: muted,
+            font: regularFont,
+            color: mutedColor,
           },
         );
 
-        const pageNumber =
-          `Page ${
-            index + 1
-          } of ${
-            pages.length
-          }`;
+        const pageText =
+          `Page ${index + 1} of ${pages.length}`;
 
-        footer.drawText(
-          pageNumber,
-          {
-            x:
-              WIDTH -
-              RIGHT -
-              regular.widthOfTextAtSize(
-                pageNumber,
-                7,
-              ),
-            y: 21,
-            size: 7,
-            font: regular,
-            color: muted,
-          },
-        );
+        footer.drawText(pageText, {
+          x:
+            PAGE_WIDTH -
+            RIGHT -
+            regularFont.widthOfTextAtSize(
+              pageText,
+              7,
+            ),
+          y: 22,
+          size: 7,
+          font: regularFont,
+          color: mutedColor,
+        });
       }
 
-      const pdfBytes =
-        await pdf.save();
+      const bytes = await pdf.save();
 
-      const blob =
-        new Blob(
-          [
-            new Uint8Array(
-              pdfBytes,
-            ),
-          ],
-          {
-            type: "application/pdf",
-          },
-        );
+      const blob = new Blob(
+        [new Uint8Array(bytes)],
+        {
+          type: "application/pdf",
+        },
+      );
 
       const url =
-        URL.createObjectURL(
-          blob,
-        );
+        URL.createObjectURL(blob);
 
-      const anchor =
-        document.createElement(
-          "a",
-        );
+      const link =
+        document.createElement("a");
 
-      anchor.href = url;
-      anchor.download =
+      link.href = url;
+
+      link.download =
         `tracepoint-complete-report-${exportDate()}.pdf`;
 
-      document.body.appendChild(
-        anchor,
-      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
 
-      anchor.click();
-
-      document.body.removeChild(
-        anchor,
-      );
-
-      window.setTimeout(
-        () =>
-          URL.revokeObjectURL(
-            url,
-          ),
-        1000,
-      );
+      URL.revokeObjectURL(url);
     } catch (error) {
-      console.error(
-        "Complete TracePoint Report failed:",
-        error,
-      );
-
       setExportError(
         error instanceof Error
           ? error.message
@@ -4505,7 +4073,7 @@ export default function ImportWizardPage() {
 
       try {
         const logoResponse = await fetch(
-          "/tracepoint-logo-dark.png",
+          "/TracePoint-Logo.png",
         );
 
         if (logoResponse.ok) {
@@ -6255,7 +5823,6 @@ export default function ImportWizardPage() {
     </TracePointShell>
   );
 }
-
 
 
 

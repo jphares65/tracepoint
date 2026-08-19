@@ -1,7 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import {
   accessFailureResponse,
   requireServerFeature,
@@ -111,33 +109,6 @@ async function reconciliationCycleRules(
       data?.fall_cycle_end ?? DEFAULT_CYCLE_RULES.fall_cycle_end,
   };
 }
-
-async function getUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  return {
-    user: error ? null : user,
-    error: error?.message ?? null,
-  };
-}
-
-async function departmentIdFor(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data?.department_id ?? null;
-}
-
 
 async function reconciliationAccess(
   admin: any,
@@ -361,25 +332,13 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
-  const { user, error } = await getUser();
-
-  if (!user) {
-    return NextResponse.json(
-      { error: error ?? "Authentication required." },
-      { status: 401 },
-    );
-  }
+  const {
+    admin,
+    user,
+    departmentId,
+  } = resolved.context;
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await departmentIdFor(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
 
     const access = await reconciliationAccess(
       admin,
@@ -434,14 +393,11 @@ export async function POST(request: NextRequest) {
   if (featureError) {
     return featureError;
   }
-  const { user, error } = await getUser();
-
-  if (!user) {
-    return NextResponse.json(
-      { error: error ?? "Authentication required." },
-      { status: 401 },
-    );
-  }
+  const {
+    admin,
+    user,
+    departmentId,
+  } = resolved.context;
 
   const body = (await request.json().catch(() => ({}))) as any;
   const action = String(body.action ?? "");
@@ -456,15 +412,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await departmentIdFor(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
 
     const access = await reconciliationAccess(
       admin,

@@ -1,7 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import {
   accessFailureResponse,
   requireServerFeature,
@@ -37,44 +35,20 @@ function reminderDays(value: unknown) {
 }
 
 async function getContext() {
-  const supabase = await createClient();
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return {
+      error: resolved.error,
+      status: resolved.status,
+    } as const;
+  }
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return {
-      error: "You must be signed in.",
-      status: 401,
-    } as const;
-  }
-
-  const admin = createAdminClient() as any;
-
-  const { data: membership, error: membershipError } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (membershipError) {
-    return {
-      error: membershipError.message,
-      status: 500,
-    } as const;
-  }
-
-  if (!membership?.department_id) {
-    return {
-      error: "No active department membership was found.",
-      status: 403,
-    } as const;
-  }
-
-  const departmentId = String(membership.department_id);
+    admin,
+    user,
+    departmentId,
+  } = resolved.context;
 
   const [{ data: canManageCertifications }, { data: administrator }] =
     await Promise.all([

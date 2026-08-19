@@ -235,7 +235,7 @@ async function responseError(response: Response) {
 }
 
 export default function OfficerHomePage() {
-  const { hasPermission } = useTracePointAccess();
+  const { hasPermission, departmentId } = useTracePointAccess();
   const [profile, setProfile] = useState<HomeProfile>({
     name: "",
     rankTitle: "",
@@ -273,7 +273,7 @@ export default function OfficerHomePage() {
 
   useEffect(() => {
     void loadNotifications();
-  }, []);
+  }, [departmentId]);
 
   useEffect(() => {
     let active = true;
@@ -298,7 +298,7 @@ export default function OfficerHomePage() {
             .select("department_id,badge_number,rank_title,unit_name")
             .eq("user_id", user.id)
             .eq("is_active", true)
-            .limit(1)
+            .eq("department_id", departmentId)
             .maybeSingle(),
         ]);
 
@@ -343,7 +343,7 @@ export default function OfficerHomePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [departmentId]);
 
   async function updateNotification(
     action: "acknowledge" | "snooze",

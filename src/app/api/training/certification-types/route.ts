@@ -1,7 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import {
   accessFailureResponse,
   requireServerFeature,
@@ -21,38 +19,20 @@ function integerOrNull(value: unknown) {
 }
 
 async function getContext() {
-  const supabase = await createClient();
+  const resolved = await resolveServerAccess();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be signed in.", status: 401 } as const;
-  }
-
-  const admin = createAdminClient() as any;
-
-  const { data: membership, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { error: error.message, status: 500 } as const;
-  }
-
-  if (!membership?.department_id) {
+  if (!resolved.ok) {
     return {
-      error: "No active department membership was found.",
-      status: 403,
+      error: resolved.error,
+      status: resolved.status,
     } as const;
   }
 
-  const departmentId = String(membership.department_id);
+  const {
+    admin,
+    user,
+    departmentId,
+  } = resolved.context;
 
   const [{ data: manager }, { data: administrator }] =
     await Promise.all([

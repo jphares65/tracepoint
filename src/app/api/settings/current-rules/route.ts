@@ -1,51 +1,28 @@
 ﻿import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { resolveServerAccess } from "@/lib/tracepoint/server-access";
+
 
 export async function GET() {
-  const supabase = await createServerClient();
+  const access = await resolveServerAccess();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
+  if (!access.ok) {
     return NextResponse.json(
-      { error: "Authentication required." },
-      { status: 401 },
+      { error: access.error },
+      { status: access.status },
     );
   }
 
+  const { admin, departmentId } = access.context;
+
   try {
-    const admin = createAdminClient() as any;
-
-    const { data: membership, error: membershipError } = await admin
-      .from("department_memberships")
-      .select("department_id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    if (membershipError) {
-      throw new Error(membershipError.message);
-    }
-
-    if (!membership?.department_id) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
 
     const { data: rules, error: rulesError } = await admin
       .from("department_rules")
       .select(
         "spring_cycle_start,spring_cycle_end,fall_cycle_start,fall_cycle_end,qualification_valid_days,qualification_due_soon_days,inspection_interval_days,battery_check_interval_days,off_duty_renewal_days",
       )
-      .eq("department_id", membership.department_id)
+      .eq("department_id", departmentId)
       .maybeSingle();
 
     if (rulesError) {

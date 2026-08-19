@@ -151,19 +151,14 @@ export async function updateSession(request: NextRequest) {
 
   const userId = String(claims?.sub ?? "");
 
-  const { data: membershipData, error: membershipError } =
+  const { data: membershipRows, error: membershipError } =
     await supabase
       .from("department_memberships")
       .select("department_id")
       .eq("user_id", userId)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
+      .eq("is_active", true);
 
-  const membership = membershipData as MembershipRow | null;
-  const departmentId = membership?.department_id ?? "";
-
-  if (membershipError || !departmentId) {
+  if (membershipError) {
     return redirectWithCookies(
       request,
       response,
@@ -171,6 +166,46 @@ export async function updateSession(request: NextRequest) {
       { next: `${pathname}${request.nextUrl.search}` },
     );
   }
+
+  const memberships = (membershipRows ?? []) as MembershipRow[];
+
+  if (memberships.length === 0) {
+    return redirectWithCookies(
+      request,
+      response,
+      "/auth/setup",
+      { next: `${pathname}${request.nextUrl.search}` },
+    );
+  }
+
+  const selectedDepartmentId =
+    request.cookies.get("tracepoint_department_id")?.value?.trim() ?? "";
+
+  let membership: MembershipRow | undefined;
+
+  if (selectedDepartmentId) {
+    membership = memberships.find(
+      (row) => row.department_id === selectedDepartmentId,
+    );
+  }
+
+  if (!membership && memberships.length === 1) {
+    membership = memberships[0];
+  }
+
+  if (!membership) {
+    if (pathname === "/") {
+      return response;
+    }
+
+    return redirectWithCookies(
+      request,
+      response,
+      "/",
+    );
+  }
+
+  const departmentId = String(membership.department_id);
 
   const requirement =
     getRoutePermissionRequirement(pathname);

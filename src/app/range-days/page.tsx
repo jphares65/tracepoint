@@ -1093,7 +1093,7 @@ function getFirearmName(firearmId?: string) {
 
   if (!firearm) return "Unknown firearm";
 
-  return `${formatRangeFirearmType(firearm.firearm_type)} â€” ${firearm.make} ${firearm.model}`;
+  return `${formatRangeFirearmType(firearm.firearm_type)} — ${firearm.make} ${firearm.model}`;
 }
 
 function normalizeFirearmType(value?: string | null) {
@@ -1406,13 +1406,13 @@ function PrintableRangePacket({
                   <tr key={drill.id}>
                     <td>
                       <strong>{drill.name}</strong>
-                      {drill.description ? <span> â€” {drill.description}</span> : null}
+                      {drill.description ? <span> — {drill.description}</span> : null}
                     </td>
                     <td>{drill.category}</td>
                     <td>{getScoringFormat(drill)}</td>
                     <td>{getEffectiveRunCount(drill)}</td>
-                    <td>{drill.roundCount ?? "â€”"}</td>
-                    <td>{drill.isDepartmentStandard ? getDepartmentStandardRequirementLabel(drill) : "â€”"}</td>
+                    <td>{drill.roundCount ?? "—"}</td>
+                    <td>{drill.isDepartmentStandard ? getDepartmentStandardRequirementLabel(drill) : "—"}</td>
                   </tr>
                 ))
               )}
@@ -3111,7 +3111,7 @@ export default function RangeDaysPage() {
             <StatCard
               label="Scheduled"
               value={filteredRangeDays.length}
-              sub={`${activeRangeDayCount} active Â· ${archivedRangeDayCount} archived`}
+              sub={`${activeRangeDayCount} active · ${archivedRangeDayCount} archived`}
             />
             <StatCard
               label="Roster Slots"
@@ -3301,7 +3301,7 @@ export default function RangeDaysPage() {
                   <div className="space-y-2 text-[12px] text-slate-400">
                     <p className="flex items-center gap-2">
                       <CalendarDays size={13} className="text-slate-600" />
-                      {formatDate(rangeDay.date)} Â· {rangeDay.startTime}-
+                      {formatDate(rangeDay.date)} · {rangeDay.startTime}-
                       {rangeDay.endTime}
                     </p>
 
@@ -4199,7 +4199,7 @@ export default function RangeDaysPage() {
                             {drill.departmentStandardName || drill.name}
                           </p>
                           <p className="mt-1 text-[11px] text-blue-200">
-                            {getDepartmentStandardRequirementLabel(drill)} Â· {drill.departmentStandardAppliesTo || "Agency configured"}
+                            {getDepartmentStandardRequirementLabel(drill)} · {drill.departmentStandardAppliesTo || "Agency configured"}
                           </p>
                         </div>
                       ))
@@ -4303,7 +4303,7 @@ export default function RangeDaysPage() {
                           {entry.assignedFirearmIds.length > 0
                             ? entry.assignedFirearmIds
                                 .map(getFirearmName)
-                                .join(" Â· ")
+                                .join(" · ")
                             : "No firearms selected"}
                         </p>
                       </div>
@@ -5221,7 +5221,7 @@ export default function RangeDaysPage() {
                                       : scoringFormat === "Completion" ||
                                           scoringFormat === "Pass/Fail" ||
                                           scoringFormat === "Notes Only"
-                                        ? "â€”"
+                                        ? "—"
                                         : "Score"
                                 }
                                 disabled={
@@ -5565,7 +5565,7 @@ export default function RangeDaysPage() {
                                     : scoringFormat === "Completion" ||
                                         scoringFormat === "Pass/Fail" ||
                                         scoringFormat === "Notes Only"
-                                      ? "â€”"
+                                      ? "—"
                                       : "Score"
                               }
                               disabled={
@@ -5634,7 +5634,7 @@ export default function RangeDaysPage() {
                                       : "Pending"}
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-slate-600">â€”</span>
+                                <span className="text-[11px] text-slate-600">—</span>
                               )}
                             </div>
 
@@ -5816,7 +5816,7 @@ export default function RangeDaysPage() {
                               {getFirearmName(malfunction.firearmId)}
                             </p>
                             <p className="text-[11px] text-amber-300">
-                              {malfunction.type} Â· Armorer inspection required
+                              {malfunction.type} · Armorer inspection required
                             </p>
                             {malfunction.notes && (
                               <p className="mt-1 text-[11px] text-slate-400">
@@ -5886,10 +5886,10 @@ export default function RangeDaysPage() {
                                     activity.drill,
                                     activity.runNumber,
                                   )}{" "}
-                                  Â·{" "}
+                                  ·{" "}
                                   {activity.drill.firearmType ||
                                     "Any firearm"}{" "}
-                                  Â·{" "}
+                                  ·{" "}
                                   {getScoringFormat(
                                     activity.drill,
                                   )}
@@ -5959,25 +5959,25 @@ export default function RangeDaysPage() {
                                   {formatResultMetric(
                                     result,
                                     activity.drill,
-                                  ) || "â€”"}{" "}
-                                  Â· Passed:{" "}
+                                  ) || "—"}{" "}
+                                  · Passed:{" "}
                                   {typeof result.passed ===
                                   "boolean"
                                     ? result.passed
                                       ? "Yes"
                                       : "No"
-                                    : "â€”"}{" "}
-                                  Â· Completed:{" "}
+                                    : "—"}{" "}
+                                  · Completed:{" "}
                                   {result.completed
                                     ? "Yes"
                                     : "No"}{" "}
-                                  Â· Standard:{" "}
+                                  · Standard:{" "}
                                   {typeof result.departmentStandardPassed ===
                                   "boolean"
                                     ? result.departmentStandardPassed
                                       ? "Met"
                                       : "Failed"
-                                    : "â€”"}
+                                    : "—"}
                                 </p>
 
                                 {result.notes ? (
