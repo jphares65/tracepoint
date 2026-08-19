@@ -1011,10 +1011,16 @@ export async function GET(request: NextRequest) {
               ? error.message
               : "Unavailable",
         })),
-      internalJson(
-        request,
-        "/api/readiness/equipment",
-      ),
+      context.enabledFeatures.includes("equipment_readiness")
+        ? internalJson(
+            request,
+            "/api/readiness/equipment",
+          )
+        : Promise.resolve({
+            ok: true,
+            payload: { rows: [] },
+            error: "",
+          }),
       internalJson(request, "/api/pilot/personnel"),
       internalJson(request, "/api/settings/current-rules"),
     ]);
@@ -1263,6 +1269,7 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
 
 
 
