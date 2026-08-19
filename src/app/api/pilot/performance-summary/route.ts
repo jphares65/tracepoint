@@ -787,6 +787,16 @@ export async function GET() {
       (resultQuery.data ??
         []) as DrillResultRow[];
 
+    const rosterQuery = await admin
+      .from("range_day_roster")
+      .select("id, range_day_id, officer_user_id, attendance_status")
+      .eq("department_id", departmentId);
+
+    if (rosterQuery.error) {
+      throw new Error(rosterQuery.error.message);
+    }
+
+    const rangeRoster = rosterQuery.data ?? [];
     const qualificationTrends =
       buildQualificationTrends(
         personnelLabels,
@@ -846,6 +856,51 @@ export async function GET() {
           ) / changes.length
         : 0;
 
+    const today = new Date().toISOString().slice(0, 10);
+
+    const activeRangeDays = rangeDays.filter(
+      (day) => String(day.status).toLowerCase() !== "archived",
+    );
+
+    const upcomingRangeDays = activeRangeDays
+      .filter(
+        (day) =>
+          String(day.range_date ?? "") >= today &&
+          !["completed", "locked", "archived"].includes(
+            String(day.status).toLowerCase(),
+          ),
+      )
+      .sort((a, b) =>
+        String(a.range_date).localeCompare(String(b.range_date)),
+      )
+      .slice(0, 4)
+      .map((day) => ({
+        id: day.id,
+        title: day.title,
+        date: day.range_date,
+        location: day.location,
+        status: day.status,
+        packetStatus: day.packet_status,
+        rangeType: day.range_type,
+      }));
+
+    const incompletePacketCount = activeRangeDays.filter(
+      (day) =>
+        !["completed", "locked"].includes(
+          String(day.status).toLowerCase(),
+        ) &&
+        String(day.packet_status).toLowerCase() !== "ready",
+    ).length;
+
+    const rangeSummary = {
+      totalRangeDays: rangeDays.length,
+      activeRangeDays: activeRangeDays.length,
+      upcomingRangeDayCount: upcomingRangeDays.length,
+      incompletePacketCount,
+      rosterAssignmentCount: rangeRoster.length,
+      plannedDrillCount: drills.length,
+      upcomingRangeDays,
+    };
     return NextResponse.json({
       source: "authoritative_range_training",
       generatedAt: new Date().toISOString(),
@@ -896,6 +951,7 @@ export async function GET() {
       drillTrends,
       broadCategoryTrends,
       trainingAlerts: alerts,
+      rangeSummary,
 
       hasWorkspaceData:
         rangeDays.length > 0 ||

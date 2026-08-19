@@ -586,6 +586,15 @@ const [loading, setLoading] = useState(true);
       day.packetStatus !== "Ready",
   );
 
+  const authoritativeRange = performanceSummary?.rangeSummary ?? {
+    totalRangeDays: 0,
+    activeRangeDays: 0,
+    upcomingRangeDayCount: 0,
+    incompletePacketCount: 0,
+    rosterAssignmentCount: 0,
+    plannedDrillCount: 0,
+    upcomingRangeDays: [],
+  };
   const firearmAlerts = firearms.filter((firearm) => {
     const status = (firearm.condition_status ?? "").toLowerCase();
 
@@ -926,18 +935,18 @@ const [loading, setLoading] = useState(true);
             <>
               <PulseCard
                 title="Range Readiness"
-                value={loading ? "—" : upcomingRangeDays.length}
+                value={loading ? "—" : authoritativeRange.upcomingRangeDayCount}
                 label="Upcoming range days"
-                detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
+                detail={`${authoritativeRange.incompletePacketCount} packet${authoritativeRange.incompletePacketCount === 1 ? "" : "s"} need setup or review.`}
                 icon={CalendarDays}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
 
               <PulseCard
                 title="Records Health"
-                value={loading ? "—" : workspace.rangeDays.length}
+                value={loading ? "—" : authoritativeRange.totalRangeDays}
                 label="Range days saved"
-                detail={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills.`}
+                detail={`${authoritativeRange.rosterAssignmentCount} roster assignments · ${authoritativeRange.plannedDrillCount} planned drills.`}
                 icon={FileText}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
@@ -1079,7 +1088,7 @@ const [loading, setLoading] = useState(true);
                     ? [
                         "Range & Training",
                         "/range-days",
-                        `${activeRangeDays.length} active range days`,
+                        `${authoritativeRange.activeRangeDays} active range days`,
                       ]
                     : null,
                   hasQualifications
