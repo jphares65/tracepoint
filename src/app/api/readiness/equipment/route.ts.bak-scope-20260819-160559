@@ -53,7 +53,7 @@ export async function GET() {
   let membersQuery = admin
     .from("department_memberships")
     .select(
-      "user_id,badge_number,rank_title,unit_name,is_active",
+      "user_id,badge_number,rank_title,is_active",
     )
     .eq("department_id", departmentId)
     .eq("is_active", true);
@@ -119,9 +119,6 @@ export async function GET() {
           "equipment_type_id",
           "is_required",
           "required_quantity",
-          "scope_type",
-          "scope_value",
-          "affects_readiness",
           "valid_days",
           "due_soon_days",
           "inspection_interval_days",
@@ -199,9 +196,6 @@ export async function GET() {
 
       rankTitle:
         row.rank_title ?? null,
-
-      unitName:
-        row.unit_name ?? null,
     }),
   );
 
@@ -263,19 +257,6 @@ export async function GET() {
       1,
       Number(row.required_quantity ?? 1),
     ),
-
-    scopeType:
-      row.scope_type === "rank" ||
-      row.scope_type === "unit" ||
-      row.scope_type === "officer"
-        ? row.scope_type
-        : "all",
-
-    scopeValue:
-      row.scope_value ?? "",
-
-    affectsReadiness:
-      row.affects_readiness !== false,
 
     validDays:
       row.valid_days === null ||
@@ -375,4 +356,3 @@ export async function GET() {
     },
   );
 }
-

@@ -747,8 +747,6 @@ export default function AdminSettingsPage() {
   const [newTitleName, setNewTitleName] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
-  const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
-  const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
   const [editingRoleCode, setEditingRoleCode] =
     useState<string | null>(null);
   const [rolePermissionDraft, setRolePermissionDraft] = useState<
@@ -1827,8 +1825,6 @@ export default function AdminSettingsPage() {
           unitName: inviteDraft.unitName,
           employeeNumber: inviteDraft.employeeNumber,
           roleCodes: inviteDraft.roleCodes,
-          groupIds: inviteGroupIds,
-          groupIds: inviteGroupIds,
         }),
       });
 
@@ -1843,8 +1839,6 @@ export default function AdminSettingsPage() {
 
       setInviteOpen(false);
       setInviteDraft(EMPTY_INVITE);
-      setInviteGroupIds([]);
-      setInviteGroupIds([]);
       showNotice(
         "success",
         result.message || "The user was added successfully.",
@@ -2853,8 +2847,6 @@ export default function AdminSettingsPage() {
                   type="button"
                   onClick={() => {
                     setInviteDraft(EMPTY_INVITE);
-      setInviteGroupIds([]);
-      setInviteGroupIds([]);
                     setInviteOpen(true);
                   }}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
@@ -3636,10 +3628,7 @@ export default function AdminSettingsPage() {
           title="Invite Department User"
           description="Invite a new TracePoint account or add an existing TracePoint user to this department."
           onClose={() => {
-            if (savingSection !== "invite") {
-              setInviteOpen(false);
-              setInviteGroupIds([]);
-            }
+            if (savingSection !== "invite") setInviteOpen(false);
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -3711,111 +3700,6 @@ export default function AdminSettingsPage() {
           </div>
 
           <div className="mt-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <p className="text-sm font-semibold text-slate-200">
-                Groups / Assignments
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Optional organizational assignments. These do not
-                grant TracePoint permissions.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {organizationGroups
-                  .filter((group) => group.is_active)
-                  .map((group) => {
-                    const selected =
-                      inviteGroupIds.includes(group.id);
-
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        disabled={savingSection === "invite"}
-                        onClick={() =>
-                          setInviteGroupIds((current) =>
-                            selected
-                              ? current.filter(
-                                  (groupId) =>
-                                    groupId !== group.id,
-                                )
-                              : [...current, group.id],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          selected
-                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {selected ? "✓ " : ""}
-                        {group.name}
-                      </button>
-                    );
-                  })}
-
-                {organizationGroups.filter(
-                  (group) => group.is_active,
-                ).length === 0 ? (
-                  <span className="text-xs text-slate-600">
-                    No active groups are configured.
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <p className="text-sm font-semibold text-slate-200">
-                Groups / Assignments
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Optional organizational assignments. These do not grant TracePoint permissions.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {organizationGroups
-                  .filter((group) => group.is_active)
-                  .map((group) => {
-                    const selected = inviteGroupIds.includes(group.id);
-
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        disabled={savingSection === "invite"}
-                        onClick={() =>
-                          setInviteGroupIds((current) =>
-                            selected
-                              ? current.filter((groupId) => groupId !== group.id)
-                              : [...current, group.id],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          selected
-                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {selected ? "✓ " : ""}
-                        {group.name}
-                      </button>
-                    );
-                  })}
-
-                {organizationGroups.filter((group) => group.is_active).length === 0 ? (
-                  <span className="text-xs text-slate-600">
-                    No active groups are configured.
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5">
             <RoleSelector
               roles={assignableRoles}
               selected={inviteDraft.roleCodes}
@@ -3835,7 +3719,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               disabled={savingSection === "invite"}
-              onClick={() => { setInviteOpen(false); setInviteGroupIds([]); }}
+              onClick={() => setInviteOpen(false)}
               className="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:text-white disabled:opacity-50"
             >
               Cancel
@@ -4175,8 +4059,6 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
-
-
 
 
 

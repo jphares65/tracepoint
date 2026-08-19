@@ -905,7 +905,7 @@ const filteredReadiness = useMemo(() => {
                   className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
                 >
                   <PackagePlus size={15} />
-                  Assign Equipment
+                  Add Equipment
                 </button>
                 </>
               ) : null}
@@ -1441,7 +1441,7 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign Equipment Type
+                Add Equipment Type
               </h2>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1905,7 +1905,7 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign Equipment
+                Add Equipment
               </h2>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -2120,7 +2120,7 @@ const filteredReadiness = useMemo(() => {
                   }
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  Assign Equipment
+                  Add Equipment
                 </button>
               </div>
             </div>
@@ -2130,7 +2130,6 @@ const filteredReadiness = useMemo(() => {
     </TracePointShell>
   );
 }
-
 
 
 

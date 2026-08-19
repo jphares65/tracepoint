@@ -46,7 +46,7 @@ export async function GET() {
     await context.admin
       .from("department_memberships")
       .select(
-        "user_id,badge_number,rank_title,unit_name,is_active",
+        "user_id,badge_number,rank_title,is_active",
       )
       .eq("department_id", context.departmentId)
       .eq("is_active", true);
@@ -99,7 +99,6 @@ export async function GET() {
         "Unnamed Officer",
       badgeNumber: row.badge_number ?? null,
       rankTitle: row.rank_title ?? null,
-      unitName: row.unit_name ?? null,
     })),
 
     canManage: context.canManage,
@@ -420,4 +419,3 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ item: data });
 }
-

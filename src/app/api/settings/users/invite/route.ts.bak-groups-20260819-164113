@@ -12,7 +12,6 @@ type InviteRequest = {
   unitName?: string;
   employeeNumber?: string;
   roleCodes?: string[];
-  groupIds?: string[];
 };
 
 function cleanText(value: unknown) {
@@ -36,18 +35,6 @@ function getRequestOrigin(request: NextRequest) {
   return request.nextUrl.origin.replace(/\/$/, "");
 }
 
-function uniqueIds(value: unknown) {
-  if (!Array.isArray(value)) return [];
-
-  return Array.from(
-    new Set(
-      value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  );
-}
 function uniqueRoleCodes(value: unknown) {
   if (!Array.isArray(value)) return [];
 
@@ -98,7 +85,6 @@ export async function POST(request: NextRequest) {
     const unitName = cleanText(body.unitName);
     const employeeNumber = cleanText(body.employeeNumber);
     const roleCodes = uniqueRoleCodes(body.roleCodes);
-    const groupIds = uniqueIds(body.groupIds);
 
     if (!departmentId || !email || !fullName || roleCodes.length === 0) {
       return NextResponse.json(
@@ -268,17 +254,6 @@ export async function POST(request: NextRequest) {
 
     if (rolesError) throw rolesError;
 
-    const { error: groupsError } = await server.rpc(
-      "set_department_group_members",
-      {
-        p_department_id: departmentId,
-        p_user_id: targetUser.id,
-        p_group_ids: groupIds,
-      },
-    );
-
-    if (groupsError) throw groupsError;
-
     const { error: auditError } = await admin.from("audit_events").insert({
       department_id: departmentId,
       actor_user_id: actor.id,
@@ -292,7 +267,6 @@ export async function POST(request: NextRequest) {
         email,
         full_name: fullName,
         role_codes: roleCodes,
-        group_ids: groupIds,
       },
     });
 
@@ -314,5 +288,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
 

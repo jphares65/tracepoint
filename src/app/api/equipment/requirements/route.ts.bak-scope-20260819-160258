@@ -10,93 +10,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const VALID_SCOPE_TYPES = new Set([
-  "all",
-  "rank",
-  "unit",
-  "officer",
-]);
-
-function normalizeScopeType(value: unknown) {
-  const scopeType = text(value).toLowerCase() || "all";
-
-  return VALID_SCOPE_TYPES.has(scopeType)
-    ? scopeType
-    : "";
-}
-
-function normalizeScopeValue(
-  scopeType: string,
-  value: unknown,
-) {
-  if (scopeType === "all") return "";
-
-  return text(value);
-}
-
-async function validateScope(
-  context: Awaited<ReturnType<typeof getEquipmentServerContext>>,
-  scopeType: string,
-  scopeValue: string,
-) {
-  if ("error" in context) {
-    return {
-      error: "Unable to resolve equipment access.",
-      status: 500,
-    };
-  }
-
-  if (!VALID_SCOPE_TYPES.has(scopeType)) {
-    return {
-      error: "Invalid equipment requirement scope.",
-      status: 400,
-    };
-  }
-
-  if (scopeType === "all") {
-    return null;
-  }
-
-  if (!scopeValue) {
-    return {
-      error:
-        scopeType === "rank"
-          ? "A rank/title is required for a rank-scoped equipment requirement."
-          : scopeType === "unit"
-            ? "A unit is required for a unit-scoped equipment requirement."
-            : "An officer is required for an officer-scoped equipment requirement.",
-      status: 400,
-    };
-  }
-
-  if (scopeType === "officer") {
-    const { data, error } = await context.admin
-      .from("department_memberships")
-      .select("user_id")
-      .eq("department_id", context.departmentId)
-      .eq("user_id", scopeValue)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (error) {
-      return {
-        error: error.message,
-        status: 500,
-      };
-    }
-
-    if (!data) {
-      return {
-        error:
-          "The selected officer is not an active member of this department.",
-        status: 400,
-      };
-    }
-  }
-
-  return null;
-}
-
 export async function GET() {
   const context = await getEquipmentServerContext();
 
@@ -160,46 +73,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const scopeType = normalizeScopeType(
-    body.scopeType,
-  );
-
-  if (!scopeType) {
-    return NextResponse.json(
-      {
-        error:
-          "Scope must be all, rank, unit, or officer.",
-      },
-      { status: 400 },
-    );
-  }
-
-  const scopeValue = normalizeScopeValue(
-    scopeType,
-    body.scopeValue,
-  );
-
-  const scopeError = await validateScope(
-    context,
-    scopeType,
-    scopeValue,
-  );
-
-  if (scopeError) {
-    return NextResponse.json(
-      { error: scopeError.error },
-      { status: scopeError.status },
-    );
-  }
-
   const requiredQuantity =
     nullableInteger(body.requiredQuantity) ?? 1;
 
-  const validDays =
-    nullableInteger(body.validDays);
-
-  const dueSoonDays =
-    nullableInteger(body.dueSoonDays);
+  const validDays = nullableInteger(body.validDays);
+  const dueSoonDays = nullableInteger(body.dueSoonDays);
 
   const inspectionIntervalDays =
     nullableInteger(body.inspectionIntervalDays);
@@ -207,10 +85,7 @@ export async function POST(request: NextRequest) {
   const inspectionDueSoonDays =
     nullableInteger(body.inspectionDueSoonDays);
 
-  if (
-    requiredQuantity < 1 ||
-    requiredQuantity > 100
-  ) {
+  if (requiredQuantity < 1 || requiredQuantity > 100) {
     return NextResponse.json(
       {
         error:
@@ -237,8 +112,7 @@ export async function POST(request: NextRequest) {
   if (
     inspectionIntervalDays !== null &&
     inspectionDueSoonDays !== null &&
-    inspectionDueSoonDays >=
-      inspectionIntervalDays
+    inspectionDueSoonDays >= inspectionIntervalDays
   ) {
     return NextResponse.json(
       {
@@ -253,14 +127,8 @@ export async function POST(request: NextRequest) {
     department_id: context.departmentId,
     equipment_type_id: equipmentTypeId,
 
-    scope_type: scopeType,
-    scope_value: scopeValue,
-
     is_required: body.isRequired !== false,
     required_quantity: requiredQuantity,
-
-    affects_readiness:
-      body.affectsReadiness !== false,
 
     valid_days: validDays,
     due_soon_days: dueSoonDays,
@@ -287,7 +155,7 @@ export async function POST(request: NextRequest) {
       },
       {
         onConflict:
-          "department_id,equipment_type_id,scope_type,scope_value",
+          "department_id,equipment_type_id",
       },
     )
     .select("*")
@@ -300,13 +168,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({
-    item: data,
-  });
+  return NextResponse.json({ item: data });
 }
 
-export async function PATCH(
-  request: NextRequest,
-) {
+export async function PATCH(request: NextRequest) {
   return POST(request);
 }

@@ -44,7 +44,7 @@ import {
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
-type TabId = "agency" | "organization" | "users" | "rules" | "branding" | "importExport" | "audit";
+type TabId = "agency" | "users" | "rules" | "branding" | "importExport" | "audit";
 type NoticeTone = "success" | "error" | "info";
 
 type RoleRow = {
@@ -140,17 +140,6 @@ type InviteDraft = {
   roleCodes: string[];
 };
 
-type OrganizationItem = {
-  id: string;
-  name: string;
-  sort_order: number;
-  is_active: boolean;
-};
-
-type OrganizationGroup = OrganizationItem & {
-  description: string | null;
-  group_type: string;
-};
 type AuditEvent = {
   id: string;
   changed_by_user_id: string;
@@ -728,27 +717,9 @@ export default function AdminSettingsPage() {
     useState<MemberRow | null>(null);
   const [memberDraft, setMemberDraft] =
     useState<MemberDraft | null>(null);
-  const [memberGroupIds, setMemberGroupIds] = useState<string[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteDraft, setInviteDraft] =
     useState<InviteDraft>(EMPTY_INVITE);
-
-  const [organizationTitles, setOrganizationTitles] = useState<
-    OrganizationItem[]
-  >([]);
-  const [organizationUnits, setOrganizationUnits] = useState<
-    OrganizationItem[]
-  >([]);
-  const [organizationGroups, setOrganizationGroups] = useState<
-    OrganizationGroup[]
-  >([]);
-  const [organizationLoading, setOrganizationLoading] = useState(false);
-
-  const [newTitleName, setNewTitleName] = useState("");
-  const [newUnitName, setNewUnitName] = useState("");
-  const [newGroupName, setNewGroupName] = useState("");
-  const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
-  const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
   const [editingRoleCode, setEditingRoleCode] =
     useState<string | null>(null);
   const [rolePermissionDraft, setRolePermissionDraft] = useState<
@@ -772,12 +743,6 @@ export default function AdminSettingsPage() {
         id: "agency",
         label: "Agency Profile",
         icon: Building2,
-      });
-
-      items.push({
-        id: "organization",
-        label: "Organization",
-        icon: Users,
       });
     }
 
@@ -846,31 +811,6 @@ export default function AdminSettingsPage() {
     [roles],
   );
 
-  const titleOptions = useMemo(
-    () => [
-      { value: "", label: "Not assigned" },
-      ...organizationTitles
-        .filter((item) => item.is_active)
-        .map((item) => ({
-          value: item.name,
-          label: item.name,
-        })),
-    ],
-    [organizationTitles],
-  );
-
-  const unitOptions = useMemo(
-    () => [
-      { value: "", label: "Not assigned" },
-      ...organizationUnits
-        .filter((item) => item.is_active)
-        .map((item) => ({
-          value: item.name,
-          label: item.name,
-        })),
-    ],
-    [organizationUnits],
-  );
   const assignableRoles = useMemo(
     () =>
       canAdminister
@@ -1369,7 +1309,7 @@ export default function AdminSettingsPage() {
     }
   }
 
-  async function beginEditMember(member: MemberRow) {
+  function beginEditMember(member: MemberRow) {
     setEditingMember(member);
     setMemberDraft({
       badge_number: member.badge_number ?? "",
@@ -1379,271 +1319,8 @@ export default function AdminSettingsPage() {
       is_active: member.is_active,
       role_codes: [...member.role_codes],
     });
-
-    setMemberGroupIds([]);
-
-    const { data: groupMemberships, error: groupMembershipError } =
-      await (supabase as any)
-        .from("department_group_members")
-        .select("group_id")
-        .eq("department_id", departmentId)
-        .eq("user_id", member.user_id);
-
-    if (groupMembershipError) {
-      showNotice(
-        "error",
-        groupMembershipError.message ||
-          "Group assignments could not be loaded.",
-      );
-      return;
-    }
-
-    setMemberGroupIds(
-      (groupMemberships ?? [])
-        .map((row: { group_id?: string }) => row.group_id)
-        .filter(
-          (groupId: string | undefined): groupId is string =>
-            Boolean(groupId),
-        ),
-    );
   }
 
-  type OrganizationKind = "title" | "unit" | "group";
-
-  function organizationTable(kind: OrganizationKind) {
-    if (kind === "title") return "department_titles";
-    if (kind === "unit") return "department_units";
-    return "department_groups";
-  }
-
-  async function loadOrganization() {
-    if (!departmentId || !canAdminister) return;
-
-    setOrganizationLoading(true);
-
-    try {
-      const [titlesResult, unitsResult, groupsResult] =
-        await Promise.all([
-          (supabase as any)
-            .from("department_titles")
-            .select("id,name,sort_order,is_active")
-            .eq("department_id", departmentId)
-            .order("sort_order")
-            .order("name"),
-
-          (supabase as any)
-            .from("department_units")
-            .select("id,name,sort_order,is_active")
-            .eq("department_id", departmentId)
-            .order("sort_order")
-            .order("name"),
-
-          (supabase as any)
-            .from("department_groups")
-            .select(
-              "id,name,description,group_type,sort_order,is_active",
-            )
-            .eq("department_id", departmentId)
-            .order("sort_order")
-            .order("name"),
-        ]);
-
-      if (titlesResult.error) throw titlesResult.error;
-      if (unitsResult.error) throw unitsResult.error;
-      if (groupsResult.error) throw groupsResult.error;
-
-      setOrganizationTitles(
-        (titlesResult.data ?? []) as OrganizationItem[],
-      );
-
-      setOrganizationUnits(
-        (unitsResult.data ?? []) as OrganizationItem[],
-      );
-
-      setOrganizationGroups(
-        (groupsResult.data ?? []) as OrganizationGroup[],
-      );
-    } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
-          ? error.message
-          : "Department organization could not be loaded.",
-      );
-    } finally {
-      setOrganizationLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (
-      !accessLoading &&
-      departmentId &&
-      canAdminister
-    ) {
-      void loadOrganization();
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessLoading, departmentId, canAdminister]);
-
-  async function addOrganizationItem(
-    kind: OrganizationKind,
-  ) {
-    if (!departmentId || !canAdminister) return;
-
-    const rawName =
-      kind === "title"
-        ? newTitleName
-        : kind === "unit"
-          ? newUnitName
-          : newGroupName;
-
-    const name = rawName.trim();
-
-    if (!name) {
-      showNotice("error", "Enter a name first.");
-      return;
-    }
-
-    setSavingSection(`organization-${kind}`);
-
-    try {
-      const table = organizationTable(kind);
-
-      const payload =
-        kind === "group"
-          ? {
-              department_id: departmentId,
-              name,
-              group_type: "specialty",
-              sort_order: 100,
-              is_active: true,
-            }
-          : {
-              department_id: departmentId,
-              name,
-              sort_order: 100,
-              is_active: true,
-            };
-
-      const { error } = await (supabase as any)
-        .from(table)
-        .insert(payload);
-
-      if (error) throw error;
-
-      if (kind === "title") setNewTitleName("");
-      if (kind === "unit") setNewUnitName("");
-      if (kind === "group") setNewGroupName("");
-
-      showNotice("success", `${name} was added.`);
-
-      await loadOrganization();
-    } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
-          ? error.message
-          : "The organization item could not be added.",
-      );
-    } finally {
-      setSavingSection(null);
-    }
-  }
-
-  async function renameOrganizationItem(
-    kind: OrganizationKind,
-    item: OrganizationItem,
-  ) {
-    if (!departmentId || !canAdminister) return;
-
-    const response = window.prompt(
-      `Rename ${item.name}`,
-      item.name,
-    );
-
-    if (response === null) return;
-
-    const name = response.trim();
-
-    if (!name || name === item.name) return;
-
-    setSavingSection(
-      `organization-${kind}-${item.id}`,
-    );
-
-    try {
-      const table = organizationTable(kind);
-
-      const { error } = await (supabase as any)
-        .from(table)
-        .update({ name })
-        .eq("department_id", departmentId)
-        .eq("id", item.id);
-
-      if (error) throw error;
-
-      showNotice(
-        "success",
-        `${item.name} was renamed to ${name}.`,
-      );
-
-      await loadOrganization();
-    } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
-          ? error.message
-          : "The organization item could not be renamed.",
-      );
-    } finally {
-      setSavingSection(null);
-    }
-  }
-
-  async function toggleOrganizationItem(
-    kind: OrganizationKind,
-    item: OrganizationItem,
-  ) {
-    if (!departmentId || !canAdminister) return;
-
-    setSavingSection(
-      `organization-${kind}-${item.id}`,
-    );
-
-    try {
-      const table = organizationTable(kind);
-
-      const { error } = await (supabase as any)
-        .from(table)
-        .update({
-          is_active: !item.is_active,
-        })
-        .eq("department_id", departmentId)
-        .eq("id", item.id);
-
-      if (error) throw error;
-
-      showNotice(
-        "success",
-        `${item.name} ${
-          item.is_active ? "deactivated" : "activated"
-        }.`,
-      );
-
-      await loadOrganization();
-    } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
-          ? error.message
-          : "The organization item could not be updated.",
-      );
-    } finally {
-      setSavingSection(null);
-    }
-  }
   async function saveMember() {
     if (
       !editingMember ||
@@ -1692,20 +1369,8 @@ export default function AdminSettingsPage() {
 
       if (roleError) throw roleError;
 
-      const { error: groupError } = await (supabase as any).rpc(
-        "set_department_group_members",
-        {
-          p_department_id: departmentId,
-          p_user_id: editingMember.user_id,
-          p_group_ids: memberGroupIds,
-        },
-      );
-
-      if (groupError) throw groupError;
-
       setEditingMember(null);
       setMemberDraft(null);
-      setMemberGroupIds([]);
       showNotice(
         "success",
         `${editingMember.full_name}'s access was updated.`,
@@ -1827,8 +1492,6 @@ export default function AdminSettingsPage() {
           unitName: inviteDraft.unitName,
           employeeNumber: inviteDraft.employeeNumber,
           roleCodes: inviteDraft.roleCodes,
-          groupIds: inviteGroupIds,
-          groupIds: inviteGroupIds,
         }),
       });
 
@@ -1843,8 +1506,6 @@ export default function AdminSettingsPage() {
 
       setInviteOpen(false);
       setInviteDraft(EMPTY_INVITE);
-      setInviteGroupIds([]);
-      setInviteGroupIds([]);
       showNotice(
         "success",
         result.message || "The user was added successfully.",
@@ -2455,375 +2116,6 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
-        {!loading &&
-        !accessLoading &&
-        activeTab === "organization" ? (
-          <div className="space-y-4">
-
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-5">
-              <h2 className="text-lg font-semibold text-white">
-                Department Organization
-              </h2>
-
-              <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
-                Configure this agency's titles, units, and
-                specialty assignments. Organization describes
-                where people sit in the agency; security roles
-                and permissions determine what they can do in
-                TracePoint.
-              </p>
-            </div>
-
-            {organizationLoading ? (
-              <div className="flex min-h-[240px] items-center justify-center rounded-3xl border border-slate-800 bg-slate-900/50">
-                <LoaderCircle
-                  size={26}
-                  className="animate-spin text-blue-400"
-                />
-              </div>
-            ) : (
-              <div className="grid gap-4 xl:grid-cols-3">
-
-                <SettingsCard
-                  title="Titles / Ranks"
-                  description="Agency-specific titles such as Chief, Sheriff, Captain, Lieutenant, Sergeant, Detective, Officer, or Deputy."
-                >
-                  <div className="flex gap-2">
-                    <input
-                      value={newTitleName}
-                      onChange={(event) =>
-                        setNewTitleName(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void addOrganizationItem("title");
-                        }
-                      }}
-                      placeholder="Add title / rank"
-                      className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void addOrganizationItem("title")
-                      }
-                      disabled={
-                        !newTitleName.trim() ||
-                        savingSection === "organization-title"
-                      }
-                      className="rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    {organizationTitles.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-800 p-5 text-center text-sm text-slate-600">
-                        No titles configured.
-                      </div>
-                    ) : (
-                      organizationTitles.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-3.5 py-3"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-200">
-                              {item.name}
-                            </p>
-
-                            <div className="mt-1">
-                              <StatusPill
-                                label={
-                                  item.is_active
-                                    ? "Active"
-                                    : "Inactive"
-                                }
-                                tone={
-                                  item.is_active
-                                    ? "green"
-                                    : "slate"
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex shrink-0 gap-1">
-                            <button
-                              type="button"
-                              title="Rename"
-                              onClick={() =>
-                                void renameOrganizationItem(
-                                  "title",
-                                  item,
-                                )
-                              }
-                              className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
-                            >
-                              <Pencil size={14} />
-                            </button>
-
-                            <button
-                              type="button"
-                              title={
-                                item.is_active
-                                  ? "Deactivate"
-                                  : "Activate"
-                              }
-                              onClick={() =>
-                                void toggleOrganizationItem(
-                                  "title",
-                                  item,
-                                )
-                              }
-                              className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
-                            >
-                              {item.is_active ? (
-                                <X size={14} />
-                              ) : (
-                                <Check size={14} />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </SettingsCard>
-
-
-                <SettingsCard
-                  title="Units"
-                  description="Primary organizational units such as Patrol, Investigations, Traffic, Administration, or Special Services."
-                >
-                  <div className="flex gap-2">
-                    <input
-                      value={newUnitName}
-                      onChange={(event) =>
-                        setNewUnitName(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void addOrganizationItem("unit");
-                        }
-                      }}
-                      placeholder="Add unit"
-                      className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void addOrganizationItem("unit")
-                      }
-                      disabled={
-                        !newUnitName.trim() ||
-                        savingSection === "organization-unit"
-                      }
-                      className="rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    {organizationUnits.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-800 p-5 text-center text-sm text-slate-600">
-                        No units configured.
-                      </div>
-                    ) : (
-                      organizationUnits.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-3.5 py-3"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-200">
-                              {item.name}
-                            </p>
-
-                            <div className="mt-1">
-                              <StatusPill
-                                label={
-                                  item.is_active
-                                    ? "Active"
-                                    : "Inactive"
-                                }
-                                tone={
-                                  item.is_active
-                                    ? "green"
-                                    : "slate"
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex shrink-0 gap-1">
-                            <button
-                              type="button"
-                              title="Rename"
-                              onClick={() =>
-                                void renameOrganizationItem(
-                                  "unit",
-                                  item,
-                                )
-                              }
-                              className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
-                            >
-                              <Pencil size={14} />
-                            </button>
-
-                            <button
-                              type="button"
-                              title={
-                                item.is_active
-                                  ? "Deactivate"
-                                  : "Activate"
-                              }
-                              onClick={() =>
-                                void toggleOrganizationItem(
-                                  "unit",
-                                  item,
-                                )
-                              }
-                              className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
-                            >
-                              {item.is_active ? (
-                                <X size={14} />
-                              ) : (
-                                <Check size={14} />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </SettingsCard>
-
-
-                <SettingsCard
-                  title="Groups / Assignments"
-                  description="Cross-organizational assignments such as SWAT, UAS, FTO, Honor Guard, Firearms Instructor, or Crisis Negotiation."
-                >
-                  <div className="flex gap-2">
-                    <input
-                      value={newGroupName}
-                      onChange={(event) =>
-                        setNewGroupName(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void addOrganizationItem("group");
-                        }
-                      }}
-                      placeholder="Add group / assignment"
-                      className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void addOrganizationItem("group")
-                      }
-                      disabled={
-                        !newGroupName.trim() ||
-                        savingSection === "organization-group"
-                      }
-                      className="rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    {organizationGroups.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-800 p-5 text-center text-sm text-slate-600">
-                        No groups configured.
-                      </div>
-                    ) : (
-                      organizationGroups.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-3.5 py-3"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-200">
-                              {item.name}
-                            </p>
-
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              <StatusPill
-                                label={
-                                  item.is_active
-                                    ? "Active"
-                                    : "Inactive"
-                                }
-                                tone={
-                                  item.is_active
-                                    ? "green"
-                                    : "slate"
-                                }
-                              />
-
-                              <span className="text-[11px] text-slate-600">
-                                {humanize(item.group_type)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex shrink-0 gap-1">
-                            <button
-                              type="button"
-                              title="Rename"
-                              onClick={() =>
-                                void renameOrganizationItem(
-                                  "group",
-                                  item,
-                                )
-                              }
-                              className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
-                            >
-                              <Pencil size={14} />
-                            </button>
-
-                            <button
-                              type="button"
-                              title={
-                                item.is_active
-                                  ? "Deactivate"
-                                  : "Activate"
-                              }
-                              onClick={() =>
-                                void toggleOrganizationItem(
-                                  "group",
-                                  item,
-                                )
-                              }
-                              className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
-                            >
-                              {item.is_active ? (
-                                <X size={14} />
-                              ) : (
-                                <Check size={14} />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </SettingsCard>
-
-              </div>
-            )}
-          </div>
-        ) : null}
         {!loading && !accessLoading && activeTab === "users" ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
@@ -2853,8 +2145,6 @@ export default function AdminSettingsPage() {
                   type="button"
                   onClick={() => {
                     setInviteDraft(EMPTY_INVITE);
-      setInviteGroupIds([]);
-      setInviteGroupIds([]);
                     setInviteOpen(true);
                   }}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
@@ -3636,10 +2926,7 @@ export default function AdminSettingsPage() {
           title="Invite Department User"
           description="Invite a new TracePoint account or add an existing TracePoint user to this department."
           onClose={() => {
-            if (savingSection !== "invite") {
-              setInviteOpen(false);
-              setInviteGroupIds([]);
-            }
+            if (savingSection !== "invite") setInviteOpen(false);
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2">
@@ -3664,17 +2951,16 @@ export default function AdminSettingsPage() {
                 }))
               }
             />
-            <SelectInput
+            <TextInput
               label="Rank / title"
               value={inviteDraft.rankTitle}
-              options={titleOptions}
               onChange={(value) =>
                 setInviteDraft((current) => ({
                   ...current,
                   rankTitle: value,
                 }))
               }
-              hint="Configured under Administration > Organization."
+              placeholder="Lieutenant"
             />
             <TextInput
               label="Badge number"
@@ -3686,17 +2972,16 @@ export default function AdminSettingsPage() {
                 }))
               }
             />
-            <SelectInput
+            <TextInput
               label="Unit"
               value={inviteDraft.unitName}
-              options={unitOptions}
               onChange={(value) =>
                 setInviteDraft((current) => ({
                   ...current,
                   unitName: value,
                 }))
               }
-              hint="Configured under Administration > Organization."
+              placeholder="Special Services"
             />
             <TextInput
               label="Employee number"
@@ -3708,111 +2993,6 @@ export default function AdminSettingsPage() {
                 }))
               }
             />
-          </div>
-
-          <div className="mt-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <p className="text-sm font-semibold text-slate-200">
-                Groups / Assignments
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Optional organizational assignments. These do not
-                grant TracePoint permissions.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {organizationGroups
-                  .filter((group) => group.is_active)
-                  .map((group) => {
-                    const selected =
-                      inviteGroupIds.includes(group.id);
-
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        disabled={savingSection === "invite"}
-                        onClick={() =>
-                          setInviteGroupIds((current) =>
-                            selected
-                              ? current.filter(
-                                  (groupId) =>
-                                    groupId !== group.id,
-                                )
-                              : [...current, group.id],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          selected
-                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {selected ? "✓ " : ""}
-                        {group.name}
-                      </button>
-                    );
-                  })}
-
-                {organizationGroups.filter(
-                  (group) => group.is_active,
-                ).length === 0 ? (
-                  <span className="text-xs text-slate-600">
-                    No active groups are configured.
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <p className="text-sm font-semibold text-slate-200">
-                Groups / Assignments
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Optional organizational assignments. These do not grant TracePoint permissions.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {organizationGroups
-                  .filter((group) => group.is_active)
-                  .map((group) => {
-                    const selected = inviteGroupIds.includes(group.id);
-
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        disabled={savingSection === "invite"}
-                        onClick={() =>
-                          setInviteGroupIds((current) =>
-                            selected
-                              ? current.filter((groupId) => groupId !== group.id)
-                              : [...current, group.id],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          selected
-                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {selected ? "✓ " : ""}
-                        {group.name}
-                      </button>
-                    );
-                  })}
-
-                {organizationGroups.filter((group) => group.is_active).length === 0 ? (
-                  <span className="text-xs text-slate-600">
-                    No active groups are configured.
-                  </span>
-                ) : null}
-              </div>
-            </div>
           </div>
 
           <div className="mt-5">
@@ -3835,7 +3015,7 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               disabled={savingSection === "invite"}
-              onClick={() => { setInviteOpen(false); setInviteGroupIds([]); }}
+              onClick={() => setInviteOpen(false)}
               className="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:text-white disabled:opacity-50"
             >
               Cancel
@@ -3965,7 +3145,6 @@ export default function AdminSettingsPage() {
             if (savingSection !== "member") {
               setEditingMember(null);
               setMemberDraft(null);
-                setMemberGroupIds([]);
             }
           }}
         >
@@ -3977,10 +3156,9 @@ export default function AdminSettingsPage() {
               disabled
               hint="Authentication email changes are managed through Supabase Auth."
             />
-            <SelectInput
+            <TextInput
               label="Rank / title"
               value={memberDraft.rank_title}
-              options={titleOptions}
               onChange={(value) =>
                 setMemberDraft((current) =>
                   current
@@ -3988,7 +3166,6 @@ export default function AdminSettingsPage() {
                     : current,
                 )
               }
-              hint="Configured under Administration > Organization."
             />
             <TextInput
               label="Badge number"
@@ -4013,10 +3190,9 @@ export default function AdminSettingsPage() {
               }
             />
             <div className="sm:col-span-2">
-              <SelectInput
+              <TextInput
                 label="Unit"
                 value={memberDraft.unit_name}
-                options={unitOptions}
                 onChange={(value) =>
                   setMemberDraft((current) =>
                     current
@@ -4024,7 +3200,6 @@ export default function AdminSettingsPage() {
                       : current,
                   )
                 }
-                hint="Configured under Administration > Organization."
               />
             </div>
           </div>
@@ -4053,63 +3228,6 @@ export default function AdminSettingsPage() {
           </div>
 
           <div className="mt-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <p className="text-sm font-semibold text-slate-200">
-                Groups / Assignments
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Organizational assignments such as SWAT, UAS, FTO,
-                Honor Guard, or Firearms Instructor. These do not
-                grant TracePoint permissions.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {organizationGroups
-                  .filter((group) => group.is_active)
-                  .map((group) => {
-                    const selected =
-                      memberGroupIds.includes(group.id);
-
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        disabled={savingSection === "member"}
-                        onClick={() =>
-                          setMemberGroupIds((current) =>
-                            selected
-                              ? current.filter(
-                                  (groupId) =>
-                                    groupId !== group.id,
-                                )
-                              : [...current, group.id],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          selected
-                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {selected ? "✓ " : ""}
-                        {group.name}
-                      </button>
-                    );
-                  })}
-
-                {organizationGroups.filter(
-                  (group) => group.is_active,
-                ).length === 0 ? (
-                  <span className="text-xs text-slate-600">
-                    No active groups are configured.
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5">
             <RoleSelector
               roles={assignableRoles}
               selected={memberDraft.role_codes}
@@ -4133,7 +3251,6 @@ export default function AdminSettingsPage() {
               onClick={() => {
                 setEditingMember(null);
                 setMemberDraft(null);
-                setMemberGroupIds([]);
               }}
               className="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:text-white disabled:opacity-50"
             >
@@ -4175,14 +3292,6 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
-
-
-
-
-
-
-
-
 
 
 

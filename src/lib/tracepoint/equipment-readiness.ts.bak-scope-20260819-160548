@@ -7,18 +7,11 @@
   | "missing"
   | "out_of_service";
 
-export type EquipmentRequirementScope =
-  | "all"
-  | "rank"
-  | "unit"
-  | "officer";
-
 export type EquipmentReadinessMember = {
   userId: string;
   fullName: string;
   badgeNumber?: string | null;
   rankTitle?: string | null;
-  unitName?: string | null;
 };
 
 export type EquipmentReadinessType = {
@@ -38,12 +31,6 @@ export type EquipmentReadinessRequirement = {
   isRequired: boolean;
   isActive: boolean;
   requiredQuantity: number;
-
-  scopeType: EquipmentRequirementScope;
-  scopeValue: string;
-
-  affectsReadiness: boolean;
-
   validDays: number | null;
   dueSoonDays: number | null;
   inspectionIntervalDays: number | null;
@@ -80,16 +67,10 @@ export type EquipmentReadinessRow = {
   officerName: string;
   badgeNumber?: string | null;
   rankTitle?: string | null;
-  unitName?: string | null;
 
   equipmentTypeId: string;
   equipmentName: string;
   equipmentCategory: string;
-
-  scopeType: EquipmentRequirementScope;
-  scopeValue: string;
-
-  affectsReadiness: boolean;
 
   requiredQuantity: number;
   assignedQuantity: number;
@@ -122,43 +103,6 @@ type EvaluatedAsset = EquipmentReadinessAssetEvaluation & {
 
 const DAY_MS = 86_400_000;
 
-function normalize(value: string | null | undefined) {
-  return (value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
-function requirementApplies(
-  member: EquipmentReadinessMember,
-  requirement: EquipmentReadinessRequirement,
-) {
-  switch (requirement.scopeType) {
-    case "all":
-      return true;
-
-    case "rank":
-      return (
-        normalize(member.rankTitle) ===
-        normalize(requirement.scopeValue)
-      );
-
-    case "unit":
-      return (
-        normalize(member.unitName) ===
-        normalize(requirement.scopeValue)
-      );
-
-    case "officer":
-      return (
-        member.userId === requirement.scopeValue
-      );
-
-    default:
-      return false;
-  }
-}
-
 function utcDate(value: string) {
   return new Date(`${value}T00:00:00Z`);
 }
@@ -187,8 +131,7 @@ function addDays(value: string, days: number) {
 
 function daysRemaining(value: string, today: Date) {
   return Math.floor(
-    (utcDate(value).getTime() - today.getTime()) /
-      DAY_MS,
+    (utcDate(value).getTime() - today.getTime()) / DAY_MS,
   );
 }
 
@@ -205,15 +148,13 @@ function evaluateAsset(params: {
       assetId: asset.id,
       status: "out_of_service",
       expirationDate: asset.expirationDate,
-      expirationDaysRemaining:
-        asset.expirationDate
-          ? daysRemaining(asset.expirationDate, today)
-          : null,
+      expirationDaysRemaining: asset.expirationDate
+        ? daysRemaining(asset.expirationDate, today)
+        : null,
       nextInspectionDate: asset.nextInspectionDate,
-      inspectionDaysRemaining:
-        asset.nextInspectionDate
-          ? daysRemaining(asset.nextInspectionDate, today)
-          : null,
+      inspectionDaysRemaining: asset.nextInspectionDate
+        ? daysRemaining(asset.nextInspectionDate, today)
+        : null,
       reason: "Equipment is marked out of service.",
       readinessRank: 60,
       isReady: false,
@@ -240,9 +181,11 @@ function evaluateAsset(params: {
 
   const effectiveExpiration =
     asset.expirationDate ??
-    (asset.issueDate && validDays
-      ? addDays(asset.issueDate, validDays)
-      : null);
+    (
+      asset.issueDate && validDays
+        ? addDays(asset.issueDate, validDays)
+        : null
+    );
 
   let expirationRemaining: number | null = null;
 
@@ -258,12 +201,8 @@ function evaluateAsset(params: {
         expirationDaysRemaining: expirationRemaining,
         nextInspectionDate: asset.nextInspectionDate,
         inspectionDaysRemaining: null,
-        reason: `Equipment expired ${Math.abs(
-          expirationRemaining,
-        )} day${
-          Math.abs(expirationRemaining) === 1
-            ? ""
-            : "s"
+        reason: `Equipment expired ${Math.abs(expirationRemaining)} day${
+          Math.abs(expirationRemaining) === 1 ? "" : "s"
         } ago.`,
         readinessRank: 70,
         isReady: false,
@@ -286,13 +225,14 @@ function evaluateAsset(params: {
 
   const effectiveInspectionDate =
     asset.nextInspectionDate ??
-    (asset.lastInspectionDate &&
-    inspectionIntervalDays
-      ? addDays(
-          asset.lastInspectionDate,
-          inspectionIntervalDays,
-        )
-      : null);
+    (
+      asset.lastInspectionDate && inspectionIntervalDays
+        ? addDays(
+            asset.lastInspectionDate,
+            inspectionIntervalDays,
+          )
+        : null
+    );
 
   let inspectionRemaining: number | null = null;
 
@@ -311,9 +251,7 @@ function evaluateAsset(params: {
         reason: `Equipment inspection is overdue by ${Math.abs(
           inspectionRemaining,
         )} day${
-          Math.abs(inspectionRemaining) === 1
-            ? ""
-            : "s"
+          Math.abs(inspectionRemaining) === 1 ? "" : "s"
         }.`,
         readinessRank: 80,
         isReady: false,
@@ -429,8 +367,7 @@ function rowStatusFromSelected(
 
   return {
     status: "current",
-    reason:
-      "Required equipment is assigned and current.",
+    reason: "Required equipment is assigned and current.",
   };
 }
 
@@ -463,12 +400,7 @@ export function evaluateEquipmentReadiness(params: {
   const rows: EquipmentReadinessRow[] = [];
 
   for (const member of members) {
-    const applicableRequirements =
-      required.filter((requirement) =>
-        requirementApplies(member, requirement),
-      );
-
-    for (const requirement of applicableRequirements) {
+    for (const requirement of required) {
       const type = typeMap.get(
         requirement.equipmentTypeId,
       );
@@ -508,14 +440,11 @@ export function evaluateEquipmentReadiness(params: {
       let status: EquipmentReadinessStatus;
       let statusReason: string;
 
-      if (
-        assignedAssets.length < requiredQuantity
-      ) {
+      if (assignedAssets.length < requiredQuantity) {
         status = "missing";
 
         const missingCount =
-          requiredQuantity -
-          assignedAssets.length;
+          requiredQuantity - assignedAssets.length;
 
         statusReason = `${missingCount} required ${type.name} item${
           missingCount === 1 ? " is" : "s are"
@@ -536,22 +465,12 @@ export function evaluateEquipmentReadiness(params: {
       rows.push({
         userId: member.userId,
         officerName: member.fullName,
-        badgeNumber:
-          member.badgeNumber ?? null,
-        rankTitle:
-          member.rankTitle ?? null,
-        unitName:
-          member.unitName ?? null,
+        badgeNumber: member.badgeNumber ?? null,
+        rankTitle: member.rankTitle ?? null,
 
         equipmentTypeId: type.id,
         equipmentName: type.name,
         equipmentCategory: type.category,
-
-        scopeType: requirement.scopeType,
-        scopeValue: requirement.scopeValue,
-
-        affectsReadiness:
-          requirement.affectsReadiness,
 
         requiredQuantity,
         assignedQuantity: assignedAssets.length,
@@ -577,12 +496,8 @@ export function evaluateEquipmentReadiness(params: {
 export function summarizeEquipmentReadiness(
   rows: EquipmentReadinessRow[],
 ): EquipmentReadinessSummary {
-  const readinessRows = rows.filter(
-    (row) => row.affectsReadiness,
-  );
-
   const summary: EquipmentReadinessSummary = {
-    totalRequiredChecks: readinessRows.length,
+    totalRequiredChecks: rows.length,
     current: 0,
     dueSoon: 0,
     expired: 0,
@@ -595,7 +510,7 @@ export function summarizeEquipmentReadiness(
     readinessPercent: 100,
   };
 
-  for (const row of readinessRows) {
+  for (const row of rows) {
     switch (row.status) {
       case "current":
         summary.current += 1;

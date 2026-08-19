@@ -515,100 +515,6 @@ const filteredReadiness = useMemo(() => {
     statusFilter,
   ]);
 
-  const officerReadinessGroups = useMemo(() => {
-    const groups = new Map<
-      string,
-      {
-        userId: string;
-        officerName: string;
-        badgeNumber?: string | null;
-        rankTitle?: string | null;
-        unitName?: string | null;
-        rows: EquipmentReadinessRow[];
-        requiredQuantity: number;
-        assignedQuantity: number;
-        missingQuantity: number;
-        attentionCount: number;
-        criticalCount: number;
-        affectsReadinessCount: number;
-        readinessReadyCount: number;
-      }
-    >();
-
-    filteredReadiness.forEach((row) => {
-      const existing = groups.get(row.userId);
-
-      const group =
-        existing ??
-        {
-          userId: row.userId,
-          officerName: row.officerName,
-          badgeNumber: row.badgeNumber,
-          rankTitle: row.rankTitle,
-          unitName: row.unitName,
-          rows: [],
-          requiredQuantity: 0,
-          assignedQuantity: 0,
-          missingQuantity: 0,
-          attentionCount: 0,
-          criticalCount: 0,
-          affectsReadinessCount: 0,
-          readinessReadyCount: 0,
-        };
-
-      group.rows.push(row);
-      group.requiredQuantity += row.requiredQuantity;
-      group.assignedQuantity += Math.min(
-        row.assignedQuantity,
-        row.requiredQuantity,
-      );
-
-      group.missingQuantity += Math.max(
-        0,
-        row.requiredQuantity - row.assignedQuantity,
-      );
-
-      if (
-        row.status !== "current" &&
-        row.status !== "due_soon" &&
-        row.status !== "inspection_due_soon"
-      ) {
-        group.criticalCount += 1;
-      }
-
-      if (row.status !== "current") {
-        group.attentionCount += 1;
-      }
-
-      if (row.affectsReadiness) {
-        group.affectsReadinessCount += 1;
-
-        if (
-          row.status === "current" ||
-          row.status === "due_soon" ||
-          row.status === "inspection_due_soon"
-        ) {
-          group.readinessReadyCount += 1;
-        }
-      }
-
-      groups.set(row.userId, group);
-    });
-
-    return Array.from(groups.values()).sort((a, b) => {
-      if (a.criticalCount !== b.criticalCount) {
-        return b.criticalCount - a.criticalCount;
-      }
-
-      if (a.attentionCount !== b.attentionCount) {
-        return b.attentionCount - a.attentionCount;
-      }
-
-      return a.officerName.localeCompare(b.officerName);
-    });
-  }, [filteredReadiness]);
-
-
   async function saveType() {
     setSaving(true);
     setError("");
@@ -905,7 +811,7 @@ const filteredReadiness = useMemo(() => {
                   className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
                 >
                   <PackagePlus size={15} />
-                  Assign Equipment
+                  Add Equipment
                 </button>
                 </>
               ) : null}
@@ -1231,209 +1137,78 @@ const filteredReadiness = useMemo(() => {
                 className="text-emerald-400"
               />
               <p className="mt-3 font-semibold text-white">
-                No officer readiness records found
+                No readiness issues found
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                No officers match the current readiness filters.
+                No officer readiness rows match the current filters.
               </p>
             </div>
           ) : (
-            <div className="space-y-3 p-4">
-              {officerReadinessGroups.map((group) => {
-                const readinessPercent =
-                  group.affectsReadinessCount > 0
-                    ? Math.round(
-                        (group.readinessReadyCount /
-                          group.affectsReadinessCount) *
-                          100,
-                      )
-                    : 100;
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left">
+                <thead className="border-b border-slate-800 bg-slate-950/40">
+                  <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3">Officer</th>
+                    <th className="px-4 py-3">Equipment</th>
+                    <th className="px-4 py-3">Ready</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Reason</th>
+                  </tr>
+                </thead>
 
-                const ready =
-                  group.criticalCount === 0 &&
-                  group.missingQuantity === 0;
+                <tbody className="divide-y divide-slate-800">
+                  {filteredReadiness.map((row) => (
+                    <tr
+                      key={`${row.userId}-${row.equipmentTypeId}`}
+                      className="align-top transition hover:bg-slate-950/40"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-semibold text-white">
+                          {row.officerName}
+                        </p>
 
-                return (
-                  <article
-                    key={group.userId}
-                    className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/35"
-                  >
-                    <div className="flex flex-col gap-4 border-b border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
-                            ready
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                              : "border-red-500/30 bg-red-500/10 text-red-300"
-                          }`}
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {[
+                            row.rankTitle,
+                            row.badgeNumber
+                              ? `Badge ${row.badgeNumber}`
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <p className="text-xs font-medium text-slate-300">
+                          {row.equipmentName}
+                        </p>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {row.equipmentCategory}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-3 text-xs text-slate-400">
+                        {row.readyQuantity}/{row.requiredQuantity}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(
+                            row.status,
+                          )}`}
                         >
-                          {ready ? (
-                            <ShieldCheck size={19} />
-                          ) : (
-                            <ShieldAlert size={19} />
-                          )}
-                        </div>
+                          {statusLabel(row.status)}
+                        </span>
+                      </td>
 
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-sm font-bold text-white">
-                              {group.officerName}
-                            </h3>
-
-                            <span
-                              className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                                ready
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                                  : "border-red-500/30 bg-red-500/10 text-red-300"
-                              }`}
-                            >
-                              {ready
-                                ? "Ready"
-                                : "Needs Attention"}
-                            </span>
-                          </div>
-
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            {[
-                              group.rankTitle,
-                              group.unitName,
-                              group.badgeNumber
-                                ? `Badge ${group.badgeNumber}`
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
-                          <p className="text-[8px] font-semibold uppercase tracking-wider text-slate-500">
-                            Required
-                          </p>
-                          <p className="mt-1 text-base font-bold text-white">
-                            {group.requiredQuantity}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
-                          <p className="text-[8px] font-semibold uppercase tracking-wider text-slate-500">
-                            Issued
-                          </p>
-                          <p className="mt-1 text-base font-bold text-white">
-                            {group.assignedQuantity}
-                          </p>
-                        </div>
-
-                        <div
-                          className={`rounded-xl border px-3 py-2 ${
-                            group.missingQuantity > 0
-                              ? "border-red-500/30 bg-red-500/[0.07]"
-                              : "border-slate-800 bg-slate-900/70"
-                          }`}
-                        >
-                          <p className="text-[8px] font-semibold uppercase tracking-wider text-slate-500">
-                            Missing
-                          </p>
-                          <p
-                            className={`mt-1 text-base font-bold ${
-                              group.missingQuantity > 0
-                                ? "text-red-300"
-                                : "text-white"
-                            }`}
-                          >
-                            {group.missingQuantity}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
-                          <p className="text-[8px] font-semibold uppercase tracking-wider text-slate-500">
-                            Readiness
-                          </p>
-                          <p
-                            className={`mt-1 text-base font-bold ${
-                              readinessPercent === 100
-                                ? "text-emerald-300"
-                                : readinessPercent >= 80
-                                  ? "text-amber-300"
-                                  : "text-red-300"
-                            }`}
-                          >
-                            {readinessPercent}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="divide-y divide-slate-800">
-                      {group.rows
-                        .slice()
-                        .sort((a, b) => {
-                          const order: Record<
-                            ReadinessStatus,
-                            number
-                          > = {
-                            missing: 0,
-                            out_of_service: 1,
-                            expired: 2,
-                            inspection_overdue: 3,
-                            due_soon: 4,
-                            inspection_due_soon: 5,
-                            current: 6,
-                          };
-
-                          return (
-                            order[a.status] - order[b.status]
-                          );
-                        })
-                        .map((row) => (
-                          <div
-                            key={`${row.userId}-${row.equipmentTypeId}-${row.scopeType}-${row.scopeValue}`}
-                            className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.3fr)_120px_160px_minmax(260px,2fr)] lg:items-center"
-                          >
-                            <div>
-                              <p className="text-xs font-semibold text-slate-200">
-                                {row.equipmentName}
-                              </p>
-
-                              <p className="mt-1 text-[10px] text-slate-500">
-                                {row.equipmentCategory}
-                                {!row.affectsReadiness
-                                  ? " · Tracked only"
-                                  : ""}
-                              </p>
-                            </div>
-
-                            <div>
-                              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-600">
-                                Issued
-                              </p>
-                              <p className="mt-1 text-xs text-slate-300">
-                                {row.assignedQuantity}/
-                                {row.requiredQuantity}
-                              </p>
-                            </div>
-
-                            <div>
-                              <span
-                                className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(
-                                  row.status,
-                                )}`}
-                              >
-                                {statusLabel(row.status)}
-                              </span>
-                            </div>
-
-                            <p className="text-xs leading-5 text-slate-400">
-                              {row.statusReason}
-                            </p>
-                          </div>
-                        ))}
-                    </div>
-                  </article>
-                );
-              })}
+                      <td className="px-4 py-3 text-xs leading-5 text-slate-400">
+                        {row.statusReason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -1441,7 +1216,7 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign Equipment Type
+                Add Equipment Type
               </h2>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1905,7 +1680,7 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign Equipment
+                Add Equipment
               </h2>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -2120,7 +1895,7 @@ const filteredReadiness = useMemo(() => {
                   }
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  Assign Equipment
+                  Add Equipment
                 </button>
               </div>
             </div>
@@ -2130,8 +1905,6 @@ const filteredReadiness = useMemo(() => {
     </TracePointShell>
   );
 }
-
-
 
 
 
