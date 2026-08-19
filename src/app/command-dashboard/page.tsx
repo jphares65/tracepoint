@@ -490,6 +490,7 @@ const [loading, setLoading] = useState(true);
         setQualificationDueSoonDays(data.qualificationDueSoonDays);
         setCertificationReadiness(data.certificationReadiness);
         setEquipmentReadiness(data.equipmentReadiness);
+        setPerformanceSummary(data.performanceSummary);
       } catch (error) {
         console.error("Could not load command dashboard.", error);
         if (mounted) {
@@ -526,84 +527,29 @@ const [loading, setLoading] = useState(true);
   );
 
   const officerSummaries = useMemo<OfficerSummary[]>(() => {
-    return personnel.map((person) => {
-      const results = qualificationResults
-        .filter((result) => result.officerId === person.id)
-        .sort(
-          (a, b) =>
-            getDateValue(rangeDaysById.get(b.rangeDayId)?.date) -
-            getDateValue(rangeDaysById.get(a.rangeDayId)?.date),
-        );
+    const rows = Array.isArray(performanceSummary?.qualificationTrends)
+      ? performanceSummary.qualificationTrends
+      : [];
 
-      const passed = results.filter(isPassed);
-      const day = passed.find((result) => result.runNumber === 1);
-      const night = passed.find((result) => result.runNumber === 2);
-      const failedQualifications = results
-        .filter((result) => result.passed === false)
-        .map((result) => ({
-          date: rangeDaysById.get(result.rangeDayId)?.date ?? "",
-          runLabel:
-            result.runNumber === 1
-              ? "Day Qualification"
-              : result.runNumber === 2
-                ? "Night Qualification"
-                : `Run ${result.runNumber ?? 1}`,
-        }));
-
-      const lastDayQualification = day
-        ? {
-            date: rangeDaysById.get(day.rangeDayId)?.date ?? "",
-            runLabel: "Day Qualification",
-          }
-        : undefined;
-
-      const lastNightQualification = night
-        ? {
-            date: rangeDaysById.get(night.rangeDayId)?.date ?? "",
-            runLabel: "Night Qualification",
-          }
-        : undefined;
-
-      const evaluatedStatus = evaluateQualificationReadiness({
-        lastDayQualification,
-        lastNightQualification,
-        failedQualifications,
-        qualificationValidDays,
-        qualificationDueSoonDays,
-      });
-
-      const status = evaluatedStatus.status;
-      const statusReason = evaluatedStatus.statusReason;
-
-      const scored = [...results]
-        .filter((result) => typeof result.score === "number")
-        .reverse();
-
-      let scoreTrend: OfficerSummary["scoreTrend"] = "Insufficient Data";
-      let trendDelta: number | undefined;
-
-      if (scored.length >= 3) {
-        trendDelta =
-          (scored[scored.length - 1].score ?? 0) - (scored[0].score ?? 0);
-
-        scoreTrend =
-          trendDelta <= -5
+    return rows.map((row: any) => ({
+      officerId: row.officerId,
+      officerName: row.name,
+      status:
+        row.status === "No Record"
+          ? "No Record"
+          : row.status === "Expired"
+            ? "Overdue"
+            : row.status,
+      statusReason: row.detail ?? "",
+      scoreTrend:
+        row.trend === "Improving"
+          ? "Improving"
+          : row.trend === "Declining" || row.trend === "Action Needed"
             ? "Declining"
-            : trendDelta >= 5
-              ? "Improving"
-              : "Stable";
-      }
-
-      return {
-        officerId: person.id,
-        officerName: person.displayName || person.fullName,
-        status,
-        statusReason,
-        scoreTrend,
-        trendDelta,
-      };
-    });
-  }, [personnel, qualificationResults, qualificationValidDays, qualificationDueSoonDays, rangeDaysById]);
+            : "Stable",
+      trendDelta: undefined,
+    }));
+  }, [performanceSummary]);
 
   const activeRangeDays = workspace.rangeDays.filter(
     (day) => day.status !== "Archived",
@@ -687,7 +633,7 @@ const [loading, setLoading] = useState(true);
         ) {
           items.push({
             id: `qualification-${officer.officerId}`,
-            title: `${officer.officerName} · ${officer.status}`,
+            title: `${officer.officerName} Ã‚Â· ${officer.status}`,
             detail: officer.statusReason,
             href: "/qualifications",
             tone:
@@ -706,7 +652,7 @@ const [loading, setLoading] = useState(true);
 
         items.push({
           id: `certification-${row.userId}-${row.certificationTypeId}`,
-          title: `${row.officerName} · ${row.certificationName}`,
+          title: `${row.officerName} Ã‚Â· ${row.certificationName}`,
           detail: row.statusReason,
           href: "/training/certifications",
           tone: row.status === "due_soon" ? "amber" : "red",
@@ -759,7 +705,7 @@ const [loading, setLoading] = useState(true);
 
         items.push({
           id: `equipment-${key}`,
-          title: `${group.equipmentName} · ${labels[group.status]}`,
+          title: `${group.equipmentName} Ã‚Â· ${labels[group.status]}`,
           detail: `${group.count} officer${
             group.count === 1 ? "" : "s"
           } affected. Review Equipment Readiness for details.`,
@@ -774,7 +720,7 @@ const [loading, setLoading] = useState(true);
       firearmAlerts.forEach((firearm) => {
         items.push({
           id: `firearm-${firearm.id}`,
-          title: `${firearm.make} ${firearm.model} · ${firearm.serial_number}`,
+          title: `${firearm.make} ${firearm.model} Ã‚Â· ${firearm.serial_number}`,
           detail: `Condition: ${firearm.condition_status ?? "Review required"}.`,
           href: "/firearms",
           tone: "red",
@@ -787,8 +733,8 @@ const [loading, setLoading] = useState(true);
       incompletePackets.forEach((day) => {
         items.push({
           id: `packet-${day.id}`,
-          title: `Packet not ready · ${day.title}`,
-          detail: `${formatDate(day.date)} · ${
+          title: `Packet not ready Ã‚Â· ${day.title}`,
+          detail: `${formatDate(day.date)} Ã‚Â· ${
             day.packetStatus ?? "Needs Setup"
           }`,
           href: "/range-days",
@@ -802,7 +748,7 @@ const [loading, setLoading] = useState(true);
       declining.forEach((officer) => {
         items.push({
           id: `trend-${officer.officerId}`,
-          title: `${officer.officerName} · Declining score trend`,
+          title: `${officer.officerName} Ã‚Â· Declining score trend`,
           detail:
             typeof officer.trendDelta === "number"
               ? `Scores declined by ${Math.abs(
@@ -907,7 +853,7 @@ const [loading, setLoading] = useState(true);
           {hasQualifications && (
             <PulseCard
               title="Qualification Readiness"
-              value={loading ? "—" : `${currentCount}/${personnel.length}`}
+              value={loading ? "Ã¢â‚¬â€" : `${currentCount}/${personnel.length}`}
               label="Officers current"
               detail={`${missingDayCount} missing day/no record ? ${missingNightCount} missing night ? ${dueSoonCount} due soon ? ${failedOrOverdueCount} failed/overdue.`}
               icon={Shield}
@@ -920,9 +866,9 @@ const [loading, setLoading] = useState(true);
               title="Certification Readiness"
               value={
                 loading
-                  ? "—"
+                  ? "Ã¢â‚¬â€"
                   : certificationReadiness.summary.totalRequiredChecks === 0
-                    ? "—"
+                    ? "Ã¢â‚¬â€"
                     : `${certificationReadiness.summary.readinessPercent}%`
               }
               label={
@@ -933,7 +879,7 @@ const [loading, setLoading] = useState(true);
               detail={
                 certificationReadiness.summary.totalRequiredChecks === 0
                   ? "Configure required certifications to begin agency readiness tracking."
-                  : `${certificationReadiness.summary.dueSoon} due soon · ${certificationReadiness.summary.expired} expired · ${certificationReadiness.summary.missing} missing.`
+                  : `${certificationReadiness.summary.dueSoon} due soon Ã‚Â· ${certificationReadiness.summary.expired} expired Ã‚Â· ${certificationReadiness.summary.missing} missing.`
               }
               icon={ShieldCheck}
               tone={certificationTone}
@@ -945,9 +891,9 @@ const [loading, setLoading] = useState(true);
               title="Equipment Readiness"
               value={
                 loading
-                  ? "—"
+                  ? "Ã¢â‚¬â€"
                   : equipmentReadiness.summary.totalRequiredChecks === 0
-                    ? "—"
+                    ? "Ã¢â‚¬â€"
                     : `${equipmentReadiness.summary.readinessPercent}%`
               }
               label={
@@ -958,7 +904,7 @@ const [loading, setLoading] = useState(true);
               detail={
                 equipmentReadiness.summary.totalRequiredChecks === 0
                   ? "Configure required equipment to begin agency readiness tracking."
-                  : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
+                  : `${equipmentReadiness.summary.missing} missing Ã‚Â· ${equipmentReadiness.summary.expired} expired Ã‚Â· ${equipmentReadiness.summary.inspectionOverdue} inspection overdue Ã‚Â· ${equipmentReadiness.summary.outOfService} out of service.`
               }
               icon={Boxes}
               tone={equipmentTone}
@@ -969,7 +915,7 @@ const [loading, setLoading] = useState(true);
             <>
               <PulseCard
                 title="Range Readiness"
-                value={loading ? "—" : upcomingRangeDays.length}
+                value={loading ? "Ã¢â‚¬â€" : upcomingRangeDays.length}
                 label="Upcoming range days"
                 detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
                 icon={CalendarDays}
@@ -978,18 +924,18 @@ const [loading, setLoading] = useState(true);
 
               <PulseCard
                 title="Records Health"
-                value={loading ? "—" : workspace.rangeDays.length}
+                value={loading ? "Ã¢â‚¬â€" : workspace.rangeDays.length}
                 label="Range days saved"
-                detail={`${workspace.rangeRoster.length} roster assignments · ${workspace.rangeDayDrills.length} planned drills.`}
+                detail={`${workspace.rangeRoster.length} roster assignments Ã‚Â· ${workspace.rangeDayDrills.length} planned drills.`}
                 icon={FileText}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
 
               <PulseCard
                 title="Performance Signal"
-                value={loading ? "—" : averageScore ?? "—"}
-                label="Average score"
-                detail={`${declining.length} declining · ${improvingCount} improving.`}
+                value={loading ? "Ã¢â‚¬â€" : averageScore ?? "Ã¢â‚¬â€"}
+                label="Average trend movement"
+                detail={`${declining.length} declining Ã‚Â· ${improvingCount} improving.`}
                 icon={TrendingUp}
                 tone={declining.length > 0 ? "amber" : "blue"}
               />
@@ -999,7 +945,7 @@ const [loading, setLoading] = useState(true);
           {hasFirearms && (
             <PulseCard
               title="Firearm Reliability"
-              value={loading ? "—" : firearmAlerts.length}
+              value={loading ? "Ã¢â‚¬â€" : firearmAlerts.length}
               label="Weapons flagged"
               detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
               icon={Crosshair}
@@ -1221,7 +1167,7 @@ const [loading, setLoading] = useState(true);
                         {day.title}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        {formatDate(day.date)} · {day.location}
+                        {formatDate(day.date)} Ã‚Â· {day.location}
                       </p>
                     </div>
                     <ChevronRight size={15} className="text-slate-600" />
