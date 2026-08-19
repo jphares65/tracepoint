@@ -482,18 +482,13 @@ async function collectCertificationReadiness(
   for (const row of readinessRows) {
     if (row.status === "current") continue;
 
-    const officerPrefix =
-      context.canViewDepartmentReadiness &&
-      row.userId !== context.user.id
-        ? `${row.officerName} Ãƒâ€š· `
-        : "";
-
-    if (row.status === "missing") {
+    if (row.userId !== context.user.id) continue;
+if (row.status === "missing") {
       alerts.push({
         key: `certification-readiness-${row.userId}-${row.certificationTypeId}`,
         source: "Training",
         kind: "required_certification_missing",
-        title: `${officerPrefix}${row.certificationName} Missing`,
+        title: `${row.certificationName} Missing`,
         detail:
           "A required certification is not currently recorded.",
         href: "/training/certifications",
@@ -509,7 +504,7 @@ async function collectCertificationReadiness(
         key: `certification-readiness-${row.userId}-${row.certificationTypeId}`,
         source: "Training",
         kind: "required_certification_expired",
-        title: `${officerPrefix}${row.certificationName} Expired`,
+        title: `${row.certificationName} Expired`,
         detail: row.statusReason,
         href: "/training/certifications",
         priority: "Critical",
@@ -524,7 +519,7 @@ async function collectCertificationReadiness(
         key: `certification-readiness-${row.userId}-${row.certificationTypeId}`,
         source: "Training",
         kind: "required_certification_due_soon",
-        title: `${officerPrefix}${row.certificationName} Due Soon`,
+        title: `${row.certificationName} Due Soon`,
         detail: row.statusReason,
         href: "/training/certifications",
         priority: "High",
@@ -639,10 +634,7 @@ function collectQualificationReadiness(
 
     if (!officerId) continue;
 
-    if (
-      !context.canViewDepartmentReadiness &&
-      userId !== context.user.id
-    ) {
+    if (userId !== context.user.id) {
       continue;
     }
 
@@ -755,12 +747,7 @@ function collectQualificationReadiness(
 
     if (readiness.status === "Current") continue;
 
-    const officerPrefix =
-      context.canViewDepartmentReadiness &&
-      userId !== context.user.id
-        ? `${officerName} - `
-        : "";
-
+    
     const base = {
       key: `qualification-readiness-${userId || officerId}`,
       source: "Qualifications" as Source,
@@ -819,7 +806,7 @@ function collectQualificationReadiness(
     alerts.push({
       ...base,
       kind: config.kind,
-      title: `${officerPrefix}${config.title}`,
+      title: config.title,
       priority: config.priority,
       createdAt,
     });
@@ -854,11 +841,7 @@ function collectEquipmentReadiness(
     const equipmentName =
       text(row.equipmentName) || "Required Equipment";
 
-    const officerPrefix =
-      departmentScope &&
-      userId !== context.user.id
-        ? `${text(row.officerName) || "Officer"} Ãƒâ€š· `
-        : "";
+    if (userId !== context.user.id) continue;
 
     const base = {
       key: `equipment-readiness-${userId}-${equipmentTypeId}`,
@@ -870,7 +853,7 @@ function collectEquipmentReadiness(
       alerts.push({
         ...base,
         kind: "required_equipment_missing",
-        title: `${officerPrefix}${equipmentName} Missing`,
+        title: `${equipmentName} Missing`,
         detail:
           text(row.statusReason) ||
           "Required equipment is not currently assigned.",
@@ -884,7 +867,7 @@ function collectEquipmentReadiness(
       alerts.push({
         ...base,
         kind: "required_equipment_expired",
-        title: `${officerPrefix}${equipmentName} Expired`,
+        title: `${equipmentName} Expired`,
         detail: text(row.statusReason),
         priority: "Critical",
         createdAt:
@@ -899,7 +882,7 @@ function collectEquipmentReadiness(
       alerts.push({
         ...base,
         kind: "equipment_inspection_overdue",
-        title: `${officerPrefix}${equipmentName} Inspection Overdue`,
+        title: `${equipmentName} Inspection Overdue`,
         detail: text(row.statusReason),
         priority: "Critical",
         createdAt:
@@ -915,7 +898,7 @@ function collectEquipmentReadiness(
       alerts.push({
         ...base,
         kind: "required_equipment_out_of_service",
-        title: `${officerPrefix}${equipmentName} Out of Service`,
+        title: `${equipmentName} Out of Service`,
         detail: text(row.statusReason),
         priority: "Critical",
         createdAt: null,
@@ -927,7 +910,7 @@ function collectEquipmentReadiness(
       alerts.push({
         ...base,
         kind: "equipment_expiration_due_soon",
-        title: `${officerPrefix}${equipmentName} Expiring Soon`,
+        title: `${equipmentName} Expiring Soon`,
         detail: text(row.statusReason),
         priority: "High",
         createdAt:
@@ -942,7 +925,7 @@ function collectEquipmentReadiness(
       alerts.push({
         ...base,
         kind: "equipment_inspection_due_soon",
-        title: `${officerPrefix}${equipmentName} Inspection Due Soon`,
+        title: `${equipmentName} Inspection Due Soon`,
         detail: text(row.statusReason),
         priority: "High",
         createdAt:
@@ -1280,6 +1263,10 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
+
+
+
 
 
 
