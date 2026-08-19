@@ -453,6 +453,17 @@ export default function DashboardPage() {
       },
       rows: [],
     });
+  const [performanceSummary, setPerformanceSummary] = useState<any>({
+    metrics: {
+      qualificationCoverage: "0%",
+      drillPerformance: "-",
+      trainingFollowUps: "0",
+      officerWatchlist: "0",
+    },
+    qualificationTrends: [],
+    drillTrends: [],
+    broadCategoryTrends: [],
+  });
   const [equipmentReadiness, setEquipmentReadiness] =
     useState<EquipmentReadinessPayload>({
       scope: "department",
@@ -633,7 +644,7 @@ const [loading, setLoading] = useState(true);
         ) {
           items.push({
             id: `qualification-${officer.officerId}`,
-            title: `${officer.officerName} Ã‚Â· ${officer.status}`,
+            title: `${officer.officerName} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${officer.status}`,
             detail: officer.statusReason,
             href: "/qualifications",
             tone:
@@ -652,7 +663,7 @@ const [loading, setLoading] = useState(true);
 
         items.push({
           id: `certification-${row.userId}-${row.certificationTypeId}`,
-          title: `${row.officerName} Ã‚Â· ${row.certificationName}`,
+          title: `${row.officerName} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${row.certificationName}`,
           detail: row.statusReason,
           href: "/training/certifications",
           tone: row.status === "due_soon" ? "amber" : "red",
@@ -705,7 +716,7 @@ const [loading, setLoading] = useState(true);
 
         items.push({
           id: `equipment-${key}`,
-          title: `${group.equipmentName} Ã‚Â· ${labels[group.status]}`,
+          title: `${group.equipmentName} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${labels[group.status]}`,
           detail: `${group.count} officer${
             group.count === 1 ? "" : "s"
           } affected. Review Equipment Readiness for details.`,
@@ -720,7 +731,7 @@ const [loading, setLoading] = useState(true);
       firearmAlerts.forEach((firearm) => {
         items.push({
           id: `firearm-${firearm.id}`,
-          title: `${firearm.make} ${firearm.model} Ã‚Â· ${firearm.serial_number}`,
+          title: `${firearm.make} ${firearm.model} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${firearm.serial_number}`,
           detail: `Condition: ${firearm.condition_status ?? "Review required"}.`,
           href: "/firearms",
           tone: "red",
@@ -733,8 +744,8 @@ const [loading, setLoading] = useState(true);
       incompletePackets.forEach((day) => {
         items.push({
           id: `packet-${day.id}`,
-          title: `Packet not ready Ã‚Â· ${day.title}`,
-          detail: `${formatDate(day.date)} Ã‚Â· ${
+          title: `Packet not ready ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${day.title}`,
+          detail: `${formatDate(day.date)} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${
             day.packetStatus ?? "Needs Setup"
           }`,
           href: "/range-days",
@@ -748,7 +759,7 @@ const [loading, setLoading] = useState(true);
       declining.forEach((officer) => {
         items.push({
           id: `trend-${officer.officerId}`,
-          title: `${officer.officerName} Ã‚Â· Declining score trend`,
+          title: `${officer.officerName} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Declining score trend`,
           detail:
             typeof officer.trendDelta === "number"
               ? `Scores declined by ${Math.abs(
@@ -853,7 +864,7 @@ const [loading, setLoading] = useState(true);
           {hasQualifications && (
             <PulseCard
               title="Qualification Readiness"
-              value={loading ? "Ã¢â‚¬â€" : `${currentCount}/${personnel.length}`}
+              value={loading ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â" : `${currentCount}/${personnel.length}`}
               label="Officers current"
               detail={`${missingDayCount} missing day/no record ? ${missingNightCount} missing night ? ${dueSoonCount} due soon ? ${failedOrOverdueCount} failed/overdue.`}
               icon={Shield}
@@ -866,9 +877,9 @@ const [loading, setLoading] = useState(true);
               title="Certification Readiness"
               value={
                 loading
-                  ? "Ã¢â‚¬â€"
+                  ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"
                   : certificationReadiness.summary.totalRequiredChecks === 0
-                    ? "Ã¢â‚¬â€"
+                    ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"
                     : `${certificationReadiness.summary.readinessPercent}%`
               }
               label={
@@ -879,7 +890,7 @@ const [loading, setLoading] = useState(true);
               detail={
                 certificationReadiness.summary.totalRequiredChecks === 0
                   ? "Configure required certifications to begin agency readiness tracking."
-                  : `${certificationReadiness.summary.dueSoon} due soon Ã‚Â· ${certificationReadiness.summary.expired} expired Ã‚Â· ${certificationReadiness.summary.missing} missing.`
+                  : `${certificationReadiness.summary.dueSoon} due soon ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${certificationReadiness.summary.expired} expired ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${certificationReadiness.summary.missing} missing.`
               }
               icon={ShieldCheck}
               tone={certificationTone}
@@ -891,9 +902,9 @@ const [loading, setLoading] = useState(true);
               title="Equipment Readiness"
               value={
                 loading
-                  ? "Ã¢â‚¬â€"
+                  ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"
                   : equipmentReadiness.summary.totalRequiredChecks === 0
-                    ? "Ã¢â‚¬â€"
+                    ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"
                     : `${equipmentReadiness.summary.readinessPercent}%`
               }
               label={
@@ -904,7 +915,7 @@ const [loading, setLoading] = useState(true);
               detail={
                 equipmentReadiness.summary.totalRequiredChecks === 0
                   ? "Configure required equipment to begin agency readiness tracking."
-                  : `${equipmentReadiness.summary.missing} missing Ã‚Â· ${equipmentReadiness.summary.expired} expired Ã‚Â· ${equipmentReadiness.summary.inspectionOverdue} inspection overdue Ã‚Â· ${equipmentReadiness.summary.outOfService} out of service.`
+                  : `${equipmentReadiness.summary.missing} missing ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${equipmentReadiness.summary.expired} expired ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${equipmentReadiness.summary.inspectionOverdue} inspection overdue ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${equipmentReadiness.summary.outOfService} out of service.`
               }
               icon={Boxes}
               tone={equipmentTone}
@@ -915,7 +926,7 @@ const [loading, setLoading] = useState(true);
             <>
               <PulseCard
                 title="Range Readiness"
-                value={loading ? "Ã¢â‚¬â€" : upcomingRangeDays.length}
+                value={loading ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â" : upcomingRangeDays.length}
                 label="Upcoming range days"
                 detail={`${incompletePackets.length} packet${incompletePackets.length === 1 ? "" : "s"} need setup or review.`}
                 icon={CalendarDays}
@@ -924,18 +935,18 @@ const [loading, setLoading] = useState(true);
 
               <PulseCard
                 title="Records Health"
-                value={loading ? "Ã¢â‚¬â€" : workspace.rangeDays.length}
+                value={loading ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â" : workspace.rangeDays.length}
                 label="Range days saved"
-                detail={`${workspace.rangeRoster.length} roster assignments Ã‚Â· ${workspace.rangeDayDrills.length} planned drills.`}
+                detail={`${workspace.rangeRoster.length} roster assignments ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${workspace.rangeDayDrills.length} planned drills.`}
                 icon={FileText}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
 
               <PulseCard
                 title="Performance Signal"
-                value={loading ? "Ã¢â‚¬â€" : averageScore ?? "Ã¢â‚¬â€"}
+                value={loading ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â" : averageScore ?? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"}
                 label="Average trend movement"
-                detail={`${declining.length} declining Ã‚Â· ${improvingCount} improving.`}
+                detail={`${declining.length} declining ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${improvingCount} improving.`}
                 icon={TrendingUp}
                 tone={declining.length > 0 ? "amber" : "blue"}
               />
@@ -945,7 +956,7 @@ const [loading, setLoading] = useState(true);
           {hasFirearms && (
             <PulseCard
               title="Firearm Reliability"
-              value={loading ? "Ã¢â‚¬â€" : firearmAlerts.length}
+              value={loading ? "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â" : firearmAlerts.length}
               label="Weapons flagged"
               detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
               icon={Crosshair}
@@ -1167,7 +1178,7 @@ const [loading, setLoading] = useState(true);
                         {day.title}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        {formatDate(day.date)} Ã‚Â· {day.location}
+                        {formatDate(day.date)} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {day.location}
                       </p>
                     </div>
                     <ChevronRight size={15} className="text-slate-600" />
