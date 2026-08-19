@@ -878,7 +878,6 @@ export async function GET() {
         id: day.id,
         title: day.title,
         date: day.range_date,
-        location: day.location,
         status: day.status,
         packetStatus: day.packet_status,
         rangeType: day.range_type,
@@ -910,7 +909,7 @@ export async function GET() {
 
         drillPerformance:
           drillResults.length === 0
-            ? "—"
+            ? "Ã¢â‚¬â€"
             : `${
                 averageChange > 0 ? "+" : ""
               }${averageChange.toFixed(1)}`,
