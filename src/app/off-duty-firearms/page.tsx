@@ -583,6 +583,8 @@ function ReviewDrawer({
     notes: string,
     effectiveDate: string,
     expirationDate: string,
+    qualificationOverride: boolean,
+    qualificationOverrideReason: string,
   ) => void;
   onInspectionRecorded: () => Promise<void>;
 
@@ -595,6 +597,9 @@ function ReviewDrawer({
     record.approvalExpires ?? oneYearFromTodayInputValue(),
   );
   const [error, setError] = useState("");
+  const [qualificationOverride, setQualificationOverride] = useState(false);
+  const [qualificationOverrideReason, setQualificationOverrideReason] =
+    useState("");
 
   const [inspectionDate, setInspectionDate] = useState(
     todayInputValue(),
@@ -707,12 +712,34 @@ function ReviewDrawer({
       return;
     }
 
-    if ((action === "Deny" || action === "Return") && !notes.trim()) {
-      setError("Decision notes are required when denying or returning a request.");
+    if (
+      action === "Approve" &&
+      qualificationOverride &&
+      !qualificationOverrideReason.trim()
+    ) {
+      setError(
+        "A reason is required when an independent qualification is not required per department policy.",
+      );
       return;
     }
 
-    onDecision(action, notes.trim(), effectiveDate, expirationDate);
+    if ((action === "Deny" || action === "Return") && !notes.trim()) {
+      setError(
+        "Decision notes are required when denying or returning a request.",
+      );
+      return;
+    }
+
+    setError("");
+
+    onDecision(
+      action,
+      notes.trim(),
+      effectiveDate,
+      expirationDate,
+      qualificationOverride,
+      qualificationOverrideReason.trim(),
+    );
   }
 
   return (
@@ -1006,6 +1033,79 @@ function ReviewDrawer({
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-white"
                   />
                 </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/60 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                  Qualification Requirement
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                  Determine whether this firearm requires an independent qualification
+                  under department policy.
+                </p>
+
+                <div className="mt-3 space-y-2">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 px-3 py-3 hover:border-slate-700">
+                    <input
+                      type="radio"
+                      name="qualificationRequirement"
+                      checked={!qualificationOverride}
+                      onChange={() => {
+                        setQualificationOverride(false);
+                        setQualificationOverrideReason("");
+                        setError("");
+                      }}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <p className="text-[12px] font-semibold text-slate-200">
+                        Independent qualification required
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        TracePoint will require a current qualifying record before approval.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 px-3 py-3 hover:border-slate-700">
+                    <input
+                      type="radio"
+                      name="qualificationRequirement"
+                      checked={qualificationOverride}
+                      onChange={() => {
+                        setQualificationOverride(true);
+                        setError("");
+                      }}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <p className="text-[12px] font-semibold text-slate-200">
+                        Independent qualification not required per department policy
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        The approving authority is documenting that this firearm does not
+                        require its own qualification record.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {qualificationOverride && (
+                  <div className="mt-3">
+                    <label className="mb-1 block text-[10px] uppercase tracking-widest text-slate-600">
+                      Policy Exception / Justification
+                    </label>
+                    <textarea
+                      value={qualificationOverrideReason}
+                      onChange={(event) =>
+                        setQualificationOverrideReason(event.target.value)
+                      }
+                      placeholder="Explain why an independent qualification is not required..."
+                      rows={2}
+                      className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+                )}
               </div>
 
               <textarea
@@ -1398,6 +1498,8 @@ export default function OffDutyFirearmsPage() {
     notes: string,
     effectiveDate: string,
     expirationDate: string,
+    qualificationOverride: boolean,
+    qualificationOverrideReason: string,
   ) {
     if (!selectedRecord) return;
 
@@ -1416,6 +1518,8 @@ export default function OffDutyFirearmsPage() {
             notes,
             effectiveDate,
             expirationDate,
+            qualificationOverride,
+            qualificationOverrideReason,
           }),
         },
       );
@@ -1516,13 +1620,39 @@ export default function OffDutyFirearmsPage() {
                         );
                         setQuery("");
                       }}
-                      className={`rounded-lg px-3 py-2 text-[11px] font-semibold transition ${
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold transition ${
                         portalMode === mode
                           ? "bg-blue-600 text-white"
                           : "text-slate-500 hover:text-slate-200"
                       }`}
                     >
-                      {mode === "Officer Portal" ? "My Requests" : "Department Review"}
+                      {mode === "Officer Portal" ? (
+                        "My Requests"
+                      ) : (
+                        <>
+                          <span>Department Review</span>
+                          {records.filter(
+                            (record) =>
+                              record.requestStatus === "Pending Command Review",
+                          ).length > 0 && (
+                            <span
+                              className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                portalMode === mode
+                                  ? "bg-white/20 text-white"
+                                  : "bg-blue-500/15 text-blue-300"
+                              }`}
+                            >
+                              {
+                                records.filter(
+                                  (record) =>
+                                    record.requestStatus ===
+                                    "Pending Command Review",
+                                ).length
+                              }
+                            </span>
+                          )}
+                        </>
+                      )}
                     </button>
                   ),
                 )}
@@ -1712,6 +1842,12 @@ export default function OffDutyFirearmsPage() {
     </TracePointShell>
   );
 }
+
+
+
+
+
+
 
 
 

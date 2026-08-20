@@ -330,7 +330,8 @@ export async function PATCH(
     notes?: string;
     effectiveDate?: string;
     expirationDate?: string;
-
+    qualificationOverride?: boolean;
+    qualificationOverrideReason?: string;
     make?: string;
     model?: string;
     firearmType?: string;
@@ -500,30 +501,50 @@ export async function PATCH(
     }
 
     const action = body.action as "Approve" | "Deny" | "Return";
-
     if (action === "Approve") {
-      const qualificationReadiness =
-        await getOfficerQualificationReadiness(
-          context,
-          String(existing.officer_user_id),
-        );
+      const qualificationOverride =
+        body.qualificationOverride === true;
+
+      const qualificationOverrideReason =
+        cleanText(body.qualificationOverrideReason);
 
       if (
-        !["Current", "Due Soon"].includes(
-          qualificationReadiness.status,
-        )
+        qualificationOverride &&
+        !qualificationOverrideReason
       ) {
         return NextResponse.json(
           {
             error:
-              "This off-duty firearm request cannot be approved because the officer does not have a current qualifying record.",
-            qualificationStatus:
-              qualificationReadiness.status,
-            qualificationReason:
-              qualificationReadiness.statusReason,
+              "A justification is required when an independent qualification is not required per department policy.",
           },
-          { status: 409 },
+          { status: 400 },
         );
+      }
+
+      if (!qualificationOverride) {
+        const qualificationReadiness =
+          await getOfficerQualificationReadiness(
+            context,
+            String(existing.officer_user_id),
+          );
+
+        if (
+          !["Current", "Due Soon"].includes(
+            qualificationReadiness.status,
+          )
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "This off-duty firearm request cannot be approved because the officer does not have a current qualifying record.",
+              qualificationStatus:
+                qualificationReadiness.status,
+              qualificationReason:
+                qualificationReadiness.statusReason,
+            },
+            { status: 409 },
+          );
+        }
       }
 
       const inspectionReadiness =
@@ -563,6 +584,12 @@ export async function PATCH(
           action === "Approve" ? body.effectiveDate : null,
         p_expiration_date:
           action === "Approve" ? body.expirationDate : null,
+        p_qualification_exception_used:
+          action === "Approve" && body.qualificationOverride === true,
+        p_qualification_exception_reason:
+          action === "Approve" && body.qualificationOverride === true
+            ? cleanText(body.qualificationOverrideReason)
+            : null,
       },
     );
 
@@ -611,5 +638,9 @@ export async function PATCH(
     );
   }
 }
+
+
+
+
 
 
