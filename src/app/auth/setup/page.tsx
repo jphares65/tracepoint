@@ -134,10 +134,10 @@ async function createInitialDepartment(formData: FormData) {
     {
       p_name: name,
       p_slug: slug,
-      p_short_name: shortName || null,
-      p_badge_number: badgeNumber || null,
-      p_rank_title: rankTitle || null,
-      p_unit_name: unitName || null,
+      p_short_name: shortName || undefined,
+      p_badge_number: badgeNumber || undefined,
+      p_rank_title: rankTitle || undefined,
+      p_unit_name: unitName || undefined,
     },
   );
 
@@ -581,4 +581,5 @@ export default async function SetupPage({
     />
   );
 }
+
 

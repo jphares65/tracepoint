@@ -151,6 +151,39 @@ type OrganizationGroup = OrganizationItem & {
   description: string | null;
   group_type: string;
 };
+type QualificationScoringBasis =
+  | "Points"
+  | "Percentage"
+  | "Time"
+  | "Pass/Fail"
+  | "Hit Count"
+  | "Completion";
+
+type QualificationStandardComponentRow = {
+  id: string;
+  department_id: string;
+  qualification_standard_id: string;
+  name: string;
+  scoring_basis: QualificationScoringBasis;
+  maximum_score: number | null;
+  passing_score: number | null;
+  passing_time_seconds: number | null;
+  minimum_hits: number | null;
+  is_required: boolean;
+  sort_order: number;
+  is_active: boolean;
+};
+
+type QualificationStandardRow = {
+  id: string;
+  department_id: string;
+  name: string;
+  firearm_type: string | null;
+  validity_days: number | null;
+  description: string | null;
+  is_active: boolean;
+  components: QualificationStandardComponentRow[];
+};
 type AuditEvent = {
   id: string;
   changed_by_user_id: string;
@@ -743,6 +776,14 @@ export default function AdminSettingsPage() {
     OrganizationGroup[]
   >([]);
   const [organizationLoading, setOrganizationLoading] = useState(false);
+  const [qualificationStandards, setQualificationStandards] = useState<
+    QualificationStandardRow[]
+  >([]);
+  const [qualificationStandardsLoading, setQualificationStandardsLoading] =
+    useState(false);
+  const [newQualificationStandardName, setNewQualificationStandardName] =
+    useState("");
+
 
   const [newTitleName, setNewTitleName] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
@@ -1407,6 +1448,253 @@ export default function AdminSettingsPage() {
     );
   }
 
+  async function loadQualificationStandards() {
+    if (!departmentId) return;
+
+    setQualificationStandardsLoading(true);
+
+    try {
+      const [standardsResult, componentsResult] = await Promise.all([
+        supabase
+          .from("department_qualification_standards")
+          .select(
+            "id, department_id, name, firearm_type, validity_days, description, is_active",
+          )
+          .eq("department_id", departmentId)
+          .order("name"),
+        supabase
+          .from("department_qualification_standard_components")
+          .select(
+            "id, department_id, qualification_standard_id, name, scoring_basis, maximum_score, passing_score, passing_time_seconds, minimum_hits, is_required, sort_order, is_active",
+          )
+          .eq("department_id", departmentId)
+          .order("sort_order")
+          .order("name"),
+      ]);
+
+      if (standardsResult.error) throw standardsResult.error;
+      if (componentsResult.error) throw componentsResult.error;
+
+      const components =
+        (componentsResult.data ?? []) as QualificationStandardComponentRow[];
+
+      setQualificationStandards(
+        ((standardsResult.data ?? []) as Omit<
+          QualificationStandardRow,
+          "components"
+        >[]).map((standard) => ({
+          ...standard,
+          components: components.filter(
+            (component) =>
+              component.qualification_standard_id === standard.id,
+          ),
+        })),
+      );
+    } catch (error) {
+      console.error(error);
+      showNotice(
+        "error",
+        "Qualification standards could not be loaded.",
+      );
+    } finally {
+      setQualificationStandardsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (
+      accessLoading ||
+      !departmentId ||
+      !canAdminister ||
+      activeTab !== "rules"
+    ) {
+      return;
+    }
+
+    void loadQualificationStandards();
+  }, [accessLoading, activeTab, canAdminister, departmentId]);
+
+  async function createQualificationStandard() {
+    const name = newQualificationStandardName.trim();
+
+    if (!departmentId || !name) return;
+
+    setSavingSection("qualification-standard-new");
+
+    try {
+      const { error } = await supabase
+        .from("department_qualification_standards")
+        .insert({
+          department_id: departmentId,
+          name,
+          created_by: userId || null,
+          is_active: true,
+        });
+
+      if (error) throw error;
+
+      setNewQualificationStandardName("");
+      showNotice("success", "Qualification standard created.");
+      await loadQualificationStandards();
+    } catch (error) {
+      console.error(error);
+      showNotice(
+        "error",
+        "The qualification standard could not be created.",
+      );
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
+  function updateQualificationStandardLocal(
+    standardId: string,
+    patch: Partial<QualificationStandardRow>,
+  ) {
+    setQualificationStandards((current) =>
+      current.map((standard) =>
+        standard.id === standardId
+          ? { ...standard, ...patch }
+          : standard,
+      ),
+    );
+  }
+
+  async function saveQualificationStandard(
+    standard: QualificationStandardRow,
+  ) {
+    setSavingSection(`qualification-standard-${standard.id}`);
+
+    try {
+      const { error } = await supabase
+        .from("department_qualification_standards")
+        .update({
+          name: standard.name.trim(),
+          firearm_type: standard.firearm_type || null,
+          validity_days: standard.validity_days,
+          description: standard.description || null,
+          is_active: standard.is_active,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", standard.id)
+        .eq("department_id", departmentId);
+
+      if (error) throw error;
+
+      showNotice("success", "Qualification standard saved.");
+      await loadQualificationStandards();
+    } catch (error) {
+      console.error(error);
+      showNotice(
+        "error",
+        "The qualification standard could not be saved.",
+      );
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
+  async function addQualificationStandardComponent(
+    standard: QualificationStandardRow,
+  ) {
+    if (!departmentId) return;
+
+    setSavingSection(`qualification-component-new-${standard.id}`);
+
+    try {
+      const nextOrder =
+        standard.components.length === 0
+          ? 0
+          : Math.max(
+              ...standard.components.map(
+                (component) => component.sort_order,
+              ),
+            ) + 1;
+
+      const { error } = await supabase
+        .from("department_qualification_standard_components")
+        .insert({
+          department_id: departmentId,
+          qualification_standard_id: standard.id,
+          name: `Component ${standard.components.length + 1}`,
+          scoring_basis: "Points",
+          is_required: true,
+          sort_order: nextOrder,
+          is_active: true,
+        });
+
+      if (error) throw error;
+
+      await loadQualificationStandards();
+    } catch (error) {
+      console.error(error);
+      showNotice(
+        "error",
+        "The qualification component could not be added.",
+      );
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
+  function updateQualificationComponentLocal(
+    standardId: string,
+    componentId: string,
+    patch: Partial<QualificationStandardComponentRow>,
+  ) {
+    setQualificationStandards((current) =>
+      current.map((standard) =>
+        standard.id !== standardId
+          ? standard
+          : {
+              ...standard,
+              components: standard.components.map((component) =>
+                component.id === componentId
+                  ? { ...component, ...patch }
+                  : component,
+              ),
+            },
+      ),
+    );
+  }
+
+  async function saveQualificationComponent(
+    component: QualificationStandardComponentRow,
+  ) {
+    setSavingSection(`qualification-component-${component.id}`);
+
+    try {
+      const { error } = await supabase
+        .from("department_qualification_standard_components")
+        .update({
+          name: component.name.trim(),
+          scoring_basis: component.scoring_basis,
+          maximum_score: component.maximum_score,
+          passing_score: component.passing_score,
+          passing_time_seconds: component.passing_time_seconds,
+          minimum_hits: component.minimum_hits,
+          is_required: component.is_required,
+          sort_order: component.sort_order,
+          is_active: component.is_active,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", component.id)
+        .eq("department_id", departmentId);
+
+      if (error) throw error;
+
+      showNotice("success", "Qualification component saved.");
+      await loadQualificationStandards();
+    } catch (error) {
+      console.error(error);
+      showNotice(
+        "error",
+        "The qualification component could not be saved.",
+      );
+    } finally {
+      setSavingSection(null);
+    }
+  }
   type OrganizationKind = "title" | "unit" | "group";
 
   function organizationTable(kind: OrganizationKind) {
@@ -3222,8 +3510,466 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </SettingsCard>
+            <div className="xl:col-span-2">
+              <SettingsCard
+                title="Qualification Standards"
+                description="Define reusable agency qualification standards and their required scoring components. Components may represent Day, Night, individual courses, or any other agency-defined requirement."
+              >
+                <div className="space-y-5">
+                  <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-end">
+                    <label className="flex-1">
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        New standard
+                      </span>
+
+                      <input
+                        type="text"
+                        value={newQualificationStandardName}
+                        onChange={(event) =>
+                          setNewQualificationStandardName(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void createQualificationStandard();
+                          }
+                        }}
+                        placeholder="Example: Handgun Qualification"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void createQualificationStandard()}
+                      disabled={
+                        !newQualificationStandardName.trim() ||
+                        savingSection === "qualification-standard-new"
+                      }
+                      className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingSection === "qualification-standard-new"
+                        ? "Creating..."
+                        : "Add Standard"}
+                    </button>
+                  </div>
+
+                  {qualificationStandardsLoading ? (
+                    <div className="flex items-center justify-center rounded-2xl border border-slate-800 bg-slate-950/40 py-10">
+                      <LoaderCircle
+                        size={24}
+                        className="animate-spin text-blue-400"
+                      />
+                    </div>
+                  ) : qualificationStandards.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/30 p-8 text-center">
+                      <p className="text-sm font-semibold text-slate-300">
+                        No qualification standards configured.
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Create a standard, then add its scoring components.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {qualificationStandards.map((standard) => (
+                        <div
+                          key={standard.id}
+                          className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"
+                        >
+                          <div className="grid gap-3 lg:grid-cols-4">
+                            <label>
+                              <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                Standard name
+                              </span>
+                              <input
+                                type="text"
+                                value={standard.name}
+                                onChange={(event) =>
+                                  updateQualificationStandardLocal(
+                                    standard.id,
+                                    { name: event.target.value },
+                                  )
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                              />
+                            </label>
+
+                            <label>
+                              <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                Firearm type
+                              </span>
+                              <select
+                                value={standard.firearm_type ?? ""}
+                                onChange={(event) =>
+                                  updateQualificationStandardLocal(
+                                    standard.id,
+                                    {
+                                      firearm_type:
+                                        event.target.value || null,
+                                    },
+                                  )
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                              >
+                                <option value="">Any / unspecified</option>
+                                <option value="Handgun">Handgun</option>
+                                <option value="Rifle">Rifle</option>
+                                <option value="Shotgun">Shotgun</option>
+                                <option value="Less Lethal">
+                                  Less Lethal
+                                </option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </label>
+
+                            <label>
+                              <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                Validity
+                              </span>
+                              <input
+                                type="number"
+                                min={1}
+                                value={standard.validity_days ?? ""}
+                                onChange={(event) =>
+                                  updateQualificationStandardLocal(
+                                    standard.id,
+                                    {
+                                      validity_days:
+                                        event.target.value === ""
+                                          ? null
+                                          : Number(event.target.value),
+                                    },
+                                  )
+                                }
+                                placeholder="Days"
+                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                              />
+                            </label>
+
+                            <div className="flex items-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateQualificationStandardLocal(
+                                    standard.id,
+                                    {
+                                      is_active: !standard.is_active,
+                                    },
+                                  )
+                                }
+                                className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                                  standard.is_active
+                                    ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
+                                    : "border-slate-700 bg-slate-900 text-slate-500"
+                                }`}
+                              >
+                                {standard.is_active ? "Active" : "Inactive"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void saveQualificationStandard(standard)
+                                }
+                                disabled={
+                                  savingSection ===
+                                  `qualification-standard-${standard.id}`
+                                }
+                                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </div>
+
+                          <label className="mt-3 block">
+                            <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                              Description
+                            </span>
+                            <input
+                              type="text"
+                              value={standard.description ?? ""}
+                              onChange={(event) =>
+                                updateQualificationStandardLocal(
+                                  standard.id,
+                                  { description: event.target.value },
+                                )
+                              }
+                              placeholder="Optional description or governing standard"
+                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+
+                          <div className="mt-5 flex items-center justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-white">
+                                Scoring Components
+                              </h4>
+                              <p className="mt-0.5 text-xs text-slate-500">
+                                Examples: Day, Night, Course 1, Low Light.
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void addQualificationStandardComponent(
+                                  standard,
+                                )
+                              }
+                              disabled={
+                                savingSection ===
+                                `qualification-component-new-${standard.id}`
+                              }
+                              className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
+                            >
+                              + Add Component
+                            </button>
+                          </div>
+
+                          {standard.components.length === 0 ? (
+                            <div className="mt-3 rounded-xl border border-dashed border-slate-800 p-5 text-center text-xs text-slate-600">
+                              No components configured.
+                            </div>
+                          ) : (
+                            <div className="mt-3 space-y-3">
+                              {standard.components.map((component) => (
+                                <div
+                                  key={component.id}
+                                  className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
+                                >
+                                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                                    <label>
+                                      <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                        Component
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={component.name}
+                                        onChange={(event) =>
+                                          updateQualificationComponentLocal(
+                                            standard.id,
+                                            component.id,
+                                            { name: event.target.value },
+                                          )
+                                        }
+                                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                      />
+                                    </label>
+
+                                    <label>
+                                      <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                        Scoring
+                                      </span>
+                                      <select
+                                        value={component.scoring_basis}
+                                        onChange={(event) =>
+                                          updateQualificationComponentLocal(
+                                            standard.id,
+                                            component.id,
+                                            {
+                                              scoring_basis:
+                                                event.target
+                                                  .value as QualificationScoringBasis,
+                                            },
+                                          )
+                                        }
+                                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                      >
+                                        <option value="Points">Points</option>
+                                        <option value="Percentage">
+                                          Percentage
+                                        </option>
+                                        <option value="Time">Time</option>
+                                        <option value="Pass/Fail">
+                                          Pass / Fail
+                                        </option>
+                                        <option value="Hit Count">
+                                          Hit Count
+                                        </option>
+                                        <option value="Completion">
+                                          Completion
+                                        </option>
+                                      </select>
+                                    </label>
+
+                                    {(component.scoring_basis === "Points" ||
+                                      component.scoring_basis ===
+                                        "Percentage") ? (
+                                      <>
+                                        <label>
+                                          <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                            Maximum
+                                          </span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={
+                                              component.maximum_score ?? ""
+                                            }
+                                            onChange={(event) =>
+                                              updateQualificationComponentLocal(
+                                                standard.id,
+                                                component.id,
+                                                {
+                                                  maximum_score:
+                                                    event.target.value === ""
+                                                      ? null
+                                                      : Number(
+                                                          event.target.value,
+                                                        ),
+                                                },
+                                              )
+                                            }
+                                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                          />
+                                        </label>
+
+                                        <label>
+                                          <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                            Passing
+                                          </span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={
+                                              component.passing_score ?? ""
+                                            }
+                                            onChange={(event) =>
+                                              updateQualificationComponentLocal(
+                                                standard.id,
+                                                component.id,
+                                                {
+                                                  passing_score:
+                                                    event.target.value === ""
+                                                      ? null
+                                                      : Number(
+                                                          event.target.value,
+                                                        ),
+                                                },
+                                              )
+                                            }
+                                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                          />
+                                        </label>
+                                      </>
+                                    ) : component.scoring_basis === "Time" ? (
+                                      <label>
+                                        <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                          Passing seconds
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          step="0.01"
+                                          value={
+                                            component.passing_time_seconds ??
+                                            ""
+                                          }
+                                          onChange={(event) =>
+                                            updateQualificationComponentLocal(
+                                              standard.id,
+                                              component.id,
+                                              {
+                                                passing_time_seconds:
+                                                  event.target.value === ""
+                                                    ? null
+                                                    : Number(
+                                                        event.target.value,
+                                                      ),
+                                              },
+                                            )
+                                          }
+                                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                        />
+                                      </label>
+                                    ) : component.scoring_basis ===
+                                      "Hit Count" ? (
+                                      <label>
+                                        <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                          Minimum hits
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={component.minimum_hits ?? ""}
+                                          onChange={(event) =>
+                                            updateQualificationComponentLocal(
+                                              standard.id,
+                                              component.id,
+                                              {
+                                                minimum_hits:
+                                                  event.target.value === ""
+                                                    ? null
+                                                    : Number(
+                                                        event.target.value,
+                                                      ),
+                                              },
+                                            )
+                                          }
+                                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                        />
+                                      </label>
+                                    ) : (
+                                      <div />
+                                    )}
+
+                                    <label className="flex items-end">
+                                      <span className="flex w-full items-center justify-between rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                                        <span className="text-xs text-slate-400">
+                                          Required
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={component.is_required}
+                                          onChange={(event) =>
+                                            updateQualificationComponentLocal(
+                                              standard.id,
+                                              component.id,
+                                              {
+                                                is_required:
+                                                  event.target.checked,
+                                              },
+                                            )
+                                          }
+                                          className="h-4 w-4"
+                                        />
+                                      </span>
+                                    </label>
+
+                                    <div className="flex items-end">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void saveQualificationComponent(
+                                            component,
+                                          )
+                                        }
+                                        disabled={
+                                          savingSection ===
+                                          `qualification-component-${component.id}`
+                                        }
+                                        className="w-full rounded-lg border border-blue-800 bg-blue-950/40 px-3 py-2 text-xs font-semibold text-blue-200 transition hover:border-blue-500 disabled:opacity-50"
+                                      >
+                                        Save Component
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </SettingsCard>
+            </div>
 
             <SettingsCard
+
               title="Personally Owned Rifle Program"
               description="Configure whether officers may submit personally owned rifles and which approval safeguards apply."
             >
@@ -4173,6 +4919,7 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
+
 
 
 
