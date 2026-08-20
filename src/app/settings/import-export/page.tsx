@@ -44,6 +44,22 @@ type ParsedCsv = {
   headers: string[];
   rows: Record<string, string>[];
 };
+type OnboardingDatasetType =
+  | "personnel"
+  | "firearms"
+  | "qualification_history"
+  | "certifications"
+  | "equipment"
+  | "equipment_requirements"
+  | "unknown";
+
+type OnboardingDataset = {
+  id: string;
+  sourceFile: string;
+  sourceSheet: string;
+  detectedType: OnboardingDatasetType;
+  parsed: ParsedCsv;
+};
 
 type ValidationIssue = {
   rowNumber: number;
@@ -326,6 +342,206 @@ function parseCsv(text: string): ParsedCsv {
   return { headers, rows };
 }
 
+function detectOnboardingDatasetType(
+  name: string,
+  headers: string[],
+): OnboardingDatasetType {
+  const normalizedName = normalizeHeader(name);
+  const normalizedHeaders = headers.map(normalizeHeader);
+
+  const hasAnyHeader = (...values: string[]) =>
+    values.some((value) =>
+      normalizedHeaders.includes(normalizeHeader(value)),
+    );
+
+  if (
+    normalizedName.includes("personnel") ||
+    normalizedName.includes("officer") ||
+    normalizedName.includes("employee")
+  ) {
+    return "personnel";
+  }
+
+  if (
+    normalizedName.includes("qualification") ||
+    normalizedName.includes("qual history") ||
+    normalizedName.includes("range qualification")
+  ) {
+    return "qualification_history";
+  }
+
+  if (
+    normalizedName.includes("certification") ||
+    normalizedName.includes("credential")
+  ) {
+    return "certifications";
+  }
+
+  if (
+    normalizedName.includes("equipment requirement") ||
+    normalizedName.includes("equipment standard") ||
+    normalizedName.includes("readiness requirement")
+  ) {
+    return "equipment_requirements";
+  }
+
+  if (
+    normalizedName.includes("equipment") ||
+    normalizedName.includes("asset")
+  ) {
+    return "equipment";
+  }
+
+  if (
+    normalizedName.includes("firearm") ||
+    normalizedName.includes("weapon") ||
+    normalizedName.includes("armory")
+  ) {
+    return "firearms";
+  }
+
+  if (
+    hasAnyHeader("first name", "last name") &&
+    hasAnyHeader("badge", "badge number", "employee number")
+  ) {
+    return "personnel";
+  }
+
+  if (
+    hasAnyHeader("qualification date", "qual date") &&
+    hasAnyHeader("score", "qualification score")
+  ) {
+    return "qualification_history";
+  }
+
+  if (
+    hasAnyHeader("certification title", "certification", "credential number") &&
+    hasAnyHeader("expiration date", "issue date")
+  ) {
+    return "certifications";
+  }
+
+  if (
+    hasAnyHeader("serial number", "manufacturer", "model") &&
+    hasAnyHeader("equipment type", "asset type")
+  ) {
+    return "equipment";
+  }
+
+  if (
+    hasAnyHeader("equipment type") &&
+    hasAnyHeader("required quantity", "required by department")
+  ) {
+    return "equipment_requirements";
+  }
+
+  if (
+    hasAnyHeader("serial number") &&
+    hasAnyHeader("caliber", "caliber gauge", "firearm type")
+  ) {
+    return "firearms";
+  }
+
+  return "unknown";
+}
+
+function worksheetMatrixToParsedCsv(matrix: unknown[][]): ParsedCsv {
+  if (matrix.length === 0) {
+    return { headers: [], rows: [] };
+  }
+
+  const headers = (matrix[0] ?? []).map((value) =>
+    String(value ?? "").trim(),
+  );
+
+  const rows = matrix
+    .slice(1)
+    .filter((values) =>
+      values.some((value) => String(value ?? "").trim().length > 0),
+    )
+    .map((values) => {
+      const row: Record<string, string> = {};
+
+      headers.forEach((header, index) => {
+        if (!header) return;
+        row[header] = String(values[index] ?? "").trim();
+      });
+
+      return row;
+    });
+
+  return {
+    headers: headers.filter(Boolean),
+    rows,
+  };
+}
+
+async function parseOnboardingFile(
+  file: File,
+): Promise<OnboardingDataset[]> {
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".csv")) {
+    const parsed = parseCsv(await file.text());
+
+    return [
+      {
+        id: `${file.name}-csv`,
+        sourceFile: file.name,
+        sourceSheet: file.name,
+        detectedType: detectOnboardingDatasetType(
+          file.name,
+          parsed.headers,
+        ),
+        parsed,
+      },
+    ];
+  }
+
+  if (
+    lowerName.endsWith(".xlsx") ||
+    lowerName.endsWith(".xls")
+  ) {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.read(await file.arrayBuffer(), {
+      type: "array",
+    });
+
+    return workbook.SheetNames.map((sheetName) => {
+      const worksheet = workbook.Sheets[sheetName];
+
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(
+        worksheet,
+        {
+          header: 1,
+          raw: false,
+          defval: "",
+        },
+      );
+
+      const parsed = worksheetMatrixToParsedCsv(matrix);
+
+      return {
+        id: `${file.name}-${sheetName}`,
+        sourceFile: file.name,
+        sourceSheet: sheetName,
+        detectedType: detectOnboardingDatasetType(
+          sheetName,
+          parsed.headers,
+        ),
+        parsed,
+      };
+    }).filter(
+      (dataset) =>
+        dataset.parsed.headers.length > 0 &&
+        dataset.parsed.rows.length > 0,
+    );
+  }
+
+  throw new Error(
+    "Unsupported file type. Upload a CSV, XLSX, or XLS file.",
+  );
+}
 function buildAutoMapping(headers: string[], definition: ImportTypeDefinition): MappingState {
   const mapping: MappingState = {};
   const normalizedHeaders = headers.map((header) => ({
@@ -706,6 +922,14 @@ const exportDate = () => new Date().toISOString().slice(0, 10);
 
 
 export default function ImportWizardPage() {
+  const [onboardingDatasets, setOnboardingDatasets] =
+    useState<OnboardingDataset[]>([]);
+  const [onboardingFileName, setOnboardingFileName] =
+    useState("");
+  const [onboardingLoading, setOnboardingLoading] =
+    useState(false);
+  const [onboardingError, setOnboardingError] =
+    useState<string | null>(null);
   const [selectedTypeId, setSelectedTypeId] = useState<ImportTypeId>("personnel");
   const [step, setStep] = useState<ImportStep>("type");
   const [fileName, setFileName] = useState("");
@@ -839,6 +1063,40 @@ export default function ImportWizardPage() {
       .slice(0, 25);
   }, [mappedRows, search]);
 
+  async function handleOnboardingFile(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    setOnboardingLoading(true);
+    setOnboardingError(null);
+
+    try {
+      const datasets = await parseOnboardingFile(file);
+
+      if (datasets.length === 0) {
+        throw new Error(
+          "No usable data sheets or records were found in this file.",
+        );
+      }
+
+      setOnboardingFileName(file.name);
+      setOnboardingDatasets(datasets);
+    } catch (error) {
+      setOnboardingFileName("");
+      setOnboardingDatasets([]);
+      setOnboardingError(
+        error instanceof Error
+          ? error.message
+          : "Unable to read onboarding file.",
+      );
+    } finally {
+      setOnboardingLoading(false);
+      event.target.value = "";
+    }
+  }
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -5896,6 +6154,190 @@ export default function ImportWizardPage() {
             </div>
           </section>
 
+          <section className="rounded-[2rem] border border-sky-900/70 bg-sky-950/20 p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Upload className="h-7 w-7 text-sky-300" />
+                  <h2 className="text-xl font-bold text-white">
+                    Agency Onboarding
+                  </h2>
+                </div>
+
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+                  Upload a TracePoint onboarding workbook or an existing structured
+                  agency CSV/Excel file. TracePoint will identify the datasets,
+                  inspect the columns, and prepare them for supervised mapping.
+                </p>
+              </div>
+
+              <span className="rounded-full border border-sky-700 bg-sky-950/60 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-sky-200">
+                Multi-Dataset Import
+              </span>
+            </div>
+
+            <label className="mt-6 flex cursor-pointer flex-col items-center justify-center rounded-[2rem] border border-dashed border-sky-800 bg-slate-950/60 p-8 text-center transition hover:border-sky-500">
+              {onboardingLoading ? (
+                <Loader2 className="h-10 w-10 animate-spin text-sky-300" />
+              ) : (
+                <FileSpreadsheet className="h-10 w-10 text-sky-300" />
+              )}
+
+              <span className="mt-3 text-lg font-bold text-white">
+                {onboardingLoading
+                  ? "Reading agency data..."
+                  : "Choose onboarding workbook or data file"}
+              </span>
+
+              <span className="mt-1 text-sm text-slate-400">
+                CSV, XLSX, and XLS are supported.
+              </span>
+
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                onChange={handleOnboardingFile}
+                disabled={onboardingLoading}
+                className="hidden"
+              />
+            </label>
+
+            {onboardingError ? (
+              <div className="mt-4 rounded-2xl border border-red-800 bg-red-950/40 p-3 text-sm font-medium text-red-200">
+                {onboardingError}
+              </div>
+            ) : null}
+
+            {onboardingDatasets.length > 0 ? (
+              <div className="mt-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      {onboardingFileName}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {onboardingDatasets.length} dataset
+                      {onboardingDatasets.length === 1 ? "" : "s"} detected.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOnboardingFileName("");
+                      setOnboardingDatasets([]);
+                      setOnboardingError(null);
+                    }}
+                    className="text-sm font-semibold text-slate-400 transition hover:text-white"
+                  >
+                    Clear file
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                  {onboardingDatasets.map((dataset) => {
+                    const definition =
+                      dataset.detectedType === "personnel" ||
+                      dataset.detectedType === "firearms" ||
+                      dataset.detectedType === "qualification_history"
+                        ? IMPORT_TYPES.find(
+                            (type) => type.id === dataset.detectedType,
+                          )
+                        : null;
+
+                    const detectedLabel =
+                      definition?.label ??
+                      (dataset.detectedType === "certifications"
+                        ? "Certifications"
+                        : dataset.detectedType === "equipment"
+                          ? "Equipment"
+                          : dataset.detectedType === "equipment_requirements"
+                            ? "Equipment Requirements"
+                            : "Needs Review");
+
+                    return (
+                      <div
+                        key={dataset.id}
+                        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-white">
+                              {dataset.sourceSheet}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {dataset.parsed.rows.length} row
+                              {dataset.parsed.rows.length === 1 ? "" : "s"}
+                            </p>
+                          </div>
+
+                          {dataset.detectedType === "unknown" ? (
+                            <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-300" />
+                          ) : (
+                            <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-emerald-300" />
+                          )}
+                        </div>
+
+                        <div className="mt-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Detected As
+                          </p>
+                          <p
+                            className={`mt-1 text-sm font-bold ${
+                              dataset.detectedType === "unknown"
+                                ? "text-amber-200"
+                                : "text-sky-200"
+                            }`}
+                          >
+                            {detectedLabel}
+                          </p>
+                        </div>
+
+                        <div className="mt-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Columns
+                          </p>
+                          <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-400">
+                            {dataset.parsed.headers.join(" • ")}
+                          </p>
+                        </div>
+
+                        {definition ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTypeId(definition.id);
+                              setFileName(
+                                dataset.sourceSheet ||
+                                  dataset.sourceFile,
+                              );
+                              setParsedCsv(dataset.parsed);
+                              setMapping(
+                                buildAutoMapping(
+                                  dataset.parsed.headers,
+                                  definition,
+                                ),
+                              );
+                              setReport(null);
+                              setStep("mapping");
+                            }}
+                            className="mt-5 inline-flex items-center gap-2 rounded-xl border border-sky-800 bg-sky-950/50 px-3 py-2 text-xs font-bold text-sky-100 transition hover:border-sky-500"
+                          >
+                            Review Mapping
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <p className="mt-5 text-xs font-medium text-slate-500">
+                            Mapping support will be added for this dataset.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </section>
           {step === "type" && (
             <section className="grid gap-4 lg:grid-cols-3">
               {IMPORT_TYPES.map((type) => (
@@ -6255,6 +6697,8 @@ export default function ImportWizardPage() {
     </TracePointShell>
   );
 }
+
+
 
 
 
