@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+﻿import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
@@ -164,6 +164,8 @@ export async function updateSession(request: NextRequest) {
     pathname.toLowerCase().startsWith("/platform/") ||
     pathname.toLowerCase() === "/api/platform" ||
     pathname.toLowerCase().startsWith("/api/platform/") ||
+    pathname.toLowerCase().startsWith("/api/settings/onboarding/") ||
+    pathname.toLowerCase() === "/api/settings/users/activation" ||
     hasPlatformDepartmentOverride;
 
   if (isPlatformPath) {
@@ -304,5 +306,6 @@ export async function updateSession(request: NextRequest) {
 
   return response;
 }
+
 
 
