@@ -133,6 +133,13 @@ export default async function PlatformAdminPage() {
                         </div>
 
                         <a
+                          href={`/platform/${agency.id}`}
+                          className="mt-2 mr-4 inline-flex text-xs font-medium text-emerald-400 transition hover:text-emerald-300"
+                        >
+                          Manage Agency
+                        </a>
+
+                        <a
                           href={`/settings/import-export?platformDepartmentId=${agency.id}`}
                           className="mt-2 inline-flex text-xs font-medium text-blue-400 transition hover:text-blue-300"
                         >

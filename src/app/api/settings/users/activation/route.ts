@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [manageResult, administerResult] = await Promise.all([
+    const [manageResult, administerResult, platformAdminResult] = await Promise.all([
       server.rpc("has_department_permission", {
         p_department_id: departmentId,
         p_permission_code: "manage_users",
@@ -59,12 +59,18 @@ export async function POST(request: NextRequest) {
         p_department_id: departmentId,
         p_permission_code: "administer_department",
       }),
+      server.rpc("is_platform_admin"),
     ]);
 
     if (manageResult.error) throw manageResult.error;
     if (administerResult.error) throw administerResult.error;
+    if (platformAdminResult.error) throw platformAdminResult.error;
 
-    if (!manageResult.data && !administerResult.data) {
+    if (
+      !manageResult.data &&
+      !administerResult.data &&
+      !platformAdminResult.data
+    ) {
       return NextResponse.json(
         { error: "You do not have permission to activate users." },
         { status: 403 },
@@ -169,4 +175,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
