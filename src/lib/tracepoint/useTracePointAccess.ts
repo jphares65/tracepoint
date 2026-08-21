@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   useCallback,
@@ -86,7 +86,8 @@ async function readError(response: Response) {
   }
 }
 
-export function useTracePointAccess(): TracePointAccess {
+export function useTracePointAccess(options?: { enabled?: boolean }): TracePointAccess {
+  const enabled = options?.enabled ?? true;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [requiresDepartmentSelection, setRequiresDepartmentSelection] =
@@ -97,6 +98,15 @@ export function useTracePointAccess(): TracePointAccess {
   const [access, setAccess] = useState<AccessPayload>(EMPTY_ACCESS);
 
   const loadAccess = useCallback(async () => {
+    if (!enabled) {
+      setAccess(EMPTY_ACCESS);
+      setError(null);
+      setRequiresDepartmentSelection(false);
+      setAvailableDepartments([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setRequiresDepartmentSelection(false);
@@ -153,7 +163,7 @@ export function useTracePointAccess(): TracePointAccess {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     void loadAccess();

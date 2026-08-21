@@ -1,4 +1,4 @@
-﻿import { createServerClient } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
@@ -150,6 +150,30 @@ export async function updateSession(request: NextRequest) {
   }
 
   const userId = String(claims?.sub ?? "");
+
+  const hasPlatformDepartmentOverride =
+    pathname.toLowerCase() === "/settings/import-export" &&
+    Boolean(
+      request.nextUrl.searchParams
+        .get("platformDepartmentId")
+        ?.trim()
+    );
+
+  const isPlatformPath =
+    pathname.toLowerCase() === "/platform" ||
+    pathname.toLowerCase().startsWith("/platform/") ||
+    pathname.toLowerCase() === "/api/platform" ||
+    pathname.toLowerCase().startsWith("/api/platform/") ||
+    hasPlatformDepartmentOverride;
+
+  if (isPlatformPath) {
+    const { data: isPlatformAdmin, error: platformAdminError } =
+      await supabase.rpc("is_platform_admin");
+
+    if (!platformAdminError && isPlatformAdmin) {
+      return response;
+    }
+  }
 
   const { data: membershipRows, error: membershipError } =
     await supabase

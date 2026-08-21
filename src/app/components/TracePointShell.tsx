@@ -41,6 +41,7 @@ import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 type TracePointShellProps = {
   activePage: string;
   children: ReactNode;
+  accessEnabled?: boolean;
 };
 
 type NavigationLeaf = {
@@ -707,6 +708,7 @@ function BrandHeader({ compact = false }: { compact?: boolean }) {
 export default function TracePointShell({
   activePage,
   children,
+  accessEnabled = true,
 }: TracePointShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -732,7 +734,7 @@ export default function TracePointShell({
     enabledFeatures,
     isSuperAdmin,
     refresh: refreshAccess,
-  } = useTracePointAccess();
+  } = useTracePointAccess({ enabled: accessEnabled });
 
   useEffect(() => {
     applyAppearanceToDocument(appearance);
@@ -1032,6 +1034,7 @@ export default function TracePointShell({
     </div>
   );
 }
+
 
 
 

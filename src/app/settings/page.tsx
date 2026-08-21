@@ -117,6 +117,7 @@ type MemberRow = {
   employee_number: string | null;
   is_active: boolean;
   joined_at: string;
+  activation_status: "pending_activation" | "activation_sent" | "activated";
   role_codes: string[];
   effective_permissions: TracePointPermission[];
 };
@@ -798,6 +799,7 @@ export default function AdminSettingsPage() {
   const [passwordResetEmail, setPasswordResetEmail] = useState<string | null>(
     null,
   );
+  const [activationUserId, setActivationUserId] = useState<string | null>(null);
   const [passwordAssignmentMember, setPasswordAssignmentMember] =
     useState<MemberRow | null>(null);
   const availableTabs = useMemo(() => {
@@ -1187,6 +1189,11 @@ export default function AdminSettingsPage() {
               : null,
           is_active: Boolean(row.is_active),
           joined_at: String(row.joined_at ?? ""),
+          activation_status:
+            row.activation_status === "pending_activation" ||
+            row.activation_status === "activation_sent"
+              ? row.activation_status
+              : "activated",
           role_codes: normalizeArray(row.role_codes),
           effective_permissions: normalizeArray(
             row.effective_permissions,
@@ -2145,6 +2152,63 @@ export default function AdminSettingsPage() {
       );
     } finally {
       setSavingSection(null);
+    }
+  }
+
+  async function handleSendActivation(member: MemberRow) {
+    if (!departmentId || !canManageUsers || !member.user_id) return;
+
+    const verb =
+      member.activation_status === "activation_sent" ? "Resend" : "Send";
+
+    const confirmed = window.confirm(
+      `${verb} activation email to ${member.email ?? member.full_name}?`,
+    );
+
+    if (!confirmed) return;
+
+    setActivationUserId(member.user_id);
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/settings/users/activation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          departmentId,
+          userId: member.user_id,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ?? "Activation email could not be sent.",
+        );
+      }
+
+      showNotice(
+        "success",
+        result.message ?? "Activation email sent successfully.",
+      );
+
+      await loadSettings();
+    } catch (error) {
+      showNotice(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Activation email could not be sent.",
+      );
+    } finally {
+      setActivationUserId(null);
     }
   }
 
@@ -3168,6 +3232,17 @@ export default function AdminSettingsPage() {
                             label={member.is_active ? "Active" : "Inactive"}
                             tone={member.is_active ? "green" : "slate"}
                           />
+                          {member.activation_status === "pending_activation" ? (
+                            <StatusPill
+                              label="Pending Activation"
+                              tone="amber"
+                            />
+                          ) : member.activation_status === "activation_sent" ? (
+                            <StatusPill
+                              label="Activation Sent"
+                              tone="blue"
+                            />
+                          ) : null}
                           {member.user_id === userId ? (
                             <StatusPill label="You" tone="blue" />
                           ) : null}
@@ -3206,6 +3281,36 @@ export default function AdminSettingsPage() {
                             Joined {formatDateTime(member.joined_at)}
                           </p>
                         </div>
+                        {member.email &&
+                        (member.activation_status === "pending_activation" ||
+                          member.activation_status === "activation_sent") ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleSendActivation(member)}
+                            disabled={
+                              !canManageUsers ||
+                              !member.is_active ||
+                              activationUserId === member.user_id ||
+                              (member.role_codes.includes("administrator") &&
+                                !canAdminister)
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-500/40 px-3.5 py-2 text-sm font-semibold text-blue-200 transition hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {activationUserId === member.user_id ? (
+                              <LoaderCircle
+                                size={14}
+                                className="animate-spin"
+                              />
+                            ) : (
+                              <Mail size={14} />
+                            )}
+                            {activationUserId === member.user_id
+                              ? "Sending..."
+                              : member.activation_status === "activation_sent"
+                                ? "Resend Activation"
+                                : "Send Activation"}
+                          </button>
+                        ) : null}
 
                         <button
                           type="button"
@@ -4919,6 +5024,15 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
+
+
+
+
+
+
+
+
+
 
 
 

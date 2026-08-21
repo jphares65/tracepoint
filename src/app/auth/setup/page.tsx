@@ -1,4 +1,4 @@
-﻿import Image from "next/image";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
   BadgeCheck,
@@ -9,6 +9,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type SetupPageProps = {
@@ -92,6 +93,41 @@ async function completeAccountSetup(formData: FormData) {
 
   if (error) {
     setupRedirectWithError(error.message, nextPath);
+  }
+
+  const admin = createAdminClient();
+
+  const { error: activationError } = await admin
+    .from("department_memberships")
+    .update({
+      activation_status: "activated",
+    })
+    .eq("user_id", user.id)
+    .in("activation_status", [
+      "pending_activation",
+      "activation_sent",
+    ]);
+
+  if (activationError) {
+    setupRedirectWithError(
+      "Your password was saved, but TracePoint could not finish account activation. Please contact your administrator.",
+      nextPath,
+    );
+  }
+
+  const { error: metadataError } =
+    await admin.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        ...user.user_metadata,
+        onboarding_status: "activated",
+      },
+    });
+
+  if (metadataError) {
+    setupRedirectWithError(
+      "Your password was saved, but TracePoint could not finish account activation. Please contact your administrator.",
+      nextPath,
+    );
   }
 
   redirect(nextPath);
@@ -557,6 +593,12 @@ export default async function SetupPage({
     );
   }
 
+  const { data: isPlatformAdmin, error: platformAdminError } =
+    await supabase.rpc("is_platform_admin");
+
+  if (!platformAdminError && isPlatformAdmin) {
+    redirect("/platform");
+  }
   const { data: membership } = await supabase
     .from("department_memberships")
     .select("department_id")
@@ -581,5 +623,6 @@ export default async function SetupPage({
     />
   );
 }
+
 
 
