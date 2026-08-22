@@ -32,6 +32,8 @@ type FirearmImportRequest = {
   conditionStatus?: string;
   notes?: string;
   assignedToUserId?: string;
+  assignedOfficerName?: string;
+  badgeNumber?: string;
 };
 
 function cleanText(value: unknown) {
@@ -121,11 +123,13 @@ export async function POST(request: NextRequest) {
   "handgun" | "rifle" | "shotgun" | "less_lethal" | "other";
   const conditionStatus =
     cleanText(body.conditionStatus) ?? "In Service";
-  const assignedToUserId = cleanText(body.assignedToUserId);
+  let assignedToUserId = cleanText(body.assignedToUserId);
+  const assignedOfficerName = cleanText(body.assignedOfficerName);
+  const badgeNumber = cleanText(body.badgeNumber);
 
-  if (!make || !model || !serialNumber) {
+  if (!make || !serialNumber) {
     return NextResponse.json(
-      { error: "Make, model, and serial number are required." },
+      { error: "Make and serial number are required." },
       { status: 400 },
     );
   }
@@ -147,6 +151,87 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
 
   try {
+    if (!assignedToUserId && badgeNumber) {
+      const { data: badgeMatches, error: badgeError } = await admin
+        .from("department_memberships")
+        .select("user_id")
+        .eq("department_id", departmentId)
+        .eq("badge_number", badgeNumber)
+        .eq("is_active", true);
+
+      if (badgeError) {
+        throw new Error(badgeError.message);
+      }
+
+      if ((badgeMatches ?? []).length > 1) {
+        return NextResponse.json(
+          {
+            error: `Badge number "${badgeNumber}" matched more than one active personnel record.`,
+          },
+          { status: 409 },
+        );
+      }
+
+      if ((badgeMatches ?? []).length === 1) {
+        assignedToUserId = badgeMatches![0].user_id;
+      }
+    }
+
+    if (!assignedToUserId && assignedOfficerName) {
+      const { data: profileMatches, error: profileError } = await admin
+        .from("profiles")
+        .select("id, full_name")
+        .ilike("full_name", assignedOfficerName);
+
+      if (profileError) {
+        throw new Error(profileError.message);
+      }
+
+      const candidateIds = (profileMatches ?? []).map(
+        (profile) => profile.id,
+      );
+
+      if (candidateIds.length > 0) {
+        const { data: membershipMatches, error: membershipError } =
+          await admin
+            .from("department_memberships")
+            .select("user_id")
+            .eq("department_id", departmentId)
+            .eq("is_active", true)
+            .in("user_id", candidateIds);
+
+        if (membershipError) {
+          throw new Error(membershipError.message);
+        }
+
+        if ((membershipMatches ?? []).length > 1) {
+          return NextResponse.json(
+            {
+              error: `Officer "${assignedOfficerName}" matched more than one active personnel record. Include a badge number to disambiguate.`,
+            },
+            { status: 409 },
+          );
+        }
+
+        if ((membershipMatches ?? []).length === 1) {
+          assignedToUserId = membershipMatches![0].user_id;
+        }
+      }
+    }
+
+    if (
+      !assignedToUserId &&
+      (assignedOfficerName || badgeNumber)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The assigned officer could not be matched to an active personnel record in the selected agency.",
+        },
+        { status: 400 },
+      );
+    }
+
     if (assignedToUserId) {
       const { data: membership, error: membershipError } =
         await admin
@@ -198,6 +283,72 @@ export async function POST(request: NextRequest) {
     }
 
     if (existing) {
+      if (assignedToUserId) {
+        const { data: activeAssignment, error: assignmentLookupError } =
+          await admin
+            .from("firearm_assignments")
+            .select("id, assigned_to_user_id")
+            .eq("department_id", departmentId)
+            .eq("firearm_id", existing.id)
+            .is("returned_at", null)
+            .limit(1)
+            .maybeSingle();
+
+        if (assignmentLookupError) {
+          throw new Error(assignmentLookupError.message);
+        }
+
+        if (
+          activeAssignment &&
+          activeAssignment.assigned_to_user_id !== assignedToUserId
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "This firearm is already actively assigned to a different officer. Review the assignment before importing.",
+              status: "assignment_conflict",
+              firearmId: existing.id,
+              currentAssignedToUserId:
+                activeAssignment.assigned_to_user_id,
+              incomingAssignedToUserId: assignedToUserId,
+            },
+            { status: 409 },
+          );
+        }
+
+        if (!activeAssignment) {
+          const { error: assignmentInsertError } = await admin
+            .from("firearm_assignments")
+            .insert({
+              department_id: departmentId,
+              firearm_id: existing.id,
+              assigned_to_user_id: assignedToUserId,
+              assigned_by_user_id: user.id,
+              assigned_at: new Date().toISOString(),
+              condition_at_issue: conditionStatus,
+              magazines_issued: 0,
+            });
+
+          if (assignmentInsertError) {
+            throw new Error(
+              `The firearm assignment could not be created: ${assignmentInsertError.message}`,
+            );
+          }
+
+          await admin.from("audit_events").insert({
+            department_id: departmentId,
+            actor_user_id: user.id,
+            action: "firearm_assignment_added_during_onboarding",
+            entity_type: "firearm",
+            entity_id: existing.id,
+            new_value: {
+              assigned_to_user_id: assignedToUserId,
+              platform_admin: Boolean(platformAdminResult.data),
+            },
+          });
+        }
+      }
+
       const merge = buildEnrichOnlyUpdates(
         existing as Record<string, unknown>,
         {
@@ -272,7 +423,7 @@ export async function POST(request: NextRequest) {
         .insert({
           department_id: departmentId,
           make,
-          model,
+          model: model ?? "TBD / Unknown",
           serial_number: serialNumber,
           firearm_type: firearmType,
           caliber: cleanText(body.caliber) ?? "TBD / Unknown",
@@ -350,6 +501,13 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+
+
+
+
+
+
 
 
 
