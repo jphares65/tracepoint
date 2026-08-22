@@ -1061,10 +1061,7 @@ export async function GET(request: NextRequest) {
       collectCertificationReadiness(context)
         .then((items) => ({
           ok: true,
-          items: myItems,
-          departmentItems,
-          canViewDepartmentInbox,
-      isSupportMode: context.isSupportMode,
+          items,
           error: "",
         }))
         .catch((error) => ({
