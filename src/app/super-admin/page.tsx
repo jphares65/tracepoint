@@ -385,7 +385,7 @@ export default function SuperAdminPage() {
                     `${departmentId}:${feature.code}`;
 
                   const enabled =
-                    entitlementMap.get(key) !== false;
+                    entitlementMap.get(key) === true;
 
                   const saving =
                     savingFeature === feature.code;
@@ -461,3 +461,4 @@ export default function SuperAdminPage() {
     </TracePointShell>
   );
 }
+
