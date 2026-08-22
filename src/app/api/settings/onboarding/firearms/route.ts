@@ -126,6 +126,10 @@ export async function POST(request: NextRequest) {
 
   const attentionReasons: string[] = [];
 
+  if (!make || make.toLowerCase() === "tbd / unknown") {
+    attentionReasons.push("missing_make");
+  }
+
   if (!model || model.toLowerCase() === "tbd / unknown") {
     attentionReasons.push("missing_model");
   }
@@ -147,9 +151,9 @@ export async function POST(request: NextRequest) {
   const assignedOfficerName = cleanText(body.assignedOfficerName);
   const badgeNumber = cleanText(body.badgeNumber);
 
-  if (!make || !serialNumber) {
+  if (!serialNumber) {
     return NextResponse.json(
-      { error: "Make and serial number are required." },
+      { error: "Serial number is required." },
       { status: 400 },
     );
   }
@@ -376,7 +380,7 @@ export async function POST(request: NextRequest) {
       const merge = buildEnrichOnlyUpdates(
         existing as Record<string, unknown>,
         {
-          make,
+          make: make ?? "TBD / Unknown",
           model,
           firearm_type: firearmType,
           caliber: cleanText(body.caliber),
@@ -483,7 +487,7 @@ export async function POST(request: NextRequest) {
         .from("firearms")
         .insert({
           department_id: departmentId,
-          make,
+          make: make ?? "TBD / Unknown",
           model: model ?? "TBD / Unknown",
           serial_number: serialNumber,
           firearm_type: firearmType,
@@ -564,6 +568,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 
 

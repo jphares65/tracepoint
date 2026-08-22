@@ -860,6 +860,7 @@ function validateRows(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const firearmNeedsAttentionFields = new Set([
+    "make",
     "model",
     "firearmType",
     "caliber",
@@ -1114,7 +1115,7 @@ async function importFirearm(
     },
     body: JSON.stringify({
       departmentId,
-      make: row.make,
+      make: row.make?.trim() || "TBD / Unknown",
       model: row.model?.trim() || "TBD / Unknown",
       serialNumber: row.serialNumber,
       firearmType: row.firearmType?.trim()
@@ -1636,7 +1637,7 @@ function ImportWizardContent() {
               body: JSON.stringify({
                 departmentId,
                 officerUserId: matchedOfficer.userId,
-                make: row.make,
+                make: row.make?.trim() || "TBD / Unknown",
                 model: row.model?.trim() || "TBD / Unknown",
                 firearmType: row.firearmType,
                 serialNumber: row.serialNumber,
@@ -7351,6 +7352,7 @@ export default function ImportWizardPage() {
     </Suspense>
   );
 }
+
 
 
 

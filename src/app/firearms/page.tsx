@@ -1241,8 +1241,10 @@ The firearm will be removed from active inventory and future operational selecti
                                   key={reason}
                                   className="rounded-full border border-amber-500/30 px-2.5 py-1 text-xs font-semibold text-amber-200"
                                 >
-                                  {reason === "missing_model"
-                                    ? "Missing Model"
+                                  {reason === "missing_make"
+                                    ? "Missing Make"
+                                    : reason === "missing_model"
+                                      ? "Missing Model"
                                     : reason === "missing_caliber"
                                       ? "Missing Caliber"
                                       : reason === "missing_firearm_type"
@@ -1690,6 +1692,7 @@ The firearm will be removed from active inventory and future operational selecti
     </TracePointShell>
   );
 }
+
 
 
 
