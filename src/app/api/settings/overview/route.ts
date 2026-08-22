@@ -8,6 +8,162 @@ import {
 
 export const dynamic = "force-dynamic";
 
+type MemberRow = {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  badge_number: string | null;
+  rank_title: string | null;
+  unit_name: string | null;
+  employee_number: string | null;
+  is_active: boolean;
+  joined_at: string | null;
+  activation_status: string | null;
+  role_codes: string[];
+  effective_permissions: string[];
+};
+
+async function getSupportModeMembers(
+  admin: any,
+  departmentId: string,
+): Promise<{ data: MemberRow[]; error: any }> {
+  const [
+    membershipsResult,
+    membershipRolesResult,
+    rolePermissionsResult,
+  ] = await Promise.all([
+    admin
+      .from("department_memberships")
+      .select(
+        "user_id,badge_number,rank_title,unit_name,employee_number,is_active,joined_at,activation_status",
+      )
+      .eq("department_id", departmentId),
+
+    admin
+      .from("department_membership_roles")
+      .select("user_id,role_code")
+      .eq("department_id", departmentId),
+
+    admin
+      .from("department_role_permissions")
+      .select("role_code,permission_code")
+      .eq("department_id", departmentId),
+  ]);
+
+  const firstError = [
+    membershipsResult.error,
+    membershipRolesResult.error,
+    rolePermissionsResult.error,
+  ].find(Boolean);
+
+  if (firstError) {
+    return { data: [], error: firstError };
+  }
+
+  const memberships = membershipsResult.data ?? [];
+  const userIds = memberships
+    .map((row: any) => row.user_id)
+    .filter(Boolean);
+
+  if (userIds.length === 0) {
+    return { data: [], error: null };
+  }
+
+  const profilesResult = await admin
+    .from("profiles")
+    .select("id,full_name,email")
+    .in("id", userIds);
+
+  if (profilesResult.error) {
+    return { data: [], error: profilesResult.error };
+  }
+
+  const profileById = new Map<
+    string,
+    {
+      id: string;
+      full_name: string | null;
+      email: string | null;
+    }
+  >(
+    (profilesResult.data ?? []).map((profile: any) => [
+      String(profile.id),
+      {
+        id: String(profile.id),
+        full_name:
+          typeof profile.full_name === "string"
+            ? profile.full_name
+            : null,
+        email:
+          typeof profile.email === "string"
+            ? profile.email
+            : null,
+      },
+    ]),
+  );
+
+  const rolesByUser = new Map<string, Set<string>>();
+
+  for (const row of membershipRolesResult.data ?? []) {
+    if (!row.user_id || !row.role_code) continue;
+
+    const roles = rolesByUser.get(row.user_id) ?? new Set<string>();
+    roles.add(row.role_code);
+    rolesByUser.set(row.user_id, roles);
+  }
+
+  const permissionsByRole = new Map<string, Set<string>>();
+
+  for (const row of rolePermissionsResult.data ?? []) {
+    if (!row.role_code || !row.permission_code) continue;
+
+    const permissions =
+      permissionsByRole.get(row.role_code) ?? new Set<string>();
+
+    permissions.add(row.permission_code);
+    permissionsByRole.set(row.role_code, permissions);
+  }
+
+  const members: MemberRow[] = memberships.map((membership: any) => {
+    const profile = profileById.get(membership.user_id);
+    const roleCodes = Array.from(
+      rolesByUser.get(membership.user_id) ?? [],
+    ).sort();
+
+    const effectivePermissions = Array.from(
+      new Set(
+        roleCodes.flatMap((roleCode) =>
+          Array.from(permissionsByRole.get(roleCode) ?? []),
+        ),
+      ),
+    ).sort();
+
+    return {
+      user_id: membership.user_id,
+      full_name: profile?.full_name ?? null,
+      email: profile?.email ?? null,
+      badge_number: membership.badge_number ?? null,
+      rank_title: membership.rank_title ?? null,
+      unit_name: membership.unit_name ?? null,
+      employee_number: membership.employee_number ?? null,
+      is_active: Boolean(membership.is_active),
+      joined_at: membership.joined_at ?? null,
+      activation_status: membership.activation_status ?? null,
+      role_codes: roleCodes,
+      effective_permissions: effectivePermissions,
+    };
+  });
+
+  members.sort((a, b) =>
+    (a.full_name ?? "").localeCompare(b.full_name ?? ""),
+  );
+
+  return {
+    data: members,
+    error: null,
+  };
+}
+
 export async function GET() {
   const access = await resolveServerAccess();
 
@@ -73,23 +229,30 @@ export async function GET() {
       .eq("department_id", departmentId),
   ]);
 
-  let membersResult: { data: any[]; error: any } = {
+  let membersResult: { data: MemberRow[]; error: any } = {
     data: [],
     error: null,
   };
 
   if (canManageUsers) {
-    const result = await context.admin.rpc(
-      "get_department_members",
-      {
-        p_department_id: departmentId,
-      },
-    );
+    if (context.isSupportMode) {
+      membersResult = await getSupportModeMembers(
+        context.admin,
+        departmentId,
+      );
+    } else {
+      const result = await db.rpc(
+        "get_department_members",
+        {
+          p_department_id: departmentId,
+        },
+      );
 
-    membersResult = {
-      data: result.data ?? [],
-      error: result.error,
-    };
+      membersResult = {
+        data: (result.data ?? []) as MemberRow[],
+        error: result.error,
+      };
+    }
   }
 
   const firstError = [

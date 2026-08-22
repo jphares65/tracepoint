@@ -2494,11 +2494,6 @@ export default function AdminSettingsPage() {
               </span>
               <span>·</span>
               <span>{roles.length} available roles</span>
-              <span>·</span>
-              <span className="inline-flex items-center gap-1.5 text-slate-500">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Supabase connected
-              </span>
             </div>
           </div>
 
