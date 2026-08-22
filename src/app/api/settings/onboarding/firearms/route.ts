@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
+import { getLookupLastName, matchesPersonnelName } from "@/lib/onboarding/personnel-name";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -178,18 +179,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (!assignedToUserId && assignedOfficerName) {
+      const lastName = getLookupLastName(assignedOfficerName);
+
       const { data: profileMatches, error: profileError } = await admin
         .from("profiles")
         .select("id, full_name")
-        .ilike("full_name", assignedOfficerName);
+        .ilike("full_name", `%${lastName}%`);
 
       if (profileError) {
         throw new Error(profileError.message);
       }
 
-      const candidateIds = (profileMatches ?? []).map(
-        (profile) => profile.id,
+      const matchingProfiles = (profileMatches ?? []).filter((profile) =>
+        matchesPersonnelName(profile.full_name, assignedOfficerName),
       );
+
+      const candidateIds = matchingProfiles.map((profile) => profile.id);
 
       if (candidateIds.length > 0) {
         const { data: membershipMatches, error: membershipError } =
