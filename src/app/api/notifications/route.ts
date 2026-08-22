@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   hasAnyServerPermission,
@@ -966,6 +966,67 @@ async function getPreferences(context: any) {
   };
 }
 
+function canReviewDepartmentInbox(context: any) {
+  const permissions = Array.isArray(context?.permissions)
+    ? context.permissions
+    : [];
+
+  return (
+    context?.isSupportMode === true ||
+    permissions.includes("administer_department") ||
+    [
+      "review_off_duty_requests",
+      "approve_off_duty_requests",
+      "return_off_duty_requests",
+      "deny_off_duty_requests",
+    ].some((permission) => permissions.includes(permission))
+  );
+}
+
+function getNotificationInboxScope(
+  row: any,
+  context: any,
+): "my" | "department" {
+  const key = text(row?.notification_key);
+  const kind = text(row?.kind);
+  const source = text(row?.source);
+  const userId = text(context?.userId) || text(context?.user?.id);
+
+  if (userId && key.includes(userId)) {
+    return "my";
+  }
+
+  if (source === "Personal Rifle") {
+    return "my";
+  }
+
+  if (
+    kind === "off_duty_firearm_review_required" &&
+    canReviewDepartmentInbox(context)
+  ) {
+    return "department";
+  }
+
+  if (
+    (source === "Ammunition" || source === "Inspection") &&
+    context?.canManageArmory
+  ) {
+    return "department";
+  }
+
+  if (source === "Range" && context?.canManageRange) {
+    return "department";
+  }
+
+  if (
+    ["Qualifications", "Training", "Equipment"].includes(source) &&
+    context?.canViewDepartmentReadiness
+  ) {
+    return "department";
+  }
+
+  return "my";
+}
 function sortRows(rows: any[]) {
   const weight = { Critical: 0, High: 1, Normal: 2 };
   return [...rows].sort((a, b) => {
@@ -1000,7 +1061,9 @@ export async function GET(request: NextRequest) {
       collectCertificationReadiness(context)
         .then((items) => ({
           ok: true,
-          items,
+          items: myItems,
+          departmentItems,
+          canViewDepartmentInbox,
           error: "",
         }))
         .catch((error) => ({
@@ -1175,6 +1238,7 @@ export async function GET(request: NextRequest) {
       acknowledgedAt: row.acknowledged_at,
       snoozedUntil: row.snoozed_until,
       lastSeenAt: row.last_seen_at,
+      inboxScope: getNotificationInboxScope(row, context),
     }));
 
     const visible = allOpenItems.filter((item: any) => {
@@ -1182,18 +1246,35 @@ export async function GET(request: NextRequest) {
       if (!item.snoozedUntil) return true;
       return new Date(item.snoozedUntil).getTime() <= Date.now();
     });
-
     const items = sortRows(visible);
 
+    const myItems = sortRows(
+      items.filter((item: any) => item.inboxScope === "my"),
+    );
+
+    const departmentItems = sortRows(
+      items.filter((item: any) => item.inboxScope === "department"),
+    );
+
+    const canViewDepartmentInbox =
+      context.isSupportMode === true ||
+      context.canManageArmory ||
+      context.canManageRange ||
+      context.canViewDepartmentReadiness ||
+      canReviewDepartmentInbox(context);
     return NextResponse.json({
-      items,
+      items: myItems,
+      departmentItems,
+      canViewDepartmentInbox,
       allOpenItems: sortRows(allOpenItems),
       preferences,
       sourceErrors,
       counts: {
-        open: items.length,
-        critical: items.filter((item: any) => item.priority === "Critical").length,
-        high: items.filter((item: any) => item.priority === "High").length,
+        open: myItems.length,
+        myOpen: myItems.length,
+        departmentOpen: departmentItems.length,
+        critical: myItems.filter((item: any) => item.priority === "Critical").length,
+        high: myItems.filter((item: any) => item.priority === "High").length,
         normal: items.filter((item: any) => item.priority === "Normal").length,
         acknowledged: allOpenItems.filter((item: any) => item.acknowledgedAt).length,
         snoozed: allOpenItems.filter((item: any) => item.snoozedUntil && new Date(item.snoozedUntil).getTime() > Date.now()).length,

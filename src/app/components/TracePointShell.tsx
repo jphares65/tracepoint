@@ -88,7 +88,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         requirement: { anyOf: ["view_analytics"] },
       },
       {
-        label: "Notifications",
+        label: "Inbox",
         href: "/notifications",
         icon: BellRing,
       },
@@ -397,6 +397,42 @@ function NavigationLinks({
   onNavigate?: () => void;
 }) {
   const enabledFeatureSet = new Set(enabledFeatures);
+  const [inboxCount, setInboxCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadInboxCount() {
+      try {
+        const response = await fetch(
+          "/api/notifications/count",
+          { cache: "no-store" },
+        );
+
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as {
+          count?: number;
+        };
+
+        if (active) {
+          setInboxCount(
+            Number.isFinite(payload.count)
+              ? Math.max(0, Number(payload.count))
+              : 0,
+          );
+        }
+      } catch {
+        // Inbox remains available if badge loading fails.
+      }
+    }
+
+    void loadInboxCount();
+
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
 
   const navItems = getNavItems(
     permissions,
@@ -472,7 +508,15 @@ function NavigationLinks({
                       : "text-slate-600 group-hover:text-slate-400"
                   }
                 />
-                <span className="truncate font-medium">{item.label}</span>
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {item.label}
+                </span>
+                {item.href === "/notifications" &&
+                inboxCount > 0 ? (
+                  <span className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                    {inboxCount > 99 ? "99+" : inboxCount}
+                  </span>
+                ) : null}
               </Link>
             );
           }

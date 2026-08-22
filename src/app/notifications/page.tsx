@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -15,6 +15,7 @@ type Item = {
   createdAt?: string | null;
   acknowledgedAt?: string | null;
   snoozedUntil?: string | null;
+  inboxScope?: "my" | "department";
 };
 
 type Payload = {
@@ -52,6 +53,7 @@ function Icon({ priority }: { priority: Item["priority"] }) {
 
 export default function NotificationsPage() {
   const [payload, setPayload] = useState<Payload | null>(null);
+  const [inboxScope, setInboxScope] = useState<"my" | "department">("my");
   const [filter, setFilter] = useState("Open");
   const [source, setSource] = useState("All");
   const [showPreferences, setShowPreferences] = useState(false);
@@ -77,13 +79,35 @@ export default function NotificationsPage() {
 
   const visible = useMemo(() => {
     if (!payload) return [];
-    const base = filter === "Open"
-      ? payload.items
-      : payload.allOpenItems.filter((item) => filter === "Acknowledged"
-          ? Boolean(item.acknowledgedAt)
-          : Boolean(item.snoozedUntil && new Date(item.snoozedUntil).getTime() > Date.now()));
-    return source === "All" ? base : base.filter((item) => item.source === source);
-  }, [payload, filter, source]);
+
+    const scoped = payload.allOpenItems.filter(
+      (item) => (item.inboxScope ?? "my") === inboxScope,
+    );
+
+    const base =
+      filter === "Open"
+        ? scoped.filter((item) => {
+            if (item.acknowledgedAt) return false;
+            if (!item.snoozedUntil) return true;
+
+            return (
+              new Date(item.snoozedUntil).getTime() <= Date.now()
+            );
+          })
+        : scoped.filter((item) =>
+            filter === "Acknowledged"
+              ? Boolean(item.acknowledgedAt)
+              : Boolean(
+                  item.snoozedUntil &&
+                    new Date(item.snoozedUntil).getTime() >
+                      Date.now(),
+                ),
+          );
+
+    return source === "All"
+      ? base
+      : base.filter((item) => item.source === source);
+  }, [payload, filter, source, inboxScope]);
 
   async function act(action: string, item: Item) {
     setSaving(true);
@@ -176,9 +200,69 @@ export default function NotificationsPage() {
           ))}
         </section>
 
-        <section className="flex flex-wrap gap-2 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
-          {["Open", "Acknowledged", "Snoozed"].map((item) => <button key={item} onClick={() => setFilter(item)} className={`rounded-xl border px-3 py-2 text-sm ${filter === item ? "border-blue-500 text-blue-200" : "border-slate-700 text-slate-400"}`}>{item}</button>)}
-          <select value={source} onChange={(event) => setSource(event.target.value)} className="ml-auto rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300"><option>All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select>
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setInboxScope("my")}
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
+                inboxScope === "my"
+                  ? "border-blue-500 bg-blue-500/10 text-blue-200"
+                  : "border-slate-700 text-slate-400"
+              }`}
+            >
+              My Inbox
+              <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-xs">
+                {(payload?.counts as any)?.myOpen ??
+                  payload?.counts?.open ??
+                  0}
+              </span>
+            </button>
+
+            {(payload as any)?.canViewDepartmentInbox ? (
+              <button
+                type="button"
+                onClick={() => setInboxScope("department")}
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
+                  inboxScope === "department"
+                    ? "border-blue-500 bg-blue-500/10 text-blue-200"
+                    : "border-slate-700 text-slate-400"
+                }`}
+              >
+                Department Inbox
+                <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-xs">
+                  {(payload?.counts as any)?.departmentOpen ?? 0}
+                </span>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-800 pt-3">
+            {["Open", "Acknowledged", "Snoozed"].map((item) => (
+              <button
+                key={item}
+                onClick={() => setFilter(item)}
+                className={`rounded-xl border px-3 py-2 text-sm ${
+                  filter === item
+                    ? "border-blue-500 text-blue-200"
+                    : "border-slate-700 text-slate-400"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+
+            <select
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+              className="ml-auto rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300"
+            >
+              <option>All</option>
+              {sources.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
         </section>
 
         {loading ? <div className="flex min-h-[300px] items-center justify-center rounded-3xl border border-slate-800 bg-slate-900"><Loader2 className="animate-spin text-blue-300" /></div> : visible.length === 0 ? <div className="rounded-3xl border border-emerald-800 bg-emerald-950/20 p-10 text-center text-emerald-200">No notifications in this view.</div> : (
