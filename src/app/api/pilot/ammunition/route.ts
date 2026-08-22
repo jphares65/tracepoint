@@ -1,7 +1,9 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type AmmunitionWorkspace = {
   dutyLots?: unknown[];
@@ -9,41 +11,16 @@ type AmmunitionWorkspace = {
   transactions?: unknown[];
 };
 
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in." };
-  }
-
-  return { user, error: null };
-}
-
-async function getActiveDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-
-  return data?.department_id ?? null;
-}
-
 function normalizeWorkspace(value: unknown): Required<AmmunitionWorkspace> {
   const workspace =
-    value && typeof value === "object" ? (value as AmmunitionWorkspace) : {};
+    value && typeof value === "object"
+      ? (value as AmmunitionWorkspace)
+      : {};
 
   return {
-    dutyLots: Array.isArray(workspace.dutyLots) ? workspace.dutyLots : [],
+    dutyLots: Array.isArray(workspace.dutyLots)
+      ? workspace.dutyLots
+      : [],
     trainingLots: Array.isArray(workspace.trainingLots)
       ? workspace.trainingLots
       : [],
@@ -54,23 +31,17 @@ function normalizeWorkspace(value: unknown): Required<AmmunitionWorkspace> {
 }
 
 export async function GET() {
-  const { user, error: authError } = await getCurrentUser();
+  const access = await resolveServerAccess();
 
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
+  if (!access.ok) {
+    return accessFailureResponse(access);
   }
 
+  const context = access.context;
+  const admin = context.admin as any;
+  const departmentId = context.departmentId;
+
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership found." },
-        { status: 404 },
-      );
-    }
-
     const { data, error } = await admin
       .from("pilot_ammunition_workspaces")
       .select("workspace, updated_at")
@@ -78,7 +49,10 @@ export async function GET() {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
@@ -100,16 +74,24 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const { user, error: authError } = await getCurrentUser();
+  const access = await resolveServerAccess();
 
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
+  if (!access.ok) {
+    return accessFailureResponse(access);
   }
+
+  const context = access.context;
+  const admin = context.admin as any;
+  const departmentId = context.departmentId;
+  const userId = context.user.id;
 
   let workspace: Required<AmmunitionWorkspace>;
 
   try {
-    const payload = (await request.json()) as { workspace?: unknown };
+    const payload = (await request.json()) as {
+      workspace?: unknown;
+    };
+
     workspace = normalizeWorkspace(payload.workspace);
   } catch {
     return NextResponse.json(
@@ -119,23 +101,13 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getActiveDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership found." },
-        { status: 404 },
-      );
-    }
-
     const { error } = await admin
       .from("pilot_ammunition_workspaces")
       .upsert(
         {
           department_id: departmentId,
           workspace,
-          updated_by: user.id,
+          updated_by: userId,
           updated_at: new Date().toISOString(),
         },
         {
@@ -144,18 +116,25 @@ export async function PUT(request: Request) {
       );
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 },
+      );
     }
 
     await admin.from("audit_events").insert({
       department_id: departmentId,
-      actor_user_id: user.id,
+      actor_user_id: userId,
       action: "pilot_ammunition_workspace_saved",
       entity_type: "pilot_ammunition_workspaces",
       entity_id: departmentId,
-      summary: `Saved ammunition workspace with ${workspace.dutyLots.length} duty lot${
+      summary: `Saved ammunition workspace with ${
+        workspace.dutyLots.length
+      } duty lot${
         workspace.dutyLots.length === 1 ? "" : "s"
-      } and ${workspace.trainingLots.length} training lot${
+      } and ${
+        workspace.trainingLots.length
+      } training lot${
         workspace.trainingLots.length === 1 ? "" : "s"
       }.`,
       previous_value: null,
@@ -184,4 +163,3 @@ export async function PUT(request: Request) {
     );
   }
 }
-
