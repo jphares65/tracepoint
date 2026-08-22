@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   equipmentPermissionDenied,
@@ -31,7 +31,7 @@ export async function GET() {
 
   if ("error" in context) return context.error;
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("equipment_types")
     .select("*")
     .eq("department_id", context.departmentId)
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("equipment_types")
     .insert({
       department_id: context.departmentId,
@@ -223,7 +223,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("equipment_types")
     .update({
       name,

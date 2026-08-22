@@ -32,6 +32,7 @@ export async function getEquipmentServerContext() {
 
   return {
     admin: access.admin,
+    db: access.db,
     user: access.user,
     departmentId: access.departmentId,
     canManage: hasAnyServerPermission(access, [

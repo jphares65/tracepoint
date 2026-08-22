@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -39,7 +39,7 @@ export async function GET() {
     return featureError;
   }
 
-  const admin = context.admin;
+  const admin = context.db;
   const departmentId = context.departmentId;
   const userId = context.userId;
 

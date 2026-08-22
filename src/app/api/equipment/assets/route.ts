@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   equipmentPermissionDenied,
@@ -20,7 +20,7 @@ export async function GET() {
 
   if ("error" in context) return context.error;
 
-  let query = context.admin
+  let query = context.db
     .from("equipment_assets")
     .select("*")
     .eq("department_id", context.departmentId)
@@ -43,7 +43,7 @@ export async function GET() {
   }
 
   const { data: members, error: memberError } =
-    await context.admin
+    await context.db
       .from("department_memberships")
       .select(
         "user_id,badge_number,rank_title,unit_name,is_active",
@@ -66,7 +66,7 @@ export async function GET() {
 
   if (userIds.length > 0) {
     const { data, error: profileError } =
-      await context.admin
+      await context.db
         .from("profiles")
         .select("id,full_name")
         .in("id", userIds);
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: type, error: typeError } =
-    await context.admin
+    await context.db
       .from("equipment_types")
       .select("id")
       .eq("id", equipmentTypeId)
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
 
   if (assignedUserId) {
     const { data: member, error: memberError } =
-      await context.admin
+      await context.db
         .from("department_memberships")
         .select("user_id")
         .eq("department_id", context.departmentId)
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("equipment_assets")
     .insert({
       department_id: context.departmentId,
@@ -267,7 +267,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const { data: existing, error: existingError } =
-    await context.admin
+    await context.db
       .from("equipment_assets")
       .select("*")
       .eq("id", id)
@@ -325,7 +325,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("equipment_assets")
     .update({
       equipment_type_id: equipmentTypeId,

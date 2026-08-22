@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   equipmentPermissionDenied,
@@ -70,7 +70,7 @@ async function validateScope(
   }
 
   if (scopeType === "officer") {
-    const { data, error } = await context.admin
+    const { data, error } = await context.db
       .from("department_memberships")
       .select("user_id")
       .eq("department_id", context.departmentId)
@@ -102,7 +102,7 @@ export async function GET() {
 
   if ("error" in context) return context.error;
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("department_equipment_requirements")
     .select("*")
     .eq("department_id", context.departmentId)
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: type, error: typeError } =
-    await context.admin
+    await context.db
       .from("equipment_types")
       .select("id")
       .eq("id", equipmentTypeId)
@@ -278,7 +278,7 @@ export async function POST(request: NextRequest) {
     updated_by: context.user.id,
   };
 
-  const { data, error } = await context.admin
+  const { data, error } = await context.db
     .from("department_equipment_requirements")
     .upsert(
       {
