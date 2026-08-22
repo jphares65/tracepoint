@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import ActivationButton from "./ActivationButton";
 import AdministratorButton from "./AdministratorButton";
+import AccessAgencyButton from "./AccessAgencyButton";
 
 export const dynamic = "force-dynamic";
 
@@ -57,9 +58,13 @@ export default async function PlatformAgencyPage({ params }: PageProps) {
           {department.name}
         </h1>
 
-        <p className="mt-2 text-sm text-slate-400">
-          Personnel and account activation management.
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-4">
+          <p className="text-sm text-slate-400">
+            Personnel and account activation management.
+          </p>
+
+          <AccessAgencyButton departmentId={departmentId} />
+        </div>
 
         <div className="mt-8 overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
           <table className="w-full text-left text-sm">

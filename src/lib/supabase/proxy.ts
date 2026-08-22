@@ -1,4 +1,4 @@
-﻿import { createServerClient } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
@@ -177,6 +177,27 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
+  const selectedDepartmentId =
+    request.cookies.get("tracepoint_department_id")?.value?.trim() ?? "";
+
+  const supportDepartmentId =
+    request.cookies
+      .get("tracepoint_support_department_id")
+      ?.value?.trim() ?? "";
+
+  const supportModeRequested =
+    Boolean(supportDepartmentId) &&
+    supportDepartmentId === selectedDepartmentId;
+
+  if (supportModeRequested) {
+    const { data: isPlatformAdmin, error: supportAdminError } =
+      await supabase.rpc("is_platform_admin");
+
+    if (!supportAdminError && isPlatformAdmin) {
+      return response;
+    }
+  }
+
   const { data: membershipRows, error: membershipError } =
     await supabase
       .from("department_memberships")
@@ -203,9 +224,6 @@ export async function updateSession(request: NextRequest) {
       { next: `${pathname}${request.nextUrl.search}` },
     );
   }
-
-  const selectedDepartmentId =
-    request.cookies.get("tracepoint_department_id")?.value?.trim() ?? "";
 
   let membership: MembershipRow | undefined;
 
@@ -306,6 +324,7 @@ export async function updateSession(request: NextRequest) {
 
   return response;
 }
+
 
 
 

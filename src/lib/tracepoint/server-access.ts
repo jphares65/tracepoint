@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -39,6 +39,7 @@ export type ServerAccessPayload = {
   primaryRoleLabel: string;
   permissions: TracePointPermission[];
   isSuperAdmin: boolean;
+  isSupportMode: boolean;
   enabledFeatures: string[];
 };
 
@@ -126,6 +127,137 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
   }
 
   const admin = createAdminClient() as any;
+  const cookieStore = await cookies();
+
+  const selectedDepartmentId =
+    clean(cookieStore.get("tracepoint_department_id")?.value);
+
+  const supportDepartmentId =
+    clean(cookieStore.get("tracepoint_support_department_id")?.value);
+
+  const supportModeRequested =
+    Boolean(supportDepartmentId) &&
+    supportDepartmentId === selectedDepartmentId;
+
+  if (supportModeRequested) {
+    const [
+      platformAdminResult,
+      departmentResult,
+      profileResult,
+      departmentFeaturesResult,
+    ] = await Promise.all([
+      admin
+        .from("platform_admins")
+        .select("is_active")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+
+      admin
+        .from("departments")
+        .select("name,short_name,patch_url")
+        .eq("id", supportDepartmentId)
+        .maybeSingle(),
+
+      admin
+        .from("profiles")
+        .select("full_name")
+        .eq("id", user.id)
+        .maybeSingle(),
+
+      admin
+        .from("department_features")
+        .select("feature_code,is_enabled")
+        .eq("department_id", supportDepartmentId),
+    ]);
+
+    if (platformAdminResult.error) {
+      return {
+        ok: false,
+        status: 500,
+        error: platformAdminResult.error.message,
+      };
+    }
+
+    if (platformAdminResult.data?.is_active !== true) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Platform administrator access is required for Support Mode.",
+      };
+    }
+
+    if (departmentResult.error) {
+      return {
+        ok: false,
+        status: 500,
+        error: departmentResult.error.message,
+      };
+    }
+
+    if (!departmentResult.data) {
+      return {
+        ok: false,
+        status: 404,
+        error: "Support Mode agency was not found.",
+      };
+    }
+
+    if (departmentFeaturesResult.error) {
+      return {
+        ok: false,
+        status: 500,
+        error: departmentFeaturesResult.error.message,
+      };
+    }
+
+    const department = departmentResult.data as DepartmentRow;
+    const profile = profileResult.data as ProfileRow | null;
+
+    const metadataName = clean(user.user_metadata?.full_name);
+
+    const fullName =
+      clean(profile?.full_name) ||
+      metadataName ||
+      clean(user.email)?.split("@")[0] ||
+      "TracePoint Platform Administrator";
+
+    const enabledFeatures = uniqueStrings(
+      (departmentFeaturesResult.data ?? [])
+        .filter((row: any) => row.is_enabled !== false)
+        .map((row: any) => row.feature_code),
+    );
+
+    return {
+      ok: true,
+      context: {
+        user,
+        admin,
+        userId: user.id,
+        email: clean(user.email),
+        fullName,
+        departmentId: supportDepartmentId,
+        departmentName:
+          clean(department.name) || "TracePoint Department",
+        departmentShortName:
+          clean(department.short_name) ||
+          clean(department.name) ||
+          "TracePoint",
+        departmentPatchUrl: clean(department.patch_url),
+        badgeNumber: "",
+        rankTitle: "TracePoint Platform Administrator",
+        unitName: "",
+        roleCodes: ["platform_support"],
+        roleLabels: ["Platform Support"],
+        primaryRoleLabel: "Platform Support",
+        permissions: [
+          "administer_department" as TracePointPermission,
+        ],
+        isSuperAdmin: true,
+        isSupportMode: true,
+        enabledFeatures,
+      },
+    };
+  }
 
   const { data: membershipRows, error: membershipError } = await admin
     .from("department_memberships")
@@ -152,12 +284,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
       error: "No active department membership was found.",
     };
   }
-
-  const cookieStore = await cookies();
-  const selectedDepartmentId =
-    clean(cookieStore.get("tracepoint_department_id")?.value);
-
-  let membership: MembershipRow | undefined;
+let membership: MembershipRow | undefined;
 
   if (selectedDepartmentId) {
     membership = memberships.find(
@@ -368,6 +495,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
         : "Member",
       permissions,
       isSuperAdmin,
+      isSupportMode: false,
       enabledFeatures,
     },
   };
@@ -466,4 +594,9 @@ export function requireServerFeature(
     featureName ?? "This TracePoint module",
   );
 }
+
+
+
+
+
 

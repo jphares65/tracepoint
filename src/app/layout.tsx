@@ -1,6 +1,7 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import SupportModeBanner from "@/components/SupportModeBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,8 +29,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full w-full antialiased`}
     >
       <body className="min-h-screen w-full overflow-x-hidden bg-slate-950 text-slate-100">
+        <SupportModeBanner />
         {children}
       </body>
     </html>
   );
 }
+
