@@ -19,7 +19,13 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
-type ImportTypeId = "personnel" | "firearms" | "qualification_history";
+type ImportTypeId =
+  | "personnel"
+  | "firearms"
+  | "qualification_history"
+  | "certifications"
+  | "equipment"
+  | "off_duty_firearms";
 
 type ImportStep = "type" | "upload" | "mapping" | "preview" | "report";
 
@@ -279,7 +285,240 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
       },
     ],
   },
-];
+  {
+    id: "certifications",
+    label: "Certifications",
+    description:
+      "Import existing officer certifications and credential history.",
+    supportStatus: "Can Import",
+    duplicateKeys: ["officerName", "certificationTitle", "expirationDate"],
+    fields: [
+      {
+        key: "officerName",
+        label: "Officer Name",
+        required: true,
+        aliases: ["officer", "officer name", "employee", "name"],
+      },
+      {
+        key: "badgeNumber",
+        label: "Badge Number",
+        aliases: ["badge", "badge number", "employee number"],
+      },
+      {
+        key: "certificationTitle",
+        label: "Certification Title",
+        required: true,
+        aliases: ["certification", "certification title", "credential", "type"],
+      },
+      {
+        key: "issuingOrganization",
+        label: "Issuing Organization",
+        aliases: ["issuing organization", "issuer", "agency", "organization"],
+      },
+      {
+        key: "credentialNumber",
+        label: "Credential Number",
+        aliases: ["credential number", "certificate number", "cert number"],
+      },
+      {
+        key: "issueDate",
+        label: "Issue Date",
+        aliases: ["issue date", "issued", "date issued"],
+      },
+      {
+        key: "expirationDate",
+        label: "Expiration Date",
+        aliases: ["expiration date", "expires", "expiry date"],
+      },
+      {
+        key: "notes",
+        label: "Notes",
+        aliases: ["notes", "comments", "remarks"],
+      },
+    ],
+  },
+  {
+    id: "equipment",
+    label: "Equipment",
+    description:
+      "Import issued equipment and readiness assets.",
+    supportStatus: "Can Import",
+    duplicateKeys: ["serialNumber"],
+    fields: [
+      {
+        key: "equipmentType",
+        label: "Equipment Type",
+        required: true,
+        aliases: ["equipment type", "asset type", "type", "category"],
+      },
+      {
+        key: "manufacturer",
+        label: "Manufacturer",
+        aliases: ["manufacturer", "make", "brand"],
+      },
+      {
+        key: "model",
+        label: "Model",
+        aliases: ["model"],
+      },
+      {
+        key: "serialNumber",
+        label: "Serial Number",
+        aliases: ["serial", "serial number", "s/n"],
+      },
+      {
+        key: "lotNumber",
+        label: "Lot Number",
+        aliases: ["lot", "lot number", "batch number"],
+      },
+      {
+        key: "assignedOfficerName",
+        label: "Assigned Officer Name",
+        aliases: ["assigned officer", "assigned to", "officer", "employee"],
+      },
+      {
+        key: "issueDate",
+        label: "Issue Date",
+        aliases: ["issue date", "issued date"],
+      },
+      {
+        key: "expirationDate",
+        label: "Expiration Date",
+        aliases: ["expiration date", "expires", "expiry date"],
+      },
+      {
+        key: "lastInspectionDate",
+        label: "Last Inspection Date",
+        aliases: ["last inspection", "last inspection date"],
+      },
+      {
+        key: "nextInspectionDate",
+        label: "Next Inspection Date",
+        aliases: ["next inspection", "next inspection date"],
+      },
+      {
+        key: "lifecycleStatus",
+        label: "Lifecycle Status",
+        aliases: ["lifecycle status", "status"],
+      },
+      {
+        key: "notes",
+        label: "Notes",
+        aliases: ["notes", "comments", "remarks"],
+      },
+    ],
+  },
+  {
+    id: "off_duty_firearms",
+    label: "Off-Duty Firearms",
+    description:
+      "Import existing personally owned off-duty firearm records without triggering the approval workflow.",
+    supportStatus: "Can Import",
+    duplicateKeys: ["serialNumber"],
+    fields: [
+      {
+        key: "officerName",
+        label: "Officer Name",
+        required: true,
+        aliases: ["officer", "officer name", "employee", "name"],
+      },
+      {
+        key: "badgeNumber",
+        label: "Badge Number",
+        aliases: ["badge", "badge number", "employee number"],
+      },
+      {
+        key: "make",
+        label: "Make",
+        required: true,
+        aliases: ["make", "manufacturer", "brand"],
+      },
+      {
+        key: "model",
+        label: "Model",
+        required: true,
+        aliases: ["model"],
+      },
+      {
+        key: "serialNumber",
+        label: "Serial Number",
+        required: true,
+        aliases: ["serial", "serial number", "s/n"],
+      },
+      {
+        key: "firearmType",
+        label: "Firearm Type",
+        required: true,
+        aliases: ["firearm type", "weapon type", "type"],
+      },
+      {
+        key: "caliber",
+        label: "Caliber",
+        required: true,
+        aliases: ["caliber", "calibre", "cal"],
+      },
+      {
+        key: "capacity",
+        label: "Capacity",
+        aliases: ["capacity", "magazine capacity"],
+      },
+      {
+        key: "optic",
+        label: "Optic",
+        aliases: ["optic", "sight"],
+      },
+      {
+        key: "weaponLight",
+        label: "Weapon Light",
+        aliases: ["weapon light", "light"],
+      },
+      {
+        key: "holster",
+        label: "Holster",
+        aliases: ["holster"],
+      },
+      {
+        key: "requestStatus",
+        label: "Request Status",
+        aliases: ["request status", "status"],
+      },
+      {
+        key: "authorizationStatus",
+        label: "Authorization Status",
+        aliases: ["authorization status", "authorization"],
+      },
+      {
+        key: "complianceStatus",
+        label: "Compliance Status",
+        aliases: ["compliance status", "compliance"],
+      },
+      {
+        key: "inspectionStatus",
+        label: "Inspection Status",
+        aliases: ["inspection status"],
+      },
+      {
+        key: "approvalDate",
+        label: "Approval Date",
+        aliases: ["approval date", "approved date"],
+      },
+      {
+        key: "approvalEffectiveDate",
+        label: "Approval Effective Date",
+        aliases: ["approval effective date", "effective date"],
+      },
+      {
+        key: "approvalExpirationDate",
+        label: "Approval Expiration Date",
+        aliases: ["approval expiration date", "expiration date", "expires"],
+      },
+      {
+        key: "notes",
+        label: "Notes",
+        aliases: ["notes", "comments", "remarks"],
+      },
+    ],
+  },];
 
 function normalizeHeader(value: string) {
   return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
@@ -1026,7 +1265,7 @@ function ImportWizardContent() {
       try {
         const payload = await fetchJson<{
           personnel?: PilotPersonnel[];
-        }>("/api/pilot/personnel");
+        }>(`/api/settings/onboarding/personnel-directory?departmentId=${encodeURIComponent(departmentId)}`);
 
         if (!isMounted) return;
 
@@ -1049,7 +1288,7 @@ function ImportWizardContent() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [departmentId]);
 
   const selectedDefinition = useMemo(
     () => IMPORT_TYPES.find((type) => type.id === selectedTypeId) ?? IMPORT_TYPES[0],
@@ -1175,7 +1414,10 @@ function ImportWizardContent() {
     if (
       selectedDefinition.id !== "personnel" &&
       selectedDefinition.id !== "firearms" &&
-      selectedDefinition.id !== "qualification_history"
+      selectedDefinition.id !== "qualification_history" &&
+      selectedDefinition.id !== "certifications" &&
+      selectedDefinition.id !== "equipment" &&
+      selectedDefinition.id !== "off_duty_firearms"
     ) {
       setReport({
         created: 0,
@@ -1214,6 +1456,147 @@ function ImportWizardContent() {
           continue;
         }
 
+        if (selectedDefinition.id === "certifications") {
+          const officerName = row.officerName?.trim() ?? "";
+          const matchedOfficer = officerName
+            ? getPersonnelMatch(officerName, personnel)
+            : null;
+
+          if (!matchedOfficer) {
+            throw new Error(
+              `Officer "${officerName}" did not uniquely match an active personnel record.`,
+            );
+          }
+
+          const response = await fetch(
+            "/api/settings/onboarding/certifications",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                departmentId,
+                userId: matchedOfficer.userId,
+                certificationTitle: row.certificationTitle,
+                issuingOrganization: row.issuingOrganization,
+                credentialNumber: row.credentialNumber,
+                issueDate: row.issueDate,
+                expirationDate: row.expirationDate,
+                notes: row.notes,
+              }),
+            },
+          );
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              payload?.error ?? "Certification could not be imported.",
+            );
+          }
+
+          created += 1;
+          continue;
+        }
+        if (selectedDefinition.id === "equipment") {
+          const assignedOfficerName =
+            row.assignedOfficerName?.trim() ?? "";
+
+          const matchedOfficer = assignedOfficerName
+            ? getPersonnelMatch(assignedOfficerName, personnel)
+            : null;
+
+          if (assignedOfficerName && !matchedOfficer) {
+            throw new Error(
+              `Assigned officer "${assignedOfficerName}" did not uniquely match an active personnel record.`,
+            );
+          }
+
+          const response = await fetch(
+            "/api/settings/onboarding/equipment",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                departmentId,
+                equipmentType: row.equipmentType,
+                manufacturer: row.manufacturer,
+                model: row.model,
+                serialNumber: row.serialNumber,
+                lotNumber: row.lotNumber,
+                assignedToUserId: matchedOfficer?.userId,
+                issueDate: row.issueDate,
+                expirationDate: row.expirationDate,
+                lastInspectionDate: row.lastInspectionDate,
+                nextInspectionDate: row.nextInspectionDate,
+                lifecycleStatus: row.lifecycleStatus,
+                notes: row.notes,
+              }),
+            },
+          );
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              payload?.error ?? "Equipment could not be imported.",
+            );
+          }
+
+          created += 1;
+          continue;
+        }
+        if (selectedDefinition.id === "off_duty_firearms") {
+          const officerName = row.officerName?.trim() ?? "";
+          const matchedOfficer = officerName
+            ? getPersonnelMatch(officerName, personnel)
+            : null;
+
+          if (!matchedOfficer) {
+            throw new Error(
+              `Officer "${officerName}" did not uniquely match an active personnel record.`,
+            );
+          }
+
+          const response = await fetch(
+            "/api/settings/onboarding/off-duty-firearms",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                departmentId,
+                officerUserId: matchedOfficer.userId,
+                make: row.make,
+                model: row.model,
+                firearmType: row.firearmType,
+                serialNumber: row.serialNumber,
+                caliber: row.caliber,
+                capacity: row.capacity,
+                optic: row.optic,
+                weaponLight: row.weaponLight,
+                holster: row.holster,
+                requestStatus: row.requestStatus,
+                authorizationStatus: row.authorizationStatus,
+                complianceStatus: row.complianceStatus,
+                inspectionStatus: row.inspectionStatus,
+                approvalDate: row.approvalDate,
+                approvalEffectiveDate: row.approvalEffectiveDate,
+                approvalExpirationDate: row.approvalExpirationDate,
+                notes: row.notes,
+              }),
+            },
+          );
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              payload?.error ?? "Off-duty firearm could not be imported.",
+            );
+          }
+
+          created += 1;
+          continue;
+        }
         if (selectedDefinition.id === "qualification_history") {
           const response = await fetch(
             "/api/settings/onboarding/qualification-history",
@@ -2816,7 +3199,7 @@ function ImportWizardContent() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [departmentId]);
 
 
   async function handleGenerateCompleteReport() {
