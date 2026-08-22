@@ -935,51 +935,61 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const [
-        departmentResult,
-        rulesResult,
-        securityResult,
-        rolesResult,
-        permissionsResult,
-        rolePermissionsResult,
-        membersResult,
-      ] = await Promise.all([
-        supabase
-          .from("departments")
-          .select(
-            "id,name,short_name,state,county,agency_type,sworn_officers,civilian_staff,timezone,primary_contact_user_id,patch_url,accent_color,login_theme",
-          )
-          .eq("id", departmentId)
-          .single(),
-        supabase
-          .from("department_rules")
-          .select("*")
-          .eq("department_id", departmentId)
-          .maybeSingle(),
-        canViewAudit
-          ? supabase
-              .from("department_security_settings")
-              .select("*")
-              .eq("department_id", departmentId)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null }),
-        supabase
-          .from("roles")
-          .select("code,display_name,description,sort_order")
-          .order("sort_order"),
-        supabase
-          .from("permissions")
-          .select("code,display_name,description"),
-        supabase
-          .from("department_role_permissions")
-          .select("role_code,permission_code")
-          .eq("department_id", departmentId),
-        canManageUsers
-          ? supabase.rpc("get_department_members", {
-              p_department_id: departmentId,
-            })
-          : Promise.resolve({ data: [], error: null }),
-      ]);
+      const response = await fetch("/api/settings/overview", {
+        cache: "no-store",
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        department?: unknown;
+        rules?: unknown;
+        security?: unknown;
+        roles?: Record<string, unknown>[];
+        permissions?: Record<string, unknown>[];
+        rolePermissions?: Record<string, unknown>[];
+        members?: Record<string, unknown>[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error || "Settings could not be loaded.",
+        );
+      }
+
+      const departmentResult = {
+        data: payload.department,
+        error: null,
+      };
+
+      const rulesResult = {
+        data: payload.rules,
+        error: null,
+      };
+
+      const securityResult = {
+        data: payload.security,
+        error: null,
+      };
+
+      const rolesResult = {
+        data: payload.roles ?? [],
+        error: null,
+      };
+
+      const permissionsResult = {
+        data: payload.permissions ?? [],
+        error: null,
+      };
+
+      const rolePermissionsResult = {
+        data: payload.rolePermissions ?? [],
+        error: null,
+      };
+
+      const membersResult = {
+        data: payload.members ?? [],
+        error: null,
+      };
 
       const firstError = [
         departmentResult.error,
