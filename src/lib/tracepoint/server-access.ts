@@ -510,6 +510,7 @@ export function toAccessPayload(
   const {
     user: _user,
     admin: _admin,
+    db: _db,
     ...payload
   } = context;
 
