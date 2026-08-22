@@ -22,10 +22,10 @@ import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 type ImportTypeId =
   | "personnel"
   | "firearms"
+  | "off_duty_firearms"
   | "qualification_history"
   | "certifications"
-  | "equipment"
-  | "off_duty_firearms";
+  | "equipment";
 
 type ImportStep = "type" | "upload" | "mapping" | "preview" | "report";
 
@@ -55,10 +55,12 @@ type ParsedCsv = {
 type OnboardingDatasetType =
   | "personnel"
   | "firearms"
+  | "off_duty_firearms"
   | "qualification_history"
   | "certifications"
   | "equipment"
   | "equipment_requirements"
+  | "reference"
   | "unknown";
 
 type OnboardingDataset = {
@@ -598,6 +600,25 @@ function detectOnboardingDatasetType(
     values.some((value) =>
       normalizedHeaders.includes(normalizeHeader(value)),
     );
+  if (
+    normalizedName.includes("import notes") ||
+    normalizedName.includes("source snapshot") ||
+    normalizedName.includes("instructions") ||
+    normalizedName.includes("read me") ||
+    normalizedName.includes("readme")
+  ) {
+    return "reference";
+  }
+
+  if (
+    normalizedName.includes("off duty") ||
+    normalizedName.includes("off-duty") ||
+    normalizedName.includes("off duty firearm") ||
+    normalizedName.includes("off-duty firearm")
+  ) {
+    return "off_duty_firearms";
+  }
+
 
   if (
     normalizedName.includes("personnel") ||
@@ -778,6 +799,7 @@ async function parseOnboardingFile(
       };
     }).filter(
       (dataset) =>
+        dataset.detectedType !== "reference" &&
         dataset.parsed.headers.length > 0 &&
         dataset.parsed.rows.length > 0,
     );
@@ -6793,6 +6815,7 @@ function ImportWizardContent() {
                     const definition =
                       dataset.detectedType === "personnel" ||
                       dataset.detectedType === "firearms" ||
+                      dataset.detectedType === "off_duty_firearms" ||
                       dataset.detectedType === "qualification_history"
                         ? IMPORT_TYPES.find(
                             (type) => type.id === dataset.detectedType,
@@ -7330,4 +7353,13 @@ export default function ImportWizardPage() {
     </Suspense>
   );
 }
+
+
+
+
+
+
+
+
+
 
