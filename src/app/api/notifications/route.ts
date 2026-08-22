@@ -1064,6 +1064,7 @@ export async function GET(request: NextRequest) {
           items: myItems,
           departmentItems,
           canViewDepartmentInbox,
+      isSupportMode: context.isSupportMode,
           error: "",
         }))
         .catch((error) => ({
@@ -1266,6 +1267,7 @@ export async function GET(request: NextRequest) {
       items: myItems,
       departmentItems,
       canViewDepartmentInbox,
+      isSupportMode: context.isSupportMode,
       allOpenItems: sortRows(allOpenItems),
       preferences,
       sourceErrors,

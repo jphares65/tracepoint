@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -379,7 +379,42 @@ export default function OfficerHomePage() {
     }
   }
 
-  const items = notifications?.items ?? [];
+  const [actionScope, setActionScope] =
+    useState<"my" | "department">("my");
+
+  const myItems = notifications?.items ?? [];
+
+  const departmentItems =
+    ((notifications as any)?.departmentItems as
+      | NotificationItem[]
+      | undefined) ?? [];
+
+  const canViewDepartmentActions = Boolean(
+    (notifications as any)?.canViewDepartmentInbox,
+  );
+
+  const isSupportMode = Boolean(
+    (notifications as any)?.isSupportMode,
+  );
+
+  useEffect(() => {
+    if (isSupportMode && canViewDepartmentActions) {
+      setActionScope("department");
+    }
+  }, [isSupportMode, canViewDepartmentActions]);
+
+  const items =
+    actionScope === "department" && canViewDepartmentActions
+      ? departmentItems
+      : myItems;
+
+  const criticalItems = items.filter(
+    (item) => item.priority === "Critical",
+  );
+
+  const highItems = items.filter(
+    (item) => item.priority === "High",
+  );
 
   const approvalItems = useMemo(
     () =>
@@ -408,9 +443,14 @@ export default function OfficerHomePage() {
 
   const sourceCounts = useMemo(() => {
     const counts = new Map<string, number>();
+
     for (const item of items) {
-      counts.set(item.source, (counts.get(item.source) ?? 0) + 1);
+      counts.set(
+        item.source,
+        (counts.get(item.source) ?? 0) + 1,
+      );
     }
+
     return counts;
   }, [items]);
 
@@ -490,18 +530,15 @@ export default function OfficerHomePage() {
         <section className="grid grid-cols-2 gap-2.5 xl:grid-cols-5">
           <SnapshotCard
             label="Open Actions"
-            value={notifications?.counts.open ?? 0}
+            value={items.length}
             detail="Current items requiring attention"
             href="/notifications"
             icon={<Inbox size={17} className="text-blue-300" />}
           />
           <SnapshotCard
             label="Critical / High"
-            value={
-              (notifications?.counts.critical ?? 0) +
-              (notifications?.counts.high ?? 0)
-            }
-            detail={`${notifications?.counts.critical ?? 0} critical · ${notifications?.counts.high ?? 0} high`}
+            value={criticalItems.length + highItems.length}
+            detail={`${criticalItems.length} critical · ${highItems.length} high`}
             href="/notifications"
             icon={<ShieldAlert size={17} className="text-red-300" />}
           />
@@ -533,10 +570,48 @@ export default function OfficerHomePage() {
           <div id="my-inbox" className="rounded-2xl border border-slate-800 bg-slate-900/70">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3.5">
               <div>
-                <h2 className="text-[15px] font-bold text-white">Priority Action Queue</h2>
+                <h2 className="text-[15px] font-bold text-white">
+                  Priority Action Queue
+                </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   Highest-priority work across every TracePoint module
                 </p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActionScope("my")}
+                    className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold ${
+                      actionScope === "my"
+                        ? "border-blue-500 bg-blue-500/10 text-blue-200"
+                        : "border-slate-700 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    My Actions
+                    <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-[10px]">
+                      {myItems.length}
+                    </span>
+                  </button>
+
+                  {canViewDepartmentActions ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActionScope("department")
+                      }
+                      className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold ${
+                        actionScope === "department"
+                          ? "border-blue-500 bg-blue-500/10 text-blue-200"
+                          : "border-slate-700 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Department Actions
+                      <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-[10px]">
+                        {departmentItems.length}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <Link
                 href="/notifications"
@@ -554,9 +629,15 @@ export default function OfficerHomePage() {
             ) : queue.length === 0 ? (
               <div className="flex min-h-[280px] flex-col items-center justify-center p-6 text-center">
                 <CheckCircle2 size={32} className="text-emerald-400" />
-                <h3 className="mt-3 font-bold text-white">You are current</h3>
+                <h3 className="mt-3 font-bold text-white">
+                  {actionScope === "department"
+                    ? "Department queue is current"
+                    : "You are current"}
+                </h3>
                 <p className="mt-1 max-w-md text-xs text-slate-500">
-                  No open operational notifications are assigned to you.
+                  {actionScope === "department"
+                    ? "No open department actions currently require attention."
+                    : "No open operational actions are assigned to you."}
                 </p>
               </div>
             ) : (
