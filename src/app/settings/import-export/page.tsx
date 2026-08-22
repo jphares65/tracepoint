@@ -18,6 +18,7 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
 
 type ImportTypeId =
   | "personnel"
@@ -1018,10 +1019,8 @@ function getPersonnelMatch(
 
   if (!normalized) return null;
 
-  const exactMatches = personnel.filter((person) => {
-    const candidates = [
-      person.fullName,
-      person.displayName,
+  const exactIdentifierMatches = personnel.filter((person) => {
+    const identifiers = [
       person.email ?? "",
       person.badgeNumber ?? "",
       person.badgeNumber ? `badge ${person.badgeNumber}` : "",
@@ -1029,45 +1028,25 @@ function getPersonnelMatch(
       .filter(Boolean)
       .map(normalizePersonLookup);
 
-    return candidates.includes(normalized);
+    return identifiers.includes(normalized);
   });
 
-  if (exactMatches.length === 1) return exactMatches[0];
-
-  const commaParts = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (commaParts.length === 2) {
-    const reordered = normalizePersonLookup(
-      `${commaParts[1]} ${commaParts[0]}`,
-    );
-
-    const reorderedMatches = personnel.filter((person) =>
-      [person.fullName, person.displayName]
-        .filter(Boolean)
-        .map(normalizePersonLookup)
-        .includes(reordered),
-    );
-
-    if (reorderedMatches.length === 1) {
-      return reorderedMatches[0];
-    }
+  if (exactIdentifierMatches.length === 1) {
+    return exactIdentifierMatches[0];
   }
 
-  const sourceLastName = getLastName(value);
+  if (exactIdentifierMatches.length > 1) {
+    return null;
+  }
 
-  if (sourceLastName) {
-    const surnameMatches = personnel.filter((person) =>
-      [person.fullName, person.displayName]
-        .filter(Boolean)
-        .some((candidate) => getLastName(candidate) === sourceLastName),
-    );
+  const nameMatches = personnel.filter(
+    (person) =>
+      matchesPersonnelName(person.fullName, value) ||
+      matchesPersonnelName(person.displayName, value),
+  );
 
-    if (surnameMatches.length === 1) {
-      return surnameMatches[0];
-    }
+  if (nameMatches.length === 1) {
+    return nameMatches[0];
   }
 
   return null;
@@ -7353,6 +7332,8 @@ export default function ImportWizardPage() {
     </Suspense>
   );
 }
+
+
 
 
 
