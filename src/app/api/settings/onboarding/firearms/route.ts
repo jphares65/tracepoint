@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
 import { getLookupLastName, matchesPersonnelName } from "@/lib/onboarding/personnel-name";
@@ -120,8 +120,27 @@ export async function POST(request: NextRequest) {
   const make = cleanText(body.make);
   const model = cleanText(body.model);
   const serialNumber = cleanText(body.serialNumber);
-  const firearmType = (cleanText(body.firearmType) ?? "handgun") as
+  const rawFirearmType = cleanText(body.firearmType);
+  const firearmType = (rawFirearmType ?? "other") as
   "handgun" | "rifle" | "shotgun" | "less_lethal" | "other";
+
+  const attentionReasons: string[] = [];
+
+  if (!model || model.toLowerCase() === "tbd / unknown") {
+    attentionReasons.push("missing_model");
+  }
+
+  const caliber = cleanText(body.caliber);
+
+  if (!caliber || caliber.toLowerCase() === "tbd / unknown") {
+    attentionReasons.push("missing_caliber");
+  }
+
+  if (!rawFirearmType) {
+    attentionReasons.push("missing_firearm_type");
+  }
+
+  const needsAttention = attentionReasons.length > 0;
   const conditionStatus =
     cleanText(body.conditionStatus) ?? "In Service";
   let assignedToUserId = cleanText(body.assignedToUserId);
@@ -276,7 +295,7 @@ export async function POST(request: NextRequest) {
       await admin
         .from("firearms")
         .select(
-          "id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes",
+          "id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,needs_attention,attention_reasons",
         )
         .eq("department_id", departmentId)
         .ilike("serial_number", serialNumber)
@@ -368,10 +387,45 @@ export async function POST(request: NextRequest) {
         ["id", "serial_number"],
       );
 
-      if (Object.keys(merge.updates).length > 0) {
+      const resultingFirearm = {
+        ...existing,
+        ...merge.updates,
+      } as Record<string, unknown>;
+
+      const resultingAttentionReasons: string[] = [];
+
+      const resultingModel = String(resultingFirearm.model ?? "").trim();
+      if (!resultingModel || resultingModel.toLowerCase() === "tbd / unknown") {
+        resultingAttentionReasons.push("missing_model");
+      }
+
+      const resultingCaliber = String(resultingFirearm.caliber ?? "").trim();
+      if (!resultingCaliber || resultingCaliber.toLowerCase() === "tbd / unknown") {
+        resultingAttentionReasons.push("missing_caliber");
+      }
+
+      const resultingFirearmType = String(resultingFirearm.firearm_type ?? "").trim();
+      if (!resultingFirearmType) {
+        resultingAttentionReasons.push("missing_firearm_type");
+      }
+
+      const resultingNeedsAttention = resultingAttentionReasons.length > 0;
+
+      const firearmUpdates = {
+        ...merge.updates,
+        needs_attention: resultingNeedsAttention,
+        attention_reasons: resultingAttentionReasons,
+      };
+
+      if (
+        Object.keys(merge.updates).length > 0 ||
+        existing.needs_attention !== resultingNeedsAttention ||
+        JSON.stringify(existing.attention_reasons ?? []) !==
+          JSON.stringify(resultingAttentionReasons)
+      ) {
         const { error: updateError } = await admin
           .from("firearms")
-          .update(merge.updates as {
+          .update(firearmUpdates as {
             make?: string;
             model?: string;
             firearm_type?: "handgun" | "rifle" | "shotgun" | "less_lethal" | "other";
@@ -379,6 +433,8 @@ export async function POST(request: NextRequest) {
             asset_number?: string | null;
             condition_status?: string;
             notes?: string | null;
+            needs_attention?: boolean;
+            attention_reasons?: string[];
           })
           .eq("id", existing.id)
           .eq("department_id", departmentId);
@@ -435,6 +491,8 @@ export async function POST(request: NextRequest) {
           asset_number: cleanText(body.assetNumber),
           condition_status: conditionStatus,
           notes: cleanText(body.notes),
+          needs_attention: needsAttention,
+          attention_reasons: attentionReasons,
           is_active: true,
           created_by: user.id,
         })
@@ -506,6 +564,10 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+
+
+
 
 
 

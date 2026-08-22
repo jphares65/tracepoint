@@ -2339,7 +2339,9 @@ export type Database = {
           is_active: boolean
           last_inspection_date: string | null
           make: string
-          model: string
+          model: string
+          needs_attention: boolean
+          attention_reasons: string[]
           next_inspection_due: string | null
           notes: string | null
           retired_date: string | null
@@ -2364,7 +2366,9 @@ export type Database = {
           is_active?: boolean
           last_inspection_date?: string | null
           make: string
-          model: string
+          model: string
+          needs_attention?: boolean
+          attention_reasons?: string[]
           next_inspection_due?: string | null
           notes?: string | null
           retired_date?: string | null
@@ -2389,7 +2393,9 @@ export type Database = {
           is_active?: boolean
           last_inspection_date?: string | null
           make?: string
-          model?: string
+          model?: string
+          needs_attention?: boolean
+          attention_reasons?: string[]
           next_inspection_due?: string | null
           notes?: string | null
           retired_date?: string | null
@@ -4984,3 +4990,5 @@ export const Constants = {
     },
   },
 } as const
+
+

@@ -49,6 +49,8 @@ type ArmoryFirearm = {
   asset_number?: string | null;
   condition_status?: FirearmStatus | string | null;
   notes?: string | null;
+  needs_attention?: boolean;
+  attention_reasons?: string[];
   is_active: boolean;
   archived_at?: string | null;
   archived_by_user_id?: string | null;
@@ -860,9 +862,16 @@ The firearm will be removed from active inventory and future operational selecti
                               }`}
                             >
                               <td className="px-4 py-4">
-                                <p className="font-bold text-white">
-                                  {getFirearmLabel(firearm)}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-bold text-white">
+                                    {getFirearmLabel(firearm)}
+                                  </p>
+                                  {firearm.needs_attention ? (
+                                    <span className="inline-flex rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-300">
+                                      Needs Attention
+                                    </span>
+                                  ) : null}
+                                </div>
                                 <p className="text-xs text-slate-500">
                                   {formatFirearmType(firearm.firearm_type)}
                                   {firearm.caliber
@@ -1216,6 +1225,35 @@ The firearm will be removed from active inventory and future operational selecti
                         Every saved change requires a reason and is permanently
                         recorded in the immutable audit log.
                       </p>
+
+                      {selectedFirearm.needs_attention ? (
+                        <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3">
+                          <p className="text-sm font-bold text-amber-200">
+                            Needs Attention
+                          </p>
+                          <p className="mt-1 text-xs text-amber-100/80">
+                            Complete the following firearm information:
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(selectedFirearm.attention_reasons ?? []).map(
+                              (reason) => (
+                                <span
+                                  key={reason}
+                                  className="rounded-full border border-amber-500/30 px-2.5 py-1 text-xs font-semibold text-amber-200"
+                                >
+                                  {reason === "missing_model"
+                                    ? "Missing Model"
+                                    : reason === "missing_caliber"
+                                      ? "Missing Caliber"
+                                      : reason === "missing_firearm_type"
+                                        ? "Missing Firearm Type"
+                                        : reason}
+                                </span>
+                              ),
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         <label className="space-y-1">
@@ -1652,6 +1690,9 @@ The firearm will be removed from active inventory and future operational selecti
     </TracePointShell>
   );
 }
+
+
+
 
 
 

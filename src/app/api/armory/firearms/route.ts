@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
       let firearmsQuery = context.admin
         .from("firearms")
         .select(
-          "id,department_id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,is_active,archived_at,archived_by_user_id,archive_reason,created_at,updated_at",
+          "id,department_id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,needs_attention,attention_reasons,is_active,archived_at,archived_by_user_id,archive_reason,created_at,updated_at",
         )
         .eq("department_id", context.departmentId)
         .order("make", { ascending: true })
@@ -486,6 +486,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 
 
