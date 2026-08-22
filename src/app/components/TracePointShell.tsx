@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import IdleSessionGuard from "@/app/components/IdleSessionGuard";
 import {
   applyAppearanceToDocument,
   buildAppearancePreferences,
@@ -948,6 +949,7 @@ export default function TracePointShell({
       className={`tracepoint-app tracepoint-accent-${appearance.accentColor} tracepoint-brightness-${appearance.brightness} min-h-screen bg-slate-950 text-white`}
     >
       <AppearanceStyleOverrides />
+      <IdleSessionGuard />
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
           <div className="border-b border-slate-800 px-5 py-3.5">
