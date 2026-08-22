@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   type ChangeEvent,
@@ -2293,28 +2293,29 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const path = `${departmentId}/patch-${Date.now()}.${extension}`;
-      const { error: uploadError } = await supabase.storage
-        .from("department-assets")
-        .upload(path, file, {
-          contentType: file.type,
-          upsert: true,
-        });
+      const formData = new FormData();
+      formData.set("file", file);
 
-      if (uploadError) throw uploadError;
+      const response = await fetch(
+        "/api/settings/department-patch",
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
-      const { data } = supabase.storage
-        .from("department-assets")
-        .getPublicUrl(path);
+      const payload = (await response.json().catch(() => ({}))) as {
+        patchUrl?: string;
+        error?: string;
+      };
 
-      const patchUrl = data.publicUrl;
+      if (!response.ok || !payload.patchUrl) {
+        throw new Error(
+          payload.error || "The department patch could not be uploaded.",
+        );
+      }
 
-      const { error: updateError } = await supabase
-        .from("departments")
-        .update({ patch_url: patchUrl })
-        .eq("id", departmentId);
-
-      if (updateError) throw updateError;
+      const patchUrl = payload.patchUrl;
 
       setDepartment((current) => ({
         ...current,
