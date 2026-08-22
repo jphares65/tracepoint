@@ -38,6 +38,8 @@ const INSPECTION_STATUSES = new Set([
 type OffDutyImportRequest = {
   departmentId?: string;
   officerUserId?: string;
+  officerName?: string;
+  badgeNumber?: string;
 
   make?: string;
   model?: string;
@@ -88,7 +90,9 @@ export async function POST(request: NextRequest) {
     .catch(() => ({}))) as OffDutyImportRequest;
 
   const departmentId = cleanText(body.departmentId);
-  const officerUserId = cleanText(body.officerUserId);
+  let officerUserId = cleanText(body.officerUserId);
+  const officerName = cleanText(body.officerName);
+  const badgeNumber = cleanText(body.badgeNumber);
 
   const make = cleanText(body.make);
   const model = cleanText(body.model);
@@ -96,19 +100,11 @@ export async function POST(request: NextRequest) {
   const serialNumber = cleanText(body.serialNumber);
   const caliber = cleanText(body.caliber);
 
-  if (
-    !departmentId ||
-    !officerUserId ||
-    !make ||
-    !model ||
-    !firearmType ||
-    !serialNumber ||
-    !caliber
-  ) {
+  if (!departmentId || !serialNumber) {
     return NextResponse.json(
       {
         error:
-          "Department, officer, make, model, firearm type, serial number, and caliber are required.",
+          "Department and serial number are required.",
       },
       { status: 400 },
     );
@@ -211,6 +207,84 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
 
   try {
+    if (!officerUserId && badgeNumber) {
+      const { data: badgeMatches, error: badgeError } = await admin
+        .from("department_memberships")
+        .select("user_id")
+        .eq("department_id", departmentId)
+        .eq("badge_number", badgeNumber)
+        .eq("is_active", true);
+
+      if (badgeError) {
+        throw new Error(badgeError.message);
+      }
+
+      if ((badgeMatches ?? []).length > 1) {
+        return NextResponse.json(
+          {
+            error: `Badge number "${badgeNumber}" matched more than one active personnel record.`,
+          },
+          { status: 409 },
+        );
+      }
+
+      if ((badgeMatches ?? []).length === 1) {
+        officerUserId = badgeMatches![0].user_id;
+      }
+    }
+
+    if (!officerUserId && officerName) {
+      const { data: profileMatches, error: profileError } = await admin
+        .from("profiles")
+        .select("id, full_name")
+        .ilike("full_name", officerName);
+
+      if (profileError) {
+        throw new Error(profileError.message);
+      }
+
+      const candidateIds = (profileMatches ?? []).map(
+        (profile) => profile.id,
+      );
+
+      if (candidateIds.length > 0) {
+        const { data: membershipMatches, error: membershipMatchError } =
+          await admin
+            .from("department_memberships")
+            .select("user_id")
+            .eq("department_id", departmentId)
+            .eq("is_active", true)
+            .in("user_id", candidateIds);
+
+        if (membershipMatchError) {
+          throw new Error(membershipMatchError.message);
+        }
+
+        if ((membershipMatches ?? []).length > 1) {
+          return NextResponse.json(
+            {
+              error: `Officer "${officerName}" matched more than one active personnel record. Include a badge number to disambiguate.`,
+            },
+            { status: 409 },
+          );
+        }
+
+        if ((membershipMatches ?? []).length === 1) {
+          officerUserId = membershipMatches![0].user_id;
+        }
+      }
+    }
+
+    if (!officerUserId) {
+      return NextResponse.json(
+        {
+          error:
+            "The officer could not be matched to an active personnel record in the selected agency.",
+        },
+        { status: 400 },
+      );
+    }
+
     const { data: membership, error: membershipError } =
       await admin
         .from("department_memberships")
@@ -312,11 +386,11 @@ export async function POST(request: NextRequest) {
           department_id: departmentId,
           officer_user_id: officerUserId,
 
-          make,
-          model,
-          firearm_type: firearmType,
+          make: make ?? "TBD / Unknown",
+          model: model ?? "TBD / Unknown",
+          firearm_type: firearmType ?? "handgun",
           serial_number: serialNumber,
-          caliber,
+          caliber: caliber ?? "TBD / Unknown",
 
           capacity: cleanText(body.capacity),
           optic: cleanText(body.optic),
@@ -390,3 +464,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+
+
+
