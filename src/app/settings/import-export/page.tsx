@@ -3929,7 +3929,7 @@ function ImportWizardContent() {
           value === undefined ||
           value === ""
         ) {
-          return "â€”";
+          return "-";
         }
 
         return String(value);
@@ -3939,7 +3939,7 @@ function ImportWizardContent() {
         value?: string | null,
       ) {
         if (!value) {
-          return "â€”";
+          return "-";
         }
 
         const date = new Date(
@@ -3963,7 +3963,7 @@ function ImportWizardContent() {
         value?: string | null,
       ) {
         if (!value) {
-          return "â€”";
+          return "-";
         }
 
         const date =
@@ -4411,7 +4411,7 @@ function ImportWizardContent() {
         itemHeading(
           `${dateText(
             day?.date,
-          )} â€” ${
+          )} - ${
             officer?.name ??
             "Officer"
           }`,
@@ -4502,7 +4502,7 @@ function ImportWizardContent() {
         itemHeading(
           `${dateText(
             day?.date,
-          )} â€” ${
+          )} - ${
             drill?.name ??
             "Training Activity"
           }`,
@@ -4555,7 +4555,7 @@ function ImportWizardContent() {
         itemHeading(
           `${dateText(
             day.date,
-          )} â€” ${clean(
+          )} - ${clean(
             day.title,
           )}`,
         );
@@ -4609,7 +4609,7 @@ function ImportWizardContent() {
           );
 
         itemHeading(
-          `${officer?.name ?? "Officer"} â€” ${
+          `${officer?.name ?? "Officer"} - ${
             certification.certification_title ??
             certification.title ??
             "Certification"
@@ -4690,7 +4690,7 @@ function ImportWizardContent() {
           );
 
         itemHeading(
-          `${type?.name ?? "Equipment"} â€” ${
+          `${type?.name ?? "Equipment"} - ${
             officer?.name ??
             "Unassigned"
           }`,
@@ -4764,7 +4764,7 @@ function ImportWizardContent() {
         filteredOffDuty
       ) {
         itemHeading(
-          `${record.officer ?? "Officer"} â€” ${
+          `${record.officer ?? "Officer"} - ${
             record.make ?? ""
           } ${
             record.model ?? ""
@@ -4840,10 +4840,10 @@ function ImportWizardContent() {
             write(
               `${dateTimeText(
                 event.timestamp,
-              )} â€” ${
+              )} - ${
                 event.action ??
                 ""
-              } â€” ${
+              } - ${
                 event.actor ??
                 ""
               }`,
@@ -4935,7 +4935,7 @@ function ImportWizardContent() {
           `${dateTimeText(
             event.created_at ??
               event.createdAt,
-          )} â€” ${clean(
+          )} - ${clean(
             event.action,
           )}`,
         );
@@ -5003,7 +5003,7 @@ function ImportWizardContent() {
         });
 
         footer.drawText(
-          "TracePoint â€” Operational Accountability. Verified.",
+          "TracePoint - Operational Accountability. Verified.",
           {
             x: LEFT,
             y: 21,
@@ -5388,7 +5388,7 @@ function ImportWizardContent() {
           value === undefined ||
           value === ""
         ) {
-          return "â€”";
+          return "-";
         }
 
         return String(value);
@@ -5396,7 +5396,7 @@ function ImportWizardContent() {
 
       function formatDateTime(value?: string) {
         if (!value) {
-          return "â€”";
+          return "-";
         }
 
         const parsed = new Date(value);
@@ -5410,7 +5410,7 @@ function ImportWizardContent() {
 
       function formatDate(value?: string) {
         if (!value) {
-          return "â€”";
+          return "-";
         }
 
         const parsed = new Date(
@@ -5769,7 +5769,7 @@ function ImportWizardContent() {
         );
 
         drawTextLine(
-          `${record.officer} â€” ${record.make} ${record.model}`,
+          `${record.officer} - ${record.make} ${record.model}`,
           {
             bold: true,
             size: 11,
@@ -5909,21 +5909,21 @@ function ImportWizardContent() {
           "Reviewed",
           record.reviewedAt
             ? formatDateTime(record.reviewedAt)
-            : "â€”",
+            : "-",
         );
 
         labelValue(
           "Authorization Effective",
           record.approvalDate
             ? formatDate(record.approvalDate)
-            : "â€”",
+            : "-",
         );
 
         labelValue(
           "Authorization Expires",
           record.approvalExpires
             ? formatDate(record.approvalExpires)
-            : "â€”",
+            : "-",
         );
 
         if (reportIncludeNotes) {
@@ -5946,7 +5946,7 @@ function ImportWizardContent() {
 
           for (const event of record.auditTrail ?? []) {
             drawTextLine(
-              `${formatDateTime(event.timestamp)} â€” ${event.action}`,
+              `${formatDateTime(event.timestamp)} - ${event.action}`,
               {
                 bold: true,
                 size: 8,
@@ -5993,7 +5993,7 @@ function ImportWizardContent() {
           } else {
             for (const inspection of inspections) {
               drawTextLine(
-                `${formatDate(inspection.inspectionDate)} â€” ${inspection.result}`,
+                `${formatDate(inspection.inspectionDate)} - ${inspection.result}`,
                 {
                   bold: true,
                   size: 8,
@@ -6062,7 +6062,7 @@ function ImportWizardContent() {
         });
 
         footerPage.drawText(
-          "TracePoint â€” Operational Accountability. Verified.",
+          "TracePoint - Operational Accountability. Verified.",
           {
             x: MARGIN_X,
             y: 22,
@@ -6338,7 +6338,7 @@ function ImportWizardContent() {
                       >
                         {officer.name}
                         {officer.badge
-                          ? ` â€” ${officer.badge}`
+                          ? ` - ${officer.badge}`
                           : ""}
                       </option>
                     ))}
@@ -6874,7 +6874,7 @@ function ImportWizardContent() {
                             Columns
                           </p>
                           <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-400">
-                            {dataset.parsed.headers.join(" â€¢ ")}
+                            {dataset.parsed.headers.join("  |  ")}
                           </p>
                         </div>
 
@@ -6995,7 +6995,7 @@ function ImportWizardContent() {
                 <div>
                   <h2 className="text-xl font-bold text-white">Field Mapping</h2>
                   <p className="mt-2 text-sm text-slate-300">
-                    {fileName} â€¢ {parsedCsv.rows.length} row
+                    {fileName}  |  {parsedCsv.rows.length} row
                     {parsedCsv.rows.length === 1 ? "" : "s"} detected.
                   </p>
                 </div>
@@ -7163,7 +7163,7 @@ function ImportWizardContent() {
                           {selectedDefinition.fields.map((field) => (
                             <td key={field.key} className="px-4 py-3 text-slate-300">
                               {row[field.key] || (
-                                <span className="text-slate-600">â€”</span>
+                                <span className="text-slate-600">-</span>
                               )}
                             </td>
                           ))}
@@ -7352,6 +7352,7 @@ export default function ImportWizardPage() {
     </Suspense>
   );
 }
+
 
 
 
