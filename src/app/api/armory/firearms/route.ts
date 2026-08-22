@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
   ]);
 
   try {
-    let assignmentsQuery = context.admin
+    let assignmentsQuery = context.db
       .from("firearm_assignments")
       .select(
         "id,firearm_id,assigned_to_user_id,assigned_at,magazines_issued,magazine_description,magazines_returned,magazine_discrepancy_reason",
@@ -208,7 +208,7 @@ export async function GET(request: NextRequest) {
     let firearms: any[] = [];
 
     if (canViewAll || firearmIds.length > 0) {
-      let firearmsQuery = context.admin
+      let firearmsQuery = context.db
         .from("firearms")
         .select(
           "id,department_id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,needs_attention,attention_reasons,is_active,archived_at,archived_by_user_id,archive_reason,created_at,updated_at",
@@ -239,7 +239,7 @@ export async function GET(request: NextRequest) {
     }
 
     const members = await getDepartmentMembers(
-      context.admin,
+      context.db,
       context.departmentId,
     );
     const membersById = new Map(
@@ -352,7 +352,7 @@ export async function POST(request: NextRequest) {
   try {
     if (assignedToUserId) {
       const { data: membership, error: membershipError } =
-        await context.admin
+        await context.db
           .from("department_memberships")
           .select("user_id")
           .eq("department_id", context.departmentId)
@@ -386,7 +386,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: existing, error: existingError } =
-      await context.admin
+      await context.db
         .from("firearms")
         .select("id")
         .eq("department_id", context.departmentId)
@@ -409,7 +409,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: inserted, error: insertError } =
-      await context.admin
+      await context.db
         .from("firearms")
         .insert({
           department_id: context.departmentId,
@@ -432,7 +432,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (assignedToUserId) {
-      const { error: assignmentError } = await context.admin
+      const { error: assignmentError } = await context.db
         .from("firearm_assignments")
         .insert({
           department_id: context.departmentId,
@@ -445,7 +445,7 @@ export async function POST(request: NextRequest) {
         });
 
       if (assignmentError) {
-        await context.admin
+        await context.db
           .from("firearms")
           .delete()
           .eq("id", inserted.id)

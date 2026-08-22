@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -68,7 +68,7 @@ export async function GET() {
       return featureError;
     }
 
-    const supabase = context.admin;
+    const supabase = context.db;
     const departmentId = context.departmentId;
     const { data, error } = await supabase
       .from("firearm_inspections")
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = context.admin;
+    const supabase = context.db;
     const body = (await request.json()) as InspectionPayload;
 
     if (!body.firearmId) {

@@ -46,6 +46,7 @@ export type ServerAccessPayload = {
 export type ServerAccessContext = ServerAccessPayload & {
   user: any;
   admin: any;
+  db: any;
 };
 
 type MembershipRow = {
@@ -232,6 +233,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
       context: {
         user,
         admin,
+        db: admin,
         userId: user.id,
         email: clean(user.email),
         fullName,
@@ -472,6 +474,7 @@ let membership: MembershipRow | undefined;
     context: {
       user,
       admin,
+      db: server,
       userId: user.id,
       email: clean(user.email),
       fullName,
