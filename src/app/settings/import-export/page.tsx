@@ -78,10 +78,14 @@ type ValidationIssue = {
 
 type ImportReport = {
   created: number;
+  updated: number;
+  unchanged: number;
+  review: number;
   skipped: number;
   failed: number;
   message: string;
   failures: string[];
+  reviews: string[];
 };
 
 type PilotPersonnel = {
@@ -192,7 +196,7 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
           "weapon calibre",
         ],
         help:
-          "Required. Map the firearm caliber or shotgun gauge from the source file.",
+          "Optional during onboarding. Missing values are imported as TBD / Unknown and can be updated later.",
       },
       {
         key: "assetNumber",
@@ -1096,7 +1100,7 @@ async function importFirearm(
       model: row.model,
       serialNumber: row.serialNumber,
       firearmType: normalizeFirearmType(row.firearmType || "other"),
-      caliber: row.caliber,
+      caliber: row.caliber?.trim() || "TBD / Unknown",
       assetNumber: row.assetNumber,
       conditionStatus: normalizeStatus(row.conditionStatus || "In Service"),
       notes: row.notes,
@@ -1104,18 +1108,22 @@ async function importFirearm(
     }),
   });
 
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    status?: "created" | "updated" | "unchanged";
+    changedFields?: string[];
+    conflicts?: Array<{
+      field: string;
+      existingValue: unknown;
+      incomingValue: unknown;
+    }>;
+  };
+
   if (!response.ok) {
-    let message = "Import failed.";
-
-    try {
-      const payload = (await response.json()) as { error?: string };
-      message = payload.error ?? message;
-    } catch {
-      // no-op
-    }
-
-    throw new Error(message);
+    throw new Error(payload.error ?? "Import failed.");
   }
+
+  return payload;
 }
 
 
@@ -1421,11 +1429,15 @@ function ImportWizardContent() {
     ) {
       setReport({
         created: 0,
+        updated: 0,
+        unchanged: 0,
+        review: 0,
         skipped: mappedRows.length,
         failed: 0,
         message:
           "This import type currently supports validation and preview only.",
         failures: [],
+        reviews: [],
       });
       setStep("report");
       return;
@@ -1434,10 +1446,14 @@ function ImportWizardContent() {
     if (!departmentId) {
       setReport({
         created: 0,
+        updated: 0,
+        unchanged: 0,
+        review: 0,
         skipped: 0,
         failed: mappedRows.length,
         message: "No active department is available for import.",
         failures: ["An active department is required before importing."],
+        reviews: [],
       });
       setStep("report");
       return;
@@ -1446,7 +1462,42 @@ function ImportWizardContent() {
     setImporting(true);
 
     const failures: string[] = [];
+    const reviews: string[] = [];
     let created = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let review = 0;
+
+    const recordImportResult = (
+      payload: {
+        status?: "created" | "updated" | "unchanged";
+        conflicts?: Array<{
+          field?: string;
+          existingValue?: unknown;
+          incomingValue?: unknown;
+        }>;
+      },
+      rowNumber: number,
+    ) => {
+      if ((payload.conflicts?.length ?? 0) > 0) {
+        review += 1;
+
+        const fields = payload.conflicts
+          ?.map((conflict) => conflict.field)
+          .filter(Boolean)
+          .join(", ");
+
+        reviews.push(
+          `Row ${rowNumber}: Existing TracePoint data was preserved. Conflicting field${(payload.conflicts?.length ?? 0) === 1 ? "" : "s"}: ${fields || "unknown"}.`,
+        );
+      } else if (payload.status === "updated") {
+        updated += 1;
+      } else if (payload.status === "unchanged") {
+        unchanged += 1;
+      } else {
+        created += 1;
+      }
+    };
 
     for (const [index, row] of mappedRows.entries()) {
       try {
@@ -1494,7 +1545,7 @@ function ImportWizardContent() {
             );
           }
 
-          created += 1;
+          recordImportResult(payload, index + 2);
           continue;
         }
         if (selectedDefinition.id === "equipment") {
@@ -1542,7 +1593,7 @@ function ImportWizardContent() {
             );
           }
 
-          created += 1;
+          recordImportResult(payload, index + 2);
           continue;
         }
         if (selectedDefinition.id === "off_duty_firearms") {
@@ -1569,7 +1620,7 @@ function ImportWizardContent() {
                 model: row.model,
                 firearmType: row.firearmType,
                 serialNumber: row.serialNumber,
-                caliber: row.caliber,
+                caliber: row.caliber?.trim() || "TBD / Unknown",
                 capacity: row.capacity,
                 optic: row.optic,
                 weaponLight: row.weaponLight,
@@ -1594,7 +1645,7 @@ function ImportWizardContent() {
             );
           }
 
-          created += 1;
+          recordImportResult(payload, index + 2);
           continue;
         }
         if (selectedDefinition.id === "qualification_history") {
@@ -1627,7 +1678,7 @@ function ImportWizardContent() {
             );
           }
 
-          created += 1;
+          recordImportResult(payload, index + 2);
           continue;
         }
 
@@ -1644,8 +1695,12 @@ function ImportWizardContent() {
           );
         }
 
-        await importFirearm(row, departmentId, matchedOfficer?.userId);
-        created += 1;
+        const payload = await importFirearm(
+          row,
+          departmentId,
+          matchedOfficer?.userId,
+        );
+        recordImportResult(payload, index + 2);
       } catch (error) {
         failures.push(
           `Row ${index + 2}: ${
@@ -1659,6 +1714,9 @@ function ImportWizardContent() {
 
     setReport({
       created,
+      updated,
+      unchanged,
+      review,
       skipped: 0,
       failed: failures.length,
       message:
@@ -1666,14 +1724,11 @@ function ImportWizardContent() {
           ? failures.length === 0
             ? "Personnel import completed. Accounts are staged pending activation."
             : "Personnel import completed with errors."
-          : selectedDefinition.id === "qualification_history"
-            ? failures.length === 0
-              ? "Qualification history import completed."
-              : "Qualification history import completed with errors."
-            : failures.length === 0
-              ? "Firearms import completed."
-              : "Firearms import completed with errors.",
+          : failures.length === 0
+            ? `${selectedDefinition.label} import completed.`
+            : `${selectedDefinition.label} import completed with errors.`,
       failures,
+      reviews,
     });
 
     setImporting(false);
@@ -7135,7 +7190,7 @@ function ImportWizardContent() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">
                     Created
@@ -7144,6 +7199,34 @@ function ImportWizardContent() {
                     {report.created}
                   </p>
                 </div>
+
+                <div className="rounded-2xl border border-sky-800 bg-sky-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
+                    Updated
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-sky-200">
+                    {report.updated}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
+                    Unchanged
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-slate-200">
+                    {report.unchanged}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-amber-800 bg-amber-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
+                    Needs Review
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-amber-200">
+                    {report.review}
+                  </p>
+                </div>
+
                 <div className="rounded-2xl border border-amber-800 bg-amber-950/40 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
                     Skipped
@@ -7152,6 +7235,7 @@ function ImportWizardContent() {
                     {report.skipped}
                   </p>
                 </div>
+
                 <div className="rounded-2xl border border-red-800 bg-red-950/40 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">
                     Failed
@@ -7162,6 +7246,16 @@ function ImportWizardContent() {
                 </div>
               </div>
 
+              {report.reviews.length > 0 && (
+                <div className="mt-5 rounded-2xl border border-amber-800 bg-amber-950/40 p-4">
+                  <h3 className="font-bold text-amber-100">Needs Review</h3>
+                  <ul className="mt-3 space-y-2 text-sm text-amber-200">
+                    {report.reviews.slice(0, 50).map((reviewItem) => (
+                      <li key={reviewItem}>{reviewItem}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {report.failures.length > 0 && (
                 <div className="mt-5 rounded-2xl border border-red-800 bg-red-950/40 p-4">
                   <h3 className="font-bold text-red-100">Failures</h3>

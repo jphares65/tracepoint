@@ -1,4 +1,6 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -183,7 +185,9 @@ export async function POST(request: NextRequest) {
     const { data: existing, error: existingError } =
       await admin
         .from("firearms")
-        .select("id")
+        .select(
+          "id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes",
+        )
         .eq("department_id", departmentId)
         .ilike("serial_number", serialNumber)
         .limit(1)
@@ -194,13 +198,72 @@ export async function POST(request: NextRequest) {
     }
 
     if (existing) {
-      return NextResponse.json(
+      const merge = buildEnrichOnlyUpdates(
+        existing as Record<string, unknown>,
         {
-          error:
-            "A firearm with this serial number already exists in this department.",
+          make,
+          model,
+          firearm_type: firearmType,
+          caliber: cleanText(body.caliber),
+          asset_number: cleanText(body.assetNumber),
+          condition_status: cleanText(body.conditionStatus),
+          notes: cleanText(body.notes),
         },
-        { status: 409 },
+        ["id", "serial_number"],
       );
+
+      if (Object.keys(merge.updates).length > 0) {
+        const { error: updateError } = await admin
+          .from("firearms")
+          .update(merge.updates as {
+            make?: string;
+            model?: string;
+            firearm_type?: "handgun" | "rifle" | "shotgun" | "less_lethal" | "other";
+            caliber?: string;
+            asset_number?: string | null;
+            condition_status?: string;
+            notes?: string | null;
+          })
+          .eq("id", existing.id)
+          .eq("department_id", departmentId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+
+        await admin.from("audit_events").insert({
+          department_id: departmentId,
+          actor_user_id: user.id,
+          action: "firearm_enriched_during_onboarding",
+          entity_type: "firearm",
+          entity_id: existing.id,
+          new_value: {
+            changed_fields: merge.changedFields,
+            conflicts: merge.conflicts.map((conflict) => ({
+              field: conflict.field,
+              existingValue: String(conflict.existingValue ?? ""),
+              incomingValue: String(conflict.incomingValue ?? ""),
+            })),
+            platform_admin: Boolean(platformAdminResult.data),
+          },
+        });
+
+        return NextResponse.json({
+          ok: true,
+          status: "updated",
+          firearmId: existing.id,
+          changedFields: merge.changedFields,
+          conflicts: merge.conflicts,
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        status: "unchanged",
+        firearmId: existing.id,
+        changedFields: [],
+        conflicts: merge.conflicts,
+      });
     }
 
     const { data: inserted, error: insertError } =
@@ -212,7 +275,7 @@ export async function POST(request: NextRequest) {
           model,
           serial_number: serialNumber,
           firearm_type: firearmType,
-          caliber: cleanText(body.caliber) ?? "",
+          caliber: cleanText(body.caliber) ?? "TBD / Unknown",
           asset_number: cleanText(body.assetNumber),
           condition_status: conditionStatus,
           notes: cleanText(body.notes),
@@ -269,6 +332,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: true,
+        status: "created",
         firearmId: inserted.id,
         assignmentCreated: Boolean(assignedToUserId),
       },

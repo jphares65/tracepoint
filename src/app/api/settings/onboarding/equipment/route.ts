@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
@@ -180,7 +182,9 @@ export async function POST(request: NextRequest) {
       const { data: existing, error: existingError } =
         await admin
           .from("equipment_assets")
-          .select("id")
+          .select(
+            "id,equipment_type_id,manufacturer,model,serial_number,lot_number,assigned_user_id,issue_date,expiration_date,last_inspection_date,next_inspection_date,lifecycle_status,notes",
+          )
           .eq("department_id", departmentId)
           .ilike("serial_number", serialNumber)
           .limit(1)
@@ -191,13 +195,51 @@ export async function POST(request: NextRequest) {
       }
 
       if (existing) {
-        return NextResponse.json(
+        const merge = buildEnrichOnlyUpdates(
+          existing as Record<string, unknown>,
           {
-            error:
-              "An equipment record with this serial number already exists.",
+            equipment_type_id: equipmentType.id,
+            manufacturer: cleanText(body.manufacturer),
+            model: cleanText(body.model),
+            lot_number: cleanText(body.lotNumber),
+            assigned_user_id: assignedToUserId,
+            issue_date: cleanText(body.issueDate),
+            expiration_date: cleanText(body.expirationDate),
+            last_inspection_date: cleanText(body.lastInspectionDate),
+            next_inspection_date: cleanText(body.nextInspectionDate),
+            lifecycle_status: cleanText(body.lifecycleStatus),
+            notes: cleanText(body.notes),
           },
-          { status: 409 },
+          ["id", "serial_number"],
         );
+
+        if (Object.keys(merge.updates).length > 0) {
+          const { error: updateError } = await admin
+            .from("equipment_assets")
+            .update(merge.updates as any)
+            .eq("id", existing.id)
+            .eq("department_id", departmentId);
+
+          if (updateError) {
+            throw new Error(updateError.message);
+          }
+
+          return NextResponse.json({
+            ok: true,
+            status: "updated",
+            equipmentId: existing.id,
+            changedFields: merge.changedFields,
+            conflicts: merge.conflicts,
+          });
+        }
+
+        return NextResponse.json({
+          ok: true,
+          status: "unchanged",
+          equipmentId: existing.id,
+          changedFields: [],
+          conflicts: merge.conflicts,
+        });
       }
     }
 
@@ -249,6 +291,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: true,
+        status: "created",
         equipmentId: inserted.id,
       },
       { status: 201 },

@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -110,7 +110,7 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
         p_model: model,
         p_serial_number: serialNumber,
         p_firearm_type: firearmType,
-        p_caliber: cleanOptionalText(body.caliber),
+        p_caliber: cleanOptionalText(body.caliber) ?? "TBD / Unknown",
         p_asset_number: cleanOptionalText(body.assetNumber),
         p_notes: cleanOptionalText(body.notes),
       },

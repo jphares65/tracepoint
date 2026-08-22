@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -417,7 +417,7 @@ export async function POST(request: NextRequest) {
           model,
           serial_number: serialNumber,
           firearm_type: firearmType,
-          caliber: cleanText(body.caliber),
+          caliber: cleanText(body.caliber) ?? "TBD / Unknown",
           asset_number: cleanText(body.assetNumber),
           condition_status: conditionStatus,
           notes: cleanText(body.notes),

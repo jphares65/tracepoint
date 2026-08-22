@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
@@ -235,7 +237,9 @@ export async function POST(request: NextRequest) {
     const { data: existing, error: existingError } =
       await admin
         .from("off_duty_firearm_requests")
-        .select("id")
+        .select(
+          "id,officer_user_id,make,model,firearm_type,serial_number,caliber,capacity,optic,weapon_light,holster,request_status,authorization_status,compliance_status,inspection_status,approval_date,approval_effective_date,approval_expiration_date,officer_notes",
+        )
         .eq("department_id", departmentId)
         .ilike("serial_number", serialNumber)
         .limit(1)
@@ -246,13 +250,57 @@ export async function POST(request: NextRequest) {
     }
 
     if (existing) {
-      return NextResponse.json(
+      const merge = buildEnrichOnlyUpdates(
+        existing as Record<string, unknown>,
         {
-          error:
-            "An off-duty firearm with this serial number already exists for this department.",
+          officer_user_id: officerUserId,
+          make,
+          model,
+          firearm_type: firearmType,
+          caliber,
+          capacity: cleanText(body.capacity),
+          optic: cleanText(body.optic),
+          weapon_light: cleanText(body.weaponLight),
+          holster: cleanText(body.holster),
+          request_status: cleanText(body.requestStatus),
+          authorization_status: cleanText(body.authorizationStatus),
+          compliance_status: cleanText(body.complianceStatus),
+          inspection_status: cleanText(body.inspectionStatus),
+          approval_date: cleanText(body.approvalDate),
+          approval_effective_date: cleanText(body.approvalEffectiveDate),
+          approval_expiration_date: cleanText(body.approvalExpirationDate),
+          officer_notes: cleanText(body.notes),
         },
-        { status: 409 },
+        ["id", "serial_number"],
       );
+
+      if (Object.keys(merge.updates).length > 0) {
+        const { error: updateError } = await admin
+          .from("off_duty_firearm_requests")
+          .update(merge.updates as any)
+          .eq("id", existing.id)
+          .eq("department_id", departmentId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+
+        return NextResponse.json({
+          ok: true,
+          status: "updated",
+          offDutyFirearmId: existing.id,
+          changedFields: merge.changedFields,
+          conflicts: merge.conflicts,
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        status: "unchanged",
+        offDutyFirearmId: existing.id,
+        changedFields: [],
+        conflicts: merge.conflicts,
+      });
     }
 
     const now = new Date().toISOString();
@@ -325,6 +373,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: true,
+        status: "created",
         offDutyFirearmId: inserted.id,
       },
       { status: 201 },

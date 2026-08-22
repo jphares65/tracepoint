@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
@@ -242,7 +244,9 @@ export async function POST(request: NextRequest) {
 
     const { data: duplicateRows, error: duplicateError } = await admin
       .from("qualification_results")
-      .select("id")
+      .select(
+        "id,score,passed,historical_instructor_name,historical_passing_score,historical_result_text,notes",
+      )
       .eq("department_id", departmentId)
       .eq("officer_user_id", officerUserId)
       .eq("qualification_date", qualificationDate)
@@ -252,13 +256,53 @@ export async function POST(request: NextRequest) {
 
     if (duplicateError) throw duplicateError;
 
-    if ((duplicateRows ?? []).length > 0) {
-      return NextResponse.json(
+    const existing = duplicateRows?.[0] ?? null;
+
+    if (existing) {
+      const passed = derivePassed(resultText, score, passingScore);
+
+      const merge = buildEnrichOnlyUpdates(
+        existing as Record<string, unknown>,
         {
-          error: `A historical qualification for "${officerName}" on ${qualificationDate} for "${courseName}" already exists.`,
+          score,
+          passed,
+          historical_instructor_name: instructorName || null,
+          historical_passing_score: passingScore,
+          historical_result_text: resultText || null,
+          notes: notes || null,
         },
-        { status: 409 },
+        ["id"],
       );
+
+      if (Object.keys(merge.updates).length > 0) {
+        const { error: updateError } = await admin
+          .from("qualification_results")
+          .update(merge.updates as any)
+          .eq("id", existing.id)
+          .eq("department_id", departmentId);
+
+        if (updateError) throw updateError;
+
+        return NextResponse.json({
+          ok: true,
+          status: "updated",
+          resultId: existing.id,
+          officerUserId,
+          changedFields: merge.changedFields,
+          conflicts: merge.conflicts,
+          passed,
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        status: "unchanged",
+        resultId: existing.id,
+        officerUserId,
+        changedFields: [],
+        conflicts: merge.conflicts,
+        passed,
+      });
     }
 
     const passed = derivePassed(resultText, score, passingScore);
@@ -311,6 +355,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      status: "created",
       resultId: insertedResult.id,
       officerUserId,
       passed,
