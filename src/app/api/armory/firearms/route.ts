@@ -70,10 +70,11 @@ function getDisplayName(
 }
 
 async function getDepartmentMembers(
+  db: any,
   admin: any,
   departmentId: string,
 ): Promise<ArmoryMember[]> {
-  const { data: memberships, error } = await admin
+  const { data: memberships, error } = await db
     .from("department_memberships")
     .select("user_id,rank_title,badge_number")
     .eq("department_id", departmentId)
@@ -88,7 +89,7 @@ async function getDepartmentMembers(
   const profilesById = new Map<string, ProfileRecord>();
 
   if (userIds.length > 0) {
-    const { data: profiles, error: profilesError } = await admin
+    const { data: profiles, error: profilesError } = await db
       .from("profiles")
       .select("id,full_name,email")
       .in("id", userIds);
@@ -240,6 +241,7 @@ export async function GET(request: NextRequest) {
 
     const members = await getDepartmentMembers(
       context.db,
+      context.admin,
       context.departmentId,
     );
     const membersById = new Map(
