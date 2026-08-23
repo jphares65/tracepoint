@@ -1,10 +1,11 @@
 import {
-  Activity,
+  AlertTriangle,
   Car,
   CheckCircle2,
   ClipboardCheck,
   History,
   QrCode,
+  ShieldCheck,
   Smartphone,
   Users,
   Wrench,
@@ -17,13 +18,19 @@ const FEATURES = [
     icon: QrCode,
     title: "QR Vehicle Access",
     description:
-      "Scan the unit's QR code to immediately open the correct vehicle, inspection workflow, required-equipment checklist, current status, and service history.",
+      "Scan the unit's QR code to immediately open the correct vehicle, mobile inspection, required-equipment checklist, current status, and maintenance history.",
   },
   {
     icon: Smartphone,
     title: "Fast Mobile Inspections",
     description:
-      "Complete routine vehicle and equipment inspections from a phone with a streamlined workflow designed to take seconds at the start of a shift.",
+      "Complete routine vehicle and equipment checks from a phone with a streamlined workflow designed to take seconds at the beginning of a shift.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Automatic Vehicle Readiness",
+    description:
+      "Inspection results can automatically update vehicle availability. Critical defects, missing required equipment, overdue inspections, or other agency-defined deficiencies can immediately restrict or remove a unit from service.",
   },
   {
     icon: Wrench,
@@ -38,22 +45,31 @@ const FEATURES = [
       "Keep inspections, repairs, preventive maintenance, mileage, defects, downtime, and return-to-service history attached to the vehicle.",
   },
   {
-    icon: ClipboardCheck,
-    title: "Vehicle & Equipment Readiness",
-    description:
-      "Track required equipment, inspection schedules, maintenance intervals, deficiencies, and operational readiness before problems affect a shift.",
-  },
-  {
     icon: Users,
     title: "Assignments & Pool Vehicles",
     description:
       "Maintain assignment and custody history for permanently assigned and shared vehicles with clear checkout, return, and accountability records.",
   },
+];
+
+const STATUS_EXAMPLES = [
   {
-    icon: Activity,
-    title: "Connected Fleet Data",
-    description:
-      "Support future telematics and external API integrations while TracePoint applies agency-specific readiness rules and accountability workflows.",
+    status: "Available",
+    detail:
+      "Inspection complete with no readiness condition preventing operational use.",
+    icon: CheckCircle2,
+  },
+  {
+    status: "Attention",
+    detail:
+      "A non-critical issue requires follow-up, but agency rules permit the vehicle to remain available.",
+    icon: AlertTriangle,
+  },
+  {
+    status: "Out of Service",
+    detail:
+      "A critical mechanical issue, missing required equipment, failed inspection item, or other configured deficiency removes the vehicle from available inventory.",
+    icon: Wrench,
   },
 ];
 
@@ -76,8 +92,9 @@ export default function FleetManagementPage() {
 
             <p className="mt-4 max-w-4xl text-base leading-7 text-slate-300">
               Know whether every vehicle is inspected, equipped, maintained,
-              assigned, and ready for service — while routing problems directly
-              to the people responsible for resolving them.
+              assigned, and ready for service — while automatically removing
+              deficient vehicles from availability and routing problems to the
+              people responsible for resolving them.
             </p>
 
             <div className="mt-7 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm font-semibold text-slate-300">
@@ -95,7 +112,7 @@ export default function FleetManagementPage() {
             </p>
 
             <h2 className="mt-1 text-xl font-bold text-white">
-              From QR scan to resolved maintenance issue
+              From QR scan to verified vehicle readiness
             </h2>
           </div>
 
@@ -131,14 +148,14 @@ export default function FleetManagementPage() {
             <QrCode size={21} className="text-blue-300" />
 
             <h2 className="mt-4 text-lg font-bold text-white">
-              Scan. Inspect. Go.
+              Scan. Inspect. Status Updated.
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Scan the cruiser, confirm mileage and required equipment, report
+              Scan the cruiser, confirm mileage and required equipment, record
               any defect, and complete the inspection from a phone in seconds.
-              TracePoint preserves who inspected the vehicle, when it occurred,
-              what was found, and what still requires action.
+              TracePoint evaluates the inspection result and immediately
+              updates whether the vehicle remains available for service.
             </p>
           </div>
 
@@ -150,12 +167,56 @@ export default function FleetManagementPage() {
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              A failed inspection item can immediately become a tracked
-              maintenance task for the designated mechanic or fleet manager,
-              carrying the vehicle details and reported problem with it.
-              Repair, resolution, and return-to-service become part of the
-              permanent record.
+              A failed inspection item can become a tracked maintenance task
+              for the designated mechanic or fleet manager, carrying the
+              vehicle details, reported issue, inspection record, and supporting
+              information with it. Repair and return-to-service become part of
+              the permanent vehicle history.
             </p>
+          </div>
+
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400">
+            Automatic Status
+          </p>
+
+          <h2 className="mt-2 text-lg font-bold text-white">
+            Inspection results drive availability
+          </h2>
+
+          <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-400">
+            Agencies will be able to define which deficiencies affect vehicle
+            availability. TracePoint can evaluate those rules as soon as an
+            inspection is submitted so fleet status reflects operational
+            reality instead of waiting for someone to update another list.
+          </p>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {STATUS_EXAMPLES.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <div
+                  key={item.status}
+                  className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon size={16} className="text-blue-300" />
+
+                    <h3 className="text-sm font-bold text-slate-200">
+                      {item.status}
+                    </h3>
+                  </div>
+
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    {item.detail}
+                  </p>
+                </div>
+              );
+            })}
           </div>
 
         </section>
@@ -170,26 +231,26 @@ export default function FleetManagementPage() {
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              The goal is not another lengthy inspection form. Routine checks
-              should be fast enough that officers actually complete them while
-              exceptions, missing equipment, and maintenance issues receive the
-              attention they require.
+              Routine checks should be fast enough that officers actually
+              complete them. TracePoint handles the accountability behind the
+              scenes while exceptions, missing equipment, and mechanical issues
+              receive the attention they require.
             </p>
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <Activity size={21} className="text-blue-300" />
+            <ShieldCheck size={21} className="text-blue-300" />
 
             <h2 className="mt-4 text-lg font-bold text-white">
-              Built for connected fleet systems
+              Agency-defined readiness rules
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Fleet Management is planned around stable vehicle identities and
-              an integration-ready architecture. Future telematics providers
-              can supply vehicle data while TracePoint manages agency-specific
-              inspections, readiness rules, accountability, exceptions, and
-              workflow.
+              Different agencies can decide what constitutes a warning,
+              restriction, or out-of-service condition. A missing non-critical
+              item may generate attention while a safety-related mechanical
+              defect can immediately remove the vehicle from service until it
+              is resolved.
             </p>
           </div>
 
