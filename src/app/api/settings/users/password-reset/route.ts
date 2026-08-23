@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
     const siteUrl = getRequestOrigin(request);
 
     const { error: resetError } = await admin.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(
+      redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(
         "/auth/setup",
       )}`,
     });
