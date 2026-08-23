@@ -30,6 +30,13 @@ type RangeQualificationRules = {
 
   missing_required_qualification_affects_readiness: boolean;
   expired_qualification_affects_readiness: boolean;
+
+  firearm_failure_lockout_enabled: boolean;
+  firearm_failure_lockout_threshold: number;
+  firearm_failure_count_mode: "consecutive_since_pass";
+  firearm_failure_scope: "specific_firearm";
+  passing_requalification_restores_authorization: boolean;
+  require_supervisor_release_after_requalification: boolean;
 };
 
 const DEFAULT_RULES: RangeQualificationRules = {
@@ -50,6 +57,13 @@ const DEFAULT_RULES: RangeQualificationRules = {
 
   missing_required_qualification_affects_readiness: true,
   expired_qualification_affects_readiness: true,
+
+  firearm_failure_lockout_enabled: true,
+  firearm_failure_lockout_threshold: 2,
+  firearm_failure_count_mode: "consecutive_since_pass",
+  firearm_failure_scope: "specific_firearm",
+  passing_requalification_restores_authorization: true,
+  require_supervisor_release_after_requalification: false,
 };
 
 function normalizeRules(
@@ -250,6 +264,14 @@ export default function RangeQualificationRulesPanel({
           1,
           rules.remediation_due_days,
         ),
+
+        firearm_failure_lockout_threshold: Math.max(
+          1,
+          rules.firearm_failure_lockout_threshold,
+        ),
+
+        firearm_failure_count_mode: "consecutive_since_pass",
+        firearm_failure_scope: "specific_firearm",
       };
 
       const { error } = await (supabase as any)
@@ -564,6 +586,108 @@ export default function RangeQualificationRulesPanel({
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
+
+            <Toggle
+              title="Suspend firearm authorization after repeated failures"
+              description="When an officer reaches the configured consecutive-failure threshold with a specific firearm, that officer/firearm relationship becomes Qualification Restricted. The firearm itself remains Active unless a separate armory condition changes its status."
+              checked={rules.firearm_failure_lockout_enabled}
+              disabled={!canAdminister}
+              onChange={(value) =>
+                patchRule(
+                  "firearm_failure_lockout_enabled",
+                  value,
+                )
+              }
+            />
+
+            {rules.firearm_failure_lockout_enabled ? (
+              <DaysInput
+                label="Failed qualification threshold"
+                description="Number of consecutive recorded failures with the same firearm before that officer's authorization for the firearm becomes restricted."
+                value={rules.firearm_failure_lockout_threshold}
+                min={1}
+                max={20}
+                disabled={!canAdminister}
+                onChange={(value) =>
+                  patchRule(
+                    "firearm_failure_lockout_threshold",
+                    value,
+                  )
+                }
+              />
+            ) : (
+              <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs leading-5 text-slate-500">
+                Repeated qualification failures will not automatically
+                restrict an officer's authorization for the associated
+                firearm.
+              </div>
+            )}
+
+            {rules.firearm_failure_lockout_enabled ? (
+              <>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                  <p className="text-sm font-semibold text-slate-200">
+                    Failure counting
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    TracePoint counts consecutive failures with the specific
+                    firearm used. A later passing qualification resets the
+                    consecutive-failure count. Historical failures before a
+                    successful qualification do not accumulate forever.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                  <p className="text-sm font-semibold text-slate-200">
+                    Restriction scope
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    The restriction applies only to the officer and the
+                    firearm used in the failed qualification attempts. It does
+                    not place the firearm itself Out of Service.
+                  </p>
+                </div>
+
+                <Toggle
+                  title="Passing requalification restores authorization"
+                  description="A later passing qualification with the same firearm can clear the qualification restriction."
+                  checked={
+                    rules.passing_requalification_restores_authorization
+                  }
+                  disabled={!canAdminister}
+                  onChange={(value) =>
+                    patchRule(
+                      "passing_requalification_restores_authorization",
+                      value,
+                    )
+                  }
+                />
+
+                {rules.passing_requalification_restores_authorization ? (
+                  <Toggle
+                    title="Require supervisor / range-master release after passing"
+                    description="Keep the officer/firearm relationship restricted after a successful requalification until an authorized supervisor or range-master formally releases the restriction."
+                    checked={
+                      rules.require_supervisor_release_after_requalification
+                    }
+                    disabled={!canAdminister}
+                    onChange={(value) =>
+                      patchRule(
+                        "require_supervisor_release_after_requalification",
+                        value,
+                      )
+                    }
+                  />
+                ) : (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs leading-5 text-slate-500">
+                    A passing qualification alone will not automatically
+                    restore firearm authorization under current agency policy.
+                  </div>
+                )}
+              </>
+            ) : null}
 
             <Toggle
               title="Failed qualification requires remediation"
