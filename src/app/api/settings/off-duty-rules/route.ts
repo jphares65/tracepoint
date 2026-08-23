@@ -62,6 +62,7 @@ export async function GET() {
       .select(
         [
           "require_off_duty_inspection",
+          "require_off_duty_qualification",
           "off_duty_renewal_days",
           "inspection_interval_days",
           "inspection_due_soon_days",
@@ -84,6 +85,9 @@ export async function GET() {
     rules: {
       requireInspection:
         data?.require_off_duty_inspection !== false,
+
+      requireQualification:
+        data?.require_off_duty_qualification !== false,
 
       renewalDays:
         Number(data?.off_duty_renewal_days) || 365,
@@ -131,6 +135,7 @@ export async function PATCH(
       () => ({}),
     )) as {
       requireInspection?: boolean;
+      requireQualification?: boolean;
       renewalDays?: number;
       inspectionIntervalDays?: number;
       inspectionDueSoonDays?: number;
@@ -198,6 +203,9 @@ export async function PATCH(
         require_off_duty_inspection:
           body.requireInspection !== false,
 
+        require_off_duty_qualification:
+          body.requireQualification !== false,
+
         off_duty_renewal_days:
           renewalDays,
 
@@ -217,6 +225,7 @@ export async function PATCH(
       .select(
         [
           "require_off_duty_inspection",
+          "require_off_duty_qualification",
           "off_duty_renewal_days",
           "inspection_interval_days",
           "inspection_due_soon_days",
@@ -235,6 +244,9 @@ export async function PATCH(
     rules: {
       requireInspection:
         data.require_off_duty_inspection !== false,
+
+      requireQualification:
+        data.require_off_duty_qualification !== false,
 
       renewalDays:
         data.off_duty_renewal_days,

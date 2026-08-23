@@ -7,6 +7,7 @@ import {
 
 type OffDutyRules = {
   requireInspection: boolean;
+  requireQualification: boolean;
   renewalDays: number;
   inspectionIntervalDays: number;
   inspectionDueSoonDays: number;
@@ -40,6 +41,7 @@ export default function OffDutyRulesPanel() {
   const [rules, setRules] =
     useState<OffDutyRules>({
       requireInspection: true,
+      requireQualification: true,
       renewalDays: 365,
       inspectionIntervalDays: 180,
       inspectionDueSoonDays: 30,
@@ -172,6 +174,45 @@ export default function OffDutyRulesPanel() {
             Inspection is optional. Existing inspection history
             remains preserved, but a missing or expired inspection
             will not prevent approval.
+          </div>
+        ) : null}
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/30 p-5">
+        <label className="flex items-start justify-between gap-5">
+          <div>
+            <div className="text-sm font-semibold text-white">
+              Require Independent Qualification
+            </div>
+
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
+              When enabled, the officer must have a current
+              qualifying record before command may approve the
+              off-duty firearm. When disabled, qualification
+              readiness remains visible but does not block
+              command approval.
+            </p>
+          </div>
+
+          <input
+            type="checkbox"
+            checked={rules.requireQualification}
+            onChange={(event) =>
+              setRules((current) => ({
+                ...current,
+                requireQualification:
+                  event.target.checked,
+              }))
+            }
+            className="mt-1 h-5 w-5"
+          />
+        </label>
+
+        {!rules.requireQualification ? (
+          <div className="mt-4 rounded-xl border border-blue-900/60 bg-blue-950/20 p-3 text-xs leading-5 text-blue-200">
+            Independent qualification is not required by agency
+            policy. Missing, expired, or failed qualification
+            readiness will not block command approval.
           </div>
         ) : null}
       </section>

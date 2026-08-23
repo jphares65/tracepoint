@@ -39,6 +39,22 @@ async function loadRequest(context: any, requestId: string) {
   return data;
 }
 
+async function requiresOffDutyQualification(
+  context: any,
+): Promise<boolean> {
+  const { data, error } = await context.admin
+    .from("department_rules")
+    .select("require_off_duty_qualification")
+    .eq("department_id", context.departmentId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.require_off_duty_qualification !== false;
+}
+
 type OffDutyInspectionReadiness = {
   status: "Current" | "Due Soon" | "Overdue" | "Not Inspected" | "Failed" | "Not Required";
   statusReason: string;
@@ -534,31 +550,34 @@ export async function PATCH(
       }
 
       if (!qualificationOverride) {
+        if (await requiresOffDutyQualification(context)) {
         const qualificationReadiness =
-          await getOfficerQualificationReadiness(
-            context,
-            String(existing.officer_user_id),
-          );
+            await getOfficerQualificationReadiness(
+              context,
+              String(existing.officer_user_id),
+            );
 
-        if (
-          !["Current", "Due Soon"].includes(
-            qualificationReadiness.status,
-          )
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "This off-duty firearm request cannot be approved because the officer does not have a current qualifying record.",
-              qualificationStatus:
-                qualificationReadiness.status,
-              qualificationReason:
-                qualificationReadiness.statusReason,
-            },
-            { status: 409 },
-          );
+          if (
+            !["Current", "Due Soon"].includes(
+              qualificationReadiness.status,
+            )
+          ) {
+            return NextResponse.json(
+              {
+                error:
+                  "This off-duty firearm request cannot be approved because the officer does not have a current qualifying record.",
+                qualificationStatus:
+                  qualificationReadiness.status,
+                qualificationReason:
+                  qualificationReadiness.statusReason,
+              },
+              { status: 409 },
+            );
+          }
         }
-      }
 
+
+      }
       const inspectionReadiness =
         await getOffDutyInspectionReadiness(
           context,
