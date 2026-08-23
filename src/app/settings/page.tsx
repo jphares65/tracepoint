@@ -740,6 +740,7 @@ export default function AdminSettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("agency");
   const [loading, setLoading] = useState(true);
   const [savingSection, setSavingSection] = useState<string | null>(null);
+  const [savedSection, setSavedSection] = useState<string | null>(null);
   const [notice, setNotice] = useState<{
     tone: NoticeTone;
     message: string;
@@ -1277,6 +1278,7 @@ export default function AdminSettingsPage() {
     if (!canAdminister || !departmentId) return;
 
     setSavingSection("agency");
+    setSavedSection(null);
     setNotice(null);
 
     try {
@@ -1304,7 +1306,14 @@ export default function AdminSettingsPage() {
       window.dispatchEvent(
         new CustomEvent("tracepoint:department-updated"),
       );
-      showNotice("success", "Agency profile saved to Supabase.");
+      showNotice("success", "Agency profile saved.");
+      setSavedSection("agency");
+
+      window.setTimeout(() => {
+        setSavedSection((current) =>
+          current === "agency" ? null : current,
+        );
+      }, 3000);
     } catch (error) {
       showNotice(
         "error",
@@ -2523,7 +2532,16 @@ export default function AdminSettingsPage() {
                 ) : (
                   <Save size={15} />
                 )}
-                Save {availableTabs.find((tab) => tab.id === activeTab)?.label}
+
+                {savingSection
+                  ? `Saving ${
+                      availableTabs.find((tab) => tab.id === activeTab)?.label
+                    }...`
+                  : activeTab === "agency" && savedSection === "agency"
+                    ? "Saved"
+                    : `Save ${
+                        availableTabs.find((tab) => tab.id === activeTab)?.label
+                      }`}
               </button>
             ) : null}
           </div>
@@ -2686,7 +2704,7 @@ export default function AdminSettingsPage() {
                       short_name: value,
                     }))
                   }
-                  placeholder="Readington PD"
+                  placeholder="Short agency name"
                 />
                 <TextInput
                   label="State"
@@ -4180,7 +4198,7 @@ export default function AdminSettingsPage() {
                 <TextInput
                   label="Agency display name"
                   value={department.short_name}
-                  placeholder="Readington PD"
+                  placeholder="Short agency name"
                   onChange={(value) =>
                     setDepartment((current) => ({
                       ...current,
