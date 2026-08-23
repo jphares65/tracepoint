@@ -741,6 +741,17 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [savingSection, setSavingSection] = useState<string | null>(null);
   const [savedSection, setSavedSection] = useState<string | null>(null);
+
+  const [rulesModule, setRulesModule] = useState<
+    | "overview"
+    | "armory"
+    | "range"
+    | "certifications"
+    | "equipment"
+    | "offDuty"
+    | "agencyTraining"
+    | "fleet"
+  >("overview");
   const [notice, setNotice] = useState<{
     tone: NoticeTone;
     message: string;
@@ -3490,155 +3501,274 @@ export default function AdminSettingsPage() {
         ) : null}
 
         {!loading && !accessLoading && activeTab === "rules" ? (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SettingsCard
-              title="Qualification Cycles"
-              description="Store agency-defined spring and fall cycle boundaries using MM-DD."
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <TextInput
-                  label="Spring cycle start"
-                  value={rules.spring_cycle_start}
-                  placeholder="04-01"
-                  onChange={(value) =>
-                    setRules((current) => ({
-                      ...current,
-                      spring_cycle_start: value,
-                    }))
-                  }
-                />
-                <TextInput
-                  label="Spring cycle end"
-                  value={rules.spring_cycle_end}
-                  placeholder="06-30"
-                  onChange={(value) =>
-                    setRules((current) => ({
-                      ...current,
-                      spring_cycle_end: value,
-                    }))
-                  }
-                />
-                <TextInput
-                  label="Fall cycle start"
-                  value={rules.fall_cycle_start}
-                  placeholder="09-01"
-                  onChange={(value) =>
-                    setRules((current) => ({
-                      ...current,
-                      fall_cycle_start: value,
-                    }))
-                  }
-                />
-                <TextInput
-                  label="Fall cycle end"
-                  value={rules.fall_cycle_end}
-                  placeholder="11-30"
-                  onChange={(value) =>
-                    setRules((current) => ({
-                      ...current,
-                      fall_cycle_end: value,
-                    }))
-                  }
-                />
-              </div>
-            </SettingsCard>
+          <div className="space-y-5">
 
-            <SettingsCard
-              title="Training Requirements"
-              description="Agency-defined qualification validity, alert windows, inspection intervals, and related training requirements."
-            >
-              <div className="space-y-4">
-                <ToggleRow
-                  title="Require rifle familiarization"
-                  description="Track familiarization separately from rifle qualification."
-                  checked={rules.require_rifle_familiarization}
-                  onChange={(checked) =>
-                    setRules((current) => ({
-                      ...current,
-                      require_rifle_familiarization: checked,
-                    }))
-                  }
-                />
+            <section className="rounded-3xl border border-blue-500/20 bg-slate-900/70 p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-400">
+                    Agency Policy Configuration
+                  </p>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <NumberInput
-                    label="Qualification validity"
-                    value={rules.qualification_valid_days}
-                    min={1}
-                    max={3650}
-                    hint="Days"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        qualification_valid_days: value,
-                      }))
-                    }
-                  />
+                  <h2 className="mt-1 text-xl font-bold text-white">
+                    Agency Rules
+                  </h2>
 
-                  <NumberInput
-                    label="Due soon warning"
-                    value={rules.qualification_due_soon_days}
-                    min={0}
-                    max={Math.max(0, rules.qualification_valid_days - 1)}
-                    hint="Days before expiration"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        qualification_due_soon_days: Math.min(
-                          value,
-                          Math.max(
-                            0,
-                            current.qualification_valid_days - 1,
-                          ),
-                        ),
-                      }))
-                    }
-                  />
+                  <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
+                    Configure how TracePoint evaluates readiness, workflows,
+                    warnings, approvals, inspections, training requirements,
+                    and accountability for this department. These rules are
+                    department-specific and should reflect agency policy rather
+                    than TracePoint defaults.
+                  </p>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <NumberInput
-                    label="Inspection interval"
-                    value={rules.inspection_interval_days}
-                    min={1}
-                    max={3650}
-                    hint="Days"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        inspection_interval_days: value,
-                      }))
-                    }
-                  />
-                  <NumberInput
-                    label="Battery check interval"
-                    value={rules.battery_check_interval_days}
-                    min={1}
-                    max={3650}
-                    hint="Days"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        battery_check_interval_days: value,
-                      }))
-                    }
-                  />
-                  <NumberInput
-                    label="Off-duty renewal"
-                    value={rules.off_duty_renewal_days}
-                    min={1}
-                    max={3650}
-                    hint="Days"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        off_duty_renewal_days: value,
-                      }))
-                    }
-                  />
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs text-slate-400">
+                  <span className="font-semibold text-slate-200">
+                    Central policy source
+                  </span>
+                  <br />
+                  Modules should consume these rules rather than maintain
+                  separate hard-coded standards.
                 </div>
               </div>
-            </SettingsCard>
+            </section>
+
+            <section className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 p-1.5">
+              <div className="flex min-w-max gap-1">
+                {[
+                  ["overview", "Overview"],
+                  ["armory", "Armory"],
+                  ["range", "Range & Qualifications"],
+                  ["certifications", "Certifications"],
+                  ["equipment", "Equipment"],
+                  ["offDuty", "Off-Duty Firearms"],
+                  ["agencyTraining", "Agency Training"],
+                  ["fleet", "Fleet"],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() =>
+                      setRulesModule(
+                        id as
+                          | "overview"
+                          | "armory"
+                          | "range"
+                          | "certifications"
+                          | "equipment"
+                          | "offDuty"
+                          | "agencyTraining"
+                          | "fleet",
+                      )
+                    }
+                    className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                      rulesModule === id
+                        ? "bg-blue-600/20 text-blue-300"
+                        : "text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {rulesModule === "overview" ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    id: "armory",
+                    title: "Armory",
+                    detail:
+                      "Firearm inspections, personally owned rifles, maintenance, and armory policy.",
+                  },
+                  {
+                    id: "range",
+                    title: "Range & Qualifications",
+                    detail:
+                      "Qualification cycles, validity, warnings, scoring standards, and remediation.",
+                  },
+                  {
+                    id: "certifications",
+                    title: "Certifications",
+                    detail:
+                      "Required credentials, renewal periods, expiration warnings, and readiness effects.",
+                  },
+                  {
+                    id: "equipment",
+                    title: "Equipment",
+                    detail:
+                      "Required equipment, inspection intervals, expirations, and readiness conditions.",
+                  },
+                  {
+                    id: "offDuty",
+                    title: "Off-Duty Firearms",
+                    detail:
+                      "Renewals, qualification expectations, inspections, approvals, and exceptions.",
+                  },
+                  {
+                    id: "agencyTraining",
+                    title: "Agency Training",
+                    detail:
+                      "Training-event requirements, qualifying outcomes, hours, and certification effects.",
+                  },
+                  {
+                    id: "fleet",
+                    title: "Fleet",
+                    detail:
+                      "Future inspection, equipment, availability, restriction, and out-of-service rules.",
+                  },
+                ].map((module) => (
+                  <button
+                    key={module.id}
+                    type="button"
+                    onClick={() =>
+                      setRulesModule(
+                        module.id as
+                          | "armory"
+                          | "range"
+                          | "certifications"
+                          | "equipment"
+                          | "offDuty"
+                          | "agencyTraining"
+                          | "fleet",
+                      )
+                    }
+                    className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left transition hover:border-blue-500/40 hover:bg-slate-900"
+                  >
+                    <h3 className="text-sm font-bold text-white">
+                      {module.title}
+                    </h3>
+
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {module.detail}
+                    </p>
+
+                    <p className="mt-4 text-[11px] font-semibold text-blue-300">
+                      Configure rules →
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {rulesModule === "range" ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+
+                <SettingsCard
+                  title="Qualification Cycles"
+                  description="Store agency-defined spring and fall cycle boundaries using MM-DD."
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <TextInput
+                      label="Spring cycle start"
+                      value={rules.spring_cycle_start}
+                      placeholder="04-01"
+                      onChange={(value) =>
+                        setRules((current) => ({
+                          ...current,
+                          spring_cycle_start: value,
+                        }))
+                      }
+                    />
+
+                    <TextInput
+                      label="Spring cycle end"
+                      value={rules.spring_cycle_end}
+                      placeholder="06-30"
+                      onChange={(value) =>
+                        setRules((current) => ({
+                          ...current,
+                          spring_cycle_end: value,
+                        }))
+                      }
+                    />
+
+                    <TextInput
+                      label="Fall cycle start"
+                      value={rules.fall_cycle_start}
+                      placeholder="09-01"
+                      onChange={(value) =>
+                        setRules((current) => ({
+                          ...current,
+                          fall_cycle_start: value,
+                        }))
+                      }
+                    />
+
+                    <TextInput
+                      label="Fall cycle end"
+                      value={rules.fall_cycle_end}
+                      placeholder="11-30"
+                      onChange={(value) =>
+                        setRules((current) => ({
+                          ...current,
+                          fall_cycle_end: value,
+                        }))
+                      }
+                    />
+                  </div>
+                </SettingsCard>
+
+                <SettingsCard
+                  title="Qualification Requirements"
+                  description="Agency qualification validity, warning windows, inspection requirements, and related training policy."
+                >
+                  <div className="space-y-4">
+
+                    <ToggleRow
+                      title="Require rifle familiarization"
+                      description="Track familiarization separately from rifle qualification."
+                      checked={rules.require_rifle_familiarization}
+                      onChange={(checked) =>
+                        setRules((current) => ({
+                          ...current,
+                          require_rifle_familiarization: checked,
+                        }))
+                      }
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <NumberInput
+                        label="Qualification validity"
+                        value={rules.qualification_valid_days}
+                        min={1}
+                        max={3650}
+                        hint="Days"
+                        onChange={(value) =>
+                          setRules((current) => ({
+                            ...current,
+                            qualification_valid_days: value,
+                          }))
+                        }
+                      />
+
+                      <NumberInput
+                        label="Due soon warning"
+                        value={rules.qualification_due_soon_days}
+                        min={0}
+                        max={Math.max(
+                          0,
+                          rules.qualification_valid_days - 1,
+                        )}
+                        hint="Days before expiration"
+                        onChange={(value) =>
+                          setRules((current) => ({
+                            ...current,
+                            qualification_due_soon_days: Math.min(
+                              value,
+                              Math.max(
+                                0,
+                                current.qualification_valid_days - 1,
+                              ),
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </SettingsCard>
             <div className="xl:col-span-2">
               <SettingsCard
                 title="Qualification Standards"
@@ -4097,6 +4227,47 @@ export default function AdminSettingsPage() {
               </SettingsCard>
             </div>
 
+
+              </div>
+            ) : null}
+
+            {rulesModule === "armory" ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+
+                <SettingsCard
+                  title="Armory Inspection Rules"
+                  description="Agency-defined firearm inspection and battery-check intervals."
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <NumberInput
+                      label="Inspection interval"
+                      value={rules.inspection_interval_days}
+                      min={1}
+                      max={3650}
+                      hint="Days"
+                      onChange={(value) =>
+                        setRules((current) => ({
+                          ...current,
+                          inspection_interval_days: value,
+                        }))
+                      }
+                    />
+
+                    <NumberInput
+                      label="Battery check interval"
+                      value={rules.battery_check_interval_days}
+                      min={1}
+                      max={3650}
+                      hint="Days"
+                      onChange={(value) =>
+                        setRules((current) => ({
+                          ...current,
+                          battery_check_interval_days: value,
+                        }))
+                      }
+                    />
+                  </div>
+                </SettingsCard>
             <SettingsCard
 
               title="Personally Owned Rifle Program"
@@ -4185,9 +4356,126 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </SettingsCard>
+
+              </div>
+            ) : null}
+
+            {rulesModule === "offDuty" ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                <SettingsCard
+                  title="Off-Duty Firearm Renewal"
+                  description="Configure the department's renewal interval for off-duty firearm authorizations."
+                >
+                  <NumberInput
+                    label="Authorization renewal"
+                    value={rules.off_duty_renewal_days}
+                    min={1}
+                    max={3650}
+                    hint="Days"
+                    onChange={(value) =>
+                      setRules((current) => ({
+                        ...current,
+                        off_duty_renewal_days: value,
+                      }))
+                    }
+                  />
+                </SettingsCard>
+
+                <SettingsCard
+                  title="Workflow Rules"
+                  description="Additional qualification, inspection, approval, exception, and policy-routing controls will be configured here as the Off-Duty workflow is normalized into the Agency Rules service."
+                >
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
+                    <p className="text-sm font-semibold text-blue-200">
+                      Centralization in progress
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-400">
+                      Existing workflow behavior remains active. Future
+                      Off-Duty policy controls will be added here rather than
+                      scattered throughout the module.
+                    </p>
+                  </div>
+                </SettingsCard>
+              </div>
+            ) : null}
+
+            {rulesModule === "certifications" ? (
+              <SettingsCard
+                title="Certification Rules"
+                description="Define which certifications are required, who they apply to, renewal periods, warning windows, responsible roles, and which completed Training Events satisfy them."
+              >
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/30 p-7">
+                  <p className="text-sm font-semibold text-slate-300">
+                    Certification requirements are already supported as
+                    structured records.
+                  </p>
+                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">
+                    The next rules pass will connect those requirements into
+                    this centralized policy console so personnel groups,
+                    renewal periods, readiness effects, and Training Event
+                    equivalencies are administered here.
+                  </p>
+                </div>
+              </SettingsCard>
+            ) : null}
+
+            {rulesModule === "equipment" ? (
+              <SettingsCard
+                title="Equipment Readiness Rules"
+                description="Define required equipment by personnel group, inspection intervals, expiration warnings, responsibility routing, and conditions that affect readiness."
+              >
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/30 p-7">
+                  <p className="text-sm font-semibold text-slate-300">
+                    Equipment requirements remain authoritative.
+                  </p>
+                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">
+                    This section will become the central policy editor for
+                    required issued equipment and the readiness consequences
+                    of missing, expired, overdue, or out-of-service assets.
+                  </p>
+                </div>
+              </SettingsCard>
+            ) : null}
+
+            {rulesModule === "agencyTraining" ? (
+              <SettingsCard
+                title="Agency Training Rules"
+                description="Define required training, qualifying event types, minimum hours, completion outcomes, certification effects, and remediation expectations."
+              >
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
+                  <p className="text-sm font-semibold text-blue-200">
+                    Planned with Agency Training
+                  </p>
+                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
+                    When Agency Training becomes active, its event workflow
+                    will consume policy from this Rules section rather than
+                    defining its own independent standards.
+                  </p>
+                </div>
+              </SettingsCard>
+            ) : null}
+
+            {rulesModule === "fleet" ? (
+              <SettingsCard
+                title="Fleet Readiness Rules"
+                description="Future agency-defined vehicle inspection, required-equipment, availability, restriction, out-of-service, and return-to-service standards."
+              >
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
+                  <p className="text-sm font-semibold text-blue-200">
+                    Planned with Fleet Management
+                  </p>
+                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
+                    Fleet inspections will eventually evaluate these rules
+                    automatically so missing required equipment or mechanical
+                    deficiencies can affect vehicle availability according to
+                    department policy.
+                  </p>
+                </div>
+              </SettingsCard>
+            ) : null}
+
           </div>
         ) : null}
-
         {!loading && !accessLoading && activeTab === "branding" ? (
           <div className="grid gap-4 xl:grid-cols-2">
             <SettingsCard
