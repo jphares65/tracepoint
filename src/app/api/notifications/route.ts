@@ -264,7 +264,7 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
     );
     const isInstructor = lead === context.user.id || instructors.includes(context.user.id);
 
-    if ((rostered || isInstructor) && scheduled >= todayStart && scheduled <= todayStart + 14 * 86400000) {
+    if ((rostered || isInstructor) && scheduled >= todayStart) {
       alerts.push({
         key: `range-assignment-${id}`,
         source: "Range",

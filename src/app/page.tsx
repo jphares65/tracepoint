@@ -196,16 +196,19 @@ function SnapshotCard({
   detail,
   href,
   icon,
+  onClick,
 }: {
   label: string;
   value: string | number;
   detail: string;
   href: string;
   icon: ReactNode;
+  onClick?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       className="group rounded-2xl border border-slate-800 bg-slate-900/75 p-3 transition hover:border-blue-500/40 hover:bg-slate-900"
     >
       <div className="flex items-start justify-between gap-3">
@@ -214,12 +217,15 @@ function SnapshotCard({
         </p>
         {icon}
       </div>
+
       <p className="mt-1.5 text-xl font-bold text-white">{value}</p>
+
       <p className="mt-1 min-h-7 text-[10px] leading-4 text-slate-500">
         {detail}
       </p>
+
       <div className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-blue-300">
-        Open
+        Filter Inbox
         <ChevronRight
           size={13}
           className="transition group-hover:translate-x-0.5"
@@ -454,7 +460,40 @@ export default function OfficerHomePage() {
     return counts;
   }, [items]);
 
-  const queue = items.slice(0, 8);
+  const [queueFilter, setQueueFilter] = useState<
+    "all" | "priority" | "approvals" | "range" | "expiring"
+  >("all");
+
+  const filteredItems = useMemo(() => {
+    switch (queueFilter) {
+      case "priority":
+        return items.filter(
+          (item) =>
+            item.priority === "Critical" ||
+            item.priority === "High",
+        );
+
+      case "approvals":
+        return approvalItems;
+
+      case "range":
+        return rangeItems;
+
+      case "expiring":
+        return expiringItems;
+
+      default:
+        return items;
+    }
+  }, [
+    items,
+    queueFilter,
+    approvalItems,
+    rangeItems,
+    expiringItems,
+  ]);
+
+  const queue = filteredItems.slice(0, 8);
   const greeting = professionalGreeting(profile);
   const profileLine = [
     profile.role,
@@ -532,35 +571,40 @@ export default function OfficerHomePage() {
             label="Open Actions"
             value={items.length}
             detail="Current items requiring attention"
-            href="/notifications"
+            href="#my-inbox"
+            onClick={() => setQueueFilter("all")}
             icon={<Inbox size={17} className="text-blue-300" />}
           />
           <SnapshotCard
             label="Critical / High"
             value={criticalItems.length + highItems.length}
             detail={`${criticalItems.length} critical · ${highItems.length} high`}
-            href="/notifications"
+            href="#my-inbox"
+            onClick={() => setQueueFilter("priority")}
             icon={<ShieldAlert size={17} className="text-red-300" />}
           />
           <SnapshotCard
             label="Approvals"
             value={approvalItems.length}
             detail="Reviews, decisions, and certifications"
-            href="/notifications"
+            href="#my-inbox"
+            onClick={() => setQueueFilter("approvals")}
             icon={<FileCheck2 size={17} className="text-violet-300" />}
           />
           <SnapshotCard
             label="Upcoming Range"
             value={rangeItems.length}
             detail={rangeItems[0]?.detail || "No current range assignment"}
-            href="/range-days"
+            href="#my-inbox"
+            onClick={() => setQueueFilter("range")}
             icon={<CalendarDays size={17} className="text-blue-300" />}
           />
           <SnapshotCard
             label="Due / Expiring"
             value={expiringItems.length}
             detail="Deadlines, shortages, and renewals"
-            href="/notifications"
+            href="#my-inbox"
+            onClick={() => setQueueFilter("expiring")}
             icon={<Clock3 size={17} className="text-amber-300" />}
           />
         </section>
@@ -574,7 +618,17 @@ export default function OfficerHomePage() {
                   Priority Action Queue
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Highest-priority work across every TracePoint module
+                  {queueFilter === "all"
+                    ? "Everything requiring your attention across TracePoint"
+                    : `Filtered view · ${
+                        queueFilter === "priority"
+                          ? "Critical / High"
+                          : queueFilter === "approvals"
+                            ? "Approvals"
+                            : queueFilter === "range"
+                              ? "Upcoming Range"
+                              : "Due / Expiring"
+                      }`}
                 </p>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -614,11 +668,12 @@ export default function OfficerHomePage() {
                 </div>
               </div>
               <Link
-                href="/notifications"
+                href="#my-inbox"
+                onClick={() => setQueueFilter("all")}
                 className="inline-flex items-center gap-2 text-xs font-semibold text-blue-300"
               >
-                View all
-                <ExternalLink size={13} />
+                Show all
+                <ChevronRight size={13} />
               </Link>
             </div>
 
