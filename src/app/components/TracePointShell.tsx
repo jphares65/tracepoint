@@ -150,12 +150,6 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
     icon: GraduationCap,
     children: [
       {
-        label: "Training",
-        href: "/training",
-        featureCode: "range_training",
-        icon: GraduationCap,
-      },
-      {
         label: "Range Days",
         href: "/range-days",
         featureCode: "range_training",
