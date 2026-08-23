@@ -8,6 +8,8 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
+export const dynamic = "force-dynamic";
+
 type RouteContext = {
   params: Promise<{ requestId: string }>;
 };
