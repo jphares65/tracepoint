@@ -249,6 +249,11 @@ export async function POST(request: NextRequest) {
           employee_number: employeeNumber || null,
           is_active: true,
           deactivated_at: null,
+          activation_status: invitationSent
+            ? "pending_activation"
+            : targetUser.email_confirmed_at
+              ? "activated"
+              : "pending_activation",
         },
         { onConflict: "department_id,user_id" },
       );
@@ -290,6 +295,19 @@ export async function POST(request: NextRequest) {
         siteUrl: getRequestOrigin(request),
         actorUserId: actor.id,
       });
+
+      const { error: activationStatusError } = await admin
+        .from("department_memberships")
+        .update({
+          activation_status: "activation_sent",
+        })
+        .eq("department_id", departmentId)
+        .eq("user_id", targetUser.id)
+        .eq("is_active", true);
+
+      if (activationStatusError) {
+        throw activationStatusError;
+      }
     }
 
     const { error: auditError } = await admin.from("audit_events").insert({

@@ -299,14 +299,13 @@ export async function validateActivationToken(token: string) {
     .eq("user_id", row.user_id)
     .maybeSingle();
 
-  if (
-    membershipError ||
-    !membership ||
-    !membership.is_active ||
-    !["pending_activation", "activation_sent"].includes(
-      membership.activation_status,
-    )
-  ) {
+  if (membershipError) {
+    throw new Error(
+      "The invited department membership could not be verified.",
+    );
+  }
+
+  if (!membership || !membership.is_active) {
     throw new Error(
       "This account no longer requires activation.",
     );
@@ -319,6 +318,21 @@ export async function validateActivationToken(token: string) {
 
   if (userError || !userData.user || !email) {
     throw new Error("The invited account could not be found.");
+  }
+
+  const onboardingStatus = String(
+    userData.user.user_metadata?.onboarding_status ?? "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    userData.user.email_confirmed_at ||
+    onboardingStatus === "activated"
+  ) {
+    throw new Error(
+      "This account no longer requires activation.",
+    );
   }
 
   return {
