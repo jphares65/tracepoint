@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import RangeQualificationRulesPanel from "@/app/settings/components/RangeQualificationRulesPanel";
 import AssignPasswordModal from "./AssignPasswordModal";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -3717,18 +3718,6 @@ export default function AdminSettingsPage() {
                 >
                   <div className="space-y-4">
 
-                    <ToggleRow
-                      title="Require rifle familiarization"
-                      description="Track familiarization separately from rifle qualification."
-                      checked={rules.require_rifle_familiarization}
-                      onChange={(checked) =>
-                        setRules((current) => ({
-                          ...current,
-                          require_rifle_familiarization: checked,
-                        }))
-                      }
-                    />
-
                     <div className="grid gap-4 sm:grid-cols-2">
                       <NumberInput
                         label="Qualification validity"
@@ -3769,6 +3758,10 @@ export default function AdminSettingsPage() {
                     </div>
                   </div>
                 </SettingsCard>
+            <RangeQualificationRulesPanel
+              departmentId={departmentId}
+              canAdminister={canAdminister}
+            />
             <div className="xl:col-span-2">
               <SettingsCard
                 title="Qualification Standards"
