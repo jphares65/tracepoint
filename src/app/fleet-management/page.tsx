@@ -1,165 +1,205 @@
 import {
-  AlertTriangle,
+  Activity,
   Car,
   CheckCircle2,
   ClipboardCheck,
-  Gauge,
+  History,
+  QrCode,
+  Smartphone,
+  Users,
   Wrench,
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
 
-const metrics = [
+const FEATURES = [
   {
-    label: "Active Vehicles",
-    value: "0",
-    detail: "Vehicles currently in agency service",
-    icon: Car,
+    icon: QrCode,
+    title: "QR Vehicle Access",
+    description:
+      "Scan the unit's QR code to immediately open the correct vehicle, inspection workflow, required-equipment checklist, current status, and service history.",
   },
   {
-    label: "Service Due",
-    value: "0",
-    detail: "Preventive maintenance requiring attention",
+    icon: Smartphone,
+    title: "Fast Mobile Inspections",
+    description:
+      "Complete routine vehicle and equipment inspections from a phone with a streamlined workflow designed to take seconds at the start of a shift.",
+  },
+  {
     icon: Wrench,
+    title: "Direct Maintenance Routing",
+    description:
+      "Report a defect once and automatically route the vehicle, issue, notes, photos, and inspection record to the designated mechanic or fleet manager.",
   },
   {
-    label: "Inspections Due",
-    value: "0",
-    detail: "Vehicle inspections approaching due date",
+    icon: History,
+    title: "Permanent Maintenance History",
+    description:
+      "Keep inspections, repairs, preventive maintenance, mileage, defects, downtime, and return-to-service history attached to the vehicle.",
+  },
+  {
     icon: ClipboardCheck,
+    title: "Vehicle & Equipment Readiness",
+    description:
+      "Track required equipment, inspection schedules, maintenance intervals, deficiencies, and operational readiness before problems affect a shift.",
   },
   {
-    label: "Out of Service",
-    value: "0",
-    detail: "Vehicles unavailable for deployment",
-    icon: AlertTriangle,
+    icon: Users,
+    title: "Assignments & Pool Vehicles",
+    description:
+      "Maintain assignment and custody history for permanently assigned and shared vehicles with clear checkout, return, and accountability records.",
+  },
+  {
+    icon: Activity,
+    title: "Connected Fleet Data",
+    description:
+      "Support future telematics and external API integrations while TracePoint applies agency-specific readiness rules and accountability workflows.",
   },
 ];
 
 export default function FleetManagementPage() {
   return (
     <TracePointShell activePage="Fleet Management">
-      <div className="mx-auto w-full max-w-[1600px] space-y-5">
-        <header className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
-                Assets & Fleet
-              </p>
+      <div className="mx-auto w-full max-w-[1500px] space-y-7">
 
-              <h1 className="mt-1 text-2xl font-bold text-white">
-                Fleet Management
-              </h1>
+        <section className="overflow-hidden rounded-3xl border border-blue-500/20 bg-slate-900/80">
+          <div className="px-6 py-10 sm:px-10 sm:py-14">
 
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                Centralize vehicle inventory, assignment, inspections,
-                maintenance, lifecycle status, and future telematics-based
-                readiness.
-              </p>
-            </div>
-
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-blue-300">
+              <Car size={14} />
               Coming Soon
             </div>
+
+            <h1 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Fleet Management
+            </h1>
+
+            <p className="mt-4 max-w-4xl text-base leading-7 text-slate-300">
+              Know whether every vehicle is inspected, equipped, maintained,
+              assigned, and ready for service — while routing problems directly
+              to the people responsible for resolving them.
+            </p>
+
+            <div className="mt-7 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm font-semibold text-slate-300">
+              <Car size={17} className="text-blue-300" />
+              This module is currently in development and is not yet available.
+            </div>
+
           </div>
-        </header>
+        </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map((metric) => {
-            const Icon = metric.icon;
+        <section>
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400">
+              Planned Capabilities
+            </p>
 
-            return (
-              <div
-                key={metric.label}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      {metric.label}
-                    </p>
+            <h2 className="mt-1 text-xl font-bold text-white">
+              From QR scan to resolved maintenance issue
+            </h2>
+          </div>
 
-                    <p className="mt-2 text-2xl font-bold text-white">
-                      {metric.value}
-                    </p>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon;
+
+              return (
+                <article
+                  key={feature.title}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-300">
+                    <Icon size={18} />
                   </div>
 
-                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-2 text-blue-300">
-                    <Icon size={17} />
-                  </div>
-                </div>
+                  <h3 className="mt-4 text-sm font-bold text-white">
+                    {feature.title}
+                  </h3>
 
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  {metric.detail}
-                </p>
-              </div>
-            );
-          })}
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                    {feature.description}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-            <div className="flex items-center gap-3">
-              <Car size={18} className="text-blue-300" />
 
-              <h2 className="text-base font-bold text-white">
-                Vehicle Lifecycle
-              </h2>
-            </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <QrCode size={21} className="text-blue-300" />
 
-            <div className="mt-4 space-y-3">
-              {[
-                "Vehicle inventory and stable asset identity",
-                "Unit assignment and operational status",
-                "Preventive maintenance and service history",
-                "Inspection schedules and deficiencies",
-                "Out-of-service and return-to-service workflow",
-              ].map((item) => (
-                <div
-                  key={item}
-                  className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3.5 py-3"
-                >
-                  <CheckCircle2
-                    size={15}
-                    className="mt-0.5 shrink-0 text-slate-500"
-                  />
+            <h2 className="mt-4 text-lg font-bold text-white">
+              Scan. Inspect. Go.
+            </h2>
 
-                  <p className="text-xs leading-5 text-slate-400">
-                    {item}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-            <div className="flex items-center gap-3">
-              <Gauge size={18} className="text-blue-300" />
-
-              <h2 className="text-base font-bold text-white">
-                Connected Fleet Readiness
-              </h2>
-            </div>
-
-            <p className="mt-4 text-xs leading-5 text-slate-500">
-              The fleet architecture will be designed for future external
-              telematics integrations while keeping TracePoint responsible for
-              agency-specific readiness rules, accountability workflows, and
-              operational attention items.
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Scan the cruiser, confirm mileage and required equipment, report
+              any defect, and complete the inspection from a phone in seconds.
+              TracePoint preserves who inspected the vehicle, when it occurred,
+              what was found, and what still requires action.
             </p>
-
-            <div className="mt-5 rounded-2xl border border-dashed border-slate-700 bg-slate-950/35 px-5 py-8 text-center">
-              <p className="text-sm font-semibold text-slate-300">
-                Fleet data is not enabled yet
-              </p>
-
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                This module is intentionally staged for a later TracePoint
-                release.
-              </p>
-            </div>
           </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <Wrench size={21} className="text-blue-300" />
+
+            <h2 className="mt-4 text-lg font-bold text-white">
+              Send the problem directly to the mechanic
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              A failed inspection item can immediately become a tracked
+              maintenance task for the designated mechanic or fleet manager,
+              carrying the vehicle details and reported problem with it.
+              Repair, resolution, and return-to-service become part of the
+              permanent record.
+            </p>
+          </div>
+
         </section>
+
+        <section className="grid gap-4 lg:grid-cols-2">
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <ClipboardCheck size={21} className="text-blue-300" />
+
+            <h2 className="mt-4 text-lg font-bold text-white">
+              Accountability without slowing down the shift
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              The goal is not another lengthy inspection form. Routine checks
+              should be fast enough that officers actually complete them while
+              exceptions, missing equipment, and maintenance issues receive the
+              attention they require.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <Activity size={21} className="text-blue-300" />
+
+            <h2 className="mt-4 text-lg font-bold text-white">
+              Built for connected fleet systems
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Fleet Management is planned around stable vehicle identities and
+              an integration-ready architecture. Future telematics providers
+              can supply vehicle data while TracePoint manages agency-specific
+              inspections, readiness rules, accountability, exceptions, and
+              workflow.
+            </p>
+          </div>
+
+        </section>
+
+        <div className="flex items-center justify-center gap-2 pb-2 text-xs text-slate-500">
+          <CheckCircle2 size={14} />
+          Planned for a future TracePoint release
+        </div>
+
       </div>
     </TracePointShell>
   );

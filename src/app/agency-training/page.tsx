@@ -2,215 +2,193 @@ import {
   Award,
   CalendarDays,
   CheckCircle2,
+  ClipboardCheck,
+  FileCheck2,
   FileText,
   GraduationCap,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
 
-const metrics = [
+const FEATURES = [
   {
-    label: "Scheduled Events",
-    value: "0",
-    detail: "Upcoming agency training events",
     icon: CalendarDays,
+    title: "Create Training Events",
+    description:
+      "Create in-service, CPR, defensive tactics, policy, tactical, remedial, and other agency-defined training events from one structured workflow.",
   },
   {
-    label: "Personnel Scheduled",
-    value: "0",
-    detail: "Current roster assignments",
     icon: Users,
+    title: "Roster & Attendance",
+    description:
+      "Assign personnel and instructors, record attendance, training hours, locations, and individual completion outcomes without maintaining separate spreadsheets.",
   },
   {
-    label: "Certifications",
-    value: "0",
-    detail: "Credentials generated from events",
+    icon: FileText,
+    title: "Lesson Plans & Records",
+    description:
+      "Keep lesson plans, syllabi, instructor credentials, supporting documents, certificates, and attachments with the permanent training record.",
+  },
+  {
     icon: Award,
+    title: "Certification Automation",
+    description:
+      "Allow a completed event to create or renew qualifying certifications for an entire roster while preserving individual exceptions.",
   },
   {
-    label: "Completed Events",
-    value: "0",
-    detail: "Closed training records",
-    icon: CheckCircle2,
+    icon: ShieldCheck,
+    title: "Readiness Integration",
+    description:
+      "Update personnel readiness automatically when required training is completed, expires, is missed, or requires remediation.",
+  },
+  {
+    icon: FileCheck2,
+    title: "Complete Training Reports",
+    description:
+      "Produce a professional event package containing the roster, results, hours, instructors, lesson plan, attachments, certification impact, and audit history.",
   },
 ];
 
-const workflow = [
-  {
-    step: "01",
-    title: "Create Event",
-    detail:
-      "Define the course, instructors, date, location, training hours, topics, and supporting materials.",
-  },
-  {
-    step: "02",
-    title: "Build Roster",
-    detail:
-      "Assign personnel and preserve the exact attendance roster for the event.",
-  },
-  {
-    step: "03",
-    title: "Record Outcomes",
-    detail:
-      "Document completed, passed, failed, excused, no-show, incomplete, or remedial-required outcomes.",
-  },
-  {
-    step: "04",
-    title: "Update Readiness",
-    detail:
-      "Create or renew qualifying certifications and update personnel readiness from the completed event.",
-  },
-  {
-    step: "05",
-    title: "Close & Report",
-    detail:
-      "Lock the completed event record and generate a professional Complete Training Report.",
-  },
+const WORKFLOW = [
+  ["01", "Create Event"],
+  ["02", "Build Roster"],
+  ["03", "Conduct Training"],
+  ["04", "Record Outcomes"],
+  ["05", "Close & Report"],
 ];
 
 export default function AgencyTrainingPage() {
   return (
     <TracePointShell activePage="Agency Training">
-      <div className="mx-auto w-full max-w-[1600px] space-y-5">
-        <header className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
-                Training
-              </p>
+      <div className="mx-auto w-full max-w-[1500px] space-y-7">
 
-              <h1 className="mt-1 text-2xl font-bold text-white">
-                Agency Training
-              </h1>
+        <section className="overflow-hidden rounded-3xl border border-blue-500/20 bg-slate-900/80">
+          <div className="px-6 py-10 sm:px-10 sm:py-14">
 
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                Plan, document, and close agency training events using the same
-                structured event model that powers Range Days.
-              </p>
-            </div>
-
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-blue-300">
               <GraduationCap size={14} />
-              Module Scaffold
+              Coming Soon
             </div>
+
+            <h1 className="mt-5 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Agency Training
+            </h1>
+
+            <p className="mt-4 max-w-4xl text-base leading-7 text-slate-300">
+              Plan, conduct, document, and prove agency training from one
+              structured record — connecting attendance, instructors, lesson
+              plans, outcomes, certifications, readiness, and reporting.
+            </p>
+
+            <div className="mt-7 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm font-semibold text-slate-300">
+              <ClipboardCheck size={17} className="text-blue-300" />
+              This module is currently in development and is not yet available.
+            </div>
+
           </div>
-        </header>
-
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map((metric) => {
-            const Icon = metric.icon;
-
-            return (
-              <div
-                key={metric.label}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      {metric.label}
-                    </p>
-
-                    <p className="mt-2 text-2xl font-bold text-white">
-                      {metric.value}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-2 text-blue-300">
-                    <Icon size={17} />
-                  </div>
-                </div>
-
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  {metric.detail}
-                </p>
-              </div>
-            );
-          })}
         </section>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
-          <div className="border-b border-slate-800 px-5 py-4">
-            <h2 className="text-base font-bold text-white">
-              Training Event Lifecycle
-            </h2>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Agency Training will use a structured event lifecycle parallel to
-              Range Days.
+        <section>
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400">
+              Planned Capabilities
             </p>
+
+            <h2 className="mt-1 text-xl font-bold text-white">
+              One training record from scheduling through accreditation proof
+            </h2>
           </div>
 
-          <div className="grid gap-3 p-4 lg:grid-cols-5">
-            {workflow.map((item) => (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon;
+
+              return (
+                <article
+                  key={feature.title}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-300">
+                    <Icon size={18} />
+                  </div>
+
+                  <h3 className="mt-4 text-sm font-bold text-white">
+                    {feature.title}
+                  </h3>
+
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                    {feature.description}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400">
+            Planned Event Workflow
+          </p>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-5">
+            {WORKFLOW.map(([step, label]) => (
               <div
-                key={item.step}
-                className="rounded-2xl border border-slate-800 bg-slate-950/45 p-4"
+                key={step}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"
               >
-                <p className="text-[10px] font-bold tracking-[0.18em] text-blue-400">
-                  {item.step}
-                </p>
+                <span className="text-[10px] font-bold tracking-[0.18em] text-blue-400">
+                  {step}
+                </span>
 
-                <h3 className="mt-2 text-sm font-semibold text-white">
-                  {item.title}
-                </h3>
-
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  {item.detail}
+                <p className="mt-2 text-sm font-semibold text-slate-200">
+                  {label}
                 </p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-2 text-blue-300">
-                <CalendarDays size={18} />
-              </div>
+        <section className="grid gap-4 lg:grid-cols-2">
 
-              <div>
-                <h2 className="text-base font-bold text-white">
-                  Training Events
-                </h2>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <GraduationCap size={20} className="text-blue-300" />
 
-                <p className="text-xs text-slate-500">
-                  Scheduled and completed agency training will appear here.
-                </p>
-              </div>
-            </div>
+            <h2 className="mt-4 text-lg font-bold text-white">
+              Built like Range Days — for every kind of training
+            </h2>
 
-            <div className="mt-5 rounded-2xl border border-dashed border-slate-700 bg-slate-950/35 px-5 py-10 text-center">
-              <p className="text-sm font-semibold text-slate-300">
-                No agency training events yet
-              </p>
-
-              <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-slate-500">
-                The production workflow will support in-service training,
-                CPR/First Aid, defensive tactics, policy training, tactical
-                training, and other agency-defined event types.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-            <div className="flex items-center gap-3">
-              <FileText size={18} className="text-blue-300" />
-
-              <h2 className="text-base font-bold text-white">
-                Record Package
-              </h2>
-            </div>
-
-            <p className="mt-3 text-xs leading-5 text-slate-500">
-              Closed events will preserve the roster, outcomes, hours,
-              instructors, syllabus or lesson plan, attachments, certification
-              effects, and Complete Training Report in one auditable record.
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Agency Training will use the same event-centered philosophy as
+              TracePoint Range Days: schedule the event, identify who should be
+              there, document what actually occurred, preserve individual
+              results, and close the event into an auditable record.
             </p>
           </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <FileCheck2 size={20} className="text-blue-300" />
+
+            <h2 className="mt-4 text-lg font-bold text-white">
+              Documentation without the paperwork chase
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Supervisors, training officers, accreditation managers, and
+              command staff will be able to retrieve the complete training
+              record instead of rebuilding it from sign-in sheets, email,
+              certificates, lesson plans, and separate files.
+            </p>
+          </div>
+
         </section>
+
+        <div className="flex items-center justify-center gap-2 pb-2 text-xs text-slate-500">
+          <CheckCircle2 size={14} />
+          Planned for a future TracePoint release
+        </div>
+
       </div>
     </TracePointShell>
   );
