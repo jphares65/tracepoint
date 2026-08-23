@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import CertificationRulesPanel from "@/app/settings/components/CertificationRulesPanel";
+import EquipmentRulesPanel from "@/app/settings/components/EquipmentRulesPanel";
 import RangeQualificationRulesPanel from "@/app/settings/components/RangeQualificationRulesPanel";
 import AssignPasswordModal from "./AssignPasswordModal";
 import { createClient } from "@/lib/supabase/client";
@@ -4395,38 +4397,18 @@ export default function AdminSettingsPage() {
             {rulesModule === "certifications" ? (
               <SettingsCard
                 title="Certification Rules"
-                description="Define which certifications are required, who they apply to, renewal periods, warning windows, responsible roles, and which completed Training Events satisfy them."
+                description="Define certification requirements, validity periods, readiness expectations, and operational capabilities that require a current credential."
               >
-                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/30 p-7">
-                  <p className="text-sm font-semibold text-slate-300">
-                    Certification requirements are already supported as
-                    structured records.
-                  </p>
-                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">
-                    The next rules pass will connect those requirements into
-                    this centralized policy console so personnel groups,
-                    renewal periods, readiness effects, and Training Event
-                    equivalencies are administered here.
-                  </p>
-                </div>
+                <CertificationRulesPanel />
               </SettingsCard>
             ) : null}
 
             {rulesModule === "equipment" ? (
               <SettingsCard
                 title="Equipment Readiness Rules"
-                description="Define required equipment by personnel group, inspection intervals, expiration warnings, responsibility routing, and conditions that affect readiness."
+                description="Define required equipment by personnel group, validity and inspection cycles, warning periods, and readiness consequences."
               >
-                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/30 p-7">
-                  <p className="text-sm font-semibold text-slate-300">
-                    Equipment requirements remain authoritative.
-                  </p>
-                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">
-                    This section will become the central policy editor for
-                    required issued equipment and the readiness consequences
-                    of missing, expired, overdue, or out-of-service assets.
-                  </p>
-                </div>
+                <EquipmentRulesPanel />
               </SettingsCard>
             ) : null}
 

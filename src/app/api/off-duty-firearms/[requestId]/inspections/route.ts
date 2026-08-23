@@ -10,6 +10,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
+import {
+  certificationCapabilityDeniedResponse,
+  evaluateCertificationCapability,
+} from "@/lib/tracepoint/certification-capability";
+
 type RouteContext = {
   params: Promise<{ requestId: string }>;
 };
@@ -184,6 +189,22 @@ export async function POST(
   if (!isInspectionManager(context)) {
     return permissionDeniedResponse(
       "Inspection management permission is required to record an off-duty firearm inspection.",
+    );
+  }
+
+  const certificationEligibility =
+    await evaluateCertificationCapability({
+      request,
+      context,
+      capabilityCode: "perform_firearm_inspections",
+    });
+
+  if (
+    certificationEligibility.configured &&
+    !certificationEligibility.eligible
+  ) {
+    return certificationCapabilityDeniedResponse(
+      certificationEligibility,
     );
   }
 

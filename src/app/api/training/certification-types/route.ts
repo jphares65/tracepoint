@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -58,6 +58,44 @@ async function getContext() {
     user,
     departmentId,
   } as const;
+}
+
+export async function GET() {
+  const resolved = await resolveServerAccess();
+
+  if (!resolved.ok) {
+    return accessFailureResponse(resolved);
+  }
+
+  const featureError = requireServerFeature(
+    resolved.context,
+    "certifications",
+    "Certifications",
+  );
+
+  if (featureError) {
+    return featureError;
+  }
+
+  const { admin, departmentId } = resolved.context;
+
+  const { data, error } = await admin
+    .from("certification_types")
+    .select("*")
+    .eq("department_id", departmentId)
+    .order("category")
+    .order("name");
+
+  if (error) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    items: data ?? [],
+  });
 }
 
 export async function POST(request: NextRequest) {
