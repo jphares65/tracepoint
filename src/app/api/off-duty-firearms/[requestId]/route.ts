@@ -40,7 +40,7 @@ async function loadRequest(context: any, requestId: string) {
 }
 
 type OffDutyInspectionReadiness = {
-  status: "Current" | "Due Soon" | "Overdue" | "Not Inspected" | "Failed";
+  status: "Current" | "Due Soon" | "Overdue" | "Not Inspected" | "Failed" | "Not Required";
   statusReason: string;
 };
 
