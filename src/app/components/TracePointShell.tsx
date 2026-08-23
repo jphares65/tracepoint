@@ -87,11 +87,6 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         icon: BarChart3,
         requirement: { anyOf: ["view_analytics"] },
       },
-      {
-        label: "Notifications",
-        href: "/notifications",
-        icon: BellRing,
-      },
     ],
   },
   {
