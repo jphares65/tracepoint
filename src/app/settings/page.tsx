@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import OffDutyRulesPanel from "@/app/settings/components/OffDutyRulesPanel";
 import CertificationRulesPanel from "@/app/settings/components/CertificationRulesPanel";
 import EquipmentRulesPanel from "@/app/settings/components/EquipmentRulesPanel";
 import RangeQualificationRulesPanel from "@/app/settings/components/RangeQualificationRulesPanel";
@@ -4356,42 +4357,12 @@ export default function AdminSettingsPage() {
             ) : null}
 
             {rulesModule === "offDuty" ? (
-              <div className="grid gap-4 xl:grid-cols-2">
-                <SettingsCard
-                  title="Off-Duty Firearm Renewal"
-                  description="Configure the department's renewal interval for off-duty firearm authorizations."
-                >
-                  <NumberInput
-                    label="Authorization renewal"
-                    value={rules.off_duty_renewal_days}
-                    min={1}
-                    max={3650}
-                    hint="Days"
-                    onChange={(value) =>
-                      setRules((current) => ({
-                        ...current,
-                        off_duty_renewal_days: value,
-                      }))
-                    }
-                  />
-                </SettingsCard>
-
-                <SettingsCard
-                  title="Workflow Rules"
-                  description="Additional qualification, inspection, approval, exception, and policy-routing controls will be configured here as the Off-Duty workflow is normalized into the Agency Rules service."
-                >
-                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
-                    <p className="text-sm font-semibold text-blue-200">
-                      Centralization in progress
-                    </p>
-                    <p className="mt-2 text-xs leading-5 text-slate-400">
-                      Existing workflow behavior remains active. Future
-                      Off-Duty policy controls will be added here rather than
-                      scattered throughout the module.
-                    </p>
-                  </div>
-                </SettingsCard>
-              </div>
+              <SettingsCard
+                title="Off-Duty Firearm Rules"
+                description="Configure department inspection requirements and recurring authorization policy for personally owned off-duty firearms."
+              >
+                <OffDutyRulesPanel />
+              </SettingsCard>
             ) : null}
 
             {rulesModule === "certifications" ? (

@@ -61,7 +61,7 @@ async function getOffDutyInspectionReadiness(
 
     context.admin
       .from("department_rules")
-      .select("inspection_interval_days,inspection_due_soon_days")
+      .select("inspection_interval_days,inspection_due_soon_days,require_off_duty_inspection")
       .eq("department_id", context.departmentId)
       .maybeSingle(),
   ]);
@@ -74,7 +74,19 @@ async function getOffDutyInspectionReadiness(
     throw new Error(rulesResult.error.message);
   }
 
-  const inspection = inspectionResult.data;
+
+  if (
+    rulesResult.data?.require_off_duty_inspection ===
+    false
+  ) {
+    return {
+      status: "Not Required",
+      statusReason:
+        "Department policy does not require an off-duty firearm inspection.",
+    };
+  }
+
+const inspection = inspectionResult.data;
 
   if (!inspection) {
     return {
@@ -554,7 +566,7 @@ export async function PATCH(
         );
 
       if (
-        !["Current", "Due Soon"].includes(
+        !["Current", "Due Soon", "Not Required"].includes(
           inspectionReadiness.status,
         )
       ) {
