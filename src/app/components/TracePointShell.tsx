@@ -254,11 +254,6 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         href: "/settings/import-export",
         icon: BarChart3,
       },
-      {
-        label: "Import Wizard",
-        href: "/import",
-        icon: CalendarRange,
-      },
     ],
   },
 ];
