@@ -1014,6 +1014,13 @@ function getNotificationInboxScope(
     return "department";
   }
 
+  if (
+    source === "Range" &&
+    ["range_officer_assignment", "range_instructor_assignment"].includes(kind)
+  ) {
+    return "my";
+  }
+
   if (source === "Range" && context?.canManageRange) {
     return "department";
   }
