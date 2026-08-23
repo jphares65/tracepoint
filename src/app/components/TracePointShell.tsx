@@ -146,7 +146,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
     ],
   },
   {
-    label: "Range & Training",
+    label: "Training",
     icon: GraduationCap,
     children: [
       {
@@ -161,6 +161,12 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
             "view_command_dashboard",
           ],
         },
+      },
+      {
+        label: "Agency Training",
+        href: "/agency-training",
+        featureCode: "range_training",
+        icon: GraduationCap,
       },
       {
         label: "Training Alerts",
@@ -193,15 +199,25 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         featureCode: "certifications",
         icon: ShieldCheck,
       },
+    ],
+  },
+  {
+    label: "Assets & Fleet",
+    icon: Boxes,
+    children: [
       {
         label: "Equipment",
         href: "/equipment",
         featureCode: "equipment_readiness",
         icon: Boxes,
       },
+      {
+        label: "Fleet Management",
+        href: "/fleet-management",
+        icon: Boxes,
+      },
     ],
-  },
-  {
+  },  {
     label: "Off-Duty Firearms",
     icon: Shield,
     requirement: {
