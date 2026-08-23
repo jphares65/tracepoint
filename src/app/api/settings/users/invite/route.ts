@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { issueActivationEmail } from "@/lib/tracepoint/activation";
 
 type InviteRequest = {
   departmentId?: string;
@@ -187,13 +188,10 @@ export async function POST(request: NextRequest) {
     let invitationSent = false;
 
     if (!targetUser) {
-      const siteUrl = getRequestOrigin(request);
-
-      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-        data: { full_name: fullName },
-        redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(
-          "/auth/setup",
-        )}`,
+      const { data, error } = await admin.auth.admin.createUser({
+        email,
+        email_confirm: false,
+        user_metadata: { full_name: fullName },
       });
 
       if (error) throw error;
@@ -279,6 +277,21 @@ export async function POST(request: NextRequest) {
 
     if (groupsError) throw groupsError;
 
+    let activation:
+      | { tokenId: string; expiresAt: string }
+      | null = null;
+
+    if (invitationSent) {
+      activation = await issueActivationEmail({
+        departmentId,
+        userId: targetUser.id,
+        email,
+        fullName,
+        siteUrl: getRequestOrigin(request),
+        actorUserId: actor.id,
+      });
+    }
+
     const { error: auditError } = await admin.from("audit_events").insert({
       department_id: departmentId,
       actor_user_id: actor.id,
@@ -293,6 +306,8 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         role_codes: roleCodes,
         group_ids: groupIds,
+        activation_expires_at: activation?.expiresAt ?? null,
+        activation_token_id: activation?.tokenId ?? null,
       },
     });
 

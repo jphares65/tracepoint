@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { issueActivationEmail } from "@/lib/tracepoint/activation";
 
 type ActivationRequest = {
   departmentId?: string;
@@ -128,14 +129,16 @@ export async function POST(request: NextRequest) {
 
     const siteUrl = getRequestOrigin(request);
 
-    const { error: resetError } =
-      await admin.auth.resetPasswordForEmail(email, {
-        redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(
-          "/auth/setup",
-        )}`,
-      });
-
-    if (resetError) throw resetError;
+    const activation = await issueActivationEmail({
+      departmentId,
+      userId,
+      email,
+      fullName:
+        cleanText(targetUser.user?.user_metadata?.full_name) ||
+        email,
+      siteUrl,
+      actorUserId: actor.id,
+    });
 
     const { error: statusError } = await admin
       .from("department_memberships")
@@ -157,6 +160,8 @@ export async function POST(request: NextRequest) {
       new_value: {
         activation_status: "activation_sent",
         email,
+        activation_expires_at: activation.expiresAt,
+        activation_token_id: activation.tokenId,
       },
     });
 
