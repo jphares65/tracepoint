@@ -258,6 +258,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       },
     ],
   },
+  { label: "Help Center", href: "/help", icon: CircleHelp },
 ];
 
 function isNavigationGroup(item: NavigationEntry): item is NavigationGroup {
