@@ -36,6 +36,7 @@ import TracePointShell from "@/app/components/TracePointShell";
 import OffDutyRulesPanel from "@/app/settings/components/OffDutyRulesPanel";
 import CertificationRulesPanel from "@/app/settings/components/CertificationRulesPanel";
 import EquipmentRulesPanel from "@/app/settings/components/EquipmentRulesPanel";
+import NotificationPreferencesPanel from "@/app/settings/components/NotificationPreferencesPanel";
 import RangeQualificationRulesPanel from "@/app/settings/components/RangeQualificationRulesPanel";
 import AssignPasswordModal from "./AssignPasswordModal";
 import { createClient } from "@/lib/supabase/client";
@@ -48,7 +49,7 @@ import {
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
-type TabId = "agency" | "organization" | "users" | "rules" | "branding" | "importExport" | "audit";
+type TabId = "agency" | "organization" | "users" | "rules" | "branding" | "importExport" | "notifications" | "audit";
 type NoticeTone = "success" | "error" | "info";
 
 type RoleRow = {
@@ -865,6 +866,12 @@ export default function AdminSettingsPage() {
       });
     }
 
+    items.push({
+      id: "notifications",
+      label: "My Notifications",
+      icon: Mail,
+    });
+
     if (canViewAudit) {
       items.push({
         id: "audit",
@@ -875,6 +882,14 @@ export default function AdminSettingsPage() {
 
     return items;
   }, [canAdminister, canManageUsers, canViewAudit]);
+
+  useEffect(() => {
+    if (accessLoading || availableTabs.length === 0) return;
+
+    if (!availableTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(availableTabs[0].id);
+    }
+  }, [accessLoading, activeTab, availableTabs]);
 
   const rolePermissionMap = useMemo(() => {
     const map = new Map<string, TracePointPermission[]>();
@@ -4515,6 +4530,10 @@ export default function AdminSettingsPage() {
               </div>
             </SettingsCard>
           </div>
+        ) : null}
+
+        {!loading && !accessLoading && activeTab === "notifications" ? (
+          <NotificationPreferencesPanel />
         ) : null}
 
         {!loading && !accessLoading && activeTab === "audit" ? (
