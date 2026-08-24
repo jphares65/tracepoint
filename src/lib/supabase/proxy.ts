@@ -9,7 +9,7 @@ import {
 
 import type { Database } from "./database.types";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/confirm", "/activate"];
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/confirm", "/activate", "/api/notifications/email-dispatch"];
 const AUTH_FLOW_PATHS = [
   "/auth/setup",
   "/auth/signout",
