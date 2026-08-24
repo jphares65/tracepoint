@@ -88,6 +88,38 @@ function dateValue(value?: string | null) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function getDigestSchedule(mode: unknown, now: Date) {
+  const normalizedMode = text(mode);
+
+  if (normalizedMode === "Immediate") {
+    return now.toISOString();
+  }
+
+  const scheduled = new Date(now);
+  scheduled.setUTCHours(13, 0, 0, 0);
+
+  if (normalizedMode === "Weekly") {
+    const daysUntilMonday =
+      (8 - scheduled.getUTCDay()) % 7;
+
+    scheduled.setUTCDate(
+      scheduled.getUTCDate() + daysUntilMonday,
+    );
+
+    if (scheduled.getTime() <= now.getTime()) {
+      scheduled.setUTCDate(scheduled.getUTCDate() + 7);
+    }
+
+    return scheduled.toISOString();
+  }
+
+  if (scheduled.getTime() <= now.getTime()) {
+    scheduled.setUTCDate(scheduled.getUTCDate() + 1);
+  }
+
+  return scheduled.toISOString();
+}
+
 async function getContext() {
   const access = await resolveServerAccess();
 
@@ -531,6 +563,38 @@ if (row.status === "missing") {
   return alerts;
 }
 
+function hasQualificationActivity(rangePayload: any) {
+  const workspace =
+    rangePayload?.workspace ?? rangePayload ?? {};
+
+  const drills = list(
+    workspace,
+    "rangeDayDrills",
+    "range_day_drills",
+  );
+
+  const results = list(workspace, "results");
+
+  const drillsById = new Map(
+    drills.map((drill: any) => [text(drill.id), drill]),
+  );
+
+  return results.some((result: any) => {
+    const drillId = text(
+      get(result, "drillId", "drill_id"),
+    );
+
+    const drill = drillsById.get(drillId);
+    const category = text(drill?.category).toLowerCase();
+    const name = text(drill?.name).toLowerCase();
+
+    return (
+      category === "qualification" ||
+      name.includes("qualification")
+    );
+  });
+}
+
 function collectQualificationReadiness(
   rangePayload: any,
   personnelPayload: any,
@@ -951,9 +1015,14 @@ async function getPreferences(context: any) {
 
   return {
     in_app_enabled: data?.in_app_enabled ?? true,
-    email_enabled: data?.email_enabled ?? false,
+    email_enabled: data?.email_enabled ?? true,
     critical_email_only: data?.critical_email_only ?? true,
-    digest_mode: data?.digest_mode === "Daily" || data?.digest_mode === "Weekly" ? data.digest_mode : "Immediate",
+    digest_mode:
+      data?.digest_mode === "Immediate" ||
+      data?.digest_mode === "Daily" ||
+      data?.digest_mode === "Weekly"
+        ? data.digest_mode
+        : "Daily",
     source_preferences: {
       "Personal Rifle": true,
       Ammunition: true,
@@ -1153,7 +1222,17 @@ export async function GET(request: NextRequest) {
       ? generated.filter((item) => preferences.source_preferences[item.source] !== false)
       : [];
 
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+
+    const qualificationEmailReady =
+      range.ok &&
+      hasQualificationActivity(range.payload);
+
+    const emailScheduledFor = getDigestSchedule(
+      preferences.digest_mode,
+      nowDate,
+    );
     const { data: existing, error: existingError } = await context.admin
       .from("notification_events")
       .select("*")
@@ -1197,7 +1276,18 @@ export async function GET(request: NextRequest) {
 
       if (error) throw new Error(error.message);
 
-      if (preferences.email_enabled && (!preferences.critical_email_only || item.priority === "Critical") && context.user.email) {
+      if (
+        preferences.email_enabled &&
+        (
+          !preferences.critical_email_only ||
+          item.priority === "Critical"
+        ) &&
+        (
+          item.source !== "Qualifications" ||
+          qualificationEmailReady
+        ) &&
+        context.user.email
+      ) {
         await context.admin.from("notification_email_queue").upsert({
           department_id: context.departmentId,
           user_id: context.user.id,
@@ -1206,7 +1296,7 @@ export async function GET(request: NextRequest) {
           fingerprint,
           subject: `[TracePoint] ${item.title}`,
           body_text: `${item.title}\n\n${item.detail}\n\nOpen TracePoint: ${item.href}`,
-          scheduled_for: now,
+          scheduled_for: emailScheduledFor,
           status: "Pending",
           updated_at: now,
         }, { onConflict: "department_id,user_id,notification_key,fingerprint", ignoreDuplicates: true });
