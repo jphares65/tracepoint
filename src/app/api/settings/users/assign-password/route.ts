@@ -1,7 +1,10 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  accessFailureResponse,
+  hasServerPermission,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type AssignPasswordRequest = {
   departmentId?: string;
@@ -40,40 +43,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const server = await createServerClient();
+    const access = await resolveServerAccess();
 
-    const {
-      data: { user: actor },
-      error: actorError,
-    } = await server.auth.getUser();
+    if (!access.ok) {
+      return accessFailureResponse(access);
+    }
 
-    if (actorError || !actor) {
+    const { context } = access;
+
+    if (context.departmentId !== departmentId) {
       return NextResponse.json(
         {
-          error: "Authentication is required.",
+          error:
+            "The selected department does not match the active agency.",
         },
-        { status: 401 },
+        { status: 403 },
       );
     }
 
-    const [manageResult, administerResult] = await Promise.all([
-      server.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "manage_users",
-      }),
-      server.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "administer_department",
-      }),
-    ]);
+    const canManage = hasServerPermission(
+      context,
+      "manage_users",
+    );
 
-    if (manageResult.error) throw manageResult.error;
-    if (administerResult.error) throw administerResult.error;
+    const canAdminister = hasServerPermission(
+      context,
+      "administer_department",
+    );
 
-    const canManage = Boolean(manageResult.data);
-    const canAdminister = Boolean(administerResult.data);
-
-    if (!canManage && !canAdminister) {
+    if (!canManage) {
       return NextResponse.json(
         {
           error: "You do not have permission to manage users.",
@@ -82,7 +80,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createAdminClient();
+    const actor = context.user;
+    const admin = context.admin;
 
     /*
      * Verify that the selected user is an active member of the same
@@ -128,7 +127,7 @@ export async function POST(request: NextRequest) {
     if (targetRolesError) throw targetRolesError;
 
     const targetIsAdministrator = (targetRoles ?? []).some(
-      (row) => row.role_code === "administrator",
+      (row: { role_code?: string | null }) => row.role_code === "administrator",
     );
 
     if (targetIsAdministrator && !canAdminister) {
@@ -157,12 +156,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const assignedAt = new Date().toISOString();
+
+    const existingMetadata =
+      targetUserResult.user.user_metadata &&
+      typeof targetUserResult.user.user_metadata === "object"
+        ? targetUserResult.user.user_metadata
+        : {};
+
     const { error: updateError } =
       await admin.auth.admin.updateUserById(targetUserId, {
         password,
+        email_confirm: true,
+        user_metadata: {
+          ...existingMetadata,
+          activation_status: "activated",
+          activated_at: assignedAt,
+        },
       });
 
     if (updateError) throw updateError;
+
+    const { error: activationStatusError } = await admin
+      .from("department_memberships")
+      .update({
+        activation_status: "activated",
+      })
+      .eq("department_id", departmentId)
+      .eq("user_id", targetUserId);
+
+    if (activationStatusError) throw activationStatusError;
+
+    const { error: tokenRevokeError } = await admin
+      .from("user_activation_tokens")
+      .update({
+        revoked_at: assignedAt,
+      })
+      .eq("department_id", departmentId)
+      .eq("user_id", targetUserId)
+      .is("used_at", null)
+      .is("revoked_at", null);
+
+    if (tokenRevokeError) throw tokenRevokeError;
 
     const targetEmail =
       targetUserResult.user.email ?? "the selected user";
@@ -182,6 +217,9 @@ export async function POST(request: NextRequest) {
         new_value: {
           target_user_id: targetUserId,
           target_email: targetUserResult.user.email ?? null,
+          activation_status: "activated",
+          support_mode: context.isSupportMode,
+          platform_administrator: context.isSuperAdmin,
         },
       });
 
