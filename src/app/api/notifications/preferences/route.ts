@@ -168,19 +168,18 @@ export async function PUT(request: NextRequest) {
       action: "notification_preferences_updated",
       entity_type: "notification_preferences",
       entity_id: resolved.user.id,
-      details: {
-        previous: {
-          email_enabled: previous.email_enabled,
-          critical_email_only: previous.critical_email_only,
-          digest_mode: previous.digest_mode,
-          source_preferences: previous.source_preferences,
-        },
-        current: {
-          email_enabled: next.email_enabled,
-          critical_email_only: next.critical_email_only,
-          digest_mode: next.digest_mode,
-          source_preferences: next.source_preferences,
-        },
+      summary: "Updated personal email notification preferences.",
+      previous_value: {
+        email_enabled: previous.email_enabled,
+        critical_email_only: previous.critical_email_only,
+        digest_mode: previous.digest_mode,
+        source_preferences: previous.source_preferences,
+      },
+      new_value: {
+        email_enabled: next.email_enabled,
+        critical_email_only: next.critical_email_only,
+        digest_mode: next.digest_mode,
+        source_preferences: next.source_preferences,
       },
     });
 
