@@ -70,7 +70,6 @@ type DepartmentAppearanceRow = {
 
 const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
-  { label: "Help Center", href: "/help", icon: CircleHelp },
   {
     label: "Command",
     icon: Activity,
