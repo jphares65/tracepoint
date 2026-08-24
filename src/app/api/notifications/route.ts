@@ -1035,6 +1035,39 @@ async function getPreferences(context: any) {
   };
 }
 
+async function getNotificationRecipientEmail(context: any) {
+  const sessionEmail = text(context?.user?.email);
+
+  if (sessionEmail) return sessionEmail;
+
+  const userId = text(context?.user?.id) || text(context?.userId);
+
+  if (!userId) {
+    throw new Error(
+      "Notification email could not be queued because the current user ID is unavailable.",
+    );
+  }
+
+  const { data, error } =
+    await context.admin.auth.admin.getUserById(userId);
+
+  if (error) {
+    throw new Error(
+      `Notification recipient lookup failed: ${error.message}`,
+    );
+  }
+
+  const recipientEmail = text(data?.user?.email);
+
+  if (!recipientEmail) {
+    throw new Error(
+      "Notification email could not be queued because the current user has no email address.",
+    );
+  }
+
+  return recipientEmail;
+}
+
 function canReviewDepartmentInbox(context: any) {
   const permissions = Array.isArray(context?.permissions)
     ? context.permissions
@@ -1120,6 +1153,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const preferences = await getPreferences(context);
+    const notificationRecipientEmail =
+      preferences.email_enabled
+        ? await getNotificationRecipientEmail(context)
+        : "";
     const [
       rifles,
       ammunition,
@@ -1286,12 +1323,15 @@ export async function GET(request: NextRequest) {
           item.source !== "Qualifications" ||
           qualificationEmailReady
         ) &&
-        context.user.email
+        notificationRecipientEmail
       ) {
-        await context.admin.from("notification_email_queue").upsert({
+        const { error: queueInsertError } =
+          await context.admin
+            .from("notification_email_queue")
+            .upsert({
           department_id: context.departmentId,
           user_id: context.user.id,
-          recipient_email: context.user.email,
+          recipient_email: notificationRecipientEmail,
           notification_key: item.key,
           fingerprint,
           subject: `[TracePoint] ${item.title}`,
@@ -1300,6 +1340,12 @@ export async function GET(request: NextRequest) {
           status: "Pending",
           updated_at: now,
         }, { onConflict: "department_id,user_id,notification_key,fingerprint", ignoreDuplicates: true });
+
+        if (queueInsertError) {
+          throw new Error(
+            `Notification email could not be queued: ${queueInsertError.message}`,
+          );
+        }
       }
     }
 
