@@ -1,0 +1,773 @@
+export type HelpRole = "Officer" | "Supervisor" | "Administrator" | "Platform Admin";
+
+export type HelpSection = {
+  heading: string;
+  steps: readonly string[];
+};
+
+export type HelpArticle = {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  roles: readonly HelpRole[];
+  keywords: readonly string[];
+  sections: readonly HelpSection[];
+  tip?: string;
+  route?: string;
+  routeLabel?: string;
+  status?: "Live" | "Coming soon";
+};
+
+export const HELP_CATEGORIES = [
+  "Getting Started",
+  "Home & Inbox",
+  "Command",
+  "Armory",
+  "Range & Training",
+  "Readiness",
+  "Equipment",
+  "Off-Duty Firearms",
+  "Administration",
+  "Platform",
+  "Troubleshooting",
+] as const;
+
+const allRoles: readonly HelpRole[] = ["Officer", "Supervisor", "Administrator", "Platform Admin"];
+const leaders: readonly HelpRole[] = ["Supervisor", "Administrator", "Platform Admin"];
+const admins: readonly HelpRole[] = ["Administrator", "Platform Admin"];
+
+export const HELP_ARTICLES: readonly HelpArticle[] = [
+  {
+    id: "tracepoint-overview",
+    title: "What TracePoint does",
+    summary: "Understand how TracePoint connects operational records, readiness rules, the Inbox, and accountability workflows.",
+    category: "Getting Started",
+    roles: allRoles,
+    keywords: ["overview", "start", "purpose", "how it works", "modules"],
+    sections: [
+      { heading: "The basic model", steps: [
+        "Operational work is recorded in the module where it occurs, such as Range Days, Firearms, Equipment, or Off-Duty Firearms.",
+        "TracePoint evaluates those records against your department's rules and creates actionable items when something needs attention.",
+        "Officer Home and the Inbox bring those items together so users can open the source record, act, acknowledge, or snooze.",
+        "Dashboards and analytics summarize the same underlying records for supervisors and command staff.",
+      ] },
+    ],
+    tip: "TracePoint is designed around one authoritative record. Open an Inbox item to correct the source instead of maintaining a separate side list.",
+    route: "/",
+    routeLabel: "Open My Home",
+  },
+  {
+    id: "activate-account",
+    title: "Activate a new account",
+    summary: "Use a TracePoint activation email to create a password and complete account setup.",
+    category: "Getting Started",
+    roles: allRoles,
+    keywords: ["activation", "invite", "new user", "create password", "14 days", "expired link"],
+    sections: [
+      { heading: "Activate", steps: [
+        "Open the TracePoint activation email sent by your administrator.",
+        "Select Activate Your Account. Activation links remain valid for 14 days unless an administrator sends a replacement.",
+        "Create and confirm your password, then finish any requested profile setup.",
+        "Sign in and confirm that the correct department appears.",
+      ] },
+      { heading: "If the link does not work", steps: [
+        "Use only the most recent activation email; a replacement link revokes the earlier link.",
+        "Ask a department administrator to resend activation from Settings > Users & Roles.",
+      ] },
+    ],
+    route: "/login",
+    routeLabel: "Open Sign In",
+  },
+  {
+    id: "password-reset",
+    title: "Reset a forgotten password",
+    summary: "Request a secure password-reset email and return to TracePoint.",
+    category: "Getting Started",
+    roles: allRoles,
+    keywords: ["forgot password", "reset password", "can't login", "sign in"],
+    sections: [
+      { heading: "Reset", steps: [
+        "Open the TracePoint sign-in page and select Forgot password.",
+        "Enter the email address associated with your TracePoint account.",
+        "Open the newest reset email and select Reset Password.",
+        "Choose a new password, then sign in normally.",
+      ] },
+    ],
+    tip: "If no email arrives, check junk mail and confirm the address with your department administrator.",
+    route: "/login",
+    routeLabel: "Open Sign In",
+  },
+  {
+    id: "navigation-and-access",
+    title: "Navigate TracePoint and understand access",
+    summary: "Learn why menus differ by role, permission, department, and enabled module.",
+    category: "Getting Started",
+    roles: allRoles,
+    keywords: ["sidebar", "menu", "permission", "role", "missing page", "agency", "department"],
+    sections: [
+      { heading: "Navigation", steps: [
+        "Use the left navigation on desktop or the menu button on mobile.",
+        "Expand a section such as Armory, Training, Readiness, or Administration to see its available pages.",
+        "Your menu shows only features enabled for the selected department and allowed by your effective permissions.",
+        "If you belong to more than one department, return Home and select the correct agency context before working.",
+      ] },
+    ],
+    tip: "A missing menu item usually means a role, permission, or feature setting—not that the record was deleted.",
+  },
+  {
+    id: "officer-home",
+    title: "Use Officer Home",
+    summary: "Review personal and department work from the unified operational Inbox.",
+    category: "Home & Inbox",
+    roles: allRoles,
+    keywords: ["home", "inbox", "my pending", "department pending", "cards", "tasks"],
+    sections: [
+      { heading: "Review work", steps: [
+        "Open My Home to see the unified Inbox and operational status cards.",
+        "Choose My Pending for items assigned to you or Department Pending when your role permits broader review.",
+        "Use a summary card or filter to narrow the same Inbox; cards do not create separate task lists.",
+        "Open an item to go to the record that needs attention.",
+      ] },
+    ],
+    route: "/",
+    routeLabel: "Open My Home",
+  },
+  {
+    id: "inbox-actions",
+    title: "Acknowledge, snooze, and resolve Inbox items",
+    summary: "Triage an alert without losing the connection to its source record.",
+    category: "Home & Inbox",
+    roles: allRoles,
+    keywords: ["acknowledge", "snooze", "resolve", "alert", "open item", "notification"],
+    sections: [
+      { heading: "Choose the right action", steps: [
+        "Select Open when you need to inspect or correct the underlying record.",
+        "Select Acknowledge when you have reviewed the item and do not need it in the active queue.",
+        "Select Snooze 1 Day when the item is valid but cannot be handled now.",
+        "Resolve the actual condition in its module whenever possible; TracePoint will remove stale items as the source changes.",
+      ] },
+    ],
+    route: "/notifications",
+    routeLabel: "Open Operational Inbox",
+  },
+  {
+    id: "email-notifications",
+    title: "Configure Inbox email reminders",
+    summary: "Choose whether TracePoint emails Inbox items immediately or as a digest.",
+    category: "Home & Inbox",
+    roles: allRoles,
+    keywords: ["email", "digest", "immediate", "daily", "weekly", "critical only", "brevo"],
+    sections: [
+      { heading: "Set preferences", steps: [
+        "Open Settings and choose My Notifications.",
+        "Turn email reminders on or off.",
+        "Choose whether email should include only critical items.",
+        "Choose Immediate, Daily, or Weekly delivery and save preferences.",
+      ] },
+    ],
+    tip: "The TracePoint Inbox remains authoritative. Email is a reminder and groups eligible items to avoid repeated messages.",
+    route: "/settings",
+    routeLabel: "Open Notification Settings",
+  },
+  {
+    id: "command-dashboard",
+    title: "Read the Command Dashboard",
+    summary: "Use readiness, records-health, firearm-reliability, and attention summaries for command review.",
+    category: "Command",
+    roles: leaders,
+    keywords: ["command", "dashboard", "readiness", "records health", "attention", "overview"],
+    sections: [
+      { heading: "Review", steps: [
+        "Start with the readiness summaries for qualifications, certifications, equipment, and upcoming Range Days.",
+        "Review records-health indicators to identify incomplete or aging data.",
+        "Use attention items to move from the department-level signal to the affected person or record.",
+        "Confirm the source record before making an operational decision.",
+      ] },
+    ],
+    route: "/command-dashboard",
+    routeLabel: "Open Command Dashboard",
+  },
+  {
+    id: "analytics",
+    title: "Use Analytics",
+    summary: "Explore qualification coverage, drill performance, follow-ups, and risk signals.",
+    category: "Command",
+    roles: leaders,
+    keywords: ["analytics", "trends", "performance", "coverage", "watchlist", "risk"],
+    sections: [
+      { heading: "Analyze", steps: [
+        "Select the relevant date range or population when filters are available.",
+        "Review qualification coverage and drill performance for patterns—not isolated scores alone.",
+        "Use follow-up and watchlist signals to identify records requiring review.",
+        "Open the operational record before assigning remediation or changing status.",
+      ] },
+    ],
+    route: "/analytics",
+    routeLabel: "Open Analytics",
+  },
+  {
+    id: "department-firearms",
+    title: "Manage department firearms",
+    summary: "Maintain inventory, custody, condition, status, and permanent firearm history.",
+    category: "Armory",
+    roles: leaders,
+    keywords: ["firearm", "weapon", "inventory", "serial", "armory", "archive", "condition"],
+    sections: [
+      { heading: "Find or add a firearm", steps: [
+        "Open Department Firearms and use search or filters to locate an existing record.",
+        "Open the firearm to review identity, status, assignment, inspection, and history details.",
+        "Users with firearm-management access can add or edit records and archive items no longer in active inventory.",
+        "Use Restore when a previously archived firearm returns to active inventory.",
+      ] },
+    ],
+    route: "/firearms",
+    routeLabel: "Open Department Firearms",
+  },
+  {
+    id: "firearm-assignments",
+    title: "Assign and return a department firearm",
+    summary: "Record custody changes without losing assignment history.",
+    category: "Armory",
+    roles: leaders,
+    keywords: ["assign firearm", "return firearm", "custody", "issued weapon", "officer assignment"],
+    sections: [
+      { heading: "Change custody", steps: [
+        "Open the firearm's detail page and review its current assignment and status.",
+        "Choose the assignment action and select the receiving officer or return destination.",
+        "Confirm effective date and any required notes.",
+        "Save and verify the new current assignment while the prior assignment remains in history.",
+      ] },
+    ],
+    route: "/firearms",
+    routeLabel: "Find a Firearm",
+  },
+  {
+    id: "firearm-inspections",
+    title: "Record firearm maintenance and inspections",
+    summary: "Complete inspection checklists, record service recommendations, and track follow-up.",
+    category: "Armory",
+    roles: leaders,
+    keywords: ["inspection", "maintenance", "armorer", "out of service", "corrective action", "battery"],
+    sections: [
+      { heading: "Inspect", steps: [
+        "Open Maintenance & Inspections and start a new inspection for the correct firearm.",
+        "Complete each checklist item and record the overall result.",
+        "Add a service recommendation, corrective action, notes, and follow-up date when needed.",
+        "Confirm that failed or unsafe results place the firearm in the appropriate maintenance or out-of-service status.",
+      ] },
+    ],
+    route: "/firearms/inspections",
+    routeLabel: "Open Maintenance & Inspections",
+  },
+  {
+    id: "ammunition",
+    title: "Manage ammunition inventory",
+    summary: "Receive lots, record use, maintain types and rules, and review inventory history.",
+    category: "Armory",
+    roles: leaders,
+    keywords: ["ammo", "ammunition", "lot", "receive", "use", "physical count", "inventory"],
+    sections: [
+      { heading: "Work with inventory", steps: [
+        "Use Inventory to review current quantities and Types & Rules to configure ammunition definitions.",
+        "Use Receive Lot when stock arrives, preserving lot and source information.",
+        "Use Record Use when ammunition is issued or consumed, including the related purpose when known.",
+        "Use Physical Count to enter verified on-hand quantities and History to review movements.",
+      ] },
+    ],
+    route: "/firearms/ammunition",
+    routeLabel: "Open Ammunition",
+  },
+  {
+    id: "ammunition-reconciliation",
+    title: "Reconcile ammunition",
+    summary: "Compare system inventory to a physical count and document variance.",
+    category: "Armory",
+    roles: leaders,
+    keywords: ["reconcile", "variance", "count", "audit ammo", "seasonal inventory"],
+    sections: [
+      { heading: "Reconcile", steps: [
+        "Open Reconciliation and begin the appropriate inventory cycle.",
+        "Enter the physical count for each ammunition type or lot included in the cycle.",
+        "Review calculated variance against TracePoint's expected quantity.",
+        "Document explanations and complete the reconciliation so the result remains auditable.",
+      ] },
+    ],
+    route: "/firearms/ammunition/reconciliation",
+    routeLabel: "Open Reconciliation",
+  },
+  {
+    id: "personal-rifles",
+    title: "Process a personally owned rifle",
+    summary: "Move an officer submission through armorer inspection, qualification, and chief approval.",
+    category: "Armory",
+    roles: allRoles,
+    keywords: ["personal rifle", "owned rifle", "armorer review", "chief approval", "specification"],
+    sections: [
+      { heading: "Officer", steps: [
+        "Open Personally Owned Rifles and create a submission with the required firearm details and acknowledgment.",
+        "Provide any supporting information required by department policy.",
+        "Monitor the request for returned questions, inspection needs, qualification requirements, or a final decision.",
+      ] },
+      { heading: "Reviewer", steps: [
+        "Open the pending rifle and verify specifications and ownership information.",
+        "Record the armorer inspection and qualification requirement when applicable.",
+        "Advance the request for command approval or return it with a clear reason.",
+      ] },
+    ],
+    route: "/firearms/personal-rifles",
+    routeLabel: "Open Personally Owned Rifles",
+  },
+  {
+    id: "create-range-day",
+    title: "Create a Range Day",
+    summary: "Start a structured range event and define its schedule, purpose, and staff.",
+    category: "Range & Training",
+    roles: leaders,
+    keywords: ["range day", "create event", "schedule range", "instructor", "date"],
+    sections: [
+      { heading: "Create", steps: [
+        "Open Range Days and start a new event.",
+        "Enter the event date, location, purpose, lead staff, and other required details.",
+        "Save the event, then use its workspace tabs to build readiness, roster, drills, equipment, and scoring.",
+      ] },
+    ],
+    route: "/range-days",
+    routeLabel: "Open Range Days",
+  },
+  {
+    id: "prepare-range-day",
+    title: "Prepare the roster, drills, and equipment",
+    summary: "Build a Range Day before personnel arrive and identify readiness issues early.",
+    category: "Range & Training",
+    roles: leaders,
+    keywords: ["roster", "drills", "range equipment", "readiness", "staffing", "syllabus"],
+    sections: [
+      { heading: "Prepare", steps: [
+        "Use Readiness to review personnel, qualification, firearm, and equipment concerns.",
+        "Use Roster to add expected participants and instructors.",
+        "Use Drills to define the courses of fire or exercises that will be scored.",
+        "Use Equipment to confirm firearm assignments and other event resources.",
+        "Generate packet components when a printed staffing plan, syllabus, roster, or assignment sheet is needed.",
+      ] },
+    ],
+    route: "/range-days",
+    routeLabel: "Open Range Days",
+  },
+  {
+    id: "score-range-day",
+    title: "Enter scores and close a Range Day",
+    summary: "Capture results, failures, malfunctions, remediation, signatures, and the final event record.",
+    category: "Range & Training",
+    roles: leaders,
+    keywords: ["score", "pass fail", "qualification", "malfunction", "results", "close range"],
+    sections: [
+      { heading: "Conduct and close", steps: [
+        "Use Scoring to enter each participant's drill or qualification result.",
+        "Record failures, malfunctions, remediation, and relevant notes as they occur.",
+        "Review Results for missing or inconsistent entries before closing.",
+        "Complete required signatures and the after-action review, then close the Range Day into a permanent record.",
+      ] },
+    ],
+    tip: "Qualification records and qualification-related alerts begin from actual Range Day qualification activity, preventing a newly onboarded department from receiving premature email reminders.",
+    route: "/range-days",
+    routeLabel: "Open Range Days",
+  },
+  {
+    id: "range-reports",
+    title: "Export a Range Day packet and AAR",
+    summary: "Produce staffing, syllabus, roster, assignment, score, malfunction, signature, and after-action records.",
+    category: "Range & Training",
+    roles: leaders,
+    keywords: ["print", "export", "packet", "aar", "after action", "report", "signatures"],
+    sections: [
+      { heading: "Produce records", steps: [
+        "Open the Range Day and confirm each workspace tab is complete.",
+        "Choose the packet or report action for the records you need.",
+        "Review the generated staffing, syllabus, roster, firearm assignment, drill, score, malfunction, and signature information.",
+        "Complete the AAR so lessons and follow-up remain attached to the event.",
+      ] },
+    ],
+    route: "/range-days",
+    routeLabel: "Open Range Days",
+  },
+  {
+    id: "training-alerts",
+    title: "Use Training Alerts",
+    summary: "Review training and qualification conditions that need supervisor attention.",
+    category: "Range & Training",
+    roles: leaders,
+    keywords: ["training alert", "qualification due", "failure", "remediation", "follow up"],
+    sections: [
+      { heading: "Review", steps: [
+        "Open Training Alerts and use filters to focus on the relevant condition or person.",
+        "Open the source qualification, Range Day, or remediation record.",
+        "Correct or complete the operational record rather than simply dismissing a valid condition.",
+        "Return to the alert list and refresh to confirm the condition was cleared.",
+      ] },
+    ],
+    route: "/training-alerts",
+    routeLabel: "Open Training Alerts",
+  },
+  {
+    id: "agency-training",
+    title: "Agency Training module status",
+    summary: "See what is planned for non-range training events and what is not yet available.",
+    category: "Range & Training",
+    roles: allRoles,
+    keywords: ["agency training", "in service", "cpr", "defensive tactics", "coming soon"],
+    sections: [
+      { heading: "Current status", steps: [
+        "Agency Training is a preview of a planned module and is not yet an active recordkeeping workflow.",
+        "The planned design covers events, rosters, attendance, instructors, lesson plans, outcomes, certificates, and readiness integration.",
+        "Continue using your department's current approved process until the module is released.",
+      ] },
+    ],
+    status: "Coming soon",
+    route: "/agency-training",
+    routeLabel: "View Planned Module",
+  },
+  {
+    id: "qualification-status",
+    title: "Review qualification status and history",
+    summary: "Understand current, due-soon, needs-action, day, night, and rifle qualification records.",
+    category: "Readiness",
+    roles: leaders,
+    keywords: ["qualification", "current", "expired", "due soon", "day night rifle", "history"],
+    sections: [
+      { heading: "Review", steps: [
+        "Open Qualifications and use status filters to find current, due-soon, expired, or needs-action personnel.",
+        "Review day, night, rifle, or other configured qualification requirements.",
+        "Open a person's history to inspect the Range Day source, score, result, evidence, failure, or malfunction.",
+        "Correct source data through the appropriate Range Day or authorized record workflow.",
+      ] },
+    ],
+    route: "/qualifications",
+    routeLabel: "Open Qualifications",
+  },
+  {
+    id: "certification-types",
+    title: "Configure certification types and requirements",
+    summary: "Define the certifications a department tracks and how they affect readiness.",
+    category: "Readiness",
+    roles: admins,
+    keywords: ["certification type", "requirement", "expiration", "cert rules", "configure"],
+    sections: [
+      { heading: "Configure", steps: [
+        "Open Certifications and review the department's available certification types.",
+        "Add or edit a type with its name, validity or expiry behavior, and other required settings.",
+        "Configure who must hold the certification through department rules when applicable.",
+        "Archive unused types only after reviewing how existing personnel records will be preserved.",
+      ] },
+    ],
+    route: "/training/certifications",
+    routeLabel: "Open Certifications",
+  },
+  {
+    id: "personnel-certifications",
+    title: "Add or update a personnel certification",
+    summary: "Record issuance and expiration while preserving certification history.",
+    category: "Readiness",
+    roles: leaders,
+    keywords: ["add certification", "renew certification", "certificate", "expiration", "officer training"],
+    sections: [
+      { heading: "Record", steps: [
+        "Open Certifications and choose the personnel or certification record to update.",
+        "Select the certification type and enter issue, expiration, provider, identifier, and notes as required.",
+        "Attach supporting evidence when the workflow provides it.",
+        "Save and verify that readiness and due-soon status reflect the new dates.",
+      ] },
+    ],
+    route: "/training/certifications",
+    routeLabel: "Open Certifications",
+  },
+  {
+    id: "equipment-readiness",
+    title: "Issue equipment and review readiness",
+    summary: "Track equipment custody, inspection, expiration, missing items, and out-of-service status.",
+    category: "Equipment",
+    roles: leaders,
+    keywords: ["equipment", "issue", "asset", "custody", "expired", "missing", "out of service"],
+    sections: [
+      { heading: "Manage equipment", steps: [
+        "Open Equipment and use status filters to review current, due-soon, expired, missing, or out-of-service items.",
+        "Add or select the asset and record the assigned officer when custody changes.",
+        "Enter issue, expiration, inspection, and status information required for that equipment type.",
+        "Resolve missing or out-of-service conditions through the source asset record.",
+      ] },
+    ],
+    route: "/equipment",
+    routeLabel: "Open Equipment",
+  },
+  {
+    id: "equipment-requirements",
+    title: "Configure equipment types and requirements",
+    summary: "Define required equipment for everyone or by rank, unit, or individual officer.",
+    category: "Equipment",
+    roles: admins,
+    keywords: ["equipment requirement", "everyone", "rank", "unit", "officer", "type"],
+    sections: [
+      { heading: "Configure", steps: [
+        "Open Equipment and review Types and Requirements.",
+        "Create or update the equipment type and its inspection or expiration behavior.",
+        "Set the requirement scope for everyone, a rank, a unit, or a specific officer.",
+        "Review newly created readiness conditions before relying on them operationally.",
+      ] },
+    ],
+    route: "/equipment",
+    routeLabel: "Open Equipment",
+  },
+  {
+    id: "submit-off-duty-request",
+    title: "Submit an off-duty firearm request",
+    summary: "Create an officer request and supply ownership, qualification, and inspection information.",
+    category: "Off-Duty Firearms",
+    roles: allRoles,
+    keywords: ["off duty", "request", "personal weapon", "proof of ownership", "submit"],
+    sections: [
+      { heading: "Submit", steps: [
+        "Open Off-Duty Firearms and choose My Requests.",
+        "Create a request and enter the firearm and proof-of-ownership information required by department policy.",
+        "Complete or reference the required qualification and inspection records.",
+        "Submit the request and monitor its status for approval, return, or denial.",
+      ] },
+    ],
+    route: "/off-duty-firearms",
+    routeLabel: "Open Off-Duty Firearms",
+  },
+  {
+    id: "review-off-duty-request",
+    title: "Review an off-duty firearm request",
+    summary: "Verify required records and approve, return, or deny with an auditable reason.",
+    category: "Off-Duty Firearms",
+    roles: leaders,
+    keywords: ["approve off duty", "deny", "return request", "review firearm", "chief"],
+    sections: [
+      { heading: "Review", steps: [
+        "Open Off-Duty Firearms and switch to the department review view.",
+        "Open the request and verify ownership, qualification, inspection, and policy requirements.",
+        "Approve when complete, return when the officer can correct missing information, or deny with a clear reason.",
+        "Confirm the decision appears in request history.",
+      ] },
+    ],
+    route: "/off-duty-firearms",
+    routeLabel: "Open Department Review",
+  },
+  {
+    id: "agency-settings",
+    title: "Configure agency profile, organization, and branding",
+    summary: "Maintain department identity, organization lists, patch, colors, and login appearance.",
+    category: "Administration",
+    roles: admins,
+    keywords: ["agency profile", "organization", "rank", "unit", "branding", "patch", "color"],
+    sections: [
+      { heading: "Configure", steps: [
+        "Open Settings and use Agency Profile for department identity and contact information.",
+        "Use Organization to maintain ranks, units, groups, and related lists used by personnel records.",
+        "Use Branding to update the department patch, accent color, and login appearance.",
+        "Save one section at a time and verify the updated appearance or option before continuing.",
+      ] },
+    ],
+    route: "/settings",
+    routeLabel: "Open Settings",
+  },
+  {
+    id: "users-and-roles",
+    title: "Add users and manage roles",
+    summary: "Invite personnel, resend activation, update profile details, and assign effective permissions.",
+    category: "Administration",
+    roles: admins,
+    keywords: ["add officer", "invite user", "resend activation", "role", "permission", "deactivate user"],
+    sections: [
+      { heading: "Add or update", steps: [
+        "Open Settings > Users & Roles.",
+        "Create the user with the correct email, name, badge or employee information, rank, unit, and role.",
+        "Send activation and use resend only when the user needs a new 14-day activation link.",
+        "Review effective permissions after changing roles, and deactivate access when a person should no longer enter the department.",
+      ] },
+    ],
+    tip: "Activate the department's lead administrator first so that person can finish local configuration before inviting the rest of the agency.",
+    route: "/settings",
+    routeLabel: "Open Users & Roles",
+  },
+  {
+    id: "rules-engine",
+    title: "Configure department rules",
+    summary: "Set the policies that drive qualifications, certifications, equipment, armory, and off-duty readiness.",
+    category: "Administration",
+    roles: admins,
+    keywords: ["rules engine", "policy", "qualification days", "due soon", "inspection interval", "requirements"],
+    sections: [
+      { heading: "Configure carefully", steps: [
+        "Open Settings > Rules Engine and select the relevant module.",
+        "Review the current department policy before changing an interval, requirement, or approval step.",
+        "Save the module's settings and review any resulting Inbox or readiness changes.",
+        "Document the reason for material policy configuration changes through your department's normal process.",
+      ] },
+    ],
+    tip: "Qualification email rules do not activate merely because a new department lacks scores; they begin after qualification activity is entered through Range Days.",
+    route: "/settings",
+    routeLabel: "Open Rules Engine",
+  },
+  {
+    id: "import-data",
+    title: "Import department data",
+    summary: "Upload, map, preview, and report personnel, firearms, qualifications, certifications, equipment, or off-duty records.",
+    category: "Administration",
+    roles: admins,
+    keywords: ["import", "csv", "spreadsheet", "mapping", "preview", "upload", "error report"],
+    sections: [
+      { heading: "Import", steps: [
+        "Open Import / Export and choose the data type: Personnel, Firearms, Qualification History, Certifications, Equipment, or Off-Duty Firearms.",
+        "Upload the prepared file and map each source column to the correct TracePoint field.",
+        "Review Preview carefully for skipped, duplicate, invalid, or incomplete rows.",
+        "Run the import and save the final report for any records that require correction.",
+      ] },
+    ],
+    tip: "Use a small representative file first. A successful preview is safer than correcting a large import afterward.",
+    route: "/settings/import-export",
+    routeLabel: "Open Import / Export",
+  },
+  {
+    id: "export-and-audit",
+    title: "Export records and review the audit log",
+    summary: "Produce operational exports and inspect who changed important settings or records.",
+    category: "Administration",
+    roles: admins,
+    keywords: ["export", "download", "audit log", "security", "history", "who changed"],
+    sections: [
+      { heading: "Export", steps: [
+        "Open Import / Export and choose the appropriate export such as Personnel, Firearms, or Ammunition.",
+        "Apply the available scope or filters and generate the file.",
+        "Handle exported files according to department security and retention policy.",
+      ] },
+      { heading: "Audit", steps: [
+        "Open Settings > Audit & Security.",
+        "Filter or review events by action, actor, entity, or date when available.",
+        "Open the relevant operational record to validate context before drawing a conclusion from an event.",
+      ] },
+    ],
+    route: "/settings/import-export",
+    routeLabel: "Open Import / Export",
+  },
+  {
+    id: "platform-agencies",
+    title: "Provision and support an agency",
+    summary: "Use platform tools to create agencies, establish the first administrator, and provide controlled support.",
+    category: "Platform",
+    roles: ["Platform Admin"],
+    keywords: ["platform", "create agency", "provision", "chief", "administrator", "support mode"],
+    sections: [
+      { heading: "Onboard", steps: [
+        "Create or open the agency from the Platform page and verify its identity and enabled features.",
+        "Establish the agency's lead administrator and send the custom 14-day activation link.",
+        "Let the agency administrator configure organization, users, roles, rules, and branding before broad invitations.",
+        "Use support mode only when required, keep department context visible, and leave support mode when work is complete.",
+      ] },
+    ],
+    route: "/platform",
+    routeLabel: "Open Platform",
+  },
+  {
+    id: "fleet-status",
+    title: "Fleet Management module status",
+    summary: "See the planned vehicle inspection, equipment, maintenance, assignment, and readiness workflow.",
+    category: "Platform",
+    roles: allRoles,
+    keywords: ["fleet", "vehicle", "cruiser", "qr", "maintenance", "coming soon"],
+    sections: [
+      { heading: "Current status", steps: [
+        "Fleet Management is a preview of a planned module and is not yet an active recordkeeping workflow.",
+        "The planned design includes QR access, mobile inspections, required equipment, maintenance routing, custody, and readiness status.",
+        "Continue using your department's approved fleet process until the module is released.",
+      ] },
+    ],
+    status: "Coming soon",
+    route: "/fleet-management",
+    routeLabel: "View Planned Module",
+  },
+  {
+    id: "troubleshoot-permissions",
+    title: "A page or action is missing",
+    summary: "Determine whether department context, feature access, or effective permissions are limiting the screen.",
+    category: "Troubleshooting",
+    roles: allRoles,
+    keywords: ["unauthorized", "missing menu", "can't see", "permission denied", "button missing", "role"],
+    sections: [
+      { heading: "Check", steps: [
+        "Confirm you are signed into the intended account and department.",
+        "Refresh the page after a recent role or permission change.",
+        "Ask a department administrator to review your role and effective permissions in Settings > Users & Roles.",
+        "If the role is correct, confirm that the module is enabled for the department.",
+      ] },
+    ],
+  },
+  {
+    id: "troubleshoot-alerts",
+    title: "An expected Inbox item is missing or will not clear",
+    summary: "Trace the condition back to its source record and refresh its evaluated state.",
+    category: "Troubleshooting",
+    roles: allRoles,
+    keywords: ["missing alert", "won't clear", "stale notification", "inbox wrong", "refresh"],
+    sections: [
+      { heading: "Diagnose", steps: [
+        "Open the source module and verify the record, dates, status, assignment, and department rules.",
+        "Confirm the item was not acknowledged, snoozed, completed, archived, or canceled.",
+        "Refresh Officer Home or the Operational Inbox after saving the source record.",
+        "If the mismatch remains, record the person or entity, department, expected condition, and time for support review.",
+      ] },
+    ],
+  },
+  {
+    id: "troubleshoot-qualification-alerts",
+    title: "Qualification alerts are not active for a new agency",
+    summary: "Understand the Range Day activity safeguard that prevents premature onboarding alerts.",
+    category: "Troubleshooting",
+    roles: leaders,
+    keywords: ["no qualification alerts", "new department", "range activity", "qualification email", "onboarding"],
+    sections: [
+      { heading: "Expected behavior", steps: [
+        "A newly onboarded department is not emailed simply because historical qualification scores have not been loaded.",
+        "Enter real qualification activity through a Range Day to begin qualification-related notification evaluation.",
+        "Close or complete the Range Day records required by the workflow.",
+        "Refresh Qualifications and the Inbox to review the newly evaluated status.",
+      ] },
+    ],
+    route: "/range-days",
+    routeLabel: "Open Range Days",
+  },
+  {
+    id: "troubleshoot-email",
+    title: "An activation, reset, or Inbox email did not arrive",
+    summary: "Check the correct email flow without repeatedly generating unnecessary messages.",
+    category: "Troubleshooting",
+    roles: allRoles,
+    keywords: ["email missing", "spam", "activation email", "reset email", "digest missing", "brevo"],
+    sections: [
+      { heading: "Check", steps: [
+        "Confirm the account email address is correct and check spam or junk folders.",
+        "For activation, use the newest email because resending creates a replacement link.",
+        "For Inbox reminders, confirm email is enabled, the selected schedule is due, and the item matches the critical-only setting.",
+        "Remember that resolved, acknowledged, snoozed, archived, completed, or canceled items are not sent as active reminders.",
+      ] },
+    ],
+  },
+  {
+    id: "troubleshoot-import",
+    title: "An import has errors or unexpected results",
+    summary: "Use mapping, preview, and the final report to correct source data safely.",
+    category: "Troubleshooting",
+    roles: admins,
+    keywords: ["import failed", "wrong mapping", "duplicate", "invalid row", "csv error"],
+    sections: [
+      { heading: "Correct", steps: [
+        "Stop before importing when Preview shows incorrect field mapping or widespread validation errors.",
+        "Correct headings, dates, identifiers, and required values in the source file.",
+        "Re-upload and verify mapping and Preview with a small sample.",
+        "If an import already ran, preserve its report and review affected records before attempting another bulk change.",
+      ] },
+    ],
+    route: "/settings/import-export",
+    routeLabel: "Open Import / Export",
+  },
+];
