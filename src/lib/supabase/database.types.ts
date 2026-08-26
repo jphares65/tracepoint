@@ -3545,6 +3545,7 @@ export type Database = {
           historical_course_name: string | null
           historical_instructor_name: string | null
           historical_passing_score: number | null
+          historical_qualification_type: string | null
           historical_result_text: string | null
           id: string
           instructor_user_id: string | null
@@ -3569,6 +3570,7 @@ export type Database = {
           historical_course_name?: string | null
           historical_instructor_name?: string | null
           historical_passing_score?: number | null
+          historical_qualification_type?: string | null
           historical_result_text?: string | null
           id?: string
           instructor_user_id?: string | null
@@ -3593,6 +3595,7 @@ export type Database = {
           historical_course_name?: string | null
           historical_instructor_name?: string | null
           historical_passing_score?: number | null
+          historical_qualification_type?: string | null
           historical_result_text?: string | null
           id?: string
           instructor_user_id?: string | null
@@ -4333,6 +4336,7 @@ export type Database = {
           historical_course_name: string | null
           historical_instructor_name: string | null
           historical_passing_score: number | null
+          historical_qualification_type: string | null
           historical_result_text: string | null
           id: string | null
           instructor_user_id: string | null

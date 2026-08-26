@@ -1,21 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+
+type QualificationType =
+  | "handgun"
+  | "rifle"
+  | "shotgun"
+  | "less_lethal"
+  | "other";
 
 type QualificationHistoryImportRequest = {
   departmentId?: string;
   officerName?: string;
   badgeNumber?: string;
   qualificationDate?: string;
+  qualificationType?: string;
   courseName?: string;
+  dayScore?: string | number;
+  dayPassingScore?: string | number;
+  dayResult?: string;
+  nightScore?: string | number;
+  nightPassingScore?: string | number;
+  nightResult?: string;
   score?: string | number;
   passingScore?: string | number;
   result?: string;
   instructor?: string;
   notes?: string;
+};
+
+type ImportedComponent = {
+  lightingCondition: "day" | "night";
+  label: "Day" | "Night";
+  score: number;
+  passingScore: number | null;
+  resultText: string;
 };
 
 function cleanText(value: unknown) {
@@ -28,28 +49,36 @@ function cleanNumber(value: unknown) {
   }
 
   const text = cleanText(value);
-
   if (!text) return null;
 
   const parsed = Number(text.replace(/,/g, ""));
-
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeDate(value: unknown) {
   const text = cleanText(value);
-
   if (!text) return null;
-
-  const directIso = /^\d{4}-\d{2}-\d{2}$/;
-
-  if (directIso.test(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
 
   const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : parsed.toISOString().slice(0, 10);
+}
 
-  if (Number.isNaN(parsed.getTime())) return null;
+function normalizeQualificationType(value: unknown): QualificationType | null {
+  const normalized = cleanText(value)
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 
-  return parsed.toISOString().slice(0, 10);
+  if (normalized === "pistol" || normalized === "sidearm") return "handgun";
+  if (normalized === "lesslethal") return "less_lethal";
+
+  return ["handgun", "rifle", "shotgun", "less_lethal", "other"].includes(
+    normalized,
+  )
+    ? (normalized as QualificationType)
+    : null;
 }
 
 function derivePassed(
@@ -80,11 +109,7 @@ function derivePassed(
     return false;
   }
 
-  if (passingScore !== null) {
-    return score >= passingScore;
-  }
-
-  return null;
+  return passingScore === null ? null : score >= passingScore;
 }
 
 export async function POST(request: NextRequest) {
@@ -96,31 +121,56 @@ export async function POST(request: NextRequest) {
     const officerName = cleanText(body.officerName);
     const badgeNumber = cleanText(body.badgeNumber);
     const qualificationDate = normalizeDate(body.qualificationDate);
+    const qualificationType = normalizeQualificationType(
+      body.qualificationType,
+    );
     const courseName = cleanText(body.courseName);
-    const score = cleanNumber(body.score);
-    const passingScore = cleanNumber(body.passingScore);
-    const resultText = cleanText(body.result);
     const instructorName = cleanText(body.instructor);
     const notes = cleanText(body.notes);
+
+    const dayScore = cleanNumber(body.dayScore ?? body.score);
+    const nightScore = cleanNumber(body.nightScore);
+    const components: ImportedComponent[] = [
+      ...(dayScore === null
+        ? []
+        : [{
+            lightingCondition: "day" as const,
+            label: "Day" as const,
+            score: dayScore,
+            passingScore: cleanNumber(
+              body.dayPassingScore ?? body.passingScore,
+            ),
+            resultText: cleanText(body.dayResult ?? body.result),
+          }]),
+      ...(nightScore === null
+        ? []
+        : [{
+            lightingCondition: "night" as const,
+            label: "Night" as const,
+            score: nightScore,
+            passingScore: cleanNumber(body.nightPassingScore),
+            resultText: cleanText(body.nightResult),
+          }]),
+    ];
 
     if (
       !departmentId ||
       !officerName ||
       !qualificationDate ||
+      !qualificationType ||
       !courseName ||
-      score === null
+      components.length === 0
     ) {
       return NextResponse.json(
         {
           error:
-            "Department, officer name, qualification date, course/standard, and numeric score are required.",
+            "Department, officer name, qualification date, qualification type, course/standard, and at least one numeric day or night score are required.",
         },
         { status: 400 },
       );
     }
 
     const server = await createServerClient();
-
     const {
       data: { user: actor },
       error: actorError,
@@ -166,16 +216,12 @@ export async function POST(request: NextRequest) {
       !platformAdminResult.data
     ) {
       return NextResponse.json(
-        {
-          error:
-            "You do not have permission to import qualification history.",
-        },
+        { error: "You do not have permission to import qualification history." },
         { status: 403 },
       );
     }
 
     const admin = createAdminClient();
-
     let officerUserId: string | null = null;
 
     if (badgeNumber) {
@@ -187,7 +233,6 @@ export async function POST(request: NextRequest) {
         .eq("is_active", true);
 
       if (badgeError) throw badgeError;
-
       if ((badgeMatches ?? []).length > 1) {
         return NextResponse.json(
           {
@@ -209,7 +254,6 @@ export async function POST(request: NextRequest) {
       if (profileError) throw profileError;
 
       const candidateIds = (profileMatches ?? []).map((profile) => profile.id);
-
       if (candidateIds.length > 0) {
         const { data: membershipMatches, error: membershipError } = await admin
           .from("department_memberships")
@@ -219,7 +263,6 @@ export async function POST(request: NextRequest) {
           .in("user_id", candidateIds);
 
         if (membershipError) throw membershipError;
-
         if ((membershipMatches ?? []).length === 1) {
           officerUserId = membershipMatches![0].user_id;
         } else if ((membershipMatches ?? []).length > 1) {
@@ -242,124 +285,152 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: duplicateRows, error: duplicateError } = await admin
-      .from("qualification_results")
-      .select(
-        "id,score,passed,historical_instructor_name,historical_passing_score,historical_result_text,notes",
-      )
-      .eq("department_id", departmentId)
-      .eq("officer_user_id", officerUserId)
-      .eq("qualification_date", qualificationDate)
-      .eq("record_origin", "historical_import")
-      .ilike("historical_course_name", courseName)
-      .limit(1);
+    const resultIds: string[] = [];
+    const statuses: Array<"created" | "updated" | "unchanged"> = [];
+    const changedFields = new Set<string>();
+    const conflicts: unknown[] = [];
 
-    if (duplicateError) throw duplicateError;
+    for (const component of components) {
+      const { data: duplicateRows, error: duplicateError } = await admin
+        .from("qualification_results")
+        .select(
+          "id,score,passed,historical_instructor_name,historical_passing_score,historical_result_text,notes",
+        )
+        .eq("department_id", departmentId)
+        .eq("officer_user_id", officerUserId)
+        .eq("qualification_date", qualificationDate)
+        .eq("record_origin", "historical_import")
+        .eq("historical_qualification_type", qualificationType)
+        .eq("lighting_condition", component.lightingCondition)
+        .ilike("historical_course_name", courseName)
+        .limit(1);
 
-    const existing = duplicateRows?.[0] ?? null;
+      if (duplicateError) throw duplicateError;
 
-    if (existing) {
-      const passed = derivePassed(resultText, score, passingScore);
-
-      const merge = buildEnrichOnlyUpdates(
-        existing as Record<string, unknown>,
-        {
-          score,
-          passed,
-          historical_instructor_name: instructorName || null,
-          historical_passing_score: passingScore,
-          historical_result_text: resultText || null,
-          notes: notes || null,
-        },
-        ["id"],
+      const existing = duplicateRows?.[0] ?? null;
+      const passed = derivePassed(
+        component.resultText,
+        component.score,
+        component.passingScore,
       );
 
-      if (Object.keys(merge.updates).length > 0) {
-        const { error: updateError } = await admin
-          .from("qualification_results")
-          .update(merge.updates as any)
-          .eq("id", existing.id)
-          .eq("department_id", departmentId);
+      if (existing) {
+        const merge = buildEnrichOnlyUpdates(
+          existing as Record<string, unknown>,
+          {
+            score: component.score,
+            passed,
+            historical_instructor_name: instructorName || null,
+            historical_passing_score: component.passingScore,
+            historical_result_text: component.resultText || null,
+            notes: notes || null,
+          },
+          ["id"],
+        );
 
-        if (updateError) throw updateError;
+        if (Object.keys(merge.updates).length > 0) {
+          const { error: updateError } = await admin
+            .from("qualification_results")
+            .update(merge.updates as any)
+            .eq("id", existing.id)
+            .eq("department_id", departmentId);
 
-        return NextResponse.json({
-          ok: true,
-          status: "updated",
-          resultId: existing.id,
-          officerUserId,
-          changedFields: merge.changedFields,
-          conflicts: merge.conflicts,
-          passed,
-        });
+          if (updateError) throw updateError;
+          statuses.push("updated");
+          merge.changedFields.forEach((field) =>
+            changedFields.add(`${component.lightingCondition}.${field}`),
+          );
+        } else {
+          statuses.push("unchanged");
+        }
+
+        resultIds.push(existing.id);
+        conflicts.push(...merge.conflicts);
+        continue;
       }
 
-      return NextResponse.json({
-        ok: true,
-        status: "unchanged",
-        resultId: existing.id,
-        officerUserId,
-        changedFields: [],
-        conflicts: merge.conflicts,
-        passed,
-      });
+      const { data: insertedResult, error: insertError } = await admin
+        .from("qualification_results")
+        .insert({
+          department_id: departmentId,
+          officer_user_id: officerUserId,
+          qualification_date: qualificationDate,
+          lighting_condition: component.lightingCondition,
+          score: component.score,
+          passed,
+          record_origin: "historical_import",
+          historical_qualification_type: qualificationType,
+          historical_course_name: courseName,
+          historical_instructor_name: instructorName || null,
+          historical_passing_score: component.passingScore,
+          historical_result_text: component.resultText || null,
+          notes: notes || null,
+          instructor_user_id: null,
+          qualification_course_id: null,
+          qualification_course_version_id: null,
+        })
+        .select("id")
+        .single();
+
+      if (insertError) throw insertError;
+      statuses.push("created");
+      resultIds.push(insertedResult.id);
     }
 
-    const passed = derivePassed(resultText, score, passingScore);
+    const status = statuses.includes("created")
+      ? "created"
+      : statuses.includes("updated")
+        ? "updated"
+        : "unchanged";
 
-    const { data: insertedResult, error: insertError } = await admin
-      .from("qualification_results")
-      .insert({
+    if (status !== "unchanged") {
+      const { error: auditError } = await admin.from("audit_events").insert({
         department_id: departmentId,
-        officer_user_id: officerUserId,
-        qualification_date: qualificationDate,
-        score,
-        passed,
-        record_origin: "historical_import",
-        historical_course_name: courseName,
-        historical_instructor_name: instructorName || null,
-        historical_passing_score: passingScore,
-        historical_result_text: resultText || null,
-        notes: notes || null,
-        instructor_user_id: null,
-        qualification_course_id: null,
-        qualification_course_version_id: null,
-      })
-      .select("id")
-      .single();
+        actor_user_id: actor.id,
+        action: "historical_qualification_imported",
+        entity_type: "qualification_result",
+        entity_id: resultIds[0],
+        summary: `${officerName} ${qualificationType} qualification imported for ${courseName}.`,
+        new_value: {
+          officer_name: officerName,
+          badge_number: badgeNumber || null,
+          qualification_date: qualificationDate,
+          qualification_type: qualificationType,
+          course_name: courseName,
+          components: components.map((component) => ({
+            lighting_condition: component.lightingCondition,
+            score: component.score,
+            passing_score: component.passingScore,
+            result: component.resultText || null,
+          })),
+          instructor: instructorName || null,
+          record_origin: "historical_import",
+          platform_admin: Boolean(platformAdminResult.data),
+        },
+      });
 
-    if (insertError) throw insertError;
-
-    const { error: auditError } = await admin.from("audit_events").insert({
-      department_id: departmentId,
-      actor_user_id: actor.id,
-      action: "historical_qualification_imported",
-      entity_type: "qualification_result",
-      entity_id: insertedResult.id,
-      summary: `${officerName} historical qualification imported for ${courseName}.`,
-      new_value: {
-        officer_name: officerName,
-        badge_number: badgeNumber || null,
-        qualification_date: qualificationDate,
-        course_name: courseName,
-        score,
-        passing_score: passingScore,
-        result: resultText || null,
-        instructor: instructorName || null,
-        record_origin: "historical_import",
-        platform_admin: Boolean(platformAdminResult.data),
-      },
-    });
-
-    if (auditError) throw auditError;
+      if (auditError) throw auditError;
+    }
 
     return NextResponse.json({
       ok: true,
-      status: "created",
-      resultId: insertedResult.id,
+      status,
+      resultId: resultIds[0],
+      resultIds,
       officerUserId,
-      passed,
-      message: `${officerName} historical qualification imported.`,
+      changedFields: Array.from(changedFields),
+      conflicts,
+      components: components.map((component, index) => ({
+        name: component.label,
+        resultId: resultIds[index],
+        status: statuses[index],
+        passed: derivePassed(
+          component.resultText,
+          component.score,
+          component.passingScore,
+        ),
+      })),
+      message: `${officerName} historical ${qualificationType} qualification imported.`,
     });
   } catch (error) {
     const message =

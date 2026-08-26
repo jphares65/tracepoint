@@ -239,7 +239,12 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
     description:
       "Preview and validate historical qualification records before import.",
     supportStatus: "Can Import",
-    duplicateKeys: ["officerName", "qualificationDate", "courseName"],
+    duplicateKeys: [
+      "officerName",
+      "qualificationDate",
+      "qualificationType",
+      "courseName",
+    ],
     fields: [
       {
         key: "officerName",
@@ -259,26 +264,58 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
         aliases: ["date", "qualification date", "qual date"],
       },
       {
+        key: "qualificationType",
+        label: "Qualification Type",
+        required: true,
+        aliases: [
+          "qualification type",
+          "weapon type",
+          "firearm type",
+          "type",
+          "discipline",
+        ],
+        help: "Handgun, Rifle, Shotgun, Less Lethal, or Other.",
+      },
+      {
         key: "courseName",
         label: "Course / Standard",
         required: true,
         aliases: ["course", "course name", "standard", "qualification"],
       },
       {
-        key: "score",
-        label: "Score",
-        required: true,
-        aliases: ["score", "points", "qualification score"],
+        key: "dayScore",
+        label: "Day Score",
+        aliases: ["day score", "day qualification score", "score", "points"],
       },
       {
-        key: "passingScore",
-        label: "Passing Score",
-        aliases: ["passing score", "minimum score", "minimum passing"],
+        key: "dayPassingScore",
+        label: "Day Passing Score",
+        aliases: [
+          "day passing score",
+          "passing score",
+          "minimum score",
+          "minimum passing",
+        ],
       },
       {
-        key: "result",
-        label: "Result",
-        aliases: ["result", "pass fail", "pass/fail", "status"],
+        key: "dayResult",
+        label: "Day Result",
+        aliases: ["day result", "result", "pass fail", "pass/fail", "status"],
+      },
+      {
+        key: "nightScore",
+        label: "Night Score",
+        aliases: ["night score", "night qualification score", "low light score"],
+      },
+      {
+        key: "nightPassingScore",
+        label: "Night Passing Score",
+        aliases: ["night passing score", "night minimum score"],
+      },
+      {
+        key: "nightResult",
+        label: "Night Result",
+        aliases: ["night result", "night pass fail", "night status"],
       },
       {
         key: "instructor",
@@ -676,7 +713,12 @@ function detectOnboardingDatasetType(
 
   if (
     hasAnyHeader("qualification date", "qual date") &&
-    hasAnyHeader("score", "qualification score")
+    hasAnyHeader(
+      "score",
+      "qualification score",
+      "day score",
+      "night score",
+    )
   ) {
     return "qualification_history";
   }
@@ -921,38 +963,80 @@ function validateRows(
     }
 
     if (definition.id === "qualification_history") {
-      const score = Number(row.score);
+      const qualificationType = row.qualificationType
+        ?.trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
 
-      if (row.score && Number.isNaN(score)) {
+      if (
+        qualificationType &&
+        ![
+          "handgun",
+          "pistol",
+          "sidearm",
+          "rifle",
+          "shotgun",
+          "less_lethal",
+          "lesslethal",
+          "other",
+        ].includes(qualificationType)
+      ) {
         issues.push({
           rowNumber: rowIndex + 2,
-          severity: "warning",
-          field: "score",
-          message: "Score is not numeric.",
+          severity: "error",
+          field: "qualificationType",
+          message:
+            "Qualification Type must be Handgun, Rifle, Shotgun, Less Lethal, or Other.",
         });
       }
+
+      if (!row.dayScore && !row.nightScore) {
+        issues.push({
+          rowNumber: rowIndex + 2,
+          severity: "error",
+          field: "dayScore",
+          message: "At least one Day Score or Night Score is required.",
+        });
+      }
+
+      ["dayScore", "dayPassingScore", "nightScore", "nightPassingScore"].forEach(
+        (field) => {
+          const value = row[field];
+          if (value && Number.isNaN(Number(value.replace(/,/g, "")))) {
+            issues.push({
+              rowNumber: rowIndex + 2,
+              severity: "error",
+              field,
+              message: `${field} must be numeric.`,
+            });
+          }
+        },
+      );
     }
   });
 
-  definition.duplicateKeys.forEach((fieldKey) => {
-    const seen = new Map<string, number>();
+  const seenDuplicateKeys = new Map<string, number>();
 
-    mappedRows.forEach((row, rowIndex) => {
-      const value = row[fieldKey]?.trim().toLowerCase();
+  mappedRows.forEach((row, rowIndex) => {
+    const keyParts = definition.duplicateKeys.map((fieldKey) =>
+      row[fieldKey]?.trim().toLowerCase(),
+    );
 
-      if (!value) return;
+    if (keyParts.some((value) => !value)) return;
 
-      if (seen.has(value)) {
-        issues.push({
-          rowNumber: rowIndex + 2,
-          severity: "warning",
-          field: fieldKey,
-          message: `Possible duplicate ${fieldKey}. First seen on row ${seen.get(value)}.`,
-        });
-      } else {
-        seen.set(value, rowIndex + 2);
-      }
-    });
+    const compositeKey = keyParts.join("::");
+    const firstRow = seenDuplicateKeys.get(compositeKey);
+
+    if (firstRow) {
+      issues.push({
+        rowNumber: rowIndex + 2,
+        severity: "warning",
+        field: definition.duplicateKeys.join(", "),
+        message: `Possible duplicate record. First seen on row ${firstRow}.`,
+      });
+    } else {
+      seenDuplicateKeys.set(compositeKey, rowIndex + 2);
+    }
   });
 
   return issues;
@@ -1726,10 +1810,14 @@ function ImportWizardContent() {
                 officerName: row.officerName,
                 badgeNumber: row.badgeNumber,
                 qualificationDate: row.qualificationDate,
+                qualificationType: row.qualificationType,
                 courseName: row.courseName,
-                score: row.score,
-                passingScore: row.passingScore,
-                result: row.result,
+                dayScore: row.dayScore,
+                dayPassingScore: row.dayPassingScore,
+                dayResult: row.dayResult,
+                nightScore: row.nightScore,
+                nightPassingScore: row.nightPassingScore,
+                nightResult: row.nightResult,
                 instructor: row.instructor,
                 notes: row.notes,
               }),
@@ -6231,10 +6319,14 @@ function ImportWizardContent() {
       "officerName",
       "badgeNumber",
       "qualificationDate",
+      "qualificationType",
       "courseName",
-      "score",
-      "passingScore",
-      "result",
+      "dayScore",
+      "dayPassingScore",
+      "dayResult",
+      "nightScore",
+      "nightPassingScore",
+      "nightResult",
       "instructor",
       "notes",
     ]);
@@ -6264,10 +6356,9 @@ function ImportWizardContent() {
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
                   Upload CSV exports, map agency fields to TracePoint fields,
-                  preview validation issues, and import supported records. Firearms
-                  can import now; personnel and qualification history are staged
-                  for preview/validation until their normalized import targets
-                  are finalized.
+                  preview validation issues, and import supported records. Firearms,
+                  personnel, and qualification history import directly into
+                  normalized TracePoint records.
                 </p>
               </div>
 
@@ -7410,11 +7501,6 @@ export default function ImportWizardPage() {
     </Suspense>
   );
 }
-
-
-
-
-
 
 
 
