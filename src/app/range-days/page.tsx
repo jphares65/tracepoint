@@ -534,12 +534,13 @@ function getScoringFormat(
   drill?: ExtendedRangeDayDrill | ExtendedDrillTemplate | null,
 ): ScoringFormat {
   if (!drill) return "Pass/Fail";
-
-  if (drill.scoringFormat) return drill.scoringFormat;
-
+  // Qualification activities are always scored as qualifications.
+  // This must take precedence over legacy/stale scoringFormat values.
   if (isQualificationNameOrCategory(drill.name, drill.category)) {
     return "Qualification";
   }
+
+  if (drill.scoringFormat) return drill.scoringFormat;
 
   const legacyMode =
     "scoringMode" in drill ? drill.scoringMode : drill.defaultScoringMode;
