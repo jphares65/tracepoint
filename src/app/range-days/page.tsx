@@ -1801,6 +1801,8 @@ export default function RangeDaysPage() {
 
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [showCreateDrillForm, setShowCreateDrillForm] = useState(false);
+  const [editingDrillTemplateId, setEditingDrillTemplateId] =
+    useState<string | null>(null);
 
   const [newDrillName, setNewDrillName] = useState("");
   const [newDrillCategory, setNewDrillCategory] =
@@ -2513,6 +2515,7 @@ export default function RangeDaysPage() {
   }
 
   function resetNewDrillForm() {
+    setEditingDrillTemplateId(null);
     setNewDrillName("");
     setNewDrillCategory("Marksmanship");
     setNewDrillDescription("");
@@ -2541,6 +2544,73 @@ export default function RangeDaysPage() {
     setNewDrillStandardRetirementDate("");
     setNewDrillTags("");
     setNewDrillNotes("");
+  }
+
+  function handleEditDrillTemplate(template: ExtendedDrillTemplate) {
+    const scoringFormat = getScoringFormat(template);
+
+    setEditingDrillTemplateId(template.id);
+    setNewDrillName(template.name);
+    setNewDrillCategory(template.category);
+    setNewDrillDescription(template.description ?? "");
+    setNewDrillInstructions(template.instructions ?? "");
+    setNewDrillFirearmType(template.firearmType ?? "Any");
+    setNewDrillRoundCount(String(template.roundCount ?? ""));
+    setNewDrillEstimatedMinutes(String(template.estimatedMinutes ?? ""));
+    setNewDrillDifficulty(template.difficulty ?? "Basic");
+    setNewDrillScoringMode(scoringFormat);
+    setNewDrillPassingScore(String(template.defaultPassingScore ?? ""));
+    setNewDrillMaxScore(String(template.defaultMaxScore ?? ""));
+    setNewDrillPassingTimeSeconds(
+      String(template.defaultPassingTimeSeconds ?? ""),
+    );
+    setNewDrillMinimumHits(String(template.defaultMinimumHits ?? ""));
+    setNewDrillRunCount(String(template.defaultRunCount ?? 1));
+    setNewDrillDefaultRequired(template.defaultRequired ?? false);
+    setNewDrillIsDepartmentStandard(template.isDepartmentStandard ?? false);
+    setNewDrillStandardName(template.departmentStandardName ?? "");
+    setNewDrillStandardMinimumScore(
+      String(template.departmentStandardMinimumScore ?? ""),
+    );
+    setNewDrillStandardPassingTimeSeconds(
+      String(template.departmentStandardPassingTimeSeconds ?? ""),
+    );
+    setNewDrillStandardMinimumHits(
+      String(template.departmentStandardMinimumHits ?? ""),
+    );
+    setNewDrillStandardAppliesTo(
+      template.departmentStandardAppliesTo ?? "All sworn officers",
+    );
+    setNewDrillStandardRemediationRequired(
+      template.departmentStandardRemediationRequired ?? true,
+    );
+    setNewDrillStandardRetestRequired(
+      template.departmentStandardRetestRequired ?? true,
+    );
+    setNewDrillStandardEffectiveDate(
+      template.departmentStandardEffectiveDate ?? "",
+    );
+    setNewDrillStandardRetirementDate(
+      template.departmentStandardRetirementDate ?? "",
+    );
+    setNewDrillTags(template.tags?.join(", ") ?? "");
+    setNewDrillNotes(template.notes ?? "");
+    setNewQualificationComponents(
+      template.qualificationComponents?.length
+        ? template.qualificationComponents.map((component) => ({
+            ...component,
+          }))
+        : isQualificationNameOrCategory(template.name, template.category)
+          ? createDefaultQualificationComponents()
+          : [],
+    );
+    setShowCreateDrillForm(true);
+
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById("drill-template-editor")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function openRangeDay(rangeDayId: string) {
@@ -3350,7 +3420,25 @@ export default function RangeDaysPage() {
         : undefined,
     };
 
-    setDrillLibrary((current) => [createdTemplate, ...current]);
+    setDrillLibrary((current) =>
+      editingDrillTemplateId
+        ? current.map((template) =>
+            template.id === editingDrillTemplateId
+              ? {
+                  ...template,
+                  ...createdTemplate,
+                  id: template.id,
+                  status: template.status,
+                }
+              : template,
+          )
+        : [createdTemplate, ...current],
+    );
+    setSaveMessage(
+      editingDrillTemplateId
+        ? `${newDrillName.trim()} updated in the drill library.`
+        : `${newDrillName.trim()} added to the drill library.`,
+    );
     resetNewDrillForm();
     setShowCreateDrillForm(false);
   }
@@ -4829,7 +4917,15 @@ export default function RangeDaysPage() {
 
                     <button
                       type="button"
-                      onClick={() => setShowCreateDrillForm((current) => !current)}
+                      onClick={() => {
+                        if (showCreateDrillForm) {
+                          resetNewDrillForm();
+                          setShowCreateDrillForm(false);
+                        } else {
+                          resetNewDrillForm();
+                          setShowCreateDrillForm(true);
+                        }
+                      }}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
                     >
                       <Plus size={14} />
@@ -4838,9 +4934,14 @@ export default function RangeDaysPage() {
                   </div>
 
                   {showCreateDrillForm && (
-                    <div className="mt-5 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4">
+                    <div
+                      id="drill-template-editor"
+                      className="mt-5 scroll-mt-6 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4"
+                    >
                       <h3 className="mb-4 text-[15px] font-bold text-white">
-                        Create New Drill Template
+                        {editingDrillTemplateId
+                          ? "Edit Drill Template"
+                          : "Create New Drill Template"}
                       </h3>
 
                       <div className="grid gap-4 lg:grid-cols-4">
@@ -5417,7 +5518,9 @@ export default function RangeDaysPage() {
                             onClick={handleCreateDrillTemplate}
                             className="rounded-xl bg-blue-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-500"
                           >
-                            Save Drill Template
+                            {editingDrillTemplateId
+                              ? "Save Drill Changes"
+                              : "Save Drill Template"}
                           </button>
                         </div>
                       </div>
@@ -5476,21 +5579,30 @@ export default function RangeDaysPage() {
                           </div>
                         ) : null}
 
-                        <button
-                          type="button"
-                          disabled={template.status !== "Active"}
-                          onClick={() =>
-                            handleAddTemplateToSelectedRangeDay(template.id)
-                          }
-                          className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
-                            template.status === "Active"
-                              ? "bg-blue-600 text-white hover:bg-blue-500"
-                              : "cursor-not-allowed bg-slate-800 text-slate-600"
-                          }`}
-                        >
-                          <Plus size={14} />
-                          Add to This Range Day
-                        </button>
+                        <div className="mt-4 grid grid-cols-[auto_1fr] gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEditDrillTemplate(template)}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-300 transition hover:border-blue-500/50 hover:text-blue-300"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={template.status !== "Active"}
+                            onClick={() =>
+                              handleAddTemplateToSelectedRangeDay(template.id)
+                            }
+                            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
+                              template.status === "Active"
+                                ? "bg-blue-600 text-white hover:bg-blue-500"
+                                : "cursor-not-allowed bg-slate-800 text-slate-600"
+                            }`}
+                          >
+                            <Plus size={14} />
+                            Add to This Range Day
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
