@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   type ChangeEvent,
@@ -49,7 +49,15 @@ import {
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
-type TabId = "agency" | "organization" | "users" | "rules" | "branding" | "importExport" | "notifications" | "audit";
+type TabId =
+  | "agency"
+  | "organization"
+  | "users"
+  | "rules"
+  | "branding"
+  | "importExport"
+  | "notifications"
+  | "audit";
 type NoticeTone = "success" | "error" | "info";
 
 type RoleRow = {
@@ -158,12 +166,7 @@ type OrganizationGroup = OrganizationItem & {
   group_type: string;
 };
 type QualificationScoringBasis =
-  | "Points"
-  | "Percentage"
-  | "Time"
-  | "Pass/Fail"
-  | "Hit Count"
-  | "Completion";
+  "Points" | "Percentage" | "Time" | "Pass/Fail" | "Hit Count" | "Completion";
 
 type QualificationStandardComponentRow = {
   id: string;
@@ -318,8 +321,7 @@ function Notice({
   onClose: () => void;
 }) {
   const styles = {
-    success:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+    success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
     error: "border-red-500/30 bg-red-500/10 text-red-200",
     info: "border-blue-500/30 bg-blue-500/10 text-blue-200",
   };
@@ -404,13 +406,7 @@ function SettingsCard({
   );
 }
 
-function FieldLabel({
-  label,
-  hint,
-}: {
-  label: string;
-  hint?: string;
-}) {
+function FieldLabel({ label, hint }: { label: string; hint?: string }) {
   return (
     <div className="mb-1.5">
       <label className="text-xs font-semibold text-slate-300">{label}</label>
@@ -735,12 +731,10 @@ export default function AdminSettingsPage() {
   } = useTracePointAccess();
 
   const canManageUsers =
-    hasPermission("manage_users") ||
-    hasPermission("administer_department");
+    hasPermission("manage_users") || hasPermission("administer_department");
   const canAdminister = hasPermission("administer_department");
   const canViewAudit =
-    hasPermission("view_audit_log") ||
-    hasPermission("administer_department");
+    hasPermission("view_audit_log") || hasPermission("administer_department");
 
   const [activeTab, setActiveTab] = useState<TabId>("agency");
   const [loading, setLoading] = useState(true);
@@ -765,24 +759,20 @@ export default function AdminSettingsPage() {
   const [department, setDepartment] =
     useState<DepartmentForm>(EMPTY_DEPARTMENT);
   const [rules, setRules] = useState<RulesForm>(EMPTY_RULES);
-  const [security, setSecurity] =
-    useState<SecurityForm>(EMPTY_SECURITY);
+  const [security, setSecurity] = useState<SecurityForm>(EMPTY_SECURITY);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [permissions, setPermissions] = useState<PermissionRow[]>([]);
-  const [rolePermissions, setRolePermissions] = useState<
-    RolePermissionRow[]
-  >([]);
+  const [rolePermissions, setRolePermissions] = useState<RolePermissionRow[]>(
+    [],
+  );
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
 
-  const [editingMember, setEditingMember] =
-    useState<MemberRow | null>(null);
-  const [memberDraft, setMemberDraft] =
-    useState<MemberDraft | null>(null);
+  const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
+  const [memberDraft, setMemberDraft] = useState<MemberDraft | null>(null);
   const [memberGroupIds, setMemberGroupIds] = useState<string[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteDraft, setInviteDraft] =
-    useState<InviteDraft>(EMPTY_INVITE);
+  const [inviteDraft, setInviteDraft] = useState<InviteDraft>(EMPTY_INVITE);
 
   const [organizationTitles, setOrganizationTitles] = useState<
     OrganizationItem[]
@@ -802,13 +792,11 @@ export default function AdminSettingsPage() {
   const [newQualificationStandardName, setNewQualificationStandardName] =
     useState("");
 
-
   const [newTitleName, setNewTitleName] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteGroupIds, setInviteGroupIds] = useState<string[]>([]);
-  const [editingRoleCode, setEditingRoleCode] =
-    useState<string | null>(null);
+  const [editingRoleCode, setEditingRoleCode] = useState<string | null>(null);
   const [rolePermissionDraft, setRolePermissionDraft] = useState<
     TracePointPermission[]
   >([]);
@@ -854,7 +842,7 @@ export default function AdminSettingsPage() {
         label: "Rules Engine",
         icon: Settings,
       });
-            items.push({
+      items.push({
         id: "branding",
         label: "Branding",
         icon: Palette,
@@ -905,12 +893,7 @@ export default function AdminSettingsPage() {
 
   const permissionMap = useMemo(
     () =>
-      new Map(
-        permissions.map((permission) => [
-          permission.code,
-          permission,
-        ]),
-      ),
+      new Map(permissions.map((permission) => [permission.code, permission])),
     [permissions],
   );
 
@@ -952,12 +935,9 @@ export default function AdminSettingsPage() {
     [canAdminister, roles],
   );
 
-  const showNotice = useCallback(
-    (tone: NoticeTone, message: string) => {
-      setNotice({ tone, message });
-    },
-    [],
-  );
+  const showNotice = useCallback((tone: NoticeTone, message: string) => {
+    setNotice({ tone, message });
+  }, []);
 
   const loadSettings = useCallback(async () => {
     if (!departmentId) return;
@@ -982,9 +962,7 @@ export default function AdminSettingsPage() {
       };
 
       if (!response.ok) {
-        throw new Error(
-          payload.error || "Settings could not be loaded.",
-        );
+        throw new Error(payload.error || "Settings could not be loaded.");
       }
 
       const departmentResult = {
@@ -1050,43 +1028,34 @@ export default function AdminSettingsPage() {
         ),
         sworn_officers: numberValue(departmentData.sworn_officers),
         civilian_staff: numberValue(departmentData.civilian_staff),
-        timezone: String(
-          departmentData.timezone ?? "America/New_York",
-        ),
+        timezone: String(departmentData.timezone ?? "America/New_York"),
         primary_contact_user_id: String(
           departmentData.primary_contact_user_id ?? "",
         ),
         patch_url: String(departmentData.patch_url ?? ""),
-        accent_color: normalizeAccentColor(
-          departmentData.accent_color,
-        ),
-        login_theme: normalizeBrightness(
-          departmentData.login_theme,
-        ),
+        accent_color: normalizeAccentColor(departmentData.accent_color),
+        login_theme: normalizeBrightness(departmentData.login_theme),
       });
 
-      const rulesData = rulesResult.data as unknown as
-        | Record<string, unknown>
-        | null;
+      const rulesData = rulesResult.data as unknown as Record<
+        string,
+        unknown
+      > | null;
 
       setRules(
         rulesData
           ? {
               spring_cycle_start: String(
-                rulesData.spring_cycle_start ??
-                  EMPTY_RULES.spring_cycle_start,
+                rulesData.spring_cycle_start ?? EMPTY_RULES.spring_cycle_start,
               ),
               spring_cycle_end: String(
-                rulesData.spring_cycle_end ??
-                  EMPTY_RULES.spring_cycle_end,
+                rulesData.spring_cycle_end ?? EMPTY_RULES.spring_cycle_end,
               ),
               fall_cycle_start: String(
-                rulesData.fall_cycle_start ??
-                  EMPTY_RULES.fall_cycle_start,
+                rulesData.fall_cycle_start ?? EMPTY_RULES.fall_cycle_start,
               ),
               fall_cycle_end: String(
-                rulesData.fall_cycle_end ??
-                  EMPTY_RULES.fall_cycle_end,
+                rulesData.fall_cycle_end ?? EMPTY_RULES.fall_cycle_end,
               ),
               require_rifle_familiarization: Boolean(
                 rulesData.require_rifle_familiarization,
@@ -1116,7 +1085,8 @@ export default function AdminSettingsPage() {
               ),
               require_personal_rifle_armorer_inspection:
                 rulesData.require_personal_rifle_armorer_inspection === null ||
-                rulesData.require_personal_rifle_armorer_inspection === undefined
+                rulesData.require_personal_rifle_armorer_inspection ===
+                  undefined
                   ? true
                   : Boolean(
                       rulesData.require_personal_rifle_armorer_inspection,
@@ -1133,14 +1103,16 @@ export default function AdminSettingsPage() {
                   : Boolean(rulesData.require_personal_rifle_qualification),
               require_personal_rifle_annual_reinspection:
                 rulesData.require_personal_rifle_annual_reinspection === null ||
-                rulesData.require_personal_rifle_annual_reinspection === undefined
+                rulesData.require_personal_rifle_annual_reinspection ===
+                  undefined
                   ? true
                   : Boolean(
                       rulesData.require_personal_rifle_annual_reinspection,
                     ),
               require_personal_rifle_spec_acknowledgment:
                 rulesData.require_personal_rifle_spec_acknowledgment === null ||
-                rulesData.require_personal_rifle_spec_acknowledgment === undefined
+                rulesData.require_personal_rifle_spec_acknowledgment ===
+                  undefined
                   ? true
                   : Boolean(
                       rulesData.require_personal_rifle_spec_acknowledgment,
@@ -1149,22 +1121,19 @@ export default function AdminSettingsPage() {
           : EMPTY_RULES,
       );
 
-      const securityData = securityResult.data as unknown as
-        | Record<string, unknown>
-        | null;
+      const securityData = securityResult.data as unknown as Record<
+        string,
+        unknown
+      > | null;
 
       if (securityData) {
         setSecurity({
-          require_mfa_policy: Boolean(
-            securityData.require_mfa_policy,
-          ),
+          require_mfa_policy: Boolean(securityData.require_mfa_policy),
           session_timeout_minutes: numberValue(
             securityData.session_timeout_minutes,
             30,
           ),
-          export_logging_enabled: Boolean(
-            securityData.export_logging_enabled,
-          ),
+          export_logging_enabled: Boolean(securityData.export_logging_enabled),
           data_retention_days: numberValue(
             securityData.data_retention_days,
             2555,
@@ -1177,9 +1146,7 @@ export default function AdminSettingsPage() {
           code: String(row.code ?? ""),
           display_name: String(row.display_name ?? row.code ?? ""),
           description:
-            typeof row.description === "string"
-              ? row.description
-              : null,
+            typeof row.description === "string" ? row.description : null,
           sort_order: numberValue(row.sort_order),
         })),
       );
@@ -1189,9 +1156,7 @@ export default function AdminSettingsPage() {
           code: String(row.code) as TracePointPermission,
           display_name: String(row.display_name ?? row.code ?? ""),
           description:
-            typeof row.description === "string"
-              ? row.description
-              : null,
+            typeof row.description === "string" ? row.description : null,
         })),
       );
 
@@ -1205,25 +1170,19 @@ export default function AdminSettingsPage() {
       );
 
       setMembers(
-        ((membersResult.data ?? []) as unknown as Array<
-          Record<string, unknown>
-        >).map((row) => ({
+        (
+          (membersResult.data ?? []) as unknown as Array<
+            Record<string, unknown>
+          >
+        ).map((row) => ({
           user_id: String(row.user_id ?? ""),
           full_name: String(row.full_name ?? "TracePoint User"),
-          email:
-            typeof row.email === "string" ? row.email : null,
+          email: typeof row.email === "string" ? row.email : null,
           badge_number:
-            typeof row.badge_number === "string"
-              ? row.badge_number
-              : null,
+            typeof row.badge_number === "string" ? row.badge_number : null,
           rank_title:
-            typeof row.rank_title === "string"
-              ? row.rank_title
-              : null,
-          unit_name:
-            typeof row.unit_name === "string"
-              ? row.unit_name
-              : null,
+            typeof row.rank_title === "string" ? row.rank_title : null,
+          unit_name: typeof row.unit_name === "string" ? row.unit_name : null,
           employee_number:
             typeof row.employee_number === "string"
               ? row.employee_number
@@ -1243,32 +1202,24 @@ export default function AdminSettingsPage() {
       );
 
       if (canViewAudit) {
-        const auditResponse = await fetch(
-          "/api/settings/audit-log?limit=100",
-          {
-            method: "GET",
-            cache: "no-store",
-          },
-        );
+        const auditResponse = await fetch("/api/settings/audit-log?limit=100", {
+          method: "GET",
+          cache: "no-store",
+        });
 
-        const auditPayload = (await auditResponse
-          .json()
-          .catch(() => ({}))) as {
+        const auditPayload = (await auditResponse.json().catch(() => ({}))) as {
           events?: AuditEvent[];
           error?: string;
         };
 
         if (!auditResponse.ok) {
           throw new Error(
-            auditPayload.error ||
-              "The audit log could not be loaded.",
+            auditPayload.error || "The audit log could not be loaded.",
           );
         }
 
         setAuditEvents(
-          Array.isArray(auditPayload.events)
-            ? auditPayload.events
-            : [],
+          Array.isArray(auditPayload.events) ? auditPayload.events : [],
         );
       }
     } catch (error) {
@@ -1281,13 +1232,7 @@ export default function AdminSettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [
-    canManageUsers,
-    canViewAudit,
-    departmentId,
-    showNotice,
-    supabase,
-  ]);
+  }, [canManageUsers, canViewAudit, departmentId, showNotice, supabase]);
 
   useEffect(() => {
     if (!accessLoading && departmentId) {
@@ -1320,29 +1265,23 @@ export default function AdminSettingsPage() {
           state: department.state.trim() || null,
           county: department.county.trim() || null,
           agency_type:
-            department.agency_type.trim() ||
-            "Municipal Police Department",
+            department.agency_type.trim() || "Municipal Police Department",
           sworn_officers: department.sworn_officers,
           civilian_staff: department.civilian_staff,
           timezone: department.timezone,
-          primary_contact_user_id:
-            department.primary_contact_user_id || null,
+          primary_contact_user_id: department.primary_contact_user_id || null,
         })
         .eq("id", departmentId);
 
       if (error) throw error;
 
       await refreshAccess();
-      window.dispatchEvent(
-        new CustomEvent("tracepoint:department-updated"),
-      );
+      window.dispatchEvent(new CustomEvent("tracepoint:department-updated"));
       showNotice("success", "Agency profile saved.");
       setSavedSection("agency");
 
       window.setTimeout(() => {
-        setSavedSection((current) =>
-          current === "agency" ? null : current,
-        );
+        setSavedSection((current) => (current === "agency" ? null : current));
       }, 3000);
     } catch (error) {
       showNotice(
@@ -1415,16 +1354,12 @@ export default function AdminSettingsPage() {
       );
 
       await refreshAccess();
-      window.dispatchEvent(
-        new CustomEvent("tracepoint:department-updated"),
-      );
+      window.dispatchEvent(new CustomEvent("tracepoint:department-updated"));
       showNotice("success", "Department branding saved to Supabase.");
     } catch (error) {
       showNotice(
         "error",
-        error instanceof Error
-          ? error.message
-          : "Branding could not be saved.",
+        error instanceof Error ? error.message : "Branding could not be saved.",
       );
     } finally {
       setSavingSection(null);
@@ -1478,12 +1413,13 @@ export default function AdminSettingsPage() {
 
     setMemberGroupIds([]);
 
-    const { data: groupMemberships, error: groupMembershipError } =
-      await (supabase as any)
-        .from("department_group_members")
-        .select("group_id")
-        .eq("department_id", departmentId)
-        .eq("user_id", member.user_id);
+    const { data: groupMemberships, error: groupMembershipError } = await (
+      supabase as any
+    )
+      .from("department_group_members")
+      .select("group_id")
+      .eq("department_id", departmentId)
+      .eq("user_id", member.user_id);
 
     if (groupMembershipError) {
       showNotice(
@@ -1497,9 +1433,8 @@ export default function AdminSettingsPage() {
     setMemberGroupIds(
       (groupMemberships ?? [])
         .map((row: { group_id?: string }) => row.group_id)
-        .filter(
-          (groupId: string | undefined): groupId is string =>
-            Boolean(groupId),
+        .filter((groupId: string | undefined): groupId is string =>
+          Boolean(groupId),
         ),
     );
   }
@@ -1531,27 +1466,25 @@ export default function AdminSettingsPage() {
       if (standardsResult.error) throw standardsResult.error;
       if (componentsResult.error) throw componentsResult.error;
 
-      const components =
-        (componentsResult.data ?? []) as QualificationStandardComponentRow[];
+      const components = (componentsResult.data ??
+        []) as QualificationStandardComponentRow[];
 
       setQualificationStandards(
-        ((standardsResult.data ?? []) as Omit<
-          QualificationStandardRow,
-          "components"
-        >[]).map((standard) => ({
+        (
+          (standardsResult.data ?? []) as Omit<
+            QualificationStandardRow,
+            "components"
+          >[]
+        ).map((standard) => ({
           ...standard,
           components: components.filter(
-            (component) =>
-              component.qualification_standard_id === standard.id,
+            (component) => component.qualification_standard_id === standard.id,
           ),
         })),
       );
     } catch (error) {
       console.error(error);
-      showNotice(
-        "error",
-        "Qualification standards could not be loaded.",
-      );
+      showNotice("error", "Qualification standards could not be loaded.");
     } finally {
       setQualificationStandardsLoading(false);
     }
@@ -1594,10 +1527,7 @@ export default function AdminSettingsPage() {
       await loadQualificationStandards();
     } catch (error) {
       console.error(error);
-      showNotice(
-        "error",
-        "The qualification standard could not be created.",
-      );
+      showNotice("error", "The qualification standard could not be created.");
     } finally {
       setSavingSection(null);
     }
@@ -1609,16 +1539,12 @@ export default function AdminSettingsPage() {
   ) {
     setQualificationStandards((current) =>
       current.map((standard) =>
-        standard.id === standardId
-          ? { ...standard, ...patch }
-          : standard,
+        standard.id === standardId ? { ...standard, ...patch } : standard,
       ),
     );
   }
 
-  async function saveQualificationStandard(
-    standard: QualificationStandardRow,
-  ) {
+  async function saveQualificationStandard(standard: QualificationStandardRow) {
     setSavingSection(`qualification-standard-${standard.id}`);
 
     try {
@@ -1641,10 +1567,7 @@ export default function AdminSettingsPage() {
       await loadQualificationStandards();
     } catch (error) {
       console.error(error);
-      showNotice(
-        "error",
-        "The qualification standard could not be saved.",
-      );
+      showNotice("error", "The qualification standard could not be saved.");
     } finally {
       setSavingSection(null);
     }
@@ -1662,9 +1585,7 @@ export default function AdminSettingsPage() {
         standard.components.length === 0
           ? 0
           : Math.max(
-              ...standard.components.map(
-                (component) => component.sort_order,
-              ),
+              ...standard.components.map((component) => component.sort_order),
             ) + 1;
 
       const { error } = await supabase
@@ -1684,10 +1605,7 @@ export default function AdminSettingsPage() {
       await loadQualificationStandards();
     } catch (error) {
       console.error(error);
-      showNotice(
-        "error",
-        "The qualification component could not be added.",
-      );
+      showNotice("error", "The qualification component could not be added.");
     } finally {
       setSavingSection(null);
     }
@@ -1743,10 +1661,7 @@ export default function AdminSettingsPage() {
       await loadQualificationStandards();
     } catch (error) {
       console.error(error);
-      showNotice(
-        "error",
-        "The qualification component could not be saved.",
-      );
+      showNotice("error", "The qualification component could not be saved.");
     } finally {
       setSavingSection(null);
     }
@@ -1765,47 +1680,38 @@ export default function AdminSettingsPage() {
     setOrganizationLoading(true);
 
     try {
-      const [titlesResult, unitsResult, groupsResult] =
-        await Promise.all([
-          (supabase as any)
-            .from("department_titles")
-            .select("id,name,sort_order,is_active")
-            .eq("department_id", departmentId)
-            .order("sort_order")
-            .order("name"),
+      const [titlesResult, unitsResult, groupsResult] = await Promise.all([
+        (supabase as any)
+          .from("department_titles")
+          .select("id,name,sort_order,is_active")
+          .eq("department_id", departmentId)
+          .order("sort_order")
+          .order("name"),
 
-          (supabase as any)
-            .from("department_units")
-            .select("id,name,sort_order,is_active")
-            .eq("department_id", departmentId)
-            .order("sort_order")
-            .order("name"),
+        (supabase as any)
+          .from("department_units")
+          .select("id,name,sort_order,is_active")
+          .eq("department_id", departmentId)
+          .order("sort_order")
+          .order("name"),
 
-          (supabase as any)
-            .from("department_groups")
-            .select(
-              "id,name,description,group_type,sort_order,is_active",
-            )
-            .eq("department_id", departmentId)
-            .order("sort_order")
-            .order("name"),
-        ]);
+        (supabase as any)
+          .from("department_groups")
+          .select("id,name,description,group_type,sort_order,is_active")
+          .eq("department_id", departmentId)
+          .order("sort_order")
+          .order("name"),
+      ]);
 
       if (titlesResult.error) throw titlesResult.error;
       if (unitsResult.error) throw unitsResult.error;
       if (groupsResult.error) throw groupsResult.error;
 
-      setOrganizationTitles(
-        (titlesResult.data ?? []) as OrganizationItem[],
-      );
+      setOrganizationTitles((titlesResult.data ?? []) as OrganizationItem[]);
 
-      setOrganizationUnits(
-        (unitsResult.data ?? []) as OrganizationItem[],
-      );
+      setOrganizationUnits((unitsResult.data ?? []) as OrganizationItem[]);
 
-      setOrganizationGroups(
-        (groupsResult.data ?? []) as OrganizationGroup[],
-      );
+      setOrganizationGroups((groupsResult.data ?? []) as OrganizationGroup[]);
     } catch (error) {
       showNotice(
         "error",
@@ -1819,20 +1725,14 @@ export default function AdminSettingsPage() {
   }
 
   useEffect(() => {
-    if (
-      !accessLoading &&
-      departmentId &&
-      canAdminister
-    ) {
+    if (!accessLoading && departmentId && canAdminister) {
       void loadOrganization();
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessLoading, departmentId, canAdminister]);
 
-  async function addOrganizationItem(
-    kind: OrganizationKind,
-  ) {
+  async function addOrganizationItem(kind: OrganizationKind) {
     if (!departmentId || !canAdminister) return;
 
     const rawName =
@@ -1870,9 +1770,7 @@ export default function AdminSettingsPage() {
               is_active: true,
             };
 
-      const { error } = await (supabase as any)
-        .from(table)
-        .insert(payload);
+      const { error } = await (supabase as any).from(table).insert(payload);
 
       if (error) throw error;
 
@@ -1901,10 +1799,7 @@ export default function AdminSettingsPage() {
   ) {
     if (!departmentId || !canAdminister) return;
 
-    const response = window.prompt(
-      `Rename ${item.name}`,
-      item.name,
-    );
+    const response = window.prompt(`Rename ${item.name}`, item.name);
 
     if (response === null) return;
 
@@ -1912,9 +1807,7 @@ export default function AdminSettingsPage() {
 
     if (!name || name === item.name) return;
 
-    setSavingSection(
-      `organization-${kind}-${item.id}`,
-    );
+    setSavingSection(`organization-${kind}-${item.id}`);
 
     try {
       const table = organizationTable(kind);
@@ -1927,10 +1820,7 @@ export default function AdminSettingsPage() {
 
       if (error) throw error;
 
-      showNotice(
-        "success",
-        `${item.name} was renamed to ${name}.`,
-      );
+      showNotice("success", `${item.name} was renamed to ${name}.`);
 
       await loadOrganization();
     } catch (error) {
@@ -1951,9 +1841,7 @@ export default function AdminSettingsPage() {
   ) {
     if (!departmentId || !canAdminister) return;
 
-    setSavingSection(
-      `organization-${kind}-${item.id}`,
-    );
+    setSavingSection(`organization-${kind}-${item.id}`);
 
     try {
       const table = organizationTable(kind);
@@ -1970,9 +1858,7 @@ export default function AdminSettingsPage() {
 
       showNotice(
         "success",
-        `${item.name} ${
-          item.is_active ? "deactivated" : "activated"
-        }.`,
+        `${item.name} ${item.is_active ? "deactivated" : "activated"}.`,
       );
 
       await loadOrganization();
@@ -1988,20 +1874,12 @@ export default function AdminSettingsPage() {
     }
   }
   async function saveMember() {
-    if (
-      !editingMember ||
-      !memberDraft ||
-      !departmentId ||
-      !canManageUsers
-    ) {
+    if (!editingMember || !memberDraft || !departmentId || !canManageUsers) {
       return;
     }
 
     if (memberDraft.is_active && memberDraft.role_codes.length === 0) {
-      showNotice(
-        "error",
-        "An active member must have at least one role.",
-      );
+      showNotice("error", "An active member must have at least one role.");
       return;
     }
 
@@ -2049,10 +1927,7 @@ export default function AdminSettingsPage() {
       setEditingMember(null);
       setMemberDraft(null);
       setMemberGroupIds([]);
-      showNotice(
-        "success",
-        `${editingMember.full_name}'s access was updated.`,
-      );
+      showNotice("success", `${editingMember.full_name}'s access was updated.`);
       await loadSettings();
 
       if (editingMember.user_id === userId) {
@@ -2074,9 +1949,7 @@ export default function AdminSettingsPage() {
     if (!canAdminister) return;
 
     setEditingRoleCode(roleCode);
-    setRolePermissionDraft([
-      ...(rolePermissionMap.get(roleCode) ?? []),
-    ]);
+    setRolePermissionDraft([...(rolePermissionMap.get(roleCode) ?? [])]);
   }
 
   async function saveRolePermissions() {
@@ -2102,27 +1975,20 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase.rpc(
-        "set_department_role_permissions",
-        {
-          p_department_id: departmentId,
-          p_role_code: editingRoleCode,
-          p_permission_codes: rolePermissionDraft,
-        },
-      );
+      const { error } = await supabase.rpc("set_department_role_permissions", {
+        p_department_id: departmentId,
+        p_role_code: editingRoleCode,
+        p_permission_codes: rolePermissionDraft,
+      });
 
       if (error) throw error;
 
       const roleLabel =
-        roleMap.get(editingRoleCode)?.display_name ??
-        humanize(editingRoleCode);
+        roleMap.get(editingRoleCode)?.display_name ?? humanize(editingRoleCode);
 
       setEditingRoleCode(null);
       setRolePermissionDraft([]);
-      showNotice(
-        "success",
-        `${roleLabel} permissions were updated.`,
-      );
+      showNotice("success", `${roleLabel} permissions were updated.`);
 
       await Promise.all([loadSettings(), refreshAccess()]);
     } catch (error) {
@@ -2195,9 +2061,7 @@ export default function AdminSettingsPage() {
     } catch (error) {
       showNotice(
         "error",
-        error instanceof Error
-          ? error.message
-          : "The user could not be added.",
+        error instanceof Error ? error.message : "The user could not be added.",
       );
     } finally {
       setSavingSection(null);
@@ -2238,9 +2102,7 @@ export default function AdminSettingsPage() {
       };
 
       if (!response.ok) {
-        throw new Error(
-          result.error ?? "Activation email could not be sent.",
-        );
+        throw new Error(result.error ?? "Activation email could not be sent.");
       }
 
       showNotice(
@@ -2345,13 +2207,10 @@ export default function AdminSettingsPage() {
       const formData = new FormData();
       formData.set("file", file);
 
-      const response = await fetch(
-        "/api/settings/department-patch",
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const response = await fetch("/api/settings/department-patch", {
+        method: "POST",
+        body: formData,
+      });
 
       const payload = (await response.json().catch(() => ({}))) as {
         patchUrl?: string;
@@ -2370,9 +2229,7 @@ export default function AdminSettingsPage() {
         ...current,
         patch_url: patchUrl,
       }));
-      window.dispatchEvent(
-        new CustomEvent("tracepoint:department-updated"),
-      );
+      window.dispatchEvent(new CustomEvent("tracepoint:department-updated"));
       showNotice("success", "Department patch uploaded and saved.");
     } catch (error) {
       showNotice(
@@ -2392,31 +2249,23 @@ export default function AdminSettingsPage() {
     setSavingSection("audit-export");
 
     try {
-      const response = await fetch(
-        "/api/settings/audit-log?limit=5000",
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
+      const response = await fetch("/api/settings/audit-log?limit=5000", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      const payload = (await response
-        .json()
-        .catch(() => ({}))) as {
+      const payload = (await response.json().catch(() => ({}))) as {
         events?: AuditEvent[];
         error?: string;
       };
 
       if (!response.ok) {
         throw new Error(
-          payload.error ||
-            "The audit log could not be exported.",
+          payload.error || "The audit log could not be exported.",
         );
       }
 
-      const rows = Array.isArray(payload.events)
-        ? payload.events
-        : [];
+      const rows = Array.isArray(payload.events) ? payload.events : [];
 
       const escape = (value: unknown) =>
         `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -2503,9 +2352,8 @@ export default function AdminSettingsPage() {
 
   const userRoleCounts = roles.map((role) => ({
     ...role,
-    count: members.filter((member) =>
-      member.role_codes.includes(role.code),
-    ).length,
+    count: members.filter((member) => member.role_codes.includes(role.code))
+      .length,
   }));
 
   const currentTabCanSave =
@@ -2523,15 +2371,15 @@ export default function AdminSettingsPage() {
               Admin Settings
             </h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              Manage department configuration, user access, operational
-              rules, branding, and audit controls.
+              Manage department configuration, user access, operational rules,
+              branding, and audit controls.
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
               <span>
                 {members.length} department member
                 {members.length === 1 ? "" : "s"}
               </span>
-              <span>ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·</span>
+              <span>·</span>
               <span>{roles.length} available roles</span>
             </div>
           </div>
@@ -2543,10 +2391,7 @@ export default function AdminSettingsPage() {
               disabled={loading}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-slate-600 hover:text-white disabled:opacity-50"
             >
-              <RefreshCw
-                size={15}
-                className={loading ? "animate-spin" : ""}
-              />
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
               Refresh
             </button>
 
@@ -2578,10 +2423,7 @@ export default function AdminSettingsPage() {
         </header>
 
         {notice ? (
-          <Notice
-            tone={notice.tone}
-            onClose={() => setNotice(null)}
-          >
+          <Notice tone={notice.tone} onClose={() => setNotice(null)}>
             {notice.message}
           </Notice>
         ) : null}
@@ -2668,8 +2510,8 @@ export default function AdminSettingsPage() {
                         Export Tools
                       </h3>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
-                        Download personnel, firearms, ammunition exports,
-                        plus blank CSV templates for agency onboarding.
+                        Download personnel, firearms, ammunition exports, plus
+                        blank CSV templates for agency onboarding.
                       </p>
                     </div>
                   </div>
@@ -2697,7 +2539,8 @@ export default function AdminSettingsPage() {
 
                 <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-4">
                   <p className="font-semibold text-amber-200">
-                    Personnel and qualification history currently support preview and validation.
+                    Personnel and qualification history currently support
+                    preview and validation.
                   </p>
                   <p className="mt-1 text-xs leading-5 text-amber-200/80">
                     Those workflows validate and preview data until the final
@@ -2845,9 +2688,7 @@ export default function AdminSettingsPage() {
                     key={item.label}
                     className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3"
                   >
-                    <span className="text-sm text-slate-400">
-                      {item.label}
-                    </span>
+                    <span className="text-sm text-slate-400">{item.label}</span>
                     <StatusPill
                       label={item.ready ? "Configured" : "Needs Setup"}
                       tone={item.ready ? "green" : "amber"}
@@ -2859,22 +2700,18 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
-        {!loading &&
-        !accessLoading &&
-        activeTab === "organization" ? (
+        {!loading && !accessLoading && activeTab === "organization" ? (
           <div className="space-y-4">
-
             <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-5">
               <h2 className="text-lg font-semibold text-white">
                 Department Organization
               </h2>
 
               <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
-                Configure this agency's titles, units, and
-                specialty assignments. Organization describes
-                where people sit in the agency; security roles
-                and permissions determine what they can do in
-                TracePoint.
+                Configure this agency's titles, units, and specialty
+                assignments. Organization describes where people sit in the
+                agency; security roles and permissions determine what they can
+                do in TracePoint.
               </p>
             </div>
 
@@ -2887,7 +2724,6 @@ export default function AdminSettingsPage() {
               </div>
             ) : (
               <div className="grid gap-4 xl:grid-cols-3">
-
                 <SettingsCard
                   title="Titles / Ranks"
                   description="Agency-specific titles such as Chief, Sheriff, Captain, Lieutenant, Sergeant, Detective, Officer, or Deputy."
@@ -2895,9 +2731,7 @@ export default function AdminSettingsPage() {
                   <div className="flex gap-2">
                     <input
                       value={newTitleName}
-                      onChange={(event) =>
-                        setNewTitleName(event.target.value)
-                      }
+                      onChange={(event) => setNewTitleName(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           event.preventDefault();
@@ -2910,9 +2744,7 @@ export default function AdminSettingsPage() {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        void addOrganizationItem("title")
-                      }
+                      onClick={() => void addOrganizationItem("title")}
                       disabled={
                         !newTitleName.trim() ||
                         savingSection === "organization-title"
@@ -2941,16 +2773,8 @@ export default function AdminSettingsPage() {
 
                             <div className="mt-1">
                               <StatusPill
-                                label={
-                                  item.is_active
-                                    ? "Active"
-                                    : "Inactive"
-                                }
-                                tone={
-                                  item.is_active
-                                    ? "green"
-                                    : "slate"
-                                }
+                                label={item.is_active ? "Active" : "Inactive"}
+                                tone={item.is_active ? "green" : "slate"}
                               />
                             </div>
                           </div>
@@ -2960,10 +2784,7 @@ export default function AdminSettingsPage() {
                               type="button"
                               title="Rename"
                               onClick={() =>
-                                void renameOrganizationItem(
-                                  "title",
-                                  item,
-                                )
+                                void renameOrganizationItem("title", item)
                               }
                               className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
                             >
@@ -2972,16 +2793,9 @@ export default function AdminSettingsPage() {
 
                             <button
                               type="button"
-                              title={
-                                item.is_active
-                                  ? "Deactivate"
-                                  : "Activate"
-                              }
+                              title={item.is_active ? "Deactivate" : "Activate"}
                               onClick={() =>
-                                void toggleOrganizationItem(
-                                  "title",
-                                  item,
-                                )
+                                void toggleOrganizationItem("title", item)
                               }
                               className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
                             >
@@ -2998,7 +2812,6 @@ export default function AdminSettingsPage() {
                   </div>
                 </SettingsCard>
 
-
                 <SettingsCard
                   title="Units"
                   description="Primary organizational units such as Patrol, Investigations, Traffic, Administration, or Special Services."
@@ -3006,9 +2819,7 @@ export default function AdminSettingsPage() {
                   <div className="flex gap-2">
                     <input
                       value={newUnitName}
-                      onChange={(event) =>
-                        setNewUnitName(event.target.value)
-                      }
+                      onChange={(event) => setNewUnitName(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           event.preventDefault();
@@ -3021,9 +2832,7 @@ export default function AdminSettingsPage() {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        void addOrganizationItem("unit")
-                      }
+                      onClick={() => void addOrganizationItem("unit")}
                       disabled={
                         !newUnitName.trim() ||
                         savingSection === "organization-unit"
@@ -3052,16 +2861,8 @@ export default function AdminSettingsPage() {
 
                             <div className="mt-1">
                               <StatusPill
-                                label={
-                                  item.is_active
-                                    ? "Active"
-                                    : "Inactive"
-                                }
-                                tone={
-                                  item.is_active
-                                    ? "green"
-                                    : "slate"
-                                }
+                                label={item.is_active ? "Active" : "Inactive"}
+                                tone={item.is_active ? "green" : "slate"}
                               />
                             </div>
                           </div>
@@ -3071,10 +2872,7 @@ export default function AdminSettingsPage() {
                               type="button"
                               title="Rename"
                               onClick={() =>
-                                void renameOrganizationItem(
-                                  "unit",
-                                  item,
-                                )
+                                void renameOrganizationItem("unit", item)
                               }
                               className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
                             >
@@ -3083,16 +2881,9 @@ export default function AdminSettingsPage() {
 
                             <button
                               type="button"
-                              title={
-                                item.is_active
-                                  ? "Deactivate"
-                                  : "Activate"
-                              }
+                              title={item.is_active ? "Deactivate" : "Activate"}
                               onClick={() =>
-                                void toggleOrganizationItem(
-                                  "unit",
-                                  item,
-                                )
+                                void toggleOrganizationItem("unit", item)
                               }
                               className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
                             >
@@ -3109,7 +2900,6 @@ export default function AdminSettingsPage() {
                   </div>
                 </SettingsCard>
 
-
                 <SettingsCard
                   title="Groups / Assignments"
                   description="Cross-organizational assignments such as SWAT, UAS, FTO, Honor Guard, Firearms Instructor, or Crisis Negotiation."
@@ -3117,9 +2907,7 @@ export default function AdminSettingsPage() {
                   <div className="flex gap-2">
                     <input
                       value={newGroupName}
-                      onChange={(event) =>
-                        setNewGroupName(event.target.value)
-                      }
+                      onChange={(event) => setNewGroupName(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           event.preventDefault();
@@ -3132,9 +2920,7 @@ export default function AdminSettingsPage() {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        void addOrganizationItem("group")
-                      }
+                      onClick={() => void addOrganizationItem("group")}
                       disabled={
                         !newGroupName.trim() ||
                         savingSection === "organization-group"
@@ -3163,16 +2949,8 @@ export default function AdminSettingsPage() {
 
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               <StatusPill
-                                label={
-                                  item.is_active
-                                    ? "Active"
-                                    : "Inactive"
-                                }
-                                tone={
-                                  item.is_active
-                                    ? "green"
-                                    : "slate"
-                                }
+                                label={item.is_active ? "Active" : "Inactive"}
+                                tone={item.is_active ? "green" : "slate"}
                               />
 
                               <span className="text-[11px] text-slate-600">
@@ -3186,10 +2964,7 @@ export default function AdminSettingsPage() {
                               type="button"
                               title="Rename"
                               onClick={() =>
-                                void renameOrganizationItem(
-                                  "group",
-                                  item,
-                                )
+                                void renameOrganizationItem("group", item)
                               }
                               className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
                             >
@@ -3198,16 +2973,9 @@ export default function AdminSettingsPage() {
 
                             <button
                               type="button"
-                              title={
-                                item.is_active
-                                  ? "Deactivate"
-                                  : "Activate"
-                              }
+                              title={item.is_active ? "Deactivate" : "Activate"}
                               onClick={() =>
-                                void toggleOrganizationItem(
-                                  "group",
-                                  item,
-                                )
+                                void toggleOrganizationItem("group", item)
                               }
                               className="rounded-xl border border-slate-700 p-2 text-slate-400 transition hover:border-slate-600 hover:text-white"
                             >
@@ -3223,7 +2991,6 @@ export default function AdminSettingsPage() {
                     )}
                   </div>
                 </SettingsCard>
-
               </div>
             )}
           </div>
@@ -3257,8 +3024,8 @@ export default function AdminSettingsPage() {
                   type="button"
                   onClick={() => {
                     setInviteDraft(EMPTY_INVITE);
-      setInviteGroupIds([]);
-      setInviteGroupIds([]);
+                    setInviteGroupIds([]);
+                    setInviteGroupIds([]);
                     setInviteOpen(true);
                   }}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
@@ -3292,10 +3059,7 @@ export default function AdminSettingsPage() {
                               tone="amber"
                             />
                           ) : member.activation_status === "activation_sent" ? (
-                            <StatusPill
-                              label="Activation Sent"
-                              tone="blue"
-                            />
+                            <StatusPill label="Activation Sent" tone="blue" />
                           ) : null}
                           {member.user_id === userId ? (
                             <StatusPill label="You" tone="blue" />
@@ -3396,7 +3160,10 @@ export default function AdminSettingsPage() {
                             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-3.5 py-2 text-sm font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {passwordResetEmail === member.email ? (
-                              <LoaderCircle size={14} className="animate-spin" />
+                              <LoaderCircle
+                                size={14}
+                                className="animate-spin"
+                              />
                             ) : (
                               <Mail size={14} />
                             )}
@@ -3443,8 +3210,7 @@ export default function AdminSettingsPage() {
             >
               <div className="grid gap-3 lg:grid-cols-2">
                 {roles.map((role) => {
-                  const granted =
-                    rolePermissionMap.get(role.code) ?? [];
+                  const granted = rolePermissionMap.get(role.code) ?? [];
                   const locked = role.code === "administrator";
 
                   return (
@@ -3463,17 +3229,14 @@ export default function AdminSettingsPage() {
                             ) : null}
                           </div>
                           <p className="mt-1 text-xs leading-5 text-slate-600">
-                            {role.description ||
-                              "TracePoint operational role."}
+                            {role.description || "TracePoint operational role."}
                           </p>
                         </div>
 
                         {canAdminister && !locked ? (
                           <button
                             type="button"
-                            onClick={() =>
-                              beginEditRolePermissions(role.code)
-                            }
+                            onClick={() => beginEditRolePermissions(role.code)}
                             className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-blue-500/50 hover:text-white"
                           >
                             <Pencil size={13} />
@@ -3488,11 +3251,9 @@ export default function AdminSettingsPage() {
                             .slice()
                             .sort((left, right) =>
                               (
-                                permissionMap.get(left)?.display_name ??
-                                left
+                                permissionMap.get(left)?.display_name ?? left
                               ).localeCompare(
-                                permissionMap.get(right)?.display_name ??
-                                  right,
+                                permissionMap.get(right)?.display_name ?? right,
                               ),
                             )
                             .map((permissionCode) => (
@@ -3501,8 +3262,7 @@ export default function AdminSettingsPage() {
                                 className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300"
                               >
                                 {permissionMap.get(permissionCode)
-                                  ?.display_name ??
-                                  humanize(permissionCode)}
+                                  ?.display_name ?? humanize(permissionCode)}
                               </span>
                             ))
                         ) : (
@@ -3521,7 +3281,6 @@ export default function AdminSettingsPage() {
 
         {!loading && !accessLoading && activeTab === "rules" ? (
           <div className="space-y-5">
-
             <section className="rounded-3xl border border-blue-500/20 bg-slate-900/70 p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -3535,8 +3294,8 @@ export default function AdminSettingsPage() {
 
                   <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
                     Configure how TracePoint evaluates readiness, workflows,
-                    warnings, approvals, inspections, training requirements,
-                    and accountability for this department. These rules are
+                    warnings, approvals, inspections, training requirements, and
+                    accountability for this department. These rules are
                     department-specific and should reflect agency policy rather
                     than TracePoint defaults.
                   </p>
@@ -3665,7 +3424,7 @@ export default function AdminSettingsPage() {
                     </p>
 
                     <p className="mt-4 text-[11px] font-semibold text-blue-300">
-                      Configure rules ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢
+                      Configure rules →
                     </p>
                   </button>
                 ))}
@@ -3674,7 +3433,6 @@ export default function AdminSettingsPage() {
 
             {rulesModule === "range" ? (
               <div className="grid gap-4 xl:grid-cols-2">
-
                 <SettingsCard
                   title="Qualification Cycles"
                   description="Store agency-defined spring and fall cycle boundaries using MM-DD."
@@ -3735,7 +3493,6 @@ export default function AdminSettingsPage() {
                   description="Agency qualification validity, warning windows, inspection requirements, and related training policy."
                 >
                   <div className="space-y-4">
-
                     <div className="grid gap-4 sm:grid-cols-2">
                       <NumberInput
                         label="Qualification validity"
@@ -3755,20 +3512,14 @@ export default function AdminSettingsPage() {
                         label="Due soon warning"
                         value={rules.qualification_due_soon_days}
                         min={0}
-                        max={Math.max(
-                          0,
-                          rules.qualification_valid_days - 1,
-                        )}
+                        max={Math.max(0, rules.qualification_valid_days - 1)}
                         hint="Days before expiration"
                         onChange={(value) =>
                           setRules((current) => ({
                             ...current,
                             qualification_due_soon_days: Math.min(
                               value,
-                              Math.max(
-                                0,
-                                current.qualification_valid_days - 1,
-                              ),
+                              Math.max(0, current.qualification_valid_days - 1),
                             ),
                           }))
                         }
@@ -3776,475 +3527,482 @@ export default function AdminSettingsPage() {
                     </div>
                   </div>
                 </SettingsCard>
-            <RangeQualificationRulesPanel
-              departmentId={departmentId}
-              canAdminister={canAdminister}
-            />
-            <div className="xl:col-span-2">
-              <SettingsCard
-                title="Qualification Standards"
-                description="Define reusable agency qualification standards and their required scoring components. Components may represent Day, Night, individual courses, or any other agency-defined requirement."
-              >
-                <div className="space-y-5">
-                  <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-end">
-                    <label className="flex-1">
-                      <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        New standard
-                      </span>
+                <RangeQualificationRulesPanel
+                  departmentId={departmentId}
+                  canAdminister={canAdminister}
+                />
+                <div className="xl:col-span-2">
+                  <SettingsCard
+                    title="Qualification Standards"
+                    description="Define reusable agency qualification standards and their required scoring components. Components may represent Day, Night, individual courses, or any other agency-defined requirement."
+                  >
+                    <div className="space-y-5">
+                      <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-end">
+                        <label className="flex-1">
+                          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            New standard
+                          </span>
 
-                      <input
-                        type="text"
-                        value={newQualificationStandardName}
-                        onChange={(event) =>
-                          setNewQualificationStandardName(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void createQualificationStandard();
+                          <input
+                            type="text"
+                            value={newQualificationStandardName}
+                            onChange={(event) =>
+                              setNewQualificationStandardName(
+                                event.target.value,
+                              )
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void createQualificationStandard();
+                              }
+                            }}
+                            placeholder="Example: Handgun Qualification"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => void createQualificationStandard()}
+                          disabled={
+                            !newQualificationStandardName.trim() ||
+                            savingSection === "qualification-standard-new"
                           }
-                        }}
-                        placeholder="Example: Handgun Qualification"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => void createQualificationStandard()}
-                      disabled={
-                        !newQualificationStandardName.trim() ||
-                        savingSection === "qualification-standard-new"
-                      }
-                      className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {savingSection === "qualification-standard-new"
-                        ? "Creating..."
-                        : "Add Standard"}
-                    </button>
-                  </div>
-
-                  {qualificationStandardsLoading ? (
-                    <div className="flex items-center justify-center rounded-2xl border border-slate-800 bg-slate-950/40 py-10">
-                      <LoaderCircle
-                        size={24}
-                        className="animate-spin text-blue-400"
-                      />
-                    </div>
-                  ) : qualificationStandards.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/30 p-8 text-center">
-                      <p className="text-sm font-semibold text-slate-300">
-                        No qualification standards configured.
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Create a standard, then add its scoring components.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {qualificationStandards.map((standard) => (
-                        <div
-                          key={standard.id}
-                          className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"
+                          className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <div className="grid gap-3 lg:grid-cols-4">
-                            <label>
-                              <span className="mb-1.5 block text-xs font-medium text-slate-500">
-                                Standard name
-                              </span>
-                              <input
-                                type="text"
-                                value={standard.name}
-                                onChange={(event) =>
-                                  updateQualificationStandardLocal(
-                                    standard.id,
-                                    { name: event.target.value },
-                                  )
-                                }
-                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                              />
-                            </label>
+                          {savingSection === "qualification-standard-new"
+                            ? "Creating..."
+                            : "Add Standard"}
+                        </button>
+                      </div>
 
-                            <label>
-                              <span className="mb-1.5 block text-xs font-medium text-slate-500">
-                                Firearm type
-                              </span>
-                              <select
-                                value={standard.firearm_type ?? ""}
-                                onChange={(event) =>
-                                  updateQualificationStandardLocal(
-                                    standard.id,
-                                    {
-                                      firearm_type:
-                                        event.target.value || null,
-                                    },
-                                  )
-                                }
-                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                              >
-                                <option value="">Any / unspecified</option>
-                                <option value="Handgun">Handgun</option>
-                                <option value="Rifle">Rifle</option>
-                                <option value="Shotgun">Shotgun</option>
-                                <option value="Less Lethal">
-                                  Less Lethal
-                                </option>
-                                <option value="Other">Other</option>
-                              </select>
-                            </label>
-
-                            <label>
-                              <span className="mb-1.5 block text-xs font-medium text-slate-500">
-                                Validity
-                              </span>
-                              <input
-                                type="number"
-                                min={1}
-                                value={standard.validity_days ?? ""}
-                                onChange={(event) =>
-                                  updateQualificationStandardLocal(
-                                    standard.id,
-                                    {
-                                      validity_days:
-                                        event.target.value === ""
-                                          ? null
-                                          : Number(event.target.value),
-                                    },
-                                  )
-                                }
-                                placeholder="Days"
-                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                              />
-                            </label>
-
-                            <div className="flex items-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateQualificationStandardLocal(
-                                    standard.id,
-                                    {
-                                      is_active: !standard.is_active,
-                                    },
-                                  )
-                                }
-                                className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                                  standard.is_active
-                                    ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
-                                    : "border-slate-700 bg-slate-900 text-slate-500"
-                                }`}
-                              >
-                                {standard.is_active ? "Active" : "Inactive"}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void saveQualificationStandard(standard)
-                                }
-                                disabled={
-                                  savingSection ===
-                                  `qualification-standard-${standard.id}`
-                                }
-                                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-
-                          <label className="mt-3 block">
-                            <span className="mb-1.5 block text-xs font-medium text-slate-500">
-                              Description
-                            </span>
-                            <input
-                              type="text"
-                              value={standard.description ?? ""}
-                              onChange={(event) =>
-                                updateQualificationStandardLocal(
-                                  standard.id,
-                                  { description: event.target.value },
-                                )
-                              }
-                              placeholder="Optional description or governing standard"
-                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                            />
-                          </label>
-
-                          <div className="mt-5 flex items-center justify-between gap-3">
-                            <div>
-                              <h4 className="text-sm font-semibold text-white">
-                                Scoring Components
-                              </h4>
-                              <p className="mt-0.5 text-xs text-slate-500">
-                                Examples: Day, Night, Course 1, Low Light.
-                              </p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void addQualificationStandardComponent(
-                                  standard,
-                                )
-                              }
-                              disabled={
-                                savingSection ===
-                                `qualification-component-new-${standard.id}`
-                              }
-                              className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
-                            >
-                              + Add Component
-                            </button>
-                          </div>
-
-                          {standard.components.length === 0 ? (
-                            <div className="mt-3 rounded-xl border border-dashed border-slate-800 p-5 text-center text-xs text-slate-600">
-                              No components configured.
-                            </div>
-                          ) : (
-                            <div className="mt-3 space-y-3">
-                              {standard.components.map((component) => (
-                                <div
-                                  key={component.id}
-                                  className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
-                                >
-                                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                                    <label>
-                                      <span className="mb-1 block text-[11px] font-medium text-slate-500">
-                                        Component
-                                      </span>
-                                      <input
-                                        type="text"
-                                        value={component.name}
-                                        onChange={(event) =>
-                                          updateQualificationComponentLocal(
-                                            standard.id,
-                                            component.id,
-                                            { name: event.target.value },
-                                          )
-                                        }
-                                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
-                                      />
-                                    </label>
-
-                                    <label>
-                                      <span className="mb-1 block text-[11px] font-medium text-slate-500">
-                                        Scoring
-                                      </span>
-                                      <select
-                                        value={component.scoring_basis}
-                                        onChange={(event) =>
-                                          updateQualificationComponentLocal(
-                                            standard.id,
-                                            component.id,
-                                            {
-                                              scoring_basis:
-                                                event.target
-                                                  .value as QualificationScoringBasis,
-                                            },
-                                          )
-                                        }
-                                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
-                                      >
-                                        <option value="Points">Points</option>
-                                        <option value="Percentage">
-                                          Percentage
-                                        </option>
-                                        <option value="Time">Time</option>
-                                        <option value="Pass/Fail">
-                                          Pass / Fail
-                                        </option>
-                                        <option value="Hit Count">
-                                          Hit Count
-                                        </option>
-                                        <option value="Completion">
-                                          Completion
-                                        </option>
-                                      </select>
-                                    </label>
-
-                                    {(component.scoring_basis === "Points" ||
-                                      component.scoring_basis ===
-                                        "Percentage") ? (
-                                      <>
-                                        <label>
-                                          <span className="mb-1 block text-[11px] font-medium text-slate-500">
-                                            Maximum
-                                          </span>
-                                          <input
-                                            type="number"
-                                            min={0}
-                                            value={
-                                              component.maximum_score ?? ""
-                                            }
-                                            onChange={(event) =>
-                                              updateQualificationComponentLocal(
-                                                standard.id,
-                                                component.id,
-                                                {
-                                                  maximum_score:
-                                                    event.target.value === ""
-                                                      ? null
-                                                      : Number(
-                                                          event.target.value,
-                                                        ),
-                                                },
-                                              )
-                                            }
-                                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
-                                          />
-                                        </label>
-
-                                        <label>
-                                          <span className="mb-1 block text-[11px] font-medium text-slate-500">
-                                            Passing
-                                          </span>
-                                          <input
-                                            type="number"
-                                            min={0}
-                                            value={
-                                              component.passing_score ?? ""
-                                            }
-                                            onChange={(event) =>
-                                              updateQualificationComponentLocal(
-                                                standard.id,
-                                                component.id,
-                                                {
-                                                  passing_score:
-                                                    event.target.value === ""
-                                                      ? null
-                                                      : Number(
-                                                          event.target.value,
-                                                        ),
-                                                },
-                                              )
-                                            }
-                                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
-                                          />
-                                        </label>
-                                      </>
-                                    ) : component.scoring_basis === "Time" ? (
-                                      <label>
-                                        <span className="mb-1 block text-[11px] font-medium text-slate-500">
-                                          Passing seconds
-                                        </span>
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          step="0.01"
-                                          value={
-                                            component.passing_time_seconds ??
-                                            ""
-                                          }
-                                          onChange={(event) =>
-                                            updateQualificationComponentLocal(
-                                              standard.id,
-                                              component.id,
-                                              {
-                                                passing_time_seconds:
-                                                  event.target.value === ""
-                                                    ? null
-                                                    : Number(
-                                                        event.target.value,
-                                                      ),
-                                              },
-                                            )
-                                          }
-                                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
-                                        />
-                                      </label>
-                                    ) : component.scoring_basis ===
-                                      "Hit Count" ? (
-                                      <label>
-                                        <span className="mb-1 block text-[11px] font-medium text-slate-500">
-                                          Minimum hits
-                                        </span>
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          value={component.minimum_hits ?? ""}
-                                          onChange={(event) =>
-                                            updateQualificationComponentLocal(
-                                              standard.id,
-                                              component.id,
-                                              {
-                                                minimum_hits:
-                                                  event.target.value === ""
-                                                    ? null
-                                                    : Number(
-                                                        event.target.value,
-                                                      ),
-                                              },
-                                            )
-                                          }
-                                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
-                                        />
-                                      </label>
-                                    ) : (
-                                      <div />
-                                    )}
-
-                                    <label className="flex items-end">
-                                      <span className="flex w-full items-center justify-between rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
-                                        <span className="text-xs text-slate-400">
-                                          Required
-                                        </span>
-                                        <input
-                                          type="checkbox"
-                                          checked={component.is_required}
-                                          onChange={(event) =>
-                                            updateQualificationComponentLocal(
-                                              standard.id,
-                                              component.id,
-                                              {
-                                                is_required:
-                                                  event.target.checked,
-                                              },
-                                            )
-                                          }
-                                          className="h-4 w-4"
-                                        />
-                                      </span>
-                                    </label>
-
-                                    <div className="flex items-end">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void saveQualificationComponent(
-                                            component,
-                                          )
-                                        }
-                                        disabled={
-                                          savingSection ===
-                                          `qualification-component-${component.id}`
-                                        }
-                                        className="w-full rounded-lg border border-blue-800 bg-blue-950/40 px-3 py-2 text-xs font-semibold text-blue-200 transition hover:border-blue-500 disabled:opacity-50"
-                                      >
-                                        Save Component
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                      {qualificationStandardsLoading ? (
+                        <div className="flex items-center justify-center rounded-2xl border border-slate-800 bg-slate-950/40 py-10">
+                          <LoaderCircle
+                            size={24}
+                            className="animate-spin text-blue-400"
+                          />
                         </div>
-                      ))}
+                      ) : qualificationStandards.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/30 p-8 text-center">
+                          <p className="text-sm font-semibold text-slate-300">
+                            No qualification standards configured.
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Create a standard, then add its scoring components.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {qualificationStandards.map((standard) => (
+                            <div
+                              key={standard.id}
+                              className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"
+                            >
+                              <div className="grid gap-3 lg:grid-cols-4">
+                                <label>
+                                  <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                    Standard name
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={standard.name}
+                                    onChange={(event) =>
+                                      updateQualificationStandardLocal(
+                                        standard.id,
+                                        { name: event.target.value },
+                                      )
+                                    }
+                                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                  />
+                                </label>
+
+                                <label>
+                                  <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                    Firearm type
+                                  </span>
+                                  <select
+                                    value={standard.firearm_type ?? ""}
+                                    onChange={(event) =>
+                                      updateQualificationStandardLocal(
+                                        standard.id,
+                                        {
+                                          firearm_type:
+                                            event.target.value || null,
+                                        },
+                                      )
+                                    }
+                                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                  >
+                                    <option value="">Any / unspecified</option>
+                                    <option value="Handgun">Handgun</option>
+                                    <option value="Rifle">Rifle</option>
+                                    <option value="Shotgun">Shotgun</option>
+                                    <option value="Less Lethal">
+                                      Less Lethal
+                                    </option>
+                                    <option value="Other">Other</option>
+                                  </select>
+                                </label>
+
+                                <label>
+                                  <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                    Validity
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={standard.validity_days ?? ""}
+                                    onChange={(event) =>
+                                      updateQualificationStandardLocal(
+                                        standard.id,
+                                        {
+                                          validity_days:
+                                            event.target.value === ""
+                                              ? null
+                                              : Number(event.target.value),
+                                        },
+                                      )
+                                    }
+                                    placeholder="Days"
+                                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                  />
+                                </label>
+
+                                <div className="flex items-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateQualificationStandardLocal(
+                                        standard.id,
+                                        {
+                                          is_active: !standard.is_active,
+                                        },
+                                      )
+                                    }
+                                    className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                                      standard.is_active
+                                        ? "border-emerald-800 bg-emerald-950/40 text-emerald-300"
+                                        : "border-slate-700 bg-slate-900 text-slate-500"
+                                    }`}
+                                  >
+                                    {standard.is_active ? "Active" : "Inactive"}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void saveQualificationStandard(standard)
+                                    }
+                                    disabled={
+                                      savingSection ===
+                                      `qualification-standard-${standard.id}`
+                                    }
+                                    className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                              </div>
+
+                              <label className="mt-3 block">
+                                <span className="mb-1.5 block text-xs font-medium text-slate-500">
+                                  Description
+                                </span>
+                                <input
+                                  type="text"
+                                  value={standard.description ?? ""}
+                                  onChange={(event) =>
+                                    updateQualificationStandardLocal(
+                                      standard.id,
+                                      { description: event.target.value },
+                                    )
+                                  }
+                                  placeholder="Optional description or governing standard"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                />
+                              </label>
+
+                              <div className="mt-5 flex items-center justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-white">
+                                    Scoring Components
+                                  </h4>
+                                  <p className="mt-0.5 text-xs text-slate-500">
+                                    Examples: Day, Night, Course 1, Low Light.
+                                  </p>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void addQualificationStandardComponent(
+                                      standard,
+                                    )
+                                  }
+                                  disabled={
+                                    savingSection ===
+                                    `qualification-component-new-${standard.id}`
+                                  }
+                                  className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white disabled:opacity-50"
+                                >
+                                  + Add Component
+                                </button>
+                              </div>
+
+                              {standard.components.length === 0 ? (
+                                <div className="mt-3 rounded-xl border border-dashed border-slate-800 p-5 text-center text-xs text-slate-600">
+                                  No components configured.
+                                </div>
+                              ) : (
+                                <div className="mt-3 space-y-3">
+                                  {standard.components.map((component) => (
+                                    <div
+                                      key={component.id}
+                                      className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
+                                    >
+                                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                                        <label>
+                                          <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                            Component
+                                          </span>
+                                          <input
+                                            type="text"
+                                            value={component.name}
+                                            onChange={(event) =>
+                                              updateQualificationComponentLocal(
+                                                standard.id,
+                                                component.id,
+                                                { name: event.target.value },
+                                              )
+                                            }
+                                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                          />
+                                        </label>
+
+                                        <label>
+                                          <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                            Scoring
+                                          </span>
+                                          <select
+                                            value={component.scoring_basis}
+                                            onChange={(event) =>
+                                              updateQualificationComponentLocal(
+                                                standard.id,
+                                                component.id,
+                                                {
+                                                  scoring_basis: event.target
+                                                    .value as QualificationScoringBasis,
+                                                },
+                                              )
+                                            }
+                                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                          >
+                                            <option value="Points">
+                                              Points
+                                            </option>
+                                            <option value="Percentage">
+                                              Percentage
+                                            </option>
+                                            <option value="Time">Time</option>
+                                            <option value="Pass/Fail">
+                                              Pass / Fail
+                                            </option>
+                                            <option value="Hit Count">
+                                              Hit Count
+                                            </option>
+                                            <option value="Completion">
+                                              Completion
+                                            </option>
+                                          </select>
+                                        </label>
+
+                                        {component.scoring_basis === "Points" ||
+                                        component.scoring_basis ===
+                                          "Percentage" ? (
+                                          <>
+                                            <label>
+                                              <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                                Maximum
+                                              </span>
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                value={
+                                                  component.maximum_score ?? ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateQualificationComponentLocal(
+                                                    standard.id,
+                                                    component.id,
+                                                    {
+                                                      maximum_score:
+                                                        event.target.value ===
+                                                        ""
+                                                          ? null
+                                                          : Number(
+                                                              event.target
+                                                                .value,
+                                                            ),
+                                                    },
+                                                  )
+                                                }
+                                                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                              />
+                                            </label>
+
+                                            <label>
+                                              <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                                Passing
+                                              </span>
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                value={
+                                                  component.passing_score ?? ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateQualificationComponentLocal(
+                                                    standard.id,
+                                                    component.id,
+                                                    {
+                                                      passing_score:
+                                                        event.target.value ===
+                                                        ""
+                                                          ? null
+                                                          : Number(
+                                                              event.target
+                                                                .value,
+                                                            ),
+                                                    },
+                                                  )
+                                                }
+                                                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                              />
+                                            </label>
+                                          </>
+                                        ) : component.scoring_basis ===
+                                          "Time" ? (
+                                          <label>
+                                            <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                              Passing seconds
+                                            </span>
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              step="0.01"
+                                              value={
+                                                component.passing_time_seconds ??
+                                                ""
+                                              }
+                                              onChange={(event) =>
+                                                updateQualificationComponentLocal(
+                                                  standard.id,
+                                                  component.id,
+                                                  {
+                                                    passing_time_seconds:
+                                                      event.target.value === ""
+                                                        ? null
+                                                        : Number(
+                                                            event.target.value,
+                                                          ),
+                                                  },
+                                                )
+                                              }
+                                              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                            />
+                                          </label>
+                                        ) : component.scoring_basis ===
+                                          "Hit Count" ? (
+                                          <label>
+                                            <span className="mb-1 block text-[11px] font-medium text-slate-500">
+                                              Minimum hits
+                                            </span>
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={
+                                                component.minimum_hits ?? ""
+                                              }
+                                              onChange={(event) =>
+                                                updateQualificationComponentLocal(
+                                                  standard.id,
+                                                  component.id,
+                                                  {
+                                                    minimum_hits:
+                                                      event.target.value === ""
+                                                        ? null
+                                                        : Number(
+                                                            event.target.value,
+                                                          ),
+                                                  },
+                                                )
+                                              }
+                                              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                            />
+                                          </label>
+                                        ) : (
+                                          <div />
+                                        )}
+
+                                        <label className="flex items-end">
+                                          <span className="flex w-full items-center justify-between rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                                            <span className="text-xs text-slate-400">
+                                              Required
+                                            </span>
+                                            <input
+                                              type="checkbox"
+                                              checked={component.is_required}
+                                              onChange={(event) =>
+                                                updateQualificationComponentLocal(
+                                                  standard.id,
+                                                  component.id,
+                                                  {
+                                                    is_required:
+                                                      event.target.checked,
+                                                  },
+                                                )
+                                              }
+                                              className="h-4 w-4"
+                                            />
+                                          </span>
+                                        </label>
+
+                                        <div className="flex items-end">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void saveQualificationComponent(
+                                                component,
+                                              )
+                                            }
+                                            disabled={
+                                              savingSection ===
+                                              `qualification-component-${component.id}`
+                                            }
+                                            className="w-full rounded-lg border border-blue-800 bg-blue-950/40 px-3 py-2 text-xs font-semibold text-blue-200 transition hover:border-blue-500 disabled:opacity-50"
+                                          >
+                                            Save Component
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </SettingsCard>
                 </div>
-              </SettingsCard>
-            </div>
-
-
               </div>
             ) : null}
 
             {rulesModule === "armory" ? (
               <div className="grid gap-4 xl:grid-cols-2">
-
                 <SettingsCard
                   title="Armory Inspection Rules"
                   description="Agency-defined firearm inspection and battery-check intervals."
@@ -4279,95 +4037,99 @@ export default function AdminSettingsPage() {
                     />
                   </div>
                 </SettingsCard>
-            <SettingsCard
-
-              title="Personally Owned Rifle Program"
-              description="Configure whether officers may submit personally owned rifles and which approval safeguards apply."
-            >
-              <div className="space-y-3">
-                <ToggleRow
-                  title="Allow personally owned rifles"
-                  description="Enables officer submission and agency review of personally owned rifles for duty use."
-                  checked={rules.allow_personally_owned_rifles}
-                  onChange={(checked) =>
-                    setRules((current) => ({
-                      ...current,
-                      allow_personally_owned_rifles: checked,
-                    }))
-                  }
-                />
-
-                <div
-                  className={`space-y-3 ${
-                    rules.allow_personally_owned_rifles
-                      ? ""
-                      : "pointer-events-none opacity-50"
-                  }`}
+                <SettingsCard
+                  title="Personally Owned Rifle Program"
+                  description="Configure whether officers may submit personally owned rifles and which approval safeguards apply."
                 >
-                  <ToggleRow
-                    title="Require armorer inspection"
-                    description="An armorer must physically inspect the rifle before it can advance."
-                    checked={rules.require_personal_rifle_armorer_inspection}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_armorer_inspection: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require Chief approval"
-                    description="Final duty-use approval must be granted by the Chief or authorized command reviewer."
-                    checked={rules.require_personal_rifle_chief_approval}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_chief_approval: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require qualification before approval"
-                    description="The officer must complete the required rifle qualification before final approval."
-                    checked={rules.require_personal_rifle_qualification}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_qualification: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require annual reinspection"
-                    description="Approved personally owned rifles are subject to an annual physical reinspection."
-                    checked={rules.require_personal_rifle_annual_reinspection}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_annual_reinspection: checked,
-                      }))
-                    }
-                  />
-                  <ToggleRow
-                    title="Require specification acknowledgment"
-                    description="The officer must acknowledge department specifications before submitting."
-                    checked={rules.require_personal_rifle_spec_acknowledgment}
-                    disabled={!rules.allow_personally_owned_rifles}
-                    onChange={(checked) =>
-                      setRules((current) => ({
-                        ...current,
-                        require_personal_rifle_spec_acknowledgment: checked,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            </SettingsCard>
+                  <div className="space-y-3">
+                    <ToggleRow
+                      title="Allow personally owned rifles"
+                      description="Enables officer submission and agency review of personally owned rifles for duty use."
+                      checked={rules.allow_personally_owned_rifles}
+                      onChange={(checked) =>
+                        setRules((current) => ({
+                          ...current,
+                          allow_personally_owned_rifles: checked,
+                        }))
+                      }
+                    />
 
+                    <div
+                      className={`space-y-3 ${
+                        rules.allow_personally_owned_rifles
+                          ? ""
+                          : "pointer-events-none opacity-50"
+                      }`}
+                    >
+                      <ToggleRow
+                        title="Require armorer inspection"
+                        description="An armorer must physically inspect the rifle before it can advance."
+                        checked={
+                          rules.require_personal_rifle_armorer_inspection
+                        }
+                        disabled={!rules.allow_personally_owned_rifles}
+                        onChange={(checked) =>
+                          setRules((current) => ({
+                            ...current,
+                            require_personal_rifle_armorer_inspection: checked,
+                          }))
+                        }
+                      />
+                      <ToggleRow
+                        title="Require Chief approval"
+                        description="Final duty-use approval must be granted by the Chief or authorized command reviewer."
+                        checked={rules.require_personal_rifle_chief_approval}
+                        disabled={!rules.allow_personally_owned_rifles}
+                        onChange={(checked) =>
+                          setRules((current) => ({
+                            ...current,
+                            require_personal_rifle_chief_approval: checked,
+                          }))
+                        }
+                      />
+                      <ToggleRow
+                        title="Require qualification before approval"
+                        description="The officer must complete the required rifle qualification before final approval."
+                        checked={rules.require_personal_rifle_qualification}
+                        disabled={!rules.allow_personally_owned_rifles}
+                        onChange={(checked) =>
+                          setRules((current) => ({
+                            ...current,
+                            require_personal_rifle_qualification: checked,
+                          }))
+                        }
+                      />
+                      <ToggleRow
+                        title="Require annual reinspection"
+                        description="Approved personally owned rifles are subject to an annual physical reinspection."
+                        checked={
+                          rules.require_personal_rifle_annual_reinspection
+                        }
+                        disabled={!rules.allow_personally_owned_rifles}
+                        onChange={(checked) =>
+                          setRules((current) => ({
+                            ...current,
+                            require_personal_rifle_annual_reinspection: checked,
+                          }))
+                        }
+                      />
+                      <ToggleRow
+                        title="Require specification acknowledgment"
+                        description="The officer must acknowledge department specifications before submitting."
+                        checked={
+                          rules.require_personal_rifle_spec_acknowledgment
+                        }
+                        disabled={!rules.allow_personally_owned_rifles}
+                        onChange={(checked) =>
+                          setRules((current) => ({
+                            ...current,
+                            require_personal_rifle_spec_acknowledgment: checked,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </SettingsCard>
               </div>
             ) : null}
 
@@ -4408,9 +4170,9 @@ export default function AdminSettingsPage() {
                     Planned with Agency Training
                   </p>
                   <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
-                    When Agency Training becomes active, its event workflow
-                    will consume policy from this Rules section rather than
-                    defining its own independent standards.
+                    When Agency Training becomes active, its event workflow will
+                    consume policy from this Rules section rather than defining
+                    its own independent standards.
                   </p>
                 </div>
               </SettingsCard>
@@ -4434,7 +4196,6 @@ export default function AdminSettingsPage() {
                 </div>
               </SettingsCard>
             ) : null}
-
           </div>
         ) : null}
         {!loading && !accessLoading && activeTab === "branding" ? (
@@ -4624,8 +4385,7 @@ export default function AdminSettingsPage() {
               <div className="space-y-3">
                 {auditEvents.map((event) => {
                   const actor = members.find(
-                    (member) =>
-                      member.user_id === event.changed_by_user_id,
+                    (member) => member.user_id === event.changed_by_user_id,
                   );
 
                   return (
@@ -4654,8 +4414,7 @@ export default function AdminSettingsPage() {
                           <p className="mt-2 text-xs text-slate-500">
                             Changed by{" "}
                             <span className="font-semibold text-slate-300">
-                              {actor?.full_name ||
-                                event.changed_by_user_id}
+                              {actor?.full_name || event.changed_by_user_id}
                             </span>
                           </p>
 
@@ -4700,15 +4459,11 @@ export default function AdminSettingsPage() {
                               </span>
 
                               <span className="break-words text-slate-600">
-                                {String(
-                                  event.old_values[field] ?? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â",
-                                )}
+                                {String(event.old_values[field] ?? "—")}
                               </span>
 
                               <span className="break-words text-slate-300">
-                                {String(
-                                  event.new_values[field] ?? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â",
-                                )}
+                                {String(event.new_values[field] ?? "—")}
                               </span>
                             </div>
                           ))}
@@ -4724,10 +4479,7 @@ export default function AdminSettingsPage() {
 
                 {auditEvents.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-700 px-5 py-10 text-center">
-                    <ShieldCheck
-                      size={24}
-                      className="mx-auto text-slate-600"
-                    />
+                    <ShieldCheck size={24} className="mx-auto text-slate-600" />
                     <p className="mt-3 text-sm text-slate-400">
                       No immutable audit records are available yet.
                     </p>
@@ -4738,17 +4490,14 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
-        {!loading &&
-        !accessLoading &&
-        availableTabs.length === 0 ? (
+        {!loading && !accessLoading && availableTabs.length === 0 ? (
           <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 px-5 py-10 text-center">
             <Lock size={28} className="mx-auto text-amber-300" />
             <h2 className="mt-3 text-lg font-semibold text-white">
               Settings access is restricted
             </h2>
             <p className="mt-2 text-sm text-slate-400">
-              Your current roles do not grant administrative settings
-              access.
+              Your current roles do not grant administrative settings access.
             </p>
             <p className="mt-3 text-xs text-slate-600">
               Loaded permissions: {currentPermissions.length}
@@ -4843,63 +4592,8 @@ export default function AdminSettingsPage() {
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-600">
-                Optional organizational assignments. These do not
-                grant TracePoint permissions.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {organizationGroups
-                  .filter((group) => group.is_active)
-                  .map((group) => {
-                    const selected =
-                      inviteGroupIds.includes(group.id);
-
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        disabled={savingSection === "invite"}
-                        onClick={() =>
-                          setInviteGroupIds((current) =>
-                            selected
-                              ? current.filter(
-                                  (groupId) =>
-                                    groupId !== group.id,
-                                )
-                              : [...current, group.id],
-                          )
-                        }
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          selected
-                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {selected ? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ " : ""}
-                        {group.name}
-                      </button>
-                    );
-                  })}
-
-                {organizationGroups.filter(
-                  (group) => group.is_active,
-                ).length === 0 ? (
-                  <span className="text-xs text-slate-600">
-                    No active groups are configured.
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-              <p className="text-sm font-semibold text-slate-200">
-                Groups / Assignments
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Optional organizational assignments. These do not grant TracePoint permissions.
+                Optional organizational assignments. These do not grant
+                TracePoint permissions.
               </p>
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -4916,7 +4610,9 @@ export default function AdminSettingsPage() {
                         onClick={() =>
                           setInviteGroupIds((current) =>
                             selected
-                              ? current.filter((groupId) => groupId !== group.id)
+                              ? current.filter(
+                                  (groupId) => groupId !== group.id,
+                                )
                               : [...current, group.id],
                           )
                         }
@@ -4926,13 +4622,67 @@ export default function AdminSettingsPage() {
                             : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
                         }`}
                       >
-                        {selected ? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ " : ""}
+                        {selected ? "✓ " : ""}
                         {group.name}
                       </button>
                     );
                   })}
 
-                {organizationGroups.filter((group) => group.is_active).length === 0 ? (
+                {organizationGroups.filter((group) => group.is_active)
+                  .length === 0 ? (
+                  <span className="text-xs text-slate-600">
+                    No active groups are configured.
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+              <p className="text-sm font-semibold text-slate-200">
+                Groups / Assignments
+              </p>
+
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                Optional organizational assignments. These do not grant
+                TracePoint permissions.
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {organizationGroups
+                  .filter((group) => group.is_active)
+                  .map((group) => {
+                    const selected = inviteGroupIds.includes(group.id);
+
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        disabled={savingSection === "invite"}
+                        onClick={() =>
+                          setInviteGroupIds((current) =>
+                            selected
+                              ? current.filter(
+                                  (groupId) => groupId !== group.id,
+                                )
+                              : [...current, group.id],
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          selected
+                            ? "border-blue-500/60 bg-blue-600/20 text-blue-200"
+                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                        }`}
+                      >
+                        {selected ? "✓ " : ""}
+                        {group.name}
+                      </button>
+                    );
+                  })}
+
+                {organizationGroups.filter((group) => group.is_active)
+                  .length === 0 ? (
                   <span className="text-xs text-slate-600">
                     No active groups are configured.
                   </span>
@@ -4961,7 +4711,10 @@ export default function AdminSettingsPage() {
             <button
               type="button"
               disabled={savingSection === "invite"}
-              onClick={() => { setInviteOpen(false); setInviteGroupIds([]); }}
+              onClick={() => {
+                setInviteOpen(false);
+                setInviteGroupIds([]);
+              }}
               className="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:text-white disabled:opacity-50"
             >
               Cancel
@@ -4999,26 +4752,18 @@ export default function AdminSettingsPage() {
         >
           <div className="grid gap-2 sm:grid-cols-2">
             {permissions.map((permission) => {
-              const reserved =
-                permission.code === "administer_department";
-              const checked = rolePermissionDraft.includes(
-                permission.code,
-              );
+              const reserved = permission.code === "administer_department";
+              const checked = rolePermissionDraft.includes(permission.code);
 
               return (
                 <button
                   key={permission.code}
                   type="button"
-                  disabled={
-                    reserved ||
-                    savingSection === "role-permissions"
-                  }
+                  disabled={reserved || savingSection === "role-permissions"}
                   onClick={() =>
                     setRolePermissionDraft((current) =>
                       current.includes(permission.code)
-                        ? current.filter(
-                            (code) => code !== permission.code,
-                          )
+                        ? current.filter((code) => code !== permission.code)
                         : [...current, permission.code],
                     )
                   }
@@ -5045,8 +4790,7 @@ export default function AdminSettingsPage() {
                     <span className="mt-0.5 block text-xs leading-4 text-slate-600">
                       {reserved
                         ? "Reserved for the Administrator role."
-                        : permission.description ||
-                          "TracePoint permission."}
+                        : permission.description || "TracePoint permission."}
                     </span>
                   </span>
                 </button>
@@ -5091,7 +4835,7 @@ export default function AdminSettingsPage() {
             if (savingSection !== "member") {
               setEditingMember(null);
               setMemberDraft(null);
-                setMemberGroupIds([]);
+              setMemberGroupIds([]);
             }
           }}
         >
@@ -5109,9 +4853,7 @@ export default function AdminSettingsPage() {
               options={titleOptions}
               onChange={(value) =>
                 setMemberDraft((current) =>
-                  current
-                    ? { ...current, rank_title: value }
-                    : current,
+                  current ? { ...current, rank_title: value } : current,
                 )
               }
               hint="Configured under Administration > Organization."
@@ -5121,9 +4863,7 @@ export default function AdminSettingsPage() {
               value={memberDraft.badge_number}
               onChange={(value) =>
                 setMemberDraft((current) =>
-                  current
-                    ? { ...current, badge_number: value }
-                    : current,
+                  current ? { ...current, badge_number: value } : current,
                 )
               }
             />
@@ -5132,9 +4872,7 @@ export default function AdminSettingsPage() {
               value={memberDraft.employee_number}
               onChange={(value) =>
                 setMemberDraft((current) =>
-                  current
-                    ? { ...current, employee_number: value }
-                    : current,
+                  current ? { ...current, employee_number: value } : current,
                 )
               }
             />
@@ -5145,9 +4883,7 @@ export default function AdminSettingsPage() {
                 options={unitOptions}
                 onChange={(value) =>
                   setMemberDraft((current) =>
-                    current
-                      ? { ...current, unit_name: value }
-                      : current,
+                    current ? { ...current, unit_name: value } : current,
                   )
                 }
                 hint="Configured under Administration > Organization."
@@ -5165,14 +4901,11 @@ export default function AdminSettingsPage() {
               }
               checked={memberDraft.is_active}
               disabled={
-                editingMember.user_id === userId ||
-                savingSection === "member"
+                editingMember.user_id === userId || savingSection === "member"
               }
               onChange={(checked) =>
                 setMemberDraft((current) =>
-                  current
-                    ? { ...current, is_active: checked }
-                    : current,
+                  current ? { ...current, is_active: checked } : current,
                 )
               }
             />
@@ -5185,17 +4918,16 @@ export default function AdminSettingsPage() {
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-600">
-                Organizational assignments such as SWAT, UAS, FTO,
-                Honor Guard, or Firearms Instructor. These do not
-                grant TracePoint permissions.
+                Organizational assignments such as SWAT, UAS, FTO, Honor Guard,
+                or Firearms Instructor. These do not grant TracePoint
+                permissions.
               </p>
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {organizationGroups
                   .filter((group) => group.is_active)
                   .map((group) => {
-                    const selected =
-                      memberGroupIds.includes(group.id);
+                    const selected = memberGroupIds.includes(group.id);
 
                     return (
                       <button
@@ -5206,8 +4938,7 @@ export default function AdminSettingsPage() {
                           setMemberGroupIds((current) =>
                             selected
                               ? current.filter(
-                                  (groupId) =>
-                                    groupId !== group.id,
+                                  (groupId) => groupId !== group.id,
                                 )
                               : [...current, group.id],
                           )
@@ -5218,15 +4949,14 @@ export default function AdminSettingsPage() {
                             : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-200"
                         }`}
                       >
-                        {selected ? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ " : ""}
+                        {selected ? "✓ " : ""}
                         {group.name}
                       </button>
                     );
                   })}
 
-                {organizationGroups.filter(
-                  (group) => group.is_active,
-                ).length === 0 ? (
+                {organizationGroups.filter((group) => group.is_active)
+                  .length === 0 ? (
                   <span className="text-xs text-slate-600">
                     No active groups are configured.
                   </span>
@@ -5241,9 +4971,7 @@ export default function AdminSettingsPage() {
               selected={memberDraft.role_codes}
               onChange={(roleCodes) =>
                 setMemberDraft((current) =>
-                  current
-                    ? { ...current, role_codes: roleCodes }
-                    : current,
+                  current ? { ...current, role_codes: roleCodes } : current,
                 )
               }
               rolePermissionMap={rolePermissionMap}
@@ -5301,31 +5029,3 @@ export default function AdminSettingsPage() {
     </TracePointShell>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
