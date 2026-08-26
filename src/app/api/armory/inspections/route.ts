@@ -185,6 +185,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // The authenticated server session is the authoritative inspection actor.
+    // A browser-supplied inspector name must never determine accountability.
+    const { data: inspectorProfile } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", context.userId)
+      .maybeSingle();
+
     const inspectionDate = body.inspectionDate
       ? new Date(body.inspectionDate).toISOString()
       : new Date().toISOString();
@@ -197,7 +205,8 @@ export async function POST(request: Request) {
         inspection_type: body.inspectionType,
         inspection_reason: body.inspectionReason ?? null,
         inspection_date: inspectionDate,
-        inspector_name: body.inspectorName?.trim() || null,
+        inspected_by_user_id: context.userId,
+        inspector_name: inspectorProfile?.full_name?.trim() || null,
         inspection_location: body.inspectionLocation?.trim() || null,
         assignee_name: body.assigneeName ?? null,
         weapon_cleared: body.weaponCleared ?? null,

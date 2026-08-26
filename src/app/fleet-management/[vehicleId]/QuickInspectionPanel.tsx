@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import {
@@ -212,6 +212,7 @@ export default function QuickInspectionPanel({
             hours: Number(hours),
             defect_count: exceptionCount,
             inspected_at: new Date().toISOString(),
+            inspector_name: "Preview user",
             checklist: items,
           },
           ...current,
@@ -542,6 +543,8 @@ export default function QuickInspectionPanel({
                     {item.inspection_type}
                   </p>
                   <p className="mt-1 text-[10px] text-slate-500">
+                    Performed by{" "}
+                    {item.inspector_name || "System / legacy record"} ·{" "}
                     {new Date(item.inspected_at).toLocaleString()} ·{" "}
                     {Number(item.mileage || 0).toLocaleString()} mi ·{" "}
                     {Number(item.hours || 0).toLocaleString()} hrs ·{" "}

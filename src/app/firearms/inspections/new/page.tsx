@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -319,7 +319,6 @@ function NewInspectionContent() {
   const [inspectionTime, setInspectionTime] = useState(() =>
     new Date().toTimeString().slice(0, 5),
   );
-  const [inspectorName, setInspectorName] = useState("");
   const [inspectionLocation, setInspectionLocation] = useState("Armory");
 
   const [weaponCleared, setWeaponCleared] = useState("Yes");
@@ -414,11 +413,6 @@ function NewInspectionContent() {
       return;
     }
 
-    if (!inspectorName.trim()) {
-      setSubmitError("Enter the inspector name before saving.");
-      return;
-    }
-
     if (result === "Passed" && failedCriticalItems.length > 0) {
       setSubmitError(
         "This inspection cannot be marked Passed while critical checklist items are failed.",
@@ -441,7 +435,6 @@ function NewInspectionContent() {
           inspectionType,
           inspectionReason,
           inspectionDate: inspectionDateTime,
-          inspectorName,
           inspectionLocation,
           assigneeName:
             selectedFirearm.active_assignment?.assigned_to_name ?? null,
@@ -702,15 +695,12 @@ function NewInspectionContent() {
                   />
                 </label>
 
-                <label className="block">
+                <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
                   <FieldLabel>Inspector</FieldLabel>
-                  <input
-                    value={inspectorName}
-                    onChange={(event) => setInspectorName(event.target.value)}
-                    placeholder="Inspector / armorer name"
-                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-500/60"
-                  />
-                </label>
+                  <p className="mt-2 text-[12px] text-blue-200">
+                    Automatically recorded from your signed-in account.
+                  </p>
+                </div>
 
                 <label className="block">
                   <FieldLabel>Location</FieldLabel>

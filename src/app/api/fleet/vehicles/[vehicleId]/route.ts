@@ -25,13 +25,57 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!vehicleResult.data) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
   const equipment = (equipmentResult.data ?? []).map((item: any) => canViewNetworkDetails(context, rulesResult.data) ? item : { ...item, static_ip: null });
 
+  const actorIds = Array.from(
+    new Set(
+      [
+        ...(inspectionResult.data ?? []).map((item: any) => item.inspector_user_id),
+        ...(auditResult.data ?? []).map((item: any) => item.actor_user_id),
+      ].filter(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
+      ),
+    ),
+  );
+
+  let actorProfiles: Array<{ id: string; full_name: string | null }> = [];
+
+  if (actorIds.length) {
+    const { data: profiles } = await context.admin
+      .from("profiles")
+      .select("id,full_name")
+      .in("id", actorIds);
+
+    actorProfiles = profiles ?? [];
+  }
+
+  const actorNames = new Map(
+    actorProfiles.map((profile) => [
+      profile.id,
+      profile.full_name?.trim() || "Unknown user",
+    ]),
+  );
+
+  const inspections = (inspectionResult.data ?? []).map((item: any) => ({
+    ...item,
+    inspector_name: item.inspector_user_id
+      ? actorNames.get(item.inspector_user_id) || "Unknown user"
+      : "System / legacy record",
+  }));
+
+  const history = (auditResult.data ?? []).map((item: any) => ({
+    ...item,
+    actor_name: item.actor_user_id
+      ? actorNames.get(item.actor_user_id) || "Unknown user"
+      : "System / legacy record",
+  }));
+
   return NextResponse.json({
     vehicle: vehicleResult.data,
     workOrders: workResult.data ?? [],
     equipment,
     documents: documentResult.data ?? [],
-    inspections: inspectionResult.data ?? [],
-    history: auditResult.data ?? [],
+    inspections,
+    history,
     rules: rulesResult.data ?? null,
     canManage: canManageFleet(context, rulesResult.data),
     canMaintain: canPerformFleetMaintenance(context, rulesResult.data),
