@@ -3395,7 +3395,7 @@ export default function AdminSettingsPage() {
                     id: "fleet",
                     title: "Fleet",
                     detail:
-                      "Future inspection, equipment, availability, restriction, and out-of-service rules.",
+                      "Configure vehicle inspections, required equipment, maintenance, availability, out-of-service, notifications, and responsible fleet roles.",
                   },
                 ].map((module) => (
                   <button
@@ -4181,18 +4181,29 @@ export default function AdminSettingsPage() {
             {rulesModule === "fleet" ? (
               <SettingsCard
                 title="Fleet Readiness Rules"
-                description="Future agency-defined vehicle inspection, required-equipment, availability, restriction, out-of-service, and return-to-service standards."
+                description="Configure the agency rules that govern Fleet Management."
               >
                 <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
-                  <p className="text-sm font-semibold text-blue-200">
-                    Fleet Rules Available - open /settings/fleet
-                  </p>
-                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
-                    Fleet inspections will eventually evaluate these rules
-                    automatically so missing required equipment or mechanical
-                    deficiencies can affect vehicle availability according to
-                    department policy.
-                  </p>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-blue-200">
+                        Fleet rules are active
+                      </p>
+                      <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
+                        Configure inspections, required equipment, maintenance
+                        intervals, vehicle status automation, out-of-service
+                        behavior, notifications, escalation, and responsible
+                        Fleet Manager and Mechanic roles.
+                      </p>
+                    </div>
+
+                    <a
+                      href="/settings/fleet"
+                      className="inline-flex shrink-0 items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-500"
+                    >
+                      Configure Fleet Rules
+                    </a>
+                  </div>
                 </div>
               </SettingsCard>
             ) : null}
