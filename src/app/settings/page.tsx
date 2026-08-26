@@ -47,6 +47,7 @@ import {
   persistAndApplyAppearance,
 } from "@/lib/tracepoint/appearance";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
+import FleetRulesPanel from "./fleet/FleetRulesPanel";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type TabId =
@@ -4177,35 +4178,19 @@ export default function AdminSettingsPage() {
                 </div>
               </SettingsCard>
             ) : null}
-
             {rulesModule === "fleet" ? (
-              <SettingsCard
-                title="Fleet Readiness Rules"
-                description="Configure the agency rules that govern Fleet Management."
-              >
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-blue-200">
-                        Fleet rules are active
-                      </p>
-                      <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
-                        Configure inspections, required equipment, maintenance
-                        intervals, vehicle status automation, out-of-service
-                        behavior, notifications, escalation, and responsible
-                        Fleet Manager and Mechanic roles.
-                      </p>
-                    </div>
-
-                    <a
-                      href="/settings/fleet"
-                      className="inline-flex shrink-0 items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-500"
-                    >
-                      Configure Fleet Rules
-                    </a>
-                  </div>
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-bold text-white">
+                    Fleet Readiness Rules
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Configure the agency rules that govern Fleet Management.
+                  </p>
                 </div>
-              </SettingsCard>
+
+                <FleetRulesPanel />
+              </div>
             ) : null}
           </div>
         ) : null}
