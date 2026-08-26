@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -910,7 +910,7 @@ export async function GET() {
 
         drillPerformance:
           drillResults.length === 0
-            ? "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"
+            ? "—"
             : `${
                 averageChange > 0 ? "+" : ""
               }${averageChange.toFixed(1)}`,

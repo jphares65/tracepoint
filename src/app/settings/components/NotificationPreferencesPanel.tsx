@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Clock3, LoaderCircle, Mail, Save, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -354,7 +354,7 @@ export default function NotificationPreferencesPanel() {
         <p className="mt-1 text-xs leading-5 text-slate-500">
           Qualification-related email begins only after the department records
           qualification activity through Range Days. This prevents a newly
-          onboarded agency from receiving repeated â€œno qualification recordâ€
+          onboarded agency from receiving repeated “no qualification record”
           email while its historical data is still being loaded.
         </p>
       </section>
