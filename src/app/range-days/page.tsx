@@ -5850,10 +5850,14 @@ export default function RangeDaysPage() {
                                   }`}
                                 >
                                   {departmentStandardStatus === true
-                                    ? "Met"
-                                    : departmentStandardStatus === false
-                                      ? "Failed"
-                                      : "Pending"}
+       ? isQualificationDrill(selectedDrill)
+         ? "Pass"
+         : "Met"
+       : departmentStandardStatus === false
+         ? isQualificationDrill(selectedDrill)
+           ? "Fail"
+           : "Failed"
+         : "Pending"}
                                 </span>
                               ) : (
                                 <span className="text-[11px] text-slate-600">—</span>
@@ -6194,12 +6198,15 @@ export default function RangeDaysPage() {
                                     ? "Yes"
                                     : "No"}{" "}
                                   · Standard:{" "}
-                                  {typeof result.departmentStandardPassed ===
-                                  "boolean"
-                                    ? result.departmentStandardPassed
-                                      ? "Met"
-                                      : "Failed"
-                                    : "—"}
+                                  {typeof result.departmentStandardPassed === "boolean"
+       ? result.departmentStandardPassed
+         ? isQualificationDrill(selectedDrill)
+           ? "Pass"
+           : "Met"
+         : isQualificationDrill(selectedDrill)
+           ? "Fail"
+           : "Failed"
+       : "—"}
                                 </p>
 
                                 {result.notes ? (
