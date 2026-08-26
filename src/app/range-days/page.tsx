@@ -147,6 +147,22 @@ type ExtendedDrillRunResult = DrillRunResult & {
   departmentStandardPassed?: boolean;
 };
 
+type QualificationStandardReferenceComponent = {
+  name: string;
+  scoringBasis: DepartmentStandardScoringBasis;
+  passingScore: number | null;
+  passingTimeSeconds: number | null;
+  minimumHits: number | null;
+  isRequired: boolean;
+};
+
+type QualificationStandardReference = {
+  id: string;
+  name: string;
+  firearmType: string | null;
+  components: QualificationStandardReferenceComponent[];
+};
+
 type BatchScoreRow = {
   officerId: string;
   firearmId?: string;
@@ -772,6 +788,132 @@ function getRunLabel(drill: RangeDayDrill | undefined, runNumber: number) {
   }
 
   return `Run ${runNumber}`;
+}
+function getQualificationStandardMatch(
+  standards: QualificationStandardReference[],
+  drill: ExtendedRangeDayDrill | undefined,
+  runNumber: number,
+) {
+  if (!drill || !isQualificationDrill(drill)) return undefined;
+
+  const firearmType = String(drill.firearmType ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!firearmType) return undefined;
+
+  const standard = standards.find(
+    (candidate) =>
+      String(candidate.firearmType ?? "")
+        .trim()
+        .toLowerCase() === firearmType,
+  );
+
+  if (!standard) return undefined;
+
+  const requiredComponents = standard.components.filter(
+    (component) => component.isRequired !== false,
+  );
+
+  const period =
+    runNumber === 1
+      ? "day"
+      : runNumber === 2
+        ? "night"
+        : "";
+
+  const component =
+    requiredComponents.find(
+      (candidate) =>
+        period &&
+        candidate.name.trim().toLowerCase().includes(period),
+    ) ??
+    (requiredComponents.length === 1
+      ? requiredComponents[0]
+      : undefined);
+
+  if (!component) return undefined;
+
+  return { standard, component };
+}
+
+function getQualificationStandardPass({
+  standards,
+  drill,
+  runNumber,
+  metricValue,
+}: {
+  standards: QualificationStandardReference[];
+  drill: ExtendedRangeDayDrill | undefined;
+  runNumber: number;
+  metricValue: string;
+}) {
+  if (!metricValue.trim()) return undefined;
+
+  const match = getQualificationStandardMatch(
+    standards,
+    drill,
+    runNumber,
+  );
+
+  if (!match) return undefined;
+
+  const numericValue = Number(metricValue);
+  if (Number.isNaN(numericValue)) return undefined;
+
+  const { component } = match;
+
+  if (
+    component.scoringBasis === "Hit Count" &&
+    typeof component.minimumHits === "number"
+  ) {
+    return numericValue >= component.minimumHits;
+  }
+
+  if (
+    (component.scoringBasis === "Points" ||
+      component.scoringBasis === "Percentage") &&
+    typeof component.passingScore === "number"
+  ) {
+    return numericValue >= component.passingScore;
+  }
+
+  if (
+    component.scoringBasis === "Time" &&
+    typeof component.passingTimeSeconds === "number"
+  ) {
+    return numericValue <= component.passingTimeSeconds;
+  }
+
+  return undefined;
+}
+
+function getQualificationStandardSnapshot(
+  standards: QualificationStandardReference[],
+  drill: ExtendedRangeDayDrill | undefined,
+  runNumber: number,
+): DepartmentStandardConfig | undefined {
+  const match = getQualificationStandardMatch(
+    standards,
+    drill,
+    runNumber,
+  );
+
+  if (!match) return undefined;
+
+  const { standard, component } = match;
+
+  return {
+    isDepartmentStandard: true,
+    departmentStandardName: `${standard.name} - ${component.name}`,
+    departmentStandardScoringBasis: component.scoringBasis,
+    departmentStandardMinimumScore:
+      component.passingScore ?? undefined,
+    departmentStandardPassingTimeSeconds:
+      component.passingTimeSeconds ?? undefined,
+    departmentStandardMinimumHits:
+      component.minimumHits ?? undefined,
+  };
 }
 
 function getDefaultOutlineForRangeType(rangeType: RangeDayType) {
@@ -1611,6 +1753,45 @@ export default function RangeDaysPage() {
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedDrillId, setSelectedDrillId] = useState("");
   const [selectedRunNumber, setSelectedRunNumber] = useState(1);
+  const [qualificationStandards, setQualificationStandards] = useState<
+    QualificationStandardReference[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadQualificationStandardReferences() {
+      try {
+        const response = await fetch("/api/pilot/range-workspace", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as {
+          qualificationStandards?: QualificationStandardReference[];
+        };
+
+        if (!cancelled) {
+          setQualificationStandards(
+            payload.qualificationStandards ?? [],
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "Could not load qualification standards for Range Days.",
+          error,
+        );
+      }
+    }
+
+    void loadQualificationStandardReferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [score, setScore] = useState("");
   const [passed, setPassed] = useState<boolean | undefined>(undefined);
   const [completed, setCompleted] = useState(true);
@@ -2639,12 +2820,19 @@ export default function RangeDaysPage() {
     if (!selectedDrill) return;
 
     const currentRow = batchScoreRows[officerId];
-    const automaticPass = getAutomaticPassValue(
-      selectedDrill,
-      getScoringFormat(selectedDrill),
-      value,
-      currentRow?.completed,
-    );
+    const automaticPass =
+          getQualificationStandardPass({
+            standards: qualificationStandards,
+            drill: selectedDrill,
+            runNumber: selectedRunNumber,
+            metricValue: value,
+          }) ??
+          getAutomaticPassValue(
+            selectedDrill,
+            getScoringFormat(selectedDrill),
+            value,
+            currentRow?.completed,
+          );
 
     updateBatchScoreRow(officerId, {
       metricValue: value,
@@ -2782,12 +2970,19 @@ export default function RangeDaysPage() {
       const firearmId =
         row.firearmId || entry.assignedFirearmIds[0] || undefined;
       const resultId = `result-${now}-${index}`;
-      const automaticPass = getAutomaticPassValue(
-        selectedDrill,
-        scoringFormat,
-        row.metricValue,
-        row.completed,
-      );
+      const automaticPass =
+          getQualificationStandardPass({
+            standards: qualificationStandards,
+            drill: selectedDrill,
+            runNumber: selectedRunNumber,
+            metricValue: row.metricValue,
+          }) ??
+          getAutomaticPassValue(
+            selectedDrill,
+            scoringFormat,
+            row.metricValue,
+            row.completed,
+          );
       const finalPassed =
         typeof row.passed === "boolean" ? row.passed : automaticPass;
       const malfunctionId =
@@ -2795,8 +2990,20 @@ export default function RangeDaysPage() {
           ? `malfunction-${now}-${index}`
           : undefined;
 
-      const departmentStandardSnapshot = getDepartmentStandardConfig(selectedDrill);
-      const departmentStandardPassed = getDepartmentStandardStatus({
+      const departmentStandardSnapshot =
+      getQualificationStandardSnapshot(
+        qualificationStandards,
+        selectedDrill,
+        selectedRunNumber,
+      ) ?? getDepartmentStandardConfig(selectedDrill);
+      const departmentStandardPassed =
+      getQualificationStandardPass({
+        standards: qualificationStandards,
+        drill: selectedDrill,
+        runNumber: selectedRunNumber,
+        metricValue: row.metricValue,
+      }) ??
+      getDepartmentStandardStatus({
         drill: selectedDrill,
         scoringFormat,
         metricValue: row.metricValue,
@@ -5416,13 +5623,27 @@ export default function RangeDaysPage() {
                         };
 
                         const scoringFormat = getScoringFormat(selectedDrill);
-                        const departmentStandardStatus = getDepartmentStandardStatus({
-                          drill: selectedDrill,
-                          scoringFormat,
-                          metricValue: row.metricValue,
-                          completed: row.completed,
-                          passed: row.passed,
-                        });
+                        const qualificationStandardMatch =
+                          getQualificationStandardMatch(
+                            qualificationStandards,
+                            selectedDrill,
+                            selectedRunNumber,
+                          );
+
+                        const departmentStandardStatus =
+                          getQualificationStandardPass({
+                            standards: qualificationStandards,
+                            drill: selectedDrill,
+                            runNumber: selectedRunNumber,
+                            metricValue: row.metricValue,
+                          }) ??
+                          getDepartmentStandardStatus({
+                            drill: selectedDrill,
+                            scoringFormat,
+                            metricValue: row.metricValue,
+                            completed: row.completed,
+                            passed: row.passed,
+                          });
 
                         const selectedFirearmId =
                           row.firearmId ||
@@ -5618,7 +5839,7 @@ export default function RangeDaysPage() {
                             </button>
 
                             <div>
-                              {selectedDrill.isDepartmentStandard ? (
+                              {selectedDrill.isDepartmentStandard || qualificationStandardMatch ? (
                                 <span
                                   className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${
                                     departmentStandardStatus === true
