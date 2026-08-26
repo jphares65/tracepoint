@@ -1,4 +1,4 @@
-create table public.user_activation_tokens (
+﻿create table if not exists public.user_activation_tokens (
   id uuid primary key,
   department_id uuid not null
     references public.departments(id) on delete cascade,
@@ -19,13 +19,14 @@ create table public.user_activation_tokens (
     check (not (used_at is not null and revoked_at is not null))
 );
 
-create index user_activation_tokens_lookup_idx
+create index if not exists user_activation_tokens_lookup_idx
   on public.user_activation_tokens (user_id, department_id);
 
-create index user_activation_tokens_expiration_idx
+create index if not exists user_activation_tokens_expiration_idx
   on public.user_activation_tokens (expires_at);
 
-alter table public.user_activation_tokens enable row level security;
+alter table public.user_activation_tokens
+  enable row level security;
 
 revoke all on table public.user_activation_tokens
   from anon, authenticated;

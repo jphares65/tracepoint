@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { collectFleetNotifications } from "@/lib/tracepoint/fleet-notifications";
+
 import {
   hasAnyServerPermission,
   resolveServerAccess,
@@ -21,7 +23,8 @@ type Source =
   | "Range"
   | "Training"
   | "Qualifications"
-  | "Equipment";
+  | "Equipment"
+  | "Fleet";
 
 type GeneratedAlert = {
   key: string;
@@ -1202,6 +1205,13 @@ export async function GET(request: NextRequest) {
     const generated: GeneratedAlert[] = [];
     const successful = new Set<string>();
     const sourceErrors: Array<{ source: string; error: string }> = [];
+    try {
+      const fleetItems = await collectFleetNotifications(context);
+      successful.add("Fleet");
+      generated.push(...fleetItems);
+    } catch (fleetError) {
+      sourceErrors.push({ source: "Fleet", error: fleetError instanceof Error ? fleetError.message : "Unavailable" });
+    }
 
     if (rifles.ok) { successful.add("Personal Rifle"); generated.push(...collectPersonalRifles(rifles.payload)); }
     else sourceErrors.push({ source: "Personal Rifle", error: rifles.error || "Unavailable" });

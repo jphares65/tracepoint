@@ -1,4 +1,4 @@
-﻿export const TRACEPOINT_PERMISSIONS = [
+export const TRACEPOINT_PERMISSIONS = [
   "view_command_dashboard",
   "view_analytics",
   "manage_users",
@@ -9,6 +9,11 @@
   "manage_qualifications",
   "manage_certifications",
   "manage_equipment",
+  "view_fleet",
+  "manage_fleet",
+  "perform_fleet_inspections",
+  "manage_fleet_maintenance",
+  "manage_fleet_rules",
   "submit_off_duty_requests",
   "review_off_duty_requests",
   "view_audit_log",
