@@ -3534,6 +3534,21 @@ export default function AdminSettingsPage() {
                 />
                 <div className="xl:col-span-2">
                   <SettingsCard
+                    title="Qualification Scoring"
+                    description="Qualification thresholds are configured on the qualification drill that uses them."
+                  >
+                    <div className="rounded-2xl border border-blue-500/25 bg-blue-500/[0.06] p-4">
+                      <p className="text-sm font-semibold text-blue-100">
+                        Scoring moved to Range &amp; Training
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-slate-400">
+                        Open Range &amp; Training, choose Add Drill, and create or edit a Qualification drill. Each drill can define Day, Night, or other agency-specific components with its own passing score, time, or hit threshold.
+                      </p>
+                    </div>
+                  </SettingsCard>
+                </div>
+                <div className="hidden">
+                  <SettingsCard
                     title="Qualification Standards"
                     description="Define reusable agency qualification standards and their required scoring components. Components may represent Day, Night, individual courses, or any other agency-defined requirement."
                   >

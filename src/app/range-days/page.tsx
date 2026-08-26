@@ -126,16 +126,34 @@ type ScoringFormat =
   | "Hit Count"
   | "Notes Only";
 
+type QualificationComponentScoringFormat = Exclude<
+  ScoringFormat,
+  "Qualification" | "Notes Only"
+>;
+
+type QualificationDrillComponent = {
+  id: string;
+  name: string;
+  scoringFormat: QualificationComponentScoringFormat;
+  maximumScore?: number;
+  passingScore?: number;
+  passingTimeSeconds?: number;
+  minimumHits?: number;
+  required: boolean;
+};
+
 type ExtendedDrillTemplate = DrillTemplate & DepartmentStandardConfig & {
   scoringFormat?: ScoringFormat;
   defaultPassingTimeSeconds?: number;
   defaultMinimumHits?: number;
+  qualificationComponents?: QualificationDrillComponent[];
 };
 
 type ExtendedRangeDayDrill = RangeDayDrill & DepartmentStandardConfig & {
   scoringFormat?: ScoringFormat;
   passingTimeSeconds?: number;
   minimumHits?: number;
+  qualificationComponents?: QualificationDrillComponent[];
 };
 
 type ExtendedDrillRunResult = DrillRunResult & {
@@ -353,6 +371,17 @@ const FIREARM_TYPES: Array<NonNullable<DrillTemplate["firearmType"]>> = [
   "Other",
 ];
 
+function createDefaultQualificationComponents(): QualificationDrillComponent[] {
+  return ["Day", "Night"].map((name) => ({
+    id: `qualification-component-${crypto.randomUUID()}`,
+    name,
+    scoringFormat: "Points",
+    maximumScore: 100,
+    passingScore: 80,
+    required: true,
+  }));
+}
+
 const DRILL_DIFFICULTIES: Array<NonNullable<DrillTemplate["difficulty"]>> = [
   "Basic",
   "Intermediate",
@@ -364,8 +393,8 @@ const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
 
 type StoredRangeDayWorkspace = {
   rangeDays: PlannedRangeDay[];
-  drillLibrary: DrillTemplate[];
-  rangeDayDrills: RangeDayDrill[];
+  drillLibrary: ExtendedDrillTemplate[];
+  rangeDayDrills: ExtendedRangeDayDrill[];
   rangeRoster: RangeRosterEntry[];
   results: DrillRunResult[];
   malfunctions: FirearmMalfunction[];
@@ -776,6 +805,17 @@ function formatResultMetric(
 function getEffectiveRunCount(drill?: RangeDayDrill | null) {
   if (!drill) return 1;
 
+  const qualificationComponents = (
+    drill as ExtendedRangeDayDrill
+  ).qualificationComponents;
+
+  if (
+    isQualificationDrill(drill) &&
+    qualificationComponents?.length
+  ) {
+    return qualificationComponents.length;
+  }
+
   return isQualificationDrill(drill)
     ? Math.max(drill.runCount ?? 1, 2)
     : drill.runCount ?? 1;
@@ -783,18 +823,70 @@ function getEffectiveRunCount(drill?: RangeDayDrill | null) {
 
 function getRunLabel(drill: RangeDayDrill | undefined, runNumber: number) {
   if (isQualificationDrill(drill)) {
+    const component = (
+      drill as ExtendedRangeDayDrill
+    ).qualificationComponents?.[runNumber - 1];
+
+    if (component) return component.name;
     if (runNumber === 1) return "Day Qualification";
     if (runNumber === 2) return "Night Qualification";
   }
 
   return `Run ${runNumber}`;
 }
+
+function getQualificationDrillComponent(
+  drill: ExtendedRangeDayDrill | ExtendedDrillTemplate | undefined,
+  runNumber: number,
+) {
+  if (!drill || !isQualificationNameOrCategory(drill.name, drill.category)) {
+    return undefined;
+  }
+
+  return drill.qualificationComponents?.[runNumber - 1];
+}
+
+function getRunScoringFormat(
+  drill: ExtendedRangeDayDrill | undefined,
+  runNumber: number,
+): ScoringFormat {
+  return (
+    getQualificationDrillComponent(drill, runNumber)?.scoringFormat ??
+    getScoringFormat(drill)
+  );
+}
+
 function getQualificationStandardMatch(
   standards: QualificationStandardReference[],
   drill: ExtendedRangeDayDrill | undefined,
   runNumber: number,
 ) {
   if (!drill || !isQualificationDrill(drill)) return undefined;
+
+  const configuredComponent = getQualificationDrillComponent(
+    drill,
+    runNumber,
+  );
+
+  if (configuredComponent) {
+    return {
+      standard: {
+        id: `drill:${drill.id}`,
+        name: drill.name,
+        firearmType: drill.firearmType ?? null,
+        components: [],
+      },
+      component: {
+        name: configuredComponent.name,
+        scoringBasis: configuredComponent.scoringFormat as DepartmentStandardScoringBasis,
+        passingScore: configuredComponent.passingScore ?? null,
+        passingTimeSeconds:
+          configuredComponent.passingTimeSeconds ?? null,
+        minimumHits: configuredComponent.minimumHits ?? null,
+        isRequired: configuredComponent.required,
+      },
+    };
+  }
 
   const firearmType = String(drill.firearmType ?? "")
     .trim()
@@ -977,26 +1069,30 @@ function parseOutlineText(value: string) {
 }
 
 function normalizeDrillLibraryForWorkspace(
-  storedDrillLibrary: DrillTemplate[],
-): DrillTemplate[] {
+  storedDrillLibrary: ExtendedDrillTemplate[],
+): ExtendedDrillTemplate[] {
   return storedDrillLibrary.map((template) =>
     isQualificationNameOrCategory(template.name, template.category)
       ? {
           ...template,
-          defaultRunCount: Math.max(template.defaultRunCount ?? 1, 2),
+          defaultRunCount: template.qualificationComponents?.length
+            ? template.qualificationComponents.length
+            : Math.max(template.defaultRunCount ?? 1, 2),
         }
       : template,
   );
 }
 
 function normalizeRangeDayDrillsForWorkspace(
-  storedRangeDayDrills: RangeDayDrill[],
-): RangeDayDrill[] {
+  storedRangeDayDrills: ExtendedRangeDayDrill[],
+): ExtendedRangeDayDrill[] {
   return storedRangeDayDrills.map((drill) =>
     isQualificationNameOrCategory(drill.name, drill.category)
       ? {
           ...drill,
-          runCount: Math.max(drill.runCount ?? 1, 2),
+          runCount: drill.qualificationComponents?.length
+            ? drill.qualificationComponents.length
+            : Math.max(drill.runCount ?? 1, 2),
         }
       : drill,
   );
@@ -1719,6 +1815,10 @@ export default function RangeDaysPage() {
     useState<NonNullable<DrillTemplate["difficulty"]>>("Basic");
   const [newDrillScoringMode, setNewDrillScoringMode] =
     useState<ScoringFormat>("Pass/Fail");
+  const [newQualificationComponents, setNewQualificationComponents] =
+    useState<QualificationDrillComponent[]>(() =>
+      createDefaultQualificationComponents(),
+    );
   const [newDrillPassingScore, setNewDrillPassingScore] = useState("");
   const [newDrillMaxScore, setNewDrillMaxScore] = useState("");
   const [newDrillPassingTimeSeconds, setNewDrillPassingTimeSeconds] = useState("");
@@ -2324,7 +2424,10 @@ export default function RangeDaysPage() {
       return;
     }
 
-    const scoringFormat = getScoringFormat(selectedDrill);
+    const scoringFormat = getRunScoringFormat(
+      selectedDrill,
+      selectedRunNumber,
+    );
     const nextRows: Record<string, BatchScoreRow> = {};
 
     attendingRoster.forEach((entry) => {
@@ -2419,6 +2522,7 @@ export default function RangeDaysPage() {
     setNewDrillEstimatedMinutes("");
     setNewDrillDifficulty("Basic");
     setNewDrillScoringMode("Pass/Fail");
+    setNewQualificationComponents(createDefaultQualificationComponents());
     setNewDrillPassingScore("");
     setNewDrillMaxScore("");
     setNewDrillPassingTimeSeconds("");
@@ -2829,7 +2933,7 @@ export default function RangeDaysPage() {
           }) ??
           getAutomaticPassValue(
             selectedDrill,
-            getScoringFormat(selectedDrill),
+            getRunScoringFormat(selectedDrill, selectedRunNumber),
             value,
             currentRow?.completed,
           );
@@ -2845,7 +2949,10 @@ export default function RangeDaysPage() {
   function handleSaveBatchResults() {
     if (!selectedRangeDay || !selectedDrill) return;
 
-    const scoringFormat = getScoringFormat(selectedDrill);
+    const scoringFormat = getRunScoringFormat(
+      selectedDrill,
+      selectedRunNumber,
+    );
     const rosterToScore = attendingRoster;
 
     if (rosterToScore.length === 0) {
@@ -3132,6 +3239,23 @@ export default function RangeDaysPage() {
   function handleCreateDrillTemplate() {
     if (!newDrillName.trim()) return;
 
+    const isQualification =
+      newDrillScoringMode === "Qualification" ||
+      newDrillCategory === "Qualification";
+
+    if (
+      isQualification &&
+      (newQualificationComponents.length === 0 ||
+        newQualificationComponents.some(
+          (component) => !component.name.trim(),
+        ))
+    ) {
+      setSaveMessage(
+        "Qualification drills require at least one named scoring component.",
+      );
+      return;
+    }
+
     const baseTemplate = createDrillLibraryTemplate({
       departmentId,
       name: newDrillName.trim(),
@@ -3154,9 +3278,8 @@ export default function RangeDaysPage() {
           ? parseOptionalNumber(newDrillMaxScore)
           : undefined,
       defaultRunCount:
-        newDrillScoringMode === "Qualification" ||
-        newDrillCategory === "Qualification"
-          ? Math.max(Number(newDrillRunCount) || 1, 2)
+        isQualification
+          ? newQualificationComponents.length
           : Math.max(Number(newDrillRunCount) || 1, 1),
       defaultRequired: newDrillDefaultRequired,
       tags: newDrillTags
@@ -3178,6 +3301,12 @@ export default function RangeDaysPage() {
         newDrillScoringMode === "Hit Count"
           ? parseOptionalNumber(newDrillMinimumHits)
           : undefined,
+      qualificationComponents: isQualification
+        ? newQualificationComponents.map((component) => ({
+            ...component,
+            name: component.name.trim(),
+          }))
+        : undefined,
       isDepartmentStandard: newDrillIsDepartmentStandard,
       departmentStandardName: newDrillIsDepartmentStandard
         ? newDrillStandardName.trim() || newDrillName.trim()
@@ -3246,13 +3375,17 @@ export default function RangeDaysPage() {
     const normalizedCopiedDrill: ExtendedRangeDayDrill = {
       ...copiedDrill,
       runCount: isQualificationDrill(copiedDrill)
-        ? Math.max(copiedDrill.runCount ?? 1, 2)
+        ? sourceTemplate?.qualificationComponents?.length ??
+          Math.max(copiedDrill.runCount ?? 1, 2)
         : copiedDrill.runCount,
       scoringFormat: sourceTemplate
         ? getScoringFormat(sourceTemplate)
         : getScoringFormat(copiedDrill),
       passingTimeSeconds: sourceTemplate?.defaultPassingTimeSeconds,
       minimumHits: sourceTemplate?.defaultMinimumHits,
+      qualificationComponents: sourceTemplate?.qualificationComponents?.map(
+        (component) => ({ ...component }),
+      ),
       isDepartmentStandard: sourceTemplate?.isDepartmentStandard,
       departmentStandardName: sourceTemplate?.departmentStandardName,
       departmentStandardScoringBasis: sourceTemplate?.departmentStandardScoringBasis,
@@ -4791,20 +4924,23 @@ export default function RangeDaysPage() {
                           </select>
                         </div>
 
-                        <div>
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                            Runs
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            value={newDrillRunCount}
-                            onChange={(event) =>
-                              setNewDrillRunCount(event.target.value)
-                            }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                          />
-                        </div>
+                        {newDrillScoringMode !== "Qualification" &&
+                        newDrillCategory !== "Qualification" ? (
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                              Runs
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={newDrillRunCount}
+                              onChange={(event) =>
+                                setNewDrillRunCount(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        ) : null}
 
                         <div>
                           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
@@ -4849,6 +4985,239 @@ export default function RangeDaysPage() {
                             className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                           />
                         </div>
+
+                        {(newDrillScoringMode === "Qualification" ||
+                          newDrillCategory === "Qualification") && (
+                          <div className="lg:col-span-4 rounded-2xl border border-blue-500/25 bg-slate-950/50 p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-[13px] font-bold text-white">
+                                  Qualification Scoring Components
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  Each component becomes its own scored run. Keep Day and Night, remove either one, or add an agency-defined component.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewQualificationComponents((current) => [
+                                    ...current,
+                                    {
+                                      id: `qualification-component-${crypto.randomUUID()}`,
+                                      name: `Component ${current.length + 1}`,
+                                      scoringFormat: "Points",
+                                      maximumScore: 100,
+                                      passingScore: 80,
+                                      required: true,
+                                    },
+                                  ])
+                                }
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 px-3 py-2 text-[12px] font-semibold text-blue-300 hover:bg-blue-500/10"
+                              >
+                                <Plus size={13} />
+                                Add Component
+                              </button>
+                            </div>
+
+                            <div className="mt-4 space-y-3">
+                              {newQualificationComponents.map((component, index) => (
+                                <div
+                                  key={component.id}
+                                  className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-3 md:grid-cols-2 xl:grid-cols-6"
+                                >
+                                  <label className="xl:col-span-2">
+                                    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                      Component Name
+                                    </span>
+                                    <input
+                                      value={component.name}
+                                      onChange={(event) =>
+                                        setNewQualificationComponents((current) =>
+                                          current.map((item) =>
+                                            item.id === component.id
+                                              ? { ...item, name: event.target.value }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      placeholder="Day, Night, Low Light..."
+                                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                    />
+                                  </label>
+
+                                  <label>
+                                    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                      Scoring
+                                    </span>
+                                    <select
+                                      value={component.scoringFormat}
+                                      onChange={(event) =>
+                                        setNewQualificationComponents((current) =>
+                                          current.map((item) =>
+                                            item.id === component.id
+                                              ? {
+                                                  ...item,
+                                                  scoringFormat: event.target.value as QualificationComponentScoringFormat,
+                                                }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                    >
+                                      {[
+                                        "Points",
+                                        "Time",
+                                        "Pass/Fail",
+                                        "Completion",
+                                        "Hit Count",
+                                      ].map((format) => (
+                                        <option key={format} value={format}>
+                                          {format}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+
+                                  {component.scoringFormat === "Points" ? (
+                                    <>
+                                      <label>
+                                        <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                          Passing Score
+                                        </span>
+                                        <input
+                                          type="number"
+                                          value={component.passingScore ?? ""}
+                                          onChange={(event) =>
+                                            setNewQualificationComponents((current) =>
+                                              current.map((item) =>
+                                                item.id === component.id
+                                                  ? {
+                                                      ...item,
+                                                      passingScore: parseOptionalNumber(event.target.value),
+                                                    }
+                                                  : item,
+                                              ),
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                        />
+                                      </label>
+                                      <label>
+                                        <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                          Maximum Score
+                                        </span>
+                                        <input
+                                          type="number"
+                                          value={component.maximumScore ?? ""}
+                                          onChange={(event) =>
+                                            setNewQualificationComponents((current) =>
+                                              current.map((item) =>
+                                                item.id === component.id
+                                                  ? {
+                                                      ...item,
+                                                      maximumScore: parseOptionalNumber(event.target.value),
+                                                    }
+                                                  : item,
+                                              ),
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                        />
+                                      </label>
+                                    </>
+                                  ) : component.scoringFormat === "Time" ? (
+                                    <label className="xl:col-span-2">
+                                      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                        Maximum Passing Seconds
+                                      </span>
+                                      <input
+                                        type="number"
+                                        value={component.passingTimeSeconds ?? ""}
+                                        onChange={(event) =>
+                                          setNewQualificationComponents((current) =>
+                                            current.map((item) =>
+                                              item.id === component.id
+                                                ? {
+                                                    ...item,
+                                                    passingTimeSeconds: parseOptionalNumber(event.target.value),
+                                                  }
+                                                : item,
+                                            ),
+                                          )
+                                        }
+                                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                      />
+                                    </label>
+                                  ) : component.scoringFormat === "Hit Count" ? (
+                                    <label className="xl:col-span-2">
+                                      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                        Minimum Hits
+                                      </span>
+                                      <input
+                                        type="number"
+                                        value={component.minimumHits ?? ""}
+                                        onChange={(event) =>
+                                          setNewQualificationComponents((current) =>
+                                            current.map((item) =>
+                                              item.id === component.id
+                                                ? {
+                                                    ...item,
+                                                    minimumHits: parseOptionalNumber(event.target.value),
+                                                  }
+                                                : item,
+                                            ),
+                                          )
+                                        }
+                                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                      />
+                                    </label>
+                                  ) : (
+                                    <div className="xl:col-span-2 flex items-end text-[11px] text-slate-500">
+                                      Instructor records the result directly.
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setNewQualificationComponents((current) =>
+                                          current.map((item) =>
+                                            item.id === component.id
+                                              ? { ...item, required: !item.required }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      className={`flex-1 rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                                        component.required
+                                          ? "border-emerald-500/40 text-emerald-300"
+                                          : "border-slate-700 text-slate-500"
+                                      }`}
+                                    >
+                                      {component.required ? "Required" : "Optional"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setNewQualificationComponents((current) =>
+                                          current.filter((item) => item.id !== component.id),
+                                        )
+                                      }
+                                      disabled={newQualificationComponents.length === 1}
+                                      className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
+                                      aria-label={`Remove ${component.name || `component ${index + 1}`}`}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {newDrillIsDepartmentStandard ? (
                           <div className="lg:col-span-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
@@ -5295,7 +5664,12 @@ export default function RangeDaysPage() {
 
               {selectedDrill && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <StatusPill label={getScoringFormat(selectedDrill)} />
+                  <StatusPill
+                    label={getRunScoringFormat(
+                      selectedDrill,
+                      selectedRunNumber,
+                    )}
+                  />
                   <StatusPill label={selectedDrill.category} tone="slate" />
                   <StatusPill label={getRunLabel(selectedDrill, selectedRunNumber)} tone="green" />
                 </div>
@@ -5319,7 +5693,10 @@ export default function RangeDaysPage() {
                         malfunctionNotes: "",
                       };
 
-                      const scoringFormat = getScoringFormat(selectedDrill);
+                      const scoringFormat = getRunScoringFormat(
+                        selectedDrill,
+                        selectedRunNumber,
+                      );
                       const selectedFirearmId =
                         row.firearmId ||
                         entry.assignedFirearmIds[0] ||
@@ -5622,7 +5999,10 @@ export default function RangeDaysPage() {
                           malfunctionNotes: "",
                         };
 
-                        const scoringFormat = getScoringFormat(selectedDrill);
+                        const scoringFormat = getRunScoringFormat(
+                          selectedDrill,
+                          selectedRunNumber,
+                        );
                         const qualificationStandardMatch =
                           getQualificationStandardMatch(
                             qualificationStandards,
