@@ -1,16 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
+import { loadCompleteAuditFeed } from "@/lib/tracepoint/audit-server";
+import { recordDataExport } from "@/lib/tracepoint/export-audit-server";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
-import { loadCompleteAuditFeed } from "@/lib/tracepoint/audit-server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const resolved = await resolveServerAccess();
 
   if (!resolved.ok) {
@@ -33,6 +34,18 @@ export async function GET() {
       context.admin,
       context.departmentId,
     );
+
+    const purpose = request.nextUrl.searchParams.get("purpose");
+
+    if (purpose !== "complete_report") {
+      await recordDataExport(context, {
+        exportType: "complete_audit_history",
+        fileName: null,
+        format: "json",
+        recordCount: events.length,
+        source: "audit_log_export_api",
+      });
+    }
 
     return NextResponse.json({
       events,

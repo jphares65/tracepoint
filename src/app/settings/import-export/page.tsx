@@ -1164,7 +1164,53 @@ function csvEscape(value: CsvValue) {
   return stringValue;
 }
 
-function downloadCsv(fileName: string, rows: Record<string, CsvValue>[]) {
+async function recordClientDataExport({
+  exportType,
+  fileName,
+  format,
+  recordCount,
+}: {
+  exportType: string;
+  fileName: string;
+  format: "csv" | "pdf";
+  recordCount?: number;
+}) {
+  const response = await fetch("/api/settings/data-exports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      exportType,
+      fileName,
+      format,
+      recordCount,
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+
+    throw new Error(
+      payload.error ?? "The data export could not be audited.",
+    );
+  }
+}
+
+async function downloadCsv(fileName: string, rows: Record<string, CsvValue>[]) {
+  const exportType = fileName
+    .replace(/^tracepoint-/, "")
+    .replace(/-\d{4}-\d{2}-\d{2}\.csv$/i, "");
+
+  if (exportType !== "complete-audit-history") {
+    await recordClientDataExport({
+      exportType,
+      fileName,
+      format: "csv",
+      recordCount: rows.length,
+    });
+  }
+
   const headers =
     rows.length > 0
       ? Object.keys(rows[0])
@@ -1790,7 +1836,7 @@ function ImportWizardContent() {
         isActive: person.isActive,
       }));
 
-      downloadCsv(`tracepoint-personnel-${exportDate()}.csv`, rows);
+      await downloadCsv(`tracepoint-personnel-${exportDate()}.csv`, rows);
     } catch (error) {
       setExportError(
         error instanceof Error ? error.message : "Personnel export failed.",
@@ -1837,7 +1883,7 @@ function ImportWizardContent() {
         notes: firearm.notes,
       }));
 
-      downloadCsv(`tracepoint-firearms-${exportDate()}.csv`, rows);
+      await downloadCsv(`tracepoint-firearms-${exportDate()}.csv`, rows);
     } catch (error) {
       setExportError(
         error instanceof Error ? error.message : "Firearms export failed.",
@@ -1889,7 +1935,7 @@ function ImportWizardContent() {
         notes: lot.notes,
       }));
 
-      downloadCsv(`tracepoint-ammunition-${exportDate()}.csv`, [
+      await downloadCsv(`tracepoint-ammunition-${exportDate()}.csv`, [
         ...dutyRows,
         ...trainingRows,
       ]);
@@ -2088,7 +2134,7 @@ function ImportWizardContent() {
           ),
         );
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-qualifications-${exportDate()}.csv`,
         rows,
       );
@@ -2262,7 +2308,7 @@ function ImportWizardContent() {
           ),
         );
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-training-records-${exportDate()}.csv`,
         rows,
       );
@@ -2482,7 +2528,7 @@ function ImportWizardContent() {
           ),
         );
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-range-days-${exportDate()}.csv`,
         rows,
       );
@@ -2660,7 +2706,7 @@ function ImportWizardContent() {
           ),
         );
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-certifications-${exportDate()}.csv`,
         rows,
       );
@@ -2909,7 +2955,7 @@ function ImportWizardContent() {
           );
         });
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-equipment-${exportDate()}.csv`,
         rows,
       );
@@ -3138,7 +3184,7 @@ function ImportWizardContent() {
           ),
         );
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-off-duty-firearms-${exportDate()}.csv`,
         rows,
       );
@@ -3209,7 +3255,7 @@ function ImportWizardContent() {
         ),
       }));
 
-      downloadCsv(
+      await downloadCsv(
         `tracepoint-complete-audit-history-${exportDate()}.csv`,
         rows,
       );
@@ -3342,7 +3388,7 @@ function ImportWizardContent() {
         ),
         safeReportFetch(
           "Audit History",
-          "/api/settings/audit-log/export",
+          "/api/settings/audit-log/export?purpose=complete_report",
         ),
         safeReportFetch(
           "Firearms",
@@ -5071,6 +5117,12 @@ function ImportWizardContent() {
         anchor,
       );
 
+      await recordClientDataExport({
+        exportType: "complete_department_report",
+        fileName: anchor.download,
+        format: "pdf",
+      });
+
       anchor.click();
 
       document.body.removeChild(
@@ -6127,6 +6179,12 @@ function ImportWizardContent() {
         `tracepoint-off-duty-firearms-report-${exportDate()}.pdf`;
 
       document.body.appendChild(link);
+
+      await recordClientDataExport({
+        exportType: "off_duty_firearms_report",
+        fileName: link.download,
+        format: "pdf",
+      });
 
       link.click();
       link.remove();
