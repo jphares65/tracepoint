@@ -35,6 +35,53 @@ async function requirePlatformAdmin() {
   return { ok: true as const, user };
 }
 
+function clearSupportCookies(response: NextResponse) {
+  for (const name of [
+    "tracepoint_support_department_id",
+    "tracepoint_department_id",
+  ]) {
+    response.cookies.set(name, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0,
+    });
+  }
+
+  return response;
+}
+
+async function recordSupportModeEvent({
+  admin,
+  actorUserId,
+  departmentId,
+  departmentName,
+  action,
+}: {
+  admin: any;
+  actorUserId: string;
+  departmentId: string;
+  departmentName: string | null;
+  action: "support_mode_entered" | "support_mode_exited";
+}) {
+  const { error } = await admin.from("audit_events").insert({
+    department_id: departmentId,
+    actor_user_id: actorUserId,
+    action,
+    entity_type: "department",
+    entity_id: departmentId,
+    details: {
+      source: "platform_support_mode",
+      support_mode: true,
+      target_department_id: departmentId,
+      target_department_name: departmentName,
+    },
+  });
+
+  return error;
+}
+
 export async function POST(request: NextRequest) {
   const auth = await requirePlatformAdmin();
 
@@ -81,6 +128,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const auditError = await recordSupportModeEvent({
+    admin,
+    actorUserId: auth.user.id,
+    departmentId,
+    departmentName: department.name,
+    action: "support_mode_entered",
+  });
+
+  if (auditError) {
+    return NextResponse.json(
+      { error: `Support mode could not be audited: ${auditError.message}` },
+      { status: 500 },
+    );
+  }
+
   const response = NextResponse.json({
     ok: true,
     departmentId,
@@ -110,7 +172,7 @@ export async function POST(request: NextRequest) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const auth = await requirePlatformAdmin();
 
   if (!auth.ok) {
@@ -120,20 +182,45 @@ export async function DELETE() {
     );
   }
 
-  const response = NextResponse.json({ ok: true });
+  const departmentId =
+    request.cookies
+      .get("tracepoint_support_department_id")
+      ?.value.trim() ?? "";
 
-  for (const name of [
-    "tracepoint_support_department_id",
-    "tracepoint_department_id",
-  ]) {
-    response.cookies.set(name, "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 0,
-    });
+  let auditErrorMessage: string | null = null;
+
+  if (departmentId) {
+    const admin = createAdminClient() as any;
+
+    const { data: department, error: departmentError } = await admin
+      .from("departments")
+      .select("id,name")
+      .eq("id", departmentId)
+      .maybeSingle();
+
+    if (departmentError) {
+      auditErrorMessage = departmentError.message;
+    } else {
+      const auditError = await recordSupportModeEvent({
+        admin,
+        actorUserId: auth.user.id,
+        departmentId,
+        departmentName: department?.name ?? null,
+        action: "support_mode_exited",
+      });
+
+      auditErrorMessage = auditError?.message ?? null;
+    }
   }
 
-  return response;
+  const response = auditErrorMessage
+    ? NextResponse.json(
+        {
+          error: `Support mode was ended, but the exit could not be audited: ${auditErrorMessage}`,
+        },
+        { status: 500 },
+      )
+    : NextResponse.json({ ok: true });
+
+  return clearSupportCookies(response);
 }
