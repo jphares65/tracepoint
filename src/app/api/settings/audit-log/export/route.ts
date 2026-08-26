@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -6,10 +6,9 @@ import {
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { loadCompleteAuditFeed } from "@/lib/tracepoint/audit-server";
 
 export const dynamic = "force-dynamic";
-
-const BATCH_SIZE = 1000;
 
 export async function GET() {
   const resolved = await resolveServerAccess();
@@ -26,58 +25,14 @@ export async function GET() {
       "administer_department",
     ])
   ) {
-    return permissionDeniedResponse(
-      "Audit-log permission is required.",
-    );
+    return permissionDeniedResponse("Audit-log permission is required.");
   }
 
   try {
-    const events: Array<Record<string, unknown>> = [];
-
-    let from = 0;
-
-    while (true) {
-      const { data, error } = await context.admin
-        .from("audit_log")
-        .select(
-          [
-            "id",
-            "entity_type",
-            "entity_id",
-            "action",
-            "changed_by_user_id",
-            "change_note",
-            "changed_fields",
-            "old_values",
-            "new_values",
-            "created_at",
-          ].join(","),
-        )
-        .eq("department_id", context.departmentId)
-        .order("created_at", { ascending: false })
-        .range(from, from + BATCH_SIZE - 1);
-
-      if (error) {
-        return NextResponse.json(
-          {
-            error:
-              error.message ||
-              "The complete audit log could not be loaded.",
-          },
-          { status: 500 },
-        );
-      }
-
-      const batch = data ?? [];
-
-      events.push(...batch);
-
-      if (batch.length < BATCH_SIZE) {
-        break;
-      }
-
-      from += BATCH_SIZE;
-    }
+    const events = await loadCompleteAuditFeed(
+      context.admin,
+      context.departmentId,
+    );
 
     return NextResponse.json({
       events,

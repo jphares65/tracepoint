@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
@@ -6,6 +6,7 @@ import {
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { loadAuditFeed } from "@/lib/tracepoint/audit-server";
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 5000;
@@ -19,10 +20,7 @@ function resolveLimit(request: NextRequest) {
     return DEFAULT_LIMIT;
   }
 
-  return Math.min(
-    MAX_LIMIT,
-    Math.max(1, Math.trunc(requested)),
-  );
+  return Math.min(MAX_LIMIT, Math.max(1, Math.trunc(requested)));
 }
 
 export async function GET(request: NextRequest) {
@@ -40,48 +38,19 @@ export async function GET(request: NextRequest) {
       "administer_department",
     ])
   ) {
-    return permissionDeniedResponse(
-      "Audit-log permission is required.",
-    );
+    return permissionDeniedResponse("Audit-log permission is required.");
   }
 
   const limit = resolveLimit(request);
 
   try {
-    const { data, error } = await context.admin
-      .from("audit_log")
-      .select(
-        [
-          "id",
-          "entity_type",
-          "entity_id",
-          "action",
-          "changed_by_user_id",
-          "change_note",
-          "changed_fields",
-          "old_values",
-          "new_values",
-          "created_at",
-        ].join(","),
-      )
-      .eq("department_id", context.departmentId)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+    const events = await loadAuditFeed(
+      context.admin,
+      context.departmentId,
+      limit,
+    );
 
-    if (error) {
-      return NextResponse.json(
-        {
-          error:
-            error.message ||
-            "The audit log could not be loaded.",
-        },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({
-      events: data ?? [],
-    });
+    return NextResponse.json({ events });
   } catch (error) {
     return NextResponse.json(
       {
@@ -94,4 +63,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
