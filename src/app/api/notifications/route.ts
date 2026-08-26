@@ -602,6 +602,7 @@ function collectQualificationReadiness(
   rangePayload: any,
   personnelPayload: any,
   rulesPayload: any,
+  authoritativeResults: any[],
   context: any,
 ): GeneratedAlert[] {
   const workspace = rangePayload?.workspace ?? rangePayload ?? {};
@@ -614,6 +615,9 @@ function collectQualificationReadiness(
       .find(Array.isArray) ?? [];
 
   const rules = rulesPayload?.rules ?? {};
+  const storedQualificationResults = Array.isArray(authoritativeResults)
+    ? authoritativeResults
+    : [];
 
   const qualificationValidDays =
     Number(rules.qualification_valid_days) || 365;
@@ -804,9 +808,101 @@ function collectQualificationReadiness(
         }
       : undefined;
 
-    const readiness = evaluateQualificationReadiness({
+    const importedOfficerResults = storedQualificationResults
+      .filter((result: any) => {
+        const resultUserId = text(
+          get(result, "officerUserId", "officer_user_id"),
+        );
+        const origin = text(
+          get(result, "recordOrigin", "record_origin"),
+        ).toLowerCase();
+        const qualificationType = text(
+          get(
+            result,
+            "historicalQualificationType",
+            "historical_qualification_type",
+          ),
+        ).toLowerCase();
+
+        return (
+          resultUserId === userId &&
+          origin === "historical_import" &&
+          qualificationType === "handgun" &&
+          result?.passed === true
+        );
+      })
+      .sort(
+        (a: any, b: any) =>
+          dateValue(
+            get(b, "qualificationDate", "qualification_date"),
+          ) -
+          dateValue(
+            get(a, "qualificationDate", "qualification_date"),
+          ),
+      );
+
+    const importedDay = importedOfficerResults.find(
+      (result: any) =>
+        text(
+          get(result, "lightingCondition", "lighting_condition"),
+        ).toLowerCase() === "day",
+    );
+
+    const importedNight = importedOfficerResults.find(
+      (result: any) =>
+        text(
+          get(result, "lightingCondition", "lighting_condition"),
+        ).toLowerCase() === "night",
+    );
+
+    const importedDayQualification = importedDay
+      ? {
+          date: text(
+            get(importedDay, "qualificationDate", "qualification_date"),
+          ),
+          runLabel: "Day Qualification",
+        }
+      : undefined;
+
+    const importedNightQualification = importedNight
+      ? {
+          date: text(
+            get(importedNight, "qualificationDate", "qualification_date"),
+          ),
+          runLabel: "Night Qualification",
+        }
+      : undefined;
+
+    const newestQualification = (
+      rangeResult:
+        | { date: string; runLabel: string }
+        | undefined,
+      importedResult:
+        | { date: string; runLabel: string }
+        | undefined,
+    ) => {
+      if (!rangeResult) return importedResult;
+      if (!importedResult) return rangeResult;
+
+      return dateValue(importedResult.date) >
+        dateValue(rangeResult.date)
+        ? importedResult
+        : rangeResult;
+    };
+
+    const resolvedLastDayQualification = newestQualification(
       lastDayQualification,
+      importedDayQualification,
+    );
+
+    const resolvedLastNightQualification = newestQualification(
       lastNightQualification,
+      importedNightQualification,
+    );
+
+    const readiness = evaluateQualificationReadiness({
+      lastDayQualification: resolvedLastDayQualification,
+      lastNightQualification: resolvedLastNightQualification,
       failedQualifications,
       qualificationValidDays,
       qualificationDueSoonDays,
@@ -825,14 +921,14 @@ function collectQualificationReadiness(
     const createdAt =
       readiness.status === "Failed"
         ? failedQualifications[0]?.date ?? null
-        : lastDayQualification &&
-            lastNightQualification
-          ? dateValue(lastDayQualification.date) <
-            dateValue(lastNightQualification.date)
-            ? lastDayQualification.date
-            : lastNightQualification.date
-          : lastDayQualification?.date ??
-            lastNightQualification?.date ??
+        : resolvedLastDayQualification &&
+            resolvedLastNightQualification
+          ? dateValue(resolvedLastDayQualification.date) <
+            dateValue(resolvedLastNightQualification.date)
+            ? resolvedLastDayQualification.date
+            : resolvedLastNightQualification.date
+          : resolvedLastDayQualification?.date ??
+            resolvedLastNightQualification?.date ??
             null;
 
     const config = {
@@ -1169,6 +1265,7 @@ export async function GET(request: NextRequest) {
       equipment,
       personnel,
       rules,
+      qualificationHistory,
     ] = await Promise.all([
       internalJson(request, "/api/armory/personal-rifles/inbox"),
       internalJson(request, "/api/pilot/ammunition"),
@@ -1200,6 +1297,17 @@ export async function GET(request: NextRequest) {
           }),
       internalJson(request, "/api/pilot/personnel"),
       internalJson(request, "/api/settings/current-rules"),
+      context.admin
+        .from("qualification_results")
+        .select(
+          "id,officer_user_id,qualification_date,lighting_condition,passed,record_origin,historical_qualification_type",
+        )
+        .eq("department_id", context.departmentId)
+        .then(({ data, error }: any) => ({
+          ok: !error,
+          items: data ?? [],
+          error: error?.message ?? "",
+        })),
     ]);
 
     const generated: GeneratedAlert[] = [];
@@ -1225,13 +1333,19 @@ export async function GET(request: NextRequest) {
     if (range.ok) { successful.add("Range"); generated.push(...collectRange(range.payload, context)); }
     else sourceErrors.push({ source: "Range", error: range.error || "Unavailable" });
 
-    if (range.ok && personnel.ok && rules.ok) {
+    if (
+      range.ok &&
+      personnel.ok &&
+      rules.ok &&
+      qualificationHistory.ok
+    ) {
       successful.add("Qualifications");
       generated.push(
         ...collectQualificationReadiness(
           range.payload,
           personnel.payload,
           rules.payload,
+          qualificationHistory.items,
           context,
         ),
       );
@@ -1242,6 +1356,7 @@ export async function GET(request: NextRequest) {
           range.error ||
           personnel.error ||
           rules.error ||
+          qualificationHistory.error ||
           "Unavailable",
       });
     }
