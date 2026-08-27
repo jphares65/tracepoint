@@ -3421,23 +3421,93 @@ export default function RangeDaysPage() {
         : undefined,
     };
 
+    const savedTemplate: ExtendedDrillTemplate = editingDrillTemplateId
+      ? {
+          ...createdTemplate,
+          id: editingDrillTemplateId,
+          status:
+            drillLibrary.find(
+              (template) => template.id === editingDrillTemplateId,
+            )?.status ?? createdTemplate.status,
+        }
+      : createdTemplate;
+
     setDrillLibrary((current) =>
       editingDrillTemplateId
         ? current.map((template) =>
             template.id === editingDrillTemplateId
-              ? {
-                  ...template,
-                  ...createdTemplate,
-                  id: template.id,
-                  status: template.status,
-                }
+              ? savedTemplate
               : template,
           )
-        : [createdTemplate, ...current],
+        : [savedTemplate, ...current],
     );
+
+    if (editingDrillTemplateId) {
+      const scoredDrillIds = new Set(
+        results.map((result) => result.drillId),
+      );
+
+      setRangeDayDrills((current) =>
+        current.map((drill) => {
+          if (
+            drill.sourceTemplateId !== editingDrillTemplateId ||
+            scoredDrillIds.has(drill.id)
+          ) {
+            return drill;
+          }
+
+          return {
+            ...drill,
+            name: savedTemplate.name,
+            category: savedTemplate.category,
+            description: savedTemplate.description,
+            instructions: savedTemplate.instructions,
+            firearmType: savedTemplate.firearmType,
+            roundCount: savedTemplate.roundCount,
+            estimatedMinutes: savedTemplate.estimatedMinutes,
+            difficulty: savedTemplate.difficulty,
+            scoringFormat: getScoringFormat(savedTemplate),
+            passingScore: savedTemplate.defaultPassingScore,
+            maxScore: savedTemplate.defaultMaxScore,
+            passingTimeSeconds: savedTemplate.defaultPassingTimeSeconds,
+            minimumHits: savedTemplate.defaultMinimumHits,
+            runCount:
+              savedTemplate.qualificationComponents?.length ??
+              savedTemplate.defaultRunCount ??
+              drill.runCount,
+            qualificationComponents:
+              savedTemplate.qualificationComponents?.map((component) => ({
+                ...component,
+              })),
+            isDepartmentStandard: savedTemplate.isDepartmentStandard,
+            departmentStandardName:
+              savedTemplate.departmentStandardName,
+            departmentStandardScoringBasis:
+              savedTemplate.departmentStandardScoringBasis,
+            departmentStandardMinimumScore:
+              savedTemplate.departmentStandardMinimumScore,
+            departmentStandardPassingTimeSeconds:
+              savedTemplate.departmentStandardPassingTimeSeconds,
+            departmentStandardMinimumHits:
+              savedTemplate.departmentStandardMinimumHits,
+            departmentStandardAppliesTo:
+              savedTemplate.departmentStandardAppliesTo,
+            departmentStandardRemediationRequired:
+              savedTemplate.departmentStandardRemediationRequired,
+            departmentStandardRetestRequired:
+              savedTemplate.departmentStandardRetestRequired,
+            departmentStandardEffectiveDate:
+              savedTemplate.departmentStandardEffectiveDate,
+            departmentStandardRetirementDate:
+              savedTemplate.departmentStandardRetirementDate,
+          };
+        }),
+      );
+    }
+
     setSaveMessage(
       editingDrillTemplateId
-        ? `${newDrillName.trim()} updated in the drill library.`
+        ? `${newDrillName.trim()} updated in the drill library and active unscored range days.`
         : `${newDrillName.trim()} added to the drill library.`,
     );
     resetNewDrillForm();
