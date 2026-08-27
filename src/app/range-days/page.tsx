@@ -3421,14 +3421,17 @@ export default function RangeDaysPage() {
         : undefined,
     };
 
+    const existingTemplate = editingDrillTemplateId
+      ? drillLibrary.find(
+          (template) => template.id === editingDrillTemplateId,
+        )
+      : undefined;
+
     const savedTemplate: ExtendedDrillTemplate = editingDrillTemplateId
       ? {
           ...createdTemplate,
           id: editingDrillTemplateId,
-          status:
-            drillLibrary.find(
-              (template) => template.id === editingDrillTemplateId,
-            )?.status ?? createdTemplate.status,
+          status: existingTemplate?.status ?? createdTemplate.status,
         }
       : createdTemplate;
 
@@ -3449,8 +3452,15 @@ export default function RangeDaysPage() {
 
       setRangeDayDrills((current) =>
         current.map((drill) => {
+          const matchesEditedTemplate =
+            drill.sourceTemplateId === editingDrillTemplateId ||
+            drill.sourceTemplateName === existingTemplate?.name ||
+            (!drill.sourceTemplateId &&
+              !drill.sourceTemplateName &&
+              drill.name === existingTemplate?.name);
+
           if (
-            drill.sourceTemplateId !== editingDrillTemplateId ||
+            !matchesEditedTemplate ||
             scoredDrillIds.has(drill.id)
           ) {
             return drill;
@@ -3458,6 +3468,8 @@ export default function RangeDaysPage() {
 
           return {
             ...drill,
+            sourceTemplateId: savedTemplate.id,
+            sourceTemplateName: savedTemplate.name,
             name: savedTemplate.name,
             category: savedTemplate.category,
             description: savedTemplate.description,
