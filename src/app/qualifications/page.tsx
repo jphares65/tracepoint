@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
@@ -91,6 +91,19 @@ type OfficerQualificationEvent = {
   deficiencyObserved?: boolean;
   remedialTrainingRecommended?: boolean;
   malfunctionCount: number;
+};
+
+type HistoricalQualificationResult = {
+  id: string;
+  officerUserId: string;
+  qualificationDate: string;
+  lightingCondition: string;
+  score?: number | null;
+  passed?: boolean | null;
+  recordOrigin: string;
+  qualificationType?: string | null;
+  instructorName?: string | null;
+  notes?: string | null;
 };
 
 type OfficerHistory = {
@@ -302,6 +315,34 @@ function isRifleDrill(drill?: RangeDayDrill) {
   );
 }
 
+async function loadHistoricalQualificationResults(): Promise<
+  HistoricalQualificationResult[]
+> {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const response = await fetch("/api/qualifications", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load qualification history.");
+    }
+
+    const payload = (await response.json()) as {
+      results?: HistoricalQualificationResult[];
+    };
+
+    return Array.isArray(payload.results)
+      ? payload.results
+      : [];
+  } catch (error) {
+    console.warn("Could not load qualification history.", error);
+    return [];
+  }
+}
+
 function getRunLabel(drill?: RangeDayDrill, runNumber?: number) {
   if (isQualificationDrill(drill)) {
     if (runNumber === 1) return "Day Qualification";
@@ -347,6 +388,7 @@ function StatusPill({
 function buildOfficerHistories(
   workspace: StoredRangeDayWorkspace,
   personnel: PilotPersonnel[],
+  historicalResults: HistoricalQualificationResult[],
   qualificationValidDays: number,
   qualificationDueSoonDays: number,
 ) {
@@ -420,7 +462,7 @@ function buildOfficerHistories(
       (entry) => entry.attended === false,
     ).length;
 
-    const qualificationEvents = officerResults
+    const rangeDayQualificationEvents = officerResults
       .map<OfficerQualificationEvent | null>((result) => {
         const drill = drillById.get(result.drillId);
 
@@ -458,8 +500,73 @@ function buildOfficerHistories(
       .filter((event): event is OfficerQualificationEvent => Boolean(event))
       .sort((a, b) => getDateValue(b.date) - getDateValue(a.date));
 
+    const historicalEvents = historicalResults
+      .filter((result) => result.officerUserId === officer.userId)
+      .map<OfficerQualificationEvent>((result) => {
+        const lightingCondition =
+          result.lightingCondition.toLowerCase();
+        const qualificationType =
+          result.qualificationType?.toLowerCase() ||
+          "qualification";
+        const qualificationName =
+          qualificationType.charAt(0).toUpperCase() +
+          qualificationType.slice(1);
+        const runNumber =
+          lightingCondition === "night" ? 2 : 1;
+
+        const importedNotes = [
+          result.instructorName
+            ? `Instructor: ${result.instructorName}`
+            : "",
+          result.notes ?? "",
+        ]
+          .filter(Boolean)
+          .join(" | ");
+
+        return {
+          id: result.id,
+          rangeDayId: "",
+          rangeDayTitle: "Historical Import",
+          rangeDayStatus: "Imported",
+          date: result.qualificationDate,
+          location: "Imported record",
+          drillName: `${qualificationName} Qualification`,
+          drillCategory: "Qualification",
+          runNumber,
+          runLabel:
+            lightingCondition === "night"
+              ? "Night Qualification"
+              : "Day Qualification",
+          score:
+            result.score === null ||
+            result.score === undefined
+              ? undefined
+              : Number(result.score),
+          passed:
+            typeof result.passed === "boolean"
+              ? result.passed
+              : undefined,
+          completed: true,
+          notes: importedNotes || undefined,
+          malfunctionCount: 0,
+        };
+      });
+
+    const qualificationEvents = [
+      ...rangeDayQualificationEvents,
+      ...historicalEvents,
+    ].sort(
+      (a, b) =>
+        getDateValue(b.date) - getDateValue(a.date),
+    );
+
     const passedQualificationEvents = qualificationEvents.filter(
-      (event) => event.passed === true || event.completed === true,
+      (event) =>
+        event.passed === true ||
+        (
+          event.passed === undefined &&
+          event.completed === true
+        ),
     );
 
     const lastDayQualification = passedQualificationEvents.find(
@@ -693,6 +800,9 @@ function QualificationEventRow({ event }: { event: OfficerQualificationEvent }) 
 
 export default function QualificationsPage() {
   const [workspace, setWorkspace] = useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
+  const [historicalResults, setHistoricalResults] = useState<
+    HistoricalQualificationResult[]
+  >([]);
   const [personnel, setPersonnel] = useState<PilotPersonnel[]>(EMPTY_PERSONNEL);
   const [qualificationValidDays, setQualificationValidDays] = useState(
     DEFAULT_QUALIFICATION_VALID_DAYS,
@@ -802,15 +912,40 @@ export default function QualificationsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadHistoricalResults() {
+      const results =
+        await loadHistoricalQualificationResults();
+
+      if (!isMounted) return;
+
+      setHistoricalResults(results);
+
+      if (results.length > 0) {
+        setHasStoredWorkspace(true);
+      }
+    }
+
+    void loadHistoricalResults();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const officerHistories = useMemo(
     () =>
       buildOfficerHistories(
         workspace,
         personnel,
+        historicalResults,
         qualificationValidDays,
         qualificationDueSoonDays,
       ),
     [
+      historicalResults,
       personnel,
       qualificationDueSoonDays,
       qualificationValidDays,
