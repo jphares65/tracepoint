@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
+import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -5853,11 +5854,17 @@ export default function RangeDaysPage() {
                                 {getRunLabel(selectedDrill, selectedRunNumber)}
                               </p>
                             </div>
-                            {existingResult ? (
-                              <StatusPill label="Saved" tone="green" />
-                            ) : (
-                              <StatusPill label="Not Saved" tone="slate" />
-                            )}
+                            <div className="flex items-center gap-2">
+                              {existingResult ? (
+                                <StatusPill label="Saved" tone="green" />
+                              ) : (
+                                <StatusPill label="Not Saved" tone="slate" />
+                              )}
+
+                              <QuickQualificationCamera
+                                qualificationResultId={existingResult?.id}
+                              />
+                            </div>
                           </div>
 
                           <div className="mt-4">
@@ -6191,9 +6198,22 @@ export default function RangeDaysPage() {
                             }`}
                           >
                             <div>
-                              <p className="font-semibold text-white">
-                                {getUserName(entry.officerId)}
-                              </p>
+                              <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-white">
+                        {getUserName(entry.officerId)}
+                      </p>
+
+                      <QuickQualificationCamera
+                        qualificationResultId={
+                          selectedRangeResults.find(
+                            (result) =>
+                              result.officerId === entry.officerId &&
+                              result.drillId === selectedDrill.id &&
+                              result.runNumber === selectedRunNumber,
+                          )?.id
+                        }
+                      />
+                    </div>
 
                               {entry.assignedFirearmIds.length > 0 ? (
                                 <>
