@@ -3455,9 +3455,8 @@ export default function RangeDaysPage() {
           const matchesEditedTemplate =
             drill.sourceTemplateId === editingDrillTemplateId ||
             drill.sourceTemplateName === existingTemplate?.name ||
-            (!drill.sourceTemplateId &&
-              !drill.sourceTemplateName &&
-              drill.name === existingTemplate?.name);
+            (drill.name === existingTemplate?.name &&
+              drill.category === existingTemplate?.category);
 
           if (
             !matchesEditedTemplate ||
