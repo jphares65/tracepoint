@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 type Risk = "Low" | "Medium" | "High";
-type Trend = "Improving" | "Stable" | "Monitor" | "Declining" | "Action Needed";
+type Trend = "Baseline" | "Improving" | "Stable" | "Monitor" | "Declining" | "Action Needed";
 
 type QualificationTrend = {
   officerId: string;
@@ -39,6 +39,7 @@ type DrillTrend = {
   name: string;
   assignment: string;
   category: string;
+  drillName: string;
   trend: Trend;
   averageChange: string;
   weakArea: string;
@@ -219,7 +220,7 @@ export default function AnalyticsPage() {
       {
         label: "Drill Performance",
         value: summary.metrics.drillPerformance,
-        detail: "Average score movement across saved drill results",
+        detail: "Average change across comparable drill histories",
         icon: TrendingUp,
       },
       {
@@ -298,7 +299,7 @@ export default function AnalyticsPage() {
               <div>Day</div>
               <div>Night</div>
               <div>Trend</div>
-              <div>Gap / Last Qual</div>
+              <div>Coverage / Last Qual</div>
               <div>Risk</div>
             </div>
 
@@ -407,7 +408,7 @@ export default function AnalyticsPage() {
               ) : (
                 summary.drillTrends.map((officer) => (
                   <div
-                    key={`${officer.officerId}-${officer.category}`}
+                    key={`${officer.officerId}-${officer.category}-${officer.drillName}`}
                     className="grid gap-3 px-4 py-4 xl:grid-cols-[1.25fr_0.95fr_0.75fr_0.75fr_1.1fr_0.8fr_0.65fr] xl:items-center"
                   >
                     <div>
@@ -423,11 +424,11 @@ export default function AnalyticsPage() {
                     </div>
 
                     <div>
-                      <p className="text-[12px] font-semibold text-slate-300">
-                        {officer.category}
+                                            <p className="text-[12px] font-semibold text-slate-300">
+                        {officer.drillName}
                       </p>
                       <p className="mt-1 text-[10px] text-slate-500">
-                        Repeated deficiency: {officer.repeatedDeficiency}
+                        {officer.category} / Repeated deficiency: {officer.repeatedDeficiency}
                       </p>
                     </div>
 
