@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { collectFleetNotifications } from "@/lib/tracepoint/fleet-notifications";
+import { collectAgencyTrainingNotifications } from "@/lib/tracepoint/agency-training-notifications";
 
 import {
   hasAnyServerPermission,
@@ -35,6 +36,7 @@ type GeneratedAlert = {
   href: string;
   priority: Priority;
   createdAt?: string | null;
+  emailEnabled?: boolean;
 };
 
 type ExistingNotificationEvent = {
@@ -60,6 +62,12 @@ const CONDITION_BASED_NOTIFICATION_KINDS = new Set([
   "required_equipment_out_of_service",
   "equipment_expiration_due_soon",
   "equipment_inspection_due_soon",
+  "agency_training_missing",
+  "agency_training_overdue",
+  "agency_training_due_soon",
+  "agency_training_missing_staff",
+  "agency_training_overdue_staff",
+  "agency_training_due_soon_staff",
 ]);
 
 function text(value: unknown) {
@@ -1310,6 +1318,14 @@ export async function GET(request: NextRequest) {
         })),
     ]);
 
+    const agencyTraining = await collectAgencyTrainingNotifications(context)
+      .then((items) => ({ ok: true, items, error: "" }))
+      .catch((error) => ({
+        ok: false,
+        items: [] as GeneratedAlert[],
+        error: error instanceof Error ? error.message : "Unavailable",
+      }));
+
     const generated: GeneratedAlert[] = [];
     const successful = new Set<string>();
     const sourceErrors: Array<{ source: string; error: string }> = [];
@@ -1361,8 +1377,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (training.ok) { successful.add("Training"); generated.push(...training.items); }
-    else sourceErrors.push({ source: "Training", error: training.error || "Unavailable" });
+    if (training.ok && agencyTraining.ok) {
+      successful.add("Training");
+      generated.push(...training.items, ...agencyTraining.items);
+    } else {
+      sourceErrors.push({
+        source: "Training",
+        error: training.error || agencyTraining.error || "Unavailable",
+      });
+    }
 
 
     if (equipment.ok) {
@@ -1440,6 +1463,7 @@ export async function GET(request: NextRequest) {
 
       if (
         preferences.email_enabled &&
+        item.emailEnabled !== false &&
         (
           !preferences.critical_email_only ||
           item.priority === "Critical"

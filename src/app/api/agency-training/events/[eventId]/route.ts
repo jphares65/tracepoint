@@ -81,12 +81,25 @@ export async function PATCH(request: NextRequest, routeContext: RouteContext) {
   };
 
   if (reopen) {
-    patch.status = "in_progress";
-    patch.closed_at = null;
-    patch.closed_by_user_id = null;
-    patch.notes = [existing.data.notes, `Reopened: ${reopenReason}`]
-      .filter(Boolean)
-      .join("\n");
+    const reopened = await context.admin.rpc("reopen_agency_training_event", {
+      p_department_id: context.departmentId,
+      p_event_id: eventId,
+      p_actor_user_id: context.userId,
+      p_reason: reopenReason,
+    });
+    if (reopened.error) {
+      return NextResponse.json({ error: reopened.error.message }, { status: 400 });
+    }
+    const refreshed = await context.admin
+      .from("agency_training_events")
+      .select("*")
+      .eq("department_id", context.departmentId)
+      .eq("id", eventId)
+      .single();
+    if (refreshed.error) {
+      return NextResponse.json({ error: refreshed.error.message }, { status: 500 });
+    }
+    return NextResponse.json({ event: refreshed.data });
   } else {
     if ("title" in body) patch.title = text(body.title);
     if ("trainingType" in body) patch.training_type = text(body.trainingType);

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   type ChangeEvent,
@@ -48,6 +48,7 @@ import {
 } from "@/lib/tracepoint/appearance";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import FleetRulesPanel from "./fleet/FleetRulesPanel";
+import AgencyTrainingRulesPanel from "@/app/settings/components/AgencyTrainingRulesPanel";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type TabId =
@@ -4179,18 +4180,9 @@ export default function AdminSettingsPage() {
             {rulesModule === "agencyTraining" ? (
               <SettingsCard
                 title="Agency Training Rules"
-                description="Define required training, qualifying event types, minimum hours, completion outcomes, certification effects, and remediation expectations."
+                description="Configure recurring course requirements, personnel scope, due intervals, grace periods, and notification delivery."
               >
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
-                  <p className="text-sm font-semibold text-blue-200">
-                    Planned with Agency Training
-                  </p>
-                  <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
-                    When Agency Training becomes active, its event workflow will
-                    consume policy from this Rules section rather than defining
-                    its own independent standards.
-                  </p>
-                </div>
+                <AgencyTrainingRulesPanel />
               </SettingsCard>
             ) : null}
             {rulesModule === "fleet" ? (

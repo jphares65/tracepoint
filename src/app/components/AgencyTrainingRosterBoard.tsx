@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import AgencyTrainingCloseoutPanel from "@/app/components/AgencyTrainingCloseoutPanel";
 
 type Member = {
   userId: string;
@@ -85,6 +86,7 @@ export default function AgencyTrainingRosterBoard({
   const [showPersonnel, setShowPersonnel] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [eventStatus, setEventStatus] = useState("");
 
   const loadRoster = useCallback(async () => {
     setLoading(true);
@@ -117,7 +119,12 @@ export default function AgencyTrainingRosterBoard({
 
       setMembers(nextMembers);
       setRows(nextRows);
-      setCanManage(payload.canManage === true && pageCanManage);
+      setEventStatus(payload.event?.status ?? "");
+      setCanManage(
+        payload.canManage === true &&
+          pageCanManage &&
+          payload.event?.status !== "completed",
+      );
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -401,6 +408,17 @@ export default function AgencyTrainingRosterBoard({
           </table>
         </div>
       )}
+
+      <AgencyTrainingCloseoutPanel
+        eventId={eventId}
+        eventStatus={eventStatus}
+        canManage={pageCanManage}
+        onClosed={() => {
+          setEventStatus("completed");
+          setCanManage(false);
+          void loadRoster();
+        }}
+      />
 
       {showPersonnel ? (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm">
