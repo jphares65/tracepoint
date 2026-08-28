@@ -23,6 +23,7 @@ import {
   Wrench,
 } from "lucide-react";
 
+import CommandOperationsPanel from "@/app/components/CommandOperationsPanel";
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
@@ -868,6 +869,8 @@ const [loading, setLoading] = useState(true);
             {loadError}
           </div>
         )}
+
+        <CommandOperationsPanel />
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           {hasQualifications && (
