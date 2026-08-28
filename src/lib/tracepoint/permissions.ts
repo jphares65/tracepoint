@@ -8,6 +8,7 @@ export const TRACEPOINT_PERMISSIONS = [
   "score_range_days",
   "manage_qualifications",
   "manage_certifications",
+  "manage_training",
   "manage_equipment",
   "view_fleet",
   "manage_fleet",
@@ -84,6 +85,18 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
     prefix: "/analytics",
     requirement: {
       anyOf: ["view_analytics", "administer_department"],
+    },
+  },
+  {
+    prefix: "/agency-training",
+    requirement: {
+      anyOf: [
+        "manage_training",
+        "manage_certifications",
+        "manage_range_days",
+        "view_command_dashboard",
+        "administer_department",
+      ],
     },
   },
   {
