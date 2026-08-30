@@ -1,0 +1,103 @@
+openapi: 3.1.0
+info:
+  title: TracePoint Integration API
+  version: 0.0.0-design
+  description: >-
+    Dormant design baseline. No /api/v1 integration endpoint is implemented or
+    externally reachable. Existing application routes are internal.
+servers: []
+tags:
+  - name: proposed
+  - name: internal-operations
+paths:
+  /api/health:
+    get:
+      tags: [internal-operations]
+      summary: Existing load-balancer health check
+      x-tracepoint-status: implemented-internal
+      responses:
+        '200':
+          description: Non-sensitive process health
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { const: ok }
+  /api/v1/agencies/{agencyId}/firearms:
+    get:
+      tags: [proposed]
+      summary: Proposed scoped firearm listing
+      x-tracepoint-status: proposed-not-implemented
+      security: [{ oauth2: [firearms.read] }]
+      parameters:
+        - $ref: '#/components/parameters/AgencyId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200': { $ref: '#/components/responses/ProposedPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /api/v1/agencies/{agencyId}/webhook-subscriptions:
+    post:
+      tags: [proposed]
+      summary: Proposed privileged webhook registration
+      x-tracepoint-status: proposed-not-implemented
+      security: [{ oauth2: [webhooks.manage] }]
+      parameters:
+        - $ref: '#/components/parameters/AgencyId'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url: { type: string, format: uri }
+                events: { type: array, minItems: 1, items: { type: string } }
+      responses:
+        '202': { description: Proposed acceptance response }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: Proposed confidential-client OAuth 2.0 client credentials.
+      flows:
+        clientCredentials:
+          tokenUrl: https://staging.tracepointhq.com/oauth2/token
+          scopes:
+            firearms.read: Read minimized firearm records for one authorized agency
+            webhooks.manage: Manage one agency's webhook subscriptions
+  parameters:
+    AgencyId: { name: agencyId, in: path, required: true, schema: { type: string, format: uuid } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    CorrelationId: { name: X-Correlation-Id, in: header, required: false, schema: { type: string, maxLength: 128 } }
+  responses:
+    ProposedPage:
+      description: Proposed cursor page; response fields require partner data-minimization review.
+    Error:
+      description: Standard error
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            required: [type, title, status, correlationId]
+            properties:
+              type: { type: string, format: uri-reference }
+              title: { type: string }
+              status: { type: integer }
+              detail: { type: string }
+              correlationId: { type: string }

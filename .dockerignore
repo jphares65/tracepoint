@@ -1,0 +1,9 @@
+.git
+.next
+node_modules
+infra
+docs
+supabase
+*.txt
+.env*
+npm-debug.log*

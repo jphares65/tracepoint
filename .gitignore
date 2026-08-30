@@ -19,6 +19,9 @@
 
 # production
 /build
+/infra/cdk.out*/
+/infra/dist/
+/infra/node_modules/
 
 # misc
 .DS_Store

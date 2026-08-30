@@ -1,0 +1,22 @@
+{
+  "name": "tracepoint-aws-infra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "diff": "cdk diff"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.210.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.11",
+    "aws-cdk": "^2.1029.2",
+    "typescript": "^5.9.2",
+    "ts-node": "^10.9.2"
+  }
+}
