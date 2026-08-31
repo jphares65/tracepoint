@@ -5,13 +5,13 @@ import {
   hasAnyServerPermission,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createObjectStore } from "@/lib/storage/object-store";
 
 export const dynamic = "force-dynamic";
 
-const BUCKET = "department-assets";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-const EXTENSIONS: Record<string, string> = {
+const EXTENSIONS: Record<string, "png" | "jpg" | "webp"> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
@@ -63,30 +63,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const storagePath =
-    `${context.departmentId}/patch-${Date.now()}.${extension}`;
-
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const objectStore = createObjectStore(context.admin);
+  const upload = await objectStore.uploadDepartmentPatch({
+    departmentId: context.departmentId,
+    extension,
+    bytes,
+    contentType: file.type,
+    timestamp: Date.now(),
+  });
 
-  const { error: uploadError } = await context.admin.storage
-    .from(BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: file.type,
-      upsert: true,
-    });
-
-  if (uploadError) {
+  if (upload.error) {
     return NextResponse.json(
-      { error: uploadError.message },
+      { error: upload.error.message },
       { status: 500 },
     );
   }
+  const storagePath = upload.path;
 
-  const { data: publicUrlData } = context.admin.storage
-    .from(BUCKET)
-    .getPublicUrl(storagePath);
-
-  const patchUrl = publicUrlData.publicUrl;
+  const patchUrl = objectStore.getDepartmentPatchPublicUrl(storagePath);
 
   const { error: updateError } = await context.admin
     .from("departments")
@@ -94,9 +89,7 @@ export async function POST(request: NextRequest) {
     .eq("id", context.departmentId);
 
   if (updateError) {
-    await context.admin.storage
-      .from(BUCKET)
-      .remove([storagePath]);
+    await objectStore.removeDepartmentPatch(storagePath);
 
     return NextResponse.json(
       { error: updateError.message },

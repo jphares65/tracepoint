@@ -1,11 +1,10 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { createObjectStore } from "@/lib/storage/object-store";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
-const BUCKET = "tracepoint-attachments";
 const MANAGE = ["manage_training", "manage_certifications", "manage_range_days"] as const;
-function safeName(name: string) { return name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "file"; }
 
 async function eventExists(admin: any, departmentId: string, eventId: string) {
   return admin.from("agency_training_events").select("id,status").eq("department_id", departmentId).eq("id", eventId).maybeSingle();
@@ -62,9 +61,17 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   if (file.size > 25 * 1024 * 1024) return NextResponse.json({ error: "Training files may not exceed 25 MB." }, { status: 400 });
   const attachmentType = kind === "lesson_plan" ? "training_lesson_plan" : "training_supporting_document";
   const attachmentId = crypto.randomUUID();
-  const storagePath = `${context.departmentId}/agency-training/${eventId}/${attachmentId}-${safeName(file.name)}`;
-  const upload = await context.admin.storage.from(BUCKET).upload(storagePath, new Uint8Array(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: false });
+  const objectStore = createObjectStore(context.admin);
+  const upload = await objectStore.uploadTrainingFile({
+    departmentId: context.departmentId,
+    recordId: eventId,
+    objectId: attachmentId,
+    fileName: file.name,
+    bytes: new Uint8Array(await file.arrayBuffer()),
+    contentType: file.type || "application/octet-stream",
+  });
   if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 500 });
+  const storagePath = upload.path;
   const inserted = await context.admin.from("attachments").insert({
     id: attachmentId, department_id: context.departmentId,
     entity_type: "agency_training_event", entity_id: eventId,
@@ -74,7 +81,7 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
     uploaded_by_user_id: context.userId,
   }).select("id,attachment_type,file_name,mime_type,file_size,description,uploaded_by_user_id,uploaded_at").single();
   if (inserted.error) {
-    await context.admin.storage.from(BUCKET).remove([storagePath]);
+    await objectStore.removeAttachment(storagePath);
     return NextResponse.json({ error: inserted.error.message }, { status: 500 });
   }
   return NextResponse.json({ attachment: inserted.data }, { status: 201 });

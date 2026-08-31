@@ -1,0 +1,142 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  attachmentPathFromMetadata,
+  createObjectStore,
+  ObjectStoreConfigurationError,
+  SupabaseObjectStore,
+  type SupabaseStorageClient,
+} from "./object-store-core.ts";
+
+type Call = {
+  bucket: string;
+  operation: string;
+  path: string;
+  options?: unknown;
+};
+
+function createClient(calls: Call[]): SupabaseStorageClient {
+  return {
+    storage: {
+      from(bucket) {
+        return {
+          async upload(path, _body, options) {
+            calls.push({ bucket, operation: "upload", path, options });
+            return { data: { path }, error: null };
+          },
+          async remove(paths) {
+            calls.push({ bucket, operation: "remove", path: paths[0] });
+            return { data: paths, error: null };
+          },
+          async createSignedUrl(path, expiresIn, options) {
+            calls.push({ bucket, operation: "sign", path, options: { expiresIn, ...options } });
+            return { data: { signedUrl: "https://signed.invalid/object" }, error: null };
+          },
+          getPublicUrl(path) {
+            calls.push({ bucket, operation: "public-url", path });
+            return { data: { publicUrl: `https://public.invalid/${path}` } };
+          },
+        };
+      },
+    },
+  };
+}
+
+const bytes = new Uint8Array([1, 2, 3]);
+
+test("pins attachment operations to the private bucket and preserves path formats", async () => {
+  const calls: Call[] = [];
+  const store = new SupabaseObjectStore(createClient(calls));
+
+  const qualification = await store.uploadQualificationEvidence({
+    departmentId: "department-a",
+    recordId: "result/a",
+    objectId: "object-a",
+    fileName: "target  -- photo.png",
+    bytes,
+    contentType: "image/png",
+  });
+  const training = await store.uploadTrainingFile({
+    departmentId: "department-a",
+    recordId: "event-a",
+    objectId: "object-b",
+    fileName: "lesson plan.pdf",
+    bytes,
+    contentType: "application/pdf",
+  });
+  const firearm = await store.uploadFirearmAttachment({
+    departmentId: "department-a",
+    recordId: "firearm-a",
+    objectId: "object-c",
+    fileName: "receipt (signed).pdf",
+    bytes,
+    contentType: "application/pdf",
+  });
+
+  assert.equal(qualification.path, "department-a/qualification/result%2Fa/object-a-target-photo.png");
+  assert.equal(training.path, "department-a/agency-training/event-a/object-b-lesson-plan.pdf");
+  assert.equal(firearm.path, "department-a/firearm/firearm-a/object-c-receipt-signed-.pdf");
+  assert.deepEqual(
+    calls.map(({ bucket, operation, options }) => ({ bucket, operation, options })),
+    [
+      { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "image/png", upsert: false } },
+      { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
+      { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
+    ],
+  );
+});
+
+test("uses a 60-second attachment download and preserves the download filename", async () => {
+  const calls: Call[] = [];
+  const store = new SupabaseObjectStore(createClient(calls));
+  const result = await store.createAttachmentDownload(
+    attachmentPathFromMetadata("department-a/firearm/a/object.pdf"),
+    "Evidence.pdf",
+  );
+  assert.equal(result.signedUrl, "https://signed.invalid/object");
+  assert.deepEqual(calls[0], {
+    bucket: "tracepoint-attachments",
+    operation: "sign",
+    path: "department-a/firearm/a/object.pdf",
+    options: { expiresIn: 60, download: "Evidence.pdf" },
+  });
+});
+
+test("pins department patches to the public asset bucket with upsert enabled", async () => {
+  const calls: Call[] = [];
+  const store = new SupabaseObjectStore(createClient(calls));
+  const uploaded = await store.uploadDepartmentPatch({
+    departmentId: "department-a",
+    extension: "webp",
+    bytes,
+    contentType: "image/webp",
+    timestamp: 1234,
+  });
+  const publicUrl = store.getDepartmentPatchPublicUrl(uploaded.path);
+  await store.removeDepartmentPatch(uploaded.path);
+
+  assert.equal(uploaded.path, "department-a/patch-1234.webp");
+  assert.equal(publicUrl, "https://public.invalid/department-a/patch-1234.webp");
+  assert.deepEqual(calls, [
+    {
+      bucket: "department-assets",
+      operation: "upload",
+      path: "department-a/patch-1234.webp",
+      options: { contentType: "image/webp", upsert: true },
+    },
+    { bucket: "department-assets", operation: "public-url", path: "department-a/patch-1234.webp" },
+    { bucket: "department-assets", operation: "remove", path: "department-a/patch-1234.webp" },
+  ]);
+});
+
+test("defaults to Supabase and rejects every unsupported provider", () => {
+  const client = createClient([]);
+  assert.ok(createObjectStore(client, {}) instanceof SupabaseObjectStore);
+  assert.throws(
+    () => createObjectStore(client, { TRACEPOINT_STORAGE_PROVIDER: "s3" }),
+    (error) =>
+      error instanceof ObjectStoreConfigurationError &&
+      error.message === "Unsupported storage provider: s3. Only supabase is implemented.",
+  );
+});

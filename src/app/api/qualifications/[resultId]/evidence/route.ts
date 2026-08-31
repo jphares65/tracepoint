@@ -6,21 +6,12 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createObjectStore } from "@/lib/storage/object-store";
 
 type RouteContext = { params: Promise<{ resultId: string }> };
 
-const BUCKET = "tracepoint-attachments";
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-function safeName(name: string) {
-  return (
-    name
-      .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/-+/g, "-")
-      .slice(-120) || "target-photo"
-  );
-}
 
 async function verifyQualificationResult(
   admin: any,
@@ -146,21 +137,21 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   }
 
   const attachmentId = crypto.randomUUID();
-  const storagePath = `${context.departmentId}/qualification/${encodeURIComponent(
-    resultId,
-  )}/${attachmentId}-${safeName(file.name)}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
-
-  const upload = await context.admin.storage
-    .from(BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: file.type,
-      upsert: false,
-    });
+  const objectStore = createObjectStore(context.admin);
+  const upload = await objectStore.uploadQualificationEvidence({
+    departmentId: context.departmentId,
+    recordId: resultId,
+    objectId: attachmentId,
+    fileName: file.name,
+    bytes,
+    contentType: file.type,
+  });
 
   if (upload.error) {
     return NextResponse.json({ error: upload.error.message }, { status: 500 });
   }
+  const storagePath = upload.path;
 
   const inserted = await context.admin
     .from("attachments")
@@ -184,7 +175,7 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
     .single();
 
   if (inserted.error) {
-    await context.admin.storage.from(BUCKET).remove([storagePath]);
+    await objectStore.removeAttachment(storagePath);
     return NextResponse.json({ error: inserted.error.message }, { status: 500 });
   }
 

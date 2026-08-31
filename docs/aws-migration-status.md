@@ -3,20 +3,24 @@
 **Last updated:** 2026-08-30
 **Target:** `tracepoint-staging`, account `559054714699`, `us-east-1`
 **Hard deny:** management account `265544358665`
-**AWS activity this run:** metadata-only, read-only; no deployment or mutation
+**AWS activity in the storage-boundary run:** none; all work was local and source-only
 
 ## Current state
 
-Local preparation is approximately **92%** complete. AWS staging deployment is
-**0%** (no bootstrap or stacks). Provider conversion is approximately **5%** of
-the overall Supabase/Brevo surface: the two email callers are converted locally,
-while Auth, authorization, database, RLS, and storage are untouched. Total
-migration is approximately **32%**, reflecting that infrastructure deployment,
+Local preparation is approximately **95%** complete. AWS staging deployment is
+**0%** (no bootstrap or stacks). Provider conversion is approximately **10%** of
+the overall Supabase/Brevo surface: both email callers and all five direct
+Supabase Storage call sites have typed, provider-pinned boundaries, while Auth,
+authorization, database, and RLS are untouched. Total migration is approximately
+**33%**, reflecting that infrastructure deployment,
 staging acceptance, data/identity work, and production cutover remain undone.
 
 Supabase remains authoritative for database, RLS/RPC authorization, Auth, and
 storage. Brevo remains the only/default email provider. No AWS provider is
 implemented or activated.
+
+The prior verified AWS evidence below is retained for continuity. This storage
+run made no AWS API/MCP call and performed no live Supabase or Brevo operation.
 
 ## Verified AWS staging evidence
 
@@ -54,6 +58,11 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
   Unsupported providers fail closed; no SES/AWS implementation exists.
 - Preserved sender/recipient/body/error behavior and digest queue/retry state.
 - Added focused provider tests using existing Node tooling only.
+- Added a typed server-only object-store boundary and converted every direct
+  route-level Supabase Storage call while retaining the same service-role client.
+- Added a source-backed storage contract/risk inventory. Supabase is the sole
+  storage implementation; unsupported provider values fail closed and no S3
+  implementation exists.
 
 ## Validation record
 
@@ -83,6 +92,16 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
 - `src/app/integration-demo/page.tsx`: remains untracked and was not modified.
 - Docker build: skipped because Docker is unavailable; nothing was installed.
 
+Storage-boundary validation on 2026-08-30:
+
+- Next.js 16.2.6 production build: passed, including TypeScript and 77 static pages.
+- Root TypeScript check and targeted ESLint: passed.
+- Focused email plus storage tests: 9/9 passed; storage cases cover exact domain
+  paths, bucket pinning, upsert values, 60-second signing, download filename,
+  public URL/removal, and unsupported-provider rejection.
+- Direct-call scan: every active `storage.from(...)` call is confined to
+  `SupabaseObjectStore`; no route or browser component retains direct access.
+
 ## Files changed in this run
 
 - Infrastructure/safety: `infra/bin/tracepoint-infra.ts`,
@@ -100,6 +119,14 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
   `docs/aws-module-migration-matrix.md`, and
   `docs/aws-migration-commit-plan.md`.
 
+The subsequent uncommitted storage-boundary review changes are:
+`src/lib/storage/object-store-core.ts`, `src/lib/storage/object-store.ts`,
+`src/lib/storage/object-store.test.ts`, the qualification/training/firearm upload
+routes, the shared attachment-download route, the department-patch route,
+`docs/aws-storage-contract-inventory.md`, this status, the provider conversion
+status, and the module migration matrix. They are intentionally left unstaged and
+uncommitted for human review.
+
 ## Blockers
 
 - Account is not CDK-bootstrapped; bootstrap is explicitly unauthorized here.
@@ -112,6 +139,10 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
   policy, and exact bootstrap role ARNs require platform approval.
 - DNS/certificate, secrets, image publishing, billing controls, and deployment
   require separate authorized actions.
+- Storage remediation remains local work: align the patch route's 5 MB limit with
+  the UI/bucket's 2 MB limit, define old-patch cleanup, validate attachment paths
+  before service-role signing, prove/create the `tracepoint-attachments` bucket
+  policy in a controlled migration, and add route-level negative tenant tests.
 
 ## Next live actions, in safe order
 

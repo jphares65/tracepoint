@@ -6,16 +6,12 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createObjectStore } from "@/lib/storage/object-store";
 
 type RouteContext = { params: Promise<{ firearmId: string }> };
-const BUCKET = "tracepoint-attachments";
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
 const VALID_CATEGORIES = new Set(["acquisition", "transfer_disposition", "maintenance_repair", "inspection", "photo", "other"]);
-
-function safeName(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").slice(-120) || "attachment";
-}
 
 async function verifyFirearm(admin: any, departmentId: string, firearmId: string) {
   return admin.from("firearms").select("id").eq("id", firearmId).eq("department_id", departmentId).maybeSingle();
@@ -70,10 +66,18 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "Files may not exceed 15 MB." }, { status: 400 });
 
   const attachmentId = crypto.randomUUID();
-  const storagePath = `${context.departmentId}/firearm/${firearmId}/${attachmentId}-${safeName(file.name)}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const upload = await context.admin.storage.from(BUCKET).upload(storagePath, bytes, { contentType: file.type, upsert: false });
+  const objectStore = createObjectStore(context.admin);
+  const upload = await objectStore.uploadFirearmAttachment({
+    departmentId: context.departmentId,
+    recordId: firearmId,
+    objectId: attachmentId,
+    fileName: file.name,
+    bytes,
+    contentType: file.type,
+  });
   if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 500 });
+  const storagePath = upload.path;
 
   const row = {
     id: attachmentId, department_id: context.departmentId, entity_type: "firearm", entity_id: firearmId,
@@ -82,7 +86,7 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
   };
   const inserted = await context.admin.from("attachments").insert(row).select("id,attachment_type,file_name,mime_type,file_size,description,uploaded_by_user_id,uploaded_at").single();
   if (inserted.error) {
-    await context.admin.storage.from(BUCKET).remove([storagePath]);
+    await objectStore.removeAttachment(storagePath);
     return NextResponse.json({ error: inserted.error.message }, { status: 500 });
   }
   await context.admin.from("audit_events").insert({
