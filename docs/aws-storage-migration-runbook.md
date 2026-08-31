@@ -17,6 +17,12 @@ longer than current need. Server verifies department membership/permission befor
 signing; constrain method/key/content length/type and never log URLs. Record
 actor, department, object ID, hash, size and action in the application audit log.
 
+The current Supabase adapter validates downloaded attachment metadata before
+service-role signing: exactly four relative segments, authenticated department
+prefix, one of `qualification`, `agency-training`, or `firearm`, and no raw or
+encoded traversal/backslash/absolute/unexpected path. Invalid metadata returns
+the existing not-found response; valid links remain 60 seconds.
+
 Uploads enter `quarantine/`, trigger asynchronous malware scanning, and move/tag
 clean objects to active state; downloads deny pending/infected/failed scans.
 Define maximum size and allowed types per domain. Lifecycle incomplete uploads,
@@ -31,3 +37,8 @@ with Supabase fallback only for explicitly unmigrated IDs; then S3 primary.
 Writes remain single-provider per cohort to avoid divergence. Reconcile orphans
 and missing objects. Rollback switches reads to untouched Supabase objects; never
 delete either copy until retention approval.
+
+Deferred policy decisions remain unchanged: physical deletion on archive,
+retention, MIME inspection, upload limits, old public patch cleanup, compensation
+failure handling, orphan reconciliation and the missing repository definition of
+the `tracepoint-attachments` bucket. This safety change does not decide them.

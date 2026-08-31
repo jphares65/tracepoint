@@ -1,6 +1,6 @@
 # TracePoint Supabase dependency map
 
-**Inventory date:** 2026-08-30
+**Inventory date:** 2026-08-31
 **Method:** repository-wide static inspection of `src/`, `supabase/migrations/`, package metadata, and route handlers. No Supabase API or database was accessed.
 
 ## Executive finding
@@ -55,6 +55,13 @@ training, qualifications and workflows. They must be preserved as an immutable
 application subject ID even if Cognito receives a different `sub`.
 
 ## PostgreSQL surface
+
+The repeatable source inventory (`scripts/inventory-supabase-access.mjs`) scans
+200 first-party TypeScript files and records 478 `.from`, 65 `.rpc`, and 39 Auth/
+session/Admin calls. Of 543 data calls, 24 are browser-side and 483 are statically
+associated with service-role contexts. See `aws-data-access-inventory.md` and the
+generated `aws-supabase-access-inventory.json`; these are static evidence, not
+runtime authorization proof.
 
 The 52 ordered migration files define at least:
 
@@ -142,7 +149,8 @@ cutover. Notification helper modules query data using the admin client.
 1. Freeze/validate schema inventory and tenant authorization tests.
 2. Introduce subject/authorization contracts while Supabase remains authoritative.
 3. Encapsulate privileged data access by bounded domain, starting with low-risk
-   read paths; do not replace all PostgREST calls mechanically.
+   read paths; the imported qualification-history pilot is the first completed
+   repository. Do not replace all PostgREST calls mechanically.
 4. Migrate object storage behind server-only contracts and reconcile metadata.
 5. Rehearse PostgreSQL migration with RLS and Auth compatibility shims.
 6. Add Cognito coexistence with an immutable application-subject mapping.

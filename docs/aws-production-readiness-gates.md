@@ -13,7 +13,10 @@ requires security/platform approval.
 5. Exact DNS/certificate/WAF decision; TLS and headers externally tested.
 6. Tenant-negative authorization suite, platform/support-mode isolation and audit continuity.
 7. Secret rotation, build-secret handling and emergency revocation rehearsed.
-8. Database migration rehearsed twice; validation exact; PITR restore and rollback timed.
+8. Database migration rehearsed twice; validation exact; PITR restore and rollback
+   timed. Every browser Supabase query has a tested server API; every service-role
+   route has explicit tenant disposition; security-definer/search-path and
+   transaction boundaries are reviewed against the source inventory.
 9. Storage checksum/reconciliation, malware quarantine and retention approved.
 10. Auth coexistence/cutover, MFA policy, disablement and help-desk recovery tested.
 11. CloudTrail, GuardDuty, Security Hub and Config centrally owned; findings routed.

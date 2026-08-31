@@ -1,18 +1,19 @@
 # TracePoint AWS migration status
 
-**Last updated:** 2026-08-30
+**Last updated:** 2026-08-31
 **Target:** `tracepoint-staging`, account `559054714699`, `us-east-1`
 **Hard deny:** management account `265544358665`
-**AWS activity in the storage-boundary run:** none; all work was local and source-only
+**AWS activity in this run:** none; all work was local and source-only
 
 ## Current state
 
-Local preparation is approximately **95%** complete. AWS staging deployment is
-**0%** (no bootstrap or stacks). Provider conversion is approximately **10%** of
-the overall Supabase/Brevo surface: both email callers and all five direct
-Supabase Storage call sites have typed, provider-pinned boundaries, while Auth,
-authorization, database, and RLS are untouched. Total migration is approximately
-**33%**, reflecting that infrastructure deployment,
+Local preparation is approximately **96%** complete. AWS staging deployment is
+**0%** (no bootstrap or stacks). Email conversion is **100%** of the two
+inventoried callers; storage boundary conversion is **100%** of the five direct
+call sites, with deferred lifecycle policy; database/data-access conversion is
+approximately **1%** (one of hundreds of static calls); Auth conversion is **0%**.
+Total provider conversion is approximately **12%**, and total migration is
+approximately **34%**, reflecting that infrastructure deployment,
 staging acceptance, data/identity work, and production cutover remain undone.
 
 Supabase remains authoritative for database, RLS/RPC authorization, Auth, and
@@ -63,6 +64,13 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
 - Added a source-backed storage contract/risk inventory. Supabase is the sole
   storage implementation; unsupported provider values fail closed and no S3
   implementation exists.
+- Checkpointed and pushed the validated storage boundary as commit
+  `9067b521557e0598f8ad2cf2053bbf1f00cc15d4`.
+- Added fail-closed department/domain/traversal validation before service-role
+  attachment URL signing; valid links remain 60 seconds.
+- Added a deterministic 543-call Supabase data-access inventory and the first
+  narrow read repository for imported qualification history. Supabase remains
+  sole/default; no AWS database provider exists.
 
 ## Validation record
 
@@ -102,6 +110,20 @@ Storage-boundary validation on 2026-08-30:
 - Direct-call scan: every active `storage.from(...)` call is confined to
   `SupabaseObjectStore`; no route or browser component retains direct access.
 
+Post-checkpoint validation on 2026-08-31 includes focused storage and repository
+tests, TypeScript, lint, production build, deterministic inventory repeatability,
+offline CDK/guard/template checks, OpenAPI parsing, diff/signature/artifact scans,
+and the protected-file check. Exact results are recorded in the session handoff;
+all post-checkpoint work remains uncommitted.
+
+Completed results: 17/17 focused email/storage/repository tests; root TypeScript
+and targeted ESLint passed; Next.js production build passed with 77 static pages;
+CDK TypeScript build and four-stack offline synthesis passed with zero lookups;
+management-account and non-staging guards rejected as expected; 42-resource
+template assertions passed; OpenAPI 3.1 parsed with three paths/operations;
+inventory output repeated byte-for-byte and the selected route has zero direct
+Supabase calls.
+
 ## Files changed in this run
 
 - Infrastructure/safety: `infra/bin/tracepoint-infra.ts`,
@@ -119,13 +141,10 @@ Storage-boundary validation on 2026-08-30:
   `docs/aws-module-migration-matrix.md`, and
   `docs/aws-migration-commit-plan.md`.
 
-The subsequent uncommitted storage-boundary review changes are:
-`src/lib/storage/object-store-core.ts`, `src/lib/storage/object-store.ts`,
-`src/lib/storage/object-store.test.ts`, the qualification/training/firearm upload
-routes, the shared attachment-download route, the department-patch route,
-`docs/aws-storage-contract-inventory.md`, this status, the provider conversion
-status, and the module migration matrix. They are intentionally left unstaged and
-uncommitted for human review.
+Post-checkpoint changes are intentionally unstaged and uncommitted: attachment
+path validation/tests; the qualification-history repository, tests and selected
+route; the deterministic inventory script/report; and directly related database,
+storage, provider, validation, readiness and status documentation.
 
 ## Blockers
 
@@ -139,10 +158,13 @@ uncommitted for human review.
   policy, and exact bootstrap role ARNs require platform approval.
 - DNS/certificate, secrets, image publishing, billing controls, and deployment
   require separate authorized actions.
-- Storage remediation remains local work: align the patch route's 5 MB limit with
-  the UI/bucket's 2 MB limit, define old-patch cleanup, validate attachment paths
-  before service-role signing, prove/create the `tracepoint-attachments` bucket
-  policy in a controlled migration, and add route-level negative tenant tests.
+- Storage policy work remains: align the patch route's 5 MB limit with the
+  UI/bucket's 2 MB limit, define old-patch cleanup, prove/create the
+  `tracepoint-attachments` bucket policy in a controlled migration, and decide
+  retention/archive/orphan handling.
+- Data conversion has only one read pilot. The 24 browser calls, 65 RPC calls,
+  service-role tenant review queue, security-definer/search-path review,
+  transactional workflows, RLS claims and Auth coupling remain blockers.
 
 ## Next live actions, in safe order
 

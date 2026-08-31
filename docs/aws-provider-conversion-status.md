@@ -4,8 +4,8 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | Supabase PostgREST/RPC | 0 | domain repositories not generic adapter |
-| Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; bucket/path/upsert/signing/config tests added; route authorization and DB behavior unchanged; no AWS provider exists |
+| Data | typed server-only qualification-history repository; Supabase otherwise direct and authoritative | 1 read path | exact tenant/origin/field/order contract and negative tests pass; no Aurora/RDS provider exists |
+| Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
 The activation and queued-digest callers now share a typed server-only transport
@@ -32,3 +32,13 @@ unchanged. See `aws-storage-contract-inventory.md` for exact risks and evidence
 gaps; notably archive does not delete bytes, patch replacement retains old public
 objects, compensation is best effort, and the repository does not evidence the
 `tracepoint-attachments` bucket definition.
+
+The first data pilot converts only `GET /api/qualifications` imported history to
+`QualificationHistoryRepository`. Supabase remains the sole/default provider.
+The repository requires an authorized department at construction and as explicit
+input, selects the same fields, applies the same department and origin filters,
+orders by qualification date descending, maps null data to an empty list, invokes
+no mutation method, maps provider errors to a stable non-leaking 500 message, and
+rejects unsupported providers. The deterministic source inventory still records
+543 data calls; the selected direct route call moved behind the repository rather
+than disappearing from the Supabase implementation.

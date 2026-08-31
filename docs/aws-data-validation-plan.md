@@ -19,6 +19,12 @@
    notification/audit flows.
 7. **Storage linkage:** every attachment metadata row maps to one object; every
    migrated object maps to allowed metadata; size/hash/content-type match.
+8. **Repository contracts:** per converted path, assert exact fields, filters,
+   ordering, pagination, null/not-found mapping, provider-error mapping, tenant
+   negatives, response status/body and absence of unintended mutations.
+9. **Migration waves:** rerun deterministic source inventory and prove the
+   expected direct call disappeared only from the selected route; count changes
+   require reviewed disposition rather than an unexplained tolerance.
 
 ## Evidence format
 

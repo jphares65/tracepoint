@@ -13,6 +13,11 @@ export, DMS creation, schema application or cutover.
    append-only audit data and object metadata.
 4. Create a versioned migration ledger with checksum, forward SQL, validation
    SQL, owner, duration and rollback classification. Never edit an applied file.
+5. Regenerate `aws-supabase-access-inventory.json`; manually disposition every
+   service-role call without a same-statement department filter and every browser
+   query. Static flags are review inputs, not vulnerability findings.
+6. Group conversion by bounded context in the wave order documented in
+   `aws-data-access-inventory.md`; Auth remains last.
 
 ## Target controls
 
@@ -40,6 +45,10 @@ export, DMS creation, schema application or cutover.
    restored separately; always re-enable and verify before access.
 6. Rebuild/validate indexes, constraints and materialized state; `ANALYZE`.
 7. Reconcile each owned sequence with `max(id)`/identity state without decreasing it.
+8. Review every security-definer owner, execute grant and fixed `search_path`;
+   map each `auth.uid()` reference to deny-by-default transaction-local subject
+   claims. Preserve transactional workflow RPCs until equivalent locking,
+   invariant, error and audit tests pass.
 
 ## Cutover design
 
@@ -56,6 +65,11 @@ back to Supabase. After target writes begin, automatic reverse replication is no
 assumed: stop writes, preserve both sides, reconcile the target delta, and obtain
 incident/data-owner approval before replay. Never discard either database during
 the retention window.
+
+Read-only conversion rolls back per route by selecting the still-authoritative
+Supabase repository. Comparative dual-read may emit redacted equality metrics but
+must not return mixed-source results. Do not dual-write: idempotency, ordering,
+reconciliation ownership and reverse replay are not solved.
 
 ## Exit criteria
 

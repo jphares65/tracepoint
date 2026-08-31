@@ -13,8 +13,15 @@ export async function GET(_request: Request, routeContext: RouteContext) {
     .eq("id", attachmentId).eq("department_id", departmentId).is("archived_at", null).maybeSingle();
   if (row.error) return NextResponse.json({ error: row.error.message }, { status: 500 });
   if (!row.data) return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
+  const storagePath = attachmentPathFromMetadata(
+    row.data.storage_path,
+    departmentId,
+  );
+  if (!storagePath) {
+    return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
+  }
   const signed = await createObjectStore(admin).createAttachmentDownload(
-    attachmentPathFromMetadata(row.data.storage_path),
+    storagePath,
     row.data.file_name,
   );
   if (signed.error || !signed.signedUrl) return NextResponse.json({ error: signed.error?.message ?? "Download could not be created." }, { status: 500 });

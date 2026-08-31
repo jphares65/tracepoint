@@ -89,7 +89,59 @@ function attachmentPath(path: string): AttachmentObjectPath {
   return path as AttachmentObjectPath;
 }
 
-export function attachmentPathFromMetadata(path: string): AttachmentObjectPath {
+const ATTACHMENT_DOMAINS = new Set([
+  "qualification",
+  "agency-training",
+  "firearm",
+]);
+
+function safelyDecodePathSegment(segment: string) {
+  let decoded = segment;
+  for (let pass = 0; pass < 3; pass += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      return null;
+    }
+  }
+  return decoded;
+}
+
+export function attachmentPathFromMetadata(
+  path: string,
+  authorizedDepartmentId: string,
+): AttachmentObjectPath | null {
+  if (!path || !authorizedDepartmentId || path.startsWith("/") || path.includes("\\")) {
+    return null;
+  }
+
+  const segments = path.split("/");
+  if (
+    segments.length !== 4 ||
+    segments[0] !== authorizedDepartmentId ||
+    !ATTACHMENT_DOMAINS.has(segments[1]) ||
+    segments.some((segment) => !segment)
+  ) {
+    return null;
+  }
+
+  for (const [index, segment] of segments.entries()) {
+    const decoded = safelyDecodePathSegment(segment);
+    const decodedParts = decoded?.split("/") ?? [];
+    const qualificationRecordSegment =
+      index === 2 && segments[1] === "qualification";
+    if (
+      decoded === null ||
+      decoded.includes("\\") ||
+      (!qualificationRecordSegment && decoded.includes("/")) ||
+      decodedParts.some((part) => !part || part === "." || part === "..")
+    ) {
+      return null;
+    }
+  }
+
   return attachmentPath(path);
 }
 

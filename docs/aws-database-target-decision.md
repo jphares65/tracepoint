@@ -46,6 +46,13 @@ security-definer `search_path`, grants, sequences, RLS and `auth.uid()`/
 PostgREST RPC/error behavior and dashboard-created objects do not transfer as
 ordinary application schema without explicit replacement.
 
+The 2026-08-31 source inventory adds concrete coupling evidence: 543 static data
+calls across 87 distinct targets, 65 RPC calls, 24 browser data calls, 106
+`auth.uid()` occurrences, and 38 `security definer` declarations. This reinforces
+Aurora/RDS PostgreSQL compatibility as the eventual target and rules out a bulk
+ORM or generic repository rewrite. It does not alter the decision to retain
+Supabase for initial staging.
+
 ## Approval evidence required
 
 Live metadata-only schema export, database size/growth, peak connections/TPS,

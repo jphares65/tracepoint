@@ -91,7 +91,7 @@ test("uses a 60-second attachment download and preserves the download filename",
   const calls: Call[] = [];
   const store = new SupabaseObjectStore(createClient(calls));
   const result = await store.createAttachmentDownload(
-    attachmentPathFromMetadata("department-a/firearm/a/object.pdf"),
+    attachmentPathFromMetadata("department-a/firearm/a/object.pdf", "department-a")!,
     "Evidence.pdf",
   );
   assert.equal(result.signedUrl, "https://signed.invalid/object");
@@ -101,6 +101,60 @@ test("uses a 60-second attachment download and preserves the download filename",
     path: "department-a/firearm/a/object.pdf",
     options: { expiresIn: 60, download: "Evidence.pdf" },
   });
+});
+
+test("accepts only attachment paths rooted in the authorized department", () => {
+  assert.equal(
+    attachmentPathFromMetadata(
+      "department-a/qualification/result%2Fa/object.png",
+      "department-a",
+    ),
+    "department-a/qualification/result%2Fa/object.png",
+  );
+  assert.equal(
+    attachmentPathFromMetadata(
+      "department-a/agency-training/event-a/object.pdf",
+      "department-a",
+    ),
+    "department-a/agency-training/event-a/object.pdf",
+  );
+  assert.equal(
+    attachmentPathFromMetadata(
+      "department-a/firearm/firearm-a/object.pdf",
+      "department-a",
+    ),
+    "department-a/firearm/firearm-a/object.pdf",
+  );
+});
+
+test("rejects cross-department, malformed, traversal, and unexpected attachment paths", () => {
+  const invalid = [
+    "department-b/firearm/firearm-a/object.pdf",
+    "firearm/firearm-a/object.pdf",
+    "/department-a/firearm/firearm-a/object.pdf",
+    "department-a/../firearm/object.pdf",
+    "department-a/%2e%2e/firearm/object.pdf",
+    "department-a/%252e%252e/firearm/object.pdf",
+    "department-a/firearm/%2e%2e/object.pdf",
+    "department-a/firearm/firearm-a/%2e%2e",
+    "department-a/qualification/result%2F../object.pdf",
+    "department-a/qualification/result%252F../object.pdf",
+    "department-a/qualification/..%2Fresult/object.pdf",
+    "department-a/firearm/firearm%2Fa/object.pdf",
+    "department-a/unknown/record/object.pdf",
+    "tracepoint-attachments/department-a/firearm/record/object.pdf",
+    "https://storage.invalid/department-a/firearm/record/object.pdf",
+    "department-a/firearm/record/extra/object.pdf",
+    "department-a\\firearm\\record\\object.pdf",
+  ];
+
+  for (const path of invalid) {
+    assert.equal(
+      attachmentPathFromMetadata(path, "department-a"),
+      null,
+      path,
+    );
+  }
 });
 
 test("pins department patches to the public asset bucket with upsert enabled", async () => {
