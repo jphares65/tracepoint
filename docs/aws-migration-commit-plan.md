@@ -17,12 +17,12 @@ Proposed commit message:
 
 Validation summary for the eventual commit body: Next.js production build
 passed; targeted ESLint passed with one expected CSS-file warning; CDK TypeScript
-build passed; management and non-staging refusal tests passed; fictional
-member-account synthesis passed; template security assertions passed; OpenAPI
+build passed; management and non-staging refusal tests passed; verified staging
+account `559054714699` synthesis passed; template security assertions passed; OpenAPI
 parse passed; migration-only secret scan found no credential signatures; and
 `git diff --check` passed. Docker build/scan was not run because Docker is
 unavailable and installation is prohibited. A live `cdk diff` remains pending
-the uncreated member account and separate bootstrap approval.
+separately approved least-privilege bootstrap.
 
 Final working-tree comparison: 49 allowlisted paths are present. The only
 unallowlisted change is the pre-existing `src/app/integration-demo/page.tsx`,

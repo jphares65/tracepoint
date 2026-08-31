@@ -7,56 +7,64 @@ import { RuntimeStack } from "../lib/runtime-stack";
 
 const app = new cdk.App();
 
-const environmentName = app.node.tryGetContext("environment") ?? "staging";
-const account = app.node.tryGetContext("account") ?? process.env.CDK_DEFAULT_ACCOUNT;
-const region = process.env.CDK_DEFAULT_REGION ?? "us-east-1";
+const environmentName = app.node.tryGetContext("environment");
+const account = app.node.tryGetContext("account");
+const region = app.node.tryGetContext("region") ?? process.env.CDK_DEFAULT_REGION;
+const workloadEnvironment = "staging";
 
-if (!/^[a-z0-9-]+$/.test(environmentName)) {
-  throw new Error("environment must use lowercase letters, numbers, and hyphens only");
-}
-if (environmentName !== "staging") {
-  throw new Error("This assembly is restricted to the staging environment");
+if (environmentName !== "tracepoint-staging") {
+  throw new Error("This assembly requires -c environment=tracepoint-staging");
 }
 if (!account || !/^\d{12}$/.test(account)) {
-  throw new Error("A 12-digit dedicated member account must be supplied with -c account=ACCOUNT_ID");
+  throw new Error("The staging account must be supplied with -c account=559054714699");
 }
 if (account === "265544358665") {
-  throw new Error("Refusing to target the current AWS Organizations management account");
+  throw new Error("Refusing to target AWS Organizations management account 265544358665");
+}
+if (account !== "559054714699") {
+  throw new Error("This assembly is restricted to staging account 559054714699");
 }
 if (region !== "us-east-1") {
-  throw new Error("TracePoint staging is restricted to us-east-1");
+  throw new Error("This assembly requires -c region=us-east-1");
 }
+
+// Keep synthesis offline and deterministic. These two AZs were verified in the
+// staging inventory; no generated lookup context is written to cdk.context.json.
+app.node.setContext(
+  `availability-zones:account=${account}:region=${region}`,
+  ["us-east-1a", "us-east-1b"],
+);
 
 const env: cdk.Environment = { account, region };
 const commonProps = {
   env,
   terminationProtection: true,
-  description: `TracePoint ${environmentName} AWS foundation`,
+  description: "TracePoint staging AWS foundation",
   tags: {
     Application: "TracePoint",
-    Environment: environmentName,
+    Environment: workloadEnvironment,
     ManagedBy: "AWS-CDK",
     DataClassification: "PublicSafety-Sensitive",
   },
 };
 
-const network = new NetworkStack(app, `tracepoint-${environmentName}-network`, {
+const network = new NetworkStack(app, `${environmentName}-network`, {
   ...commonProps,
-  stackName: `tracepoint-${environmentName}-network`,
-  environmentName,
+  stackName: `${environmentName}-network`,
+  environmentName: workloadEnvironment,
 });
 
-const security = new SecurityStack(app, `tracepoint-${environmentName}-security`, {
+const security = new SecurityStack(app, `${environmentName}-security`, {
   ...commonProps,
-  stackName: `tracepoint-${environmentName}-security`,
-  environmentName,
+  stackName: `${environmentName}-security`,
+  environmentName: workloadEnvironment,
 });
 security.addStackDependency(network);
 
-const compute = new ComputeFoundationStack(app, `tracepoint-${environmentName}-compute`, {
+const compute = new ComputeFoundationStack(app, `${environmentName}-compute`, {
   ...commonProps,
-  stackName: `tracepoint-${environmentName}-compute`,
-  environmentName,
+  stackName: `${environmentName}-compute`,
+  environmentName: workloadEnvironment,
   vpc: network.vpc,
   dataKey: security.dataKey,
 });
@@ -80,10 +88,10 @@ if (runtimeEnabled) {
     throw new Error("imageTag must be an explicit lowercase immutable tag, not latest");
   }
 
-  const runtime = new RuntimeStack(app, `tracepoint-${environmentName}-runtime`, {
+  const runtime = new RuntimeStack(app, `${environmentName}-runtime`, {
     ...commonProps,
-    stackName: `tracepoint-${environmentName}-runtime`,
-    environmentName,
+    stackName: `${environmentName}-runtime`,
+    environmentName: workloadEnvironment,
     vpc: network.vpc,
     repository: compute.repository,
     cluster: compute.cluster,

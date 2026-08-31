@@ -5,7 +5,10 @@ requires security/platform approval.
 
 1. Separate staging/production accounts and SCPs; no management-account workload.
 2. Architecture, threat model, data classification and CJIS-aligned control review.
-3. Least-privilege bootstrap/deployer/task/build identities and Access Analyzer review.
+3. Management-owned emergency path tested; one-time bootstrap separated from
+   routine deployer and image publisher; `AdministratorAccess` removed only
+   after fresh-session positive/negative tests and Access Analyzer review. See
+   `aws-iam-access-transition.md`.
 4. Signed/scanned immutable image, SBOM, dependency scan and patch SLA.
 5. Exact DNS/certificate/WAF decision; TLS and headers externally tested.
 6. Tenant-negative authorization suite, platform/support-mode isolation and audit continuity.

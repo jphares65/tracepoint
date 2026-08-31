@@ -15,7 +15,7 @@ export class NetworkStack extends cdk.Stack {
     this.vpc = new ec2.Vpc(this, "Vpc", {
       vpcName: `tracepoint-${props.environmentName}`,
       ipAddresses: ec2.IpAddresses.cidr("10.40.0.0/16"),
-      maxAzs: 2,
+      availabilityZones: ["us-east-1a", "us-east-1b"],
       natGateways: 0,
       subnetConfiguration: [
         {

@@ -1,18 +1,18 @@
 # TracePoint staging CDK local diff review
 
 **Review date:** 2026-08-30
-**Target:** future dedicated AWS Organizations member account, `us-east-1`
+**Target:** dedicated staging account `559054714699`, `us-east-1`
 **Comparison:** prior six-stack local assembly versus revised four-stack local assembly
 **AWS activity:** none. This is a synthesized-template comparison, not a live CloudFormation change-set diff.
 
 ## Result
 
-The revised assembly synthesizes successfully with a fictional member-account
-ID and placeholder certificate ARN. It refuses to synthesize for management
-account `265544358665`. Because the target member account has not been created,
-there is no deployed stack baseline against which CDK can run an authoritative
-live `cdk diff`; the first real diff remains a mandatory post-account,
-post-bootstrap read-only review gate.
+The revised assembly synthesizes locally for verified staging account
+`559054714699` with a placeholder certificate ARN. It refuses management account
+`265544358665`, every other account, and every environment other than
+`tracepoint-staging`. The account has no CloudFormation stacks and no
+`CDKToolkit`, so an authoritative live CDK diff remains blocked until a
+separately approved least-privilege bootstrap.
 
 ## Assembly change
 
@@ -105,9 +105,9 @@ Verified properties:
 
 ## Remaining real diff gate
 
-After the member account exists—but before deployment—the platform owner must:
+Before any deployment, the platform owner must:
 
-1. supply the real account ID, account-specific AZ context, certificate ARN,
+1. use account `559054714699`, verify account-specific context, supply the certificate ARN,
    immutable image tag, bootstrap qualifier, and permissions-boundary ARN;
 2. perform separately approved least-privilege CDK bootstrap work;
 3. synthesize again and inspect all templates for placeholder or management-

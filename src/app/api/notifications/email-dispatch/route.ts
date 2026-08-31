@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  createEmailProvider,
+  EmailProviderConfigurationError,
+  EmailProviderResponseError,
+} from "@/lib/email/provider";
 
 type QueueRow = {
   id: string;
@@ -189,12 +194,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const apiKey = process.env.BREVO_API_KEY;
-  const from = process.env.TRACEPOINT_FROM_EMAIL;
-
-  if (!apiKey || !from) {
+  let emailProvider;
+  try {
+    emailProvider = createEmailProvider(process.env, {
+      trimConfiguration: false,
+    });
+  } catch (error) {
     return NextResponse.json(
-      { error: "Brevo notification delivery is not configured." },
+      {
+        error:
+          error instanceof EmailProviderConfigurationError &&
+          error.message === "Brevo email delivery is not configured."
+            ? "Brevo notification delivery is not configured."
+            : error instanceof Error
+              ? error.message
+              : "Email notification delivery is not configured.",
+      },
       { status: 503 },
     );
   }
@@ -342,40 +357,26 @@ export async function POST(request: NextRequest) {
         : `[TracePoint] ${activeEvents.length} Inbox Items Need Attention`;
 
     try {
-      const response = await fetch(
-        "https://api.brevo.com/v3/smtp/email",
-        {
-          method: "POST",
-          headers: {
-            "api-key": apiKey,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            sender: { name: "TracePoint", email: from },
-            to: [{ email: first.recipient_email }],
-            subject,
-            htmlContent: buildDigestHtml(activeEvents, siteUrl),
-            textContent: buildDigestText(activeEvents, siteUrl),
-          }),
-        },
-      );
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          text(payload?.message) ||
-            `Brevo returned ${response.status}.`,
-        );
-      }
+      const sendResult = await emailProvider.send({
+        to: [{ email: first.recipient_email }],
+        subject,
+        htmlContent: buildDigestHtml(activeEvents, siteUrl),
+        textContent: buildDigestText(activeEvents, siteUrl),
+      }).catch((error) => {
+        if (error instanceof EmailProviderResponseError) {
+          throw new Error(
+            error.providerMessage ?? `Brevo returned ${error.status}.`,
+          );
+        }
+        throw error;
+      });
 
       const { error: sentUpdateError } = await admin
         .from("notification_email_queue")
         .update({
           status: "Sent",
           sent_at: new Date().toISOString(),
-          provider_message_id: text(payload?.messageId) || null,
+          provider_message_id: sendResult.messageId,
           last_error: null,
           updated_at: new Date().toISOString(),
         })

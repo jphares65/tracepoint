@@ -8,6 +8,11 @@ import {
 } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  createEmailProvider,
+  EmailProviderConfigurationError,
+  EmailProviderResponseError,
+} from "@/lib/email/provider";
 
 export const ACTIVATION_VALID_DAYS = 14;
 
@@ -78,19 +83,24 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-async function sendBrevoActivationEmail(input: {
+async function sendActivationEmail(input: {
   email: string;
   fullName: string;
   activationUrl: string;
   expiresAt: string;
 }) {
-  const apiKey = process.env.BREVO_API_KEY?.trim();
-  const fromEmail = process.env.TRACEPOINT_FROM_EMAIL?.trim();
-
-  if (!apiKey || !fromEmail) {
-    throw new Error(
-      "Brevo activation email delivery is not configured.",
-    );
+  let provider;
+  try {
+    provider = createEmailProvider();
+  } catch (error) {
+    if (error instanceof EmailProviderConfigurationError) {
+      throw new Error(
+        error.message === "Brevo email delivery is not configured."
+          ? "Brevo activation email delivery is not configured."
+          : error.message,
+      );
+    }
+    throw error;
   }
 
   const safeName = escapeHtml(input.fullName || "TracePoint user");
@@ -167,18 +177,8 @@ async function sendBrevoActivationEmail(input: {
   </table>
 </div>`;
 
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "api-key": apiKey,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      sender: {
-        name: "TracePoint",
-        email: fromEmail,
-      },
+  try {
+    await provider.send({
       to: [{ email: input.email, name: input.fullName }],
       subject: "Activate your TracePoint account",
       htmlContent,
@@ -186,17 +186,14 @@ async function sendBrevoActivationEmail(input: {
         `Activate your TracePoint account by visiting:\n\n` +
         `${input.activationUrl}\n\n` +
         `This single-use invitation is valid through ${expirationLabel}.`,
-    }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(
-      typeof payload?.message === "string"
-        ? payload.message
-        : `Brevo returned status ${response.status}.`,
-    );
+    });
+  } catch (error) {
+    if (error instanceof EmailProviderResponseError) {
+      throw new Error(
+        error.providerMessage ?? `Brevo returned status ${error.status}.`,
+      );
+    }
+    throw error;
   }
 }
 
@@ -244,7 +241,7 @@ export async function issueActivationEmail(
   activationUrl.searchParams.set("token", token);
 
   try {
-    await sendBrevoActivationEmail({
+    await sendActivationEmail({
       email: input.email,
       fullName: input.fullName,
       activationUrl: activationUrl.toString(),

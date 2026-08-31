@@ -1,8 +1,9 @@
 # TracePoint staging infrastructure
 
-This CDK application targets a dedicated AWS Organizations member account in
-`us-east-1`. It refuses to synthesize for the existing management account
-`265544358665`. It never creates an AWS account, certificate, or DNS record.
+This CDK application targets dedicated staging account `559054714699` in
+`us-east-1`. It refuses every other account and environment, with a separate
+explicit refusal for management account `265544358665`. It never creates an AWS
+account, certificate, or DNS record.
 
 ## Application assembly
 
@@ -25,20 +26,21 @@ platform/security baseline with independent lifecycle ownership.
 
 ## Local synthesis
 
-An explicit non-management member account is required. The account below is a
-local placeholder only:
+All three target values are explicit and fixed:
 
 ```powershell
-$env:CDK_DEFAULT_REGION = "us-east-1"
 npx.cmd cdk synth --output cdk.out.revised `
-  -c account=111122223333 `
-  -c environment=staging `
+  -c account=559054714699 `
+  -c region=us-east-1 `
+  -c environment=tracepoint-staging `
   -c runtimeEnabled=true `
-  -c certificateArn=arn:aws:acm:us-east-1:111122223333:certificate/REPLACE_ME `
-  -c imageTag=REPLACE_WITH_IMMUTABLE_TAG
+  -c certificateArn=arn:aws:acm:us-east-1:559054714699:certificate/REPLACE_ME `
+  -c imageTag=REPLACE_WITH_IMMUTABLE_TAG `
+  --lookups=false
 ```
 
-Replace all placeholders for a real review. The runtime consumes an existing
+The certificate and image tag remain placeholders until separately approved
+platform and publishing work. The runtime consumes an existing
 exact-name ACM certificate for `staging.tracepointhq.com`; certificate request,
 DNS validation, and the Route 53 alias remain separate platform actions.
 
