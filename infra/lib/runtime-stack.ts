@@ -45,6 +45,7 @@ export class RuntimeStack extends cdk.Stack {
         protocol: elbv2.ApplicationProtocol.HTTPS,
         desiredCount: 1,
         minHealthyPercent: 100,
+        healthCheckGracePeriod: cdk.Duration.seconds(60),
         circuitBreaker: { rollback: true },
         taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
         assignPublicIp: true,

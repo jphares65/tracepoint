@@ -29,9 +29,12 @@ exceptions. Monthly: restore sample, secret/role review, dependency/base-image
 updates and quota/cost forecast. Quarterly: incident/tabletop, tenant-boundary
 suite, backup restore, access recertification and runbook contact verification.
 
-## Staging deployment procedure (future only)
+## Staging deployment procedure
 
-Confirm member account via STS, real synth, secret-free scan, image digest/scan,
-and reviewed `cdk diff`; approve change set; deploy foundation before runtime;
-verify HTTPS/health/logs/tenant negatives; record evidence. This document does
-not authorize bootstrap, deployment, DNS, certificate, secret or billing action.
+The foundation is deployed. For runtime prerequisites, exact human inputs,
+guarded helper scripts, smoke coverage, and rollback constraints, follow
+`docs/aws-staging-runtime-readiness.md`. Runtime remains conditional: confirm the
+member account via STS, secret-free build, immutable image digest/scan, and a
+reviewed `cdk diff`; then verify HTTPS, health, logs, session behavior, and tenant
+negatives. The helpers do not request certificates, modify DNS, install Docker,
+or copy local environment files.
