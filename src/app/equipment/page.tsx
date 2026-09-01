@@ -276,6 +276,7 @@ export default function EquipmentPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [statusFilter, setStatusFilter] =
     useState<StatusFilter>("all");
@@ -614,6 +615,7 @@ const filteredReadiness = useMemo(() => {
   async function saveType() {
     setSaving(true);
     setError("");
+    setSuccess("");
 
     try {
       const response = await fetch(
@@ -645,6 +647,7 @@ const filteredReadiness = useMemo(() => {
 
       setShowTypeForm(false);
       await loadAll();
+      setSuccess("Equipment type created. You can now add individual equipment to inventory.");
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -707,6 +710,7 @@ const filteredReadiness = useMemo(() => {
   async function saveAsset() {
     setSaving(true);
     setError("");
+    setSuccess("");
 
     try {
       const response = await fetch(
@@ -889,7 +893,7 @@ const filteredReadiness = useMemo(() => {
                     className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:text-white"
                   >
                     <Plus size={14} />
-                    Equipment Type
+                    Create Equipment Category/Type
                   </button>
 
                   <button
@@ -907,7 +911,7 @@ const filteredReadiness = useMemo(() => {
                   className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
                 >
                   <PackagePlus size={15} />
-                  Assign Equipment
+                  Assign/Add to Inventory
                 </button>
                 </>
               ) : null}
@@ -931,6 +935,12 @@ const filteredReadiness = useMemo(() => {
         {error ? (
           <div className="rounded-2xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200">
             {error}
+          </div>
+        ) : null}
+
+        {success ? (
+          <div role="status" className="rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">
+            {success}
           </div>
         ) : null}
 
@@ -1050,10 +1060,10 @@ const filteredReadiness = useMemo(() => {
               <div className="flex min-h-[240px] flex-col items-center justify-center p-6 text-center">
                 <Boxes size={34} className="text-slate-600" />
                 <p className="mt-3 font-semibold text-white">
-                  No equipment found
+                  No equipment inventory found
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  No equipment records match the current search.
+                  Add equipment to department inventory and optionally assign it to an officer, vehicle, unit, or location.
                 </p>
               </div>
             ) : (
@@ -1443,8 +1453,11 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign Equipment Type
+                Create Equipment Category/Type
               </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Create a reusable equipment category or type before adding individual items to inventory.
+              </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <input
@@ -1598,7 +1611,7 @@ const filteredReadiness = useMemo(() => {
                   onClick={() => void saveType()}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  Save Type
+                  Create Equipment Category/Type
                 </button>
               </div>
             </div>
@@ -1907,8 +1920,11 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign Equipment
+                Assign/Add to Inventory
               </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Add equipment to department inventory and optionally assign it to an officer, vehicle, unit, or location.
+              </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <select
@@ -2122,7 +2138,7 @@ const filteredReadiness = useMemo(() => {
                   }
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  Assign Equipment
+                  Assign/Add to Inventory
                 </button>
               </div>
             </div>
