@@ -1,21 +1,50 @@
 # TracePoint AWS migration status
 
-**Last updated:** 2026-08-31
+**Last updated:** 2026-09-01
 **Target:** `tracepoint-staging`, account `559054714699`, `us-east-1`
 **Hard deny:** management account `265544358665`
-**AWS activity in this run:** none; all work was local and source-only
+**AWS activity in this run:** guarded staging foundation verification through
+`scripts/deploy-tracepoint-staging.ps1`; no separate AWS CLI command was used
+
+## 2026-09-01 staging foundation checkpoint
+
+The third and final controlled orchestration invocation completed successfully
+after passing the STS gate for account `559054714699`, role
+`TracePointMigrationStaging`, and `us-east-1`. The script verified:
+
+- `CDKToolkit=CREATE_COMPLETE` (bootstrap version 32);
+- `tracepoint-staging-network=CREATE_COMPLETE`;
+- `tracepoint-staging-security=UPDATE_COMPLETE`;
+- `tracepoint-staging-compute=CREATE_COMPLETE`;
+- the `$75` monthly cost budget and a deterministic projected recurring cost of
+  `$42.07`;
+- two public subnets, no NAT gateway, no paid interface endpoint, and active VPC
+  Flow Logs;
+- an immutable, scan-on-push, KMS-encrypted ECR repository;
+- an active ECS cluster with zero running tasks;
+- a KMS-encrypted application log group with 30-day retention;
+- a retained application-secret container and separate scoped ECS execution and
+  task roles; and
+- full public-access blocking on the CDK bootstrap asset bucket.
+
+Runtime was not deployed. No image was built or published. Required human inputs
+remain the four staging secret values, three staging public build values, a
+working Docker engine, and an issued `us-east-1` certificate for
+`staging.tracepointhq.com`. The deployment role could not verify KMS rotation, so
+the script reports that check as unresolved rather than claiming success.
 
 ## Current state
 
-Local preparation is approximately **96%** complete. AWS staging deployment is
-**0%** (no bootstrap or stacks). Email conversion is **100%** of the two
+Local preparation is approximately **96%** complete. AWS staging foundation
+deployment is **100%** for bootstrap/network/security/compute, while runtime is
+**0%**. Email conversion is **100%** of the two
 inventoried callers; storage boundary conversion is **100%** of the five direct
 call sites, with deferred lifecycle policy; database/data-access conversion is
 approximately **2%** (nine of 543 static calls behind used repository boundaries);
 Auth conversion is **0%**.
 Total provider conversion is approximately **12%**, and total migration is
-approximately **34%**, reflecting that infrastructure deployment,
-staging acceptance, data/identity work, and production cutover remain undone.
+approximately **43%**, reflecting completed staging foundation infrastructure
+but no runtime acceptance, data/identity migration, or production cutover.
 
 Supabase remains authoritative for database, RLS/RPC authorization, Auth, and
 storage. Brevo remains the only/default email provider. No AWS provider is
