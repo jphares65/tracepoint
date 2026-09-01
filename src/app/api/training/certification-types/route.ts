@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { createCertificationTypeCatalogRepository } from "@/lib/certifications/type-catalog-repository";
 import {
   accessFailureResponse,
   requireServerFeature,
@@ -79,23 +80,23 @@ export async function GET() {
 
   const { admin, departmentId } = resolved.context;
 
-  const { data, error } = await admin
-    .from("certification_types")
-    .select("*")
-    .eq("department_id", departmentId)
-    .order("category")
-    .order("name");
+  try {
+    const data = await createCertificationTypeCatalogRepository(
+      admin,
+      departmentId,
+    ).listTypes({ departmentId });
 
-  if (error) {
+    return NextResponse.json({ items: data });
+  } catch (error) {
     return NextResponse.json(
-      { error: error.message },
+      {
+        error: error instanceof Error
+          ? error.message
+          : "Certification types could not be loaded.",
+      },
       { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    items: data ?? [],
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = (await request.json().catch(() => ({}))) as any;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   const name = text(body.name);
   const category = text(body.category) || "General";
@@ -240,7 +241,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const body = (await request.json().catch(() => ({}))) as any;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   const certificationTypeId = text(body.certificationTypeId);
   const name = text(body.name);
@@ -320,4 +321,3 @@ export async function PATCH(request: NextRequest) {
     certificationType: data,
   });
 }
-

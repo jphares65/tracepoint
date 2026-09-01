@@ -15,7 +15,7 @@ boundaries, or the live schema.
 
 | Measure | Static count |
 |---|---:|
-| First-party source files scanned | 200 |
+| First-party source files scanned | 208 |
 | `.from(...)` calls | 478 |
 | `.rpc(...)` calls | 65 |
 | Combined data calls | 543 |
@@ -23,9 +23,9 @@ boundaries, or the live schema.
 | Distinct table/view/RPC targets | 87 |
 | Browser data calls | 24 |
 | Server data calls | 519 |
-| Calls statically associated with service-role context | 483 |
+| Calls statically associated with service-role context | 480 |
 | Server-user calls | 14 |
-| Client privilege uncertain | 22 |
+| Client privilege uncertain | 25 |
 
 Classified operations are 296 selects, 72 inserts, 58 updates, 24 upserts, 22
 deletes, 65 RPCs, and 6 unknown chains. An independent token count finds 345
@@ -83,11 +83,12 @@ must deny access.
 | Candidate | Evidence | Decision |
 |---|---|---|
 | `GET /api/qualifications` imported history | Server-only; `resolveServerAccess`; service-role read of one table; explicit department and `historical_import` filters; deterministic descending date order; no side effects | Selected. Smallest complete tenant-bound read contract and entirely mockable. |
-| `GET /api/settings/current-rules` | One department-scoped read, but defaulting logic is policy-bearing and settings is the largest/highest-coupling context | Deferred. Defaults and configuration semantics deserve separate contract coverage. |
+| `GET /api/settings/current-rules` | One department-scoped read with deterministic policy defaults | Selected in wave 2; exact query/default/tenant/error contracts are tested. |
 | `GET /api/command-dashboard/operations` | Authorized read-only route, but joins two bounded contexts, tolerates missing tables, runs concurrent queries and derives time-sensitive aggregates | Rejected for the first pilot. Multi-source fallback and clock behavior materially increase parity risk. |
 
-The selected route now uses a narrow server-only
-`QualificationHistoryRepository`. Supabase is the only/default implementation.
+Four selected routes now use narrow server-only repositories: qualification
+history, current department rules, certification types, and the agency-training
+course catalog. Supabase is the only/default implementation.
 It requires the authorized department at construction and as explicit method
 input, rejects a mismatch before querying, exposes no generic table/filter/RPC
 surface, preserves fields/filters/order/null-list mapping, maps provider failure

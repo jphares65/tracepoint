@@ -12,7 +12,7 @@
       "*.bak",
       "src/app/integration-demo/**"
     ],
-    "sourceFiles": 202,
+    "sourceFiles": 208,
     "note": "Deterministic static source evidence only; regex analysis does not prove runtime authorization, RLS, transactionality, or reachability."
   },
   "counts": {
@@ -43,12 +43,12 @@
     "byClient": {
       "browser-user": 24,
       "server-user": 14,
-      "service-role": 483,
-      "uncertain": 22
+      "service-role": 480,
+      "uncertain": 25
     },
     "byContext": {
       "active-department": 2,
-      "agency-training": 67,
+      "agency-training": 66,
       "armory": 66,
       "attachments": 4,
       "auth": 4,
@@ -63,8 +63,8 @@
       "platform": 18,
       "qualifications": 4,
       "readiness": 10,
-      "settings": 134,
-      "shared": 7,
+      "settings": 133,
+      "shared": 10,
       "shared:activation": 10,
       "shared:agency-training-notifications": 5,
       "shared:certification-capability": 1,
@@ -76,7 +76,7 @@
       "shared:server-access": 12,
       "supabase-platform": 5,
       "super-admin": 8,
-      "training": 27,
+      "training": 26,
       "training-alerts": 2
     },
     "distinctTargets": 87
@@ -143,27 +143,8 @@
       "file": "src/app/api/agency-training/courses/route.ts",
       "kind": "from",
       "target": "agency_training_courses",
-      "operation": "select",
-      "line": 68,
-      "boundedContext": "agency-training",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/agency-training/courses/route.ts",
-      "kind": "from",
-      "target": "agency_training_courses",
       "operation": "insert",
-      "line": 111,
+      "line": 94,
       "boundedContext": "agency-training",
       "execution": "server",
       "client": "service-role",
@@ -182,7 +163,7 @@
       "kind": "from",
       "target": "agency_training_course_aliases",
       "operation": "insert",
-      "line": 142,
+      "line": 125,
       "boundedContext": "agency-training",
       "execution": "server",
       "client": "service-role",
@@ -201,7 +182,7 @@
       "kind": "from",
       "target": "agency_training_courses",
       "operation": "delete",
-      "line": 154,
+      "line": 137,
       "boundedContext": "agency-training",
       "execution": "server",
       "client": "service-role",
@@ -5892,25 +5873,6 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
-      "file": "src/app/api/settings/current-rules/route.ts",
-      "kind": "from",
-      "target": "department_rules",
-      "operation": "select",
-      "line": 21,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
       "file": "src/app/api/settings/department-patch/route.ts",
       "kind": "from",
       "target": "departments",
@@ -8254,7 +8216,7 @@
       "kind": "rpc",
       "target": "has_department_permission",
       "operation": "rpc",
-      "line": 39,
+      "line": 40,
       "boundedContext": "training",
       "execution": "server",
       "client": "service-role",
@@ -8273,7 +8235,7 @@
       "kind": "rpc",
       "target": "has_department_permission",
       "operation": "rpc",
-      "line": 43,
+      "line": 44,
       "boundedContext": "training",
       "execution": "server",
       "client": "service-role",
@@ -8291,27 +8253,8 @@
       "file": "src/app/api/training/certification-types/route.ts",
       "kind": "from",
       "target": "certification_types",
-      "operation": "select",
-      "line": 83,
-      "boundedContext": "training",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/training/certification-types/route.ts",
-      "kind": "from",
-      "target": "certification_types",
       "operation": "insert",
-      "line": 180,
+      "line": 181,
       "boundedContext": "training",
       "execution": "server",
       "client": "service-role",
@@ -8330,7 +8273,7 @@
       "kind": "from",
       "target": "certification_types",
       "operation": "update",
-      "line": 288,
+      "line": 289,
       "boundedContext": "training",
       "execution": "server",
       "client": "service-role",
@@ -9349,6 +9292,63 @@
         "possible mutation"
       ],
       "risk": "high: stored-procedure semantics require SQL review",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/agency-training/course-catalog-repository-core.ts",
+      "kind": "from",
+      "target": "agency_training_courses",
+      "operation": "select",
+      "line": 13,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/certifications/type-catalog-repository-core.ts",
+      "kind": "from",
+      "target": "certification_types",
+      "operation": "select",
+      "line": 14,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/department-rules/current-rules-repository-core.ts",
+      "kind": "from",
+      "target": "department_rules",
+      "operation": "select",
+      "line": 14,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  createCourseCatalogRepository,
+  mapCourseCatalogRow,
+} from "@/lib/agency-training/course-catalog-repository";
+import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
@@ -34,57 +38,36 @@ function stringList(value: unknown) {
   return Array.from(new Set(value.map(text).filter(Boolean))).slice(0, 50);
 }
 
-function mapCourse(row: any) {
-  const aliases = Array.isArray(row.agency_training_course_aliases)
-    ? row.agency_training_course_aliases
-    : [];
-  return {
-    id: row.id,
-    canonicalTitle: row.canonical_title,
-    aliases: aliases.map((alias: any) => alias.alias_title),
-    trainingType: row.training_type,
-    category: row.category,
-    description: row.description,
-    topics: row.topics ?? [],
-    defaultLocation: row.default_location,
-    defaultHours: row.default_hours,
-    lessonPlanRequired: row.lesson_plan_required,
-    certificationTypeId: row.certification_type_id,
-    certificationValidDays: row.certification_valid_days,
-    certificateEnabled: row.certificate_enabled,
-    certificateTitle: row.certificate_title,
-    usageCount: row.usage_count,
-    lastUsedAt: row.last_used_at,
-    isActive: row.is_active,
-  };
-}
+const mapCourse = mapCourseCatalogRow;
 
 export async function GET() {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
 
   const context = resolved.context;
-  const { data, error } = await context.admin
-    .from("agency_training_courses")
-    .select(
-      "id,canonical_title,training_type,category,description,topics,default_location,default_hours,lesson_plan_required,certification_type_id,certification_valid_days,certificate_enabled,certificate_title,usage_count,last_used_at,is_active,agency_training_course_aliases(id,alias_title)",
-    )
-    .eq("department_id", context.departmentId)
-    .eq("is_active", true)
-    .order("usage_count", { ascending: false })
-    .order("canonical_title", { ascending: true });
+  try {
+    const data = await createCourseCatalogRepository(
+      context.admin,
+      context.departmentId,
+    ).listActiveCourses({ departmentId: context.departmentId });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      {
+        courses: data.map(mapCourse),
+        canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error
+          ? error.message
+          : "Training courses could not be loaded.",
+      },
+      { status: 500 },
+    );
   }
-
-  return NextResponse.json(
-    {
-      courses: (data ?? []).map(mapCourse),
-      canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),
-    },
-    { headers: { "Cache-Control": "no-store" } },
-  );
 }
 
 export async function POST(request: NextRequest) {
