@@ -361,12 +361,6 @@ const [typeForm, setTypeForm] = useState({
         }),
       ]);
 
-      if (!readinessResponse.ok) {
-        throw new Error(
-          await responseError(readinessResponse),
-        );
-      }
-
       if (!typesResponse.ok) {
         throw new Error(
           await responseError(typesResponse),
@@ -384,9 +378,6 @@ const [typeForm, setTypeForm] = useState({
           await responseError(assetsResponse),
         );
       }
-
-      const readinessPayload =
-        (await readinessResponse.json()) as ReadinessPayload;
 
       const typesPayload =
         (await typesResponse.json()) as {
@@ -407,8 +398,6 @@ const [typeForm, setTypeForm] = useState({
           canManage?: boolean;
         };
 
-      setReadiness(readinessPayload);
-
       setTypes(typesPayload.items ?? []);
 
       setRequirements(
@@ -426,6 +415,19 @@ const [typeForm, setTypeForm] = useState({
             assetsPayload.canManage,
         ),
       );
+
+      // Inventory is authoritative for the equipment table. Keep successfully
+      // loaded assets visible even if the derived readiness aggregation fails.
+      if (!readinessResponse.ok) {
+        throw new Error(
+          await responseError(readinessResponse),
+        );
+      }
+
+      const readinessPayload =
+        (await readinessResponse.json()) as ReadinessPayload;
+
+      setReadiness(readinessPayload);
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -438,7 +440,7 @@ const [typeForm, setTypeForm] = useState({
   }
 
   useEffect(() => {
-    void loadAll();
+    void Promise.resolve().then(loadAll);
   }, []);
 
   const typeMap = useMemo(

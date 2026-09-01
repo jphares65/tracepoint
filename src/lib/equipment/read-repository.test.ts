@@ -110,6 +110,27 @@ test("limits non-department viewers and preserves member display fallbacks", asy
   });
 });
 
+test("returns unassigned laptop, radio, and vest rows to an authorized department viewer", async () => {
+  const createdRows = [
+    { id: "laptop", equipment_type_id: "type-laptop", assigned_user_id: null, lifecycle_status: "active" },
+    { id: "radio", equipment_type_id: "type-radio", assigned_user_id: null, lifecycle_status: "active" },
+    { id: "vest", equipment_type_id: "type-vest", assigned_user_id: null, lifecycle_status: "out_of_service" },
+  ];
+  const inputs: unknown[] = [];
+  const repository = new TenantBoundEquipmentReadRepository(source({
+    async listAssets(input) { inputs.push(input); return createdRows; },
+  }), "agency-a");
+
+  const result = await repository.getAssetDirectory({
+    departmentId: "agency-a",
+    userId: "chief-a",
+    canViewDepartment: true,
+  });
+
+  assert.deepEqual(inputs, [{ departmentId: "agency-a", assignedUserId: undefined }]);
+  assert.deepEqual(result.items, createdRows);
+});
+
 test("skips profile access for an empty member set and preserves empty results", async () => {
   let profilesCalled = false;
   const repository = new TenantBoundEquipmentReadRepository(source({
