@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | eight tenant-bound server repository callers; Supabase otherwise direct and authoritative | 19 provider reads across 8 GET paths | exact tenant/filter/field/order/visibility/permission contracts and negative tests pass; no Aurora/RDS provider exists |
+| Data | ten tenant-bound server repository callers; Supabase otherwise direct and authoritative | 29 provider reads across 10 GET paths | exact tenant/filter/field/order/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -59,3 +59,10 @@ authorization-sensitive `get_department_members` RPC. Cross-tenant input is
 rejected before provider access; security and member reads are skipped when the
 existing permissions do not allow them. Nineteen of 543 static data calls are now
 behind production repository boundaries; Supabase remains sole/default.
+
+The readiness wave adds ten reads across the equipment and certification
+readiness GET handlers. Their production callers retain the existing feature and
+permission gates; the tenant-bound core rejects mismatches before provider I/O,
+preserves equipment self-only visibility, profile fallbacks, empty results, and
+the existing readiness aggregation response shapes. Twenty-nine of the current
+551 static data calls are now behind production repository boundaries.

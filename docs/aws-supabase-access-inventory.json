@@ -12,39 +12,39 @@
       "*.bak",
       "src/app/integration-demo/**"
     ],
-    "sourceFiles": 211,
+    "sourceFiles": 222,
     "note": "Deterministic static source evidence only; regex analysis does not prove runtime authorization, RLS, transactionality, or reachability."
   },
   "counts": {
-    "dataCalls": 543,
-    "fromCalls": 478,
+    "dataCalls": 551,
+    "fromCalls": 486,
     "rpcCalls": 65,
     "authCalls": 39,
     "byOperation": {
-      "delete": 22,
-      "insert": 72,
+      "delete": 23,
+      "insert": 75,
       "rpc": 65,
-      "select": 296,
-      "unknown": 6,
+      "select": 299,
+      "unknown": 7,
       "update": 58,
       "upsert": 24
     },
     "operationTokens": {
-      "select": 345,
-      "insert": 73,
+      "select": 349,
+      "insert": 76,
       "update": 61,
       "upsert": 24,
-      "delete": 23
+      "delete": 24
     },
     "byExecution": {
       "browser": 24,
-      "server": 519
+      "server": 527
     },
     "byClient": {
       "browser-user": 24,
       "server-user": 14,
-      "service-role": 480,
-      "uncertain": 25
+      "service-role": 468,
+      "uncertain": 45
     },
     "byContext": {
       "active-department": 2,
@@ -54,6 +54,8 @@
       "auth": 4,
       "command-dashboard": 2,
       "components": 1,
+      "drill-documents": 4,
+      "drill-library": 4,
       "equipment": 10,
       "fleet": 48,
       "notifications": 26,
@@ -62,9 +64,8 @@
       "pilot": 20,
       "platform": 18,
       "qualifications": 4,
-      "readiness": 10,
-      "settings": 133,
-      "shared": 15,
+      "settings": 123,
+      "shared": 35,
       "shared:activation": 10,
       "shared:agency-training-notifications": 5,
       "shared:certification-capability": 1,
@@ -79,7 +80,7 @@
       "training": 26,
       "training-alerts": 2
     },
-    "distinctTargets": 87
+    "distinctTargets": 88
   },
   "dataCalls": [
     {
@@ -2747,6 +2748,163 @@
         "none statically evidenced"
       ],
       "risk": "medium: possible multi-step workflow",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-documents/[documentId]/[disposition]/route.ts",
+      "kind": "from",
+      "target": "drill_documents",
+      "operation": "select",
+      "line": 15,
+      "boundedContext": "drill-documents",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "storage/cleanup nearby"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-documents/[documentId]/route.ts",
+      "kind": "from",
+      "target": "drill_documents",
+      "operation": "select",
+      "line": 15,
+      "boundedContext": "drill-documents",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "storage/cleanup nearby"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-documents/[documentId]/route.ts",
+      "kind": "from",
+      "target": "drill_documents",
+      "operation": "delete",
+      "line": 24,
+      "boundedContext": "drill-documents",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "possible mutation",
+        "storage/cleanup nearby"
+      ],
+      "risk": "medium/high: mutation or workflow transaction semantics",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-documents/[documentId]/route.ts",
+      "kind": "from",
+      "target": "audit_events",
+      "operation": "insert",
+      "line": 27,
+      "boundedContext": "drill-documents",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "possible mutation",
+        "audit"
+      ],
+      "risk": "high: service-role call lacks an evidenced department filter in this statement",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-library/[drillTemplateId]/documents/route.ts",
+      "kind": "from",
+      "target": "pilot_range_workspaces",
+      "operation": "select",
+      "line": 14,
+      "boundedContext": "drill-library",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-library/[drillTemplateId]/documents/route.ts",
+      "kind": "from",
+      "target": "drill_documents",
+      "operation": "select",
+      "line": 28,
+      "boundedContext": "drill-library",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-library/[drillTemplateId]/documents/route.ts",
+      "kind": "from",
+      "target": "drill_documents",
+      "operation": "insert",
+      "line": 59,
+      "boundedContext": "drill-library",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "possible mutation",
+        "storage/cleanup nearby"
+      ],
+      "risk": "high: service-role call lacks an evidenced department filter in this statement",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/app/api/drill-library/[drillTemplateId]/documents/route.ts",
+      "kind": "from",
+      "target": "audit_events",
+      "operation": "insert",
+      "line": 68,
+      "boundedContext": "drill-library",
+      "execution": "server",
+      "client": "service-role",
+      "rlsReliance": "bypassed",
+      "authorizationHelper": "resolveServerAccess",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "possible mutation",
+        "audit",
+        "storage/cleanup nearby"
+      ],
+      "risk": "high: service-role call lacks an evidenced department filter in this statement",
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
@@ -5512,196 +5670,6 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
-      "file": "src/app/api/readiness/certifications/route.ts",
-      "kind": "from",
-      "target": "department_memberships",
-      "operation": "select",
-      "line": 43,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/certifications/route.ts",
-      "kind": "from",
-      "target": "certification_types",
-      "operation": "select",
-      "line": 51,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/certifications/route.ts",
-      "kind": "from",
-      "target": "department_certification_requirements",
-      "operation": "select",
-      "line": 59,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/certifications/route.ts",
-      "kind": "from",
-      "target": "training_certifications",
-      "operation": "select",
-      "line": 67,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/certifications/route.ts",
-      "kind": "from",
-      "target": "profiles",
-      "operation": "select",
-      "line": 125,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "absent",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "high: service-role call lacks an evidenced department filter in this statement",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/equipment/route.ts",
-      "kind": "from",
-      "target": "department_memberships",
-      "operation": "select",
-      "line": 54,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/equipment/route.ts",
-      "kind": "from",
-      "target": "equipment_assets",
-      "operation": "select",
-      "line": 62,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/equipment/route.ts",
-      "kind": "from",
-      "target": "equipment_types",
-      "operation": "select",
-      "line": 97,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/equipment/route.ts",
-      "kind": "from",
-      "target": "department_equipment_requirements",
-      "operation": "select",
-      "line": 116,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/readiness/equipment/route.ts",
-      "kind": "from",
-      "target": "profiles",
-      "operation": "select",
-      "line": 163,
-      "boundedContext": "readiness",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "absent",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "high: service-role call lacks an evidenced department filter in this statement",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
       "file": "src/app/api/settings/certification-capabilities/route.ts",
       "kind": "from",
       "target": "department_certification_capabilities",
@@ -7158,200 +7126,10 @@
     },
     {
       "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "department_memberships",
-      "operation": "select",
-      "line": 36,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "department_membership_roles",
-      "operation": "select",
-      "line": 43,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "department_role_permissions",
-      "operation": "select",
-      "line": 48,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "profiles",
-      "operation": "select",
-      "line": 73,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "absent",
-      "workflow": "single statement",
-      "sideEffects": [
-        "notification/email"
-      ],
-      "risk": "high: service-role call lacks an evidenced department filter in this statement",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "departments",
-      "operation": "select",
-      "line": 196,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "department_rules",
-      "operation": "select",
-      "line": 204,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "department_security_settings",
-      "operation": "select",
-      "line": 211,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "roles",
-      "operation": "select",
-      "line": 218,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "permissions",
-      "operation": "select",
-      "line": 223,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
-      "kind": "from",
-      "target": "department_role_permissions",
-      "operation": "select",
-      "line": 227,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/overview/route.ts",
       "kind": "rpc",
       "target": "get_department_members",
       "operation": "rpc",
-      "line": 244,
+      "line": 21,
       "boundedContext": "settings",
       "execution": "server",
       "client": "service-role",
@@ -9371,11 +9149,372 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_memberships",
+      "operation": "select",
+      "line": 7,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "equipment_types",
+      "operation": "select",
+      "line": 8,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_equipment_requirements",
+      "operation": "select",
+      "line": 9,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "equipment_assets",
+      "operation": "select",
+      "line": 10,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_memberships",
+      "operation": "select",
+      "line": 11,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "certification_types",
+      "operation": "select",
+      "line": 12,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_certification_requirements",
+      "operation": "select",
+      "line": 13,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "training_certifications",
+      "operation": "select",
+      "line": 14,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/readiness/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "profiles",
+      "operation": "select",
+      "line": 15,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "departments",
+      "operation": "select",
+      "line": 14,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_rules",
+      "operation": "select",
+      "line": 15,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_security_settings",
+      "operation": "select",
+      "line": 16,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "roles",
+      "operation": "select",
+      "line": 17,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "permissions",
+      "operation": "select",
+      "line": 18,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_role_permissions",
+      "operation": "select",
+      "line": 19,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_memberships",
+      "operation": "select",
+      "line": 20,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_membership_roles",
+      "operation": "select",
+      "line": 21,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_role_permissions",
+      "operation": "select",
+      "line": 22,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/settings/overview-repository-supabase.ts",
+      "kind": "from",
+      "target": "profiles",
+      "operation": "select",
+      "line": 23,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "notification/email"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
       "file": "src/lib/storage/object-store-core.ts",
       "kind": "from",
       "target": "tracepoint-attachments",
       "operation": "unknown",
-      "line": 187,
+      "line": 199,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",
@@ -9394,7 +9533,26 @@
       "kind": "from",
       "target": "tracepoint-attachments",
       "operation": "unknown",
-      "line": 196,
+      "line": 208,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "storage/cleanup nearby"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/storage/object-store-core.ts",
+      "kind": "from",
+      "target": "tracepoint-attachments",
+      "operation": "unknown",
+      "line": 220,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",
@@ -9413,7 +9571,7 @@
       "kind": "from",
       "target": "department-assets",
       "operation": "unknown",
-      "line": 210,
+      "line": 234,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",
@@ -9432,7 +9590,7 @@
       "kind": "from",
       "target": "department-assets",
       "operation": "unknown",
-      "line": 219,
+      "line": 243,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",
@@ -9451,7 +9609,7 @@
       "kind": "from",
       "target": "department-assets",
       "operation": "unknown",
-      "line": 223,
+      "line": 247,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",
@@ -9470,7 +9628,7 @@
       "kind": "from",
       "target": "tracepoint-attachments",
       "operation": "unknown",
-      "line": 231,
+      "line": 255,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",

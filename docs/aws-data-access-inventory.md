@@ -1,6 +1,6 @@
 # Supabase data-access inventory
 
-**Inventory date:** 2026-08-31
+**Inventory date:** 2026-09-01
 **Evidence:** first-party `src/**/*.ts(x)` only; protected integration demo,
 tests, backups, generated output and vendor directories excluded
 
@@ -15,21 +15,21 @@ boundaries, or the live schema.
 
 | Measure | Static count |
 |---|---:|
-| First-party source files scanned | 211 |
-| `.from(...)` calls | 478 |
+| First-party source files scanned | 222 |
+| `.from(...)` calls | 486 |
 | `.rpc(...)` calls | 65 |
-| Combined data calls | 543 |
+| Combined data calls | 551 |
 | Auth/session/Auth Admin calls | 39 |
-| Distinct table/view/RPC targets | 87 |
+| Distinct table/view/RPC targets | 88 |
 | Browser data calls | 24 |
-| Server data calls | 519 |
-| Calls statically associated with service-role context | 480 |
+| Server data calls | 527 |
+| Calls statically associated with service-role context | 468 |
 | Server-user calls | 14 |
-| Client privilege uncertain | 25 |
+| Client privilege uncertain | 45 |
 
-Classified operations are 296 selects, 72 inserts, 58 updates, 24 upserts, 22
-deletes, 65 RPCs, and 6 unknown chains. An independent token count finds 345
-`.select`, 73 `.insert`, 61 `.update`, 24 `.upsert`, and 23 `.delete` tokens;
+Classified operations are 299 selects, 75 inserts, 58 updates, 24 upserts, 23
+deletes, 65 RPCs, and 7 unknown chains. An independent token count finds 349
+`.select`, 76 `.insert`, 61 `.update`, 24 `.upsert`, and 24 `.delete` tokens;
 these totals differ because selection after mutation and variable-built chains
 can contain more than one operation token per `.from` call.
 
@@ -86,9 +86,10 @@ must deny access.
 | `GET /api/settings/current-rules` | One department-scoped read with deterministic policy defaults | Selected in wave 2; exact query/default/tenant/error contracts are tested. |
 | `GET /api/command-dashboard/operations` | Authorized read-only route, but joins two bounded contexts, tolerates missing tables, runs concurrent queries and derives time-sensitive aggregates | Rejected for the first pilot. Multi-source fallback and clock behavior materially increase parity risk. |
 
-Seven selected routes now use narrow server-only repositories: qualification
+Ten selected routes now use narrow server-only repositories: qualification
 history, current department rules, certification types, the agency-training
-course catalog, and equipment types, assets/member directory, and requirements.
+course catalog, equipment types, assets/member directory and requirements,
+settings overview, and equipment and certification readiness.
 Supabase is the only/default implementation.
 It requires the authorized department at construction and as explicit method
 input, rejects a mismatch before querying, exposes no generic table/filter/RPC
@@ -111,6 +112,15 @@ reads. It preserves the existing permission and support-mode gates, projections,
 ordering, empty-profile short circuit, member aggregation, and provider error
 messages. The authorization-sensitive non-support membership RPC remains direct
 and unchanged.
+
+The readiness wave moved ten reads used by the equipment and certification
+readiness GET handlers behind one tenant-bound repository. Both production
+callers retain their feature and permission gates. Equipment self-only
+visibility is applied to both memberships and assigned assets before provider
+access. Exact projections, active/required filters, profile fallbacks, empty
+profile short-circuiting, aggregation output, and provider error messages are
+covered by focused tests. Twenty-nine of 551 static data calls are now behind
+production repository boundaries; Supabase remains the sole/default provider.
 
 ## Ordered conversion waves
 
