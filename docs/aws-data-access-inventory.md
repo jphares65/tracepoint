@@ -104,6 +104,14 @@ department-wide permission remain restricted to their own assigned assets. The
 Supabase adapter preserves projections, active-member filtering and sort order;
 all colocated POST/PATCH paths remain direct and unchanged.
 
+The settings-overview wave moved ten reads behind one tenant-bound repository:
+department, rules, permission-gated security settings, role and permission
+catalogs, department role permissions, and four support-mode membership/profile
+reads. It preserves the existing permission and support-mode gates, projections,
+ordering, empty-profile short circuit, member aggregation, and provider error
+messages. The authorization-sensitive non-support membership RPC remains direct
+and unchanged.
+
 ## Ordered conversion waves
 
 1. Complete low-risk server-only single-table reads by bounded context, with

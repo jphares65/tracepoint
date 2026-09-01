@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | seven tenant-bound server repository callers; Supabase otherwise direct and authoritative | 9 provider reads across 7 GET paths | exact tenant/filter/field/order/visibility contracts and negative tests pass; no Aurora/RDS provider exists |
+| Data | eight tenant-bound server repository callers; Supabase otherwise direct and authoritative | 19 provider reads across 8 GET paths | exact tenant/filter/field/order/visibility/permission contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -49,3 +49,13 @@ boundary covers five reads, preserves self-only asset visibility for users
 without department-wide permission, and denies missing/mismatched department or
 user context before provider access. Nine of 543 static data calls are now behind
 production repository boundaries; Supabase remains sole/default.
+
+The settings-overview wave moves ten direct reads behind a tenant-bound boundary:
+department, rules, permission-gated security settings, role and permission
+catalogs, department role permissions, and the four support-mode membership
+aggregation reads. The production route retains `resolveServerAccess`, the
+`manage_users`/`administer_department` gates, support-mode branching, and the
+authorization-sensitive `get_department_members` RPC. Cross-tenant input is
+rejected before provider access; security and member reads are skipped when the
+existing permissions do not allow them. Nineteen of 543 static data calls are now
+behind production repository boundaries; Supabase remains sole/default.
