@@ -73,16 +73,26 @@ test("pins attachment operations to the private bucket and preserves path format
     bytes,
     contentType: "application/pdf",
   });
+  const drill = await store.uploadDrillDocument({
+    departmentId: "department-a",
+    recordId: "drill-template-a",
+    objectId: "object-d",
+    fileName: "range diagram.webp",
+    bytes,
+    contentType: "image/webp",
+  });
 
   assert.equal(qualification.path, "department-a/qualification/result%2Fa/object-a-target-photo.png");
   assert.equal(training.path, "department-a/agency-training/event-a/object-b-lesson-plan.pdf");
   assert.equal(firearm.path, "department-a/firearm/firearm-a/object-c-receipt-signed-.pdf");
+  assert.equal(drill.path, "department-a/drill-document/drill-template-a/object-d-range-diagram.webp");
   assert.deepEqual(
     calls.map(({ bucket, operation, options }) => ({ bucket, operation, options })),
     [
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "image/png", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
+      { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "image/webp", upsert: false } },
     ],
   );
 });
@@ -100,6 +110,20 @@ test("uses a 60-second attachment download and preserves the download filename",
     operation: "sign",
     path: "department-a/firearm/a/object.pdf",
     options: { expiresIn: 60, download: "Evidence.pdf" },
+  });
+});
+
+test("uses a 60-second inline view without forcing a download", async () => {
+  const calls: Call[] = [];
+  const store = new SupabaseObjectStore(createClient(calls));
+  await store.createAttachmentView(
+    attachmentPathFromMetadata("department-a/drill-document/drill-a/object.pdf", "department-a")!,
+  );
+  assert.deepEqual(calls[0], {
+    bucket: "tracepoint-attachments",
+    operation: "sign",
+    path: "department-a/drill-document/drill-a/object.pdf",
+    options: { expiresIn: 60 },
   });
 });
 
@@ -124,6 +148,13 @@ test("accepts only attachment paths rooted in the authorized department", () => 
       "department-a",
     ),
     "department-a/firearm/firearm-a/object.pdf",
+  );
+  assert.equal(
+    attachmentPathFromMetadata(
+      "department-a/drill-document/drill-a/object.pdf",
+      "department-a",
+    ),
+    "department-a/drill-document/drill-a/object.pdf",
   );
 });
 

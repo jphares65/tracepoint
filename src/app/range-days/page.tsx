@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
 import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
+import DrillDocuments from "@/app/components/DrillDocuments";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -4945,20 +4946,16 @@ export default function RangeDaysPage() {
                     </p>
                   ) : (
                     selectedDrills.map((drill) => (
-                      <button
+                      <div
                         key={drill.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedDrillId(drill.id);
-                          resetEntryForm(1);
-                        }}
                         className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                           selectedDrill?.id === drill.id
                             ? "border-blue-500/50 bg-blue-500/10"
                             : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <button type="button" onClick={() => { setSelectedDrillId(drill.id); resetEntryForm(1); }} className="w-full text-left">
+                          <div className="flex items-start justify-between gap-2">
                           <div>
                             <p className="text-[13px] font-semibold text-white">
                               {drill.name}
@@ -4972,14 +4969,16 @@ export default function RangeDaysPage() {
                           </span>
                         </div>
 
-                        <div className="mt-2 flex flex-wrap gap-2">
+                          <div className="mt-2 flex flex-wrap gap-2">
                           <StatusPill label={drill.category} />
                           <StatusPill label={getScoringFormat(drill)} tone="slate" />
                           {drill.isDepartmentStandard ? (
                             <StatusPill label="Department Standard" tone="green" />
                           ) : null}
-                        </div>
-                      </button>
+                          </div>
+                        </button>
+                        {drill.sourceTemplateId ? <div className="mt-3"><DrillDocuments drillTemplateId={drill.sourceTemplateId} compact /></div> : null}
+                      </div>
                     ))
                   )}
                 </div>
@@ -5661,7 +5660,7 @@ export default function RangeDaysPage() {
                           </div>
                         ) : null}
 
-                        <div className="mt-4 grid grid-cols-[auto_1fr] gap-2">
+                        <div className="mt-4 grid grid-cols-2 gap-2">
                           <button
                             type="button"
                             onClick={() => handleEditDrillTemplate(template)}
@@ -5685,6 +5684,7 @@ export default function RangeDaysPage() {
                             Add to This Range Day
                           </button>
                         </div>
+                        <div className="mt-2"><DrillDocuments drillTemplateId={template.id} /></div>
                       </div>
                     ))}
                   </div>

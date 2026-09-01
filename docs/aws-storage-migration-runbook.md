@@ -9,6 +9,15 @@ client-supplied prefix. Preserve original filename/content type in protected
 metadata, not as an authorization-bearing key. Map `tracepoint-attachments` and
 `department-assets` separately by lifecycle/policy.
 
+Drill Library documents use the provider-neutral category
+`{department_uuid}/drill-document/{drill_template_key}/{object_uuid}-name` in
+Supabase. During S3 migration, retain `drill_documents.storage_path` as the
+logical object key (or record an explicit old-to-new key mapping), place the
+objects in the private attachment bucket, and preserve original filename, MIME,
+size, uploader, tenant and Drill Library key from metadata. Do not copy these
+objects into Range Day-specific prefixes; Range Days continue resolving them
+through their source Drill Library template.
+
 ## Controls
 
 Private S3, Block Public Access, BucketOwnerEnforced, TLS-only bucket policy,

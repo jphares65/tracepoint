@@ -26,11 +26,13 @@ export interface ObjectStore {
   uploadQualificationEvidence(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadTrainingFile(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadFirearmAttachment(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
+  uploadDrillDocument(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   removeAttachment(path: AttachmentObjectPath): Promise<ObjectStoreResult>;
   createAttachmentDownload(
     path: AttachmentObjectPath,
     fileName: string,
   ): Promise<SignedDownloadResult>;
+  createAttachmentView(path: AttachmentObjectPath): Promise<SignedDownloadResult>;
   uploadDepartmentPatch(input: DepartmentPatchUploadInput): Promise<StoredObjectResult<DepartmentAssetObjectPath>>;
   getDepartmentPatchPublicUrl(path: DepartmentAssetObjectPath): string;
   removeDepartmentPatch(path: DepartmentAssetObjectPath): Promise<ObjectStoreResult>;
@@ -68,7 +70,7 @@ type SupabaseBucket = {
   createSignedUrl(
     path: string,
     expiresIn: number,
-    options: { download: string },
+    options: { download?: string },
   ): Promise<StorageResponse<{ signedUrl?: string }>>;
   getPublicUrl(path: string): { data: { publicUrl: string } };
 };
@@ -93,6 +95,7 @@ const ATTACHMENT_DOMAINS = new Set([
   "qualification",
   "agency-training",
   "firearm",
+  "drill-document",
 ]);
 
 function safelyDecodePathSegment(segment: string) {
@@ -183,6 +186,15 @@ export class SupabaseObjectStore implements ObjectStore {
     );
   }
 
+  uploadDrillDocument(input: AttachmentUploadInput) {
+    return this.uploadAttachment(
+      attachmentPath(
+        `${input.departmentId}/drill-document/${encodeURIComponent(input.recordId)}/${input.objectId}-${safeName(input.fileName, "document", true)}`,
+      ),
+      input,
+    );
+  }
+
   async removeAttachment(path: AttachmentObjectPath): Promise<ObjectStoreResult> {
     const result = await this.client.storage.from("tracepoint-attachments").remove([path]);
     return { error: result.error };
@@ -195,6 +207,18 @@ export class SupabaseObjectStore implements ObjectStore {
     const result = await this.client.storage
       .from("tracepoint-attachments")
       .createSignedUrl(path, 60, { download: fileName });
+    return {
+      signedUrl: result.data?.signedUrl ?? null,
+      error: result.error,
+    };
+  }
+
+  async createAttachmentView(
+    path: AttachmentObjectPath,
+  ): Promise<SignedDownloadResult> {
+    const result = await this.client.storage
+      .from("tracepoint-attachments")
+      .createSignedUrl(path, 60, {});
     return {
       signedUrl: result.data?.signedUrl ?? null,
       error: result.error,
