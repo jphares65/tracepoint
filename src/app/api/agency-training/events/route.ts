@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
+import { mapAgencyTrainingEvent } from "@/lib/agency-training/read-repository-core";
 
 import {
   accessFailureResponse,
@@ -62,113 +64,20 @@ function topics(value: unknown) {
   ).slice(0, 50);
 }
 
-function mapEvent(row: any) {
-  const attendees = Array.isArray(row.agency_training_attendees)
-    ? row.agency_training_attendees
-    : [];
-  const instructors = Array.isArray(row.agency_training_event_instructors)
-    ? row.agency_training_event_instructors
-    : [];
-
-  return {
-    id: row.id,
-    title: row.title,
-    courseId: row.course_id,
-    trainingType: row.training_type,
-    category: row.category,
-    description: row.description,
-    topics: row.topics ?? [],
-    location: row.location,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-    defaultHours: row.default_hours,
-    status: row.status,
-    certificationTypeId: row.certification_type_id,
-    certificationValidDays: row.certification_valid_days,
-    certificateEnabled: row.certificate_enabled,
-    certificateTitle: row.certificate_title,
-    lessonPlanRequired: row.lesson_plan_required,
-    notes: row.notes,
-    closedAt: row.closed_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    attendeeCount: attendees.length,
-    completedCount: attendees.filter((attendee: any) =>
-      ["completed", "passed"].includes(String(attendee.outcome_status)),
-    ).length,
-    instructorCount: instructors.length,
-    leadInstructorUserId:
-      instructors.find((instructor: any) => instructor.is_lead)?.user_id ?? null,
-    leadInstructor:
-      instructors.find((instructor: any) => instructor.is_lead)?.display_name ??
-      instructors[0]?.display_name ??
-      null,
-    leadInstructorOrganization:
-      instructors.find((instructor: any) => instructor.is_lead)?.organization ?? null,
-    leadInstructorCredentials:
-      instructors.find((instructor: any) => instructor.is_lead)?.credentials ?? null,
-    leadInstructorRole:
-      instructors.find((instructor: any) => instructor.is_lead)?.instructor_role ?? null,
-    additionalInstructors: instructors
-      .filter((instructor: any) => !instructor.is_lead)
-      .map((instructor: any) => ({
-        userId: instructor.user_id,
-        displayName: instructor.display_name,
-        organization: instructor.organization,
-        credentials: instructor.credentials,
-        instructorRole: instructor.instructor_role,
-      })),
-  };
-}
-
 export async function GET() {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
 
   const context = resolved.context;
-  const { data, error } = await context.admin
-    .from("agency_training_events")
-    .select(
-      [
-        "id",
-        "title",
-        "course_id",
-        "training_type",
-        "category",
-        "description",
-        "topics",
-        "location",
-        "starts_at",
-        "ends_at",
-        "default_hours",
-        "status",
-        "certification_type_id",
-        "certification_valid_days",
-        "certificate_enabled",
-        "certificate_title",
-        "lesson_plan_required",
-        "notes",
-        "closed_at",
-        "created_at",
-        "updated_at",
-        "agency_training_attendees(id,outcome_status)",
-        "agency_training_event_instructors(id,user_id,display_name,organization,credentials,instructor_role,is_lead)",
-      ].join(","),
-    )
-    .eq("department_id", context.departmentId)
-    .order("starts_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json(
-    {
-      events: (data ?? []).map(mapEvent),
+  try {
+    const events = await createAgencyTrainingReadRepository(context.admin, context.departmentId).listEvents({ departmentId: context.departmentId });
+    return NextResponse.json({
+      events,
       canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),
-    },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Training events could not be loaded." }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -479,7 +388,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   return NextResponse.json(
-    { event: mapEvent(createdEvent.data ?? inserted.data) },
+    { event: mapAgencyTrainingEvent(createdEvent.data ?? inserted.data) },
     { status: 201 },
   );
 }

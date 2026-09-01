@@ -40,9 +40,9 @@ deployment is **100%** for bootstrap/network/security/compute, while runtime is
 **0%**. Email conversion is **100%** of the two
 inventoried callers; storage boundary conversion is **100%** of the five direct
 call sites, with deferred lifecycle policy; database/data-access conversion is
-approximately **5.3%** (29 of 551 static calls behind used repository boundaries);
+approximately **6.0%** (33 of 551 static calls behind used repository boundaries);
 Auth conversion is **0%**.
-Total provider conversion is approximately **16%**, and total migration is
+Total provider conversion is approximately **17%**, and total migration is
 approximately **45%**, reflecting completed staging foundation infrastructure
 but no runtime acceptance, data/identity migration, or production cutover.
 

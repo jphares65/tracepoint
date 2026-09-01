@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 
 import {
   accessFailureResponse,
@@ -45,21 +46,15 @@ export async function GET() {
   if (!resolved.ok) return accessFailureResponse(resolved);
 
   const context = resolved.context;
-  const { data, error } = await context.admin
-    .from("agency_training_requirements")
-    .select("*,agency_training_courses(id,canonical_title)")
-    .eq("department_id", context.departmentId)
-    .order("requirement_name", { ascending: true });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  return NextResponse.json(
-    {
-      requirements: data ?? [],
+  try {
+    const requirements = await createAgencyTrainingReadRepository(context.admin, context.departmentId).listRequirements({ departmentId: context.departmentId });
+    return NextResponse.json({
+      requirements,
       canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),
-    },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Training requirements could not be loaded." }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {

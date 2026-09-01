@@ -15,7 +15,7 @@ boundaries, or the live schema.
 
 | Measure | Static count |
 |---|---:|
-| First-party source files scanned | 222 |
+| First-party source files scanned | 225 |
 | `.from(...)` calls | 486 |
 | `.rpc(...)` calls | 65 |
 | Combined data calls | 551 |
@@ -86,10 +86,11 @@ must deny access.
 | `GET /api/settings/current-rules` | One department-scoped read with deterministic policy defaults | Selected in wave 2; exact query/default/tenant/error contracts are tested. |
 | `GET /api/command-dashboard/operations` | Authorized read-only route, but joins two bounded contexts, tolerates missing tables, runs concurrent queries and derives time-sensitive aggregates | Rejected for the first pilot. Multi-source fallback and clock behavior materially increase parity risk. |
 
-Ten selected routes now use narrow server-only repositories: qualification
+Thirteen selected routes now use narrow server-only repositories: qualification
 history, current department rules, certification types, the agency-training
 course catalog, equipment types, assets/member directory and requirements,
-settings overview, and equipment and certification readiness.
+settings overview, equipment and certification readiness, and Agency Training
+instructors, requirements, and events.
 Supabase is the only/default implementation.
 It requires the authorized department at construction and as explicit method
 input, rejects a mismatch before querying, exposes no generic table/filter/RPC
@@ -121,6 +122,15 @@ access. Exact projections, active/required filters, profile fallbacks, empty
 profile short-circuiting, aggregation output, and provider error messages are
 covered by focused tests. Twenty-nine of 551 static data calls are now behind
 production repository boundaries; Supabase remains the sole/default provider.
+
+The Agency Training read wave moved four more reads behind the tenant-bound
+boundary: active instructor memberships and their profiles, recurring training
+requirements with course references, and the event catalog with attendee and
+instructor aggregates. The three GET handlers preserve their exact projections,
+tenant filters, ordering, mapping, permission-derived `canManage` value, empty
+results, and provider error responses. Colocated event and requirement mutations
+remain direct and unchanged. Thirty-three of 551 static data calls are now behind
+production repository boundaries.
 
 ## Ordered conversion waves
 
