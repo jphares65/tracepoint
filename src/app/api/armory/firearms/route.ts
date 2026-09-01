@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createArmoryReadRepository } from "@/lib/armory/read-repository";
 
 import {
   accessFailureResponse,
@@ -8,29 +9,6 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
-type ArmoryMember = {
-  user_id: string;
-  full_name: string;
-  email: string;
-  rank_title?: string | null;
-  badge_number?: string | null;
-};
-
-type SupabaseAuthUser = {
-  id: string;
-  email?: string | null;
-  user_metadata?: {
-    full_name?: string;
-    name?: string;
-    display_name?: string;
-  } | null;
-};
-
-type ProfileRecord = {
-  id: string;
-  full_name?: string | null;
-  email?: string | null;
-};
 
 const VALID_FIREARM_TYPES = [
   "handgun",
@@ -50,88 +28,6 @@ const VALID_STATUSES = [
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function getDisplayName(
-  profile?: ProfileRecord | null,
-  user?: SupabaseAuthUser | null,
-) {
-  const metadata = user?.user_metadata ?? {};
-
-  return (
-    profile?.full_name ||
-    metadata.full_name ||
-    metadata.name ||
-    metadata.display_name ||
-    profile?.email ||
-    user?.email ||
-    "Unknown User"
-  );
-}
-
-async function getDepartmentMembers(
-  db: any,
-  admin: any,
-  departmentId: string,
-): Promise<ArmoryMember[]> {
-  const { data: memberships, error } = await db
-    .from("department_memberships")
-    .select("user_id,rank_title,badge_number")
-    .eq("department_id", departmentId)
-    .eq("is_active", true);
-
-  if (error) throw new Error(error.message);
-
-  const userIds = (memberships ?? [])
-    .map((membership: any) => membership.user_id)
-    .filter(Boolean);
-
-  const profilesById = new Map<string, ProfileRecord>();
-
-  if (userIds.length > 0) {
-    const { data: profiles, error: profilesError } = await db
-      .from("profiles")
-      .select("id,full_name,email")
-      .in("id", userIds);
-
-    if (profilesError) throw new Error(profilesError.message);
-
-    (profiles ?? []).forEach((profile: ProfileRecord) => {
-      profilesById.set(profile.id, profile);
-    });
-  }
-
-  const { data: usersData, error: usersError } =
-    await admin.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-
-  if (usersError) throw new Error(usersError.message);
-
-  const usersById = new Map<string, SupabaseAuthUser>(
-    ((usersData?.users ?? []) as SupabaseAuthUser[]).map((user) => [
-      user.id,
-      user,
-    ]),
-  );
-
-  return (memberships ?? [])
-    .map((membership: any) => {
-      const user = usersById.get(membership.user_id);
-      const profile = profilesById.get(membership.user_id);
-
-      return {
-        user_id: membership.user_id,
-        full_name: getDisplayName(profile, user),
-        email: profile?.email ?? user?.email ?? "",
-        rank_title: membership.rank_title ?? null,
-        badge_number: membership.badge_number ?? null,
-      };
-    })
-    .sort((left: ArmoryMember, right: ArmoryMember) =>
-      left.full_name.localeCompare(right.full_name),
-    );
 }
 
 function responseError(error: unknown, fallback: string) {
@@ -176,108 +72,8 @@ export async function GET(request: NextRequest) {
   ]);
 
   try {
-    let assignmentsQuery = context.db
-      .from("firearm_assignments")
-      .select(
-        "id,firearm_id,assigned_to_user_id,assigned_at,magazines_issued,magazine_description,magazines_returned,magazine_discrepancy_reason",
-      )
-      .eq("department_id", context.departmentId)
-      .is("returned_at", null);
-
-    if (!canViewAll) {
-      assignmentsQuery = assignmentsQuery.eq(
-        "assigned_to_user_id",
-        context.userId,
-      );
-    }
-
-    const { data: assignments, error: assignmentsError } =
-      await assignmentsQuery;
-
-    if (assignmentsError) {
-      throw new Error(assignmentsError.message);
-    }
-
-    const firearmIds = Array.from(
-      new Set(
-        (assignments ?? [])
-          .map((assignment: any) => assignment.firearm_id)
-          .filter(Boolean),
-      ),
-    );
-
-    let firearms: any[] = [];
-
-    if (canViewAll || firearmIds.length > 0) {
-      let firearmsQuery = context.db
-        .from("firearms")
-        .select(
-          "id,department_id,make,model,serial_number,firearm_type,caliber,asset_number,condition_status,notes,needs_attention,attention_reasons,is_active,archived_at,archived_by_user_id,archive_reason,created_at,updated_at",
-        )
-        .eq("department_id", context.departmentId)
-        .order("make", { ascending: true })
-        .order("model", { ascending: true });
-
-      if (!includeArchived) {
-        firearmsQuery = firearmsQuery.eq("is_active", true);
-      }
-
-      if (!canViewAll) {
-        firearmsQuery = firearmsQuery.eq("is_active", true);
-      }
-
-      if (!canViewAll) {
-        firearmsQuery = firearmsQuery.in("id", firearmIds);
-      }
-
-      const firearmsResult = await firearmsQuery;
-
-      if (firearmsResult.error) {
-        throw new Error(firearmsResult.error.message);
-      }
-
-      firearms = firearmsResult.data ?? [];
-    }
-
-    const members = await getDepartmentMembers(
-      context.db,
-      context.admin,
-      context.departmentId,
-    );
-    const membersById = new Map(
-      members.map((member) => [member.user_id, member]),
-    );
-
-    const assignmentsByFirearmId = new Map(
-      (assignments ?? []).map((assignment: any) => [
-        assignment.firearm_id,
-        {
-          ...assignment,
-          assigned_to_name:
-            membersById.get(assignment.assigned_to_user_id)?.full_name ??
-            "Unknown User",
-        },
-      ]),
-    );
-
-    return NextResponse.json(
-      {
-        departmentId: context.departmentId,
-        firearms: firearms.map((firearm: any) => ({
-          ...firearm,
-          condition_status: firearm.condition_status ?? "In Service",
-          active_assignment:
-            assignmentsByFirearmId.get(firearm.id) ?? null,
-        })),
-        members: canManage ? members : [],
-        access: {
-          canViewAll,
-          canManage,
-          canInspect,
-        },
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    const data = await createArmoryReadRepository(context.db, context.admin, context.departmentId, context.userId).getFirearmInventory({ departmentId: context.departmentId, userId: context.userId, includeArchived, canViewAll, canManage, canInspect });
+    return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return responseError(
       error,
@@ -337,14 +133,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!VALID_FIREARM_TYPES.includes(firearmType as any)) {
+  if (!VALID_FIREARM_TYPES.includes(firearmType as (typeof VALID_FIREARM_TYPES)[number])) {
     return NextResponse.json(
       { error: "Invalid firearm type." },
       { status: 400 },
     );
   }
 
-  if (!VALID_STATUSES.includes(conditionStatus as any)) {
+  if (!VALID_STATUSES.includes(conditionStatus as (typeof VALID_STATUSES)[number])) {
     return NextResponse.json(
       { error: "Invalid firearm status." },
       { status: 400 },

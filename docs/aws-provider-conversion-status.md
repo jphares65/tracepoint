@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | thirteen tenant-bound server repository callers; Supabase otherwise direct and authoritative | 33 provider reads across 13 GET paths | exact tenant/filter/field/order/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
+| Data | fifteen tenant-bound server repository callers; Supabase otherwise direct and authoritative | 38 provider reads across 15 GET paths | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -73,3 +73,9 @@ fallbacks and sorting, requirement course relation and ordering, event aggregate
 mapping, and each route's existing permission-derived response. All colocated
 mutations remain direct and behaviorally unchanged. Thirty-three of 551 static
 data calls are now behind production repository boundaries.
+
+The first Armory read checkpoint adds five reads across firearm inventory and
+inspection history. Department-wide versus assigned-user visibility, archived
+filtering, active assignment/member mapping, access flags, inspection joins,
+ordering, limits, and provider errors are preserved. Thirty-eight of 551 calls
+are behind production repository boundaries; Armory mutations remain direct.

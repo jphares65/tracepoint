@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createArmoryReadRepository } from "@/lib/armory/read-repository";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -68,41 +69,8 @@ export async function GET() {
       return featureError;
     }
 
-    const supabase = context.db;
-    const departmentId = context.departmentId;
-    const { data, error } = await supabase
-      .from("firearm_inspections")
-      .select(
-        `
-        *,
-        firearm:firearms (
-          id,
-          make,
-          model,
-          serial_number,
-          asset_number,
-          condition_status
-        ),
-        items:firearm_inspection_items (
-          id,
-          section,
-          label,
-          status,
-          note,
-          critical,
-          sort_order
-        )
-      `,
-      )
-      .eq("department_id", departmentId)
-      .order("inspection_date", { ascending: false })
-      .limit(100);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ inspections: data ?? [] });
+    const inspections = await createArmoryReadRepository(context.db, context.admin, context.departmentId, context.userId).listInspections({ departmentId: context.departmentId, userId: context.userId });
+    return NextResponse.json({ inspections });
   } catch (error) {
     return NextResponse.json(
       {
@@ -299,4 +267,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

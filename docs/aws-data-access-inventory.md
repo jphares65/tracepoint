@@ -15,7 +15,7 @@ boundaries, or the live schema.
 
 | Measure | Static count |
 |---|---:|
-| First-party source files scanned | 225 |
+| First-party source files scanned | 228 |
 | `.from(...)` calls | 486 |
 | `.rpc(...)` calls | 65 |
 | Combined data calls | 551 |
@@ -86,7 +86,7 @@ must deny access.
 | `GET /api/settings/current-rules` | One department-scoped read with deterministic policy defaults | Selected in wave 2; exact query/default/tenant/error contracts are tested. |
 | `GET /api/command-dashboard/operations` | Authorized read-only route, but joins two bounded contexts, tolerates missing tables, runs concurrent queries and derives time-sensitive aggregates | Rejected for the first pilot. Multi-source fallback and clock behavior materially increase parity risk. |
 
-Thirteen selected routes now use narrow server-only repositories: qualification
+Fifteen selected routes now use narrow server-only repositories: qualification
 history, current department rules, certification types, the agency-training
 course catalog, equipment types, assets/member directory and requirements,
 settings overview, equipment and certification readiness, and Agency Training
@@ -131,6 +131,13 @@ tenant filters, ordering, mapping, permission-derived `canManage` value, empty
 results, and provider error responses. Colocated event and requirement mutations
 remain direct and unchanged. Thirty-three of 551 static data calls are now behind
 production repository boundaries.
+
+The first Armory read checkpoint moves five reads across firearm inventory and
+inspection-history GET handlers. It preserves archived and self-only visibility,
+active assignment and member mapping, Auth Admin display-name fallbacks, feature
+and permission-derived access flags, inspection joins, descending date order,
+and the 100-row inspection limit. Thirty-eight of 551 static data calls are now
+behind production repository boundaries; all colocated mutations remain direct.
 
 ## Ordered conversion waves
 
