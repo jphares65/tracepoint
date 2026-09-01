@@ -6,6 +6,7 @@ import {
   nullableText,
   text,
 } from "@/lib/tracepoint/equipment-server";
+import { createEquipmentReadRepository } from "@/lib/equipment/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -20,91 +21,26 @@ export async function GET() {
 
   if ("error" in context) return context.error;
 
-  let query = context.db
-    .from("equipment_assets")
-    .select("*")
-    .eq("department_id", context.departmentId)
-    .order("created_at", { ascending: false });
-
-  if (!context.canViewDepartment) {
-    query = query.eq(
-      "assigned_user_id",
-      context.user.id,
-    );
-  }
-
-  const { data: assets, error } = await query;
-
-  if (error) {
+  try {
+    const result = await createEquipmentReadRepository(
+      context.db,
+      context.departmentId,
+    ).getAssetDirectory({
+      departmentId: context.departmentId,
+      userId: context.user.id,
+      canViewDepartment: context.canViewDepartment,
+    });
+    return NextResponse.json({
+      ...result,
+      canManage: context.canManage,
+      canViewDepartment: context.canViewDepartment,
+    });
+  } catch (error) {
     return NextResponse.json(
-      { error: error.message },
+      { error: error instanceof Error ? error.message : "Equipment data could not be loaded." },
       { status: 500 },
     );
   }
-
-  const { data: members, error: memberError } =
-    await context.db
-      .from("department_memberships")
-      .select(
-        "user_id,badge_number,rank_title,unit_name,is_active",
-      )
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true);
-
-  if (memberError) {
-    return NextResponse.json(
-      { error: memberError.message },
-      { status: 500 },
-    );
-  }
-
-  const userIds = (members ?? []).map((row: any) =>
-    String(row.user_id),
-  );
-
-  let profiles: any[] = [];
-
-  if (userIds.length > 0) {
-    const { data, error: profileError } =
-      await context.db
-        .from("profiles")
-        .select("id,full_name")
-        .in("id", userIds);
-
-    if (profileError) {
-      return NextResponse.json(
-        { error: profileError.message },
-        { status: 500 },
-      );
-    }
-
-    profiles = data ?? [];
-  }
-
-  const profileMap = new Map(
-    profiles.map((row: any) => [
-      String(row.id),
-      row.full_name,
-    ]),
-  );
-
-  return NextResponse.json({
-    items: assets ?? [],
-
-    members: (members ?? []).map((row: any) => ({
-      userId: String(row.user_id),
-      fullName:
-        text(profileMap.get(String(row.user_id))) ||
-        text(row.rank_title) ||
-        "Unnamed Officer",
-      badgeNumber: row.badge_number ?? null,
-      rankTitle: row.rank_title ?? null,
-      unitName: row.unit_name ?? null,
-    })),
-
-    canManage: context.canManage,
-    canViewDepartment: context.canViewDepartment,
-  });
 }
 
 export async function POST(request: NextRequest) {

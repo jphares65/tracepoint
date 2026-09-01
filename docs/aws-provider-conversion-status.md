@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | typed server-only qualification-history repository; Supabase otherwise direct and authoritative | 1 read path | exact tenant/origin/field/order contract and negative tests pass; no Aurora/RDS provider exists |
+| Data | seven tenant-bound server repository callers; Supabase otherwise direct and authoritative | 9 provider reads across 7 GET paths | exact tenant/filter/field/order/visibility contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -42,3 +42,10 @@ no mutation method, maps provider errors to a stable non-leaking 500 message, an
 rejects unsupported providers. The deterministic source inventory still records
 543 data calls; the selected direct route call moved behind the repository rather
 than disappearing from the Supabase implementation.
+
+Waves 2 and 3 add current department rules, certification types, the
+agency-training course catalog, and three equipment GET paths. The equipment
+boundary covers five reads, preserves self-only asset visibility for users
+without department-wide permission, and denies missing/mismatched department or
+user context before provider access. Nine of 543 static data calls are now behind
+production repository boundaries; Supabase remains sole/default.

@@ -11,7 +11,8 @@ Local preparation is approximately **96%** complete. AWS staging deployment is
 **0%** (no bootstrap or stacks). Email conversion is **100%** of the two
 inventoried callers; storage boundary conversion is **100%** of the five direct
 call sites, with deferred lifecycle policy; database/data-access conversion is
-approximately **1%** (one of hundreds of static calls); Auth conversion is **0%**.
+approximately **2%** (nine of 543 static calls behind used repository boundaries);
+Auth conversion is **0%**.
 Total provider conversion is approximately **12%**, and total migration is
 approximately **34%**, reflecting that infrastructure deployment,
 staging acceptance, data/identity work, and production cutover remain undone.

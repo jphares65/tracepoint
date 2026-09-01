@@ -7,6 +7,7 @@ import {
   nullableText,
   text,
 } from "@/lib/tracepoint/equipment-server";
+import { createEquipmentReadRepository } from "@/lib/equipment/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -102,23 +103,18 @@ export async function GET() {
 
   if ("error" in context) return context.error;
 
-  const { data, error } = await context.db
-    .from("department_equipment_requirements")
-    .select("*")
-    .eq("department_id", context.departmentId)
-    .order("created_at");
-
-  if (error) {
+  try {
+    const items = await createEquipmentReadRepository(
+      context.db,
+      context.departmentId,
+    ).listRequirements({ departmentId: context.departmentId });
+    return NextResponse.json({ items, canManage: context.canManage });
+  } catch (error) {
     return NextResponse.json(
-      { error: error.message },
+      { error: error instanceof Error ? error.message : "Equipment requirements could not be loaded." },
       { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    items: data ?? [],
-    canManage: context.canManage,
-  });
 }
 
 export async function POST(request: NextRequest) {

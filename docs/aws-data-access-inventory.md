@@ -15,7 +15,7 @@ boundaries, or the live schema.
 
 | Measure | Static count |
 |---|---:|
-| First-party source files scanned | 208 |
+| First-party source files scanned | 211 |
 | `.from(...)` calls | 478 |
 | `.rpc(...)` calls | 65 |
 | Combined data calls | 543 |
@@ -86,14 +86,23 @@ must deny access.
 | `GET /api/settings/current-rules` | One department-scoped read with deterministic policy defaults | Selected in wave 2; exact query/default/tenant/error contracts are tested. |
 | `GET /api/command-dashboard/operations` | Authorized read-only route, but joins two bounded contexts, tolerates missing tables, runs concurrent queries and derives time-sensitive aggregates | Rejected for the first pilot. Multi-source fallback and clock behavior materially increase parity risk. |
 
-Four selected routes now use narrow server-only repositories: qualification
-history, current department rules, certification types, and the agency-training
-course catalog. Supabase is the only/default implementation.
+Seven selected routes now use narrow server-only repositories: qualification
+history, current department rules, certification types, the agency-training
+course catalog, and equipment types, assets/member directory, and requirements.
+Supabase is the only/default implementation.
 It requires the authorized department at construction and as explicit method
 input, rejects a mismatch before querying, exposes no generic table/filter/RPC
 surface, preserves fields/filters/order/null-list mapping, maps provider failure
 to a stable 500 message, and rejects unsupported provider selection. No mutation,
 Auth, RLS, audit, notification or adjacent qualification path changed.
+
+The equipment wave moved five reads used by three GET handlers behind one
+tenant-bound repository: type catalog, assets, active memberships, member
+profiles, and requirements. The core requires the server-resolved department on
+every entry point and the authenticated user for asset visibility. Users without
+department-wide permission remain restricted to their own assigned assets. The
+Supabase adapter preserves projections, active-member filtering and sort order;
+all colocated POST/PATCH paths remain direct and unchanged.
 
 ## Ordered conversion waves
 
