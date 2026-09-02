@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { attachmentPathFromMetadata, createObjectStore } from "@/lib/storage/object-store";
+import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
 
 type RouteContext = { params: Promise<{ attachmentId: string }> };
 
@@ -9,12 +10,11 @@ export async function GET(_request: Request, routeContext: RouteContext) {
   if (!resolved.ok) return accessFailureResponse(resolved);
   const { attachmentId } = await routeContext.params;
   const { admin, departmentId } = resolved.context;
-  const row = await admin.from("attachments").select("storage_path,file_name")
-    .eq("id", attachmentId).eq("department_id", departmentId).is("archived_at", null).maybeSingle();
-  if (row.error) return NextResponse.json({ error: row.error.message }, { status: 500 });
-  if (!row.data) return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
+  try {
+  const row = await createEvidenceReadRepository(admin, departmentId).getAttachment(departmentId, attachmentId);
+  if (!row) return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
   const storagePath = attachmentPathFromMetadata(
-    row.data.storage_path,
+    row.storage_path,
     departmentId,
   );
   if (!storagePath) {
@@ -22,8 +22,9 @@ export async function GET(_request: Request, routeContext: RouteContext) {
   }
   const signed = await createObjectStore(admin).createAttachmentDownload(
     storagePath,
-    row.data.file_name,
+    row.file_name,
   );
   if (signed.error || !signed.signedUrl) return NextResponse.json({ error: signed.error?.message ?? "Download could not be created." }, { status: 500 });
   return NextResponse.redirect(signed.signedUrl);
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Download could not be created." }, { status: 500 }); }
 }

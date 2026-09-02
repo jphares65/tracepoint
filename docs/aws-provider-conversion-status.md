@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | eighteen tenant-bound server repository callers; Supabase otherwise direct and authoritative | 49 provider reads across 18 GET paths | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
+| Data | tenant-bound server repositories; Supabase otherwise direct and authoritative | 119 provider reads | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -100,3 +100,10 @@ platform agencies/features, and active-department membership. Existing
 notification-event writes inside GET are isolated separately but are not counted
 as read conversion. One hundred three of the original 551 calls (18.7%) are now
 behind production repository boundaries; Supabase remains authoritative.
+
+The off-duty and evidence checkpoint adds sixteen reads across off-duty firearm
+requests and inspection history, firearm attachments, qualification target
+evidence, Drill Library documents, and authorized attachment downloads. Shared
+mutation helpers and all POST behavior remain direct and unchanged. One hundred
+nineteen of the original 551 calls (21.6%) are now behind tenant-bound production
+repository boundaries.

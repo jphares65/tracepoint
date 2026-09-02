@@ -14,6 +14,7 @@ import {
   certificationCapabilityDeniedResponse,
   evaluateCertificationCapability,
 } from "@/lib/tracepoint/certification-capability";
+import { createOffDutyReadRepository } from "@/lib/off-duty-firearms/read-repository";
 
 type RouteContext = {
   params: Promise<{ requestId: string }>;
@@ -24,7 +25,8 @@ function cleanText(value: unknown) {
 }
 
 async function loadProfileNames(
-  admin: any,
+  repository: ReturnType<typeof createOffDutyReadRepository>,
+  departmentId: string,
   userIds: string[],
 ) {
   const uniqueIds = Array.from(
@@ -35,17 +37,10 @@ async function loadProfileNames(
     return new Map<string, string>();
   }
 
-  const { data, error } = await admin
-    .from("profiles")
-    .select("id,full_name")
-    .in("id", uniqueIds);
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const data = await repository.listProfiles(departmentId, uniqueIds);
 
   return new Map(
-    (data ?? []).map((row: any) => [
+    data.map((row: any) => [
       String(row.id),
       cleanText(row.full_name) ?? "Unknown User",
     ]),
@@ -99,11 +94,8 @@ export async function GET(
   }
 
   const { requestId } = await routeContext.params;
-
-  const offDutyRequest = await loadOffDutyRequest(
-    context,
-    requestId,
-  );
+  const repository = createOffDutyReadRepository(context.admin, context.departmentId);
+  const offDutyRequest = await repository.getRequest(context.departmentId, requestId);
 
   if (!offDutyRequest) {
     return NextResponse.json(
@@ -122,25 +114,13 @@ export async function GET(
     );
   }
 
-  const { data, error } = await context.admin
-    .from("off_duty_firearm_inspections")
-    .select(
-      "id,inspection_date,result,notes,inspected_by_user_id,created_at",
-    )
-    .eq("department_id", context.departmentId)
-    .eq("request_id", requestId)
-    .order("inspection_date", { ascending: false })
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
-  }
+  let data;
+  try { data = await repository.listRequestInspections(context.departmentId, requestId); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Inspections could not be loaded." }, { status: 500 }); }
 
     const inspectorNames = await loadProfileNames(
-    context.admin,
+    repository,
+    context.departmentId,
     (data ?? []).map((row: any) =>
       String(row.inspected_by_user_id ?? ""),
     ),

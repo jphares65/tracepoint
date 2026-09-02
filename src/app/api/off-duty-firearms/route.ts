@@ -10,6 +10,7 @@ import {
 import {
   getOfficerQualificationReadiness,
 } from "@/lib/tracepoint/off-duty-qualification-readiness";
+import { createOffDutyReadRepository } from "@/lib/off-duty-firearms/read-repository";
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -29,7 +30,7 @@ function isCommandReviewer(context: any) {
 }
 
 async function loadOfficerIdentities(
-  admin: any,
+  repository: ReturnType<typeof createOffDutyReadRepository>,
   departmentId: string,
   userIds: string[],
 ) {
@@ -40,33 +41,16 @@ async function loadOfficerIdentities(
     >();
   }
 
-  const [profilesResult, membershipsResult] = await Promise.all([
-    admin
-      .from("profiles")
-      .select("id,full_name")
-      .in("id", userIds),
-
-    admin
-      .from("department_memberships")
-      .select("user_id,badge_number,unit_name")
-      .eq("department_id", departmentId)
-      .eq("is_active", true)
-      .in("user_id", userIds),
+  const [profiles, memberships] = await Promise.all([
+    repository.listProfiles(departmentId, userIds),
+    repository.listMemberships(departmentId, userIds),
   ]);
-
-  if (profilesResult.error) {
-    throw new Error(profilesResult.error.message);
-  }
-
-  if (membershipsResult.error) {
-    throw new Error(membershipsResult.error.message);
-  }
 
   const membershipMap = new Map<
     string,
     { badge: string; unit: string }
   >(
-    (membershipsResult.data ?? []).map((row: any) => [
+    memberships.map((row: any) => [
       String(row.user_id),
       {
         badge: cleanText(row.badge_number) ?? "",
@@ -79,7 +63,7 @@ async function loadOfficerIdentities(
     string,
     { name: string; badge: string; unit: string }
   >(
-    (profilesResult.data ?? []).map((row: any) => {
+    profiles.map((row: any) => {
       const userId = String(row.id);
       const membership = membershipMap.get(userId);
 
@@ -96,64 +80,17 @@ async function loadOfficerIdentities(
 }
 
 async function loadRequests(context: any) {
-  let query = context.admin
-    .from("off_duty_firearm_requests")
-    .select("*")
-    .eq("department_id", context.departmentId)
-    .order("submitted_at", { ascending: false });
-
-  if (
-    !isCommandReviewer(context) &&
-    !canManageOffDutyInspections(context)
-  ) {
-    query = query.eq("officer_user_id", context.userId);
-  }
-
-  const { data: requestRows, error: requestError } = await query;
-
-  if (requestError) throw new Error(requestError.message);
+  const repository = createOffDutyReadRepository(context.admin, context.departmentId);
+  const restrictToOfficer = !isCommandReviewer(context) && !canManageOffDutyInspections(context);
+  const requestRows = await repository.listRequests(context.departmentId, restrictToOfficer ? context.userId : undefined);
 
   const requestIds = (requestRows ?? []).map((row: any) => String(row.id));
 
-  const { data: historyRows, error: historyError } =
-    requestIds.length > 0
-      ? await context.admin
-          .from("off_duty_firearm_history")
-          .select("*")
-          .eq("department_id", context.departmentId)
-          .in("request_id", requestIds)
-          .order("created_at", { ascending: true })
-      : { data: [], error: null };
-
-  if (historyError) throw new Error(historyError.message);
-
-  const { data: inspectionRows, error: inspectionError } =
-    requestIds.length > 0
-      ? await context.admin
-          .from("off_duty_firearm_inspections")
-          .select(
-            "request_id,inspection_date,result,created_at",
-          )
-          .eq("department_id", context.departmentId)
-          .in("request_id", requestIds)
-          .order("inspection_date", { ascending: false })
-          .order("created_at", { ascending: false })
-      : { data: [], error: null };
-
-  if (inspectionError) {
-    throw new Error(inspectionError.message);
-  }
-
-  const { data: rulesRow, error: rulesError } =
-    await context.admin
-      .from("department_rules")
-      .select("inspection_interval_days,inspection_due_soon_days")
-      .eq("department_id", context.departmentId)
-      .maybeSingle();
-
-  if (rulesError) {
-    throw new Error(rulesError.message);
-  }
+  const [historyRows, inspectionRows, rulesRow] = await Promise.all([
+    repository.listHistory(context.departmentId, requestIds),
+    repository.listInspections(context.departmentId, requestIds),
+    repository.getRules(context.departmentId),
+  ]);
 
   const inspectionIntervalDays =
     Number(rulesRow?.inspection_interval_days) || 180;
@@ -231,7 +168,7 @@ async function loadRequests(context: any) {
   );
 
   const officerIdentities = await loadOfficerIdentities(
-    context.admin,
+    repository,
     context.departmentId,
     userIds,
   );

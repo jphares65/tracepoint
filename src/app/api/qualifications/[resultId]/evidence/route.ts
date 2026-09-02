@@ -7,6 +7,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createObjectStore } from "@/lib/storage/object-store";
+import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
 
 type RouteContext = { params: Promise<{ resultId: string }> };
 
@@ -57,31 +58,19 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   const { resultId } = await routeContext.params;
   const { admin, departmentId } = resolved.context;
 
-  const qualification = await verifyQualificationResult(admin, departmentId, resultId);
-  if (qualification.error) {
-    return NextResponse.json({ error: qualification.error }, { status: 500 });
-  }
-  if (!qualification.exists) {
+  const repository = createEvidenceReadRepository(admin, departmentId);
+  try {
+  if (!(await repository.qualificationExists(departmentId, resultId))) {
     return NextResponse.json({ error: "Qualification result not found." }, { status: 404 });
   }
 
-  const { data, error } = await admin
-    .from("attachments")
-    .select(
-      "id,attachment_type,file_name,mime_type,file_size,description,uploaded_by_user_id,uploaded_at",
-    )
-    .eq("department_id", departmentId)
-    .eq("entity_type", "qualification")
-    .eq("entity_key", resultId)
-    .is("archived_at", null)
-    .order("uploaded_at", { ascending: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const attachments = await repository.listQualificationEvidence(departmentId, resultId);
 
   return NextResponse.json(
-    { attachments: data ?? [] },
+    { attachments },
     { headers: { "Cache-Control": "no-store" } },
   );
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Qualification evidence could not be loaded." }, { status: 500 }); }
 }
 
 export async function POST(request: NextRequest, routeContext: RouteContext) {

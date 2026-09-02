@@ -12,25 +12,25 @@
       "*.bak",
       "src/app/integration-demo/**"
     ],
-    "sourceFiles": 255,
+    "sourceFiles": 261,
     "note": "Deterministic static source evidence only; regex analysis does not prove runtime authorization, RLS, transactionality, or reachability."
   },
   "counts": {
-    "dataCalls": 542,
-    "fromCalls": 477,
+    "dataCalls": 544,
+    "fromCalls": 479,
     "rpcCalls": 65,
     "authCalls": 39,
     "byOperation": {
       "delete": 23,
       "insert": 75,
       "rpc": 65,
-      "select": 290,
+      "select": 292,
       "unknown": 7,
       "update": 58,
       "upsert": 24
     },
     "operationTokens": {
-      "select": 340,
+      "select": 342,
       "insert": 76,
       "update": 61,
       "upsert": 24,
@@ -38,33 +38,33 @@
     },
     "byExecution": {
       "browser": 24,
-      "server": 518
+      "server": 520
     },
     "byClient": {
       "browser-user": 24,
       "server-user": 12,
-      "service-role": 398,
-      "uncertain": 108
+      "service-role": 386,
+      "uncertain": 122
     },
     "byContext": {
       "active-department": 1,
       "agency-training": 54,
-      "armory": 61,
-      "attachments": 4,
+      "armory": 60,
+      "attachments": 3,
       "auth": 4,
       "components": 1,
       "drill-documents": 4,
-      "drill-library": 4,
+      "drill-library": 3,
       "equipment": 10,
       "fleet": 37,
       "notifications": 13,
-      "off-duty-firearms": 24,
+      "off-duty-firearms": 16,
       "page.tsx": 3,
       "pilot": 5,
       "platform": 16,
-      "qualifications": 4,
+      "qualifications": 3,
       "settings": 121,
-      "shared": 98,
+      "shared": 112,
       "shared:activation": 10,
       "shared:agency-training-notifications": 5,
       "shared:certification-capability": 1,
@@ -1724,26 +1724,7 @@
       "kind": "from",
       "target": "firearms",
       "operation": "select",
-      "line": 17,
-      "boundedContext": "armory",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/armory/firearms/[firearmId]/attachments/route.ts",
-      "kind": "from",
-      "target": "attachments",
-      "operation": "select",
-      "line": 29,
+      "line": 18,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -1762,7 +1743,7 @@
       "kind": "from",
       "target": "attachments",
       "operation": "insert",
-      "line": 87,
+      "line": 85,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -1782,7 +1763,7 @@
       "kind": "from",
       "target": "audit_events",
       "operation": "insert",
-      "line": 92,
+      "line": 90,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -2293,25 +2274,6 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
-      "file": "src/app/api/attachments/[attachmentId]/download/route.ts",
-      "kind": "from",
-      "target": "attachments",
-      "operation": "select",
-      "line": 12,
-      "boundedContext": "attachments",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "storage/cleanup nearby"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
       "file": "src/app/api/attachments/[attachmentId]/route.ts",
       "kind": "from",
       "target": "attachments",
@@ -2452,26 +2414,7 @@
       "kind": "from",
       "target": "pilot_range_workspaces",
       "operation": "select",
-      "line": 14,
-      "boundedContext": "drill-library",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/drill-library/[drillTemplateId]/documents/route.ts",
-      "kind": "from",
-      "target": "drill_documents",
-      "operation": "select",
-      "line": 28,
+      "line": 15,
       "boundedContext": "drill-library",
       "execution": "server",
       "client": "service-role",
@@ -2490,7 +2433,7 @@
       "kind": "from",
       "target": "drill_documents",
       "operation": "insert",
-      "line": 59,
+      "line": 57,
       "boundedContext": "drill-library",
       "execution": "server",
       "client": "service-role",
@@ -2510,7 +2453,7 @@
       "kind": "from",
       "target": "audit_events",
       "operation": "insert",
-      "line": 68,
+      "line": 66,
       "boundedContext": "drill-library",
       "execution": "server",
       "client": "service-role",
@@ -3681,47 +3624,9 @@
     {
       "file": "src/app/api/off-duty-firearms/[requestId]/inspections/route.ts",
       "kind": "from",
-      "target": "profiles",
-      "operation": "select",
-      "line": 39,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "absent",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "high: service-role call lacks an evidenced department filter in this statement",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/[requestId]/inspections/route.ts",
-      "kind": "from",
       "target": "off_duty_firearm_requests",
       "operation": "select",
-      "line": 66,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/[requestId]/inspections/route.ts",
-      "kind": "from",
-      "target": "off_duty_firearm_inspections",
-      "operation": "select",
-      "line": 126,
+      "line": 61,
       "boundedContext": "off-duty-firearms",
       "execution": "server",
       "client": "service-role",
@@ -3740,7 +3645,7 @@
       "kind": "rpc",
       "target": "record_off_duty_firearm_inspection",
       "operation": "rpc",
-      "line": 250,
+      "line": 230,
       "boundedContext": "off-duty-firearms",
       "execution": "server",
       "client": "service-role",
@@ -3969,123 +3874,9 @@
     {
       "file": "src/app/api/off-duty-firearms/route.ts",
       "kind": "from",
-      "target": "profiles",
-      "operation": "select",
-      "line": 45,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/route.ts",
-      "kind": "from",
-      "target": "department_memberships",
-      "operation": "select",
-      "line": 50,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/route.ts",
-      "kind": "from",
-      "target": "off_duty_firearm_requests",
-      "operation": "select",
-      "line": 100,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/route.ts",
-      "kind": "from",
-      "target": "off_duty_firearm_history",
-      "operation": "select",
-      "line": 121,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/route.ts",
-      "kind": "from",
-      "target": "off_duty_firearm_inspections",
-      "operation": "select",
-      "line": 133,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/route.ts",
-      "kind": "from",
-      "target": "department_rules",
-      "operation": "select",
-      "line": 149,
-      "boundedContext": "off-duty-firearms",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/off-duty-firearms/route.ts",
-      "kind": "from",
       "target": "department_membership_roles",
       "operation": "select",
-      "line": 381,
+      "line": 318,
       "boundedContext": "off-duty-firearms",
       "execution": "server",
       "client": "service-role",
@@ -4104,7 +3895,7 @@
       "kind": "from",
       "target": "notification_events",
       "operation": "upsert",
-      "line": 433,
+      "line": 370,
       "boundedContext": "off-duty-firearms",
       "execution": "server",
       "client": "service-role",
@@ -4124,7 +3915,7 @@
       "kind": "rpc",
       "target": "submit_off_duty_firearm_request",
       "operation": "rpc",
-      "line": 553,
+      "line": 490,
       "boundedContext": "off-duty-firearms",
       "execution": "server",
       "client": "service-role",
@@ -4432,7 +4223,7 @@
       "kind": "from",
       "target": "pilot_range_workspaces",
       "operation": "select",
-      "line": 22,
+      "line": 23,
       "boundedContext": "qualifications",
       "execution": "server",
       "client": "service-role",
@@ -4450,27 +4241,8 @@
       "file": "src/app/api/qualifications/[resultId]/evidence/route.ts",
       "kind": "from",
       "target": "attachments",
-      "operation": "select",
-      "line": 69,
-      "boundedContext": "qualifications",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "resolveServerAccess",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/qualifications/[resultId]/evidence/route.ts",
-      "kind": "from",
-      "target": "attachments",
       "operation": "insert",
-      "line": 157,
+      "line": 146,
       "boundedContext": "qualifications",
       "execution": "server",
       "client": "service-role",
@@ -4490,7 +4262,7 @@
       "kind": "from",
       "target": "audit_events",
       "operation": "insert",
-      "line": 185,
+      "line": 174,
       "boundedContext": "qualifications",
       "execution": "server",
       "client": "service-role",
@@ -8081,6 +7853,120 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
+      "file": "src/lib/evidence/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "firearms",
+      "operation": "select",
+      "line": 6,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/evidence/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "attachments",
+      "operation": "select",
+      "line": 7,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/evidence/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "pilot_range_workspaces",
+      "operation": "select",
+      "line": 8,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/evidence/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "attachments",
+      "operation": "select",
+      "line": 9,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "storage/cleanup nearby"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/evidence/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "drill_documents",
+      "operation": "select",
+      "line": 10,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "storage/cleanup nearby"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/evidence/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "attachments",
+      "operation": "select",
+      "line": 11,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "storage/cleanup nearby"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
       "file": "src/lib/fleet/read-repository-supabase.ts",
       "kind": "from",
       "target": "fleet_rules",
@@ -8459,6 +8345,158 @@
       "workflow": "single statement",
       "sideEffects": [
         "notification/email"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "off_duty_firearm_requests",
+      "operation": "select",
+      "line": 7,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "off_duty_firearm_history",
+      "operation": "select",
+      "line": 8,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "off_duty_firearm_inspections",
+      "operation": "select",
+      "line": 9,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_rules",
+      "operation": "select",
+      "line": 10,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "profiles",
+      "operation": "select",
+      "line": 11,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_memberships",
+      "operation": "select",
+      "line": 12,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "off_duty_firearm_requests",
+      "operation": "select",
+      "line": 13,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/off-duty-firearms/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "off_duty_firearm_inspections",
+      "operation": "select",
+      "line": 14,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
       ],
       "risk": "low/medium: read contract still requires authorization tests",
       "certainty": "static source evidence; runtime authorization not proven"

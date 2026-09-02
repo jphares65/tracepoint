@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createObjectStore } from "@/lib/storage/object-store";
 import { validateDrillDocumentFile, workspaceHasDrillTemplate } from "@/lib/tracepoint/drill-documents-core";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
 
 type Context = { params: Promise<{ drillTemplateId: string }> };
 
@@ -22,15 +23,12 @@ export async function GET(_request: NextRequest, routeContext: Context) {
   if (!resolved.ok) return accessFailureResponse(resolved);
   const { drillTemplateId } = await routeContext.params;
   const { admin, departmentId } = resolved.context;
-  const template = await verifyTemplate(admin, departmentId, drillTemplateId);
-  if (template.error) return NextResponse.json({ error: template.error }, { status: 500 });
-  if (!template.found) return NextResponse.json({ error: "Drill Library record not found." }, { status: 404 });
-  const result = await admin.from("drill_documents")
-    .select("id,drill_template_id,original_filename,mime_type,file_size,uploaded_by_user_id,created_at")
-    .eq("department_id", departmentId).eq("drill_template_id", drillTemplateId)
-    .order("created_at", { ascending: false });
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
-  return NextResponse.json({ documents: result.data ?? [], canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]) }, { headers: { "Cache-Control": "no-store" } });
+  const repository = createEvidenceReadRepository(admin, departmentId);
+  try {
+  if (!(await repository.drillTemplateExists(departmentId, drillTemplateId))) return NextResponse.json({ error: "Drill Library record not found." }, { status: 404 });
+  const documents = await repository.listDrillDocuments(departmentId, drillTemplateId);
+  return NextResponse.json({ documents, canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Drill documents could not be loaded." }, { status: 500 }); }
 }
 
 export async function POST(request: NextRequest, routeContext: Context) {

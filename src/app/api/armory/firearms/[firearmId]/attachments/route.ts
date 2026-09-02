@@ -7,6 +7,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createObjectStore } from "@/lib/storage/object-store";
+import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
 
 type RouteContext = { params: Promise<{ firearmId: string }> };
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -22,16 +23,13 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   if (!resolved.ok) return accessFailureResponse(resolved);
   const { firearmId } = await routeContext.params;
   const { admin, departmentId } = resolved.context;
-  const firearm = await verifyFirearm(admin, departmentId, firearmId);
-  if (firearm.error) return NextResponse.json({ error: firearm.error.message }, { status: 500 });
-  if (!firearm.data) return NextResponse.json({ error: "Firearm not found." }, { status: 404 });
-
-  const { data, error } = await admin.from("attachments")
-    .select("id,attachment_type,file_name,mime_type,file_size,description,uploaded_by_user_id,uploaded_at")
-    .eq("department_id", departmentId).eq("entity_type", "firearm").eq("entity_id", firearmId)
-    .is("archived_at", null).order("uploaded_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ attachments: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
+  const repository = createEvidenceReadRepository(admin, departmentId);
+  try {
+  const firearm = await repository.getFirearm(departmentId, firearmId);
+  if (!firearm) return NextResponse.json({ error: "Firearm not found." }, { status: 404 });
+  const attachments = await repository.listFirearmAttachments(departmentId, firearmId);
+  return NextResponse.json({ attachments }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Attachments could not be loaded." }, { status: 500 }); }
 }
 
 export async function POST(request: NextRequest, routeContext: RouteContext) {

@@ -1,0 +1,2 @@
+import "server-only"; import {requireOffDutyReadProvider,TenantBoundOffDutyReadRepository} from "./read-repository-core"; import {SupabaseOffDutyReadDataSource,type Client} from "./read-repository-supabase";
+export function createOffDutyReadRepository(client:Client,departmentId:string){requireOffDutyReadProvider(process.env.TRACEPOINT_DATA_PROVIDER);return new TenantBoundOffDutyReadRepository(new SupabaseOffDutyReadDataSource(client),departmentId);}

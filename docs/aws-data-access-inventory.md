@@ -167,6 +167,15 @@ not counted as converted reads. One hundred three of the original 551 calls
 (18.7%) are now behind production repository boundaries. The deterministic
 inventory contains 542 static calls after consolidated relocation.
 
+The off-duty and evidence checkpoint moves sixteen reads behind two bounded
+repositories. It preserves officer-only visibility, inspection ordering and
+identity enrichment, rules defaults, not-found behavior, attachment filters,
+workspace membership checks, no-store responses, and signed-download metadata
+scope. One hundred nineteen of 551 original calls (21.6%) are isolated. The
+generated inventory contains 544 static calls because mutation-only route helpers
+remain in place while provider-specific read construction is represented in the
+new adapters.
+
 ## Ordered conversion waves
 
 1. Complete low-risk server-only single-table reads by bounded context, with
