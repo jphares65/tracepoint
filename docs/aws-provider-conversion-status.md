@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | tenant-bound server repositories; Supabase otherwise direct and authoritative | 119 provider reads | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
+| Data | tenant-bound server repositories; Supabase otherwise direct and authoritative | 125 provider reads | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -85,6 +85,11 @@ equipment and histories, actor profiles, and Fleet rules. The production GET
 handlers use the tenant-bound repository while POST, PATCH, and PUT paths remain
 unchanged. Forty-nine of the original 551 calls (8.9%) are now behind production
 repository boundaries.
+
+The administration and personal-rifle checkpoint adds six reads across the two
+audit streams, onboarding personnel directory, personal-rifle records/history,
+and review inbox. One hundred twenty-five of 551 original reads (22.7%) are now
+provider isolated.
 
 The Training certification checkpoint adds six tenant-bound reads. The next
 Range and reporting checkpoint adds thirty reads across Pilot workspaces,

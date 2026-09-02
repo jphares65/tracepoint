@@ -11,6 +11,7 @@ import {
   recordPersonalRifleHistory,
   type SupabaseAuthUser,
 } from "@/lib/tracepoint/personal-rifle-server";
+import { createPersonalRifleReadRepository } from "@/lib/personal-rifles/read-repository";
 
 function serializeError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -33,33 +34,16 @@ export async function GET() {
       getPersonalRifleAccess(admin, departmentId, user.id),
     ]);
 
-    let rifleQuery = admin
-      .from("personal_rifles")
-      .select("*")
-      .eq("department_id", departmentId)
-      .order("updated_at", { ascending: false });
-
-    if (!access.canViewAll) {
-      rifleQuery = rifleQuery.eq("owner_user_id", user.id);
-    }
-
-    const { data: rifles, error: riflesError } = await rifleQuery;
-    if (riflesError) throw new Error(riflesError.message);
+    const repository = createPersonalRifleReadRepository(admin, departmentId, user.id);
+    const rifles = await repository.listRifles(departmentId, user.id, access.canViewAll);
 
     const rifleIds = (rifles ?? []).map((rifle: any) => rifle.id);
-    const [usersResult, historyResult] = await Promise.all([
+    const [usersResult, history] = await Promise.all([
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      rifleIds.length > 0
-        ? admin
-            .from("personal_rifle_status_history")
-            .select("*")
-            .in("personal_rifle_id", rifleIds)
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
+      repository.listHistory(departmentId, user.id, rifleIds),
     ]);
 
     if (usersResult.error) throw new Error(usersResult.error.message);
-    if (historyResult.error) throw new Error(historyResult.error.message);
 
     const usersById = new Map<string, SupabaseAuthUser>(
       ((usersResult.data?.users ?? []) as SupabaseAuthUser[]).map((item) => [
@@ -69,15 +53,15 @@ export async function GET() {
     );
 
     const historyByRifle = new Map<string, any[]>();
-    for (const history of historyResult.data ?? []) {
-      const current = historyByRifle.get(history.personal_rifle_id) ?? [];
+    for (const historyRow of history) {
+      const current = historyByRifle.get(historyRow.personal_rifle_id) ?? [];
       current.push({
-        ...history,
+        ...historyRow,
         actor_name: getPersonalRifleDisplayName(
-          usersById.get(history.actor_user_id),
+          usersById.get(historyRow.actor_user_id),
         ),
       });
-      historyByRifle.set(history.personal_rifle_id, current);
+      historyByRifle.set(historyRow.personal_rifle_id, current);
     }
 
     const result = (rifles ?? []).map((rifle: any) => ({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createAdministrationReadRepository } from "@/lib/administration/read-repository";
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,17 +60,7 @@ export async function GET(request: NextRequest) {
 
     const admin = createAdminClient();
 
-    const { data: memberships, error: membershipsError } =
-      await admin
-        .from("department_memberships")
-        .select(
-          "user_id,badge_number,rank_title,is_active,profiles!department_memberships_user_id_fkey(full_name,email)",
-        )
-        .eq("department_id", departmentId)
-        .eq("is_active", true)
-        .order("badge_number");
-
-    if (membershipsError) throw membershipsError;
+    const memberships = await createAdministrationReadRepository(admin as any, departmentId).listPersonnel(departmentId);
 
     const personnel = (memberships ?? []).map((membership) => {
       const profile = Array.isArray(membership.profiles)

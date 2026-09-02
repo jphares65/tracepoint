@@ -6,6 +6,7 @@ import {
   getPersonalRifleRequestContext,
   type SupabaseAuthUser,
 } from "@/lib/tracepoint/personal-rifle-server";
+import { createPersonalRifleReadRepository } from "@/lib/personal-rifles/read-repository";
 
 export async function GET() {
   const context = await getPersonalRifleRequestContext();
@@ -19,19 +20,13 @@ export async function GET() {
 
   try {
     const { admin, departmentId, user } = context;
+    const repository = createPersonalRifleReadRepository(admin, departmentId, user.id);
     const [access, riflesResult, usersResult] = await Promise.all([
       getPersonalRifleAccess(admin, departmentId, user.id),
-      admin
-        .from("personal_rifles")
-        .select(
-          "id,owner_user_id,manufacturer,model,caliber,status,submitted_at,correction_notes,armorer_decision_notes,chief_decision_notes,expiration_date,updated_at",
-        )
-        .eq("department_id", departmentId)
-        .order("updated_at", { ascending: false }),
+      repository.listInbox(departmentId, user.id),
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
 
-    if (riflesResult.error) throw new Error(riflesResult.error.message);
     if (usersResult.error) throw new Error(usersResult.error.message);
 
     const usersById = new Map<string, SupabaseAuthUser>(
@@ -46,7 +41,7 @@ export async function GET() {
     sixtyDays.setDate(sixtyDays.getDate() + 60);
     const items: Array<Record<string, unknown>> = [];
 
-    for (const rifle of riflesResult.data ?? []) {
+    for (const rifle of riflesResult) {
       const label = `${rifle.manufacturer} ${rifle.model}`.trim();
       const ownerName = getPersonalRifleDisplayName(
         usersById.get(rifle.owner_user_id),

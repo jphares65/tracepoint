@@ -12,7 +12,7 @@
       "*.bak",
       "src/app/integration-demo/**"
     ],
-    "sourceFiles": 261,
+    "sourceFiles": 267,
     "note": "Deterministic static source evidence only; regex analysis does not prove runtime authorization, RLS, transactionality, or reachability."
   },
   "counts": {
@@ -43,13 +43,13 @@
     "byClient": {
       "browser-user": 24,
       "server-user": 12,
-      "service-role": 386,
-      "uncertain": 122
+      "service-role": 382,
+      "uncertain": 126
     },
     "byContext": {
       "active-department": 1,
       "agency-training": 54,
-      "armory": 60,
+      "armory": 57,
       "attachments": 3,
       "auth": 4,
       "components": 1,
@@ -63,8 +63,8 @@
       "pilot": 5,
       "platform": 16,
       "qualifications": 3,
-      "settings": 121,
-      "shared": 112,
+      "settings": 120,
+      "shared": 116,
       "shared:activation": 10,
       "shared:agency-training-notifications": 5,
       "shared:certification-capability": 1,
@@ -2160,68 +2160,11 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
-      "file": "src/app/api/armory/personal-rifles/inbox/route.ts",
-      "kind": "from",
-      "target": "personal_rifles",
-      "operation": "select",
-      "line": 25,
-      "boundedContext": "armory",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "not statically evidenced",
-      "departmentFilter": "present",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "medium: possible multi-step workflow",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
       "file": "src/app/api/armory/personal-rifles/route.ts",
       "kind": "from",
       "target": "personal_rifles",
       "operation": "select",
-      "line": 37,
-      "boundedContext": "armory",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "not statically evidenced",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/armory/personal-rifles/route.ts",
-      "kind": "from",
-      "target": "personal_rifle_status_history",
-      "operation": "select",
-      "line": 54,
-      "boundedContext": "armory",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "not statically evidenced",
-      "departmentFilter": "absent",
-      "workflow": "possibly multi-step",
-      "sideEffects": [
-        "none statically evidenced"
-      ],
-      "risk": "high: service-role call lacks an evidenced department filter in this statement",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/armory/personal-rifles/route.ts",
-      "kind": "from",
-      "target": "personal_rifles",
-      "operation": "select",
-      "line": 169,
+      "line": 153,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -2240,7 +2183,7 @@
       "kind": "from",
       "target": "personal_rifles",
       "operation": "insert",
-      "line": 190,
+      "line": 174,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -5278,7 +5221,7 @@
       "kind": "rpc",
       "target": "has_department_permission",
       "operation": "rpc",
-      "line": 34,
+      "line": 35,
       "boundedContext": "settings",
       "execution": "server",
       "client": "service-role",
@@ -5297,7 +5240,7 @@
       "kind": "rpc",
       "target": "has_department_permission",
       "operation": "rpc",
-      "line": 38,
+      "line": 39,
       "boundedContext": "settings",
       "execution": "server",
       "client": "service-role",
@@ -5316,7 +5259,7 @@
       "kind": "rpc",
       "target": "is_platform_admin",
       "operation": "rpc",
-      "line": 42,
+      "line": 43,
       "boundedContext": "settings",
       "execution": "server",
       "client": "service-role",
@@ -5328,25 +5271,6 @@
         "possible mutation"
       ],
       "risk": "high: service-role call lacks an evidenced department filter in this statement",
-      "certainty": "static source evidence; runtime authorization not proven"
-    },
-    {
-      "file": "src/app/api/settings/onboarding/personnel-directory/route.ts",
-      "kind": "from",
-      "target": "department_memberships",
-      "operation": "select",
-      "line": 64,
-      "boundedContext": "settings",
-      "execution": "server",
-      "client": "service-role",
-      "rlsReliance": "bypassed",
-      "authorizationHelper": "auth.getUser",
-      "departmentFilter": "present",
-      "workflow": "single statement",
-      "sideEffects": [
-        "notification/email"
-      ],
-      "risk": "low/medium: read contract still requires authorization tests",
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
@@ -7397,6 +7321,25 @@
       "certainty": "static source evidence; runtime authorization not proven"
     },
     {
+      "file": "src/lib/administration/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "department_memberships",
+      "operation": "select",
+      "line": 1,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "notification/email"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
       "file": "src/lib/agency-training/course-catalog-repository-core.ts",
       "kind": "from",
       "target": "agency_training_courses",
@@ -8526,6 +8469,63 @@
       "target": "fleet_vehicles",
       "operation": "select",
       "line": 4,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/personal-rifles/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "personal_rifle_status_history",
+      "operation": "select",
+      "line": 1,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "absent",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/personal-rifles/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "personal_rifles",
+      "operation": "select",
+      "line": 1,
+      "boundedContext": "shared",
+      "execution": "server",
+      "client": "uncertain",
+      "rlsReliance": "uncertain",
+      "authorizationHelper": "not statically evidenced",
+      "departmentFilter": "present",
+      "workflow": "single statement",
+      "sideEffects": [
+        "none statically evidenced"
+      ],
+      "risk": "low/medium: read contract still requires authorization tests",
+      "certainty": "static source evidence; runtime authorization not proven"
+    },
+    {
+      "file": "src/lib/personal-rifles/read-repository-supabase.ts",
+      "kind": "from",
+      "target": "personal_rifles",
+      "operation": "select",
+      "line": 1,
       "boundedContext": "shared",
       "execution": "server",
       "client": "uncertain",
@@ -10534,7 +10534,7 @@
     {
       "file": "src/app/api/armory/personal-rifles/inbox/route.ts",
       "method": "listUsers",
-      "line": 31,
+      "line": 27,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -10546,7 +10546,7 @@
     {
       "file": "src/app/api/armory/personal-rifles/route.ts",
       "method": "listUsers",
-      "line": 51,
+      "line": 42,
       "boundedContext": "armory",
       "execution": "server",
       "client": "service-role",
@@ -10654,7 +10654,7 @@
     {
       "file": "src/app/api/settings/onboarding/personnel-directory/route.ts",
       "method": "getUser",
-      "line": 23,
+      "line": 24,
       "boundedContext": "settings",
       "execution": "server",
       "client": "service-role",

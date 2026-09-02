@@ -176,6 +176,10 @@ generated inventory contains 544 static calls because mutation-only route helper
 remain in place while provider-specific read construction is represented in the
 new adapters.
 
+The administration and personal-rifle checkpoint adds six reads across audit
+feeds, onboarding personnel directory, and personal-rifle list/history/inbox
+paths. One hundred twenty-five of 551 original reads (22.7%) are isolated.
+
 ## Ordered conversion waves
 
 1. Complete low-risk server-only single-table reads by bounded context, with

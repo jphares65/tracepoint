@@ -1,4 +1,5 @@
 import "server-only";
+import { createAdministrationReadRepository } from "@/lib/administration/read-repository";
 
 const EVENT_COLUMNS = [
   "id",
@@ -194,18 +195,8 @@ async function loadLimitedSource(
   departmentId: string,
   limit: number,
 ) {
-  const { data, error } = await admin
-    .from(table)
-    .select(columns)
-    .eq("department_id", departmentId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw new Error("Unable to load " + table + ": " + error.message);
-  }
-
-  return (data ?? []) as RawAuditRow[];
+  try { return await createAdministrationReadRepository(admin, departmentId).listAudit(departmentId, table, columns, limit) as RawAuditRow[]; }
+  catch (error) { throw new Error("Unable to load " + table + ": " + (error instanceof Error ? error.message : "Unknown error")); }
 }
 
 async function loadCompleteSource(
@@ -218,18 +209,9 @@ async function loadCompleteSource(
   let from = 0;
 
   while (true) {
-    const { data, error } = await admin
-      .from(table)
-      .select(columns)
-      .eq("department_id", departmentId)
-      .order("created_at", { ascending: false })
-      .range(from, from + EXPORT_BATCH_SIZE - 1);
-
-    if (error) {
-      throw new Error("Unable to load " + table + ": " + error.message);
-    }
-
-    const batch = (data ?? []) as RawAuditRow[];
+    let batch: RawAuditRow[];
+    try { batch = await createAdministrationReadRepository(admin, departmentId).listCompleteAudit(departmentId, table, columns, from, from + EXPORT_BATCH_SIZE - 1) as RawAuditRow[]; }
+    catch (error) { throw new Error("Unable to load " + table + ": " + (error instanceof Error ? error.message : "Unknown error")); }
     rows.push(...batch);
 
     if (batch.length < EXPORT_BATCH_SIZE) break;
