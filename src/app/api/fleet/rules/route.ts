@@ -8,6 +8,7 @@ import {
   canConfigureFleet,
   numeric,
 } from "@/lib/tracepoint/fleet-server";
+import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 const DEFAULTS = {
   status_automation_enabled: true,
@@ -48,19 +49,11 @@ export async function GET() {
   const access = await resolveServerAccess();
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
-  const { data, error } = await context.admin
-    .from("fleet_rules")
-    .select("*")
-    .eq("department_id", context.departmentId)
-    .maybeSingle();
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({
-    rules: { ...DEFAULTS, ...(data ?? {}) },
-    canManage: canConfigureFleet(context),
-  });
+  try { const data = await createFleetReadRepository(context.admin, context.departmentId).getRules({ departmentId: context.departmentId }); return NextResponse.json({ rules: { ...DEFAULTS, ...(data ?? {}) }, canManage: canConfigureFleet(context) }); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet rules could not be loaded." }, { status: 500 }); }
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy mutation payload remains unchanged */
 export async function PUT(request: NextRequest) {
   const access = await resolveServerAccess();
   if (!access.ok) return accessFailureResponse(access);
@@ -174,3 +167,4 @@ export async function PUT(request: NextRequest) {
   );
   return NextResponse.json({ ok: true, rules: data });
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */

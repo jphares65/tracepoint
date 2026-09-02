@@ -40,10 +40,10 @@ deployment is **100%** for bootstrap/network/security/compute, while runtime is
 **0%**. Email conversion is **100%** of the two
 inventoried callers; storage boundary conversion is **100%** of the five direct
 call sites, with deferred lifecycle policy; database/data-access conversion is
-approximately **6.9%** (38 of 551 static calls behind used repository boundaries);
+approximately **8.9%** (49 of 551 static calls behind used repository boundaries);
 Auth conversion is **0%**.
-Total provider conversion is approximately **18%**, and total migration is
-approximately **46%**, reflecting completed staging foundation infrastructure
+Total provider conversion is approximately **20%**, and total migration is
+approximately **47%**, reflecting completed staging foundation infrastructure
 but no runtime acceptance, data/identity migration, or production cutover.
 
 Supabase remains authoritative for database, RLS/RPC authorization, Auth, and

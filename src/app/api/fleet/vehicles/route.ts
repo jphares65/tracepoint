@@ -5,6 +5,8 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { canManageFleet } from "@/lib/tracepoint/fleet-server";
+import { createFleetReadRepository } from "@/lib/fleet/read-repository";
+import { FleetReadRepositoryError } from "@/lib/fleet/read-repository-core";
 
 export const dynamic = "force-dynamic";
 
@@ -107,24 +109,16 @@ export async function GET() {
   if (!access.ok) return accessFailureResponse(access);
 
   const resolved = access.context;
-  const { data: rules } = await resolved.admin.from("fleet_rules").select("fleet_manager_role_codes").eq("department_id", resolved.departmentId).maybeSingle();
-  const { data, error } = await resolved.admin
-    .from("fleet_vehicles")
-    .select(VEHICLE_SELECT)
-    .eq("department_id", resolved.departmentId)
-    .order("unit_number", { ascending: true });
-
-  if (error) {
+  try {
+    const { rules, items } = await createFleetReadRepository(resolved.admin, resolved.departmentId).getVehicleList({ departmentId: resolved.departmentId, vehicleFields: VEHICLE_SELECT });
+    return NextResponse.json({ items, canManage: canManageFleet(resolved, rules) });
+  } catch (error) {
+    const providerError = error instanceof FleetReadRepositoryError ? { code: error.code, message: error.message } : null;
     return NextResponse.json(
-      { error: fleetUnavailable(error) },
-      { status: fleetNeedsMigration(error) ? 503 : 500 },
+      { error: fleetUnavailable(providerError) },
+      { status: fleetNeedsMigration(providerError) ? 503 : 500 },
     );
   }
-
-  return NextResponse.json({
-    items: data ?? [],
-    canManage: canManageFleet(resolved, rules),
-  });
 }
 
 export async function POST(request: NextRequest) {

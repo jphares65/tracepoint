@@ -4,7 +4,7 @@
 |---|---|---:|---|
 | Auth | Supabase browser/server/proxy/admin | 0 | designed; cookie/account lifecycle contract tests required |
 | Authorization | Supabase RPC/RLS + `server-access` | 0 | highest risk; cross-agency matrix required |
-| Data | fifteen tenant-bound server repository callers; Supabase otherwise direct and authoritative | 38 provider reads across 15 GET paths | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
+| Data | eighteen tenant-bound server repository callers; Supabase otherwise direct and authoritative | 49 provider reads across 18 GET paths | exact tenant/filter/field/order/limit/visibility/permission/aggregation contracts and negative tests pass; no Aurora/RDS provider exists |
 | Storage | typed server-only `ObjectStore`; Supabase sole implementation/default | 5 storage call sites | all direct route storage calls converted; signed downloads validate authorized department/canonical path; no AWS provider exists |
 | Email | typed server-only `EmailProvider`; Brevo sole implementation/default | 2 | both inventoried callers converted; focused request/config/error tests pass; no AWS provider exists |
 
@@ -79,3 +79,9 @@ inspection history. Department-wide versus assigned-user visibility, archived
 filtering, active assignment/member mapping, access flags, inspection joins,
 ordering, limits, and provider errors are preserved. Thirty-eight of 551 calls
 are behind production repository boundaries; Armory mutations remain direct.
+
+The Fleet checkpoint adds eleven reads across vehicle list and detail, related
+equipment and histories, actor profiles, and Fleet rules. The production GET
+handlers use the tenant-bound repository while POST, PATCH, and PUT paths remain
+unchanged. Forty-nine of the original 551 calls (8.9%) are now behind production
+repository boundaries.

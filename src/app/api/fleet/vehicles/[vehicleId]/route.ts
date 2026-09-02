@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -11,76 +12,17 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const context = access.context;
   const { vehicleId } = await params;
 
-  const [vehicleResult, workResult, equipmentResult, documentResult, inspectionResult, auditResult, rulesResult] = await Promise.all([
-    context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle(),
-    context.admin.from("fleet_work_orders").select("*").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).order("reported_at", { ascending: false }),
-    context.admin.from("fleet_vehicle_equipment").select("*").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).order("category"),
-    context.admin.from("fleet_vehicle_documents").select("*").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).order("created_at", { ascending: false }),
-    context.admin.from("fleet_vehicle_inspections").select("*").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).order("inspected_at", { ascending: false }).limit(100),
-    context.admin.from("audit_events").select("id,action,details,actor_user_id,created_at").eq("department_id", context.departmentId).eq("entity_type", "fleet_vehicle").eq("entity_id", vehicleId).order("created_at", { ascending: false }).limit(100),
-    context.admin.from("fleet_rules").select("*").eq("department_id", context.departmentId).maybeSingle(),
-  ]);
-
-  if (vehicleResult.error) return NextResponse.json({ error: vehicleResult.error.message }, { status: 500 });
-  if (!vehicleResult.data) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
-  const equipment = (equipmentResult.data ?? []).map((item: any) => canViewNetworkDetails(context, rulesResult.data) ? item : { ...item, static_ip: null });
-
-  const actorIds = Array.from(
-    new Set(
-      [
-        ...(inspectionResult.data ?? []).map((item: any) => item.inspector_user_id),
-        ...(auditResult.data ?? []).map((item: any) => item.actor_user_id),
-      ].filter(
-        (value): value is string =>
-          typeof value === "string" && value.length > 0,
-      ),
-    ),
-  );
-
-  let actorProfiles: Array<{ id: string; full_name: string | null }> = [];
-
-  if (actorIds.length) {
-    const { data: profiles } = await context.admin
-      .from("profiles")
-      .select("id,full_name")
-      .in("id", actorIds);
-
-    actorProfiles = profiles ?? [];
-  }
-
-  const actorNames = new Map(
-    actorProfiles.map((profile) => [
-      profile.id,
-      profile.full_name?.trim() || "Unknown user",
-    ]),
-  );
-
-  const inspections = (inspectionResult.data ?? []).map((item: any) => ({
-    ...item,
-    inspector_name: item.inspector_user_id
-      ? actorNames.get(item.inspector_user_id) || "Unknown user"
-      : "System / legacy record",
-  }));
-
-  const history = (auditResult.data ?? []).map((item: any) => ({
-    ...item,
-    actor_name: item.actor_user_id
-      ? actorNames.get(item.actor_user_id) || "Unknown user"
-      : "System / legacy record",
-  }));
+  let detail;
+  try { detail = await createFleetReadRepository(context.admin, context.departmentId).getVehicleDetail({ departmentId: context.departmentId, vehicleId, canViewNetworkDetails: (rules) => canViewNetworkDetails(context, rules) }); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
+  if (!detail) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
 
   return NextResponse.json({
-    vehicle: vehicleResult.data,
-    workOrders: workResult.data ?? [],
-    equipment,
-    documents: documentResult.data ?? [],
-    inspections,
-    history,
-    rules: rulesResult.data ?? null,
-    canManage: canManageFleet(context, rulesResult.data),
-    canMaintain: canPerformFleetMaintenance(context, rulesResult.data),
+    ...detail,
+    canManage: canManageFleet(context, detail.rules),
+    canMaintain: canPerformFleetMaintenance(context, detail.rules),
     canConfigure: canConfigureFleet(context),
-    canViewNetworkDetails: canViewNetworkDetails(context, rulesResult.data),
+    canViewNetworkDetails: canViewNetworkDetails(context, detail.rules),
     roleCodes: context.roleCodes,
   });
 }

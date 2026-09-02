@@ -15,20 +15,20 @@ boundaries, or the live schema.
 
 | Measure | Static count |
 |---|---:|
-| First-party source files scanned | 228 |
-| `.from(...)` calls | 486 |
+| First-party source files scanned | 231 |
+| `.from(...)` calls | 484 |
 | `.rpc(...)` calls | 65 |
-| Combined data calls | 551 |
+| Combined data calls | 549 |
 | Auth/session/Auth Admin calls | 39 |
 | Distinct table/view/RPC targets | 88 |
 | Browser data calls | 24 |
-| Server data calls | 527 |
-| Calls statically associated with service-role context | 468 |
+| Server data calls | 525 |
+| Calls statically associated with service-role context | 448 |
 | Server-user calls | 14 |
-| Client privilege uncertain | 45 |
+| Client privilege uncertain | 63 |
 
-Classified operations are 299 selects, 75 inserts, 58 updates, 24 upserts, 23
-deletes, 65 RPCs, and 7 unknown chains. An independent token count finds 349
+Classified operations are 297 selects, 75 inserts, 58 updates, 24 upserts, 23
+deletes, 65 RPCs, and 7 unknown chains. An independent token count finds 347
 `.select`, 76 `.insert`, 61 `.update`, 24 `.upsert`, and 24 `.delete` tokens;
 these totals differ because selection after mutation and variable-built chains
 can contain more than one operation token per `.from` call.
@@ -138,6 +138,16 @@ active assignment and member mapping, Auth Admin display-name fallbacks, feature
 and permission-derived access flags, inspection joins, descending date order,
 and the 100-row inspection limit. Thirty-eight of 551 static data calls are now
 behind production repository boundaries; all colocated mutations remain direct.
+
+The Fleet read checkpoint moves eleven production reads across vehicle list,
+vehicle detail, related equipment, work-order/document/inspection/audit history,
+profile display names, and Fleet rules behind a tenant-bound repository. Exact
+projections, department and vehicle filters, ordering, limits, not-found and
+provider-error behavior, optional related-query behavior, permissions, and
+network-field masking are covered by focused tests. Forty-nine of the original
+551 static data calls are behind production repository boundaries; Fleet
+mutations remain direct and unchanged. The generated inventory now contains 549
+calls because eleven route calls are represented by nine thin-adapter calls.
 
 ## Ordered conversion waves
 
