@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createPlatformReadRepository } from "@/lib/platform/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -48,57 +49,15 @@ export async function GET() {
 
   const { admin } = access.context;
 
-  const [
-    departmentsResult,
-    featuresResult,
-    entitlementsResult,
-  ] = await Promise.all([
-    admin
-      .from("departments")
-      .select("id,name,short_name")
-      .order("name"),
-
-    admin
-      .from("feature_catalog")
-      .select(
-        "code,display_name,description,sort_order,is_active",
-      )
-      .eq("is_active", true)
-      .order("sort_order"),
-
-    admin
-      .from("department_features")
-      .select(
-        "department_id,feature_code,is_enabled,enabled_at,disabled_at,updated_at,updated_by",
-      ),
-  ]);
-
-  if (departmentsResult.error) {
-    return NextResponse.json(
-      { error: departmentsResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (featuresResult.error) {
-    return NextResponse.json(
-      { error: featuresResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (entitlementsResult.error) {
-    return NextResponse.json(
-      { error: entitlementsResult.error.message },
-      { status: 500 },
-    );
-  }
+  let data;
+  try { data = await createPlatformReadRepository(admin, true).listEntitlements(); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Platform entitlements could not be loaded." }, { status: 500 }); }
 
   return NextResponse.json(
     {
-      departments: departmentsResult.data ?? [],
-      features: featuresResult.data ?? [],
-      entitlements: entitlementsResult.data ?? [],
+      departments: data.departments,
+      features: data.features,
+      entitlements: data.entitlements,
     },
     {
       headers: { "Cache-Control": "no-store" },

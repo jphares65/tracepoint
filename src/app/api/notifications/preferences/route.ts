@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -59,21 +60,9 @@ export async function GET() {
   }
 
   const resolved = access.context;
-  const { data, error } = await resolved.admin
-    .from("notification_preferences")
-    .select(
-      "in_app_enabled,email_enabled,critical_email_only,digest_mode,source_preferences,updated_at",
-    )
-    .eq("department_id", resolved.departmentId)
-    .eq("user_id", resolved.user.id)
-    .maybeSingle();
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
-  }
+  let data;
+  try { data = await createNotificationReadRepository(resolved.admin, resolved.departmentId, resolved.user.id).getPreferences(resolved.departmentId, resolved.user.id, true); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Notification preferences could not be loaded." }, { status: 500 }); }
 
   return NextResponse.json({
     preferences: normalizePreferences(

@@ -1,5 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createPlatformReadRepository } from "@/lib/platform/read-repository";
+import { PlatformReadRepositoryError } from "@/lib/platform/read-repository-core";
 
 type CreateAgencyRequest = {
   name: string;
@@ -65,60 +67,9 @@ export async function GET() {
 
   const { supabase } = auth;
 
-  const { data: departments, error: departmentError } =
-    await supabase
-      .from("departments")
-      .select(`
-        id,
-        name,
-        short_name,
-        slug,
-        state,
-        county,
-        agency_type,
-        timezone,
-        sworn_officers,
-        civilian_staff,
-        is_active,
-        created_at
-      `)
-      .order("name");
-
-  if (departmentError) {
-    console.error("Failed to load departments:", departmentError);
-
-    return NextResponse.json(
-      { error: "Unable to load agencies." },
-      { status: 500 }
-    );
-  }
-
-  const { data: accounts, error: accountError } =
-    await supabase
-      .from("platform_agency_accounts")
-      .select(`
-        department_id,
-        account_status,
-        plan_type,
-        onboarding_status,
-        pilot_start_date,
-        production_start_date,
-        internal_notes,
-        created_at,
-        updated_at
-      `);
-
-  if (accountError) {
-    console.error(
-      "Failed to load platform agency accounts:",
-      accountError
-    );
-
-    return NextResponse.json(
-      { error: "Unable to load agency account information." },
-      { status: 500 }
-    );
-  }
+  let departments; let accounts;
+  try { ({ departments, accounts } = await createPlatformReadRepository(supabase, true).listAgencies()); }
+  catch (error) { console.error("Failed to load agencies:", error); return NextResponse.json({ error: error instanceof PlatformReadRepositoryError && error.domain === "accounts" ? "Unable to load agency account information." : "Unable to load agencies." }, { status: 500 }); }
 
   const accountMap = new Map(
     (accounts ?? []).map((account) => [

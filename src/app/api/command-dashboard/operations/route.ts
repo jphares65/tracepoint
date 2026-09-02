@@ -6,6 +6,7 @@ import {
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createOperationsReadRepository } from "@/lib/operations/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -39,23 +40,7 @@ export async function GET() {
     return permissionDeniedResponse("Command Dashboard permission is required.");
   }
 
-  const [trainingResult, fleetResult] = await Promise.all([
-    context.admin
-      .from("agency_training_events")
-      .select(
-        "id,title,training_type,starts_at,ends_at,status,location,agency_training_attendees(id,outcome_status)",
-      )
-      .eq("department_id", context.departmentId)
-      .order("starts_at", { ascending: true }),
-    context.admin
-      .from("fleet_vehicles")
-      .select(
-        "id,unit_number,year,make,model,status,open_issue_count,next_service_date,inspection_due_date,registration_expiration_date",
-      )
-      .eq("department_id", context.departmentId)
-      .neq("status", "Retired")
-      .order("unit_number", { ascending: true }),
-  ]);
+  const [trainingResult, fleetResult] = await createOperationsReadRepository(context.admin, context.departmentId).getCommandDashboard(context.departmentId);
 
   if (trainingResult.error && !missingTable(trainingResult.error)) {
     return NextResponse.json({ error: trainingResult.error.message }, { status: 500 });
@@ -67,8 +52,8 @@ export async function GET() {
   const now = Date.now();
   const sevenDays = now + 7 * 86_400_000;
   const thirtyDays = now + 30 * 86_400_000;
-  const trainingEvents = trainingResult.error ? [] : trainingResult.data ?? [];
-  const vehicles = fleetResult.error ? [] : fleetResult.data ?? [];
+  const trainingEvents = trainingResult.error || !Array.isArray(trainingResult.data) ? [] : trainingResult.data;
+  const vehicles = fleetResult.error || !Array.isArray(fleetResult.data) ? [] : fleetResult.data;
 
   const upcomingTraining = trainingEvents
     .filter((event: any) => {

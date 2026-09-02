@@ -1,0 +1,2 @@
+import "server-only"; import { requireOperationsReadProvider, TenantBoundOperationsReadRepository } from "./read-repository-core"; import { SupabaseOperationsReadDataSource, type OperationsClient } from "./read-repository-supabase";
+export function createOperationsReadRepository(client: OperationsClient, id: string) { requireOperationsReadProvider(process.env.TRACEPOINT_DATA_PROVIDER); return new TenantBoundOperationsReadRepository(new SupabaseOperationsReadDataSource(client), id); }

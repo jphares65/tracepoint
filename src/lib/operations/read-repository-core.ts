@@ -1,0 +1,6 @@
+export type OperationsResult = { data: unknown; error: { message: string; code?: string } | null };
+export interface OperationsReadDataSource { listTrainingEvents(id: string): PromiseLike<OperationsResult>; listFleetVehicles(id: string): PromiseLike<OperationsResult>; }
+export class OperationsReadAuthorizationError extends Error {}
+export class OperationsReadRepositoryError extends Error { readonly code?: string; constructor(message: string, code?: string) { super(message); this.code = code; } }
+export function requireOperationsReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase") throw new Error(`Unsupported data provider: ${provider}. Only supabase is implemented.`); return provider; }
+export class TenantBoundOperationsReadRepository { private readonly source: OperationsReadDataSource; private readonly id: string; constructor(source: OperationsReadDataSource, id: string) { if (!id) throw new OperationsReadAuthorizationError(); this.source = source; this.id = id; } private authorize(id: string) { if (id !== this.id) throw new OperationsReadAuthorizationError(); } async getCommandDashboard(id: string) { this.authorize(id); return Promise.all([this.source.listTrainingEvents(id), this.source.listFleetVehicles(id)]); } }

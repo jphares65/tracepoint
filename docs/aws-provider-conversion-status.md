@@ -93,3 +93,10 @@ and certificates, plus certification and off-duty policy metadata. Converted
 GET bodies contain no direct provider calls and colocated mutations remain
 unchanged. Eighty-five of the original 551 calls (15.4%) are now behind
 production repository boundaries. Supabase remains the sole/default provider.
+
+The notifications and operational metadata checkpoint adds eighteen reads
+across notification readiness/preferences, command-dashboard reporting,
+platform agencies/features, and active-department membership. Existing
+notification-event writes inside GET are isolated separately but are not counted
+as read conversion. One hundred three of the original 551 calls (18.7%) are now
+behind production repository boundaries; Supabase remains authoritative.

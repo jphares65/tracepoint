@@ -15,6 +15,8 @@ import {
 import {
   evaluateQualificationReadiness,
 } from "@/lib/tracepoint/qualification-readiness";
+import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
+import { createNotificationEventWriter } from "@/lib/notifications/event-writer";
 
 type Priority = "Critical" | "High" | "Normal";
 type Source =
@@ -341,98 +343,12 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
 async function collectCertificationReadiness(
   context: any,
 ): Promise<GeneratedAlert[]> {
-  let membershipQuery = context.admin
-    .from("department_memberships")
-    .select("user_id,badge_number,rank_title,is_active")
-    .eq("department_id", context.departmentId)
-    .eq("is_active", true);
-
-  if (!context.canViewDepartmentReadiness) {
-    membershipQuery = membershipQuery.eq(
-      "user_id",
-      context.user.id,
-    );
-  }
-
-  let credentialsQuery = context.admin
-    .from("training_certifications")
-    .select(
-      "id,user_id,certification_type_id,issue_date,expiration_date,is_active",
-    )
-    .eq("department_id", context.departmentId)
-    .eq("is_active", true);
-
-  if (!context.canViewDepartmentReadiness) {
-    credentialsQuery = credentialsQuery.eq(
-      "user_id",
-      context.user.id,
-    );
-  }
-
-  const [
-    membershipsResult,
-    typesResult,
-    requirementsResult,
-    credentialsResult,
-  ] = await Promise.all([
-    membershipQuery,
-
-    context.admin
-      .from("certification_types")
-      .select(
-        "id,name,category,expiration_required,default_valid_days,default_due_soon_days,is_active",
-      )
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true),
-
-    context.admin
-      .from("department_certification_requirements")
-      .select(
-        "certification_type_id,is_required,is_active,valid_days,due_soon_days",
-      )
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true)
-      .eq("is_required", true),
-
-    credentialsQuery,
-  ]);
-
-  if (membershipsResult.error) {
-    throw new Error(membershipsResult.error.message);
-  }
-
-  if (typesResult.error) {
-    throw new Error(typesResult.error.message);
-  }
-
-  if (requirementsResult.error) {
-    throw new Error(requirementsResult.error.message);
-  }
-
-  if (credentialsResult.error) {
-    throw new Error(credentialsResult.error.message);
-  }
-
-  const memberships = membershipsResult.data ?? [];
-
-  const userIds = memberships.map((row: any) =>
-    String(row.user_id),
-  );
-
-  let profiles: any[] = [];
-
-  if (userIds.length > 0) {
-    const { data, error } = await context.admin
-      .from("profiles")
-      .select("id,full_name")
-      .in("id", userIds);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    profiles = data ?? [];
-  }
+  const data = await createNotificationReadRepository(context.admin, context.departmentId, context.user.id).getCertificationReadiness(context.departmentId, context.user.id, context.canViewDepartmentReadiness);
+  const memberships = data.memberships;
+  const typesResult = { data: data.certificationTypes };
+  const requirementsResult = { data: data.requirements };
+  const credentialsResult = { data: data.credentials };
+  const profiles = data.profiles;
 
   const profileMap = new Map(
     profiles.map((profile: any) => [
@@ -1111,14 +1027,7 @@ function collectEquipmentReadiness(
   return alerts;
 }
 async function getPreferences(context: any) {
-  const { data, error } = await context.admin
-    .from("notification_preferences")
-    .select("in_app_enabled,email_enabled,critical_email_only,digest_mode,source_preferences")
-    .eq("department_id", context.departmentId)
-    .eq("user_id", context.user.id)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
+  const data = await createNotificationReadRepository(context.admin, context.departmentId, context.user.id).getPreferences(context.departmentId, context.user.id);
 
   return {
     in_app_enabled: data?.in_app_enabled ?? true,
@@ -1137,7 +1046,9 @@ async function getPreferences(context: any) {
       Range: true,
       Training: true,
       Qualifications: true,
-      Equipment: true,...(data?.source_preferences ?? {}),
+      Equipment: true,
+      Fleet: true,
+      ...((data?.source_preferences ?? {}) as Record<string, boolean>),
     },
   };
 }
@@ -1305,17 +1216,10 @@ export async function GET(request: NextRequest) {
           }),
       internalJson(request, "/api/pilot/personnel"),
       internalJson(request, "/api/settings/current-rules"),
-      context.admin
-        .from("qualification_results")
-        .select(
-          "id,officer_user_id,qualification_date,lighting_condition,passed,record_origin,historical_qualification_type",
-        )
-        .eq("department_id", context.departmentId)
-        .then(({ data, error }: any) => ({
-          ok: !error,
-          items: data ?? [],
-          error: error?.message ?? "",
-        })),
+      createNotificationReadRepository(context.admin, context.departmentId, context.user.id)
+        .listQualificationResults(context.departmentId, context.user.id)
+        .then((items) => ({ ok: true, items, error: "" }))
+        .catch((error) => ({ ok: false, items: [], error: error instanceof Error ? error.message : "Unavailable" })),
     ]);
 
     const agencyTraining = await collectAgencyTrainingNotifications(context)
@@ -1418,13 +1322,7 @@ export async function GET(request: NextRequest) {
       preferences.digest_mode,
       nowDate,
     );
-    const { data: existing, error: existingError } = await context.admin
-      .from("notification_events")
-      .select("*")
-      .eq("department_id", context.departmentId)
-      .eq("user_id", context.user.id);
-
-    if (existingError) throw new Error(existingError.message);
+    const existing = await createNotificationReadRepository(context.admin, context.departmentId, context.user.id).listNotificationEvents(context.departmentId, context.user.id);
     const byKey = new Map<string, ExistingNotificationEvent>(
       (existing ?? []).map(
         (row: ExistingNotificationEvent): [string, ExistingNotificationEvent] => [
@@ -1433,13 +1331,14 @@ export async function GET(request: NextRequest) {
         ],
       ),
     );
+    const eventWriter = createNotificationEventWriter(context.admin, context.departmentId, context.user.id);
 
     for (const item of filtered) {
       const prior = byKey.get(item.key);
       const fingerprint = JSON.stringify(item);
       const changed = prior && String(prior.fingerprint) !== fingerprint;
 
-      const { error } = await context.admin.from("notification_events").upsert({
+      await eventWriter.upsertEvent({
         department_id: context.departmentId,
         user_id: context.user.id,
         notification_key: item.key,
@@ -1457,9 +1356,7 @@ export async function GET(request: NextRequest) {
         acknowledged_at: changed ? null : prior?.acknowledged_at ?? null,
         snoozed_until: changed ? null : prior?.snoozed_until ?? null,
         updated_at: now,
-      }, { onConflict: "department_id,user_id,notification_key" });
-
-      if (error) throw new Error(error.message);
+      });
 
       if (
         preferences.email_enabled &&
@@ -1474,10 +1371,7 @@ export async function GET(request: NextRequest) {
         ) &&
         notificationRecipientEmail
       ) {
-        const { error: queueInsertError } =
-          await context.admin
-            .from("notification_email_queue")
-            .upsert({
+        try { await eventWriter.upsertEmail({
           department_id: context.departmentId,
           user_id: context.user.id,
           recipient_email: notificationRecipientEmail,
@@ -1488,11 +1382,9 @@ export async function GET(request: NextRequest) {
           scheduled_for: emailScheduledFor,
           status: "Pending",
           updated_at: now,
-        }, { onConflict: "department_id,user_id,notification_key,fingerprint", ignoreDuplicates: true });
-
-        if (queueInsertError) {
+        }); } catch (queueError) {
           throw new Error(
-            `Notification email could not be queued: ${queueInsertError.message}`,
+            `Notification email could not be queued: ${queueError instanceof Error ? queueError.message : "Unknown error"}`,
           );
         }
       }
@@ -1501,19 +1393,11 @@ export async function GET(request: NextRequest) {
     const activeKeys = new Set(filtered.map((item) => item.key));
     for (const row of existing ?? []) {
       if (successful.has(String(row.source)) && !activeKeys.has(String(row.notification_key)) && !row.resolved_at) {
-        await context.admin.from("notification_events").update({ resolved_at: now, updated_at: now }).eq("id", row.id);
+        await eventWriter.resolveEvent(String(row.id), now);
       }
     }
 
-    const { data: rows, error: rowsError } = await context.admin
-      .from("notification_events")
-      .select("*")
-      .eq("department_id", context.departmentId)
-      .eq("user_id", context.user.id)
-      .is("resolved_at", null)
-      .order("last_seen_at", { ascending: false });
-
-    if (rowsError) throw new Error(rowsError.message);
+    const rows = await createNotificationReadRepository(context.admin, context.departmentId, context.user.id).listNotificationEvents(context.departmentId, context.user.id, true);
 
     const allOpenItems = (rows ?? []).map((row: any) => ({
       id: row.id,
@@ -1641,9 +1525,6 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
-
-
-
 
 
 

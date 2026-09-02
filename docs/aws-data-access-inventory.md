@@ -158,6 +158,15 @@ calls, while colocated mutations remain direct. Eighty-five of the original 551
 static calls (15.4%) are now behind production repository boundaries. The
 regenerated inventory contains 545 calls after consolidated query relocation.
 
+The notifications and operational metadata checkpoint moves eighteen more
+production reads: ten notification/readiness/preference reads, two command
+dashboard aggregation reads, five platform agency/feature reads, and one
+authenticated active-department membership read. Notification GET writes retain
+their exact Supabase behavior behind a separate tenant/user-bound writer and are
+not counted as converted reads. One hundred three of the original 551 calls
+(18.7%) are now behind production repository boundaries. The deterministic
+inventory contains 542 static calls after consolidated relocation.
+
 ## Ordered conversion waves
 
 1. Complete low-risk server-only single-table reads by bounded context, with

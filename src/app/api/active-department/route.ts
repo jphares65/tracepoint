@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createActiveDepartmentReadRepository } from "@/lib/active-department/read-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -32,24 +33,13 @@ export async function GET() {
 
   const admin = createAdminClient() as any;
 
-  const { data: memberships, error } = await admin
-    .from("department_memberships")
-    .select(
-      "department_id,badge_number,rank_title,unit_name,departments(name,short_name,patch_url)",
-    )
-    .eq("user_id", user.id)
-    .eq("is_active", true);
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
-  }
+  let memberships;
+  try { memberships = await createActiveDepartmentReadRepository(admin, user.id).listMemberships(user.id); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Department memberships could not be loaded." }, { status: 500 }); }
 
   return NextResponse.json(
     {
-      memberships: (memberships ?? []).map((row: any) => ({
+      memberships: memberships.map((row: any) => ({
         departmentId: String(row.department_id ?? ""),
         departmentName:
           row.departments?.name ??

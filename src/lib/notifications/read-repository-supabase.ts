@@ -1,0 +1,14 @@
+import type { NotificationReadDataSource, NotificationReadResult } from "./read-repository-core.ts";
+export type NotificationQuery = PromiseLike<NotificationReadResult> & { select(fields: string): NotificationQuery; eq(key: string, value: unknown): NotificationQuery; in(key: string, values: string[]): NotificationQuery; is(key: string, value: unknown): NotificationQuery; order(key: string, options?: { ascending?: boolean }): NotificationQuery; maybeSingle(): NotificationQuery };
+export type NotificationClient = { from(table: string): NotificationQuery };
+export class SupabaseNotificationReadDataSource implements NotificationReadDataSource {
+  private readonly client: NotificationClient; constructor(client: NotificationClient) { this.client = client; }
+  listMemberships(id: string, userId?: string) { let query = this.client.from("department_memberships").select("user_id,badge_number,rank_title,is_active").eq("department_id", id).eq("is_active", true); if (userId) query = query.eq("user_id", userId); return query; }
+  listCredentials(id: string, userId?: string) { let query = this.client.from("training_certifications").select("id,user_id,certification_type_id,issue_date,expiration_date,is_active").eq("department_id", id).eq("is_active", true); if (userId) query = query.eq("user_id", userId); return query; }
+  listCertificationTypes(id: string) { return this.client.from("certification_types").select("id,name,category,expiration_required,default_valid_days,default_due_soon_days,is_active").eq("department_id", id).eq("is_active", true); }
+  listCertificationRequirements(id: string) { return this.client.from("department_certification_requirements").select("certification_type_id,is_required,is_active,valid_days,due_soon_days").eq("department_id", id).eq("is_active", true).eq("is_required", true); }
+  listProfiles(ids: string[]) { return this.client.from("profiles").select("id,full_name").in("id", ids); }
+  getPreferences(id: string, userId: string, includeUpdatedAt: boolean) { const fields = `in_app_enabled,email_enabled,critical_email_only,digest_mode,source_preferences${includeUpdatedAt ? ",updated_at" : ""}`; return this.client.from("notification_preferences").select(fields).eq("department_id", id).eq("user_id", userId).maybeSingle(); }
+  listQualificationResults(id: string) { return this.client.from("qualification_results").select("id,officer_user_id,qualification_date,lighting_condition,passed,record_origin,historical_qualification_type").eq("department_id", id); }
+  listNotificationEvents(id: string, userId: string, openOnly: boolean) { let query = this.client.from("notification_events").select("*").eq("department_id", id).eq("user_id", userId); if (openOnly) query = query.is("resolved_at", null).order("last_seen_at", { ascending: false }); return query; }
+}
