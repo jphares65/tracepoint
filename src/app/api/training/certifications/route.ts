@@ -5,6 +5,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createTrainingReadRepository } from "@/lib/training/read-repository";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -97,135 +98,12 @@ export async function GET() {
     );
   }
 
-  const [
-    certificationsResult,
-    membershipsResult,
-    typesResult,
-    requirementsResult,
-  ] = await Promise.all([
-    context.admin
-      .from("training_certifications")
-      .select("*")
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true)
-      .order("expiration_date", {
-        ascending: true,
-        nullsFirst: false,
-      }),
-
-    context.admin
-      .from("department_memberships")
-      .select("user_id,badge_number,rank_title,is_active")
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true),
-
-    context.admin
-      .from("certification_types")
-      .select(
-        "id,department_id,name,description,category,issuing_organization,expiration_required,default_valid_days,default_due_soon_days,is_active",
-      )
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true)
-      .order("category", { ascending: true })
-      .order("name", { ascending: true }),
-
-    context.admin
-      .from("department_certification_requirements")
-      .select(
-        "id,department_id,certification_type_id,is_required,valid_days,due_soon_days,is_active,notes",
-      )
-      .eq("department_id", context.departmentId)
-      .eq("is_active", true),
-  ]);
-
-  if (certificationsResult.error) {
-    return NextResponse.json(
-      { error: certificationsResult.error.message },
-      { status: 500 },
-    );
+  try {
+    const data = await createTrainingReadRepository(context.admin, context.departmentId).getCertificationWorkspace(context.departmentId);
+    return NextResponse.json({ ...data, canManage: context.canManage });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Certification records could not be loaded." }, { status: 500 });
   }
-
-  if (membershipsResult.error) {
-    return NextResponse.json(
-      { error: membershipsResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (typesResult.error) {
-    return NextResponse.json(
-      { error: typesResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (requirementsResult.error) {
-    return NextResponse.json(
-      { error: requirementsResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  const memberships = membershipsResult.data ?? [];
-
-  const userIds = memberships.map((row: any) =>
-    String(row.user_id),
-  );
-
-  let profiles: any[] = [];
-
-  if (userIds.length > 0) {
-    const { data: profileRows, error: profileError } =
-      await context.admin
-        .from("profiles")
-        .select("id,full_name")
-        .in("id", userIds);
-
-    if (profileError) {
-      return NextResponse.json(
-        { error: profileError.message },
-        { status: 500 },
-      );
-    }
-
-    profiles = profileRows ?? [];
-  }
-
-  const profilesById = new Map(
-    profiles.map((profile: any) => [
-      String(profile.id),
-      profile,
-    ]),
-  );
-
-  const members = memberships
-    .map((membership: any) => {
-      const profile = profilesById.get(
-        String(membership.user_id),
-      );
-
-      return {
-        user_id: String(membership.user_id),
-        full_name:
-          profile?.full_name ||
-          membership.rank_title ||
-          "Unnamed Officer",
-        badge_number: membership.badge_number ?? null,
-        rank_title: membership.rank_title ?? null,
-        is_active: membership.is_active ?? true,
-      };
-    })
-    .sort((left: any, right: any) =>
-      left.full_name.localeCompare(right.full_name),
-    );
-
-  return NextResponse.json({
-    certifications: certificationsResult.data ?? [],
-    members,
-    certificationTypes: typesResult.data ?? [],
-    requirements: requirementsResult.data ?? [],
-    canManage: context.canManage,
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -391,4 +269,3 @@ export async function POST(request: NextRequest) {
     { status: 201 },
   );
 }
-

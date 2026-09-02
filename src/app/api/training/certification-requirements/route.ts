@@ -5,6 +5,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createTrainingReadRepository } from "@/lib/training/read-repository";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -79,23 +80,12 @@ export async function GET() {
   }
 
   const { admin, departmentId } = resolved.context;
-
-  const { data, error } = await admin
-    .from("department_certification_requirements")
-    .select("*")
-    .eq("department_id", departmentId)
-    .order("created_at");
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+  try {
+    const items = await createTrainingReadRepository(admin, departmentId).getRequirements(departmentId);
+    return NextResponse.json({ items });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Certification requirements could not be loaded." }, { status: 500 });
   }
-
-  return NextResponse.json({
-    items: data ?? [],
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -232,4 +222,3 @@ export async function POST(request: NextRequest) {
     requirement: data,
   });
 }
-
