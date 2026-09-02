@@ -1,0 +1,4 @@
+import type { PolicyReadDataSource, PolicyResult } from "./read-repository-core.ts";
+export type PolicyQuery = PromiseLike<PolicyResult> & { select(fields: string): PolicyQuery; eq(key: string, value: unknown): PolicyQuery; maybeSingle(): PolicyQuery };
+export type PolicyClient = { from(table: string): PolicyQuery };
+export class SupabasePolicyReadDataSource implements PolicyReadDataSource { private readonly client: PolicyClient; constructor(client: PolicyClient) { this.client = client; } listCertificationCapabilities(id: string) { return this.client.from("department_certification_capabilities").select("id,capability_code,certification_type_id,is_active,notes").eq("department_id", id); } getOffDutyRules(id: string) { return this.client.from("department_rules").select("require_off_duty_inspection,require_off_duty_qualification,off_duty_renewal_days,inspection_interval_days,inspection_due_soon_days").eq("department_id", id).maybeSingle(); } }

@@ -5,6 +5,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createRangeReadRepository } from "@/lib/range/read-repository";
 
 type RemediationPayload = {
   remediations?: unknown;
@@ -32,20 +33,11 @@ export async function GET() {
   }
   const {
     admin,
-    user,
     departmentId,
   } = resolved.context;
 
   try {
-    const { data, error } = await admin
-      .from("pilot_remediation_workspaces")
-      .select("remediations, updated_at")
-      .eq("department_id", departmentId)
-      .maybeSingle();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    const data = await createRangeReadRepository(admin, departmentId).getRemediations(departmentId);
 
     return NextResponse.json({
       remediations: normalizeRemediations(data?.remediations),
@@ -149,8 +141,6 @@ export async function PUT(request: Request) {
     );
   }
 }
-
-
 
 
 

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { createObjectStore } from "@/lib/storage/object-store";
+import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
 const MANAGE = ["manage_training", "manage_certifications", "manage_range_days"] as const;
@@ -15,32 +16,17 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   if (!resolved.ok) return accessFailureResponse(resolved);
   const context = resolved.context;
   const { eventId } = await routeContext.params;
-  const event = await eventExists(context.admin, context.departmentId, eventId);
-  if (event.error) return NextResponse.json({ error: event.error.message }, { status: 500 });
-  if (!event.data) return NextResponse.json({ error: "Training event not found." }, { status: 404 });
-
-  const [files, certificates] = await Promise.all([
-    context.admin.from("attachments")
-      .select("id,attachment_type,file_name,mime_type,file_size,description,uploaded_by_user_id,uploaded_at")
-      .eq("department_id", context.departmentId).eq("entity_type", "agency_training_event")
-      .eq("entity_id", eventId).is("archived_at", null).order("uploaded_at", { ascending: false }),
-    context.admin.from("agency_training_certificates")
-      .select("id,user_id,certificate_number,certificate_title,issued_at,revoked_at")
-      .eq("department_id", context.departmentId).eq("event_id", eventId).order("issued_at", { ascending: true }),
-  ]);
-  if (files.error) return NextResponse.json({ error: files.error.message }, { status: 500 });
-  if (certificates.error) return NextResponse.json({ error: certificates.error.message }, { status: 500 });
-
-  const userIds = [...new Set((certificates.data ?? []).map((row: any) => String(row.user_id)))];
-  const profiles = userIds.length ? await context.admin.from("profiles").select("id,full_name").in("id", userIds) : { data: [], error: null };
-  if (profiles.error) return NextResponse.json({ error: profiles.error.message }, { status: 500 });
-  const names = new Map((profiles.data ?? []).map((row: any) => [String(row.id), row.full_name]));
+  try {
+  const data = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getFiles({ departmentId: context.departmentId, eventId });
+  if (!data) return NextResponse.json({ error: "Training event not found." }, { status: 404 });
+  const names = new Map(data.profiles.map((row: any) => [String(row.id), row.full_name]));
   return NextResponse.json({
-    status: event.data.status,
-    files: files.data ?? [],
-    certificates: (certificates.data ?? []).map((row: any) => ({ ...row, fullName: names.get(String(row.user_id)) ?? "Department Member" })),
+    status: data.event.status,
+    files: data.files,
+    certificates: data.certificates.map((row: any) => ({ ...row, fullName: names.get(String(row.user_id)) ?? "Department Member" })),
     canManage: hasAnyServerPermission(context, MANAGE),
   }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Training files could not be loaded." }, { status: 500 }); }
 }
 
 export async function POST(request: NextRequest, routeContext: RouteContext) {

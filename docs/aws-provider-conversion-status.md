@@ -85,3 +85,11 @@ equipment and histories, actor profiles, and Fleet rules. The production GET
 handlers use the tenant-bound repository while POST, PATCH, and PUT paths remain
 unchanged. Forty-nine of the original 551 calls (8.9%) are now behind production
 repository boundaries.
+
+The Training certification checkpoint adds six tenant-bound reads. The next
+Range and reporting checkpoint adds thirty reads across Pilot workspaces,
+personnel, performance reporting, Agency Training event reports, rosters, files
+and certificates, plus certification and off-duty policy metadata. Converted
+GET bodies contain no direct provider calls and colocated mutations remain
+unchanged. Eighty-five of the original 551 calls (15.4%) are now behind
+production repository boundaries. Supabase remains the sole/default provider.

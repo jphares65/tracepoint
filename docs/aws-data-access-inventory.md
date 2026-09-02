@@ -149,6 +149,15 @@ network-field masking are covered by focused tests. Forty-nine of the original
 mutations remain direct and unchanged. The generated inventory now contains 549
 calls because eleven route calls are represented by nine thin-adapter calls.
 
+The Training certification checkpoint moves six reads across certification
+workspace and certification-requirement GET handlers. The next Range and
+reporting checkpoint moves thirty additional reads: fifteen Range/Pilot reads,
+thirteen Agency Training reporting/roster/file/certificate reads, and two
+policy-metadata reads. Converted GET bodies contain no direct `.from(...)`
+calls, while colocated mutations remain direct. Eighty-five of the original 551
+static calls (15.4%) are now behind production repository boundaries. The
+regenerated inventory contains 548 calls after consolidated query relocation.
+
 ## Ordered conversion waves
 
 1. Complete low-risk server-only single-table reads by bounded context, with

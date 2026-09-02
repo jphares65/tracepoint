@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AgencyTrainingReadAuthorizationError, AgencyTrainingReadRepositoryError, mapAgencyTrainingEvent, requireAgencyTrainingReadProvider, TenantBoundAgencyTrainingReadRepository, type AgencyTrainingReadDataSource, type AgencyTrainingResult } from "./read-repository-core.ts";
@@ -6,7 +5,7 @@ import { EVENT_FIELDS, SupabaseAgencyTrainingReadDataSource } from "./read-repos
 
 const result = (data: Record<string, any>[] = [], error: { message: string } | null = null): AgencyTrainingResult => ({ data, error });
 function source(overrides: Partial<AgencyTrainingReadDataSource> = {}): AgencyTrainingReadDataSource {
-  return { listInstructorMemberships: async () => result(), listProfiles: async () => result(), listRequirements: async () => result(), listEvents: async () => result(), ...overrides };
+  return { listInstructorMemberships: async () => result(), listProfiles: async () => result(), listRequirements: async () => result(), listEvents: async () => result(), getEvent: async () => result(), listAttendees: async () => result(), listActiveMemberships: async () => result(), listEventFiles: async () => result(), listCertificates: async () => result(), getCertificate: async () => result(), getProfile: async () => result(), ...overrides };
 }
 
 test("rejects missing and cross-tenant context before provider I/O", async () => {
@@ -36,6 +35,8 @@ test("preserves event aggregation and empty/default values", () => {
   const mapped = mapAgencyTrainingEvent({ id: "e", topics: null, agency_training_attendees: [{ outcome_status: "passed" }, { outcome_status: "failed" }], agency_training_event_instructors: [{ user_id: "lead", display_name: "Lead", is_lead: true }, { user_id: "other", display_name: "Other", is_lead: false }] });
   assert.equal(mapped.attendeeCount, 2); assert.equal(mapped.completedCount, 1); assert.equal(mapped.instructorCount, 2); assert.equal(mapped.leadInstructor, "Lead"); assert.deepEqual(mapped.topics, []); assert.deepEqual(mapped.additionalInstructors, [{ userId: "other", displayName: "Other", organization: undefined, credentials: undefined, instructorRole: undefined }]);
 });
+
+test("reporting reads preserve tenant binding, enrichment, and not-found", async () => { const repository = new TenantBoundAgencyTrainingReadRepository(source({ getEvent: async () => ({ data: { id: "e", title: "Event" }, error: null }), listAttendees: async () => result([{ user_id: "u" }]), listProfiles: async () => result([{ id: "u", full_name: "Alex" }]) }), "dept-a"); const report = await repository.getReport({ departmentId: "dept-a", eventId: "e" }); assert.equal(report?.profiles[0].full_name, "Alex"); const missing = new TenantBoundAgencyTrainingReadRepository(source({ getEvent: async () => ({ data: null, error: null }) }), "dept-a"); assert.equal(await missing.getRoster({ departmentId: "dept-a", eventId: "missing" }), null); await assert.rejects(repository.getFiles({ departmentId: "dept-b", eventId: "e" }), AgencyTrainingReadAuthorizationError); });
 
 test("preserves provider error messages and provider fail-closed behavior", async () => {
   const repository = new TenantBoundAgencyTrainingReadRepository(source({ listRequirements: async () => result([], { message: "requirements failed" }) }), "dept-a");

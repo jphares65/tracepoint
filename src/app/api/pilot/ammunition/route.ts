@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createRangeReadRepository } from "@/lib/range/read-repository";
 
 type AmmunitionWorkspace = {
   dutyLots?: unknown[];
@@ -42,18 +43,7 @@ export async function GET() {
   const departmentId = context.departmentId;
 
   try {
-    const { data, error } = await admin
-      .from("pilot_ammunition_workspaces")
-      .select("workspace, updated_at")
-      .eq("department_id", departmentId)
-      .maybeSingle();
-
-    if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 },
-      );
-    }
+    const data = await createRangeReadRepository(admin, departmentId).getAmmunition(departmentId);
 
     return NextResponse.json({
       departmentId,

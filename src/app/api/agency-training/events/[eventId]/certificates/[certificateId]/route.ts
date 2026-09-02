@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 
 type RouteContext = { params: Promise<{ eventId: string; certificateId: string }> };
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -11,13 +12,11 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   if (!resolved.ok) return accessFailureResponse(resolved);
   const context = resolved.context;
   const { eventId, certificateId } = await routeContext.params;
-  const result = await context.admin.from("agency_training_certificates")
-    .select("*,agency_training_events(title,starts_at,location),departments(name)")
-    .eq("department_id", context.departmentId).eq("event_id", eventId).eq("id", certificateId).maybeSingle();
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
-  if (!result.data || result.data.revoked_at) return NextResponse.json({ error: "Certificate not found." }, { status: 404 });
-  const profile = await context.admin.from("profiles").select("full_name").eq("id", result.data.user_id).maybeSingle();
-  if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
+  try {
+  const data = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getCertificate({ departmentId: context.departmentId, eventId, certificateId });
+  if (!data) return NextResponse.json({ error: "Certificate not found." }, { status: 404 });
+  const result = { data: data.certificate as any };
+  const profile = { data: data.profile };
 
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([792, 612]);
@@ -49,4 +48,5 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   new Uint8Array(body).set(bytes);
   const safe = clean(profile.data?.full_name).replace(/[^a-zA-Z0-9]+/g, "-") || "certificate";
   return new NextResponse(body, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${safe}-training-certificate.pdf"`, "Cache-Control": "private, no-store" } });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Certificate could not be loaded." }, { status: 500 }); }
 }

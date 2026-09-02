@@ -5,6 +5,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createRangeReadRepository } from "@/lib/range/read-repository";
 
 type Risk = "Low" | "Medium" | "High";
 
@@ -162,81 +163,6 @@ function qualificationStatus(latest?: QualificationRow) {
   }
 
   return "Current";
-}
-
-async function getPersonnelLabels(
-  admin: any,
-  departmentId: string,
-): Promise<OfficerLabelMap> {
-  const { data: memberships, error: membershipError } = await admin
-    .from("department_memberships")
-    .select("user_id, badge_number, rank_title, unit_name, is_active")
-    .eq("department_id", departmentId)
-    .eq("is_active", true);
-
-  if (membershipError) {
-    throw new Error(membershipError.message);
-  }
-
-  const safeMemberships = Array.isArray(memberships)
-    ? memberships
-    : [];
-
-  const userIds = safeMemberships
-    .map((membership: any) => membership.user_id)
-    .filter(Boolean);
-
-  if (userIds.length === 0) {
-    return {};
-  }
-
-  const { data: profiles, error: profileError } = await admin
-    .from("profiles")
-    .select("id, full_name, email")
-    .in("id", userIds);
-
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
-
-  const profilesById = new Map<string, any>();
-
-  (profiles ?? []).forEach((profile: any) => {
-    profilesById.set(profile.id, profile);
-  });
-
-  const labels: OfficerLabelMap = {};
-
-  safeMemberships.forEach((membership: any) => {
-    const profile = profilesById.get(membership.user_id);
-
-    const fullName = String(
-      profile?.full_name ??
-        profile?.email ??
-        membership.user_id,
-    ).trim();
-
-    const rankTitle = String(
-      membership.rank_title ?? "",
-    ).trim();
-
-    const displayName =
-      rankTitle &&
-      !fullName
-        .toLowerCase()
-        .startsWith(`${rankTitle.toLowerCase()} `)
-        ? `${rankTitle} ${fullName}`
-        : fullName;
-
-    labels[membership.user_id] = {
-      name: displayName,
-      assignment:
-        String(membership.unit_name ?? "").trim() ||
-        "Department Personnel",
-    };
-  });
-
-  return labels;
 }
 
 function buildQualificationTrends(
@@ -636,93 +562,13 @@ export async function GET() {
     resolved.context;
 
   try {
-    const [
-      personnelLabels,
-      qualificationQuery,
-      rangeDayQuery,
-      drillQuery,
-      resultQuery,
-    ] = await Promise.all([
-      getPersonnelLabels(admin, departmentId),
-
-      admin
-        .from("qualification_results")
-        .select(
-          "id, officer_user_id, qualification_date, lighting_condition, score, passed, expires_on, notes",
-        )
-        .eq("department_id", departmentId),
-
-      admin
-        .from("range_days")
-        .select(
-          "id, title, range_date, status, range_type, packet_status",
-        )
-        .eq("department_id", departmentId),
-
-      admin
-        .from("range_day_drills")
-        .select(
-          "id, range_day_id, name, category, scoring_format, passing_score, max_score, passing_time_seconds",
-        )
-        .eq("department_id", departmentId),
-
-      admin
-        .from("drill_run_results")
-        .select(
-          "id, range_day_id, range_day_drill_id, officer_user_id, run_number, scoring_format_snapshot, completed, score, time_seconds, hit_count, passed, notes, deficiency_observed, remedial_training_recommended, recorded_at",
-        )
-        .eq("department_id", departmentId)
-        .eq("completed", true),
-    ]);
-
-    if (qualificationQuery.error) {
-      throw new Error(
-        qualificationQuery.error.message,
-      );
-    }
-
-    if (rangeDayQuery.error) {
-      throw new Error(
-        rangeDayQuery.error.message,
-      );
-    }
-
-    if (drillQuery.error) {
-      throw new Error(drillQuery.error.message);
-    }
-
-    if (resultQuery.error) {
-      throw new Error(
-        resultQuery.error.message,
-      );
-    }
-
-    const qualificationResults =
-      (qualificationQuery.data ??
-        []) as QualificationRow[];
-
-    const rangeDays =
-      (rangeDayQuery.data ??
-        []) as RangeDayRow[];
-
-    const drills =
-      (drillQuery.data ??
-        []) as RangeDayDrillRow[];
-
-    const drillResults =
-      (resultQuery.data ??
-        []) as DrillResultRow[];
-
-    const rosterQuery = await admin
-      .from("range_day_roster")
-      .select("id, range_day_id, officer_user_id, attendance_status")
-      .eq("department_id", departmentId);
-
-    if (rosterQuery.error) {
-      throw new Error(rosterQuery.error.message);
-    }
-
-    const rangeRoster = rosterQuery.data ?? [];
+    const inputs = await createRangeReadRepository(admin, departmentId).getPerformanceInputs(departmentId);
+    const personnelLabels = inputs.personnelLabels as OfficerLabelMap;
+    const qualificationResults = inputs.qualificationResults as QualificationRow[];
+    const rangeDays = inputs.rangeDays as RangeDayRow[];
+    const drills = inputs.drills as RangeDayDrillRow[];
+    const drillResults = inputs.drillResults as DrillResultRow[];
+    const rangeRoster = inputs.rangeRoster;
     const qualificationTrends =
       buildQualificationTrends(
         personnelLabels,

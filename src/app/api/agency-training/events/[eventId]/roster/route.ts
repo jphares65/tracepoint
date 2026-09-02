@@ -6,6 +6,7 @@ import {
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
 
@@ -142,31 +143,19 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
 
   const context = resolved.context;
   const { eventId } = await routeContext.params;
-  const eventResult = await findEvent(
-    context.admin,
-    context.departmentId,
-    eventId,
-  );
-
-  if (eventResult.error) {
-    return NextResponse.json({ error: eventResult.error.message }, { status: 500 });
-  }
-  if (!eventResult.data) {
+  try {
+  const roster = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getRoster({ departmentId: context.departmentId, eventId });
+  if (!roster) {
     return NextResponse.json({ error: "Training event not found." }, { status: 404 });
-  }
-
-  const roster = await loadRoster(context.admin, context.departmentId, eventId);
-  if (roster.error) {
-    return NextResponse.json({ error: roster.error }, { status: 500 });
   }
 
   return NextResponse.json(
     {
       event: {
-        id: eventResult.data.id,
-        title: eventResult.data.title,
-        defaultHours: eventResult.data.default_hours,
-        status: eventResult.data.status,
+        id: roster.event.id,
+        title: roster.event.title,
+        defaultHours: roster.event.default_hours,
+        status: roster.event.status,
       },
       members: roster.members,
       attendees: roster.attendees,
@@ -174,6 +163,7 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
     },
     { headers: { "Cache-Control": "no-store" } },
   );
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Training roster could not be loaded." }, { status: 500 }); }
 }
 
 export async function PUT(request: NextRequest, routeContext: RouteContext) {

@@ -1,6 +1,6 @@
 export type AgencyTrainingRow = Record<string, unknown>;
 export type AgencyTrainingResult = {
-  data: AgencyTrainingRow[] | null;
+  data: AgencyTrainingRow | AgencyTrainingRow[] | null;
   error: { message: string } | null;
 };
 
@@ -9,6 +9,13 @@ export interface AgencyTrainingReadDataSource {
   listProfiles(userIds: string[]): PromiseLike<AgencyTrainingResult>;
   listRequirements(departmentId: string): PromiseLike<AgencyTrainingResult>;
   listEvents(departmentId: string): PromiseLike<AgencyTrainingResult>;
+  getEvent(departmentId: string, eventId: string, fields: string): PromiseLike<AgencyTrainingResult>;
+  listAttendees(departmentId: string, eventId: string, fields: string): PromiseLike<AgencyTrainingResult>;
+  listActiveMemberships(departmentId: string): PromiseLike<AgencyTrainingResult>;
+  listEventFiles(departmentId: string, eventId: string): PromiseLike<AgencyTrainingResult>;
+  listCertificates(departmentId: string, eventId: string): PromiseLike<AgencyTrainingResult>;
+  getCertificate(departmentId: string, eventId: string, certificateId: string): PromiseLike<AgencyTrainingResult>;
+  getProfile(userId: string): PromiseLike<AgencyTrainingResult>;
 }
 
 export class AgencyTrainingReadAuthorizationError extends Error {
@@ -36,8 +43,9 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
 function rows(result: AgencyTrainingResult) {
   if (result.error) throw new AgencyTrainingReadRepositoryError(result.error.message);
-  return result.data ?? [];
+  return Array.isArray(result.data) ? result.data : [];
 }
+function record(result: AgencyTrainingResult) { if (result.error) throw new AgencyTrainingReadRepositoryError(result.error.message); return !Array.isArray(result.data) ? result.data : null; }
 
 export function requireAgencyTrainingReadProvider(provider: string | undefined) {
   const value = provider?.trim().toLowerCase() || "supabase";
@@ -113,4 +121,9 @@ export class TenantBoundAgencyTrainingReadRepository {
     this.authorize(input.departmentId);
     return rows(await this.source.listEvents(input.departmentId)).map(mapAgencyTrainingEvent);
   }
+
+  async getReport(input: { departmentId: string; eventId: string }) { this.authorize(input.departmentId); const event = record(await this.source.getEvent(input.departmentId, input.eventId, "*")); if (!event) return null; const attendees = rows(await this.source.listAttendees(input.departmentId, input.eventId, "*")); const ids = attendees.map((row) => String(row.user_id)); const profiles = ids.length ? rows(await this.source.listProfiles(ids)) : []; return { event, attendees, profiles }; }
+  async getRoster(input: { departmentId: string; eventId: string }) { this.authorize(input.departmentId); const event = record(await this.source.getEvent(input.departmentId, input.eventId, "id,title,default_hours,status")); if (!event) return null; const [attendeesResult, memberships] = await Promise.all([this.source.listAttendees(input.departmentId, input.eventId, "id,user_id,attendance_status,outcome_status,hours_completed,score_text,result_notes,remedial_notes,recorded_at,updated_at"), this.source.listActiveMemberships(input.departmentId)]); const memberRows = rows(memberships); const ids = memberRows.map((row) => String(row.user_id)); const profiles = ids.length ? rows(await this.source.listProfiles(ids)) : []; const profileMap = new Map(profiles.map((profile) => [String(profile.id), profile])); const members = memberRows.map((membership) => ({ userId: String(membership.user_id), fullName: text(profileMap.get(String(membership.user_id))?.full_name) || text(membership.rank_title) || "Unnamed Member", badgeNumber: text(membership.badge_number) || null, rankTitle: text(membership.rank_title) || null, unitName: text(membership.unit_name) || null })).sort((a, b) => a.fullName.localeCompare(b.fullName)); const memberMap = new Map(members.map((member) => [member.userId, member])); const attendees = rows(attendeesResult).map((row) => ({ id: row.id, userId: String(row.user_id), fullName: memberMap.get(String(row.user_id))?.fullName ?? "Former Member", badgeNumber: memberMap.get(String(row.user_id))?.badgeNumber ?? null, rankTitle: memberMap.get(String(row.user_id))?.rankTitle ?? null, unitName: memberMap.get(String(row.user_id))?.unitName ?? null, attendanceStatus: row.attendance_status, outcomeStatus: row.outcome_status, hoursCompleted: row.hours_completed, scoreText: row.score_text, resultNotes: row.result_notes, remedialNotes: row.remedial_notes, recordedAt: row.recorded_at, updatedAt: row.updated_at })); return { event, members, attendees }; }
+  async getFiles(input: { departmentId: string; eventId: string }) { this.authorize(input.departmentId); const event = record(await this.source.getEvent(input.departmentId, input.eventId, "id,status")); if (!event) return null; const [filesResult, certificatesResult] = await Promise.all([this.source.listEventFiles(input.departmentId, input.eventId), this.source.listCertificates(input.departmentId, input.eventId)]); const certificates = rows(certificatesResult); const ids = certificates.map((row) => String(row.user_id)); const profiles = ids.length ? rows(await this.source.listProfiles(ids)) : []; return { event, files: rows(filesResult), certificates, profiles }; }
+  async getCertificate(input: { departmentId: string; eventId: string; certificateId: string }) { this.authorize(input.departmentId); const certificate = record(await this.source.getCertificate(input.departmentId, input.eventId, input.certificateId)); if (!certificate || certificate.revoked_at) return null; const profile = record(await this.source.getProfile(String(certificate.user_id))); return { certificate, profile }; }
 }

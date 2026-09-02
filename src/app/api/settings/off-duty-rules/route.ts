@@ -9,6 +9,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createPolicyReadRepository } from "@/lib/policy-metadata/read-repository";
 
 function integer(
   value: unknown,
@@ -56,29 +57,11 @@ export async function GET() {
 
   const { context } = resolved;
 
-  const { data, error } =
-    await context.admin
-      .from("department_rules")
-      .select(
-        [
-          "require_off_duty_inspection",
-          "require_off_duty_qualification",
-          "off_duty_renewal_days",
-          "inspection_interval_days",
-          "inspection_due_soon_days",
-        ].join(","),
-      )
-      .eq(
-        "department_id",
-        context.departmentId,
-      )
-      .maybeSingle();
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+  let data;
+  try {
+    data = await createPolicyReadRepository(context.admin, context.departmentId).getOffDutyRules(context.departmentId);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Off-duty rules could not be loaded." }, { status: 500 });
   }
 
   return NextResponse.json({

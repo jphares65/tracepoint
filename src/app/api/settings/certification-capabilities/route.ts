@@ -6,6 +6,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createPolicyReadRepository } from "@/lib/policy-metadata/read-repository";
 
 const SUPPORTED_CAPABILITIES = new Set([
   "perform_firearm_inspections",
@@ -34,22 +35,15 @@ export async function GET() {
     return featureError;
   }
 
-  const { data, error } = await context.admin
-    .from("department_certification_capabilities")
-    .select(
-      "id,capability_code,certification_type_id,is_active,notes",
-    )
-    .eq("department_id", context.departmentId);
-
-  if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+  let data;
+  try {
+    data = await createPolicyReadRepository(context.admin, context.departmentId).listCertificationCapabilities(context.departmentId);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Certification capabilities could not be loaded." }, { status: 500 });
   }
 
   return NextResponse.json({
-    items: data ?? [],
+    items: data,
   });
 }
 

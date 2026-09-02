@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { createRangeReadRepository } from "@/lib/range/read-repository";
 
 type PersonnelRecord = {
   id: string;
@@ -92,81 +93,20 @@ export async function GET() {
   const departmentId = context.departmentId;
 
   try {
-    const {
-      data: memberships,
-      error: membershipError,
-    } = await admin
-      .from("department_memberships")
-      .select(
-        "user_id, badge_number, rank_title, unit_name, employee_number, is_active, joined_at",
-      )
-      .eq("department_id", departmentId)
-      .eq("is_active", true)
-      .order("rank_title", { ascending: true })
-      .order("joined_at", { ascending: true });
-
-    if (membershipError) {
-      return NextResponse.json(
-        { error: membershipError.message },
-        { status: 500 },
-      );
-    }
-
-    const safeMemberships = Array.isArray(memberships)
-      ? memberships
-      : [];
-
-    const userIds = safeMemberships
-      .map((membership: any) => membership.user_id)
-      .filter(Boolean);
-
+    const readData = await createRangeReadRepository(admin, departmentId).getPersonnel(departmentId);
+    const safeMemberships = readData.memberships;
     const profilesById = new Map<string, any>();
     const rolesByUserId = new Map<string, string[]>();
-
-    if (userIds.length > 0) {
-      const {
-        data: profiles,
-        error: profileError,
-      } = await admin
-        .from("profiles")
-        .select("id, full_name, email")
-        .in("id", userIds);
-
-      if (profileError) {
-        return NextResponse.json(
-          { error: profileError.message },
-          { status: 500 },
-        );
-      }
-
-      (profiles ?? []).forEach((profile: any) => {
+      readData.profiles.forEach((profile: any) => {
         profilesById.set(profile.id, profile);
       });
-
-      const {
-        data: roleRows,
-        error: roleError,
-      } = await admin
-        .from("department_membership_roles")
-        .select("user_id, role_code")
-        .eq("department_id", departmentId)
-        .in("user_id", userIds);
-
-      if (roleError) {
-        return NextResponse.json(
-          { error: roleError.message },
-          { status: 500 },
-        );
-      }
-
-      (roleRows ?? []).forEach((roleRow: any) => {
+      readData.roles.forEach((roleRow: any) => {
         const current =
           rolesByUserId.get(roleRow.user_id) ?? [];
 
         current.push(roleRow.role_code);
         rolesByUserId.set(roleRow.user_id, current);
       });
-    }
 
     const personnel: PersonnelRecord[] =
       safeMemberships.map((membership: any) => {
