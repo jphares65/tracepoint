@@ -19,6 +19,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
+import { REPORT_DEFINITIONS, reportCollection } from "@/lib/reports/report-definitions";
 
 type ImportTypeId =
   | "personnel"
@@ -1362,9 +1363,10 @@ function ImportWizardContent() {
   const platformDepartmentId =
     searchParams.get("platformDepartmentId")?.trim() ?? "";
 
-  const { departmentId: activeDepartmentId } = useTracePointAccess({
+  const access = useTracePointAccess({
     enabled: !platformDepartmentId,
   });
+  const activeDepartmentId = access.departmentId;
 
   const departmentId =
     platformDepartmentId || activeDepartmentId;
@@ -1411,6 +1413,29 @@ function ImportWizardContent() {
         badge: string;
       }>
     >([]);
+
+  const availableReports = useMemo(() => REPORT_DEFINITIONS.filter((definition) => {
+    if (definition.key === "complete") return access.hasPermission("administer_department");
+    const entitled = !definition.featureCode || access.isFeatureEnabled(definition.featureCode);
+    const permitted = definition.permissions.length === 0 || access.hasAnyPermission(definition.permissions);
+    return entitled && permitted;
+  }), [access]);
+  const selectedReportDefinition = availableReports.find((definition) => definition.key === reportType) ?? availableReports[0];
+  const selectedReportFilters = new Set(selectedReportDefinition?.filters ?? []);
+  const effectiveReportType = selectedReportDefinition?.key ?? "";
+  const reportStatusOptions = effectiveReportType === "off-duty-firearms"
+    ? ["Draft","Pending Command Review","Returned for Correction","Approved","Denied","Withdrawn"]
+    : effectiveReportType === "firearm-inspections" ? ["Passed","Failed","Needs Maintenance","Removed from Service"]
+    : effectiveReportType === "fleet" ? ["Available","Attention","Maintenance","Out of Service","Retired"]
+    : effectiveReportType === "fleet-inspections" ? ["Passed","Passed with Defects","Failed"]
+    : effectiveReportType === "fleet-maintenance" ? ["Open","Assigned","Scheduled","In Progress","Awaiting Parts","Completed","Cancelled"]
+    : effectiveReportType === "fleet-equipment" ? ["Current","Attention","Missing","Out of Service","Removed"]
+    : effectiveReportType === "equipment" ? ["active","out_of_service","removed"]
+    : effectiveReportType === "certifications" ? ["Current","Due Soon","Expired","Missing"]
+    : effectiveReportType === "agency-training" ? ["draft","scheduled","in_progress","completed","cancelled"]
+    : effectiveReportType === "range-days" ? ["Draft","Scheduled","In Progress","Completed","Cancelled"]
+    : effectiveReportType === "alerts" || effectiveReportType === "readiness" ? ["Critical","High","Normal","Resolved"]
+    : ["Current","Completed","Incomplete","Passed","Failed"];
 
   const [exportError, setExportError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -3422,12 +3447,15 @@ function ImportWizardContent() {
       async function safeReportFetch(
         name: string,
         url: string,
+        reportKey: string | readonly string[],
       ): Promise<{
         name: string;
         ok: boolean;
         data: JsonObject;
         error?: string;
       }> {
+        const reportKeys = Array.isArray(reportKey) ? reportKey : [reportKey];
+        if (!availableReports.some((definition) => reportKeys.includes(definition.key))) return { name, ok: true, data: {} };
         try {
           const data = await fetchJson<JsonObject>(url);
 
@@ -3453,39 +3481,53 @@ function ImportWizardContent() {
         safeReportFetch(
           "Personnel",
           "/api/pilot/personnel",
+          "personnel",
         ),
         safeReportFetch(
           "Range / Training",
           "/api/pilot/range-workspace",
+          ["range-days","training-records","qualifications"],
         ),
         safeReportFetch(
           "Certifications",
           "/api/training/certifications",
+          "certifications",
         ),
         safeReportFetch(
           "Equipment",
           "/api/equipment/assets",
+          "equipment",
         ),
         safeReportFetch(
           "Equipment Types",
           "/api/equipment/types",
+          "equipment",
         ),
         safeReportFetch(
           "Off-Duty Firearms",
           "/api/off-duty-firearms",
+          "off-duty-firearms",
         ),
         safeReportFetch(
           "Audit History",
           "/api/settings/audit-log/export?purpose=complete_report",
+          "audit-history",
         ),
         safeReportFetch(
           "Firearms",
           "/api/armory/firearms",
+          "firearms",
         ),
+        safeReportFetch("Firearm Inspections", "/api/armory/inspections", "firearm-inspections"),
+        safeReportFetch("Personal Rifles", "/api/armory/personal-rifles", "personal-rifles"),
         safeReportFetch(
           "Ammunition",
-          "/api/pilot/ammunition",
+          "/api/armory/ammunition",
+          ["ammunition","ammunition-transactions"],
         ),
+        safeReportFetch("Agency Training", "/api/agency-training/events", "agency-training"),
+        safeReportFetch("Fleet", "/api/fleet/report", ["fleet","fleet-inspections","fleet-maintenance","fleet-equipment"]),
+        safeReportFetch("Alerts", "/api/notifications", "alerts"),
       ]);
 
       const byName = new Map(
@@ -3518,9 +3560,17 @@ function ImportWizardContent() {
 
       const firearmsData =
         byName.get("Firearms")?.data ?? {};
+      const firearmInspections = byName.get("Firearm Inspections")?.data.inspections ?? [];
+      const personalRifles = byName.get("Personal Rifles")?.data.rifles ?? [];
 
       const ammunitionData =
         byName.get("Ammunition")?.data ?? {};
+      const agencyTraining = byName.get("Agency Training")?.data.events ?? [];
+      const fleet = byName.get("Fleet")?.data.vehicles ?? [];
+      const fleetInspections = byName.get("Fleet")?.data.inspections ?? [];
+      const fleetWorkOrders = byName.get("Fleet")?.data.workOrders ?? [];
+      const fleetEquipment = byName.get("Fleet")?.data.equipment ?? [];
+      const alerts = byName.get("Alerts")?.data.items ?? [];
 
       const personnel =
         personnelData.personnel ??
@@ -3560,15 +3610,10 @@ function ImportWizardContent() {
         firearmsData.items ??
         [];
 
-      const ammunitionWorkspace =
-        ammunitionData.workspace ??
-        ammunitionData;
-
-      const dutyLots =
-        ammunitionWorkspace.dutyLots ?? [];
-
-      const trainingLots =
-        ammunitionWorkspace.trainingLots ?? [];
+      const ammunitionLots = ammunitionData.lots ?? [];
+      const dutyLots = ammunitionLots.filter((lot:any)=>String(lot.category??"").toLowerCase()==="duty");
+      const trainingLots = ammunitionLots.filter((lot:any)=>String(lot.category??"").toLowerCase()!=="duty");
+      const ammunitionTransactions = ammunitionData.transactions ?? [];
 
       const selectedOfficerId =
         reportOfficerId === "all"
@@ -4054,6 +4099,11 @@ function ImportWizardContent() {
         ]);
 
       let y = 630;
+      let sectionSuppressed = false;
+      let currentSection = "";
+      const sectionReportKeys: Record<string,string> = {"QUALIFICATION HISTORY":"qualifications","TRAINING RECORDS":"training-records","RANGE DAYS":"range-days","CERTIFICATIONS":"certifications","EQUIPMENT":"equipment","OFF-DUTY FIREARMS":"off-duty-firearms","FIREARMS INVENTORY":"firearms","AMMUNITION":"ammunition","AGENCY TRAINING":"agency-training","FLEET":"fleet","FLEET INSPECTIONS":"fleet-inspections","FLEET MAINTENANCE AND WORK ORDERS":"fleet-maintenance","VEHICLE-ASSOCIATED EQUIPMENT":"fleet-equipment","CURRENT ALERTS AND UNRESOLVED ITEMS":"alerts","AUDIT HISTORY":"audit-history"};
+      const summaryReportKeys: Record<string,string> = {"Personnel Records":"personnel","Firearms":"firearms","Duty Ammunition Lots":"ammunition","Training Ammunition Lots":"ammunition","Qualification Records":"qualifications","Training Records":"training-records","Range Days":"range-days","Certifications":"certifications","Equipment Assets":"equipment","Off-Duty Firearm Requests":"off-duty-firearms","Audit Events":"audit-history","Agency Training Events":"agency-training","Fleet Vehicles":"fleet","Fleet Inspections":"fleet-inspections","Fleet Work Orders":"fleet-maintenance","Vehicle Equipment":"fleet-equipment","Current Alerts":"alerts"};
+      const reportAvailable=(key:string)=>availableReports.some((definition)=>definition.key===key);
 
       function clean(
         value: unknown,
@@ -4259,6 +4309,7 @@ function ImportWizardContent() {
           indent?: number;
         },
       ) {
+        if (sectionSuppressed) return;
         const size =
           options?.size ?? 8;
 
@@ -4306,6 +4357,7 @@ function ImportWizardContent() {
         label: string,
         value: unknown,
       ) {
+        if (currentSection === "EXECUTIVE SUMMARY" && summaryReportKeys[label] && !reportAvailable(summaryReportKeys[label])) return;
         write(
           `${label}: ${clean(
             value,
@@ -4316,6 +4368,9 @@ function ImportWizardContent() {
       function section(
         title: string,
       ) {
+        currentSection = title;
+        sectionSuppressed = Boolean(sectionReportKeys[title] && !reportAvailable(sectionReportKeys[title]));
+        if (sectionSuppressed) return;
         ensureSpace(34);
 
         y -= 8;
@@ -4351,6 +4406,7 @@ function ImportWizardContent() {
       function itemHeading(
         value: string,
       ) {
+        if (sectionSuppressed) return;
         ensureSpace(24);
 
         write(value, {
@@ -4420,6 +4476,7 @@ function ImportWizardContent() {
         "Firearms",
         firearms.length,
       );
+      if (availableReports.some((definition)=>definition.key==="firearm-inspections")) field("Firearm Inspections",firearmInspections.length);
 
       field(
         "Duty Ammunition Lots",
@@ -4430,6 +4487,8 @@ function ImportWizardContent() {
         "Training Ammunition Lots",
         trainingLots.length,
       );
+      if (availableReports.some((definition)=>definition.key==="ammunition-transactions")) field("Ammunition Transactions",ammunitionTransactions.length);
+      if (availableReports.some((definition)=>definition.key==="personal-rifles")) field("Personal Rifles",personalRifles.length);
 
       field(
         "Qualification Records",
@@ -4465,6 +4524,12 @@ function ImportWizardContent() {
         "Audit Events",
         filteredAudit.length,
       );
+      field("Agency Training Events", agencyTraining.length);
+      field("Fleet Vehicles", fleet.length);
+      field("Fleet Inspections", fleetInspections.length);
+      field("Fleet Work Orders", fleetWorkOrders.length);
+      field("Vehicle Equipment", fleetEquipment.length);
+      field("Current Alerts", alerts.length);
 
       const failedSections =
         results.filter(
@@ -4497,6 +4562,12 @@ function ImportWizardContent() {
             },
           );
         }
+      }
+
+      if (availableReports.some((definition)=>definition.key==="personnel")) {
+      section("PERSONNEL DIRECTORY");
+      if (!personnel.length) write("No personnel records returned.");
+      for (const person of personnel) { itemHeading(clean(person.displayName ?? person.fullName ?? person.name));field("Badge",person.badgeNumber ?? person.badge_number);field("Rank",person.rankTitle ?? person.rank_title);field("Unit",person.unitName ?? person.unit_name);field("Active",person.isActive ?? person.is_active); }
       }
 
       section(
@@ -5037,6 +5108,12 @@ function ImportWizardContent() {
         y -= 4;
       }
 
+      if (availableReports.some((definition)=>definition.key==="firearm-inspections")) {
+      section("FIREARM INSPECTION HISTORY");
+      if (!firearmInspections.length) write("No firearm inspection records returned.");
+      for (const inspection of firearmInspections) { itemHeading(`${dateText(inspection.inspection_date)} - ${clean(inspection.result)}`);field("Firearm",inspection.firearm_id);field("Inspector",inspection.inspector_name);field("Notes",inspection.notes); }
+      }
+
       section("AMMUNITION");
 
       field(
@@ -5048,6 +5125,56 @@ function ImportWizardContent() {
         "Training Lots",
         trainingLots.length,
       );
+      if (availableReports.some((definition)=>definition.key==="ammunition-transactions")) {
+      section("AMMUNITION TRANSACTIONS");if(!ammunitionTransactions.length)write("No ammunition transactions returned.");for(const transaction of ammunitionTransactions){itemHeading(`${dateTimeText(transaction.created_at)} - ${clean(transaction.transaction_type)}`);field("Lot",transaction.lot?.lot_number ?? transaction.lot_id);field("Quantity",transaction.quantity);field("Actor",transaction.actor_name);field("Notes",transaction.notes);}
+      }
+      if (availableReports.some((definition)=>definition.key==="personal-rifles")) {
+      section("PERSONALLY OWNED RIFLES");if(!personalRifles.length)write("No personally owned rifle records returned.");for(const rifle of personalRifles){itemHeading(`${clean(rifle.owner_name)} - ${clean(rifle.manufacturer)} ${clean(rifle.model)}`);field("Serial",rifle.serial_number);field("Caliber",rifle.caliber);field("Status",rifle.status);field("Expiration",dateText(rifle.expiration_date));}
+      }
+
+      if (availableReports.some((definition)=>definition.key==="agency-training")) {
+      section("AGENCY TRAINING");
+      if (!agencyTraining.length) write("No agency training events returned.");
+      for (const event of agencyTraining) {
+        itemHeading(`${dateText(event.starts_at ?? event.start_date ?? event.startDate)} - ${clean(event.title ?? event.course_title)}`);
+        field("Status", event.status); field("Location", event.location); field("Attendees", event.attendee_count ?? event.attendeeCount);
+      }
+      }
+
+      if (availableReports.some((definition)=>definition.key==="fleet")) {
+      section("FLEET");
+      if (!fleet.length) write("No fleet vehicle records returned.");
+      for (const vehicle of fleet) {
+        itemHeading(`${clean(vehicle.unit_number ?? vehicle.unitNumber)} - ${clean(vehicle.year)} ${clean(vehicle.make)} ${clean(vehicle.model)}`);
+        field("Status", vehicle.status); field("Assignment", vehicle.assigned_to ?? vehicle.assignedTo); field("Mileage", vehicle.current_mileage ?? vehicle.currentMileage); field("Open Issues", vehicle.open_issue_count ?? vehicle.openIssueCount);
+      }
+      }
+
+      if (availableReports.some((definition)=>definition.key==="fleet-inspections")) {
+      section("FLEET INSPECTIONS");
+      if (!fleetInspections.length) write("No fleet inspection records returned.");
+      for (const inspection of fleetInspections) { itemHeading(`${dateTimeText(inspection.inspected_at)} - ${clean(inspection.result)}`); field("Inspector",inspection.inspector_name);field("Defects",inspection.defect_count);field("Critical Defects",inspection.critical_defect_count); }
+      }
+
+      if (availableReports.some((definition)=>definition.key==="fleet-maintenance")) {
+      section("FLEET MAINTENANCE AND WORK ORDERS");
+      if (!fleetWorkOrders.length) write("No fleet maintenance or work-order records returned.");
+      for (const order of fleetWorkOrders) { itemHeading(`${clean(order.record_type)} - ${clean(order.title)}`);field("Status",order.status);field("Priority",order.priority);field("Opened",dateText(order.opened_at));field("Completed",dateText(order.completed_at)); }
+      }
+
+      if (availableReports.some((definition)=>definition.key==="fleet-equipment")) {
+      section("VEHICLE-ASSOCIATED EQUIPMENT");
+      if (!fleetEquipment.length) write("No vehicle-associated equipment records returned.");
+      for (const item of fleetEquipment) { itemHeading(clean(item.item_name ?? item.name));field("Status",item.status);field("Quantity",item.quantity);field("Source",item.source_type); }
+      }
+
+      if (availableReports.some((definition)=>definition.key==="alerts")) {
+      section("CURRENT ALERTS AND UNRESOLVED ITEMS");
+      if (!alerts.length) write("No current alerts or unresolved readiness items returned.");
+      for (const alert of alerts) {
+        itemHeading(clean(alert.title)); field("Priority", alert.priority); field("Detail", alert.detail); field("Source", alert.source);
+      }
+      }
 
       section(
         "AUDIT HISTORY",
@@ -5240,23 +5367,84 @@ function ImportWizardContent() {
     }
   }
 
+  function filteredReportRows(rows: Record<string, unknown>[]) {
+    return rows.filter((row) => {
+      if (selectedReportFilters.has("officer") && reportOfficerId !== "all") {
+        const ids = [row.officerId,row.officer_id,row.userId,row.user_id,row.owner_user_id,row.assigned_user_id];
+        if (!ids.some((value) => String(value ?? "") === reportOfficerId)) return false;
+      }
+      if (selectedReportFilters.has("status") && reportStatus !== "all") {
+        const status = row.status ?? row.priority ?? row.requestStatus ?? row.request_status ?? row.lifecycle_status ?? row.result;
+        if (String(status ?? "") !== reportStatus) return false;
+      }
+      if (selectedReportFilters.has("date") && reportDateMode === "custom") {
+        const value = row.date ?? row.starts_at ?? row.created_at ?? row.updated_at ?? row.submitted_at ?? row.submittedAt ?? row.issue_date ?? row.inspected_at ?? row.opened_at;
+        const date = String(value ?? "").slice(0,10);
+        if (date && reportStartDate && date < reportStartDate) return false;
+        if (date && reportEndDate && date > reportEndDate) return false;
+      }
+      return true;
+    });
+  }
+
+  async function handleGenerateModuleReport() {
+    if (!selectedReportDefinition?.endpoint) throw new Error("This report does not have a data source.");
+    setReportGenerating(true);
+    try {
+      const payload = await fetchJson<Record<string, unknown>>(selectedReportDefinition.endpoint);
+      let sourceRows = reportCollection(payload, selectedReportDefinition.collectionPath);
+      const rows = filteredReportRows(sourceRows);
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+      const pdf = await PDFDocument.create();
+      const regular = await pdf.embedFont(StandardFonts.Helvetica);
+      const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+      const width=612,height=792,left=44,bottom=48;
+      let page=pdf.addPage([width,height]); let y=730;
+      const addPage=()=>{page=pdf.addPage([width,height]);y=730;};
+      const line=(text:string,size=8,isBold=false)=>{if(y<bottom+18)addPage();const safe=text.replace(/[^\x20-\x7E]/g," ").slice(0,115);page.drawText(safe,{x:left,y,size,font:isBold?bold:regular,color:rgb(15/255,23/255,42/255)});y-=size+5;};
+      page.drawRectangle({x:0,y:650,width,height:142,color:rgb(2/255,6/255,23/255)});
+      page.drawText("TRACEPOINT",{x:left,y:742,size:20,font:bold,color:rgb(1,1,1)});
+      page.drawText(selectedReportDefinition.label.toUpperCase(),{x:left,y:700,size:14,font:bold,color:rgb(1,1,1)});
+      page.drawText(access.departmentName || "Current Agency",{x:left,y:678,size:10,font:regular,color:rgb(203/255,213/255,225/255)});y=625;
+      line(`Generated: ${new Date().toLocaleString()}`,8,false);
+      line(`Records: ${rows.length}`,9,true); y-=6;
+      if (!rows.length) line(`No matching ${selectedReportDefinition.label.toLowerCase()} records.`,9,false);
+      for (const [index,row] of rows.entries()) {
+        line(`${index+1}. ${String(row.title ?? row.name ?? row.displayName ?? row.unit_number ?? row.id ?? "Record")}`,9,true);
+        for (const [key,value] of Object.entries(row)) {
+          if (!reportIncludeNotes && key.toLowerCase().includes("note")) continue;
+          if (value === null || value === undefined || typeof value === "object") continue;
+          line(`  ${key.replaceAll("_"," ")}: ${String(value)}`,7.5,false);
+        }
+        y-=5;
+      }
+      const bytes=await pdf.save();const blob=new Blob([new Uint8Array(bytes)],{type:"application/pdf"});const url=URL.createObjectURL(blob);const anchor=document.createElement("a");anchor.href=url;anchor.download=`tracepoint-${selectedReportDefinition.key}-${exportDate()}.pdf`;document.body.appendChild(anchor);
+      await recordClientDataExport({exportType:selectedReportDefinition.key,fileName:anchor.download,format:"pdf",recordCount:rows.length});anchor.click();anchor.remove();URL.revokeObjectURL(url);
+    } finally { setReportGenerating(false); }
+  }
+
+  async function handleExportDefinition(definitionKey: string) {
+    const definition=availableReports.find((item)=>item.key===definitionKey);
+    if(!definition?.endpoint)return;
+    setExporting(definitionKey);setExportError(null);
+    try { const payload=await fetchJson<Record<string,unknown>>(definition.endpoint);await downloadCsv(`tracepoint-${definition.key}-${exportDate()}.csv`,reportCollection(payload,definition.collectionPath) as Record<string,CsvValue>[]); }
+    catch(error){setExportError(error instanceof Error?error.message:`${definition.label} export failed.`);} finally{setExporting(null);}
+  }
+
   async function handleGenerateReport() {
     setExportError(null);
 
     try {
-      if (reportType === "complete") {
+      if (effectiveReportType === "complete") {
         await handleGenerateCompleteReport();
         return;
       }
 
-      if (reportType === "off-duty-firearms") {
+      if (effectiveReportType === "off-duty-firearms") {
         await handleGenerateOffDutyReport();
         return;
       }
-
-      setExportError(
-        "The selected report type is not yet connected to the report engine.",
-      );
+      await handleGenerateModuleReport();
     } catch (error) {
       setExportError(
         error instanceof Error
@@ -6421,51 +6609,23 @@ function ImportWizardContent() {
                     Report Type
                   </span>
                   <select
-                    value={reportType}
+                    value={effectiveReportType}
                     onChange={(event) =>
                       setReportType(event.target.value)
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                   >
-                    <option value="complete">
-                      Complete TracePoint Report
-                    </option>
-
-                    <option value="off-duty-firearms">
-                      Off-Duty Firearms
-                    </option>
-
-                    <option value="qualifications">
-                      Qualification History
-                    </option>
-
-                    <option value="training-records">
-                      Training Records
-                    </option>
-
-                    <option value="equipment">
-                      Equipment
-                    </option>
-
-                    <option value="certifications">
-                      Certifications
-                    </option>
-
-                    <option value="officer-history">
-                      Officer Historical Report
-                    </option>
-
-                    <option value="range-days">
-                      Range Day Report
-                    </option>
-
-                    <option value="audit-history">
-                      Audit History
-                    </option>
+                    {Array.from(new Set(availableReports.map((definition) => definition.group))).map((group) => (
+                      <optgroup key={group} label={group}>
+                        {availableReports.filter((definition) => definition.group === group).map((definition) => (
+                          <option key={definition.key} value={definition.key}>{definition.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </label>
 
-                <label className="space-y-2">
+                {selectedReportFilters.has("officer") && <label className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     Officer
                   </span>
@@ -6492,9 +6652,9 @@ function ImportWizardContent() {
                       </option>
                     ))}
                   </select>
-                </label>
+                </label>}
 
-                <label className="space-y-2">
+                {selectedReportFilters.has("date") && <label className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     Date Range
                   </span>
@@ -6516,9 +6676,9 @@ function ImportWizardContent() {
                       Custom Range
                     </option>
                   </select>
-                </label>
+                </label>}
 
-                <label className="space-y-2">
+                {selectedReportFilters.has("status") && <label className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     Request Status
                   </span>
@@ -6532,29 +6692,12 @@ function ImportWizardContent() {
                     <option value="all">
                       All Statuses
                     </option>
-                    <option value="Draft">
-                      Draft
-                    </option>
-                    <option value="Pending Command Review">
-                      Pending Command Review
-                    </option>
-                    <option value="Returned for Correction">
-                      Returned for Correction
-                    </option>
-                    <option value="Approved">
-                      Approved
-                    </option>
-                    <option value="Denied">
-                      Denied
-                    </option>
-                    <option value="Withdrawn">
-                      Withdrawn
-                    </option>
+                    {reportStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
-                </label>
+                </label>}
               </div>
 
-              {reportDateMode === "custom" && (
+              {selectedReportFilters.has("date") && reportDateMode === "custom" && (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <label className="space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -6591,7 +6734,7 @@ function ImportWizardContent() {
               )}
 
               <div className="mt-5 flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm text-slate-300">
+                {selectedReportFilters.has("workflow") && <label className="flex items-center gap-2 text-sm text-slate-300">
                   <input
                     type="checkbox"
                     checked={reportIncludeWorkflow}
@@ -6602,9 +6745,9 @@ function ImportWizardContent() {
                     }
                   />
                   Workflow history
-                </label>
+                </label>}
 
-                <label className="flex items-center gap-2 text-sm text-slate-300">
+                {selectedReportFilters.has("inspections") && <label className="flex items-center gap-2 text-sm text-slate-300">
                   <input
                     type="checkbox"
                     checked={reportIncludeInspections}
@@ -6615,9 +6758,9 @@ function ImportWizardContent() {
                     }
                   />
                   Inspection history
-                </label>
+                </label>}
 
-                <label className="flex items-center gap-2 text-sm text-slate-300">
+                {selectedReportFilters.has("notes") && <label className="flex items-center gap-2 text-sm text-slate-300">
                   <input
                     type="checkbox"
                     checked={reportIncludeNotes}
@@ -6628,7 +6771,7 @@ function ImportWizardContent() {
                     }
                   />
                   Notes
-                </label>
+                </label>}
               </div>
 
               <div className="mt-5">
@@ -6836,6 +6979,13 @@ function ImportWizardContent() {
                       : "Download CSV"}
                   </p>
                 </button>
+                {availableReports.filter((definition) => (["agency-training","ammunition-transactions","personal-rifles","firearm-inspections","readiness","certification-readiness","alerts"].includes(definition.key) || definition.key.startsWith("fleet")) && definition.csv).map((definition) => (
+                  <button key={definition.key} type="button" onClick={() => void handleExportDefinition(definition.key)} disabled={exporting !== null} className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60">
+                    <p className="text-sm font-bold text-white">{definition.label}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">Export current agency-scoped {definition.label.toLowerCase()} records.</p>
+                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">{exporting === definition.key ? "Exporting..." : "Download CSV"}</p>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -7501,16 +7651,3 @@ export default function ImportWizardPage() {
     </Suspense>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
