@@ -1,8 +1,5 @@
 [CmdletBinding()]
-param(
-    [string]$Profile = 'tracepoint-member-staging',
-    [switch]$ValidateArchiveOnly
-)
+param([switch]$ValidateArchiveOnly)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -50,10 +47,10 @@ $unexpected = @($status | Where-Object {
 if ($unexpected.Count) { throw "Working tree contains changes outside the protected exclusions: $($unexpected -join ', ')" }
 
 if (-not $ValidateArchiveOnly) {
-    $identity = Assert-TracePointStagingIdentity -Profile $Profile
+    $identity = Assert-TracePointStagingIdentity
     Write-Host "Verified account $($identity.Account), role TracePointMigrationStaging, region us-east-1."
 
-    $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application --query SecretString --output text --profile $Profile --region us-east-1
+    $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application --query SecretString --output text --region us-east-1
     if ($LASTEXITCODE -ne 0) { throw 'Unable to validate staging configuration names.' }
     try {
         $secret = $secretText | ConvertFrom-Json
@@ -104,12 +101,12 @@ try {
     Write-Host "Validated $($entryNames.Count) tracked build-source files for commit $commit."
     if ($ValidateArchiveOnly) { return }
 
-    & aws.exe s3 cp $archivePath "s3://$sourceBucket/$sourceKey" --only-show-errors --profile $Profile --region us-east-1
+    & aws.exe s3 cp $archivePath "s3://$sourceBucket/$sourceKey" --only-show-errors --region us-east-1
     if ($LASTEXITCODE -ne 0) { throw 'Clean source archive upload failed.' }
     Write-Host "Uploaded a tracked-only archive for commit $commit."
 
     $overrides = "name=IMAGE_TAG,value=$commit,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
-    & aws.exe codebuild start-build --project-name $projectName --environment-variables-override $overrides.Split(' ') --profile $Profile --region us-east-1 --query 'build.{id:id,status:buildStatus}' --output json
+    & aws.exe codebuild start-build --project-name $projectName --environment-variables-override $overrides.Split(' ') --region us-east-1 --query 'build.{id:id,status:buildStatus}' --output json
     if ($LASTEXITCODE -ne 0) { throw 'CodeBuild start failed.' }
 }
 finally {

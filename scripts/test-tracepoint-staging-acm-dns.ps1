@@ -1,13 +1,13 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$Hostname, [string]$Profile = 'tracepoint-member-staging')
+param([Parameter(Mandatory)][string]$Hostname)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 Assert-TracePointStagingHostname -Hostname $Hostname
-Assert-TracePointStagingIdentity -Profile $Profile | Out-Null
+Assert-TracePointStagingIdentity | Out-Null
 
-$certificates = & aws.exe acm list-certificates --certificate-statuses ISSUED --profile $Profile --region us-east-1 --output json 2>&1
+$certificates = & aws.exe acm list-certificates --certificate-statuses ISSUED --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'Unable to list issued staging certificates.' }
 $match = (($certificates -join [Environment]::NewLine) | ConvertFrom-Json).CertificateSummaryList |
     Where-Object DomainName -eq $Hostname | Select-Object -First 1

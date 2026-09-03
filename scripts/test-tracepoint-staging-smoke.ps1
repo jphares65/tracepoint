@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][uri]$BaseUri,
-    [string]$Profile = 'tracepoint-member-staging',
     [string]$SessionCookie = ''
 )
 
@@ -9,7 +8,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 Assert-TracePointStagingHostname -Hostname $BaseUri.DnsSafeHost
-Assert-TracePointStagingIdentity -Profile $Profile | Out-Null
+Assert-TracePointStagingIdentity | Out-Null
 
 $headers = @{}
 if ($SessionCookie) { $headers.Cookie = $SessionCookie }

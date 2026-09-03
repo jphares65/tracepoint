@@ -1,11 +1,8 @@
-[CmdletBinding()]
-param([string]$Profile = 'tracepoint-member-staging')
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 
-$identity = Assert-TracePointStagingIdentity -Profile $Profile
+$identity = Assert-TracePointStagingIdentity
 Write-Host "Verified account $($identity.Account), role TracePointMigrationStaging, region us-east-1."
 Write-Host 'Inventory is metadata-only; no secret values, objects, logs, records, or DNS data are read.'
 
@@ -14,7 +11,7 @@ function Invoke-InventoryQuery {
         [Parameter(Mandatory)][string]$Label,
         [Parameter(Mandatory)][string[]]$Arguments
     )
-    $output = & aws.exe @Arguments --profile $Profile --region us-east-1 --output json 2>&1
+    $output = & aws.exe @Arguments --region us-east-1 --output json 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "${Label}: unavailable to the staging role"
         return

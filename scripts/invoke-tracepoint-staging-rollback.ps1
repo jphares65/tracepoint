@@ -2,14 +2,13 @@
 param(
     [Parameter(Mandatory)][ValidateSet('tracepoint-staging-runtime')][string]$StackName,
     [Parameter(Mandatory)][string]$ConfirmedStackName,
-    [switch]$Execute,
-    [string]$Profile = 'tracepoint-member-staging'
+    [switch]$Execute
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
-Assert-TracePointStagingIdentity -Profile $Profile | Out-Null
+Assert-TracePointStagingIdentity | Out-Null
 if ($ConfirmedStackName -cne $StackName) { throw 'ConfirmedStackName must exactly match the staging runtime stack.' }
 
 Write-Host 'Rollback runbook: identify the last healthy immutable image, review a runtime-only CDK diff, and redeploy through the guarded staging orchestration workflow.'

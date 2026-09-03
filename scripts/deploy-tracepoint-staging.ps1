@@ -2,8 +2,7 @@
 param(
     [ValidateSet('Verify', 'DeployRuntime')][string]$Action = 'Verify',
     [string]$ImageTag,
-    [string]$CertificateArn,
-    [string]$Profile = 'tracepoint-member-staging'
+    [string]$CertificateArn
 )
 
 Set-StrictMode -Version Latest
@@ -24,7 +23,7 @@ $protectedPaths = @('scripts/seed-demo-fleet-equipment.mjs', 'src/app/integratio
 
 function Invoke-AwsJson {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    $output = & aws.exe @Arguments --profile $Profile --region $region --output json 2>&1
+    $output = & aws.exe @Arguments --region $region --output json 2>&1
     if ($LASTEXITCODE -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ')" }
     return ($output -join [Environment]::NewLine) | ConvertFrom-Json
 }
@@ -63,7 +62,7 @@ function Get-ImmutableImage {
 
 function Assert-RuntimeSecretConfiguration {
     # Capture and inspect only required names; never emit the secret value.
-    $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application --query SecretString --output text --profile $Profile --region $region 2>&1
+    $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application --query SecretString --output text --region $region 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'The retained staging application secret cannot be retrieved and decrypted.' }
     try {
         $secret = ($secretText -join [Environment]::NewLine) | ConvertFrom-Json
@@ -77,7 +76,7 @@ function Assert-RuntimeSecretConfiguration {
     finally { $secretText = $null; $secret = $null }
 }
 
-Assert-TracePointStagingIdentity -Profile $Profile | Out-Null
+Assert-TracePointStagingIdentity | Out-Null
 Assert-NoProtectedChanges
 Assert-CostGate
 
@@ -96,7 +95,7 @@ Assert-RuntimeSecretConfiguration
 $context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '--lookups=false')
 Push-Location $infraRoot
 try {
-    $diff = & npx.cmd cdk diff $runtimeStack --profile $Profile @context 2>&1
+    $diff = & npx.cmd cdk diff $runtimeStack @context 2>&1
     $diffExitCode = $LASTEXITCODE
 }
 finally { Pop-Location }
@@ -107,10 +106,10 @@ if ($diffText -match '(?im)^\s*\[-\]|will be destroyed|requires replacement|\[~\
 }
 Write-Host $diffText
 
-Assert-TracePointStagingIdentity -Profile $Profile | Out-Null
+Assert-TracePointStagingIdentity | Out-Null
 Push-Location $infraRoot
 try {
-    & npx.cmd cdk deploy $runtimeStack --profile $Profile @context --require-approval never
+    & npx.cmd cdk deploy $runtimeStack @context --require-approval never
     $deployExitCode = $LASTEXITCODE
 }
 finally { Pop-Location }
