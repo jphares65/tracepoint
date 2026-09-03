@@ -130,6 +130,22 @@ test("image builder uses encrypted tracked source and immutable staging ECR only
   assert.match(policies, /GetAuthorizationToken/);
   assert.match(policies, /PutImage/);
   assert.match(policies, /GetSecretValue/);
+  const iamPolicies = template.findResources("AWS::IAM::Policy");
+  const statements = Object.values(iamPolicies).flatMap((resource) =>
+    resource.Properties.PolicyDocument.Statement,
+  );
+  const decrypt = statements.filter(
+    (statement) =>
+      [statement.Action].flat().includes("kms:Decrypt") &&
+      statement.Condition?.StringEquals?.["kms:ViaService"] ===
+        "secretsmanager.us-east-1.amazonaws.com",
+  );
+  assert.equal(decrypt.length, 1);
+  assert.deepEqual(decrypt[0].Action, "kms:Decrypt");
+  assert.match(decrypt[0].Resource["Fn::ImportValue"], /^security:.*DataKey.*Arn/);
+  assert.deepEqual(decrypt[0].Condition.StringEquals, {
+    "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com",
+  });
   assert.doesNotMatch(policies, /cloudformation:/i);
   assert.doesNotMatch(policies, /iam:PassRole/i);
 });

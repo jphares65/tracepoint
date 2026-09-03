@@ -56,21 +56,16 @@ DNS validation, and the Route 53 alias remain separate platform actions.
 
 ## Protected build secret
 
-`NEXT_PUBLIC_*` and `DEPLOYMENT_VERSION` are public build arguments. The Server
-Action key is mounted only for `next build` through Docker BuildKit:
+`NEXT_PUBLIC_*` and `DEPLOYMENT_VERSION` are public build arguments inside the
+deployed CodeBuild environment. The Server Action key is mounted only for
+`next build` through Docker BuildKit. Operators do not run Docker locally:
 
 ```powershell
-$env:NEXT_SERVER_ACTIONS_ENCRYPTION_KEY = "RETRIEVE_WITHOUT_PRINTING"
-docker build `
-  --secret id=next_server_actions_encryption_key,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY `
-  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://REPLACE_ME.supabase.co `
-  --build-arg NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=REPLACE_ME `
-  --build-arg NEXT_PUBLIC_SITE_URL=https://staging.tracepointhq.com `
-  --build-arg DEPLOYMENT_VERSION=REPLACE_WITH_COMMIT_SHA `
-  -t tracepoint-staging:REPLACE_WITH_COMMIT_SHA ..
+.\scripts\publish-tracepoint-staging-image.ps1 -ValidateArchiveOnly
+.\scripts\publish-tracepoint-staging-image.ps1
 ```
 
-The build identity reads the retained staging secret because CodeBuild must inject
+The build identity reads the retained staging secret because CodeBuild injects
 the three public build values and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. It must not
 print values or store the Server Action key in the workspace or a Docker `ARG`.
 ECS injects the same key at task startup, so rotation requires a new immutable
@@ -109,9 +104,9 @@ guidance before a separate bootstrap approval.
 
 ## Gate
 
-Use existing dependencies only. Before any deployment, build/scan the immutable
-image, synthesize with the real account and certificate, and review a real
-`cdk diff`. Database, identity, Supabase/Brevo migration, CloudFront, WAF,
+Use existing dependencies only. Before runtime deployment, build/scan the
+immutable image in CodeBuild, synthesize with the real account and certificate,
+and review a real `cdk diff`. Database, identity, Supabase/Brevo migration, CloudFront, WAF,
 multi-task capacity, production, and live-agency cutover remain deferred.
 
 Run `npm test` in `infra/` to verify lean-network, encryption, retention, ECR,

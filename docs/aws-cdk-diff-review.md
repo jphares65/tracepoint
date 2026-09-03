@@ -1,4 +1,55 @@
-# TracePoint staging CDK local diff review
+# TracePoint staging CDK diff reviews
+
+## Current review — 2026-09-03
+
+**Target:** staging account `559054714699`, `us-east-1`
+
+**Scope:** five application stack definitions; four deployed application stacks,
+plus the deployed `CDKToolkit` bootstrap stack
+
+**Runtime:** intentionally disabled and not deployed
+
+The current assembly defines `tracepoint-staging-network`,
+`tracepoint-staging-security`, `tracepoint-staging-compute`,
+`tracepoint-staging-image-build`, and the opt-in
+`tracepoint-staging-runtime`. The five stacks currently deployed in the account
+are `CDKToolkit` and the first four application stacks. The runtime stack remains
+a configuration-gated future deployment, so it must not be described as a
+deployed fifth application stack.
+
+The deployed image-build stack contains the `BUILD_GENERAL1_SMALL` CodeBuild
+project, its dedicated CodeBuild role, a retained/versioned/KMS-encrypted clean-
+archive bucket, a retained KMS-encrypted 30-day log group, and its rotating build
+KMS key. The role can read only the retained application secret and source
+archive, publish only to the immutable staging ECR repository, and obtain the
+unavoidably account-wide ECR authorization token. Its application-key permission
+is only `kms:Decrypt` on the one account-owned data key, constrained to Secrets
+Manager in `us-east-1`. Live verification showed that the bootstrap secret's
+forwarded decrypt did not satisfy `SecretARN` or `CallerAccount` identity-policy
+conditions, so those unusable conditions are not claimed here.
+
+Current workload egress is internet-gateway egress from two public subnets. There
+is no NAT gateway and no paid interface endpoint; the only VPC endpoint is the
+no-charge S3 gateway endpoint. No task is running. The deployed roles are the CDK
+bootstrap roles, VPC Flow Logs delivery role, empty-permission ECS task role,
+resource-scoped ECS execution role, and resource-scoped CodeBuild image role.
+
+Remaining configuration/runtime blockers are the five build-time staging secret
+fields, three additional runtime-only secret fields, an immutable published and
+scanned ECR image, an issued `us-east-1` certificate for
+`staging.tracepointhq.com`, and the platform-owned DNS alias. Runtime acceptance,
+data/identity migration, and production cutover remain separate work. Local
+Docker is not a prerequisite: `publish-tracepoint-staging-image.ps1` uploads a
+tracked clean archive and starts CodeBuild; `deploy-tracepoint-staging.ps1`
+independently verifies or deploys an already-published immutable image.
+
+## Superseded historical local review — 2026-08-30
+
+The review below is retained to explain the redesign from the original proposal.
+Its claims about an empty account, four-stack assembly, undeployed image-builder,
+managed ECS execution policy, local Docker build, and blocked bootstrap are
+superseded by the current review above and must not be used as current-state
+deployment evidence.
 
 **Review date:** 2026-08-30
 **Target:** dedicated staging account `559054714699`, `us-east-1`

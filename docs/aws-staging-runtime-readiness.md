@@ -49,8 +49,11 @@ values were deliberately not promoted to staging.
    untracked demo files, archives an explicit tracked build-source allowlist,
    rejects secret/environment/credential/dump/generated paths, and starts the
    deployed CodeBuild project with the full commit SHA as its immutable tag.
-4. Invoke only `scripts/deploy-tracepoint-staging.ps1`. It repeats STS, cost, diff,
-   and non-deletion gates before any runtime deployment.
+4. Run `scripts/deploy-tracepoint-staging.ps1` in its default `Verify` mode, then
+   invoke it with `-Action DeployRuntime -ImageTag <full-commit-sha>
+   -CertificateArn <approved-arn>` only after review. It consumes the immutable
+   ECR image and repeats STS, role, region, cost, secret, production, diff,
+   replacement, and deletion gates. It never builds or publishes an image.
 5. Run `test-tracepoint-staging-runtime.ps1`, then the smoke script. Without a
    session cookie, protected reads must return 401/403; with one, they must return
    200 for the same authorized staging tenant.

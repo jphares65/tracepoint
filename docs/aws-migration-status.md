@@ -11,6 +11,16 @@ was changed.
 
 ## 2026-09-03 image-build deployment
 
+- Corrected the CodeBuild role's missing application-key permission. The final
+  deployed statement allows only `kms:Decrypt` on the exact staging data key and
+  only through `secretsmanager.us-east-1.amazonaws.com`; it grants no direct KMS
+  use and no access to another key. A no-source verification build retrieved the
+  bootstrap-only secret while selecting only its ARN and redirecting the response,
+  proving decrypt access without displaying the value.
+- A post-deployment change-set-backed CDK diff reported zero differences across
+  network, security, compute, and image-build. CloudFormation drift detection
+  reported `IN_SYNC` for those four stacks and `CDKToolkit`; all five were in a
+  healthy complete state. Runtime remained absent.
 - Deployed `tracepoint-staging-image-build` after reviewing an additions-only
   live diff. The existing compute stack gained only three cross-stack export
   outputs; network and security had no changes.
@@ -69,7 +79,8 @@ was changed.
 - Added a manual staging-environment GitHub Actions foundation workflow. It uses
   OIDC, validates account and role before CDK, keeps runtime disabled, and cannot
   deploy production. Repository-owner configuration is still required.
-- Docker remains unavailable. No image was built or pushed. The non-root
+- No image was built or pushed. Local Docker availability is irrelevant because
+  the deployed clean-archive CodeBuild workflow owns publication. The non-root
   container now fails before server startup when required variable names or
   provider controls are invalid, without logging values.
 - Deterministic recurring cost remains `$42.07/month`, leaving `$32.93` beneath
@@ -97,8 +108,8 @@ after passing the STS gate for account `559054714699`, role
 - full public-access blocking on the CDK bootstrap asset bucket.
 
 Runtime was not deployed. No image was built or published. Required human inputs
-remain the four staging secret values, three staging public build values, a
-working Docker engine, and an issued `us-east-1` certificate for
+remain the eight staging secret fields (including the three public build values),
+an immutable image published by CodeBuild, and an issued `us-east-1` certificate for
 `staging.tracepointhq.com`. The deployment role could not verify KMS rotation, so
 the script reports that check as unresolved rather than claiming success.
 
@@ -180,7 +191,7 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
 - Focused provider tests: 5/5 passed using Node 24's built-in test runner,
   including exact digest configuration-whitespace parity.
 - CDK TypeScript build: passed.
-- Four-stack CDK synthesis: passed with `--lookups=false` for
+- Historical four-stack CDK synthesis: passed with `--lookups=false` for
   `559054714699`/`us-east-1`/`tracepoint-staging`. Two verified AZs are
   fixed in source; the manifest has zero missing context. Management and non-staging
   environment syntheses failed with the expected guard messages.
@@ -197,7 +208,8 @@ Exact metadata and limitations are in `docs/aws-migration-baseline.md`.
 - `git diff --check`: passed after removing Markdown trailing whitespace; CRLF
   conversion notices are informational.
 - `src/app/integration-demo/page.tsx`: remains untracked and was not modified.
-- Docker build: skipped because Docker is unavailable; nothing was installed.
+- Image publication: skipped because staging configuration was incomplete; local
+  Docker is not required and nothing was installed.
 
 Storage-boundary validation on 2026-08-30:
 
@@ -283,8 +295,9 @@ storage, provider, validation, readiness and status documentation.
    pass positive and negative tests.
 5. Request/validate the staging certificate and configure DNS only through the
    owning platform workflow.
-6. Build and scan an immutable image, populate secrets through concealed input,
-   synthesize again, and review `cdk diff`/change set for additions only.
+6. Populate secrets through concealed input, then use the clean-archive CodeBuild
+   workflow to build and scan an immutable image; synthesize again and review the
+   runtime `cdk diff`/change set.
 7. Deploy runtime only after all gates pass, then
    run non-production staging acceptance. No provider or live-user cutover is
    implied.

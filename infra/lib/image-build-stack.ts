@@ -101,6 +101,20 @@ export class ImageBuildStack extends cdk.Stack {
         resources: ["*"],
       }),
     );
+    if (!props.appSecrets.encryptionKey) {
+      throw new Error("The staging application secret must use a customer-managed KMS key");
+    }
+    buildRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["kms:Decrypt"],
+        resources: [props.appSecrets.encryptionKey.keyArn],
+        conditions: {
+          StringEquals: {
+            "kms:ViaService": `secretsmanager.${this.region}.amazonaws.com`,
+          },
+        },
+      }),
+    );
     const secretVariable = (jsonKey: string): codebuild.BuildEnvironmentVariable => ({
       type: codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
       value: `${props.appSecrets.secretArn}:${jsonKey}::`,
