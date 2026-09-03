@@ -1740,7 +1740,10 @@ export type Database = {
       }
       equipment_assets: {
         Row: {
+          assigned_location: string | null
           assigned_user_id: string | null
+          assigned_vehicle_id: string | null
+          asset_number: string | null
           created_at: string
           created_by: string | null
           department_id: string
@@ -1764,7 +1767,10 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          assigned_location?: string | null
           assigned_user_id?: string | null
+          assigned_vehicle_id?: string | null
+          asset_number?: string | null
           created_at?: string
           created_by?: string | null
           department_id: string
@@ -1788,7 +1794,10 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          assigned_location?: string | null
           assigned_user_id?: string | null
+          assigned_vehicle_id?: string | null
+          asset_number?: string | null
           created_at?: string
           created_by?: string | null
           department_id?: string

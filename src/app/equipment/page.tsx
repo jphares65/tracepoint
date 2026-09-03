@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   PackagePlus,
+  Pencil,
   Plus,
   RefreshCw,
   Settings2,
@@ -124,9 +125,12 @@ type EquipmentAsset = {
   manufacturer?: string | null;
   model?: string | null;
   serial_number?: string | null;
+  asset_number?: string | null;
   lot_number?: string | null;
 
   assigned_user_id?: string | null;
+  assigned_vehicle_id?: string | null;
+  assigned_location?: string | null;
 
   issue_date?: string | null;
   expiration_date?: string | null;
@@ -146,6 +150,13 @@ type Member = {
   badgeNumber?: string | null;
   rankTitle?: string | null;
   unitName?: string | null;
+};
+
+type EquipmentVehicle = {
+  id: string;
+  unit_number: string;
+  make?: string | null;
+  model?: string | null;
 };
 
 type StatusFilter =
@@ -270,6 +281,7 @@ export default function EquipmentPage() {
     useState<EquipmentRequirement[]>([]);
   const [assets, setAssets] = useState<EquipmentAsset[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [vehicles, setVehicles] = useState<EquipmentVehicle[]>([]);
 
   const [canManage, setCanManage] = useState(false);
 
@@ -291,6 +303,8 @@ export default function EquipmentPage() {
 
   const [showAssetForm, setShowAssetForm] =
     useState(false);
+  const [editingAsset, setEditingAsset] = useState<EquipmentAsset | null>(null);
+  const [detailAsset, setDetailAsset] = useState<EquipmentAsset | null>(null);
   const [activeView, setActiveView] =
     useState<"equipment" | "readiness">("equipment");
 const [typeForm, setTypeForm] = useState({
@@ -323,15 +337,19 @@ const [typeForm, setTypeForm] = useState({
   const [assetForm, setAssetForm] = useState({
     equipmentTypeId: "",
     assignedUserId: "",
+    assignedVehicleId: "",
+    assignedLocation: "",
     manufacturer: "",
     model: "",
     serialNumber: "",
+    assetNumber: "",
     lotNumber: "",
     issueDate: "",
     expirationDate: "",
     lastInspectionDate: "",
     nextInspectionDate: "",
     notes: "",
+    lifecycleStatus: "active" as EquipmentAsset["lifecycle_status"],
   });
 
   async function loadAll() {
@@ -396,6 +414,7 @@ const [typeForm, setTypeForm] = useState({
         (await assetsResponse.json()) as {
           items?: EquipmentAsset[];
           members?: Member[];
+          vehicles?: EquipmentVehicle[];
           canManage?: boolean;
         };
 
@@ -408,6 +427,7 @@ const [typeForm, setTypeForm] = useState({
       setAssets(assetsPayload.items ?? []);
 
       setMembers(assetsPayload.members ?? []);
+      setVehicles(assetsPayload.vehicles ?? []);
 
       setCanManage(
         Boolean(
@@ -716,11 +736,11 @@ const filteredReadiness = useMemo(() => {
       const response = await fetch(
         "/api/equipment/assets",
         {
-          method: "POST",
+          method: editingAsset ? "PATCH" : "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(assetForm),
+          body: JSON.stringify({ ...assetForm, id: editingAsset?.id }),
         },
       );
 
@@ -731,20 +751,26 @@ const filteredReadiness = useMemo(() => {
       setAssetForm({
         equipmentTypeId: "",
         assignedUserId: "",
+        assignedVehicleId: "",
+        assignedLocation: "",
         manufacturer: "",
         model: "",
         serialNumber: "",
+        assetNumber: "",
         lotNumber: "",
         issueDate: "",
         expirationDate: "",
         lastInspectionDate: "",
         nextInspectionDate: "",
         notes: "",
+        lifecycleStatus: "active",
       });
 
       setShowAssetForm(false);
+      setEditingAsset(null);
 
       await loadAll();
+      setSuccess(editingAsset ? "Equipment updated successfully." : "Equipment added successfully.");
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -754,6 +780,30 @@ const filteredReadiness = useMemo(() => {
     } finally {
       setSaving(false);
     }
+  }
+
+  function editAsset(asset: EquipmentAsset) {
+    setEditingAsset(asset);
+    setAssetForm({
+      equipmentTypeId: asset.equipment_type_id,
+      assignedUserId: asset.assigned_user_id ?? "",
+      assignedVehicleId: asset.assigned_vehicle_id ?? "",
+      assignedLocation: asset.assigned_location ?? "",
+      manufacturer: asset.manufacturer ?? "",
+      model: asset.model ?? "",
+      serialNumber: asset.serial_number ?? "",
+      assetNumber: asset.asset_number ?? "",
+      lotNumber: asset.lot_number ?? "",
+      issueDate: asset.issue_date ?? "",
+      expirationDate: asset.expiration_date ?? "",
+      lastInspectionDate: asset.last_inspection_date ?? "",
+      nextInspectionDate: asset.next_inspection_date ?? "",
+      notes: asset.notes ?? "",
+      lifecycleStatus: asset.lifecycle_status,
+    });
+    setError("");
+    setSuccess("");
+    setShowAssetForm(true);
   }
 
   async function updateAssetStatus(
@@ -907,7 +957,11 @@ const filteredReadiness = useMemo(() => {
 
                   <button
                   type="button"
-                  onClick={() => setShowAssetForm(true)}
+                  onClick={() => {
+                    setEditingAsset(null);
+                    setAssetForm({ equipmentTypeId: "", assignedUserId: "", assignedVehicleId: "", assignedLocation: "", manufacturer: "", model: "", serialNumber: "", assetNumber: "", lotNumber: "", issueDate: "", expirationDate: "", lastInspectionDate: "", nextInspectionDate: "", notes: "", lifecycleStatus: "active" });
+                    setShowAssetForm(true);
+                  }}
                   className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
                 >
                   <PackagePlus size={15} />
@@ -1093,6 +1147,9 @@ const filteredReadiness = useMemo(() => {
                       const member = asset.assigned_user_id
                         ? memberMap.get(asset.assigned_user_id)
                         : undefined;
+                      const vehicle = asset.assigned_vehicle_id
+                        ? vehicles.find((item) => item.id === asset.assigned_vehicle_id)
+                        : undefined;
 
                       const readinessStatus =
                         assetReadinessMap.get(asset.id);
@@ -1103,9 +1160,9 @@ const filteredReadiness = useMemo(() => {
                           className="align-top transition hover:bg-slate-950/40"
                         >
                           <td className="px-4 py-3">
-                            <p className="text-sm font-semibold text-white">
+                            <button type="button" onClick={() => setDetailAsset(asset)} className="text-left text-sm font-semibold text-white hover:text-blue-300">
                               {type?.name ?? "Equipment"}
-                            </p>
+                            </button>
                             <p className="mt-1 text-[11px] text-slate-500">
                               {[asset.manufacturer, asset.model]
                                 .filter(Boolean)
@@ -1115,7 +1172,7 @@ const filteredReadiness = useMemo(() => {
 
                           <td className="px-4 py-3">
                             <p className="text-xs font-medium text-slate-300">
-                              {member?.fullName ?? "Unassigned"}
+                              {member?.fullName ?? (vehicle ? `Vehicle ${vehicle.unit_number}` : asset.assigned_location ?? "Unassigned")}
                             </p>
                             <p className="mt-1 text-[10px] text-slate-500">
                               {member?.badgeNumber
@@ -1130,6 +1187,12 @@ const filteredReadiness = useMemo(() => {
                                 ? `SN ${asset.serial_number}`
                                 : "—"}
                             </div>
+
+                            {asset.asset_number ? (
+                              <div className="mt-1 text-[10px] text-slate-500">
+                                Asset {asset.asset_number}
+                              </div>
+                            ) : null}
 
                             {asset.lot_number ? (
                               <div className="mt-1 text-[10px] text-slate-500">
@@ -1175,6 +1238,14 @@ const filteredReadiness = useMemo(() => {
                             <td className="px-4 py-3">
                               {asset.lifecycle_status !== "removed" ? (
                                 <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() => editAsset(asset)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-blue-700 px-2 py-1.5 text-[10px] font-semibold text-blue-300"
+                                  >
+                                    <Pencil size={11} /> Edit
+                                  </button>
                                   {asset.lifecycle_status === "active" ? (
                                     <button
                                       type="button"
@@ -1916,14 +1987,29 @@ const filteredReadiness = useMemo(() => {
           </div>
         ) : null}
 
+        {detailAsset ? (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-950 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div><h2 className="text-lg font-bold text-white">{typeMap.get(detailAsset.equipment_type_id)?.name ?? "Equipment details"}</h2><p className="mt-1 text-sm text-slate-400">{[detailAsset.manufacturer, detailAsset.model].filter(Boolean).join(" ") || "No make/model recorded"}</p></div>
+                <button type="button" onClick={() => setDetailAsset(null)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300">Close</button>
+              </div>
+              <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+                {[["Serial number", detailAsset.serial_number], ["Asset number", detailAsset.asset_number], ["Lot number", detailAsset.lot_number], ["Status", detailAsset.lifecycle_status], ["Issue date", formatDate(detailAsset.issue_date)], ["Expiration", formatDate(detailAsset.expiration_date)], ["Last inspection", formatDate(detailAsset.last_inspection_date)], ["Next inspection", formatDate(detailAsset.next_inspection_date)], ["Notes", detailAsset.notes]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-800 p-3"><dt className="text-[10px] uppercase text-slate-500">{label}</dt><dd className="mt-1 text-slate-200">{value || "—"}</dd></div>)}
+              </dl>
+              {canManage ? <div className="mt-5 flex justify-end"><button type="button" onClick={() => { setDetailAsset(null); editAsset(detailAsset); }} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Pencil size={13}/> Edit Equipment</button></div> : null}
+            </div>
+          </div>
+        ) : null}
+
         {showAssetForm && canManage ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Assign/Add to Inventory
+                {editingAsset ? "Edit Equipment" : "Assign/Add to Inventory"}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                Add equipment to department inventory and optionally assign it to an officer, vehicle, unit, or location.
+                {editingAsset ? "Update configurable details and custody. System identifiers and agency ownership cannot be changed." : "Add equipment to department inventory and optionally assign it to an officer, vehicle, or location."}
               </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1963,6 +2049,8 @@ const filteredReadiness = useMemo(() => {
                       ...assetForm,
                       assignedUserId:
                         event.target.value,
+                      assignedVehicleId: "",
+                      assignedLocation: "",
                     })
                   }
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -1983,6 +2071,24 @@ const filteredReadiness = useMemo(() => {
                     </option>
                   ))}
                 </select>
+
+                <select
+                  value={assetForm.assignedVehicleId}
+                  onChange={(event) => setAssetForm({ ...assetForm, assignedVehicleId: event.target.value, assignedUserId: "", assignedLocation: "" })}
+                  className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                >
+                  <option value="">No vehicle assignment</option>
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>Vehicle {vehicle.unit_number} · {[vehicle.make, vehicle.model].filter(Boolean).join(" ")}</option>
+                  ))}
+                </select>
+
+                <input
+                  value={assetForm.assignedLocation}
+                  onChange={(event) => setAssetForm({ ...assetForm, assignedLocation: event.target.value, assignedUserId: "", assignedVehicleId: "" })}
+                  placeholder="Assigned location (optional)"
+                  className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                />
 
                 <input
                   value={assetForm.manufacturer}
@@ -2019,6 +2125,13 @@ const filteredReadiness = useMemo(() => {
                     })
                   }
                   placeholder="Serial number"
+                  className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                />
+
+                <input
+                  value={assetForm.assetNumber}
+                  onChange={(event) => setAssetForm({ ...assetForm, assetNumber: event.target.value })}
+                  placeholder="Asset number"
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 />
 
@@ -2114,14 +2227,25 @@ const filteredReadiness = useMemo(() => {
                   placeholder="Notes"
                   className="sm:col-span-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 />
+
+                <label className="space-y-1 text-[10px] text-slate-500">
+                  <span>Status</span>
+                  <select
+                    value={assetForm.lifecycleStatus}
+                    onChange={(event) => setAssetForm({ ...assetForm, lifecycleStatus: event.target.value as EquipmentAsset["lifecycle_status"] })}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="active">Active</option>
+                    <option value="out_of_service">Out of service</option>
+                    {editingAsset?.lifecycle_status === "removed" ? <option value="removed">Removed</option> : null}
+                  </select>
+                </label>
               </div>
 
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() =>
-                    setShowAssetForm(false)
-                  }
+                  onClick={() => { setShowAssetForm(false); setEditingAsset(null); }}
                   className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300"
                 >
                   Cancel
@@ -2138,7 +2262,7 @@ const filteredReadiness = useMemo(() => {
                   }
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  Assign/Add to Inventory
+                  {editingAsset ? "Save Changes" : "Assign/Add to Inventory"}
                 </button>
               </div>
             </div>

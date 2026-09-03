@@ -7,6 +7,7 @@ import {
   text,
 } from "@/lib/tracepoint/equipment-server";
 import { createEquipmentReadRepository } from "@/lib/equipment/read-repository";
+import { equipmentAssignment, equipmentIdentifierConflict } from "@/lib/equipment/write-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,14 @@ export async function GET() {
     });
     return NextResponse.json({
       ...result,
+      vehicles: context.canManage
+        ? ((await context.admin
+            .from("fleet_vehicles")
+            .select("id,unit_number,make,model,status")
+            .eq("department_id", context.departmentId)
+            .neq("status", "Retired")
+            .order("unit_number")).data ?? [])
+        : [],
       canManage: context.canManage,
       canViewDepartment: context.canViewDepartment,
     });
@@ -52,8 +61,10 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
 
   const equipmentTypeId = text(body.equipmentTypeId);
-  const assignedUserId =
-    nullableText(body.assignedUserId);
+  let assignment;
+  try { assignment = equipmentAssignment(body); }
+  catch (assignmentError) { return NextResponse.json({ error: (assignmentError as Error).message }, { status: 400 }); }
+  const { assignedUserId, assignedVehicleId, assignedLocation } = assignment;
 
   if (!equipmentTypeId) {
     return NextResponse.json(
@@ -113,6 +124,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (assignedVehicleId) {
+    const { data: vehicle } = await context.admin.from("fleet_vehicles").select("id")
+      .eq("department_id", context.departmentId).eq("id", assignedVehicleId)
+      .neq("status", "Retired").maybeSingle();
+    if (!vehicle) return NextResponse.json(
+      { error: "Assigned vehicle must belong to this agency." }, { status: 400 },
+    );
+  }
+
   const lifecycleStatus =
     text(body.lifecycleStatus) || "active";
 
@@ -142,9 +162,12 @@ export async function POST(request: NextRequest) {
       manufacturer: nullableText(body.manufacturer),
       model: nullableText(body.model),
       serial_number: nullableText(body.serialNumber),
+      asset_number: nullableText(body.assetNumber),
       lot_number: nullableText(body.lotNumber),
 
       assigned_user_id: assignedUserId,
+      assigned_vehicle_id: assignedVehicleId,
+      assigned_location: assignedLocation,
 
       issue_date: nullableText(body.issueDate),
       expiration_date:
@@ -171,8 +194,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error.code === "23505"
-            ? "An equipment record with this serial number already exists."
+          equipmentIdentifierConflict(error.code)
+            ? equipmentIdentifierConflict(error.code)
             : error.message,
       },
       { status: error.code === "23505" ? 409 : 500 },
@@ -228,10 +251,32 @@ export async function PATCH(request: NextRequest) {
     text(body.equipmentTypeId) ||
     String(existing.equipment_type_id);
 
-  const assignedUserId =
-    body.assignedUserId === undefined
-      ? existing.assigned_user_id
-      : nullableText(body.assignedUserId);
+  let assignment;
+  try {
+    assignment = equipmentAssignment({
+      assignedUserId: body.assignedUserId === undefined ? existing.assigned_user_id : body.assignedUserId,
+      assignedVehicleId: body.assignedVehicleId === undefined ? existing.assigned_vehicle_id : body.assignedVehicleId,
+      assignedLocation: body.assignedLocation === undefined ? existing.assigned_location : body.assignedLocation,
+    });
+  } catch (assignmentError) { return NextResponse.json({ error: (assignmentError as Error).message }, { status: 400 }); }
+  const { assignedUserId, assignedVehicleId, assignedLocation } = assignment;
+
+  const { data: updateType } = await context.db.from("equipment_types").select("id")
+    .eq("id", equipmentTypeId).eq("department_id", context.departmentId).eq("is_active", true).maybeSingle();
+  if (!updateType) return NextResponse.json({ error: "Equipment type was not found in this agency." }, { status: 400 });
+
+  if (assignedUserId) {
+    const { data: member } = await context.db.from("department_memberships").select("user_id")
+      .eq("department_id", context.departmentId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle();
+    if (!member) return NextResponse.json({ error: "Assigned officer must be an active department member." }, { status: 400 });
+  }
+
+  if (assignedVehicleId) {
+    const { data: vehicle } = await context.admin.from("fleet_vehicles").select("id")
+      .eq("department_id", context.departmentId).eq("id", assignedVehicleId)
+      .neq("status", "Retired").maybeSingle();
+    if (!vehicle) return NextResponse.json({ error: "Assigned vehicle must belong to this agency." }, { status: 400 });
+  }
 
   const lifecycleStatus =
     text(body.lifecycleStatus) ||
@@ -281,12 +326,19 @@ export async function PATCH(request: NextRequest) {
           ? existing.serial_number
           : nullableText(body.serialNumber),
 
+      asset_number:
+        body.assetNumber === undefined
+          ? existing.asset_number
+          : nullableText(body.assetNumber),
+
       lot_number:
         body.lotNumber === undefined
           ? existing.lot_number
           : nullableText(body.lotNumber),
 
       assigned_user_id: assignedUserId,
+      assigned_vehicle_id: assignedVehicleId,
+      assigned_location: assignedLocation,
 
       issue_date:
         body.issueDate === undefined
@@ -346,8 +398,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error.code === "23505"
-            ? "An equipment record with this serial number already exists."
+          equipmentIdentifierConflict(error.code)
+            ? equipmentIdentifierConflict(error.code)
             : error.message,
       },
       { status: error.code === "23505" ? 409 : 500 },
