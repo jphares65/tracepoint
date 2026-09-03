@@ -191,6 +191,17 @@ export async function PATCH(request: NextRequest) {
   const defaultInspectionDueSoonDays =
     nullableInteger(body.defaultInspectionDueSoonDays) ?? 30;
 
+  const validationErrors = [
+    validateDays(defaultValidDays, "Default validity"),
+    validateDays(defaultDueSoonDays, "Expiration warning", true),
+    validateDays(defaultInspectionIntervalDays, "Inspection interval"),
+    validateDays(defaultInspectionDueSoonDays, "Inspection warning", true),
+  ].filter(Boolean);
+
+  if (validationErrors.length > 0) {
+    return NextResponse.json({ error: validationErrors[0] }, { status: 400 });
+  }
+
   if (
     defaultValidDays !== null &&
     defaultDueSoonDays >= defaultValidDays
@@ -269,4 +280,43 @@ export async function PATCH(request: NextRequest) {
   }
 
   return NextResponse.json({ item: data });
+}
+
+export async function DELETE(request: NextRequest) {
+  const context = await getEquipmentServerContext();
+  if ("error" in context) return context.error;
+  if (!context.canManage) return equipmentPermissionDenied();
+
+  const body = await request.json().catch(() => ({}));
+  const id = text(body.id);
+  if (!id) return NextResponse.json({ error: "Equipment type ID is required." }, { status: 400 });
+
+  const { data: typeRow, error: typeError } = await context.db.from("equipment_types")
+    .select("id,name,is_active").eq("id", id).eq("department_id", context.departmentId).maybeSingle();
+  if (typeError) return NextResponse.json({ error: typeError.message }, { status: 500 });
+  if (!typeRow) return NextResponse.json({ error: "Equipment type was not found." }, { status: 404 });
+
+  const [assets, requirements] = await Promise.all([
+    context.db.from("equipment_assets").select("id", { count: "exact", head: true })
+      .eq("department_id", context.departmentId).eq("equipment_type_id", id),
+    context.db.from("department_equipment_requirements").select("id", { count: "exact", head: true })
+      .eq("department_id", context.departmentId).eq("equipment_type_id", id),
+  ]);
+  const dependencyError = assets.error ?? requirements.error;
+  if (dependencyError) return NextResponse.json({ error: dependencyError.message }, { status: 500 });
+
+  const assetCount = assets.count ?? 0;
+  const ruleCount = requirements.count ?? 0;
+  if (assetCount > 0 || ruleCount > 0) {
+    return NextResponse.json({
+      error: `This type cannot be permanently deleted because it has ${assetCount} equipment record${assetCount === 1 ? "" : "s"} and ${ruleCount} requirement rule${ruleCount === 1 ? "" : "s"}. Archive it to preserve assignments, inspections, and history.`,
+      canArchive: true,
+    }, { status: 409 });
+  }
+
+  const { data, error } = await context.db.from("equipment_types").delete()
+    .eq("id", id).eq("department_id", context.departmentId).select("id").maybeSingle();
+  if (error) return NextResponse.json({ error: error.message }, { status: error.code === "23503" ? 409 : 500 });
+  if (!data) return NextResponse.json({ error: "Equipment type was not found." }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }

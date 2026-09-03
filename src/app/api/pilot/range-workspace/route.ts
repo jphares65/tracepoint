@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   accessFailureResponse,
   featureDisabledResponse,
+  hasAnyServerPermission,
   hasServerFeature,
   requireServerFeature,
   resolveServerAccess,
@@ -73,6 +74,7 @@ export async function GET() {
 
     return NextResponse.json({
       departmentId,
+      canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
       workspace: data.workspace,
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
