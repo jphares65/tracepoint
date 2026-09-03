@@ -6,11 +6,11 @@ role, and region gate and refuses management account `265544358665`.
 
 ## Required human inputs
 
-- A running Docker engine; the scripts do not install Docker Desktop.
-- `TRACEPOINT_STAGING_NEXT_PUBLIC_SUPABASE_URL`,
-  `TRACEPOINT_STAGING_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and
-  `TRACEPOINT_STAGING_NEXT_PUBLIC_SITE_URL` in the invoking staging session.
-- Secret values named `SUPABASE_SECRET_KEY`, `BREVO_API_KEY`,
+- Staging values named `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_SITE_URL` in the
+  retained Secrets Manager JSON object. The site URL must be exactly
+  `https://staging.tracepointhq.com`.
+- Runtime values named `SUPABASE_SECRET_KEY`, `BREVO_API_KEY`,
   `NOTIFICATION_DISPATCH_SECRET`, and
   `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. The Server Actions value must be base64
   for a 16-, 24-, or 32-byte AES key and must be identical at build and runtime.
@@ -22,13 +22,33 @@ role, and region gate and refuses management account `265544358665`.
 - Permission for the staging deployment role to read KMS rotation status if that
   verification is to become conclusive.
 
+## Verified 2026-09-03 inventory
+
+The `tracepoint-staging-image-build` stack is `CREATE_COMPLETE` with termination
+protection enabled. Its CodeBuild project uses `BUILD_GENERAL1_SMALL`, privileged
+Docker, no output artifacts, a 30-minute build timeout, and the tracked-source S3
+object. The source bucket is versioned, blocks all public access, uses the
+stack-specific KMS key, and expires current/noncurrent archives after seven days.
+Build logs use the same key and a 30-day retention period.
+
+The ECR repository is KMS-encrypted and immutable, has scan-on-push enabled, and
+expires images beyond the newest 30. It currently has no images. The application
+secret currently contains only its CDK bootstrap fields (`initialized` and
+`bootstrapNonce`); all five build-time names and three runtime-only names remain
+unset. Values were neither displayed nor copied. Local `.env.local` has some
+similarly named values but its site URL is not the approved staging URL, so those
+values were deliberately not promoted to staging.
+
 ## Operator sequence
 
 1. Run `test-tracepoint-staging-acm-dns.ps1` with the explicit staging hostname.
-2. Review and invoke `set-tracepoint-staging-secret.ps1`; it replaces the four-key
-   JSON value atomically, uses concealed input, prints no value, and rejects
-   production-looking values.
-3. Export the three public build variables in the current staging-only shell.
+2. Review and invoke `set-tracepoint-staging-secret.ps1`; it replaces the complete
+   eight-field JSON value atomically, uses concealed input, prints no value, and
+   rejects production-looking values.
+3. Run `publish-tracepoint-staging-image.ps1`. It permits only the protected
+   untracked demo files, archives an explicit tracked build-source allowlist,
+   rejects secret/environment/credential/dump/generated paths, and starts the
+   deployed CodeBuild project with the full commit SHA as its immutable tag.
 4. Invoke only `scripts/deploy-tracepoint-staging.ps1`. It repeats STS, cost, diff,
    and non-deletion gates before any runtime deployment.
 5. Run `test-tracepoint-staging-runtime.ps1`, then the smoke script. Without a

@@ -4,11 +4,35 @@
 **Target:** `tracepoint-staging`, account `559054714699`, `us-east-1`
 **Hard deny:** management account `265544358665`
 **AWS activity in this run:** renewed the existing Identity Center session,
-verified the staging identity boundary, ran metadata-only inventory and a live
-foundation diff, then deployed the reviewed in-place compute IAM hardening. The
-network and security stacks remained unchanged; runtime stayed disabled. Linked
-Supabase migration history was previously checked read-only and is synchronized
-through `202609020001`; no Supabase state was changed.
+verified the staging identity boundary, deployed the reviewed staging image-build
+stack, and verified its storage, encryption, logging, IAM, and ECR controls.
+Runtime stayed disabled and no DNS, certificate, production, or Supabase state
+was changed.
+
+## 2026-09-03 image-build deployment
+
+- Deployed `tracepoint-staging-image-build` after reviewing an additions-only
+  live diff. The existing compute stack gained only three cross-stack export
+  outputs; network and security had no changes.
+- The new stack contains a rotating retained KMS key/alias, retained versioned
+  source bucket with seven-day cleanup and full public-access blocking, retained
+  KMS-encrypted 30-day build logs, a source/repository/secret-scoped CodeBuild
+  role, and a `BUILD_GENERAL1_SMALL` privileged CodeBuild project.
+- The first create attempt rolled back because the KMS policy omitted the
+  regional CloudWatch Logs principal. The empty failed stack was deleted after
+  verifying no retained alias or bucket, and the corrected log-group-scoped
+  encryption-context policy deployed successfully.
+- Commit `2420992782cf617d603e0358fb187b021df3b72e` passed the local archive gate:
+  323 entries, all tracked by that commit, with environment, secret/credential,
+  SQL/dump, backup, generated, `.github`, and protected untracked paths excluded.
+- Image publication stopped before upload/build because the staging secret still
+  has only `initialized` and `bootstrapNonce`. Local configuration was not reused
+  because its site URL is not the approved staging hostname. ECR therefore remains
+  empty and there is no image tag, digest, or scan result to report yet.
+- The added recurring baseline is approximately $1/month for the customer-managed
+  KMS key, plus negligible S3/log storage and request charges. CodeBuild is
+  usage-based; the small compute free tier includes 100 build minutes/month when
+  applicable.
 
 ## 2026-09-03 foundation hardening deployment
 
@@ -224,15 +248,19 @@ storage, provider, validation, readiness and status documentation.
 ## Blockers
 
 - No staging ACM certificate or published immutable image exists, and runtime
-  remains undeployed. ECR and the independent foundation stacks do exist.
+  remains undeployed. ECR, the independent foundation stacks, and the image-build
+  stack exist. Image publication needs the five build-time secret fields; runtime
+  additionally needs `SUPABASE_SECRET_KEY`, `BREVO_API_KEY`, and
+  `NOTIFICATION_DISPATCH_SECRET`.
 - Account-level S3 public-access-block remains unverified; the deployed bootstrap
   bucket itself blocks all public access and no application bucket is deployed.
 - `TracePointMigrationStaging` administrative attachment cannot be changed from
   staging and must transition through a verified management-owned emergency path.
 - GitHub OIDC trust, environment protection, and the exact staging deployment
   role variable require repository/platform-owner configuration.
-- Runtime secrets, public build configuration, Docker or an approved clean-source
-  AWS-native build, and the staging certificate/DNS path remain required.
+- Runtime secrets, approved staging public build configuration, and the staging
+  certificate/DNS path remain required. The clean-source AWS-native builder is
+  deployed and no local Docker engine is required.
 - Storage policy work remains: align the patch route's 5 MB limit with the
   UI/bucket's 2 MB limit, define old-patch cleanup, prove/create the
   `tracepoint-attachments` bucket policy in a controlled migration, and decide
