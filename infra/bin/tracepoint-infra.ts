@@ -4,6 +4,7 @@ import { NetworkStack } from "../lib/network-stack";
 import { SecurityStack } from "../lib/security-stack";
 import { ComputeFoundationStack } from "../lib/compute-foundation-stack";
 import { RuntimeStack } from "../lib/runtime-stack";
+import { ImageBuildStack } from "../lib/image-build-stack";
 
 const app = new cdk.App();
 
@@ -72,6 +73,15 @@ const compute = new ComputeFoundationStack(app, `${environmentName}-compute`, {
 });
 compute.addStackDependency(network);
 compute.addStackDependency(security);
+
+const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
+  ...commonProps,
+  stackName: `${environmentName}-image-build`,
+  environmentName: workloadEnvironment,
+  repository: compute.repository,
+  appSecrets: compute.appSecrets,
+});
+imageBuild.addStackDependency(compute);
 
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {

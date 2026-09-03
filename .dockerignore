@@ -1,4 +1,5 @@
 .git
+.github
 .next
 node_modules
 infra
@@ -7,3 +8,11 @@ supabase
 *.txt
 .env*
 npm-debug.log*
+**/*.backup-*
+**/*.encoding-backup-*
+**/.cache
+**/.aws
+**/*credential*
+**/*secret*.json
+**/*.dump
+**/*.sql

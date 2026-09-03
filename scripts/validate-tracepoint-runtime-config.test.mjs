@@ -7,6 +7,9 @@ const valid = {
   BREVO_API_KEY: "present",
   NOTIFICATION_DISPATCH_SECRET: "present",
   NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: "present",
+  NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "present",
+  NEXT_PUBLIC_SITE_URL: "https://staging.tracepointhq.com",
   TRACEPOINT_DATA_PROVIDER: "supabase",
   TRACEPOINT_EMAIL_PROVIDER: "brevo",
   TRACEPOINT_STORAGE_PROVIDER: "supabase",
@@ -31,5 +34,12 @@ test("fails closed for unsupported provider switches", () => {
   assert.throws(
     () => validateTracePointRuntimeConfig({ ...valid, TRACEPOINT_DATA_PROVIDER: "aurora" }),
     /TRACEPOINT_DATA_PROVIDER/,
+  );
+});
+
+test("fails closed for a non-staging public site URL", () => {
+  assert.throws(
+    () => validateTracePointRuntimeConfig({ ...valid, NEXT_PUBLIC_SITE_URL: "https://tracepointhq.com" }),
+    /NEXT_PUBLIC_SITE_URL/,
   );
 });

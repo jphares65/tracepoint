@@ -4,6 +4,9 @@ param(
     [Security.SecureString]$BrevoApiKey,
     [Security.SecureString]$NotificationDispatchSecret,
     [Security.SecureString]$NextServerActionsEncryptionKey,
+    [Security.SecureString]$NextPublicSupabaseUrl,
+    [Security.SecureString]$NextPublicSupabasePublishableKey,
+    [Security.SecureString]$NextPublicSiteUrl,
     [string]$Profile = 'tracepoint-member-staging'
 )
 
@@ -12,7 +15,15 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 Assert-TracePointStagingIdentity -Profile $Profile | Out-Null
 
-$parameters = @('SupabaseSecretKey', 'BrevoApiKey', 'NotificationDispatchSecret', 'NextServerActionsEncryptionKey')
+$parameters = @(
+    'SupabaseSecretKey',
+    'BrevoApiKey',
+    'NotificationDispatchSecret',
+    'NextServerActionsEncryptionKey',
+    'NextPublicSupabaseUrl',
+    'NextPublicSupabasePublishableKey',
+    'NextPublicSiteUrl'
+)
 foreach ($name in $parameters) {
     if ($null -eq (Get-Variable -Name $name -ValueOnly)) {
         Set-Variable -Name $name -Value (Read-Host -AsSecureString "Enter $name for staging")
@@ -29,12 +40,23 @@ try {
     }
     $keyBytes = [Convert]::FromBase64String($plain.NextServerActionsEncryptionKey)
     if ($keyBytes.Length -notin @(16, 24, 32)) { throw 'NextServerActionsEncryptionKey must encode a 16, 24, or 32 byte AES key.' }
+    $supabaseUri = [uri]$plain.NextPublicSupabaseUrl
+    if ($supabaseUri.Scheme -ne 'https' -or $supabaseUri.DnsSafeHost -notlike '*.supabase.co') {
+        throw 'NextPublicSupabaseUrl must be an HTTPS Supabase project URL.'
+    }
+    if ($plain.NextPublicSiteUrl -ne 'https://staging.tracepointhq.com') {
+        throw 'NextPublicSiteUrl must exactly equal the approved staging hostname.'
+    }
 
     $payload = [ordered]@{
         SUPABASE_SECRET_KEY = $plain.SupabaseSecretKey
         BREVO_API_KEY = $plain.BrevoApiKey
         NOTIFICATION_DISPATCH_SECRET = $plain.NotificationDispatchSecret
         NEXT_SERVER_ACTIONS_ENCRYPTION_KEY = $plain.NextServerActionsEncryptionKey
+        NEXT_PUBLIC_SUPABASE_URL = $plain.NextPublicSupabaseUrl
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = $plain.NextPublicSupabasePublishableKey
+        NEXT_PUBLIC_SITE_URL = $plain.NextPublicSiteUrl
+        CONFIGURATION_ENVIRONMENT = 'staging'
     } | ConvertTo-Json -Compress
 
     if (-not $PSCmdlet.ShouldProcess('tracepoint/staging/application in account 559054714699', 'Replace the complete staging secret value')) { return }

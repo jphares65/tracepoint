@@ -3,6 +3,7 @@ import { test } from "node:test";
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { ComputeFoundationStack } from "../lib/compute-foundation-stack";
+import { ImageBuildStack } from "../lib/image-build-stack";
 import { NetworkStack } from "../lib/network-stack";
 import { RuntimeStack } from "../lib/runtime-stack";
 import { SecurityStack } from "../lib/security-stack";
@@ -70,6 +71,67 @@ test("execution IAM is resource-scoped and task IAM has no permissions", () => {
   assert.match(serialized, /AppRepository/);
   assert.match(serialized, /AppLogGroup/);
   assert.match(serialized, /AppSecrets/);
+});
+
+test("image builder uses encrypted tracked source and immutable staging ECR only", () => {
+  const { app, compute } = foundations();
+  const imageBuild = new ImageBuildStack(app, "image-build", {
+    env,
+    environmentName: "staging",
+    repository: compute.repository,
+    appSecrets: compute.appSecrets,
+  });
+  const template = Template.fromStack(imageBuild);
+  template.hasResourceProperties("AWS::S3::Bucket", {
+    BucketEncryption: {
+      ServerSideEncryptionConfiguration: Match.arrayWith([
+        Match.objectLike({
+          ServerSideEncryptionByDefault: Match.objectLike({ SSEAlgorithm: "aws:kms" }),
+        }),
+      ]),
+    },
+    PublicAccessBlockConfiguration: {
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    },
+    VersioningConfiguration: { Status: "Enabled" },
+  });
+  template.hasResourceProperties("AWS::CodeBuild::Project", {
+    Name: "tracepoint-staging-image-build",
+    Source: {
+      Type: "S3",
+      BuildSpec: "buildspec.staging-image.yml",
+    },
+    Environment: Match.objectLike({
+      ComputeType: "BUILD_GENERAL1_SMALL",
+      PrivilegedMode: true,
+    }),
+    Artifacts: { Type: "NO_ARTIFACTS" },
+  });
+  template.hasResourceProperties("AWS::KMS::Key", {
+    EnableKeyRotation: true,
+    KeyPolicy: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Principal: { Service: "logs.us-east-1.amazonaws.com" },
+          Condition: {
+            ArnEquals: {
+              "kms:EncryptionContext:aws:logs:arn": Match.anyValue(),
+            },
+          },
+        }),
+      ]),
+    }),
+  });
+  const policies = JSON.stringify(template.findResources("AWS::IAM::Policy"));
+  assert.match(policies, /source\/tracepoint-staging-source\.zip/);
+  assert.match(policies, /GetAuthorizationToken/);
+  assert.match(policies, /PutImage/);
+  assert.match(policies, /GetSecretValue/);
+  assert.doesNotMatch(policies, /cloudformation:/i);
+  assert.doesNotMatch(policies, /iam:PassRole/i);
 });
 
 test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", () => {

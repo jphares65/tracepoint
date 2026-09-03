@@ -34,6 +34,24 @@ export class RuntimeStack extends cdk.Stack {
       props.certificateArn,
     );
 
+    const taskSecurityGroup = new ec2.SecurityGroup(this, "TaskSecurityGroup", {
+      vpc: props.vpc,
+      securityGroupName: `tracepoint-${props.environmentName}-task`,
+      description: "TracePoint staging task egress: TLS providers and VPC DNS only",
+      allowAllOutbound: false,
+    });
+    taskSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS providers");
+    taskSecurityGroup.addEgressRule(
+      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
+      ec2.Port.udp(53),
+      "VPC DNS over UDP",
+    );
+    taskSecurityGroup.addEgressRule(
+      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
+      ec2.Port.tcp(53),
+      "VPC DNS over TCP",
+    );
+
     const service = new ecsPatterns.ApplicationLoadBalancedFargateService(
       this,
       "Service",
@@ -52,6 +70,17 @@ export class RuntimeStack extends cdk.Stack {
         circuitBreaker: { rollback: true },
         taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
         assignPublicIp: true,
+        securityGroups: [taskSecurityGroup],
+        healthCheck: {
+          command: [
+            "CMD-SHELL",
+            "node -e \"fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+          ],
+          retries: 3,
+          interval: cdk.Duration.seconds(30),
+          timeout: cdk.Duration.seconds(5),
+          startPeriod: cdk.Duration.seconds(30),
+        },
         taskImageOptions: {
           image: ecs.ContainerImage.fromEcrRepository(props.repository, props.imageTag),
           containerName: "tracepoint",
@@ -70,6 +99,18 @@ export class RuntimeStack extends cdk.Stack {
             TRACEPOINT_STORAGE_PROVIDER: "supabase",
           },
           secrets: {
+            NEXT_PUBLIC_SUPABASE_URL: ecs.Secret.fromSecretsManager(
+              props.appSecrets,
+              "NEXT_PUBLIC_SUPABASE_URL",
+            ),
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ecs.Secret.fromSecretsManager(
+              props.appSecrets,
+              "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+            ),
+            NEXT_PUBLIC_SITE_URL: ecs.Secret.fromSecretsManager(
+              props.appSecrets,
+              "NEXT_PUBLIC_SITE_URL",
+            ),
             SUPABASE_SECRET_KEY: ecs.Secret.fromSecretsManager(
               props.appSecrets,
               "SUPABASE_SECRET_KEY",
@@ -89,6 +130,23 @@ export class RuntimeStack extends cdk.Stack {
           },
         },
       },
+    );
+
+    const container = service.taskDefinition.defaultContainer;
+    if (!container) { throw new Error("TracePoint runtime requires a default container"); }
+    service.taskDefinition.addVolume({ name: "runtime-cache" });
+    service.taskDefinition.addVolume({ name: "temporary-files" });
+    container.addMountPoints(
+      { sourceVolume: "runtime-cache", containerPath: "/app/.next/cache", readOnly: false },
+      { sourceVolume: "temporary-files", containerPath: "/tmp", readOnly: false },
+    );
+    const cfnTaskDefinition = service.taskDefinition.node.defaultChild as ecs.CfnTaskDefinition;
+    cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.ReadonlyRootFilesystem", true);
+    cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.StopTimeout", 30);
+    cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.User", "1001:1001");
+    cfnTaskDefinition.addPropertyOverride(
+      "ContainerDefinitions.0.LinuxParameters.InitProcessEnabled",
+      true,
     );
 
     service.targetGroup.configureHealthCheck({

@@ -7,7 +7,7 @@ account, certificate, or DNS record.
 
 ## Application assembly
 
-The four lowercase stacks are:
+The five lowercase stacks are:
 
 - `tracepoint-staging-network`: two public subnets across two AZs, internet
   gateway, VPC Flow Logs, restricted default security group, and the no-charge
@@ -16,6 +16,9 @@ The four lowercase stacks are:
 - `tracepoint-staging-compute`: immutable ECR repository, ECS cluster without
   Container Insights, 30-day retained logs, retained application secret, and
   separate ECS execution/task roles.
+- `tracepoint-staging-image-build`: retained KMS-encrypted, versioned clean-source
+  bucket; KMS-encrypted 30-day build logs; and a least-privilege CodeBuild project
+  that can read the staging application secret and push only to staging ECR.
 - `tracepoint-staging-runtime` (opt-in): one public-IP Fargate task behind an
   HTTPS ALB. Its security group accepts port 3000 only from the ALB security
   group; the ALB redirects HTTP to HTTPS. It also creates ALB 5xx-rate and
@@ -67,22 +70,27 @@ docker build `
   -t tracepoint-staging:REPLACE_WITH_COMMIT_SHA ..
 ```
 
-The build identity reads only `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` from
-`tracepoint/staging/application`. It must not print it, store it in the
-workspace, or use a Docker `ARG`. ECS injects the same secret version at task
-startup, so rotation requires a new immutable image and task replacement.
+The build identity reads the retained staging secret because CodeBuild must inject
+the three public build values and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. It must not
+print values or store the Server Action key in the workspace or a Docker `ARG`.
+ECS injects the same key at task startup, so rotation requires a new immutable
+image and task replacement.
 
 The retained JSON secret also supplies `SUPABASE_SECRET_KEY`, `BREVO_API_KEY`,
 and `NOTIFICATION_DISPATCH_SECRET`. Populate all keys atomically through an
 approved concealed-input workflow; CDK contains no real values.
 
+Image publication validates only the five build-time fields. The remaining
+three runtime-only fields stay mandatory for an ECS launch, but their absence
+does not prevent producing and scanning an otherwise deployable image.
+
 ## Least-privilege deployment design
 
 The member-account platform administrator—not this application assembly—creates:
 
-1. `tracepoint-staging-image-builder`: push only to the staging ECR repository,
-   read only the Server Action field from the staging secret, and decrypt only
-   through Secrets Manager. It cannot deploy or pass roles.
+1. The deployed CodeBuild image role: push only to the staging ECR repository,
+   read only the staging application secret, and decrypt only through Secrets
+   Manager. It cannot deploy or pass roles.
 2. `tracepoint-staging-deployer`: assume only dedicated CDK bootstrap deploy,
    asset-publishing, and lookup roles. `iam:PassRole` is limited to the bootstrap
    CloudFormation execution role with
