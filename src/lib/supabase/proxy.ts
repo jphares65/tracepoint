@@ -9,7 +9,7 @@ import {
 
 import type { Database } from "./database.types";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/confirm", "/activate", "/api/notifications/email-dispatch"];
+const PUBLIC_PATHS = ["/landing", "/login", "/auth/callback", "/auth/confirm", "/activate", "/api/notifications/email-dispatch"];
 const AUTH_FLOW_PATHS = [
   "/auth/setup",
   "/auth/signout",
@@ -112,6 +112,10 @@ export async function updateSession(request: NextRequest) {
   const authenticated = Boolean(claims?.sub);
 
   if (!authenticated && !isPublicPath(pathname)) {
+    if (pathname === "/") {
+      return redirectWithCookies(request, response, "/landing");
+    }
+
     const requestedPath = `${pathname}${request.nextUrl.search}`;
 
     return redirectWithCookies(
