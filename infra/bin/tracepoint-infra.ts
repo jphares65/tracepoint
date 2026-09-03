@@ -43,7 +43,9 @@ const commonProps = {
   tags: {
     Application: "TracePoint",
     Environment: workloadEnvironment,
+    Owner: "TracePoint",
     ManagedBy: "AWS-CDK",
+    CostCenter: "TracePoint-Migration",
     DataClassification: "PublicSafety-Sensitive",
   },
 };

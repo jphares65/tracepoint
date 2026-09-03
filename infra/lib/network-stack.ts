@@ -15,7 +15,7 @@ export class NetworkStack extends cdk.Stack {
     this.vpc = new ec2.Vpc(this, "Vpc", {
       vpcName: `tracepoint-${props.environmentName}`,
       ipAddresses: ec2.IpAddresses.cidr("10.40.0.0/16"),
-      availabilityZones: ["us-east-1a", "us-east-1b"],
+      maxAzs: 2,
       natGateways: 0,
       subnetConfiguration: [
         {
@@ -32,6 +32,12 @@ export class NetworkStack extends cdk.Stack {
         },
       },
     });
+    for (const subnet of this.vpc.publicSubnets) {
+      cdk.Annotations.of(subnet).acknowledgeWarning(
+        "CloudFormation-Validate::W3010",
+        "The two staging AZs are intentionally pinned for deterministic offline synthesis and were verified in account 559054714699.",
+      );
+    }
 
     // S3 gateway endpoints have no hourly charge. Paid interface endpoints are
     // deliberately deferred for lean staging while the task already needs

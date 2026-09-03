@@ -1,5 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
@@ -44,6 +45,8 @@ export class RuntimeStack extends cdk.Stack {
         certificate,
         protocol: elbv2.ApplicationProtocol.HTTPS,
         desiredCount: 1,
+        cpu: 256,
+        memoryLimitMiB: 512,
         minHealthyPercent: 100,
         healthCheckGracePeriod: cdk.Duration.seconds(60),
         circuitBreaker: { rollback: true },
@@ -62,6 +65,9 @@ export class RuntimeStack extends cdk.Stack {
           environment: {
             NODE_ENV: "production",
             PORT: "3000",
+            TRACEPOINT_DATA_PROVIDER: "supabase",
+            TRACEPOINT_EMAIL_PROVIDER: "brevo",
+            TRACEPOINT_STORAGE_PROVIDER: "supabase",
           },
           secrets: {
             SUPABASE_SECRET_KEY: ecs.Secret.fromSecretsManager(
@@ -90,6 +96,45 @@ export class RuntimeStack extends cdk.Stack {
       healthyHttpCodes: "200",
       interval: cdk.Duration.seconds(30),
       timeout: cdk.Duration.seconds(5),
+    });
+
+    const errorRate = new cloudwatch.MathExpression({
+      expression: "IF(requests > 0, errors * 100 / requests, 0)",
+      label: "ALB 5xx rate (%)",
+      period: cdk.Duration.minutes(1),
+      usingMetrics: {
+        errors: service.loadBalancer.metrics.httpCodeElb(
+          elbv2.HttpCodeElb.ELB_5XX_COUNT,
+          { statistic: "sum", period: cdk.Duration.minutes(1) },
+        ),
+        requests: service.loadBalancer.metrics.requestCount({
+          statistic: "sum",
+          period: cdk.Duration.minutes(1),
+        }),
+      },
+    });
+    new cloudwatch.Alarm(this, "Alb5xxRateAlarm", {
+      alarmName: `tracepoint-${props.environmentName}-alb-5xx-rate`,
+      alarmDescription: "TracePoint staging ALB 5xx rate exceeds five percent",
+      metric: errorRate,
+      threshold: 5,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, "UnhealthyTargetAlarm", {
+      alarmName: `tracepoint-${props.environmentName}-unhealthy-target`,
+      alarmDescription: "TracePoint staging has an unhealthy application target",
+      metric: service.targetGroup.metrics.unhealthyHostCount({
+        statistic: "maximum",
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 1,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
     });
 
     new cdk.CfnOutput(this, "LoadBalancerDnsName", {

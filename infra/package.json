@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "test": "ts-node test/infrastructure.test.ts",
     "watch": "tsc -w",
     "cdk": "cdk",
     "synth": "cdk synth",

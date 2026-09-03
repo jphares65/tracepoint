@@ -1,10 +1,55 @@
 # TracePoint AWS migration status
 
-**Last updated:** 2026-09-02
+**Last updated:** 2026-09-03
 **Target:** `tracepoint-staging`, account `559054714699`, `us-east-1`
 **Hard deny:** management account `265544358665`
-**AWS activity in this run:** guarded staging foundation verification through
-`scripts/deploy-tracepoint-staging.ps1`; no separate AWS CLI command was used
+**AWS activity in this run:** renewed the existing Identity Center session,
+verified the staging identity boundary, ran metadata-only inventory and a live
+foundation diff, then deployed the reviewed in-place compute IAM hardening. The
+network and security stacks remained unchanged; runtime stayed disabled. Linked
+Supabase migration history was previously checked read-only and is synchronized
+through `202609020001`; no Supabase state was changed.
+
+## 2026-09-03 foundation hardening deployment
+
+- STS verified account `559054714699`, role `TracePointMigrationStaging`, and
+  `us-east-1`; the management-account deny remained active.
+- Live inventory confirmed `CDKToolkit`, network, security, and compute healthy,
+  no NAT gateway, an empty immutable KMS-encrypted ECR repository, zero ECS
+  services/tasks, no load balancer, no issued staging certificate, and the `$75`
+  budget.
+- The reviewed diff had no network or security changes and no replacements. The
+  compute update removed `AmazonECSTaskExecutionRolePolicy`, added resource-scoped
+  ECR/log/secret permissions, and constrained both ECS role trust policies.
+- The dependency and compute deployments completed successfully. Runtime remained
+  disabled; no image, certificate, DNS, secret value, or production resource was
+  changed.
+- A post-deployment live diff reported zero differences across network, security,
+  and compute.
+
+## 2026-09-02 autonomous hardening checkpoint
+
+- Created isolated local branch `codex/aws-staging-readiness-20260902`; nothing
+  was pushed and the two protected untracked paths remain untouched.
+- Reconciled stale pre-deployment blockers with the sanitized 2026-09-01
+  deployment transcript: bootstrap plus network, security, and compute foundations
+  are deployed; runtime, image publication, certificate/DNS, and staging
+  configuration remain incomplete.
+- Replaced the broad ECS task-execution managed policy with explicit ECR-pull,
+  application-log, secret, and KMS permissions. `ecr:GetAuthorizationToken` is
+  the only unavoidable wildcard resource action. Both ECS role trust policies
+  now require the staging source account and an ECS source ARN.
+- Added owner/cost tags, explicit Supabase/Brevo provider pins, fixed task sizing,
+  two runtime alarms, container startup validation, CDK invariant tests, and a
+  metadata-only AWS inventory helper.
+- Added a manual staging-environment GitHub Actions foundation workflow. It uses
+  OIDC, validates account and role before CDK, keeps runtime disabled, and cannot
+  deploy production. Repository-owner configuration is still required.
+- Docker remains unavailable. No image was built or pushed. The non-root
+  container now fails before server startup when required variable names or
+  provider controls are invalid, without logging values.
+- Deterministic recurring cost remains `$42.07/month`, leaving `$32.93` beneath
+  the authorized ceiling.
 
 ## 2026-09-01 staging foundation checkpoint
 
@@ -53,7 +98,7 @@ implemented or activated.
 The prior verified AWS evidence below is retained for continuity. This storage
 run made no AWS API/MCP call and performed no live Supabase or Brevo operation.
 
-## Verified AWS staging evidence
+## Historical AWS baseline evidence
 
 STS returned account `559054714699` through `us-east-1` at
 `2026-08-30T18:53:41Z`. Inventory completed at
@@ -178,16 +223,16 @@ storage, provider, validation, readiness and status documentation.
 
 ## Blockers
 
-- Account is not CDK-bootstrapped; bootstrap is explicitly unauthorized here.
-- No staging ACM certificate, published immutable image, ECR repository, or
-  deployed stack exists.
-- Account S3 public-access-block baseline is absent.
+- No staging ACM certificate or published immutable image exists, and runtime
+  remains undeployed. ECR and the independent foundation stacks do exist.
+- Account-level S3 public-access-block remains unverified; the deployed bootstrap
+  bucket itself blocks all public access and no application bucket is deployed.
 - `TracePointMigrationStaging` administrative attachment cannot be changed from
   staging and must transition through a verified management-owned emergency path.
-- Final bootstrap qualifier, permissions boundary, CI OIDC subject, execution
-  policy, and exact bootstrap role ARNs require platform approval.
-- DNS/certificate, secrets, image publishing, billing controls, and deployment
-  require separate authorized actions.
+- GitHub OIDC trust, environment protection, and the exact staging deployment
+  role variable require repository/platform-owner configuration.
+- Runtime secrets, public build configuration, Docker or an approved clean-source
+  AWS-native build, and the staging certificate/DNS path remain required.
 - Storage policy work remains: align the patch route's 5 MB limit with the
   UI/bucket's 2 MB limit, define old-patch cleanup, prove/create the
   `tracepoint-attachments` bucket policy in a controlled migration, and decide
@@ -203,13 +248,15 @@ storage, provider, validation, readiness and status documentation.
    management account.
 2. Platform/security owners approve the S3 public-access baseline, CDK qualifier,
    permissions boundary, bootstrap execution policy, CI trust, and routine roles.
-3. Under separate approval, create the least-privilege bootstrap/image/deployer
+3. Configure GitHub's protected `aws-staging` environment, OIDC trust, and
+   `AWS_STAGING_DEPLOY_ROLE_ARN` repository variable.
+4. Under separate approval, create the least-privilege bootstrap/image/deployer
    prerequisites and remove `AdministratorAccess` only after replacement paths
    pass positive and negative tests.
-4. Request/validate the staging certificate and configure DNS only through the
+5. Request/validate the staging certificate and configure DNS only through the
    owning platform workflow.
-5. Build and scan an immutable image, populate secrets through concealed input,
+6. Build and scan an immutable image, populate secrets through concealed input,
    synthesize again, and review `cdk diff`/change set for additions only.
-6. Obtain explicit deployment approval; deploy foundation before runtime, then
+7. Deploy runtime only after all gates pass, then
    run non-production staging acceptance. No provider or live-user cutover is
    implied.

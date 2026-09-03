@@ -14,6 +14,9 @@ role, and region gate and refuses management account `265544358665`.
   `NOTIFICATION_DISPATCH_SECRET`, and
   `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. The Server Actions value must be base64
   for a 16-, 24-, or 32-byte AES key and must be identical at build and runtime.
+- Runtime provider controls are fixed to `supabase`, `brevo`, and `supabase` for
+  data, email, and storage. The container validates these controls and all four
+  required secret names before starting Next.js. Errors list names only.
 - An issued `us-east-1` ACM certificate for `staging.tracepointhq.com`, followed
   by a platform-owner DNS alias. No helper requests a certificate or changes DNS.
 - Permission for the staging deployment role to read KMS rotation status if that
@@ -33,6 +36,11 @@ role, and region gate and refuses management account `265544358665`.
    200 for the same authorized staging tenant.
 6. Keep rollback dry-run-only until a reviewed orchestration change can accept an
    explicit prior immutable image digest. Never destroy the runtime or foundation.
+
+Before any live step, run `scripts/get-tracepoint-staging-inventory.ps1`; its
+first call is STS and it refuses every account or role outside the staging
+boundary. The GitHub foundation workflow is separate from runtime deployment and
+cannot publish an image or enable the runtime stack.
 
 The checked-in Next.js 16 container uses standalone output, copies `public` and
 `.next/static`, runs the minimal `server.js` as a non-root user on port 3000, and

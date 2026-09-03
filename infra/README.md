@@ -18,7 +18,14 @@ The four lowercase stacks are:
   separate ECS execution/task roles.
 - `tracepoint-staging-runtime` (opt-in): one public-IP Fargate task behind an
   HTTPS ALB. Its security group accepts port 3000 only from the ALB security
-  group; the ALB redirects HTTP to HTTPS.
+  group; the ALB redirects HTTP to HTTPS. It also creates ALB 5xx-rate and
+  unhealthy-target alarms with explicit missing-data behavior.
+
+All stacks carry `Application`, `Environment`, `Owner`, `ManagedBy`,
+`CostCenter`, and `DataClassification` tags. The ECS execution role is limited to
+the staging repository, application log group, application secret, and data key;
+only ECR authorization-token retrieval uses an unavoidable wildcard resource.
+The application task role has no permissions.
 
 The unused attachment bucket is deferred. CloudTrail, GuardDuty, Security Hub,
 and Config are excluded: they belong to a separate, organization-aware
@@ -98,3 +105,13 @@ Use existing dependencies only. Before any deployment, build/scan the immutable
 image, synthesize with the real account and certificate, and review a real
 `cdk diff`. Database, identity, Supabase/Brevo migration, CloudFront, WAF,
 multi-task capacity, production, and live-agency cutover remain deferred.
+
+Run `npm test` in `infra/` to verify lean-network, encryption, retention, ECR,
+IAM, disabled-runtime, provider-pin, task-size, TLS-listener, rollback, and alarm
+invariants. `scripts/get-tracepoint-staging-inventory.ps1` performs the matching
+metadata-only account inventory after verifying the staging identity.
+
+The manual `.github/workflows/aws-staging-foundation.yml` workflow validates and
+deploys only the three foundation stacks with runtime disabled. It requires the
+protected `aws-staging` GitHub environment and an OIDC role ARN in the
+`AWS_STAGING_DEPLOY_ROLE_ARN` repository variable.
