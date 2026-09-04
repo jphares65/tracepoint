@@ -94,11 +94,18 @@ Assert-RuntimeSecretConfiguration
 
 $context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '--lookups=false')
 Push-Location $infraRoot
+$savedErrorActionPreference = $ErrorActionPreference
 try {
+    # Windows PowerShell 5 surfaces native stderr as ErrorRecord instances;
+    # CDK writes progress to stderr even when it succeeds.
+    $ErrorActionPreference = 'Continue'
     $diff = & npx.cmd cdk diff $runtimeStack @context 2>&1
     $diffExitCode = $LASTEXITCODE
 }
-finally { Pop-Location }
+finally {
+    $ErrorActionPreference = $savedErrorActionPreference
+    Pop-Location
+}
 if ($diffExitCode -gt 1) { throw 'CDK diff failed; runtime was not deployed.' }
 $diffText = $diff -join [Environment]::NewLine
 if ($diffText -match '(?im)^\s*\[-\]|will be destroyed|requires replacement|\[~\].*replace|production|265544358665') {
@@ -108,11 +115,16 @@ Write-Host $diffText
 
 Assert-TracePointStagingIdentity | Out-Null
 Push-Location $infraRoot
+$savedErrorActionPreference = $ErrorActionPreference
 try {
+    $ErrorActionPreference = 'Continue'
     & npx.cmd cdk deploy $runtimeStack @context --require-approval never
     $deployExitCode = $LASTEXITCODE
 }
-finally { Pop-Location }
+finally {
+    $ErrorActionPreference = $savedErrorActionPreference
+    Pop-Location
+}
 if ($deployExitCode -ne 0) { throw 'Staging runtime deployment failed.' }
 $stack = Invoke-AwsJson @('cloudformation', 'describe-stacks', '--stack-name', $runtimeStack)
 if ($stack.Stacks[0].StackStatus -notin @('CREATE_COMPLETE', 'UPDATE_COMPLETE')) { throw 'Staging runtime stack is not healthy after deployment.' }

@@ -89,6 +89,10 @@ export class RuntimeStack extends cdk.Stack {
             TRACEPOINT_STORAGE_PROVIDER: "supabase",
           },
           secrets: {
+            CONFIGURATION_ENVIRONMENT: ecs.Secret.fromSecretsManager(
+              props.appSecrets,
+              "CONFIGURATION_ENVIRONMENT",
+            ),
             NEXT_PUBLIC_SUPABASE_URL: ecs.Secret.fromSecretsManager(
               props.appSecrets,
               "NEXT_PUBLIC_SUPABASE_URL",

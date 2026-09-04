@@ -129,3 +129,40 @@ Revised completion: foundation infrastructure `100%`; staging automation and
 safety gates `95%`; application configuration `0%`; immutable image publication
 `0%`; staging TLS `50%`; runtime deployment and verification `0%`; aggregate
 staging runtime readiness `61%`.
+
+## Deployed staging runtime checkpoint — 2026-09-03
+
+The earlier execution checkpoint is superseded. Account `559054714699` now has
+all five TracePoint application stacks in `us-east-1`; the runtime stack and its
+four dependencies are complete and termination-protected. The ECS service has
+one desired and running Fargate task behind a healthy ALB target. Task definition
+revision `5` uses the least-privilege execution role, an empty application task
+role, JSON-key secret injection, a read-only root filesystem, and the non-root
+distroless runtime. All eight required secret fields, including
+`CONFIGURATION_ENVIRONMENT=staging`, are injected by JSON key. The ALB
+`/api/health` check is the service health authority;
+the image retains its own Docker health metadata for non-ECS use.
+
+The deployed immutable application image is tag
+`793e48f3d22d9f7d3f0f17c61f5ff0f13b2abc72`, digest
+`sha256:ce1500eb985770c96dfbfc323ae330e7e93d023ba38fb638cb98f5ed899cd472`.
+Its completed ECR basic scan reported no findings. An earlier Debian-slim image
+was not deployed after its scan reported critical and high OS findings; the
+runtime stage was replaced with a smaller non-root distroless image.
+
+The retained application secret contains exactly the eight required staging
+fields and identifies Supabase project `wztqqqashilusoppddxi`. Its values are not
+recorded here. A Windows CLI serialization defect was repaired in place by
+preserving the eight values and writing valid JSON as a new secret version.
+
+ACM certificate
+`arn:aws:acm:us-east-1:559054714699:certificate/90d7c1b4-3d71-4168-a908-8678501f5e5a`
+is issued and attached to the ALB. Direct TLS checks using the intended Host name
+return `200` for health, landing, and login, and HTTP redirects to HTTPS. The only
+remaining external action is the public application DNS record:
+
+```text
+Name:  staging.tracepointhq.com
+Type:  CNAME
+Value: tracep-Servi-G9c0RkjQMCj4-947860151.us-east-1.elb.amazonaws.com
+```

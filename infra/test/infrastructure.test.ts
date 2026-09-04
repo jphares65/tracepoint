@@ -191,4 +191,5 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
   });
   template.resourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 2);
   template.resourceCountIs("AWS::CloudWatch::Alarm", 2);
+  assert.match(JSON.stringify(template.toJSON()), /CONFIGURATION_ENVIRONMENT/);
 });
