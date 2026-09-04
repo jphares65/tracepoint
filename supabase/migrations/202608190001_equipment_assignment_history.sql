@@ -1,4 +1,74 @@
-﻿create table if not exists public.equipment_asset_assignments (
+-- The equipment workspace originally shipped against tables created directly
+-- in production. Define that base schema here so the tracked migration chain
+-- is complete for new projects. IF NOT EXISTS preserves existing data.
+create table if not exists public.equipment_types (
+    id uuid primary key default gen_random_uuid(),
+    department_id uuid not null references public.departments(id) on delete cascade,
+    name text not null,
+    category text not null default 'Other',
+    description text,
+    expiration_required boolean not null default false,
+    default_valid_days integer,
+    default_due_soon_days integer not null default 30,
+    inspection_required boolean not null default false,
+    default_inspection_interval_days integer,
+    default_inspection_due_soon_days integer not null default 30,
+    is_active boolean not null default true,
+    created_by uuid references auth.users(id) on delete set null,
+    updated_by uuid references auth.users(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (department_id, name)
+);
+
+create table if not exists public.equipment_assets (
+    id uuid primary key default gen_random_uuid(),
+    department_id uuid not null references public.departments(id) on delete cascade,
+    equipment_type_id uuid not null references public.equipment_types(id) on delete restrict,
+    asset_number text,
+    manufacturer text,
+    model text,
+    serial_number text,
+    lot_number text,
+    assigned_user_id uuid references auth.users(id) on delete set null,
+    assigned_location text,
+    issue_date date,
+    expiration_date date,
+    last_inspection_date date,
+    next_inspection_date date,
+    lifecycle_status text not null default 'active'
+        check (lifecycle_status in ('active', 'maintenance', 'expired', 'removed')),
+    document_url text,
+    notes text,
+    removed_at timestamptz,
+    removed_by uuid references auth.users(id) on delete set null,
+    removal_reason text,
+    created_by uuid references auth.users(id) on delete set null,
+    updated_by uuid references auth.users(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists public.department_equipment_requirements (
+    id uuid primary key default gen_random_uuid(),
+    department_id uuid not null references public.departments(id) on delete cascade,
+    equipment_type_id uuid not null references public.equipment_types(id) on delete cascade,
+    is_required boolean not null default true,
+    required_quantity integer not null default 1 check (required_quantity > 0),
+    valid_days integer,
+    due_soon_days integer,
+    inspection_interval_days integer,
+    inspection_due_soon_days integer,
+    is_active boolean not null default true,
+    notes text,
+    created_by uuid references auth.users(id) on delete set null,
+    updated_by uuid references auth.users(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (department_id, equipment_type_id)
+);
+
+create table if not exists public.equipment_asset_assignments (
     id uuid primary key default gen_random_uuid(),
 
     department_id uuid not null
