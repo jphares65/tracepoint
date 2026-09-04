@@ -24,20 +24,19 @@ RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/next_server_actions_encryption_key)" \
     npm run build
 
-FROM node:20-bookworm-slim AS runner
+FROM gcr.io/distroless/nodejs20-debian12:nonroot AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --chown=nextjs:nodejs scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
-COPY --chown=nextjs:nodejs scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
-USER nextjs
+COPY --from=builder --chown=nonroot:nonroot /app/public ./public
+COPY --from=builder --chown=nonroot:nonroot /app/.next/standalone ./
+COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
+COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
+COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
+USER nonroot
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-CMD ["node", "start-tracepoint-container.mjs"]
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+CMD ["start-tracepoint-container.mjs"]
