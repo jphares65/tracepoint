@@ -22,6 +22,14 @@ test("equipment type management stays compact and supports archived review and r
   assert.doesNotMatch(page, /className="grid gap-2 md:grid-cols-2 xl:grid-cols-3"/);
 });
 
+test("officer view joins current assigned inventory independently of readiness requirements", async () => {
+  const page = await readFile("src/app/equipment/page.tsx", "utf8");
+  assert.match(page, /groupCurrentOfficerAssignments\(members, assets\)/);
+  assert.match(page, /group\.assignedAssets\.map/);
+  assert.match(page, /Current inventory assignment/);
+  assert.match(page, /officerReadinessGroups\.length === 0/);
+});
+
 test("equipment type schema trims names, enforces agency-local uniqueness, audits, and preserves assigned-equipment RLS", async () => {
   const migration = await readFile("supabase/migrations/202609030001_range_drill_and_equipment_type_qol.sql", "utf8");
   const auditMigration = await readFile("supabase/migrations/20260826173000_expand_accountability_audit_coverage.sql", "utf8");

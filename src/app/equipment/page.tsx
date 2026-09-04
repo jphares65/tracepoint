@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
 
 type ReadinessStatus =
   | "current"
@@ -289,6 +290,7 @@ export default function EquipmentPage() {
   const [vehicles, setVehicles] = useState<EquipmentVehicle[]>([]);
 
   const [canManage, setCanManage] = useState(false);
+  const [canViewDepartment, setCanViewDepartment] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -426,6 +428,7 @@ const [typeForm, setTypeForm] = useState({
           members?: Member[];
           vehicles?: EquipmentVehicle[];
           canManage?: boolean;
+          canViewDepartment?: boolean;
         };
 
       setTypes(typesPayload.items ?? []);
@@ -438,6 +441,7 @@ const [typeForm, setTypeForm] = useState({
 
       setMembers(assetsPayload.members ?? []);
       setVehicles(assetsPayload.vehicles ?? []);
+      setCanViewDepartment(Boolean(assetsPayload.canViewDepartment));
 
       setCanManage(
         Boolean(
@@ -570,6 +574,7 @@ const filteredReadiness = useMemo(() => {
         rankTitle?: string | null;
         unitName?: string | null;
         rows: EquipmentReadinessRow[];
+        assignedAssets: EquipmentAsset[];
         requiredQuantity: number;
         assignedQuantity: number;
         missingQuantity: number;
@@ -579,6 +584,42 @@ const filteredReadiness = useMemo(() => {
         readinessReadyCount: number;
       }
     >();
+
+    const normalizedSearch = search.trim().toLowerCase();
+    const assetsByUser = groupCurrentOfficerAssignments(members, assets);
+
+    members.forEach((member) => {
+      const assignedAssets = assetsByUser.get(member.userId) ?? [];
+      const memberText = [member.fullName, member.badgeNumber, member.rankTitle, member.unitName]
+        .filter(Boolean).join(" ").toLowerCase();
+      const assetText = assignedAssets.map((asset) => {
+        const type = typeMap.get(asset.equipment_type_id);
+        return [type?.name, type?.category, asset.manufacturer, asset.model, asset.asset_number]
+          .filter(Boolean).join(" ");
+      }).join(" ").toLowerCase();
+      const hasMatchingReadiness = filteredReadiness.some((row) => row.userId === member.userId);
+      const matchesSearch = !normalizedSearch || memberText.includes(normalizedSearch) || assetText.includes(normalizedSearch);
+      const matchesStatus = statusFilter === "all" || hasMatchingReadiness;
+
+      if ((canViewDepartment || assignedAssets.length > 0 || hasMatchingReadiness) && matchesSearch && matchesStatus) {
+        groups.set(member.userId, {
+          userId: member.userId,
+          officerName: member.fullName,
+          badgeNumber: member.badgeNumber,
+          rankTitle: member.rankTitle,
+          unitName: member.unitName,
+          rows: [],
+          assignedAssets,
+          requiredQuantity: 0,
+          assignedQuantity: 0,
+          missingQuantity: 0,
+          attentionCount: 0,
+          criticalCount: 0,
+          affectsReadinessCount: 0,
+          readinessReadyCount: 0,
+        });
+      }
+    });
 
     filteredReadiness.forEach((row) => {
       const existing = groups.get(row.userId);
@@ -592,6 +633,7 @@ const filteredReadiness = useMemo(() => {
           rankTitle: row.rankTitle,
           unitName: row.unitName,
           rows: [],
+          assignedAssets: assetsByUser.get(row.userId) ?? [],
           requiredQuantity: 0,
           assignedQuantity: 0,
           missingQuantity: 0,
@@ -651,7 +693,7 @@ const filteredReadiness = useMemo(() => {
 
       return a.officerName.localeCompare(b.officerName);
     });
-  }, [filteredReadiness]);
+  }, [assets, canViewDepartment, filteredReadiness, members, search, statusFilter, typeMap]);
 
 
   async function saveType() {
@@ -1480,7 +1522,7 @@ const filteredReadiness = useMemo(() => {
                 className="animate-spin text-blue-300"
               />
             </div>
-          ) : filteredReadiness.length === 0 ? (
+          ) : officerReadinessGroups.length === 0 ? (
             <div className="flex min-h-[240px] flex-col items-center justify-center p-6 text-center">
               <ShieldCheck
                 size={34}
@@ -1578,7 +1620,7 @@ const filteredReadiness = useMemo(() => {
                             Issued
                           </p>
                           <p className="mt-1 text-base font-bold text-white">
-                            {group.assignedQuantity}
+                            {group.assignedAssets.length}
                           </p>
                         </div>
 
@@ -1623,6 +1665,27 @@ const filteredReadiness = useMemo(() => {
                     </div>
 
                     <div className="divide-y divide-slate-800">
+                      {group.assignedAssets.map((asset) => {
+                        const type = typeMap.get(asset.equipment_type_id);
+                        return (
+                          <div key={`assigned-${asset.id}`} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.3fr)_120px_160px_minmax(260px,2fr)] lg:items-center">
+                            <div>
+                              <p className="text-xs font-semibold text-slate-200">{type?.name ?? "Equipment"}</p>
+                              <p className="mt-1 text-[10px] text-slate-500">{[type?.category, asset.manufacturer, asset.model].filter(Boolean).join(" · ") || "Assigned inventory"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-600">Custody</p>
+                              <p className="mt-1 text-xs text-slate-300">Assigned</p>
+                            </div>
+                            <div>
+                              <span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${asset.lifecycle_status === "out_of_service" ? "border-red-500/30 text-red-300" : "border-emerald-500/30 text-emerald-300"}`}>
+                                {asset.lifecycle_status === "out_of_service" ? "Out of Service" : "Active"}
+                              </span>
+                            </div>
+                            <p className="text-xs leading-5 text-slate-400">Current inventory assignment</p>
+                          </div>
+                        );
+                      })}
                       {group.rows
                         .slice()
                         .sort((a, b) => {

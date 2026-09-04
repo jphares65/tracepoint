@@ -131,6 +131,18 @@ test("returns unassigned laptop, radio, and vest rows to an authorized departmen
   assert.deepEqual(result.items, createdRows);
 });
 
+test("preserves an assigned laptop's canonical auth user ID for officer read models", async () => {
+  const assignedLaptop = { id: "laptop", equipment_type_id: "type-laptop", assigned_user_id: "auth-chief", lifecycle_status: "active" };
+  const repository = new TenantBoundEquipmentReadRepository(source({
+    async listAssets() { return [assignedLaptop]; },
+    async listActiveMembers() { return [{ user_id: "auth-chief", rank_title: "Acting Chief" }]; },
+    async listProfiles() { return [{ id: "auth-chief", full_name: "Chief Profile" }]; },
+  }), "agency-a");
+
+  const result = await repository.getAssetDirectory({ departmentId: "agency-a", userId: "auth-chief", canViewDepartment: true });
+  assert.equal(result.items[0].assigned_user_id, result.members[0].userId);
+});
+
 test("skips profile access for an empty member set and preserves empty results", async () => {
   let profilesCalled = false;
   const repository = new TenantBoundEquipmentReadRepository(source({
