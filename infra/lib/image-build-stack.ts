@@ -97,6 +97,12 @@ export class ImageBuildStack extends cdk.Stack {
     props.repository.grantPullPush(buildRole);
     buildRole.addToPolicy(
       new iam.PolicyStatement({
+        actions: ["ecr:DescribeImages"],
+        resources: [props.repository.repositoryArn],
+      }),
+    );
+    buildRole.addToPolicy(
+      new iam.PolicyStatement({
         actions: ["ecr:GetAuthorizationToken"],
         resources: ["*"],
       }),

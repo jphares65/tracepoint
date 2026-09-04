@@ -129,6 +129,7 @@ test("image builder uses encrypted tracked source and immutable staging ECR only
   assert.match(policies, /source\/tracepoint-staging-source\.zip/);
   assert.match(policies, /GetAuthorizationToken/);
   assert.match(policies, /PutImage/);
+  assert.match(policies, /DescribeImages/);
   assert.match(policies, /GetSecretValue/);
   const iamPolicies = template.findResources("AWS::IAM::Policy");
   const statements = Object.values(iamPolicies).flatMap((resource) =>
