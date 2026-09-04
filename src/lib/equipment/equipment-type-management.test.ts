@@ -8,6 +8,18 @@ test("equipment type mutations require management permission and agency scope", 
   assert.match(route, /\.eq\("id", id\)\.eq\("department_id", context\.departmentId\)/);
   assert.match(route, /department_equipment_requirements/);
   assert.match(route, /canArchive: true/);
+  assert.match(route, /code: "TYPE_IN_USE"/);
+});
+
+test("equipment type management stays compact and supports archived review and restore", async () => {
+  const page = await readFile("src/app/equipment/page.tsx", "utf8");
+  assert.match(page, /aria-haspopup="listbox"/);
+  assert.match(page, /max-h-56 overflow-y-auto/);
+  assert.match(page, /Show archived/);
+  assert.match(page, /> Restore/);
+  assert.match(page, /> Remove/);
+  assert.match(page, /selectedType \? \(/);
+  assert.doesNotMatch(page, /className="grid gap-2 md:grid-cols-2 xl:grid-cols-3"/);
 });
 
 test("equipment type schema trims names, enforces agency-local uniqueness, audits, and preserves assigned-equipment RLS", async () => {
@@ -28,15 +40,4 @@ test("range drill endpoint requires permission and scopes workspace access to re
   assert.match(route, /from\("range_day_drills"\)/);
   assert.match(route, /eq\("range_day_drill_id", drillId\)/);
   assert.match(route, /removedRangeDayDrillId: drillId/);
-});
-
-test("equipment type management uses compact responsive rows with search and archive filtering", async () => {
-  const page = await readFile("src/app/equipment/page.tsx", "utf8");
-  for (const heading of ["Type", "Category", "Expiration", "Inspection", "Status", "Actions"]) {
-    assert.match(page, new RegExp(`>${heading}<`));
-  }
-  assert.match(page, /equipment-type-search/);
-  assert.match(page, /equipment-type-status/);
-  assert.match(page, /md:hidden/);
-  assert.match(page, /handleArchiveType/);
 });

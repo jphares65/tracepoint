@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   Boxes,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   PackagePlus,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Search,
   Settings2,
   ShieldAlert,
   ShieldCheck,
@@ -299,8 +303,10 @@ export default function EquipmentPage() {
   const [showTypeForm, setShowTypeForm] =
     useState(false);
   const [editingType, setEditingType] = useState<EquipmentType | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = useState("");
+  const [showArchivedTypes, setShowArchivedTypes] = useState(false);
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [typeSearch, setTypeSearch] = useState("");
-  const [typeStatusFilter, setTypeStatusFilter] = useState<"active" | "archived" | "all">("active");
 
   const [showRequirementForm, setShowRequirementForm] =
     useState(false);
@@ -475,6 +481,18 @@ const [typeForm, setTypeForm] = useState({
       ),
     [types],
   );
+
+  const selectedType = typeMap.get(selectedTypeId) ?? null;
+  const archivedTypeCount = types.filter((type) => !type.is_active).length;
+  const visibleManagedTypes = useMemo(() => {
+    const query = typeSearch.trim().toLowerCase();
+    return types
+      .filter((type) => showArchivedTypes || type.is_active)
+      .filter((type) =>
+        !query || `${type.name} ${type.category}`.toLowerCase().includes(query),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [showArchivedTypes, typeSearch, types]);
 
   const memberMap = useMemo(
     () =>
@@ -657,6 +675,9 @@ const filteredReadiness = useMemo(() => {
         throw new Error(await responseError(response));
       }
 
+      const payload = (await response.json()) as { item?: EquipmentType };
+      const savedTypeId = payload.item?.id ?? editingType?.id ?? "";
+
       setTypeForm({
         name: "",
         category: "General",
@@ -672,6 +693,7 @@ const filteredReadiness = useMemo(() => {
       setShowTypeForm(false);
       setEditingType(null);
       await loadAll();
+      setSelectedTypeId(savedTypeId);
       setSuccess(editingType ? "Equipment type updated. Existing equipment relationships were preserved." : "Equipment type created. You can now add individual equipment to inventory.");
     } catch (saveError) {
       setError(
@@ -700,6 +722,22 @@ const filteredReadiness = useMemo(() => {
     setShowTypeForm(true);
   }
 
+  function createType() {
+    setEditingType(null);
+    setTypeForm({
+      name: "",
+      category: "General",
+      description: "",
+      expirationRequired: false,
+      defaultValidDays: "",
+      defaultDueSoonDays: "30",
+      inspectionRequired: false,
+      defaultInspectionIntervalDays: "",
+      defaultInspectionDueSoonDays: "30",
+    });
+    setShowTypeForm(true);
+  }
+
   async function archiveType(type: EquipmentType) {
     const response = await fetch("/api/equipment/types", {
       method: "PATCH",
@@ -715,26 +753,32 @@ const filteredReadiness = useMemo(() => {
     if (!response.ok) throw new Error(await responseError(response));
   }
 
-  async function handleArchiveType(type: EquipmentType) {
-    if (!window.confirm(`Archive ${type.name}? It will remain on historical records and be hidden from new-equipment selectors.`)) return;
-    setSaving(true); setError(""); setSuccess("");
+  async function setTypeActive(type: EquipmentType, isActive: boolean) {
+    setSaving(true);
+    setError("");
+    setSuccess("");
     try {
-      await archiveType(type);
+      const response = await fetch("/api/equipment/types", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: type.id, name: type.name, category: type.category, description: type.description,
+          expirationRequired: type.expiration_required, defaultValidDays: type.default_valid_days,
+          defaultDueSoonDays: type.default_due_soon_days, inspectionRequired: type.inspection_required,
+          defaultInspectionIntervalDays: type.default_inspection_interval_days,
+          defaultInspectionDueSoonDays: type.default_inspection_due_soon_days, isActive,
+        }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
       await loadAll();
-      setSuccess(`${type.name} archived. Historical records were preserved.`);
-    } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "Equipment type could not be archived.");
-    } finally { setSaving(false); }
+      setSelectedTypeId(isActive || showArchivedTypes ? type.id : "");
+      setSuccess(`${type.name} ${isActive ? "restored" : "archived"}.`);
+    } catch (mutationError) {
+      setError(mutationError instanceof Error ? mutationError.message : "Equipment type could not be updated.");
+    } finally {
+      setSaving(false);
+    }
   }
-
-  const filteredTypes = useMemo(() => {
-    const query = typeSearch.trim().toLowerCase();
-    return types.filter((type) => {
-      if (typeStatusFilter === "active" && !type.is_active) return false;
-      if (typeStatusFilter === "archived" && type.is_active) return false;
-      return !query || `${type.name} ${type.category} ${type.description ?? ""}`.toLowerCase().includes(query);
-    });
-  }, [typeSearch, typeStatusFilter, types]);
 
   async function deleteType(type: EquipmentType) {
     if (!window.confirm(`Permanently delete ${type.name}? This cannot be undone.`)) return;
@@ -750,12 +794,14 @@ const filteredReadiness = useMemo(() => {
             window.confirm(`${payload.error}\n\nArchive this type instead?`)) {
           await archiveType(type);
           await loadAll();
+          if (!showArchivedTypes) setSelectedTypeId("");
           setSuccess(`${type.name} archived. It remains on historical records and is hidden from new-item selectors.`);
           return;
         }
         throw new Error(payload.error || "Equipment type could not be deleted.");
       }
-      setTypes((current) => current.filter((item) => item.id !== type.id));
+      await loadAll();
+      setSelectedTypeId("");
       setSuccess(`${type.name} permanently deleted.`);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Equipment type could not be deleted.");
@@ -1022,19 +1068,6 @@ const filteredReadiness = useMemo(() => {
                 <>
                   <button
                     type="button"
-                    onClick={() => {
-                      setEditingType(null);
-                      setTypeForm({ name: "", category: "General", description: "", expirationRequired: false, defaultValidDays: "", defaultDueSoonDays: "30", inspectionRequired: false, defaultInspectionIntervalDays: "", defaultInspectionDueSoonDays: "30" });
-                      setShowTypeForm(true);
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:text-white"
-                  >
-                    <Plus size={14} />
-                    Create Equipment Category/Type
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => setShowRequirementForm(true)}
                     className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:text-white"
                   >
@@ -1119,26 +1152,55 @@ const filteredReadiness = useMemo(() => {
         </section>
 
         {canManage ? (
-          <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
-            <div className="flex flex-col gap-3 border-b border-slate-800 p-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-              <h2 className="text-sm font-bold text-white">Equipment Types</h2>
-              <p className="mt-1 text-xs text-slate-500">Edit active definitions, or delete unused types. Archived types remain visible here and on historical records.</p>
+          <section aria-labelledby="equipment-type-manager-heading" className="relative rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="mr-1 min-w-fit">
+                <h2 id="equipment-type-manager-heading" className="text-sm font-bold text-white">Equipment Types</h2>
+                <p className="text-[10px] text-slate-500">{types.filter((type) => type.is_active).length} active</p>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <label className="sr-only" htmlFor="equipment-type-search">Search equipment types</label>
-                <input id="equipment-type-search" value={typeSearch} onChange={(event) => setTypeSearch(event.target.value)} placeholder="Search types…" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500" />
-                <label className="sr-only" htmlFor="equipment-type-status">Filter equipment types</label>
-                <select id="equipment-type-status" value={typeStatusFilter} onChange={(event) => setTypeStatusFilter(event.target.value as "active" | "archived" | "all")} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
-                  <option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option>
-                </select>
+
+              <div className="relative min-w-[220px] flex-1">
+                <button type="button" aria-haspopup="listbox" aria-expanded={typePickerOpen} onClick={() => setTypePickerOpen((open) => !open)} className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-left text-xs text-slate-200">
+                  <span className="truncate">{selectedType ? `${selectedType.name} · ${selectedType.category}${selectedType.is_active ? "" : " · Archived"}` : "Select an equipment type"}</span>
+                  <ChevronDown size={14} className="shrink-0 text-slate-500" />
+                </button>
+
+                {typePickerOpen ? (
+                  <div className="absolute left-0 right-0 top-full z-40 mt-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-2xl">
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-2">
+                      <Search size={13} className="text-slate-500" />
+                      <span className="sr-only">Search equipment types</span>
+                      <input autoFocus value={typeSearch} onChange={(event) => setTypeSearch(event.target.value)} placeholder="Search types..." className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-slate-600" />
+                    </label>
+                    <div role="listbox" aria-label="Equipment types" className="mt-2 max-h-56 overflow-y-auto">
+                      {visibleManagedTypes.length ? visibleManagedTypes.map((type) => (
+                        <button type="button" role="option" aria-selected={selectedTypeId === type.id} key={type.id} onClick={() => { setSelectedTypeId(type.id); setTypePickerOpen(false); setTypeSearch(""); }} className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-slate-800">
+                          <span className="truncate text-xs text-slate-200">{type.name} <span className="text-slate-500">· {type.category}</span></span>
+                          {!type.is_active ? <span className="rounded-full border border-amber-700/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-300">Archived</span> : null}
+                        </button>
+                      )) : <p className="px-2.5 py-3 text-xs text-slate-500">No matching equipment types.</p>}
+                    </div>
+                  </div>
+                ) : null}
               </div>
+
+              <button type="button" onClick={createType} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-2 text-[11px] font-semibold text-white hover:bg-blue-500"><Plus size={12} /> Add</button>
+              {selectedType ? (
+                <>
+                  <button type="button" disabled={saving} onClick={() => editType(selectedType)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-2 text-[11px] font-semibold text-slate-300 disabled:opacity-40"><Pencil size={12} /> Edit</button>
+                  {selectedType.is_active ? (
+                    <button type="button" disabled={saving} onClick={() => void setTypeActive(selectedType, false)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800 px-2.5 py-2 text-[11px] font-semibold text-amber-300 disabled:opacity-40"><Archive size={12} /> Archive</button>
+                  ) : (
+                    <button type="button" disabled={saving} onClick={() => void setTypeActive(selectedType, true)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-800 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 disabled:opacity-40"><RotateCcw size={12} /> Restore</button>
+                  )}
+                  <button type="button" disabled={saving} onClick={() => void deleteType(selectedType)} className="inline-flex items-center gap-1.5 rounded-lg border border-red-900 px-2.5 py-2 text-[11px] font-semibold text-red-300 disabled:opacity-40"><Trash2 size={12} /> Remove</button>
+                </>
+              ) : null}
+              <label className="ml-auto flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400">
+                <input type="checkbox" checked={showArchivedTypes} disabled={archivedTypeCount === 0} onChange={(event) => { const showArchived = event.target.checked; setShowArchivedTypes(showArchived); if (!showArchived && selectedType && !selectedType.is_active) setSelectedTypeId(""); setTypePickerOpen(true); }} />
+                Show archived{archivedTypeCount ? ` (${archivedTypeCount})` : ""}
+              </label>
             </div>
-            {filteredTypes.length === 0 ? <p className="p-4 text-xs text-slate-500">No equipment types match this view.</p> : <>
-              <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left"><thead className="bg-slate-950/40 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2.5">Type</th><th className="px-4 py-2.5">Category</th><th className="px-4 py-2.5">Expiration</th><th className="px-4 py-2.5">Inspection</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5 text-right">Actions</th></tr></thead>
-              <tbody className="divide-y divide-slate-800">{filteredTypes.map((type) => <tr key={type.id} className="text-xs"><td className="px-4 py-2.5 font-semibold text-white">{type.name}</td><td className="px-4 py-2.5 text-slate-400">{type.category}</td><td className="px-4 py-2.5 text-slate-400">{type.expiration_required ? `${type.default_valid_days ?? "Custom"} days` : "Not required"}</td><td className="px-4 py-2.5 text-slate-400">{type.inspection_required ? `${type.default_inspection_interval_days ?? "Custom"} days` : "Not required"}</td><td className="px-4 py-2.5"><span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${type.is_active ? "border-emerald-500/30 text-emerald-300" : "border-slate-700 text-slate-500"}`}>{type.is_active ? "Active" : "Archived"}</span></td><td className="px-4 py-2.5"><div className="flex justify-end gap-1.5"><button type="button" disabled={saving} onClick={() => editType(type)} className="rounded-md border border-blue-700 px-2 py-1 text-[10px] font-semibold text-blue-300">Edit</button>{type.is_active ? <button type="button" disabled={saving} onClick={() => void handleArchiveType(type)} className="rounded-md border border-amber-700 px-2 py-1 text-[10px] font-semibold text-amber-300">Archive</button> : null}<button type="button" disabled={saving} onClick={() => void deleteType(type)} className="rounded-md border border-red-800 px-2 py-1 text-[10px] font-semibold text-red-300">Delete</button></div></td></tr>)}</tbody></table></div>
-              <ul className="divide-y divide-slate-800 md:hidden">{filteredTypes.map((type) => <li key={type.id} className="px-3 py-2.5"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{type.name}</p><p className="mt-0.5 text-[10px] text-slate-500">{type.category} · {type.expiration_required ? "Expires" : "No expiration"} · {type.inspection_required ? "Inspected" : "No inspection"} · {type.is_active ? "Active" : "Archived"}</p></div><div className="flex shrink-0 gap-1"><button type="button" disabled={saving} onClick={() => editType(type)} aria-label={`Edit ${type.name}`} className="rounded-md border border-blue-700 p-1.5 text-blue-300"><Pencil size={12}/></button>{type.is_active ? <button type="button" disabled={saving} onClick={() => void handleArchiveType(type)} aria-label={`Archive ${type.name}`} className="rounded-md border border-amber-700 px-2 py-1 text-[10px] text-amber-300">Archive</button> : null}<button type="button" disabled={saving} onClick={() => void deleteType(type)} aria-label={`Delete ${type.name}`} className="rounded-md border border-red-800 p-1.5 text-red-300"><Trash2 size={12}/></button></div></div></li>)}</ul>
-            </>}
           </section>
         ) : null}
 

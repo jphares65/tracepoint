@@ -309,6 +309,7 @@ export async function DELETE(request: NextRequest) {
   const ruleCount = requirements.count ?? 0;
   if (assetCount > 0 || ruleCount > 0) {
     return NextResponse.json({
+      code: "TYPE_IN_USE",
       error: `This type cannot be permanently deleted because it has ${assetCount} equipment record${assetCount === 1 ? "" : "s"} and ${ruleCount} requirement rule${ruleCount === 1 ? "" : "s"}. Archive it to preserve assignments, inspections, and history.`,
       canArchive: true,
     }, { status: 409 });
