@@ -73,8 +73,10 @@ export class RuntimeStack extends cdk.Stack {
         securityGroups: [taskSecurityGroup],
         healthCheck: {
           command: [
-            "CMD-SHELL",
-            "node -e \"fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+            "CMD",
+            "/nodejs/bin/node",
+            "-e",
+            "fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
           ],
           retries: 3,
           interval: cdk.Duration.seconds(30),
@@ -143,7 +145,7 @@ export class RuntimeStack extends cdk.Stack {
     const cfnTaskDefinition = service.taskDefinition.node.defaultChild as ecs.CfnTaskDefinition;
     cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.ReadonlyRootFilesystem", true);
     cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.StopTimeout", 30);
-    cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.User", "1001:1001");
+    cfnTaskDefinition.addPropertyOverride("ContainerDefinitions.0.User", "65532:65532");
     cfnTaskDefinition.addPropertyOverride(
       "ContainerDefinitions.0.LinuxParameters.InitProcessEnabled",
       true,
