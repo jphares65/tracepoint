@@ -32,6 +32,24 @@ test("blocks finalized and ready-packet range days", () => {
 });
 
 test("does not expose or mutate another agency's range day", () => {
-  const result = removeRangeDayDrill(workspace(), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-b" });
+  const result = removeRangeDayDrill(workspace({ rangeDays: [] }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-b" });
   assert.deepEqual(result, { ok: false, status: 404, error: "Range day was not found in your agency." });
+});
+
+test("removes a legacy workspace assignment even when its embedded agency field is stale", () => {
+  const result = removeRangeDayDrill(workspace({
+    rangeDays: [{ id: "day-1", departmentId: "legacy-agency", status: "Planned", packetStatus: "Needs Setup" }],
+  }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-a" });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.deepEqual(result.workspace.rangeDayDrills, []);
+});
+
+test("supports persisted snake-case workspace collections and association identifiers", () => {
+  const result = removeRangeDayDrill({
+    range_days: [{ id: "day-1", status: "Planned", packet_status: "Needs Setup" }],
+    range_day_drills: [{ id: "assignment-1", range_day_id: "day-1", name: "Failure Drill" }],
+    drill_run_results: [], firearm_malfunctions: [],
+  }, { rangeDayId: "day-1", drillId: "assignment-1", departmentId: "agency-a" });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.deepEqual(result.workspace.range_day_drills, []);
 });

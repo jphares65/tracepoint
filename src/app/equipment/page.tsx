@@ -299,6 +299,8 @@ export default function EquipmentPage() {
   const [showTypeForm, setShowTypeForm] =
     useState(false);
   const [editingType, setEditingType] = useState<EquipmentType | null>(null);
+  const [typeSearch, setTypeSearch] = useState("");
+  const [typeStatusFilter, setTypeStatusFilter] = useState<"active" | "archived" | "all">("active");
 
   const [showRequirementForm, setShowRequirementForm] =
     useState(false);
@@ -713,6 +715,27 @@ const filteredReadiness = useMemo(() => {
     if (!response.ok) throw new Error(await responseError(response));
   }
 
+  async function handleArchiveType(type: EquipmentType) {
+    if (!window.confirm(`Archive ${type.name}? It will remain on historical records and be hidden from new-equipment selectors.`)) return;
+    setSaving(true); setError(""); setSuccess("");
+    try {
+      await archiveType(type);
+      await loadAll();
+      setSuccess(`${type.name} archived. Historical records were preserved.`);
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : "Equipment type could not be archived.");
+    } finally { setSaving(false); }
+  }
+
+  const filteredTypes = useMemo(() => {
+    const query = typeSearch.trim().toLowerCase();
+    return types.filter((type) => {
+      if (typeStatusFilter === "active" && !type.is_active) return false;
+      if (typeStatusFilter === "archived" && type.is_active) return false;
+      return !query || `${type.name} ${type.category} ${type.description ?? ""}`.toLowerCase().includes(query);
+    });
+  }, [typeSearch, typeStatusFilter, types]);
+
   async function deleteType(type: EquipmentType) {
     if (!window.confirm(`Permanently delete ${type.name}? This cannot be undone.`)) return;
     setSaving(true); setError(""); setSuccess("");
@@ -1096,29 +1119,26 @@ const filteredReadiness = useMemo(() => {
         </section>
 
         {canManage ? (
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="mb-3">
+          <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
+            <div className="flex flex-col gap-3 border-b border-slate-800 p-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
               <h2 className="text-sm font-bold text-white">Equipment Types</h2>
               <p className="mt-1 text-xs text-slate-500">Edit active definitions, or delete unused types. Archived types remain visible here and on historical records.</p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <label className="sr-only" htmlFor="equipment-type-search">Search equipment types</label>
+                <input id="equipment-type-search" value={typeSearch} onChange={(event) => setTypeSearch(event.target.value)} placeholder="Search types…" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500" />
+                <label className="sr-only" htmlFor="equipment-type-status">Filter equipment types</label>
+                <select id="equipment-type-status" value={typeStatusFilter} onChange={(event) => setTypeStatusFilter(event.target.value as "active" | "archived" | "all")} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
+                  <option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option>
+                </select>
+              </div>
             </div>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {types.map((type) => (
-                <div key={type.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">{type.name}</p>
-                    <p className="text-[11px] text-slate-500">{type.category}{type.is_active ? "" : " · Archived"}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" disabled={saving} onClick={() => editType(type)} className="inline-flex items-center gap-1 rounded-lg border border-blue-700 px-2 py-1.5 text-[10px] font-semibold text-blue-300">
-                      <Pencil size={11} /> Edit
-                    </button>
-                    <button type="button" disabled={saving} onClick={() => void deleteType(type)} className="inline-flex items-center gap-1 rounded-lg border border-red-800 px-2 py-1.5 text-[10px] font-semibold text-red-300">
-                      <Trash2 size={11} /> Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {filteredTypes.length === 0 ? <p className="p-4 text-xs text-slate-500">No equipment types match this view.</p> : <>
+              <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left"><thead className="bg-slate-950/40 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-2.5">Type</th><th className="px-4 py-2.5">Category</th><th className="px-4 py-2.5">Expiration</th><th className="px-4 py-2.5">Inspection</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5 text-right">Actions</th></tr></thead>
+              <tbody className="divide-y divide-slate-800">{filteredTypes.map((type) => <tr key={type.id} className="text-xs"><td className="px-4 py-2.5 font-semibold text-white">{type.name}</td><td className="px-4 py-2.5 text-slate-400">{type.category}</td><td className="px-4 py-2.5 text-slate-400">{type.expiration_required ? `${type.default_valid_days ?? "Custom"} days` : "Not required"}</td><td className="px-4 py-2.5 text-slate-400">{type.inspection_required ? `${type.default_inspection_interval_days ?? "Custom"} days` : "Not required"}</td><td className="px-4 py-2.5"><span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${type.is_active ? "border-emerald-500/30 text-emerald-300" : "border-slate-700 text-slate-500"}`}>{type.is_active ? "Active" : "Archived"}</span></td><td className="px-4 py-2.5"><div className="flex justify-end gap-1.5"><button type="button" disabled={saving} onClick={() => editType(type)} className="rounded-md border border-blue-700 px-2 py-1 text-[10px] font-semibold text-blue-300">Edit</button>{type.is_active ? <button type="button" disabled={saving} onClick={() => void handleArchiveType(type)} className="rounded-md border border-amber-700 px-2 py-1 text-[10px] font-semibold text-amber-300">Archive</button> : null}<button type="button" disabled={saving} onClick={() => void deleteType(type)} className="rounded-md border border-red-800 px-2 py-1 text-[10px] font-semibold text-red-300">Delete</button></div></td></tr>)}</tbody></table></div>
+              <ul className="divide-y divide-slate-800 md:hidden">{filteredTypes.map((type) => <li key={type.id} className="px-3 py-2.5"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{type.name}</p><p className="mt-0.5 text-[10px] text-slate-500">{type.category} · {type.expiration_required ? "Expires" : "No expiration"} · {type.inspection_required ? "Inspected" : "No inspection"} · {type.is_active ? "Active" : "Archived"}</p></div><div className="flex shrink-0 gap-1"><button type="button" disabled={saving} onClick={() => editType(type)} aria-label={`Edit ${type.name}`} className="rounded-md border border-blue-700 p-1.5 text-blue-300"><Pencil size={12}/></button>{type.is_active ? <button type="button" disabled={saving} onClick={() => void handleArchiveType(type)} aria-label={`Archive ${type.name}`} className="rounded-md border border-amber-700 px-2 py-1 text-[10px] text-amber-300">Archive</button> : null}<button type="button" disabled={saving} onClick={() => void deleteType(type)} aria-label={`Delete ${type.name}`} className="rounded-md border border-red-800 p-1.5 text-red-300"><Trash2 size={12}/></button></div></div></li>)}</ul>
+            </>}
           </section>
         ) : null}
 
