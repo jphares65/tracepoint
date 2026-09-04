@@ -326,49 +326,64 @@ using (
 -- Immutable firearm status history
 -- ---------------------------------------------------------------------------
 
-select public.tracepoint_drop_table_policies('firearm_status_history');
-alter table public.firearm_status_history enable row level security;
+-- This table existed in an early production prototype but was never part of
+-- the tracked foundation migration. Keep hardening it for installations where
+-- it exists without making clean bootstrap depend on the legacy object.
+do $$
+begin
+  if to_regclass('public.firearm_status_history') is not null then
+    perform public.tracepoint_drop_table_policies('firearm_status_history');
 
-create policy "firearm_status_history_select_scoped"
-on public.firearm_status_history
-for select
-to authenticated
-using (
-  public.has_any_department_permission(
-    department_id,
-    array[
-      'manage_firearms',
-      'manage_inspections',
-      'view_command_dashboard',
-      'administer_department'
-    ]
-  )
-  or exists (
-    select 1
-    from public.firearm_assignments assignment
-    where assignment.department_id =
-      firearm_status_history.department_id
-      and assignment.firearm_id =
-        firearm_status_history.firearm_id
-      and assignment.assigned_to_user_id = auth.uid()
-  )
-);
+    execute
+      'alter table public.firearm_status_history enable row level security';
 
-create policy "firearm_status_history_insert_managers"
-on public.firearm_status_history
-for insert
-to authenticated
-with check (
-  public.has_any_department_permission(
-    department_id,
-    array[
-      'manage_firearms',
-      'manage_inspections',
-      'administer_department'
-    ]
-  )
-  and changed_by_user_id = auth.uid()
-);
+    execute $policy$
+      create policy "firearm_status_history_select_scoped"
+      on public.firearm_status_history
+      for select
+      to authenticated
+      using (
+        public.has_any_department_permission(
+          department_id,
+          array[
+            'manage_firearms',
+            'manage_inspections',
+            'view_command_dashboard',
+            'administer_department'
+          ]
+        )
+        or exists (
+          select 1
+          from public.firearm_assignments assignment
+          where assignment.department_id =
+            firearm_status_history.department_id
+            and assignment.firearm_id =
+              firearm_status_history.firearm_id
+            and assignment.assigned_to_user_id = auth.uid()
+        )
+      )
+    $policy$;
+
+    execute $policy$
+      create policy "firearm_status_history_insert_managers"
+      on public.firearm_status_history
+      for insert
+      to authenticated
+      with check (
+        public.has_any_department_permission(
+          department_id,
+          array[
+            'manage_firearms',
+            'manage_inspections',
+            'administer_department'
+          ]
+        )
+        and changed_by_user_id = auth.uid()
+      )
+    $policy$;
+  end if;
+end
+$$;
 
 -- No UPDATE or DELETE policy: history is immutable to authenticated users.
 

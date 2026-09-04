@@ -13,6 +13,7 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   UserRound,
   Wrench,
 } from "lucide-react";
@@ -297,6 +298,7 @@ export default function EquipmentPage() {
 
   const [showTypeForm, setShowTypeForm] =
     useState(false);
+  const [editingType, setEditingType] = useState<EquipmentType | null>(null);
 
   const [showRequirementForm, setShowRequirementForm] =
     useState(false);
@@ -641,11 +643,11 @@ const filteredReadiness = useMemo(() => {
       const response = await fetch(
         "/api/equipment/types",
         {
-          method: "POST",
+          method: editingType ? "PATCH" : "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(typeForm),
+          body: JSON.stringify({ ...typeForm, id: editingType?.id, isActive: editingType?.is_active ?? true }),
         },
       );
 
@@ -666,8 +668,9 @@ const filteredReadiness = useMemo(() => {
       });
 
       setShowTypeForm(false);
+      setEditingType(null);
       await loadAll();
-      setSuccess("Equipment type created. You can now add individual equipment to inventory.");
+      setSuccess(editingType ? "Equipment type updated. Existing equipment relationships were preserved." : "Equipment type created. You can now add individual equipment to inventory.");
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -677,6 +680,63 @@ const filteredReadiness = useMemo(() => {
     } finally {
       setSaving(false);
     }
+  }
+
+  function editType(type: EquipmentType) {
+    setEditingType(type);
+    setTypeForm({
+      name: type.name,
+      category: type.category,
+      description: type.description ?? "",
+      expirationRequired: type.expiration_required,
+      defaultValidDays: type.default_valid_days == null ? "" : String(type.default_valid_days),
+      defaultDueSoonDays: String(type.default_due_soon_days),
+      inspectionRequired: type.inspection_required,
+      defaultInspectionIntervalDays: type.default_inspection_interval_days == null ? "" : String(type.default_inspection_interval_days),
+      defaultInspectionDueSoonDays: String(type.default_inspection_due_soon_days),
+    });
+    setShowTypeForm(true);
+  }
+
+  async function archiveType(type: EquipmentType) {
+    const response = await fetch("/api/equipment/types", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: type.id, name: type.name, category: type.category, description: type.description,
+        expirationRequired: type.expiration_required, defaultValidDays: type.default_valid_days,
+        defaultDueSoonDays: type.default_due_soon_days, inspectionRequired: type.inspection_required,
+        defaultInspectionIntervalDays: type.default_inspection_interval_days,
+        defaultInspectionDueSoonDays: type.default_inspection_due_soon_days, isActive: false,
+      }),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+  }
+
+  async function deleteType(type: EquipmentType) {
+    if (!window.confirm(`Permanently delete ${type.name}? This cannot be undone.`)) return;
+    setSaving(true); setError(""); setSuccess("");
+    try {
+      const response = await fetch("/api/equipment/types", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: type.id }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string; canArchive?: boolean };
+      if (!response.ok) {
+        if (response.status === 409 && payload.canArchive && type.is_active &&
+            window.confirm(`${payload.error}\n\nArchive this type instead?`)) {
+          await archiveType(type);
+          await loadAll();
+          setSuccess(`${type.name} archived. It remains on historical records and is hidden from new-item selectors.`);
+          return;
+        }
+        throw new Error(payload.error || "Equipment type could not be deleted.");
+      }
+      setTypes((current) => current.filter((item) => item.id !== type.id));
+      setSuccess(`${type.name} permanently deleted.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Equipment type could not be deleted.");
+    } finally { setSaving(false); }
   }
 
   async function saveRequirement() {
@@ -939,7 +999,11 @@ const filteredReadiness = useMemo(() => {
                 <>
                   <button
                     type="button"
-                    onClick={() => setShowTypeForm(true)}
+                    onClick={() => {
+                      setEditingType(null);
+                      setTypeForm({ name: "", category: "General", description: "", expirationRequired: false, defaultValidDays: "", defaultDueSoonDays: "30", inspectionRequired: false, defaultInspectionIntervalDays: "", defaultInspectionDueSoonDays: "30" });
+                      setShowTypeForm(true);
+                    }}
                     className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:text-white"
                   >
                     <Plus size={14} />
@@ -1030,6 +1094,33 @@ const filteredReadiness = useMemo(() => {
             tone={unavailableCount > 0 ? "red" : "slate"}
           />
         </section>
+
+        {canManage ? (
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="mb-3">
+              <h2 className="text-sm font-bold text-white">Equipment Types</h2>
+              <p className="mt-1 text-xs text-slate-500">Edit active definitions, or delete unused types. Archived types remain visible here and on historical records.</p>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {types.map((type) => (
+                <div key={type.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">{type.name}</p>
+                    <p className="text-[11px] text-slate-500">{type.category}{type.is_active ? "" : " · Archived"}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={saving} onClick={() => editType(type)} className="inline-flex items-center gap-1 rounded-lg border border-blue-700 px-2 py-1.5 text-[10px] font-semibold text-blue-300">
+                      <Pencil size={11} /> Edit
+                    </button>
+                    <button type="button" disabled={saving} onClick={() => void deleteType(type)} className="inline-flex items-center gap-1 rounded-lg border border-red-800 px-2 py-1.5 text-[10px] font-semibold text-red-300">
+                      <Trash2 size={11} /> Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
           <div className="flex flex-col gap-3 border-b border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1524,7 +1615,7 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                Create Equipment Category/Type
+                {editingType ? "Edit Equipment Category/Type" : "Create Equipment Category/Type"}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
                 Create a reusable equipment category or type before adding individual items to inventory.
@@ -1669,7 +1760,7 @@ const filteredReadiness = useMemo(() => {
                 <button
                   type="button"
                   onClick={() =>
-                    setShowTypeForm(false)
+                    (setShowTypeForm(false), setEditingType(null))
                   }
                   className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300"
                 >
@@ -1682,7 +1773,7 @@ const filteredReadiness = useMemo(() => {
                   onClick={() => void saveType()}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  Create Equipment Category/Type
+                  {editingType ? "Save Equipment Category/Type" : "Create Equipment Category/Type"}
                 </button>
               </div>
             </div>

@@ -20,6 +20,7 @@ import {
   Save,
   Shield,
   Target,
+  Trash2,
   UserCheck,
   Users,
   Wrench,
@@ -1795,6 +1796,7 @@ export default function RangeDaysPage() {
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [canManageRangeDays, setCanManageRangeDays] = useState(false);
   const [rangeDaySearchQuery, setRangeDaySearchQuery] = useState("");
   const [rangeDayStatusFilter, setRangeDayStatusFilter] =
     useState<RangeDayStatusFilter>("All Active");
@@ -1875,12 +1877,14 @@ export default function RangeDaysPage() {
 
         const payload = (await response.json()) as {
           qualificationStandards?: QualificationStandardReference[];
+          canManage?: boolean;
         };
 
         if (!cancelled) {
           setQualificationStandards(
             payload.qualificationStandards ?? [],
           );
+          setCanManageRangeDays(payload.canManage === true);
         }
       } catch (error) {
         console.warn(
@@ -3576,6 +3580,35 @@ export default function RangeDaysPage() {
     resetEntryForm(1);
   }
 
+  async function handleRemoveDrillFromSelectedRangeDay(drill: ExtendedRangeDayDrill) {
+    if (!selectedRangeDay || !canManageRangeDays) return;
+    if (!window.confirm(`Remove ${drill.name} from this range day? This cannot be undone.`)) return;
+
+    setSaveMessage("Removing drill...");
+    try {
+      const response = await fetch("/api/pilot/range-workspace/drills", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rangeDayId: selectedRangeDay.id, drillId: drill.id }),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        error?: string;
+        workspace?: Partial<StoredRangeDayWorkspace>;
+      };
+      if (!response.ok) throw new Error(payload.error || "The drill could not be removed.");
+
+      const nextDrills = payload.workspace?.rangeDayDrills ??
+        rangeDayDrills.filter((item) => item.id !== drill.id);
+      setRangeDayDrills(normalizeRangeDayDrillsForWorkspace(nextDrills));
+      if (selectedDrillId === drill.id) {
+        setSelectedDrillId(nextDrills.find((item) => item.rangeDayId === selectedRangeDay.id)?.id ?? "");
+      }
+      setSaveMessage(`${drill.name} removed.`);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "The drill could not be removed.");
+    }
+  }
+
   if (!selectedRangeDay) {
     const visibleRangeDayIds = new Set(
       filteredRangeDays.map((rangeDay) => rangeDay.id),
@@ -4929,14 +4962,14 @@ export default function RangeDaysPage() {
                     </p>
                   </div>
 
-                  <button
+                  {canManageRangeDays ? <button
                     type="button"
                     onClick={() => setShowLibraryPanel((current) => !current)}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
                   >
                     <Plus size={14} />
                     {showLibraryPanel ? "Hide Library" : "Add Drill"}
-                  </button>
+                  </button> : null}
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
@@ -4978,6 +5011,17 @@ export default function RangeDaysPage() {
                           </div>
                         </button>
                         {drill.sourceTemplateId ? <div className="mt-3"><DrillDocuments drillTemplateId={drill.sourceTemplateId} compact /></div> : null}
+                        {canManageRangeDays ? (
+                          <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleRemoveDrillFromSelectedRangeDay(drill)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                            >
+                              <Trash2 size={12} /> Remove
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ))
                   )}
