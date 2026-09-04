@@ -71,18 +71,6 @@ export class RuntimeStack extends cdk.Stack {
         taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
         assignPublicIp: true,
         securityGroups: [taskSecurityGroup],
-        healthCheck: {
-          command: [
-            "CMD",
-            "/nodejs/bin/node",
-            "-e",
-            "fetch('http://127.0.0.1:3000/api/health',{cache:'no-store'}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-          ],
-          retries: 3,
-          interval: cdk.Duration.seconds(30),
-          timeout: cdk.Duration.seconds(5),
-          startPeriod: cdk.Duration.seconds(30),
-        },
         taskImageOptions: {
           image: ecs.ContainerImage.fromEcrRepository(props.repository, props.imageTag),
           containerName: "tracepoint",
