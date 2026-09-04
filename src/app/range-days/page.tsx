@@ -1796,6 +1796,7 @@ export default function RangeDaysPage() {
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [removingDrillId, setRemovingDrillId] = useState("");
   const [canManageRangeDays, setCanManageRangeDays] = useState(false);
   const [rangeDaySearchQuery, setRangeDaySearchQuery] = useState("");
   const [rangeDayStatusFilter, setRangeDayStatusFilter] =
@@ -3581,9 +3582,10 @@ export default function RangeDaysPage() {
   }
 
   async function handleRemoveDrillFromSelectedRangeDay(drill: ExtendedRangeDayDrill) {
-    if (!selectedRangeDay || !canManageRangeDays) return;
+    if (!selectedRangeDay || !canManageRangeDays || removingDrillId) return;
     if (!window.confirm(`Remove ${drill.name} from this range day? This cannot be undone.`)) return;
 
+    setRemovingDrillId(drill.id);
     setSaveMessage("Removing drill...");
     try {
       const response = await fetch("/api/pilot/range-workspace/drills", {
@@ -3606,6 +3608,8 @@ export default function RangeDaysPage() {
       setSaveMessage(`${drill.name} removed.`);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "The drill could not be removed.");
+    } finally {
+      setRemovingDrillId("");
     }
   }
 
@@ -4250,6 +4254,7 @@ export default function RangeDaysPage() {
                 <Save size={14} />
                 {saveMessage || "Save Range Day"}
               </button>
+              <span className="sr-only" role="status" aria-live="polite">{saveMessage}</span>
             </div>
           </div>
         </header>
@@ -5015,10 +5020,11 @@ export default function RangeDaysPage() {
                           <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
                             <button
                               type="button"
+                              disabled={Boolean(removingDrillId)}
                               onClick={() => void handleRemoveDrillFromSelectedRangeDay(drill)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <Trash2 size={12} /> Remove
+                              <Trash2 size={12} /> {removingDrillId === drill.id ? "Removing…" : "Remove"}
                             </button>
                           </div>
                         ) : null}

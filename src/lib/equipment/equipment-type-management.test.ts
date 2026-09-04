@@ -25,4 +25,18 @@ test("range drill endpoint requires permission and scopes workspace access to re
   assert.match(route, /hasAnyServerPermission\(resolved\.context, \["manage_range_days"\]\)/);
   assert.match(route, /\.eq\("department_id", departmentId\)/);
   assert.match(route, /audit_events/);
+  assert.match(route, /from\("range_day_drills"\)/);
+  assert.match(route, /eq\("range_day_drill_id", drillId\)/);
+  assert.match(route, /removedRangeDayDrillId: drillId/);
+});
+
+test("equipment type management uses compact responsive rows with search and archive filtering", async () => {
+  const page = await readFile("src/app/equipment/page.tsx", "utf8");
+  for (const heading of ["Type", "Category", "Expiration", "Inspection", "Status", "Actions"]) {
+    assert.match(page, new RegExp(`>${heading}<`));
+  }
+  assert.match(page, /equipment-type-search/);
+  assert.match(page, /equipment-type-status/);
+  assert.match(page, /md:hidden/);
+  assert.match(page, /handleArchiveType/);
 });
