@@ -16,7 +16,7 @@ Brevo delivery through the changed adapter was verified at 2026-09-05T09:31:19Z,
 - WAF rate controls are enforced with redacted logs and live 429/recovery proof. Six runtime/WAF/composite alarms were OK. SNS incident/recovery fanout reached encrypted SQS; no human recipient is yet confirmed.
 - Exact GitHub OIDC trust/environment are deployed. Mandatory Linux application/script/PG/infrastructure validation and Windows safety checks pass. Existing-image resume requires ancestor provenance and identical archived runtime source.
 - Disabled SES foundation deployed: TLS-required configuration set, RSA-2048 DKIM identity, encrypted feedback SNS/SQS/DLQ, retention, termination protection and six exact DNS outputs. No runtime send grant or DNS mutation. DKIM PENDING and SES sandbox active; application remains on Brevo. See aws-ses-foundation-evidence-20260905.json.
-- Cognito JWT/claim mapping, PKCE/nonce/state, encrypted atomic transactions and durable access-session/global-revocation stores are implemented and tested. Schema 66 has browser grants denied. Cognito is not deployed or selected. Refresh-session persistence, lifecycle integration, MFA cohort and RLS compatibility still block activation.
+- Cognito JWT/claim mapping, PKCE/nonce/state, encrypted atomic transactions and durable access-session/global-revocation stores are implemented and tested. Schema 66 has browser grants denied. The disabled Essentials Cognito pool is deployed. Live SRP/TOTP enrollment, hosted MFA/PKCE, signed tokens, refresh rotation and revocation, hosted logout and cleanup passed; the application still selects Supabase. Refresh-session persistence, lifecycle integration, MFA cohort and RLS compatibility still block activation.
 
 ## Weighted checklist
 
@@ -26,7 +26,7 @@ Brevo delivery through the changed adapter was verified at 2026-09-05T09:31:19Z,
 | network and compute | 10 | 60.00% | aws-release17-evidence-20260905.json; aws-request-controls-20260905.md | production network deployed; production load/failure test | No for remaining production/human gates |
 | runtime deployment | 8 | 75.00% | aws-release17-evidence-20260905.json | production runtime deployed | No for remaining production/human gates |
 | database/schema/data migration | 16 | 62.50% | aws-postgres-rehearsal-evidence-20260905.json; exact 66-migration staging ledger | production data rehearsal; production database moved; production PITR restore timed | No for remaining production/human gates |
-| authentication | 10 | 60.00% | Revision 17 browser recovery/login/logout; aws-auth-session-schema-20260905.json | replacement identity provider deployed; MFA and session cutover validated | Provider rehearsal available; application activation needs database/RLS compatibility |
+| authentication | 10 | 60.00% | Revision 17 browser recovery/login/logout; aws-auth-session-schema-20260905.json | replacement identity provider deployed; MFA and session cutover validated | Provider rehearsal passed; application activation needs persistent refresh/lifecycle and database/RLS compatibility |
 | storage | 8 | 100.00% | Live S3 acceptance, version restore and synthetic copy/rollback evidence | Fixed staging capability checklist complete; production scope remains separately gated. | Staging complete; production transfer requires authority |
 | email | 6 | 50.00% | aws-brevo17-delivery-20260905.json; SES foundation remains disabled | SES application provider deployed; bounce/suppression delivery verified | No live activation without DNS/sandbox and durable feedback worker |
 | DNS/TLS | 8 | 50.00% | Issued staging ACM and 12 public/protected checks | production AWS certificate verified; production DNS cutover validated | No for remaining production/human gates |
@@ -35,11 +35,11 @@ Brevo delivery through the changed adapter was verified at 2026-09-05T09:31:19Z,
 | production account readiness | 6 | 50.00% | aws-production-target-evidence-20260905.json; no live production account | dedicated production account authorized; exact live production role gate | No for remaining production/human gates |
 | cutover/rollback validation | 4 | 50.00% | aws-rollback17-evidence-20260905.json | DNS rollback rehearsed; agency cutover approved | No for remaining production/human gates |
 
-Evidence: aws-overnight-checklist-20260905.json and dated release/rollback/storage/WAF/OIDC/RDS/SES/cost files. Codex can finish current staging release/CI/rollback autonomously. Production account, credentials, production data, DNS/traffic and human escalation require Jason or the authorized owner.
+Evidence: aws-overnight-checklist-20260905.json and dated release/rollback/storage/WAF/OIDC/RDS/SES/cost files. Staging release, CI and rollback are complete. Production account, credentials, production data, DNS/traffic and human escalation require Jason or the authorized owner.
 
 ## Cost
 
-Latest pre-release measured September month-to-date: estimated **$1.3814978907**; billing lags. Monthly low-usage model **$68.67**, including disabled SES, or **$70.67** with the $2 bounded rehearsal reserve, below $75. The budget is an alert, not a spending cap. No NAT or permanent AWS database was added. Current measured evidence is refreshed separately.
+Latest measured September month-to-date (2026-09-05T10:55:50Z): estimated **$1.3814978907**; billing lags. Monthly low-usage model **$68.67**, including disabled SES and Cognito, or **$70.67** with the $2 bounded rehearsal reserve, below $75. The budget is an alert, not a spending cap. No NAT or permanent AWS database was added. Current measured evidence is refreshed separately.
 
 ## Shortest path to Wednesday
 
