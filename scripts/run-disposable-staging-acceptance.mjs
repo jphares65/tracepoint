@@ -1,3 +1,4 @@
+import {exerciseAuthRecovery} from './staging-auth-recovery-scenario.mjs';
 import {exerciseStorageCopy} from './staging-storage-copy-scenario.mjs';
 import {S3Client,ListObjectVersionsCommand,DeleteObjectCommand} from '@aws-sdk/client-s3';
 import { execFileSync, spawn } from 'node:child_process';
@@ -51,6 +52,7 @@ try {
   }
   requireSuccess(await admin.from('department_memberships').insert({ department_id: departmentIds[0], user_id: userId, is_active: true }), 'Create membership');
   requireSuccess(await admin.from('department_membership_roles').insert({ department_id: departmentIds[0], user_id: userId, role_code: 'administrator' }), 'Create manager role');
+  if(process.argv.includes('--extended-workflows'))requireSuccess(await admin.from('department_membership_roles').insert({department_id:departmentIds[0],user_id:userId,role_code:'chief'}),'Create disposable command role');
   for(const [index,departmentId] of departmentIds.entries()) {
     const extra = requireSuccess(await admin.auth.admin.createUser({email:index===0?officerEmail:'foreign-'+run+'@example.invalid',password:officerPassword,email_confirm:true}), 'Create disposable officer');
     extraUsers.push(extra.user.id);
@@ -61,12 +63,14 @@ try {
   const features = requireSuccess(await admin.from('feature_catalog').select('code').eq('is_active',true), 'Load feature codes');
   requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
+  if(process.argv.includes('--auth-recovery'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId});
   if(process.argv.includes('--storage-migration'))await exerciseStorageCopy({admin,department:departmentIds[0],env,run});
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:process.argv.includes('--range-documents')?'enabled':'', TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS:process.argv.includes('--extended-workflows')?'enabled':'', TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:process.argv.includes('--range-documents')?'enabled':'', TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
   if(result===0&&!process.argv.includes('--fixtures-only')) {
+    if(process.argv.includes('--extended-workflows'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId});
     const history=requireSuccess(await admin.from('equipment_asset_assignments').select('returned_at').eq('department_id',departmentIds[0]), 'Verify custody history');
     const audit=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','equipment_assets'), 'Verify audit creation');
     assert.ok(history.length>=2&&history.every(x=>x.returned_at));assert.ok(audit.length>=3);
@@ -95,7 +99,7 @@ try {
       console.log(JSON.stringify({fixtureRun:run,storageCleanup:'verified zero fixture versions'}));
     }catch{cleanupFailed=true;}finally{storage.destroy();}
   }
-  for(const id of createdDepartments) for(const table of [...(process.argv.includes('--range-documents')?['drill_documents','pilot_range_workspaces']:[]),'equipment_asset_assignments','equipment_assets','equipment_types']) {
+  for(const id of createdDepartments) for(const table of [...(process.argv.includes('--extended-workflows')?['firearm_inspections','firearm_assignments','firearms','training_certifications','certification_types','notification_events','off_duty_firearm_inspections','off_duty_firearm_history','off_duty_request_actions','off_duty_firearm_requests','fleet_vehicle_inspections','fleet_work_orders','fleet_vehicle_equipment','fleet_vehicle_documents','fleet_vehicles','fleet_rules','agency_training_attendees','agency_training_event_instructors','agency_training_events','agency_training_course_aliases','agency_training_courses']:[]),...(process.argv.includes('--range-documents')?['drill_documents','pilot_range_workspaces']:[]),'equipment_asset_assignments','equipment_assets','equipment_types']) {
     const removal=await admin.from(table).delete().eq('department_id',id);
     const verify=await admin.from(table).select('department_id').eq('department_id',id);
     if(removal.error||verify.error||verify.data?.length!==0)cleanupFailed=true;

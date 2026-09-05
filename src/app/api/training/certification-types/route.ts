@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createCertificationTypeCatalogRepository } from "@/lib/certifications/type-catalog-repository";
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -35,19 +36,9 @@ async function getContext() {
     departmentId,
   } = resolved.context;
 
-  const [{ data: manager }, { data: administrator }] =
-    await Promise.all([
-      admin.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "manage_certifications",
-      }),
-      admin.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "administer_department",
-      }),
-    ]);
+  const canManage = hasAnyServerPermission(resolved.context, ['manage_certifications', 'administer_department']);
 
-  if (!manager && !administrator) {
+  if (!canManage) {
     return {
       error: "You do not have permission to manage certification types.",
       status: 403,

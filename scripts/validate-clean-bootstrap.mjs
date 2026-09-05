@@ -18,7 +18,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 62;
+const expectedMigrationCount = 64;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = 56000 + Math.floor(Math.random() * 4000);
@@ -105,6 +105,7 @@ try {
     }
   }
 
+  await client.query(await readFile('scripts/validate-local-armory-workflows.sql','utf8'));
   const requiredTables = [
     "profiles", "departments", "department_memberships", "feature_catalog", "department_features", "department_feature_events", "pilot_range_workspaces",
     "equipment_types", "equipment_assets", "equipment_asset_assignments",

@@ -2,6 +2,7 @@
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -51,25 +52,13 @@ async function getContext() {
     departmentId,
   } = resolved.context;
 
-  const [{ data: canManageCertifications }, { data: administrator }] =
-    await Promise.all([
-      admin.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "manage_certifications",
-      }),
-      admin.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "administer_department",
-      }),
-    ]);
+  const canManage = hasAnyServerPermission(resolved.context, ['manage_certifications', 'administer_department']);
 
   return {
     admin,
     user,
     departmentId,
-    canManage: Boolean(
-      canManageCertifications || administrator,
-    ),
+    canManage,
   } as const;
 }
 

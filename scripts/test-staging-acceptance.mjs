@@ -1,3 +1,4 @@
+import {exerciseExtendedWorkflows} from './staging-extended-workflows.mjs';
 import {exerciseRangeDocuments} from './staging-range-document-scenarios.mjs';
 ﻿import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -144,6 +145,7 @@ else try {
     }finally{await foreignContext.close();}
   });
   if(process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled')await exerciseRangeDocuments({context,browser,baseURL,department,check});
+  if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await exerciseExtendedWorkflows({context,browser,baseURL,check});
   await check('logout',async()=>{
     await context.request.post('/auth/signout',{maxRedirects:0});
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));
@@ -151,7 +153,7 @@ else try {
   });
 } catch {results.push({name:'authenticated setup',status:'fail',reason:'Login or tenant precondition failed; sensitive details suppressed'});}
 finally {await browser?.close();}
-results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled'?'Off-duty approvals and actual exports still need scenario coverage. Range and Drill Library file results are reported separately.':'Drill protections, off-duty approvals, actual exports and file transfer still need scenario coverage.'});
+results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled'?'Some lifecycle scenarios remain uncovered; extended off-duty, fleet, training and exports are reported separately when enabled.':'Drill protections, off-duty approvals, actual exports and file transfer still need scenario coverage.'});
 console.log(JSON.stringify({target:baseURL,results},null,2));
 const smoke = process.argv.includes('--smoke');
 process.exitCode=results.some(r=>r.status==='fail')?1:smoke && email && password && department?0:results.some(r=>r.status==='blocked')?2:0;

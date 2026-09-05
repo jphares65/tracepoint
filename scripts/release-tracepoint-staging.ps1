@@ -21,7 +21,7 @@ try {
     & aws.exe ecs wait services-stable --cluster tracepoint-staging --services tracepoint-staging --region us-east-1
     if ($LASTEXITCODE -ne 0) { throw 'ECS failed to stabilize.' }
     & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 900
-    & node --import tsx (Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs') --execute --range-documents
+    & node --import tsx (Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs') --execute --range-documents --extended-workflows
     if ($LASTEXITCODE -ne 0) { throw 'Implemented acceptance scenarios failed; release is not accepted.' }
     & node (Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs') --image $ImageTag
     if ($LASTEXITCODE -ne 0) { throw 'Release image, alarms, logs or public gates failed.' }
