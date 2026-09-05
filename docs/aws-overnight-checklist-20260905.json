@@ -1,8 +1,8 @@
 {
   "date": "2026-09-05",
-  "method": "Same weighted binary capability checklist. Credit restored only for deployed and live-validated authentication/email configuration, authenticated browser sessions, S3 application storage, and executed deployment/rollback. No credit for incomplete range workflows, synthetic copy tests alone, disabled SES/Cognito, or documentation. Live staging manifest credit requires two equal repeatable-read snapshots with exact ledger, row hashes, relationship checks and schema/security fingerprints.",
+  "method": "Same weighted binary capability checklist. Credit restored only for deployed and live-validated authentication/email configuration, authenticated browser sessions, S3 application storage, and executed deployment/rollback. No credit for incomplete range workflows, local synthetic copy tests alone, disabled SES/Cognito, or documentation. Live staging manifest credit requires two equal repeatable-read snapshots with exact ledger, row hashes, relationship checks and schema/security fingerprints.",
   "before": 45.55,
-  "after": 59.65,
+  "after": 61.65,
   "categories": [
     {
       "category": "AWS account/governance",
@@ -186,7 +186,7 @@
         {
           "capability": "live object migration reconciled",
           "before": false,
-          "after": false
+          "after": true
         }
       ]
     },
@@ -376,6 +376,7 @@
     "aws-private-storage-20260905.md",
     "aws-runtime-controls-20260905.md",
     "aws-staging-acceptance-schema-20260905.md",
-    "aws-live-data-reconciliation-20260905.md"
+    "aws-live-data-reconciliation-20260905.md",
+    "aws-live-storage-copy-20260905.md"
   ]
 }

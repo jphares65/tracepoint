@@ -1,3 +1,4 @@
+import {exerciseStorageCopy} from './staging-storage-copy-scenario.mjs';
 import {S3Client,ListObjectVersionsCommand,DeleteObjectCommand} from '@aws-sdk/client-s3';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -60,6 +61,7 @@ try {
   const features = requireSuccess(await admin.from('feature_catalog').select('code').eq('is_active',true), 'Load feature codes');
   requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
+  if(process.argv.includes('--storage-migration'))await exerciseStorageCopy({admin,department:departmentIds[0],env,run});
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:process.argv.includes('--range-documents')?'enabled':'', TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
