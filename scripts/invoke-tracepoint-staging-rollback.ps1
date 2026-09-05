@@ -29,5 +29,5 @@ Assert-TracePointStagingIdentity | Out-Null
 $null = Read-Aws @('ecs','update-service','--cluster','tracepoint-staging','--service','tracepoint-staging','--task-definition',$TaskDefinitionArn)
 & aws.exe ecs wait services-stable --cluster tracepoint-staging --services tracepoint-staging --region us-east-1
 if ($LASTEXITCODE -ne 0) { throw 'Rollback failed to stabilize.' }
-& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
+& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 600
 Write-Host 'Rollback stabilized. Reconcile CloudFormation to this immutable image before the next release; ECS rollback creates temporary stack drift.'

@@ -1,8 +1,10 @@
+param([ValidateRange(0,900)][int]$WaitSeconds = 0)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 Assert-TracePointStagingIdentity | Out-Null
 
+function Test-SettledRuntime {
 $service = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'Unable to describe the staging ECS service.' }
 $service = (($service -join [Environment]::NewLine) | ConvertFrom-Json).services | Select-Object -First 1
@@ -28,3 +30,14 @@ $logs = & aws.exe logs describe-log-streams --log-group-name /tracepoint/staging
 if ($LASTEXITCODE -ne 0) { throw 'Unable to query staging log streams.' }
 $streamCount = @((($logs -join [Environment]::NewLine) | ConvertFrom-Json).logStreams).Count
 Write-Host "Recent CloudWatch log streams returned: $streamCount"
+
+}
+$deadline=[DateTimeOffset]::UtcNow.AddSeconds($WaitSeconds)
+do {
+ try { Test-SettledRuntime; break }
+ catch {
+  if([DateTimeOffset]::UtcNow -ge $deadline){throw}
+  Write-Host 'Waiting for completed rollout and target deregistration before strict health verification.'
+  Start-Sleep -Seconds 15
+ }
+} while($true)
