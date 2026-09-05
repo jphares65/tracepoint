@@ -1,3 +1,4 @@
+import {S3Client,ListObjectVersionsCommand,DeleteObjectCommand} from '@aws-sdk/client-s3';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -25,6 +26,9 @@ assert.ok(secret.SUPABASE_SECRET_KEY);
 try { await validateStagingProviderConfig(secret, fetch, { email: false }); }
 catch (error) { console.error(error.message); process.exit(1); }
 const admin = createClient(secret.NEXT_PUBLIC_SUPABASE_URL, secret.SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+const service=aws(['ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging']).services[0];
+const task=aws(['ecs','describe-task-definition','--task-definition',service.taskDefinition]).taskDefinition;
+const storageProvider=task.containerDefinitions[0].environment.find(x=>x.name==='TRACEPOINT_STORAGE_PROVIDER')?.value;
 const run = randomUUID();
 const departmentIds = [randomUUID(), randomUUID()];
 const email = 'acceptance-' + run + '@example.invalid';
@@ -57,7 +61,7 @@ try {
   requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
   if(result===0&&!process.argv.includes('--fixtures-only')) {
@@ -72,6 +76,19 @@ try {
   result = 1;
 } finally {
   let cleanupFailed = false;
+  if(storageProvider==='s3'){
+    const storage=new S3Client({region:'us-east-1',maxAttempts:1});
+    try{
+      const cleanupIdentity=aws(['sts','get-caller-identity']);assert.equal(cleanupIdentity.Account,'559054714699');assert.ok(cleanupIdentity.Arn.includes('TracePointMigrationStaging'));
+      const target={Bucket:'tracepoint-staging-private-559054714699',ExpectedBucketOwner:'559054714699'};
+      for(const id of createdDepartments)for(const Prefix of ['attachments/'+id+'/','department-assets/'+id+'/']){
+        const versions=await storage.send(new ListObjectVersionsCommand({...target,Prefix}));assert.ok(!versions.IsTruncated);
+        for(const item of [...versions.Versions??[],...versions.DeleteMarkers??[]]){assert.ok(item.Key?.startsWith(Prefix)&&item.VersionId);await storage.send(new DeleteObjectCommand({...target,Key:item.Key,VersionId:item.VersionId}));}
+        const remaining=await storage.send(new ListObjectVersionsCommand({...target,Prefix}));assert.equal((remaining.Versions?.length??0)+(remaining.DeleteMarkers?.length??0),0);
+      }
+      console.log(JSON.stringify({fixtureRun:run,storageCleanup:'verified zero fixture versions'}));
+    }catch{cleanupFailed=true;}finally{storage.destroy();}
+  }
   for(const id of createdDepartments) for(const table of ['equipment_asset_assignments','equipment_assets','equipment_types']) {
     const removal=await admin.from(table).delete().eq('department_id',id);
     const verify=await admin.from(table).select('id').eq('department_id',id);

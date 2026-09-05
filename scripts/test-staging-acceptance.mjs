@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 const baseURL = 'https://staging.tracepointhq.com';
 const routes = ['/', '/landing', '/equipment', '/range-days', '/firearms', '/off-duty-firearms', '/qualifications', '/training', '/training/certifications', '/fleet-management', '/notifications', '/settings/import-export'];
 const results = [];
+let acceptanceStep;
 async function check(name, work) {
+  acceptanceStep=undefined;
   try { await work(); results.push({ name, status: 'pass' }); }
-  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined } : { code: 'REQUEST_OR_BROWSER_FAILURE' } }); }
+  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined } : { code: error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : /strict mode violation/.test(error?.message ?? '') ? 'LOCATOR_AMBIGUOUS' : 'REQUEST_OR_BROWSER_FAILURE', step: acceptanceStep } }); }
 }
 for (const path of ['/login', '/api/health', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
   const r = await fetch(baseURL + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
@@ -90,33 +92,55 @@ else try {
     const officerId=process.env.TRACEPOINT_ACCEPTANCE_OFFICER_ID;
     const foreignUserId=process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID;
     const name='acceptance-custody-'+crypto.randomUUID();
+    acceptanceStep='create-custody-type';
     const createdType=await context.request.post('/api/equipment/types',{data:{name}});
     assert.equal(createdType.status(),201);const typeId=(await createdType.json()).item.id;
+    acceptanceStep='create-custody-asset';
     const created=await context.request.post('/api/equipment/assets',{data:{equipmentTypeId:typeId,assignedUserId:managerId,assetNumber:name}});
     assert.equal(created.status(),201);const assetId=(await created.json()).item.id;
     for(const assignedUserId of [managerId,officerId,null]){
+      acceptanceStep='update-custody';
       const updated=await context.request.patch('/api/equipment/assets',{data:{id:assetId,assignedUserId}});
       assert.equal(updated.status(),200);assert.equal((await updated.json()).item.assigned_user_id,assignedUserId);
       const directory=await context.request.get('/api/equipment/assets');assert.equal(directory.status(),200);
       assert.equal((await directory.json()).items.find(x=>x.id===assetId).assigned_user_id,assignedUserId);
       if(assignedUserId){
+        acceptanceStep='Officer-Readiness-view';
         await page.goto('/equipment');await page.getByRole('button',{name:'Officer Readiness',exact:true}).click();
         await page.getByText(name,{exact:true}).waitFor({state:'visible'});
       }
     }
+    acceptanceStep='foreign-assignment-denial';
     const denied=await context.request.patch('/api/equipment/assets',{data:{id:assetId,assignedUserId:foreignUserId}});
     assert.equal(denied.status(),400);
     const unauthorized=await browser.newContext({baseURL});
     try {
+      acceptanceStep='non-manager-login';
       const officerPage=await unauthorized.newPage();await officerPage.goto('/login');
       await officerPage.getByLabel('Email',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL);
       await officerPage.getByLabel('Password',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD);
       await officerPage.locator('button[type="submit"]').click();await officerPage.waitForURL(u=>u.pathname!=='/login');
+      acceptanceStep='non-manager-write-denial';
       const write=await unauthorized.request.post('/api/equipment/types',{data:{name:'forbidden-'+name}});assert.equal(write.status(),403);
       const edit=await unauthorized.request.patch('/api/equipment/assets',{data:{id:assetId,assignedUserId:officerId}});assert.equal(edit.status(),403);
       const listing=await unauthorized.request.get('/api/equipment/assets');assert.equal(listing.status(),200);assert.equal((await listing.json()).items.some(x=>x.id===assetId),false);
     } finally {await unauthorized.close();}
     // Parent runner removes and verifies custody history, assets and types.
+  });
+  if(process.env.TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER==='s3')await check('private department patch upload, delivery and cross-tenant denial',async()=>{
+    const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+    const upload=await context.request.post('/api/settings/department-patch',{multipart:{file:{name:'acceptance.png',mimeType:'image/png',buffer:bytes}}});assert.equal(upload.status(),200);
+    const patch=(await upload.json()).patchUrl;assert.ok(patch.startsWith('/api/settings/department-patch?path='));
+    const delivery=await context.request.get(patch,{maxRedirects:0});assert.equal(delivery.status(),307);
+    const location=new URL(delivery.headers().location);assert.equal(location.protocol,'https:');assert.equal(location.hostname,'tracepoint-staging-private-559054714699.s3.us-east-1.amazonaws.com');
+    const downloaded=await fetch(location,{redirect:'error',signal:AbortSignal.timeout(15000)});assert.equal(downloaded.status,200);assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),bytes);
+    const anonymous=await fetch(baseURL+patch,{redirect:'manual',signal:AbortSignal.timeout(15000)});assert.ok([302,303,307,308].includes(anonymous.status));assert.equal(new URL(anonymous.headers.get('location'),baseURL).pathname,'/login');
+    const foreignContext=await browser.newContext({baseURL});
+    try{
+      const foreignPage=await foreignContext.newPage();await foreignPage.goto('/login');await foreignPage.getByLabel('Email',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL);await foreignPage.getByLabel('Password',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD);await foreignPage.locator('button[type="submit"]').click();await foreignPage.waitForURL(u=>u.pathname!=='/login');
+      assert.equal((await foreignContext.request.get(patch,{maxRedirects:0})).status(),404);
+      const denied=await foreignContext.request.post('/api/settings/department-patch',{multipart:{file:{name:'acceptance.png',mimeType:'image/png',buffer:bytes}}});assert.equal(denied.status(),403);
+    }finally{await foreignContext.close();}
   });
   await check('logout',async()=>{
     await context.request.post('/auth/signout',{maxRedirects:0});
