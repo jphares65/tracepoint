@@ -1,12 +1,14 @@
 import {localPostgresPort} from '../../test-support/local-postgres-port.mjs';
 import assert from 'node:assert/strict';
 import {test,before,after} from 'node:test';
-import {randomBytes,randomUUID} from 'node:crypto';
+import {randomBytes,randomUUID,generateKeyPairSync,sign} from 'node:crypto';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';import path from 'node:path';import pg from 'pg';import EmbeddedPostgres from 'embedded-postgres';
 import {AuthenticationStateSealer,PostgresAuthorizationTransactionStore} from './postgres-transactions';
 import {PostgresCognitoSessionStore} from './postgres-sessions';
 import {createCognitoPkce} from './cognito-pkce';
+import {createCognitoInitialSessionVerifier} from './cognito-initial-session';
+import {SimpleJwksCache,type Jwk} from 'aws-jwt-verify/jwk';
 const user='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',subject='33333333-3333-4333-8333-333333333333',issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Synthetic';
 let server:EmbeddedPostgres,pool:pg.Pool,directory:string;
 before(async()=>{directory=await mkdtemp(path.join(tmpdir(),'tracepoint-session-test-'));const port=await localPostgresPort();server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});
@@ -31,6 +33,18 @@ test('verified session persists and foreign identity cannot validate or revoke i
 test('inactive mapping, forged user mapping and excessive lifetime cannot register',async()=>{
  const store=new PostgresCognitoSessionStore(pool),input=session();await assert.rejects(store.registerVerified({...input,userId:other}),/rejected/);await assert.rejects(store.registerVerified({...input,expiresAt:input.issuedAt+3600}),/claims/);
  await pool.query("update authentication_identity_links set state='revoked'");await assert.rejects(store.registerVerified(input),/rejected/);await pool.query("update authentication_identity_links set state='active'");
+});
+test('signed initial callback composes with durable registration and cannot replay after logout',async()=>{
+ const config={environment:'staging' as const,account:'559054714699',region:'us-east-1',userPoolId:'us-east-1_Synthetic',clientId:'syntheticclient'};
+ const input=session(),nonce='N'.repeat(43),{privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+ const cache=new SimpleJwksCache({fetcher:{async fetch(){throw Error('Network disabled');}}});
+ cache.addJwks(issuer+'/.well-known/jwks.json',{keys:[{...publicKey.export({format:'jwk'}),kid:'fixture',alg:'RS256',use:'sig'} as Jwk]});
+ const jwt=(kind:'id'|'access')=>{const header=Buffer.from(JSON.stringify({kid:'fixture',alg:'RS256'})).toString('base64url');const body=Buffer.from(JSON.stringify({iss:issuer,sub:subject,token_use:kind,iat:input.issuedAt,exp:input.expiresAt,jti:input.tokenId,...(kind==='id'?{aud:config.clientId,nonce}:{client_id:config.clientId})})).toString('base64url');const unsigned=header+'.'+body;return unsigned+'.'+sign('RSA-SHA256',Buffer.from(unsigned),privateKey).toString('base64url');};
+ const store=new PostgresCognitoSessionStore(pool),verify=createCognitoInitialSessionVerifier(config,{async findActive(){return {userId:user};}},store,{jwksCache:cache});
+ const tokens={accessToken:jwt('access'),idToken:jwt('id'),refreshToken:'unused-synthetic',expiresIn:300};
+ assert.equal(await store.isActive(input),false);assert.deepEqual(await verify(tokens,nonce),{userId:user});
+ assert.equal(await new PostgresCognitoSessionStore(pool).isActive(input),true);
+ await store.revokeToken(input);await assert.rejects(verify(tokens,nonce),/new sign-in/);assert.equal(await store.isActive(input),false);
 });
 test('global revocation persists a watermark and blocks re-registration of earlier tokens',async()=>{
  const store=new PostgresCognitoSessionStore(pool),input=session();await store.registerVerified(input);await store.revokeAll({userId:user,issuer});assert.equal(await store.isActive(input),false);await assert.rejects(store.registerVerified({...input,tokenId:randomUUID()}),/rejected/);
