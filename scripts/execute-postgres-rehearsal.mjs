@@ -37,17 +37,18 @@ async function main(){
  const stack=async()=>{const result=await aws(['cloudformation','describe-stacks','--stack-name',name]);const value=result.Stacks[0];validateOwnedStack(value,run);return value;};
  const pause=()=>new Promise(resolve=>setTimeout(resolve,15000));
  try{
+  evidence.phase='strict synthesis';
   const command=`& npx.cmd cdk synth --app 'npx ts-node bin/postgres-rehearsal.ts' --strict --output '${directory.replaceAll("'","''")}' -c account=${account} -c region=${region} -c run=${run} -c imageDigest=${scan.imageId.imageDigest} -c engineVersion=18.4; exit $LASTEXITCODE`;
   try{await execute('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{cwd:path.resolve('infra'),env,maxBuffer:5*1024*1024,timeout:180000});}catch{throw Error('Strict rehearsal synthesis failed; no resources created');}
-  const templatePath=path.join(directory,name+'.template.json');const template=JSON.parse(await readFile(templatePath,'utf8'));validateRehearsalTemplate(template,run);
+  evidence.phase='structural gate';const templatePath=path.join(directory,name+'.template.json');const template=JSON.parse(await readFile(templatePath,'utf8'));validateRehearsalTemplate(template,run);
   try{await aws(['cloudformation','describe-stacks','--stack-name',name]);throw Error('Existing stack cannot be used for a disposable rehearsal');}catch(error){if(!error.missing)throw error;}
   // The existing monthly model is $57.17. This one bounded rehearsal reserves $2.
   // No recurring database/service or NAT is created. Unique stack must be absent.
   assert.ok(evidence.monthlyModelWithReserve<75);
-  await identity();const result=await aws(['cloudformation','create-stack','--stack-name',name,'--template-body','file://'+templatePath,'--capabilities','CAPABILITY_IAM','--tags','Key=RehearsalRun,Value='+run,'Key=Purpose,Value=disposable-synthetic-only','Key=Environment,Value=staging','Key=Application,Value=TracePoint']);created=true;evidence.stackArn=result.StackId;
+  evidence.phase='private stack creation';await identity();const result=await aws(['cloudformation','create-stack','--stack-name',name,'--template-body','file://'+templatePath,'--capabilities','CAPABILITY_IAM','--tags','Key=RehearsalRun,Value='+run,'Key=Purpose,Value=disposable-synthetic-only','Key=Environment,Value=staging','Key=Application,Value=TracePoint']);created=true;evidence.stackArn=result.StackId;console.log(JSON.stringify({run,stackArn:result.StackId,phase:evidence.phase}));
   const createDeadline=Date.now()+45*60000;
   for(;;){const current=await stack();if(current.StackStatus==='CREATE_COMPLETE'){outputs=Object.fromEntries(current.Outputs.map(o=>[o.OutputKey,o.OutputValue]));break;}if(current.StackStatus!=='CREATE_IN_PROGRESS'||Date.now()>createDeadline)throw Error('Disposable stack creation failed or timed out');await pause();}
-  await identity();const launched=await aws(['ecs','run-task','--cluster',outputs.Cluster,'--task-definition',outputs.TaskDefinition,'--launch-type','FARGATE','--count','1','--network-configuration',`awsvpcConfiguration={subnets=[${outputs.RunnerSubnet}],securityGroups=[${outputs.RunnerSecurityGroup}],assignPublicIp=ENABLED}`]);assert.equal(launched.failures.length,0);assert.equal(launched.tasks.length,1);task=launched.tasks[0].taskArn;evidence.taskArn=task;
+  evidence.phase='synthetic migration and restore';await identity();const launched=await aws(['ecs','run-task','--cluster',outputs.Cluster,'--task-definition',outputs.TaskDefinition,'--launch-type','FARGATE','--count','1','--network-configuration',`awsvpcConfiguration={subnets=[${outputs.RunnerSubnet}],securityGroups=[${outputs.RunnerSecurityGroup}],assignPublicIp=ENABLED}`]);assert.equal(launched.failures.length,0);assert.equal(launched.tasks.length,1);task=launched.tasks[0].taskArn;evidence.taskArn=task;
   const taskDeadline=Date.now()+15*60000;let exitCode;
   for(;;){const state=await aws(['ecs','describe-tasks','--cluster',outputs.Cluster,'--tasks',task]);assert.equal(state.failures.length,0);if(state.tasks[0].lastStatus==='STOPPED'){exitCode=state.tasks[0].containers[0].exitCode;break;}if(Date.now()>taskDeadline)throw Error('Disposable runner timed out');await pause();}
   const logs=await aws(['logs','filter-log-events','--log-group-name',outputs.RunnerLogGroup]);

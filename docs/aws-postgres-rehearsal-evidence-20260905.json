@@ -1,0 +1,12 @@
+{
+  "run": "870edff764a8",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "imageTag": "ed7e0329a4e312e2f0c6bdc149f8c9c65090806f-postgres-rehearsal",
+  "imageDigest": "sha256:129b70bd2c69284a50559d119fac3f0f118c5dbe997f065c82025f6586d5cd60",
+  "monthlyModelWithReserve": 59.17,
+  "maximumRunHours": 2,
+  "startedAt": "2026-09-05T06:44:36.900Z",
+  "elapsedSeconds": 50.187,
+  "passed": false
+}

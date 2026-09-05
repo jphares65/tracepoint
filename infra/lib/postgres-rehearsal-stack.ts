@@ -35,9 +35,9 @@ export class PostgresRehearsalStack extends cdk.Stack {
   const task=new ecs.FargateTaskDefinition(this,'RunnerTask',{cpu:256,memoryLimitMiB:1024,runtimePlatform:{cpuArchitecture:ecs.CpuArchitecture.X86_64,operatingSystemFamily:ecs.OperatingSystemFamily.LINUX}});
   const secret=secrets.Secret.fromSecretCompleteArn(this,'ManagedCredential',database.attrMasterUserSecretSecretArn);
   const output=new logs.LogGroup(this,'RunnerLogs',{logGroupName:`/tracepoint/rehearsal/${props.run}`,encryptionKey:key,retention:logs.RetentionDays.ONE_WEEK,removalPolicy:cdk.RemovalPolicy.DESTROY});
-  task.addContainer('rehearsal',{image:ecs.ContainerImage.fromRegistry(`${this.account}.dkr.ecr.us-east-1.amazonaws.com/tracepoint-staging@${props.imageDigest}`),environment:{REHEARSAL_ACCOUNT:this.account,AWS_REGION:this.region,REHEARSAL_RUN:props.run,PGHOST:database.attrEndpointAddress,PGDATABASE:'tracepoint_rehearsal',REHEARSAL_PURPOSE:'disposable-synthetic-only'},secrets:{RDS_MANAGED_SECRET:ecs.Secret.fromSecretsManager(secret)},logging:ecs.LogDrivers.awsLogs({streamPrefix:'runner',logGroup:output}),user:'1000'});
+  const images=ecr.Repository.fromRepositoryName(this,'RunnerImages','tracepoint-staging');
+  task.addContainer('rehearsal',{image:ecs.ContainerImage.fromEcrRepository(images,props.imageDigest),environment:{REHEARSAL_ACCOUNT:this.account,AWS_REGION:this.region,REHEARSAL_RUN:props.run,PGHOST:database.attrEndpointAddress,PGDATABASE:'tracepoint_rehearsal',REHEARSAL_PURPOSE:'disposable-synthetic-only'},secrets:{RDS_MANAGED_SECRET:ecs.Secret.fromSecretsManager(secret)},logging:ecs.LogDrivers.awsLogs({streamPrefix:'runner',logGroup:output}),user:'1000'});
   key.grantDecrypt(task.executionRole!);
-  ecr.Repository.fromRepositoryName(this,'RunnerImages','tracepoint-staging').grantPull(task.executionRole!);
   for(const [label,value]of Object.entries({Cluster:cluster.clusterName,TaskDefinition:task.taskDefinitionArn,RunnerSecurityGroup:runnerSg.securityGroupId,RunnerSubnet:vpc.publicSubnets[0].subnetId,DatabaseIdentifier:name,RunnerLogGroup:output.logGroupName}))new cdk.CfnOutput(this,label,{value});
  }
 }
