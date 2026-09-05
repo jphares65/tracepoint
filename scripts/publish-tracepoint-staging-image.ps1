@@ -122,8 +122,15 @@ try {
             if ([DateTime]::UtcNow -gt $deadline) { throw 'Build monitoring timed out.' }
             Start-Sleep -Seconds 20
         } while ($true)
-        & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$commit" --region us-east-1
-        if ($LASTEXITCODE -ne 0) { throw 'Image scan did not complete.' }
+        # PowerShell 5 treats native CLI stderr as ErrorRecord even on success.
+        # Retain the native exit-code gate; never infer scan completion from stderr.
+        $scanErrorPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$commit" --region us-east-1
+            $scanExitCode = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $scanErrorPreference }
+        if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
         Write-Host "Build and scan completed for $commit; deployment separately rejects HIGH/CRITICAL findings."
     }
 }

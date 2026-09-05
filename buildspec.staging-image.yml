@@ -23,6 +23,8 @@ phases:
       - set +x
       - docker build --pull --secret id=next_server_actions_encryption_key,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY --build-arg NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" --build-arg NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" --build-arg NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" --build-arg DEPLOYMENT_VERSION="$SOURCE_COMMIT" --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label org.opencontainers.image.source="https://github.com/jphares65/tracepoint" -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker inspect "$ECR_REPOSITORY_URI:$IMAGE_TAG" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' | grep -Fx "$SOURCE_COMMIT"
+      - |
+        docker run --rm --read-only --user 65532:65532 --mount type=volume,destination=/app/.next/cache --mount type=volume,destination=/tmp --entrypoint /nodejs/bin/node "$ECR_REPOSITORY_URI:$IMAGE_TAG" -e 'const fs=require("fs");if(process.getuid()!==65532)throw Error("Non-root gate failed");for(const dir of ["/app/.next/cache","/tmp"]){const p=dir+"/tracepoint-write-check";fs.writeFileSync(p,"synthetic",{flag:"wx"});fs.unlinkSync(p);}try{fs.writeFileSync("/app/forbidden-write","synthetic");throw Error("Root filesystem is writable");}catch(e){if(!["EROFS","EACCES"].includes(e.code))throw e;}console.log("Non-root volumes writable; root filesystem protected.");'
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
   post_build:
     commands:

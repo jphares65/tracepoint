@@ -151,7 +151,7 @@ else try {
   });
 } catch {results.push({name:'authenticated setup',status:'fail',reason:'Login or tenant precondition failed; sensitive details suppressed'});}
 finally {await browser?.close();}
-results.push({name:'remaining scenarios',status:'blocked',reason:'Drill protections, off-duty approvals, real exports and file transfer need additional scenario coverage. Page loads do not prove these workflows.'});
+results.push({name:'remaining scenarios',status:'blocked',reason:process.argv.includes('--range-documents')?'Off-duty approvals and actual exports still need scenario coverage. Range and Drill Library file results are reported separately.':'Drill protections, off-duty approvals, actual exports and file transfer still need scenario coverage.'});
 console.log(JSON.stringify({target:baseURL,results},null,2));
 const smoke = process.argv.includes('--smoke');
 process.exitCode=results.some(r=>r.status==='fail')?1:smoke && email && password && department?0:results.some(r=>r.status==='blocked')?2:0;
