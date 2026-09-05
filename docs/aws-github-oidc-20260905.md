@@ -17,3 +17,5 @@ The first full release request 0b520e7 stopped before AWS credentials/publicatio
 The Windows hosted PostgreSQL process still exited before readiness after port selection. Validation now runs all application, script and infrastructure tests on an unprivileged Linux job; Windows retains the deployment safety/orchestration checks and actual release. No failing database check is skipped. The local application runner passed all 180 tests. The reviewed build-key permission was deployed as the only IAM policy delta.
 
 The orchestration suite now clears its intentionally mocked failure exit code only after all assertions and cleanup succeed. This prevents GitHub pwsh from reporting a successful safety suite as failed because its final negative test deliberately set LASTEXITCODE=1. Terminating assertion/cleanup failures still propagate.
+
+Hosted proof run 33956558456 succeeded: all mandatory Linux validation and the Windows live OIDC verification passed. It confirms the replacement validation platform without weakening any database check.

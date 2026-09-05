@@ -390,5 +390,5 @@ export async function POST(request: NextRequest) {
     cancelledItems,
     failedGroups,
     reconciliationRequiredGroups,
-  });
+  }, { status: failedGroups ? 503 : 200 });
 }
