@@ -1,5 +1,5 @@
 ﻿import { SendEmailCommand, type SendEmailCommandOutput } from '@aws-sdk/client-sesv2';
-import { EmailProviderConfigurationError, EmailProviderResponseError, type EmailMessage, type EmailProvider } from './provider-core';
+import { EmailProviderConfigurationError, EmailDeliveryUnconfirmedError, EmailProviderResponseError, type EmailMessage, type EmailProvider } from './provider-core';
 
 export type SesTransport = {
   send(command: SendEmailCommand): Promise<Pick<SendEmailCommandOutput, 'MessageId'>>;
@@ -69,7 +69,7 @@ export class SesEmailProvider implements EmailProvider {
     } catch {
       // Avoid logging recipient/content/provider diagnostic details. Do not automatically retry:
       // a timeout may occur after acceptance. Reconcile outbox/events before resending.
-      throw new EmailProviderResponseError(502, 'SES delivery outcome is unconfirmed; reconcile provider events before retry.');
+      throw new EmailDeliveryUnconfirmedError('SES delivery outcome is unconfirmed; reconcile provider events before retry.');
     }
   }
 }

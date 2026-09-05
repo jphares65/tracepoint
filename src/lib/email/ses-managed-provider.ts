@@ -1,5 +1,5 @@
 import { SesEmailProvider, type SesProviderOptions } from './ses-provider-core';
-import { EmailProviderResponseError, type EmailMessage } from './provider-core';
+import { EmailDeliveryUnconfirmedError, type EmailMessage } from './provider-core';
 import { parseSesFeedback, type SesFeedbackStore } from './ses-feedback';
 import { verifySnsNotification } from './sns-notification';
 
@@ -15,7 +15,7 @@ export class ManagedSesProvider {
   async send(message: EmailMessage) {
     const accepted = await this.provider.send(message);
     try { await this.store.recordAcceptance(accepted.messageId, this.departmentId, message.to.map(recipient => recipient.email)); }
-    catch { throw new EmailProviderResponseError(502, 'SES accepted the message but persistence is unconfirmed; reconcile before retry.'); }
+    catch { throw new EmailDeliveryUnconfirmedError('SES accepted the message but persistence is unconfirmed; reconcile before retry.'); }
     return accepted;
   }
 }

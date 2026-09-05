@@ -1,6 +1,9 @@
 ﻿name: AWS staging runtime release
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/aws-staging-readiness-20260902]
+    paths: [.github/staging-release.json]
 permissions:
   contents: read
 concurrency:
@@ -15,6 +18,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      statuses: read
     env:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
@@ -24,6 +28,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -34,13 +39,16 @@ jobs:
           foreach ($name in @('CERTIFICATE_ARN')) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name" }
           }
+      - name: Bind deliberate push request to reviewed source
+        if: github.event_name == 'push'
+        run: node scripts/validate-staging-release-request.mjs
       - run: npm ci
       - run: npm ci --prefix infra
       - run: npx playwright install chromium
       - name: Local validation
         shell: pwsh
         run: |
-          node --test scripts/*.test.mjs
+          node --test --test-concurrency=1 scripts/*.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Script tests failed' }
           ./scripts/test-deployment-safety.ps1
           ./scripts/test-release-orchestration.ps1
@@ -48,6 +56,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Infrastructure tests failed' }
           npx tsc --noEmit
           if ($LASTEXITCODE -ne 0) { throw 'TypeScript failed' }
+      - name: Require repaired Vercel branch Preview
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/wait-for-staging-preview.mjs
       - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}

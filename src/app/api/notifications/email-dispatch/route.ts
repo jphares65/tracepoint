@@ -4,8 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createEmailProvider,
   EmailProviderConfigurationError,
-  EmailProviderResponseError,
 } from "@/lib/email/provider";
+
+import { deliverOutboxMessage } from "@/lib/email/outbox-delivery";
 
 type QueueRow = {
   id: string;
@@ -150,13 +151,13 @@ function buildDigestText(events: EventRow[], siteUrl: string) {
   ].join("\n");
 }
 
-async function retryRows(admin: any, rows: QueueRow[], message: string) {
+async function retryRows(admin: ReturnType<typeof createAdminClient>, rows: QueueRow[], message: string, forceTerminal = false, messageId: string | null = null) {
   const now = Date.now();
 
   await Promise.all(
     rows.map((row) => {
       const attemptCount = Number(row.attempt_count ?? 0) + 1;
-      const terminal = attemptCount >= 3;
+      const terminal = forceTerminal || attemptCount >= 3;
 
       return admin
         .from("notification_email_queue")
@@ -164,6 +165,7 @@ async function retryRows(admin: any, rows: QueueRow[], message: string) {
           status: terminal ? "Failed" : "Pending",
           attempt_count: attemptCount,
           last_error: message.slice(0, 1000),
+          ...(messageId ? { provider_message_id: messageId } : {}),
           scheduled_for: terminal
             ? new Date(now).toISOString()
             : new Date(
@@ -174,7 +176,8 @@ async function retryRows(admin: any, rows: QueueRow[], message: string) {
               ).toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", "Processing");
     }),
   );
 }
@@ -214,7 +217,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const admin = createAdminClient() as any;
+  const admin = createAdminClient();
   const now = new Date().toISOString();
 
   const { data: candidates, error: queueError } = await admin
@@ -279,6 +282,7 @@ export async function POST(request: NextRequest) {
   let sentItems = 0;
   let cancelledItems = 0;
   let failedGroups = 0;
+  let reconciliationRequiredGroups = 0;
 
   for (const groupRows of groups.values()) {
     const first = groupRows[0];
@@ -296,7 +300,7 @@ export async function POST(request: NextRequest) {
       .in("notification_key", notificationKeys);
 
     if (eventError) {
-      await retryRows(admin, groupRows, eventError.message);
+      await retryRows(admin, groupRows, "Notification event lookup failed before sending.");
       failedGroups += 1;
       continue;
     }
@@ -356,45 +360,24 @@ export async function POST(request: NextRequest) {
         ? `[TracePoint] ${activeEvents[0].title}`
         : `[TracePoint] ${activeEvents.length} Inbox Items Need Attention`;
 
-    try {
-      const sendResult = await emailProvider.send({
-        to: [{ email: first.recipient_email }],
-        subject,
-        htmlContent: buildDigestHtml(activeEvents, siteUrl),
-        textContent: buildDigestText(activeEvents, siteUrl),
-      }).catch((error) => {
-        if (error instanceof EmailProviderResponseError) {
-          throw new Error(
-            error.providerMessage ?? `Brevo returned ${error.status}.`,
-          );
-        }
-        throw error;
-      });
-
-      const { error: sentUpdateError } = await admin
-        .from("notification_email_queue")
-        .update({
-          status: "Sent",
-          sent_at: new Date().toISOString(),
-          provider_message_id: sendResult.messageId,
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .in("id", activeRows.map((row) => row.id));
-
-      if (sentUpdateError) throw new Error(sentUpdateError.message);
-
+    const outcome = await deliverOutboxMessage(emailProvider, {
+      to: [{ email: first.recipient_email }],
+      subject,
+      htmlContent: buildDigestHtml(activeEvents, siteUrl),
+      textContent: buildDigestText(activeEvents, siteUrl),
+    }, async (messageId) => {
+      const { error } = await admin.from("notification_email_queue")
+        .update({status:"Sent",sent_at:new Date().toISOString(),provider_message_id:messageId,last_error:null,updated_at:new Date().toISOString()})
+        .in("id",activeRows.map(row=>row.id)).eq("status","Processing");
+      if(error) throw new Error("Acceptance persistence failed.");
+    });
+    if(outcome.kind === "sent") {
       sentMessages += 1;
       sentItems += activeRows.length;
-    } catch (error) {
-      await retryRows(
-        admin,
-        activeRows,
-        error instanceof Error
-          ? error.message
-          : "Notification delivery failed.",
-      );
+    } else {
+      await retryRows(admin,activeRows,outcome.message,outcome.kind !== "retry",outcome.messageId);
       failedGroups += 1;
+      if(outcome.kind === "reconcile") reconciliationRequiredGroups += 1;
     }
   }
 
@@ -406,5 +389,6 @@ export async function POST(request: NextRequest) {
     sentItems,
     cancelledItems,
     failedGroups,
+    reconciliationRequiredGroups,
   });
 }

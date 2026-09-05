@@ -148,7 +148,7 @@ try {
     # Windows PowerShell 5 surfaces native stderr as ErrorRecord instances;
     # CDK writes progress to stderr even when it succeeds.
     $ErrorActionPreference = 'Continue'
-    $diff = & npx.cmd cdk diff $runtimeStack @context --exclusively --no-change-set 2>&1
+    $diff = & npx.cmd cdk diff $runtimeStack @context --exclusively --no-change-set --fail=false 2>&1
     $diffExitCode = $LASTEXITCODE
 }
 finally {

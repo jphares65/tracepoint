@@ -32,6 +32,10 @@ export class EmailProviderResponseError extends Error {
   }
 }
 
+export class EmailDeliveryUnconfirmedError extends EmailProviderResponseError {
+  constructor(message = 'Email delivery outcome is unconfirmed; reconcile provider events before retry.') { super(502, message); }
+}
+
 type EmailProviderEnvironment = {
   [key: string]: string | undefined;
   TRACEPOINT_EMAIL_PROVIDER?: string;
@@ -72,7 +76,10 @@ export function createEmailProvider(
   return {
     name: "Brevo",
     async send(message) {
-      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      let response: Response;
+      try { response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        redirect: "error",
+        signal: AbortSignal.timeout(15000),
         method: "POST",
         headers: {
           "api-key": apiKey,
@@ -88,6 +95,8 @@ export function createEmailProvider(
         }),
       });
 
+      } catch { throw new EmailDeliveryUnconfirmedError(); }
+      if (response.status >= 500 || response.status === 408) { await response.body?.cancel(); throw new EmailDeliveryUnconfirmedError(); }
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -97,7 +106,9 @@ export function createEmailProvider(
         );
       }
 
-      return { messageId: optionalText(payload?.messageId) };
+      const messageId = optionalText(payload?.messageId);
+      if (!messageId) throw new EmailDeliveryUnconfirmedError();
+      return { messageId };
     },
   };
 }
