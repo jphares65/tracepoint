@@ -10,6 +10,8 @@
   "estimated": true,
   "budgetActualUSD": 0.948,
   "budgetLimitUSD": 75,
-  "modeledMonthlyUSD": 57.17,
-  "billingLagNote": "Estimated month-to-date bill can lag recent builds, deployments and the new alert stack."
+  "modeledMonthlyUSD": 67.17,
+  "billingLagNote": "Estimated month-to-date bill can lag recent builds, deployments and the new alert stack. WAF logging resources incur charges even while ALB association is pending.",
+  "requestControlsModeledUSD": 10,
+  "disposableRehearsalReserveUSD": 2
 }

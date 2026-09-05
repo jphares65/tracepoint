@@ -1,0 +1,9 @@
+{
+  "currentTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:16",
+  "priorTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:14",
+  "imageTag": "5a511edbf2d1543fd384f0ed11734a548d6272e7",
+  "rollbackVerified": true,
+  "rollbackSeconds": 411.881583,
+  "returnSeconds": 438.5910373,
+  "correctedRuntimeRestored": true
+}
