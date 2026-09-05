@@ -1,5 +1,5 @@
 {
-  "reviewDate": "2026-09-04",
+  "reviewDate": "2026-09-05",
   "account": "559054714699",
   "region": "us-east-1",
   "ceilingCents": 7500,
@@ -13,14 +13,17 @@
     "CodeBuild_600_minutes_allowance": 300,
     "four_alarms": 40,
     "data_transfer_allowance": 500,
-    "private_storage_requests_versions_logs_allowance": 100
+    "private_storage_requests_versions_logs_allowance": 100,
+    "encrypted_alarm_delivery_composite_SNS_SQS_allowance": 200
   },
   "actualSpendVerified": true,
   "sources": [
     "https://aws.amazon.com/fargate/pricing/",
     "https://aws.amazon.com/elasticloadbalancing/pricing/",
     "https://aws.amazon.com/vpc/pricing/",
-    "https://aws.amazon.com/codebuild/pricing/"
+    "https://aws.amazon.com/codebuild/pricing/",
+    "https://aws.amazon.com/cloudwatch/pricing/",
+    "https://aws.amazon.com/kms/pricing/"
   ],
   "actualSpendEvidence": "aws-cost-evidence-20260905.json"
 }
