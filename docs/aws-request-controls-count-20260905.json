@@ -1,0 +1,17 @@
+{
+  "account": "559054714699",
+  "region": "us-east-1",
+  "origin": "https://staging.tracepointhq.com",
+  "mode": "count",
+  "webAclArn": "arn:aws:wafv2:us-east-1:559054714699:regional/webacl/tracepoint-staging-requests/e9e00876-7434-4e74-9940-f4733efaf486",
+  "startedAt": "2026-09-05T07:48:18.950Z",
+  "normalRoutesHealthy": true,
+  "allowed": 120,
+  "blocked": 0,
+  "probeAllowed": true,
+  "probeLatencyP95Ms": 33,
+  "loggingRedactionVerified": true,
+  "countedRequests": 65,
+  "globalRateMatches": 0,
+  "completedAt": "2026-09-05T07:50:29.654Z"
+}

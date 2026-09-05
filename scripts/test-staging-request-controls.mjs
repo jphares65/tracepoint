@@ -23,7 +23,13 @@ async function main(){
   if(r.status===429){assert.equal(mode,'enforce');assert.equal(r.headers.get('retry-after'),'60');blocked++;break;}assert.equal(r.status,200);allowed++;
   if(mode!=='logging')await new Promise(resolve=>setTimeout(resolve,1000));
  }
- if(mode==='enforce')assert.ok(blocked>0,'No live rate-limit enforcement observed');
+ if(mode==='enforce'){
+  assert.ok(blocked>0,'No live rate-limit enforcement observed');
+  const recoveryStart=Date.now();let recovered=false;
+  // WAF rate estimates refresh asynchronously; allow a bounded quiet window.
+  while(Date.now()-recoveryStart<180000){await new Promise(resolve=>setTimeout(resolve,30000));const response=await fetch(origin+'/api/health?tracepoint_rate_probe=rehearsal',{redirect:'manual'});if(response.status===200){recovered=true;break;}assert.equal(response.status,429);}
+  assert.ok(recovered,'Synthetic rate-limit did not recover after quiet window');proof.rateLimitRecoveryMilliseconds=Date.now()-recoveryStart;
+ }
  await normal();proof.normalRoutesHealthy=true;proof.allowed=allowed;proof.blocked=blocked;proof.probeAllowed=blocked===0;proof.probeLatencyP95Ms=[...latency].sort((a,b)=>a-b)[Math.ceil(latency.length*.95)-1];
  const deadline=Date.now()+6*60000;let records=[];
  while(Date.now()<deadline){
