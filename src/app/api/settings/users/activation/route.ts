@@ -1,3 +1,4 @@
+import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,18 +14,10 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function getRequestOrigin(request: NextRequest) {
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-
-  if (configuredSiteUrl) {
-    return configuredSiteUrl.replace(/\/$/, "");
-  }
-
-  return request.nextUrl.origin.replace(/\/$/, "");
-}
 
 export async function POST(request: NextRequest) {
   try {
+    const siteUrl = configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL);
     const body = (await request.json()) as ActivationRequest;
 
     const departmentId = cleanText(body.departmentId);
@@ -127,7 +120,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const siteUrl = getRequestOrigin(request);
 
     const activation = await issueActivationEmail({
       departmentId,

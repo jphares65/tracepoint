@@ -11,7 +11,7 @@ async function check(name, work) {
   try { await work(); results.push({ name, status: 'pass' }); }
   catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined } : { code: error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : /strict mode violation/.test(error?.message ?? '') ? 'LOCATOR_AMBIGUOUS' : 'REQUEST_OR_BROWSER_FAILURE', step: acceptanceStep } }); }
 }
-for (const path of ['/login', '/api/health', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
+for (const path of ['/login', '/api/health', '/auth/confirm', '/auth/callback', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
   const r = await fetch(baseURL + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
   if (['/login','/api/health','/landing'].includes(path)) assert.equal(r.status, 200);
   else {

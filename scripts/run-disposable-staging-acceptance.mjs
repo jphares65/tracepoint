@@ -11,6 +11,7 @@ import { validateStagingProviderConfig } from './validate-staging-provider-confi
 // Only this script uses the staging admin key. Browser acceptance receives a
 // generated password through its process environment, never the admin key.
 if (!process.argv.includes('--execute')) throw new Error('Use --execute to create and remove disposable staging fixtures.');
+if((process.argv.includes('--auth-recovery')||process.argv.includes('--browser-recovery'))&&!process.argv.includes('--fixtures-only'))throw new Error('Standalone recovery requires --fixtures-only so subsequent login credentials are not invalidated.');
 const env = { ...process.env, AWS_REGION: 'us-east-1', AWS_DEFAULT_REGION: 'us-east-1' };
 function aws(args) {
   return JSON.parse(execFileSync('aws.exe', [...args, '--region', 'us-east-1', '--output', 'json'], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
@@ -63,14 +64,14 @@ try {
   const features = requireSuccess(await admin.from('feature_catalog').select('code').eq('is_active',true), 'Load feature codes');
   requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
-  if(process.argv.includes('--auth-recovery'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId});
+  if(process.argv.includes('--auth-recovery')||process.argv.includes('--browser-recovery'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId,browserRecovery:process.argv.includes('--browser-recovery')});
   if(process.argv.includes('--storage-migration'))await exerciseStorageCopy({admin,department:departmentIds[0],env,run});
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS:process.argv.includes('--extended-workflows')?'enabled':'', TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:process.argv.includes('--range-documents')?'enabled':'', TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
   if(result===0&&!process.argv.includes('--fixtures-only')) {
-    if(process.argv.includes('--extended-workflows'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId});
+    if(process.argv.includes('--extended-workflows'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId,browserRecovery:true});
     const history=requireSuccess(await admin.from('equipment_asset_assignments').select('returned_at').eq('department_id',departmentIds[0]), 'Verify custody history');
     const audit=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','equipment_assets'), 'Verify audit creation');
     assert.ok(history.length>=2&&history.every(x=>x.returned_at));assert.ok(audit.length>=3);

@@ -1,3 +1,4 @@
+import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -12,22 +13,6 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function getRequestOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-
-  if (origin) {
-    return origin.replace(/\/$/, "");
-  }
-
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
-
-  if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, "");
-  }
-
-  return request.nextUrl.origin.replace(/\/$/, "");
-}
 
 async function findUserByEmail(
   admin: ReturnType<typeof createAdminClient>,
@@ -56,6 +41,7 @@ async function findUserByEmail(
 
 export async function POST(request: NextRequest) {
   try {
+    const siteUrl = configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL);
     const body = (await request.json()) as PasswordResetRequest;
 
     const departmentId = cleanText(body.departmentId);
@@ -155,7 +141,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const siteUrl = getRequestOrigin(request);
 
     const { error: resetError } = await admin.auth.resetPasswordForEmail(email, {
       redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(

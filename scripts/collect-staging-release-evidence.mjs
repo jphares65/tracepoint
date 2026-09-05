@@ -23,7 +23,7 @@ try {
  const alarms=aws(['cloudwatch','describe-alarms','--alarm-name-prefix','tracepoint-staging','--alarm-types','MetricAlarm','CompositeAlarm']);
  report.alarms=[...alarms.MetricAlarms,...alarms.CompositeAlarms].map(x=>({name:x.AlarmName,state:x.StateValue}));
  report.public=[];
- for(const route of ['/api/health','/login','/equipment','/range-days','/firearms','/off-duty-firearms','/qualifications','/training','/fleet-management','/notifications']){
+ for(const route of ['/api/health','/login','/auth/confirm','/auth/callback','/equipment','/range-days','/firearms','/off-duty-firearms','/qualifications','/training','/fleet-management','/notifications']){
   const response=await fetch(base+route,{redirect:'manual',signal:AbortSignal.timeout(15000)});await response.body?.cancel();
   const location=response.headers.get('location');const passed=['/api/health','/login'].includes(route)?response.status===200:
    [302,303,307,308].includes(response.status)&&location&&new URL(location,base).origin===base&&new URL(location,base).pathname==='/login';
