@@ -1,3 +1,4 @@
+import {exerciseRangeDocuments} from './staging-range-document-scenarios.mjs';
 ﻿import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 const baseURL = 'https://staging.tracepointhq.com';
@@ -142,6 +143,7 @@ else try {
       const denied=await foreignContext.request.post('/api/settings/department-patch',{multipart:{file:{name:'acceptance.png',mimeType:'image/png',buffer:bytes}}});assert.equal(denied.status(),403);
     }finally{await foreignContext.close();}
   });
+  if(process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled')await exerciseRangeDocuments({context,browser,baseURL,department,check});
   await check('logout',async()=>{
     await context.request.post('/auth/signout',{maxRedirects:0});
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));

@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {validateWorkspaceWrite} from './workspace-write-policy.ts';
+const base={rangeDays:[{id:'day',status:'Planned',packetStatus:'Needs Setup'}],rangeDayDrills:[{id:'drill',rangeDayId:'day'}],results:[],malfunctions:[]};
+const validate=(previous:unknown,next:unknown,canManage=true,canScore=false)=>validateWorkspaceWrite({previous,next,canManage,canScore,departmentId:'tenant'});
+test('non-manager non-scorer cannot save any workspace',()=>assert.deepEqual(validate({}, {},false,false),{ok:false,status:403,error:'Range administration or scoring permission is required.'}));
+test('scorer can save scores but cannot change setup or roster',()=>{assert.equal(validate(base,{...base,results:[{id:'score',rangeDayId:'day',drillId:'drill'}]},false,true).ok,true);assert.equal(validate(base,{...base,rangeDays:[]},false,true).ok,false);assert.equal(validate(base,{...base,rangeRoster:[{id:'member'}]},false,true).ok,false);});
+test('manager can remove unscored editable drills',()=>assert.equal(validate(base,{...base,rangeDayDrills:[]}).ok,true));
+test('bulk save cannot remove locked or scored drills, including an association change',()=>{for(const previous of [{...base,rangeDays:[{id:'day',status:'Locked'}]},{...base,results:[{id:'score',rangeDayId:'day',drillId:'drill'}]}])for(const next of [{...base,rangeDayDrills:[]},{...base,rangeDayDrills:[{id:'drill',rangeDayId:'other'}]}])assert.equal(validate(previous,next).ok,false);});
+test('saved score and malfunction history cannot be erased to bypass removal protections',()=>{assert.equal(validate({...base,results:[{id:'score'}]},base).ok,false);assert.equal(validate({...base,malfunctions:[{id:'issue'}]},base).ok,false);});

@@ -61,13 +61,17 @@ try {
   requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:process.argv.includes('--range-documents')?'enabled':'', TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
   if(result===0&&!process.argv.includes('--fixtures-only')) {
     const history=requireSuccess(await admin.from('equipment_asset_assignments').select('returned_at').eq('department_id',departmentIds[0]), 'Verify custody history');
     const audit=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','equipment_assets'), 'Verify audit creation');
     assert.ok(history.length>=2&&history.every(x=>x.returned_at));assert.ok(audit.length>=3);
+    if(process.argv.includes('--range-documents')){
+      const documents=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','drill_document'), 'Document audit verification');assert.ok(documents.length>=2);
+      console.log(JSON.stringify({fixtureRun:run,documentAudit:'verified'}));
+    }
     console.log(JSON.stringify({fixtureRun:run,custodyHistory:'verified',auditCreation:'verified'}));
   }
 } catch {
@@ -89,9 +93,9 @@ try {
       console.log(JSON.stringify({fixtureRun:run,storageCleanup:'verified zero fixture versions'}));
     }catch{cleanupFailed=true;}finally{storage.destroy();}
   }
-  for(const id of createdDepartments) for(const table of ['equipment_asset_assignments','equipment_assets','equipment_types']) {
+  for(const id of createdDepartments) for(const table of [...(process.argv.includes('--range-documents')?['drill_documents','pilot_range_workspaces']:[]),'equipment_asset_assignments','equipment_assets','equipment_types']) {
     const removal=await admin.from(table).delete().eq('department_id',id);
-    const verify=await admin.from(table).select('id').eq('department_id',id);
+    const verify=await admin.from(table).select('department_id').eq('department_id',id);
     if(removal.error||verify.error||verify.data?.length!==0)cleanupFailed=true;
   }
   for (const createdUserId of [userId,...extraUsers].filter(Boolean)) {
