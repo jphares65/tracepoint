@@ -15,7 +15,8 @@
     "data_transfer_allowance": 500,
     "private_storage_requests_versions_logs_allowance": 100,
     "encrypted_alarm_delivery_composite_SNS_SQS_allowance": 200,
-    "wafRequestControls": 1000
+    "wafRequestControls": 1000,
+    "disabled_SES_feedback_key_and_low_volume_allowance": 125
   },
   "actualSpendVerified": true,
   "sources": [

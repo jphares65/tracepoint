@@ -28,3 +28,9 @@ for(const environmentName of ['staging','production'] as const){
 test('provider stacks reject management and mismatched staging accounts',()=>{
  for(const account of ['265544358665','111111111111'])assert.throws(()=>new CognitoFoundationStack(new cdk.App(),'bad',{env:{account,region:'us-east-1'},environmentName:'staging'}),/boundary/);
 });
+
+test('disabled SES foundation grants no runtime authority and changes no DNS',()=>{
+ const stack=new SesFoundationStack(new cdk.App(),'disabled',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',mailFromSubdomain:'bounce'});const t=Template.fromStack(stack);
+ t.resourceCountIs('AWS::IAM::Policy',0);t.resourceCountIs('AWS::IAM::Role',0);t.resourceCountIs('AWS::Route53::RecordSet',0);t.resourceCountIs('AWS::SES::EmailIdentity',1);
+ t.hasOutput('ActivationGate',{Value:Match.stringLikeRegexp('^DISABLED:')});
+});

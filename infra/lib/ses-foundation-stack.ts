@@ -6,7 +6,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
-export interface SesFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; mailFromSubdomain:string; taskRole:iam.IRole; }
+export interface SesFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; mailFromSubdomain:string; taskRole?:iam.IRole; }
 export class SesFoundationStack extends cdk.Stack {
  constructor(scope:Construct,id:string,props:SesFoundationProps){
   super(scope,id,props);
@@ -32,7 +32,7 @@ export class SesFoundationStack extends cdk.Stack {
   // Preserve the signed SNS envelope; the consumer verifies it before persistence.
   topic.addSubscription(new subscriptions.SqsSubscription(queue,{rawMessageDelivery:false,deadLetterQueue}));
   configuration.addEventDestination('FeedbackEvents',{destination:ses.EventDestination.snsTopic(topic),events:[ses.EmailSendingEvent.BOUNCE,ses.EmailSendingEvent.COMPLAINT,ses.EmailSendingEvent.DELIVERY]});
-  new iam.Policy(this,'PreparedRuntimeSendPolicy',{roles:[props.taskRole],statements:[new iam.PolicyStatement({actions:['ses:SendEmail'],resources:[identity.emailIdentityArn],conditions:{StringEquals:{'ses:FromAddress':from}}})]});
+  if(props.taskRole)new iam.Policy(this,'PreparedRuntimeSendPolicy',{roles:[props.taskRole],statements:[new iam.PolicyStatement({actions:['ses:SendEmail'],resources:[identity.emailIdentityArn],conditions:{StringEquals:{'ses:FromAddress':from}}})]});
   const records=[...identity.dkimRecords.map(x=>({type:'CNAME',name:x.name,value:x.value})),
    {type:'MX',name:mailFrom,value:'10 feedback-smtp.us-east-1.amazonses.com'},
    {type:'TXT',name:mailFrom,value:'v=spf1 include:amazonses.com -all'},
@@ -40,6 +40,6 @@ export class SesFoundationStack extends cdk.Stack {
   new cdk.CfnOutput(this,'DnsRecords',{value:cdk.Fn.toJsonString(records)});
   new cdk.CfnOutput(this,'ConfigurationSet',{value:configuration.configurationSetName});new cdk.CfnOutput(this,'FromAddress',{value:from});new cdk.CfnOutput(this,'FeedbackTopicArn',{value:topic.topicArn});
   new cdk.CfnOutput(this,'FeedbackQueueArn',{value:queue.queueArn});
-  new cdk.CfnOutput(this,'ActivationGate',{value:'OFFLINE PREVIEW: durable queue and batch consumer prepared; require worker deployment with trusted database connection, DNS verification, sandbox readiness, suppression import and real delivery before activation.'});
+  new cdk.CfnOutput(this,'ActivationGate',{value:'DISABLED: durable queue and batch consumer prepared; require explicit runtime send permission and worker deployment with trusted database connection, DNS verification, sandbox readiness, suppression import and real delivery before activation.'});
  }
 }
