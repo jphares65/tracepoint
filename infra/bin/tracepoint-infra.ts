@@ -5,6 +5,7 @@ import { SecurityStack } from "../lib/security-stack";
 import { ComputeFoundationStack } from "../lib/compute-foundation-stack";
 import { RuntimeStack } from "../lib/runtime-stack";
 import { ImageBuildStack } from "../lib/image-build-stack";
+import { directStagingSynthesizer } from "../lib/staging-synthesizer";
 
 import { PrivateStorageStack } from "../lib/private-storage-stack";
 
@@ -16,6 +17,8 @@ const environmentName = productionPreview ? "tracepoint-production" : app.node.t
 const account = productionPreview ? "111111111111" : app.node.tryGetContext("account");
 const region = app.node.tryGetContext("region");
 const workloadEnvironment = productionPreview ? "production" : "staging";
+const directDeployment=app.node.tryGetContext('directDeployment')==='true';
+if(productionPreview&&directDeployment)throw Error('Direct GitHub deployment is staging-only');
 if (app.node.tryGetContext("account") === "265544358665") throw new Error("Management account is forbidden");
 if (region !== "us-east-1") throw new Error("Region must equal us-east-1");
 if (productionPreview) {
@@ -35,6 +38,7 @@ app.node.setContext(
 const env: cdk.Environment = { account, region };
 const commonProps = {
   env,
+  ...(directDeployment?{synthesizer:directStagingSynthesizer()}:{}),
   terminationProtection: true,
   description: productionPreview ? "TracePoint production OFFLINE PREVIEW - not authorized for deployment" : "TracePoint staging AWS foundation",
   tags: {

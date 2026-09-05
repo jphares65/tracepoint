@@ -18,10 +18,13 @@ jobs:
     env:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
+      TRACEPOINT_DIRECT_STAGING_DEPLOYMENT: 'true'
       CERTIFICATE_ARN: ${{ vars.STAGING_CERTIFICATE_ARN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -45,7 +48,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Infrastructure tests failed' }
           npx tsc --noEmit
           if ($LASTEXITCODE -ne 0) { throw 'TypeScript failed' }
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1

@@ -131,7 +131,7 @@ try {
             $scanExitCode = $LASTEXITCODE
         } finally { $ErrorActionPreference = $scanErrorPreference }
         if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
-        Write-Host "Build and scan completed for $commit; deployment separately rejects HIGH/CRITICAL findings."
+        Write-Host "Build and scan completed for $commit; deployment separately requires zero findings at every severity."
     }
 }
 finally {

@@ -43,8 +43,8 @@ function Assert-CostGate {
     $costModel = Get-Content -LiteralPath (Join-Path $repositoryRoot 'docs/aws-staging-cost-model-20260904.json') -Raw | ConvertFrom-Json
     $monthlyCents = ($costModel.componentsCents.PSObject.Properties.Value | Measure-Object -Sum).Sum
     if ($monthlyCents -gt ($budgetLimit * 100)) { throw 'Projected staging cost exceeds the approved ceiling.' }
-    $budgets = Invoke-AwsJson @('budgets', 'describe-budgets', '--account-id', $account)
-    $budget = @($budgets.Budgets | Where-Object BudgetName -eq $budgetName)
+    $budgets = Invoke-AwsJson @('budgets', 'describe-budget', '--account-id', $account, '--budget-name', $budgetName)
+    $budget = @($budgets.Budget | Where-Object BudgetName -eq $budgetName)
     if ($budget.Count -ne 1 -or [decimal]$budget[0].BudgetLimit.Amount -ne $budgetLimit -or $budget[0].BudgetLimit.Unit -ne 'USD') {
         throw "The existing $budgetLimit USD staging budget gate is not satisfied."
     }
@@ -110,6 +110,7 @@ $digest = Get-ImmutableImage
 Assert-RuntimeSecretConfiguration
 
 $context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '--lookups=false')
+if($env:TRACEPOINT_DIRECT_STAGING_DEPLOYMENT -eq 'true'){$context+=@('-c','directDeployment=true')}
 if ($StorageProvider -eq 's3') {
     $context += @('-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3')
     $bucket = 'tracepoint-staging-private-559054714699'

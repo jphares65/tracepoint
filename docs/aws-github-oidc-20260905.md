@@ -1,0 +1,9 @@
+# GitHub staging OIDC
+
+The staging foundation defines an OIDC issuer and `TracePointMigrationStagingGitHub`, trusting only GitHub's STS audience and `repo:jphares65/tracepoint:environment:aws-staging`. The environment setup tool creates only `aws-staging`, restricts it to `codex/aws-staging-readiness-20260902`, installs two non-secret ARN variables, and refuses to overwrite unrelated branch policies or variables. It uses the existing Git credential manager token in memory; no AWS access keys are installed.
+
+The role cannot assume bootstrap deployment/publishing/lookup roles or write IAM policies. Direct-credential CDK synthesis preserves the existing CloudFormation template and still uses the existing CloudFormation execution role. Permissions scope changesets to the runtime stack, source publication to the existing build bucket/key/project, image reads to the staging repository, runtime rollback to the staging service, and provider/fixture access to the isolated staging secret and storage prefixes. Region/account and structural/image gates still run in the repository scripts.
+
+The full workflow uses immutable action commits for checkout 7.0.1, setup-node 7.0.0 and AWS credential configuration 6.2.4, verified against their official GitHub releases on September 5. Checkout does not persist a GitHub credential. Runtime images continue to use the separate immutable CodeBuild publication and zero-findings scan gate.
+
+Offline tests cover the exact audience/environment subject, management-account denial, absence of role chaining/IAM mutation, and template equivalence for direct credentials. Live GitHub environment setup, issuer/role deployment and a real Actions OIDC session must be recorded before claiming CI/CD execution. The dispatch workflow still needs publication on the default branch before GitHub can dispatch it there; this run does not modify main.
