@@ -15,9 +15,10 @@
     "constructs": "^10.4.2"
   },
   "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "3.1127.0",
     "@types/node": "^20.19.11",
     "aws-cdk": "^2.1029.2",
-    "typescript": "^5.9.2",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
   }
 }

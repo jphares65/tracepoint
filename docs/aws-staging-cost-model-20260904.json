@@ -16,7 +16,8 @@
     "private_storage_requests_versions_logs_allowance": 100,
     "encrypted_alarm_delivery_composite_SNS_SQS_allowance": 200,
     "wafRequestControls": 1000,
-    "disabled_SES_feedback_key_and_low_volume_allowance": 125
+    "disabled_SES_feedback_key_and_low_volume_allowance": 125,
+    "disabled_Cognito_disposable_MAU_allowance": 25
   },
   "actualSpendVerified": true,
   "sources": [
@@ -25,7 +26,8 @@
     "https://aws.amazon.com/vpc/pricing/",
     "https://aws.amazon.com/codebuild/pricing/",
     "https://aws.amazon.com/cloudwatch/pricing/",
-    "https://aws.amazon.com/kms/pricing/"
+    "https://aws.amazon.com/kms/pricing/",
+    "https://aws.amazon.com/cognito/pricing/"
   ],
   "actualSpendEvidence": "aws-cost-evidence-20260905.json"
 }

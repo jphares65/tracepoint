@@ -29,6 +29,6 @@ export class CognitoFoundationStack extends cdk.Stack {
   const domain=pool.addDomain('ManagedDomain',{cognitoDomain:{domainPrefix:'tracepoint-'+props.environmentName+'-'+this.account}});
   new cdk.CfnOutput(this,'UserPoolId',{value:pool.userPoolId});new cdk.CfnOutput(this,'ClientId',{value:client.userPoolClientId});
   new cdk.CfnOutput(this,'ManagedDomain',{value:domain.baseUrl()});
-  new cdk.CfnOutput(this,'ActivationGate',{value:'OFFLINE PREVIEW: callback, PKCE, lifecycle, revocation and RLS compatibility must pass before deployment or activation.'});
+  new cdk.CfnOutput(this,'ActivationGate',{value:'DISABLED: no application provider switch; callback, PKCE, lifecycle, revocation and RLS compatibility must pass before activation.'});
  }
 }
