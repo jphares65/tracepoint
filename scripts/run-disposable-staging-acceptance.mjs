@@ -32,8 +32,12 @@ const admin = createClient(secret.NEXT_PUBLIC_SUPABASE_URL, secret.SUPABASE_SECR
 const service=aws(['ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging']).services[0];
 const task=aws(['ecs','describe-task-definition','--task-definition',service.taskDefinition]).taskDefinition;
 const storageProvider=task.containerDefinitions[0].environment.find(x=>x.name==='TRACEPOINT_STORAGE_PROVIDER')?.value;
-const run = randomUUID();
-const departmentIds = [randomUUID(), randomUUID()];
+const cleanupIndex=process.argv.indexOf('--cleanup-run');
+const cleanupOnly=cleanupIndex!==-1;
+const run = cleanupOnly?process.argv[cleanupIndex+1]:randomUUID();
+assert.match(run,/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+if(cleanupOnly)assert.ok(process.argv.includes('--extended-workflows')&&process.argv.includes('--range-documents'),'Recovery cleanup requires the complete child-table ordering');
+const departmentIds = cleanupOnly?[]:[randomUUID(), randomUUID()];
 const email = 'acceptance-' + run + '@example.invalid';
 const password = randomBytes(36).toString('base64url') + 'Aa1!';
 let userId;
@@ -44,6 +48,24 @@ const createdDepartments = [];
 let result = 1;
 function requireSuccess(value, label) { if (value.error) { console.error(JSON.stringify({step: label, code: value.error.code ?? value.error.status ?? 'unknown'})); throw new Error('Fixture request failed'); } return value.data; }
 try {
+ if(cleanupOnly){
+  // Recover only a known run interrupted by the process host. Verify each auth
+  // identity before adding it to the existing cleanup path; never enumerate users.
+  const departments=requireSuccess(await admin.from('departments').select('id,slug').in('slug',[`acceptance-${run}-0`,`acceptance-${run}-1`]),'Locate interrupted fixture departments');
+  for(const department of departments){
+   const members=requireSuccess(await admin.from('department_memberships').select('user_id').eq('department_id',department.id),'Locate interrupted fixture memberships');
+   for(const member of members){
+    if(extraUsers.includes(member.user_id))continue;
+    const found=requireSuccess(await admin.auth.admin.getUserById(member.user_id),'Verify interrupted fixture identity');
+    assert.ok(['acceptance-','officer-','foreign-'].some(prefix=>found.user.email===prefix+run+'@example.invalid'));
+    const memberships=requireSuccess(await admin.from('department_memberships').select('department_id').eq('user_id',member.user_id),'Verify fixture membership boundary');
+    assert.ok(memberships.every(m=>departments.some(d=>d.id===m.department_id)));
+    extraUsers.push(member.user_id);
+   }
+   createdDepartments.push(department.id);
+  }
+  console.log(JSON.stringify({fixtureRun:run,recoveryCleanup:true,departments:createdDepartments.length,users:extraUsers.length}));result=0;
+ }else{
   const user = requireSuccess(await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: 'Disposable staging acceptance' } }), 'Create disposable user');
   userId = user.user.id;
   requireSuccess(await admin.from('profiles').upsert({ id: userId, full_name: 'Disposable staging acceptance', email }), 'Prepare profile');
@@ -81,6 +103,7 @@ try {
     }
     console.log(JSON.stringify({fixtureRun:run,custodyHistory:'verified',auditCreation:'verified'}));
   }
+ }
 } catch {
   // Avoid SDK request/response details and credentials in logs.
   console.error('Disposable staging setup or execution failed; sensitive details suppressed.');

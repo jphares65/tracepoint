@@ -11,8 +11,16 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Assert-TracePointStagingIdentity | Out-Null
-& node --import tsx (Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs') --execute --fixtures-only
-if ($LASTEXITCODE -ne 0) { throw 'Disposable staging authentication preflight failed.' }
+function Invoke-StagingNodeGate {
+    param([string[]]$Arguments)
+    # Native stderr under Windows PowerShell must not interrupt the child before
+    # its finally block removes disposable fixtures. Gate on its final exit code.
+    $previousPreference=$ErrorActionPreference
+    try { $ErrorActionPreference='Continue'; & node @Arguments; $code=$LASTEXITCODE }
+    finally { $ErrorActionPreference=$previousPreference }
+    if($code -ne 0){throw 'Staging Node gate failed after child cleanup completed.'}
+}
+Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--fixtures-only')
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A previous task revision is required for automatic rollback.' }
 & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
@@ -21,10 +29,8 @@ try {
     & aws.exe ecs wait services-stable --cluster tracepoint-staging --services tracepoint-staging --region us-east-1
     if ($LASTEXITCODE -ne 0) { throw 'ECS failed to stabilize.' }
     & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 900
-    & node --import tsx (Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs') --execute --range-documents --extended-workflows
-    if ($LASTEXITCODE -ne 0) { throw 'Implemented acceptance scenarios failed; release is not accepted.' }
-    & node (Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs') --image $ImageTag
-    if ($LASTEXITCODE -ne 0) { throw 'Release image, alarms, logs or public gates failed.' }
+    Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--range-documents','--extended-workflows')
+    Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs'),'--image',$ImageTag)
 } catch {
     $failure = $_
     $current = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text

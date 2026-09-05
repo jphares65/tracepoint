@@ -21,7 +21,8 @@ export async function exerciseAuthRecovery({admin,url,publicKey,email,userId,bro
    await page.locator('input[name="password"]').fill(replacement);await page.locator('input[name="confirmPassword"]').fill(replacement);
    stage='submit password form';await page.getByRole('button',{name:'Save password and continue'}).click();await page.waitForURL(u=>u.pathname==='/equipment');
    stage='verify authenticated identity';const access=await context.request.get('/api/access');assert.equal(access.status(),200);assert.equal((await access.json()).access.userId,userId);
-   await context.request.post('/auth/signout');
+   stage='verify logout redirect';const logout=await context.request.post('/auth/signout',{maxRedirects:0});assert.equal(logout.status(),303);const logoutTarget=new URL(logout.headers().location,baseURL);assert.equal(logoutTarget.origin,baseURL);assert.equal(logoutTarget.pathname,'/login');
+   stage='verify logged-out access';assert.equal((await context.request.get('/api/access',{maxRedirects:0})).status(),401);
   } catch(error){console.log(JSON.stringify({browserRecoveryStep:stage,networkCode:error?.message?.match(/net::[A-Z_]+/)?.[0],errorName:error?.name,errorClass:error?.name==='TimeoutError'?'BROWSER_TIMEOUT':error?.code==='ERR_ASSERTION'?'ASSERTION':'BROWSER_FAILURE'}));throw new Error('Browser recovery failed; sensitive details suppressed');} finally {await browser.close();}
  } else {
   const verified=await recovery.auth.verifyOtp({type:'recovery',token_hash:hash});assert.equal(Boolean(verified.error),false);assert.equal(verified.data.user?.id,userId);

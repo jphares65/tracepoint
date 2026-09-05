@@ -147,13 +147,13 @@ else try {
   if(process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled')await exerciseRangeDocuments({context,browser,baseURL,department,check});
   if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await exerciseExtendedWorkflows({context,browser,baseURL,check});
   await check('logout',async()=>{
-    await context.request.post('/auth/signout',{maxRedirects:0});
+    const logout=await context.request.post('/auth/signout',{maxRedirects:0});assert.equal(logout.status(),303);assert.equal(new URL(logout.headers().location,baseURL).origin,baseURL);
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));
     assert.equal(new URL(r.headers().location,baseURL).pathname,'/login');
   });
 } catch {results.push({name:'authenticated setup',status:'fail',reason:'Login or tenant precondition failed; sensitive details suppressed'});}
 finally {await browser?.close();}
-results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled'?'Some lifecycle scenarios remain uncovered; extended off-duty, fleet, training and exports are reported separately when enabled.':'Drill protections, off-duty approvals, actual exports and file transfer still need scenario coverage.'});
+results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled'?'Email invitation link delivery and replacement-provider MFA/session cutover remain separate gates. Browser password recovery and fixture cleanup are verified by the parent harness.':'Run the parent harness with --range-documents --extended-workflows for drill/document, off-duty, fleet, training, exports and password-recovery coverage.'});
 console.log(JSON.stringify({target:baseURL,results},null,2));
 const smoke = process.argv.includes('--smoke');
 process.exitCode=results.some(r=>r.status==='fail')?1:smoke && email && password && department?0:results.some(r=>r.status==='blocked')?2:0;
