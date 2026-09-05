@@ -51,3 +51,9 @@ test("production hosting keeps production providers and rejects staging credenti
  assert.throws(() => validateTracePointRuntimeConfig({...production,NEXT_PUBLIC_SUPABASE_URL:valid.NEXT_PUBLIC_SUPABASE_URL}), /NEXT_PUBLIC_SUPABASE_URL/);
  assert.throws(() => validateTracePointRuntimeConfig({...valid,CONFIGURATION_ENVIRONMENT:undefined}), /CONFIGURATION_ENVIRONMENT/);
 });
+
+test('S3 startup requires exact private staging bucket, account and region',()=>{
+ const storage={...valid,TRACEPOINT_STORAGE_PROVIDER:'s3',TRACEPOINT_S3_EXPECTED_OWNER:'559054714699',TRACEPOINT_S3_BUCKET:'tracepoint-staging-private-559054714699',AWS_REGION:'us-east-1'};
+ assert.doesNotThrow(()=>validateTracePointRuntimeConfig(storage));
+ for(const override of [{TRACEPOINT_S3_BUCKET:'other'},{TRACEPOINT_S3_EXPECTED_OWNER:'265544358665'},{AWS_REGION:'us-west-2'},{TRACEPOINT_S3_EXPECTED_OWNER:undefined}])assert.throws(()=>validateTracePointRuntimeConfig({...storage,...override}));
+});

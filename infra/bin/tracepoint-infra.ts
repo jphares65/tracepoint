@@ -116,12 +116,13 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
-    storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
+    storageBucketName: storageProvider === "s3" ? `tracepoint-${workloadEnvironment}-private-${account}` : undefined,
     emailFromAddress: app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,
     deletionProtection: productionPreview,
   });
+  if(storage && storageProvider === "s3") runtime.addStackDependency(storage);
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);
 }

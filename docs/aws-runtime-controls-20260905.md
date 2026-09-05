@@ -7,3 +7,5 @@ A single application email-provider submission used the live revision 9 sender c
 The controlled rollback reached retained ACTIVE revision 8 and passed settled ECS 1/1/0, ALB healthy, login, health and protected-route checks. Return to revision 9 is being verified separately. Both revisions use the corrected image; revision 8 temporarily lacks the sender setting.
 
 The ECS CLI waiter can return before rollout completion or target deregistration. The runtime verifier now accepts an explicit bounded wait while retaining exactly-one-task, completed-rollout and exactly-one-healthy-target requirements. Rollback uses this wait automatically.
+
+Return to revision 9 completed with ECS 1/1/0, completed rollout, one healthy ALB target and all ten public smoke checks passing. Measured controlled rollback to settled health: 515.493 seconds. Return to settled health: 418.8 seconds. These include target deregistration and observed monitoring overhead. Staging is left on revision 9 and corrected image 7635a07.

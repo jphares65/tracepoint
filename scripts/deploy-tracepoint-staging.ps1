@@ -3,7 +3,8 @@ param(
     [ValidateSet('Verify', 'DeployRuntime')][string]$Action = 'Verify',
     [string]$ImageTag,
     [string]$CertificateArn,
-    [switch]$IncludeReviewedRuntimeControls
+    [switch]$IncludeReviewedRuntimeControls,
+    [ValidateSet('supabase','s3')][string]$StorageProvider = 'supabase'
 )
 
 Set-StrictMode -Version Latest
@@ -79,6 +80,15 @@ function Assert-RuntimeSecretConfiguration {
         }
         $secret | ConvertTo-Json -Compress | & node (Join-Path $PSScriptRoot 'validate-staging-provider-config.mjs')
         if ($LASTEXITCODE -ne 0) { throw 'Staging provider credentials failed validation; deployment is blocked.' }
+        if ($StorageProvider -eq 's3') {
+            $currentService=Invoke-AwsJson @('ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging')
+            $currentTask=Invoke-AwsJson @('ecs','describe-task-definition','--task-definition',$currentService.services[0].taskDefinition)
+            $currentProvider=@($currentTask.taskDefinition.containerDefinitions[0].environment | Where-Object name -eq 'TRACEPOINT_STORAGE_PROVIDER')[0].value
+            if ($currentProvider -ne 's3') {
+                $secret | ConvertTo-Json -Compress | & node (Join-Path $PSScriptRoot 'validate-staging-storage-activation.mjs')
+                if ($LASTEXITCODE -ne 0) { throw 'Storage activation requires an empty staging source or a separately reviewed data migration.' }
+            }
+        }
     }
     finally { $secretText = $null; $secret = $null }
 }
@@ -100,6 +110,16 @@ $digest = Get-ImmutableImage
 Assert-RuntimeSecretConfiguration
 
 $context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '--lookups=false')
+if ($StorageProvider -eq 's3') {
+    $context += @('-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3')
+    $bucket = 'tracepoint-staging-private-559054714699'
+    $block = Invoke-AwsJson @('s3api','get-public-access-block','--bucket',$bucket,'--expected-bucket-owner',$account)
+    if (@($block.PublicAccessBlockConfiguration.PSObject.Properties.Value | Where-Object { $_ -ne $true }).Count -ne 0 -or @($block.PublicAccessBlockConfiguration.PSObject.Properties).Count -ne 4) { throw 'Private storage public-access gate failed.' }
+    $versioning = Invoke-AwsJson @('s3api','get-bucket-versioning','--bucket',$bucket,'--expected-bucket-owner',$account)
+    if ($versioning.Status -ne 'Enabled') { throw 'Private storage versioning gate failed.' }
+    $encryption = Invoke-AwsJson @('s3api','get-bucket-encryption','--bucket',$bucket,'--expected-bucket-owner',$account)
+    if ($encryption.ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.SSEAlgorithm -ne 'AES256') { throw 'Private storage encryption gate failed.' }
+}
 $validationRoot = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-runtime-review-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $validationRoot | Out-Null
 $oldTemplatePath = Join-Path $validationRoot 'previous.json'
@@ -117,6 +137,7 @@ try {
 } finally { $ErrorActionPreference = $synthErrorPreference; Pop-Location }
 $structuralOptions = @()
 if ($IncludeReviewedRuntimeControls) { $structuralOptions += '--allow-reviewed-runtime-controls' }
+if ($StorageProvider -eq 's3') { $structuralOptions += '--allow-reviewed-private-storage' }
 & node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag @structuralOptions
 if ($LASTEXITCODE -ne 0) { throw 'Runtime template changes exceed the reviewed image/alarms scope.' }
 

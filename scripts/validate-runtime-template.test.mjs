@@ -20,3 +20,10 @@ test('reviewed control gate admits only verified sender addition and retention',
   const bad=structuredClone(t);mutate(bad);assert.throws(()=>validateRuntimeTemplate(old,bad,commit,{allowReviewedControls:true}));
  }
 });
+
+test('private storage activation requires exact account bucket region and no unrelated changes',()=>{
+ const before=structuredClone(old);before.Resources.Task.Properties.ContainerDefinitions[0].Environment=[{Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'supabase'}];
+ const after=updated();after.Resources.Task.Properties.ContainerDefinitions[0].Environment=[{Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'s3'},{Name:'AWS_REGION',Value:'us-east-1'},{Name:'TRACEPOINT_S3_BUCKET',Value:'tracepoint-staging-private-559054714699'},{Name:'TRACEPOINT_S3_EXPECTED_OWNER',Value:'559054714699'}];
+ assert.throws(()=>validateRuntimeTemplate(before,after,commit));assert.equal(validateRuntimeTemplate(before,after,commit,{allowPrivateStorage:true}).safe,true);
+ for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment[2].Value='other-bucket',t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'AWS_REGION',Value:'us-west-2'}),t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[],t=>t.Resources.Service.Properties.DesiredCount=2]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,commit,{allowPrivateStorage:true}));}
+});
