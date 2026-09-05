@@ -52,7 +52,7 @@ async function main(){
   const taskDeadline=Date.now()+15*60000;let exitCode;
   for(;;){const state=await aws(['ecs','describe-tasks','--cluster',outputs.Cluster,'--tasks',task]);assert.equal(state.failures.length,0);if(state.tasks[0].lastStatus==='STOPPED'){exitCode=state.tasks[0].containers[0].exitCode;break;}if(Date.now()>taskDeadline)throw Error('Disposable runner timed out');await pause();}
   const logs=await aws(['logs','filter-log-events','--log-group-name',outputs.RunnerLogGroup]);
-  const results=logs.events.flatMap(e=>{try{return[JSON.parse(e.message)];}catch{return[];}});const proof=results.find(r=>r.rehearsal==='PASSED'&&r.run===run);evidence.runnerExitCode=exitCode;evidence.failureCodes=results.filter(r=>r.rehearsal==='FAILED'||r.failedMigration).map(r=>({sqlState:r.sqlState,failedMigration:r.failedMigration,errorName:r.errorName}));assert.equal(exitCode,0);assert.ok(proof,'Runner aggregate proof missing');evidence.result=proof;passed=true;
+  const results=logs.events.flatMap(e=>{try{return[JSON.parse(e.message)];}catch{return[];}});const proof=results.find(r=>r.rehearsal==='PASSED'&&r.run===run);evidence.runnerExitCode=exitCode;evidence.failureCodes=results.filter(r=>r.rehearsal==='FAILED'||r.failedMigration||r.reconciliationDifferences).map(r=>({phase:r.phase,sqlState:r.sqlState,failedMigration:r.failedMigration,errorName:r.errorName,reconciliationDifferences:r.reconciliationDifferences,metadataDifferences:r.metadataDifferences}));console.log(JSON.stringify({run,runnerExitCode:exitCode,failureCodes:evidence.failureCodes}));assert.equal(exitCode,0);assert.ok(proof,'Runner aggregate proof missing');evidence.result=proof;passed=true;
  }finally{
   if(created){
    await identity();await stack();
