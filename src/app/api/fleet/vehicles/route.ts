@@ -40,11 +40,18 @@ const VEHICLE_SELECT = [
   "status",
   "inspection_due_date",
   "registration_expiration_date",
+  "insurance_expiration_date",
+  "in_service_date",
   "last_service_date",
+  "last_service_mileage",
+  "last_service_hours",
   "next_service_date",
   "next_service_mileage",
+  "next_service_hours",
   "open_issue_count",
+  "comments",
   "notes",
+  "retired_at",
   "updated_by_user_id",
   "created_at",
   "updated_at",
@@ -165,10 +172,18 @@ export async function POST(request: NextRequest) {
     status: normalizeStatus(body.status),
     inspection_due_date: nullableDate(body.inspectionDueDate),
     registration_expiration_date: nullableDate(body.registrationExpirationDate),
+    insurance_expiration_date: nullableDate(body.insuranceExpirationDate),
+    in_service_date: nullableDate(body.inServiceDate),
     last_service_date: nullableDate(body.lastServiceDate),
+    last_service_mileage: optionalInteger(body.lastServiceMileage, 0, 10_000_000),
+    last_service_hours: body.lastServiceHours === null || body.lastServiceHours === undefined || body.lastServiceHours === ""
+      ? null : Math.max(0, Number(body.lastServiceHours) || 0),
     next_service_date: nullableDate(body.nextServiceDate),
     next_service_mileage: optionalInteger(body.nextServiceMileage, 0, 10_000_000),
+    next_service_hours: body.nextServiceHours === null || body.nextServiceHours === undefined || body.nextServiceHours === ""
+      ? null : Math.max(0, Number(body.nextServiceHours) || 0),
     open_issue_count: requiredInteger(body.openIssueCount, 0, 10_000),
+    comments: nullableText(body.comments, 5000),
     notes: nullableText(body.notes, 5000),
     created_by_user_id: resolved.user.id,
     updated_by_user_id: resolved.user.id,
@@ -256,38 +271,106 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
   }
 
-  const nextStatus = normalizeStatus(body.status);
-  if (existing.status === nextStatus) {
-    return NextResponse.json({ ok: true, unchanged: true, item: existing });
+  const unitNumber = body.unitNumber === undefined
+    ? existing.unit_number
+    : clean(body.unitNumber, 50);
+  if (!unitNumber) {
+    return NextResponse.json({ error: "Unit number is required." }, { status: 400 });
   }
 
+  const vin = body.vin === undefined
+    ? existing.vin
+    : nullableText(body.vin, 17)?.toUpperCase() ?? null;
+  if (vin && vin.length !== 17) {
+    return NextResponse.json(
+      { error: "VIN must contain exactly 17 characters when provided." },
+      { status: 400 },
+    );
+  }
+
+  const nextStatus = body.status === undefined
+    ? existing.status as FleetStatus
+    : normalizeStatus(body.status);
   const updatedAt = new Date().toISOString();
+  const value = (input: string, column: string) =>
+    body[input] === undefined ? existing[column] : body[input];
+  const nullableHours = (input: string, column: string) => {
+    const next = value(input, column);
+    return next === null || next === undefined || next === ""
+      ? null
+      : Math.max(0, Number(next) || 0);
+  };
+  const update = {
+    unit_number: unitNumber,
+    vin,
+    license_plate: body.licensePlate === undefined
+      ? existing.license_plate
+      : nullableText(body.licensePlate, 30)?.toUpperCase() ?? null,
+    year: optionalInteger(value("year", "year"), 1900, 2200),
+    make: nullableText(value("make", "make"), 100),
+    model: nullableText(value("model", "model"), 150),
+    vehicle_type: nullableText(value("vehicleType", "vehicle_type"), 100),
+    assignment_type: body.assignmentType === undefined
+      ? existing.assignment_type
+      : normalizeAssignment(body.assignmentType),
+    assigned_to: nullableText(value("assignedTo", "assigned_to"), 200),
+    home_location: nullableText(value("homeLocation", "home_location"), 200),
+    current_mileage: requiredInteger(value("currentMileage", "current_mileage"), 0, 10_000_000),
+    current_hours: Math.max(0, Number(value("currentHours", "current_hours")) || 0),
+    status: nextStatus,
+    status_reason: nextStatus === existing.status ? existing.status_reason : reason,
+    status_override_active: nextStatus === existing.status ? existing.status_override_active : true,
+    inspection_due_date: nullableDate(value("inspectionDueDate", "inspection_due_date")),
+    registration_expiration_date: nullableDate(value("registrationExpirationDate", "registration_expiration_date")),
+    insurance_expiration_date: nullableDate(value("insuranceExpirationDate", "insurance_expiration_date")),
+    in_service_date: nullableDate(value("inServiceDate", "in_service_date")),
+    last_service_date: nullableDate(value("lastServiceDate", "last_service_date")),
+    last_service_mileage: optionalInteger(value("lastServiceMileage", "last_service_mileage"), 0, 10_000_000),
+    last_service_hours: nullableHours("lastServiceHours", "last_service_hours"),
+    next_service_date: nullableDate(value("nextServiceDate", "next_service_date")),
+    next_service_mileage: optionalInteger(value("nextServiceMileage", "next_service_mileage"), 0, 10_000_000),
+    next_service_hours: nullableHours("nextServiceHours", "next_service_hours"),
+    open_issue_count: requiredInteger(value("openIssueCount", "open_issue_count"), 0, 10_000),
+    comments: nullableText(value("comments", "comments"), 5000),
+    notes: nullableText(value("notes", "notes"), 5000),
+    retired_at: nextStatus === "Retired" ? existing.retired_at ?? updatedAt : null,
+    updated_by_user_id: resolved.user.id,
+    updated_at: updatedAt,
+  };
+
+  const unchanged = Object.entries(update).every(([column, next]) =>
+    ["updated_by_user_id", "updated_at"].includes(column) || existing[column] === next,
+  );
+  if (unchanged) return NextResponse.json({ ok: true, unchanged: true, item: existing });
+
   const { data, error } = await resolved.admin
     .from("fleet_vehicles")
-    .update({
-      status: nextStatus,
-      updated_by_user_id: resolved.user.id,
-      updated_at: updatedAt,
-    })
+    .update(update)
     .eq("department_id", resolved.departmentId)
     .eq("id", id)
     .select(VEHICLE_SELECT)
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const duplicate = error.code === "23505";
+    return NextResponse.json(
+      { error: duplicate
+        ? "A vehicle with that unit number, VIN, or license plate already exists for this agency."
+        : "The vehicle could not be updated." },
+      { status: duplicate ? 409 : 500 },
+    );
   }
 
   const { error: auditError } = await resolved.admin.from("audit_events").insert({
     department_id: resolved.departmentId,
     actor_user_id: resolved.user.id,
-    action: "fleet_vehicle_status_updated",
+    action: "fleet_vehicle_updated",
     entity_type: "fleet_vehicle",
     entity_id: id,
     details: {
       reason,
-      previous: { status: existing.status },
-      current: { status: nextStatus },
+      previous: existing,
+      current: data,
       support_mode: resolved.isSupportMode,
     },
   });
@@ -295,15 +378,11 @@ export async function PATCH(request: NextRequest) {
   if (auditError) {
     await resolved.admin
       .from("fleet_vehicles")
-      .update({
-        status: existing.status,
-        updated_by_user_id: existing.updated_by_user_id ?? null,
-        updated_at: existing.updated_at,
-      })
+      .update(existing)
       .eq("department_id", resolved.departmentId)
       .eq("id", id);
     return NextResponse.json(
-      { error: "The audit record could not be created, so the prior status was restored." },
+      { error: "The audit record could not be created, so the prior vehicle details were restored." },
       { status: 500 },
     );
   }

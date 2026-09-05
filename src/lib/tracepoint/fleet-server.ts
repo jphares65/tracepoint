@@ -36,12 +36,13 @@ export function canConfigureFleet(context: any) {
   );
 }
 
-export function canManageFleet(context: any, rules?: any) {
+export function canManageFleet(context: any, rules?: unknown) {
+  void rules;
   const permissions = Array.isArray(context?.permissions) ? context.permissions : [];
   return Boolean(
-    canConfigureFleet(context) ||
-      permissions.includes("manage_fleet") ||
-      hasAnyRole(context, rules?.fleet_manager_role_codes, ["fleet_manager"])
+    context?.isSuperAdmin ||
+      permissions.includes("administer_department") ||
+      permissions.includes("manage_fleet")
   );
 }
 

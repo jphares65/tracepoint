@@ -458,6 +458,18 @@ async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWork
 
 let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
+async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+  const response = await fetch("/api/pilot/range-workspace", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "The range workspace could not be saved.");
+  }
+}
+
 function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   if (typeof window === "undefined") return;
 
@@ -466,13 +478,7 @@ function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 
   remoteWorkspaceSyncTimer = setTimeout(() => {
-    fetch("/api/pilot/range-workspace", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ workspace }),
-    }).catch((error) => {
+    saveRemoteRangeDayWorkspace(workspace).catch((error) => {
       console.warn("Could not save range day workspace.", error);
     });
   }, 650);
@@ -1798,6 +1804,7 @@ export default function RangeDaysPage() {
   const [saveMessage, setSaveMessage] = useState("");
   const [removingDrillId, setRemovingDrillId] = useState("");
   const [canManageRangeDays, setCanManageRangeDays] = useState(false);
+  const [canScoreRangeDays, setCanScoreRangeDays] = useState(false);
   const [rangeDaySearchQuery, setRangeDaySearchQuery] = useState("");
   const [rangeDayStatusFilter, setRangeDayStatusFilter] =
     useState<RangeDayStatusFilter>("All Active");
@@ -1879,6 +1886,7 @@ export default function RangeDaysPage() {
         const payload = (await response.json()) as {
           qualificationStandards?: QualificationStandardReference[];
           canManage?: boolean;
+          canScore?: boolean;
         };
 
         if (!cancelled) {
@@ -1886,6 +1894,7 @@ export default function RangeDaysPage() {
             payload.qualificationStandards ?? [],
           );
           setCanManageRangeDays(payload.canManage === true);
+          setCanScoreRangeDays(payload.canScore === true);
         }
       } catch (error) {
         console.warn(
@@ -1916,6 +1925,11 @@ export default function RangeDaysPage() {
   const selectedRangeDay = selectedRangeDayId
     ? rangeDays.find((item) => item.id === selectedRangeDayId) ?? null
     : null;
+  const selectedRangeDayFinalized = Boolean(selectedRangeDay && (
+    ["Completed", "Locked", "Archived"].includes(selectedRangeDay.status) ||
+    selectedRangeDay.packetStatus === "Ready"
+  ));
+  const canEditSelectedRangeDay = canManageRangeDays && !selectedRangeDayFinalized;
 
   const selectedRoster = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -2382,7 +2396,9 @@ export default function RangeDaysPage() {
     };
 
     writeStoredRangeDayWorkspace(workspace);
-    writeRemoteRangeDayWorkspace(workspace);
+    if (canManageRangeDays || canScoreRangeDays) {
+      writeRemoteRangeDayWorkspace(workspace);
+    }
   }, [
     drillLibrary,
     hasLoadedStoredWorkspace,
@@ -2391,6 +2407,8 @@ export default function RangeDaysPage() {
     rangeDays,
     rangeRoster,
     results,
+    canManageRangeDays,
+    canScoreRangeDays,
   ]);
 
   useEffect(() => {
@@ -2554,6 +2572,7 @@ export default function RangeDaysPage() {
   }
 
   function handleEditDrillTemplate(template: ExtendedDrillTemplate) {
+    if (!canManageRangeDays) return;
     const scoringFormat = getScoringFormat(template);
 
     setEditingDrillTemplateId(template.id);
@@ -2620,6 +2639,19 @@ export default function RangeDaysPage() {
     });
   }
 
+  function handleArchiveDrillTemplate(template: ExtendedDrillTemplate) {
+    if (!canManageRangeDays) return;
+    const nextStatus = template.status === "Archived" ? "Active" : "Archived";
+    setDrillLibrary((current) => current.map((item) =>
+      item.id === template.id
+        ? { ...item, status: nextStatus, updatedAt: new Date().toISOString() }
+        : item,
+    ));
+    setSaveMessage(nextStatus === "Archived"
+      ? `${template.name} archived. Existing range-day copies and results were preserved.`
+      : `${template.name} restored to the drill library.`);
+  }
+
   function openRangeDay(rangeDayId: string) {
     const firstRoster = rangeRoster.find(
       (entry) => entry.rangeDayId === rangeDayId,
@@ -2647,6 +2679,7 @@ export default function RangeDaysPage() {
   }
 
   function handleCreateRangeDay() {
+    if (!canManageRangeDays) return;
     if (!departmentId) {
       setSaveMessage("Department context could not be loaded.");
       return;
@@ -2690,7 +2723,7 @@ export default function RangeDaysPage() {
     key: Key,
     value: PlannedRangeDay[Key],
   ) {
-    if (!selectedRangeDay) return;
+    if (!selectedRangeDay || !canEditSelectedRangeDay) return;
 
     setRangeDays((current) =>
       current.map((rangeDay) =>
@@ -2784,6 +2817,9 @@ export default function RangeDaysPage() {
     rangeDayId: string,
     nextStatus: PlannedRangeDay["status"],
   ) {
+    if (!canManageRangeDays) return;
+    const currentDay = rangeDays.find((item) => item.id === rangeDayId);
+    if (currentDay && (["Completed", "Locked", "Archived"].includes(currentDay.status) || currentDay.packetStatus === "Ready")) return;
     setRangeDays((current) =>
       current.map((rangeDay) =>
         rangeDay.id === rangeDayId
@@ -2796,17 +2832,29 @@ export default function RangeDaysPage() {
     );
   }
 
-  function handleSaveRangeDayWorkspace() {
-    writeStoredRangeDayWorkspace({
+  async function handleSaveRangeDayWorkspace() {
+    if (!canManageRangeDays && !canScoreRangeDays) {
+      setSaveMessage("You do not have permission to update range records.");
+      return;
+    }
+    const workspace = {
       rangeDays,
       drillLibrary,
       rangeDayDrills,
       rangeRoster,
       results,
       malfunctions,
-    });
+    };
+    writeStoredRangeDayWorkspace(workspace);
 
-    setSaveMessage("Saved");
+    setSaveMessage("Saving...");
+    try {
+      await saveRemoteRangeDayWorkspace(workspace);
+      setSaveMessage("Saved");
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "The range workspace could not be saved.");
+      return;
+    }
 
     if (typeof window !== "undefined") {
       window.setTimeout(() => setSaveMessage(""), 2000);
@@ -2814,7 +2862,7 @@ export default function RangeDaysPage() {
   }
 
   function handleSetLeadInstructor(userId: string) {
-    if (!selectedRangeDay || !userId) return;
+    if (!selectedRangeDay || !userId || !canEditSelectedRangeDay) return;
 
     const currentInstructorIds = selectedRangeDay.instructorIds ?? [];
 
@@ -2836,6 +2884,7 @@ export default function RangeDaysPage() {
   }
 
   function handleAddInstructorToRangeDay() {
+    if (!canEditSelectedRangeDay) return;
     if (!selectedRangeDay || !newInstructorUserId) return;
 
     const currentInstructorIds = selectedRangeDay.instructorIds ?? [];
@@ -2855,6 +2904,7 @@ export default function RangeDaysPage() {
   }
 
   function handleRemoveInstructorFromRangeDay(userId: string) {
+    if (!canEditSelectedRangeDay) return;
     if (!selectedRangeDay) return;
 
     const remainingInstructorIds = (selectedRangeDay.instructorIds ?? []).filter(
@@ -2886,6 +2936,7 @@ export default function RangeDaysPage() {
   }
 
   function handleAddOfficerToRoster() {
+    if (!canEditSelectedRangeDay) return;
     if (!selectedRangeDay || !newRosterOfficerId) return;
 
     const alreadyRostered = selectedRoster.some(
@@ -2908,6 +2959,7 @@ export default function RangeDaysPage() {
   }
 
   function handleRemoveOfficerFromRoster(rosterEntryId: string) {
+    if (!canEditSelectedRangeDay) return;
     const entryToRemove = rangeRoster.find((entry) => entry.id === rosterEntryId);
 
     setRangeRoster((current) =>
@@ -2937,6 +2989,7 @@ export default function RangeDaysPage() {
   }
 
   function handleToggleRosterAttendance(rosterEntryId: string) {
+    if (!canEditSelectedRangeDay) return;
     setRangeRoster((current) =>
       current.map((entry) =>
         entry.id === rosterEntryId
@@ -2953,6 +3006,7 @@ export default function RangeDaysPage() {
     rosterEntryId: string,
     firearmId: string,
   ) {
+    if (!canEditSelectedRangeDay) return;
     setRangeRoster((current) =>
       current.map((entry) => {
         if (entry.id !== rosterEntryId) return entry;
@@ -3314,6 +3368,7 @@ export default function RangeDaysPage() {
   }
 
   function handleCreateDrillTemplate() {
+    if (!canManageRangeDays) return;
     if (!newDrillName.trim()) return;
 
     const isQualification =
@@ -3532,7 +3587,7 @@ export default function RangeDaysPage() {
   }
 
   function handleAddTemplateToSelectedRangeDay(templateId: string) {
-    if (!selectedRangeDay) return;
+    if (!selectedRangeDay || !canEditSelectedRangeDay) return;
 
     const copiedDrill = addLibraryDrillToRangeDay(
       {
@@ -3582,7 +3637,7 @@ export default function RangeDaysPage() {
   }
 
   async function handleRemoveDrillFromSelectedRangeDay(drill: ExtendedRangeDayDrill) {
-    if (!selectedRangeDay || !canManageRangeDays || removingDrillId) return;
+    if (!selectedRangeDay || !canEditSelectedRangeDay || removingDrillId) return;
     if (!window.confirm(`Remove ${drill.name} from this range day? This cannot be undone.`)) return;
 
     setRemovingDrillId(drill.id);
@@ -3645,14 +3700,14 @@ export default function RangeDaysPage() {
                 </p>
               </div>
 
-              <button
+              {canManageRangeDays ? <button
                 type="button"
                 onClick={handleCreateRangeDay}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
               >
                 <Plus size={14} />
                 New Range Day
-              </button>
+              </button> : null}
             </div>
           </header>
 
@@ -3822,7 +3877,7 @@ export default function RangeDaysPage() {
                     </div>
 
                     <div className="flex flex-col items-end gap-2">
-                      <button
+                      {canManageRangeDays && !["Completed", "Locked", "Archived"].includes(rangeDay.status) && rangeDay.packetStatus !== "Ready" ? <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -3838,7 +3893,7 @@ export default function RangeDaysPage() {
                         }`}
                       >
                         {rangeDay.status === "Archived" ? "Restore" : "Archive"}
-                      </button>
+                      </button> : null}
 
                       <ChevronRight
                         size={18}
@@ -4248,8 +4303,9 @@ export default function RangeDaysPage() {
 
               <button
                 type="button"
-                onClick={handleSaveRangeDayWorkspace}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                onClick={() => void handleSaveRangeDayWorkspace()}
+                disabled={(!canManageRangeDays && !canScoreRangeDays) || selectedRangeDayFinalized}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Save size={14} />
                 {saveMessage || "Save Range Day"}
@@ -4320,7 +4376,7 @@ export default function RangeDaysPage() {
           </div>
 
           {activeRangeDayTab === "overview" && (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)]">
+            <div aria-disabled={!canEditSelectedRangeDay} className={`grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
@@ -4778,7 +4834,7 @@ export default function RangeDaysPage() {
           )}
 
           {activeRangeDayTab === "roster" && (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+            <div aria-disabled={!canEditSelectedRangeDay} className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-[17px] font-bold text-white">
@@ -5016,7 +5072,7 @@ export default function RangeDaysPage() {
                           </div>
                         </button>
                         {drill.sourceTemplateId ? <div className="mt-3"><DrillDocuments drillTemplateId={drill.sourceTemplateId} compact /></div> : null}
-                        {canManageRangeDays ? (
+                        {canEditSelectedRangeDay ? (
                           <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
                             <button
                               type="button"
@@ -5710,7 +5766,7 @@ export default function RangeDaysPage() {
                           </div>
                         ) : null}
 
-                        <div className="mt-4 grid grid-cols-2 gap-2">
+                        <div className="mt-4 grid grid-cols-3 gap-2">
                           <button
                             type="button"
                             onClick={() => handleEditDrillTemplate(template)}
@@ -5720,12 +5776,19 @@ export default function RangeDaysPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={template.status !== "Active"}
+                            onClick={() => handleArchiveDrillTemplate(template)}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-300"
+                          >
+                            {template.status === "Archived" ? "Restore" : "Archive"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={template.status !== "Active" || !canEditSelectedRangeDay}
                             onClick={() =>
                               handleAddTemplateToSelectedRangeDay(template.id)
                             }
                             className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
-                              template.status === "Active"
+                              template.status === "Active" && canEditSelectedRangeDay
                                 ? "bg-blue-600 text-white hover:bg-blue-500"
                                 : "cursor-not-allowed bg-slate-800 text-slate-600"
                             }`}
@@ -5744,7 +5807,7 @@ export default function RangeDaysPage() {
           )}
 
           {activeRangeDayTab === "equipment" && (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+            <div aria-disabled={!canEditSelectedRangeDay} className={`grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
@@ -5845,7 +5908,7 @@ export default function RangeDaysPage() {
           )}
 
           {activeRangeDayTab === "scoring" && (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+            <div aria-disabled={!canScoreRangeDays || selectedRangeDayFinalized} className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canScoreRangeDays || selectedRangeDayFinalized ? "pointer-events-none opacity-70" : ""}`}>
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-[17px] font-bold text-white">
@@ -6871,7 +6934,7 @@ export default function RangeDaysPage() {
 
 
           {activeRangeDayTab === "aar" && (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+            <div aria-disabled={!canEditSelectedRangeDay} className={`grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
                 <div className="mb-4">
                   <h2 className="text-[17px] font-bold text-white">

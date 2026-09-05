@@ -10,6 +10,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -75,6 +76,7 @@ export async function GET() {
     return NextResponse.json({
       departmentId,
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
+      canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
       workspace: data.workspace,
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
@@ -122,6 +124,27 @@ export async function PUT(request: NextRequest) {
   const workspace = normalizeWorkspace(body.workspace);
 
   try {
+    const existingResult = await admin.from("pilot_range_workspaces")
+      .select("workspace")
+      .eq("department_id", departmentId)
+      .maybeSingle();
+    if (existingResult.error) {
+      throw new Error("The current range workspace could not be loaded.");
+    }
+
+    const decision = authorizeRangeWorkspaceMutation({
+      existingWorkspace: existingResult.data?.workspace ?? {},
+      nextWorkspace: workspace,
+      departmentId,
+      permissions: resolved.context.permissions,
+    });
+    if (!decision.ok) {
+      return NextResponse.json(
+        { error: decision.error },
+        { status: decision.status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     const { error } = await admin.from("pilot_range_workspaces").upsert(
       {
         department_id: departmentId,
@@ -135,7 +158,7 @@ export async function PUT(request: NextRequest) {
     );
 
     if (error) {
-      throw new Error(error.message);
+      throw new Error("The range workspace could not be saved.");
     }
 
     return NextResponse.json({
