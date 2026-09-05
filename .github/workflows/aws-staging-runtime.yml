@@ -1,0 +1,61 @@
+﻿name: AWS staging runtime release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tracepoint-staging-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    environment: aws-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TRACEPOINT_ACCEPTANCE_EMAIL: ${{ secrets.STAGING_ACCEPTANCE_EMAIL }}
+      TRACEPOINT_ACCEPTANCE_PASSWORD: ${{ secrets.STAGING_ACCEPTANCE_PASSWORD }}
+      TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: ${{ vars.STAGING_ACCEPTANCE_DEPARTMENT_ID }}
+      CERTIFICATE_ARN: ${{ vars.STAGING_CERTIFICATE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Validate release inputs before any AWS mutation
+        shell: pwsh
+        run: |
+          foreach ($name in @('TRACEPOINT_ACCEPTANCE_EMAIL','TRACEPOINT_ACCEPTANCE_PASSWORD','TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID','CERTIFICATE_ARN')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name" }
+          }
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - run: npx playwright install chromium
+      - name: Local validation
+        shell: pwsh
+        run: |
+          node --test scripts/*.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Script tests failed' }
+          ./scripts/test-deployment-safety.ps1
+          npm test --prefix infra
+          if ($LASTEXITCODE -ne 0) { throw 'Infrastructure tests failed' }
+          npx tsc --noEmit
+          if ($LASTEXITCODE -ne 0) { throw 'TypeScript failed' }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '559054714699'
+          role-duration-seconds: 7200
+      - name: Publish tracked source and wait for scan
+        shell: pwsh
+        run: ./scripts/publish-tracepoint-staging-image.ps1 -Wait
+      - name: Guarded release with authenticated smoke and automatic recovery
+        shell: pwsh
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN

@@ -93,7 +93,7 @@ export class ImageBuildStack extends cdk.Stack {
       description: "Builds a reviewed TracePoint commit and pushes only to staging ECR",
     });
 
-    this.sourceBucket.grantRead(buildRole, "source/tracepoint-staging-source.zip");
+    this.sourceBucket.grantRead(buildRole, `source/tracepoint-${props.environmentName}-source.zip`);
     props.repository.grantPullPush(buildRole);
     buildRole.addToPolicy(
       new iam.PolicyStatement({
@@ -132,9 +132,9 @@ export class ImageBuildStack extends cdk.Stack {
       role: buildRole,
       source: codebuild.Source.s3({
         bucket: this.sourceBucket,
-        path: "source/tracepoint-staging-source.zip",
+        path: `source/tracepoint-${props.environmentName}-source.zip`,
       }),
-      buildSpec: codebuild.BuildSpec.fromSourceFilename("buildspec.staging-image.yml"),
+      buildSpec: codebuild.BuildSpec.fromSourceFilename(`buildspec.${props.environmentName}-image.yml`),
       grantReportGroupPermissions: false,
       timeout: cdk.Duration.minutes(30),
       queuedTimeout: cdk.Duration.minutes(15),
@@ -144,6 +144,7 @@ export class ImageBuildStack extends cdk.Stack {
         privileged: true,
         environmentVariables: {
           AWS_ACCOUNT_ID: { value: this.account },
+          CONFIGURATION_ENVIRONMENT: { value: props.environmentName },
           ECR_REPOSITORY_URI: { value: props.repository.repositoryUri },
           NEXT_PUBLIC_SUPABASE_URL: secretVariable("NEXT_PUBLIC_SUPABASE_URL"),
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: secretVariable(
@@ -168,7 +169,7 @@ export class ImageBuildStack extends cdk.Stack {
       value: this.sourceBucket.bucketName,
     });
     new cdk.CfnOutput(this, "ImageBuildSourceObjectKey", {
-      value: "source/tracepoint-staging-source.zip",
+      value: `source/tracepoint-${props.environmentName}-source.zip`,
     });
   }
 }

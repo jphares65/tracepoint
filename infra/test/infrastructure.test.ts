@@ -190,6 +190,24 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
     ]),
   });
   template.resourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 2);
-  template.resourceCountIs("AWS::CloudWatch::Alarm", 2);
+  template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
   assert.match(JSON.stringify(template.toJSON()), /CONFIGURATION_ENVIRONMENT/);
+});
+
+test("production template retains resources, scales two to four tasks, and separates providers", () => {
+  const app = new cdk.App();
+  const env = { account: "111111111111", region: "us-east-1" };
+  app.node.setContext("availability-zones:account=111111111111:region=us-east-1", ["us-east-1a", "us-east-1b"]);
+  const props = {env, environmentName:"production", terminationProtection:true};
+  const network = new NetworkStack(app,"production-network",props);
+  const security = new SecurityStack(app,"production-security",props);
+  const compute = new ComputeFoundationStack(app,"production-compute",{...props,vpc:network.vpc,dataKey:security.dataKey,logRetention:cdk.aws_logs.RetentionDays.ONE_YEAR});
+  const runtime = new RuntimeStack(app,"production-runtime",{...props,vpc:network.vpc,repository:compute.repository,cluster:compute.cluster,appLogGroup:compute.appLogGroup,appSecrets:compute.appSecrets,executionRole:compute.executionRole,taskRole:compute.taskRole,certificateArn:"arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-4000-8000-000000000000",imageTag:"6b0e3028f3e5e97d567de20c05637bb0cb64e7b7",desiredCount:2,maxCapacity:4,deletionProtection:true});
+  const template = Template.fromStack(runtime);
+  template.hasResourceProperties("AWS::ECS::Service",{DesiredCount:2});
+  template.hasResourceProperties("AWS::ApplicationAutoScaling::ScalableTarget",{MinCapacity:2,MaxCapacity:4});
+  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer",{LoadBalancerAttributes:Match.arrayWith([{Key:"deletion_protection.enabled",Value:"true"}])});
+  Template.fromStack(compute).hasResourceProperties("AWS::Logs::LogGroup",{RetentionInDays:365});
+  const serialized=JSON.stringify(template.toJSON());
+  assert.doesNotMatch(serialized,/559054714699|wztqqqashilusoppddxi|tracepoint-staging/);
 });

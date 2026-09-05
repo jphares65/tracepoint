@@ -12,6 +12,7 @@ export interface ComputeFoundationStackProps extends cdk.StackProps {
   environmentName: string;
   vpc: ec2.IVpc;
   dataKey: kms.IKey;
+  logRetention?: logs.RetentionDays;
 }
 
 export class ComputeFoundationStack extends cdk.Stack {
@@ -47,7 +48,7 @@ export class ComputeFoundationStack extends cdk.Stack {
 
     this.appLogGroup = new logs.LogGroup(this, "AppLogGroup", {
       logGroupName: `/tracepoint/${props.environmentName}/application`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: props.logRetention ?? logs.RetentionDays.ONE_MONTH,
       encryptionKey: dataKey,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });

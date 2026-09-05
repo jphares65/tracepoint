@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$ValidateArchiveOnly)
+param([switch]$ValidateArchiveOnly, [switch]$Wait)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -54,6 +54,7 @@ if (-not $ValidateArchiveOnly) {
     if ($LASTEXITCODE -ne 0) { throw 'Unable to validate staging configuration names.' }
     try {
         $secret = $secretText | ConvertFrom-Json
+        if ($secret.NEXT_PUBLIC_SUPABASE_URL -ne 'https://wztqqqashilusoppddxi.supabase.co') { throw 'Only the isolated staging Supabase project is allowed.' }
         $required = @(
             'NEXT_PUBLIC_SUPABASE_URL',
             'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
@@ -101,13 +102,28 @@ try {
     Write-Host "Validated $($entryNames.Count) tracked build-source files for commit $commit."
     if ($ValidateArchiveOnly) { return }
 
-    & aws.exe s3 cp $archivePath "s3://$sourceBucket/$sourceKey" --only-show-errors --region us-east-1
-    if ($LASTEXITCODE -ne 0) { throw 'Clean source archive upload failed.' }
-    Write-Host "Uploaded a tracked-only archive for commit $commit."
-
+    Assert-TracePointStagingIdentity | Out-Null
+    $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --region us-east-1 --query VersionId --output text
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceVersion) -or $sourceVersion -eq 'None') { throw 'Versioned source upload failed.' }
+    Assert-TracePointStagingIdentity | Out-Null
     $overrides = "name=IMAGE_TAG,value=$commit,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
-    & aws.exe codebuild start-build --project-name $projectName --environment-variables-override $overrides.Split(' ') --region us-east-1 --query 'build.{id:id,status:buildStatus}' --output json
+    $buildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --environment-variables-override $overrides.Split(' ') --region us-east-1 --query build.id --output text
     if ($LASTEXITCODE -ne 0) { throw 'CodeBuild start failed.' }
+    Write-Host "Started immutable source build $buildId."
+    if ($Wait) {
+        $deadline = [DateTime]::UtcNow.AddMinutes(45)
+        do {
+            $status = & aws.exe codebuild batch-get-builds --ids $buildId --region us-east-1 --query 'builds[0].buildStatus' --output text
+            if ($LASTEXITCODE -ne 0) { throw 'Build monitoring failed.' }
+            if ($status -eq 'SUCCEEDED') { break }
+            if ($status -ne 'IN_PROGRESS') { throw "Build ended with $status." }
+            if ([DateTime]::UtcNow -gt $deadline) { throw 'Build monitoring timed out.' }
+            Start-Sleep -Seconds 20
+        } while ($true)
+        & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$commit" --region us-east-1
+        if ($LASTEXITCODE -ne 0) { throw 'Image scan did not complete.' }
+        Write-Host "Build and scan completed for $commit; deployment separately rejects HIGH/CRITICAL findings."
+    }
 }
 finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }

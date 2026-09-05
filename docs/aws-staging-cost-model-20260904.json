@@ -1,0 +1,19 @@
+﻿{
+  "reviewDate": "2026-09-04",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "ceilingCents": 7500,
+  "basis": "730 hours, one 0.25 vCPU/0.5 GiB task, two ALB IPv4s, one task IPv4, 0.1 average LCU; low-usage allowances, not a measured bill",
+  "componentsCents": {
+    "ALB_IPv4_LCU": 2431,
+    "Fargate_IPv4": 1266,
+    "two_KMS_keys_secret_ECR": 290,
+    "logs_and_S3_allowance": 300,
+    "governance_allowance": 290,
+    "CodeBuild_600_minutes_allowance": 300,
+    "four_alarms": 40,
+    "data_transfer_allowance": 500
+  },
+  "actualSpendVerified": false,
+  "sources": ["https://aws.amazon.com/fargate/pricing/", "https://aws.amazon.com/elasticloadbalancing/pricing/", "https://aws.amazon.com/vpc/pricing/", "https://aws.amazon.com/codebuild/pricing/"]
+}

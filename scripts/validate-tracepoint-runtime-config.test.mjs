@@ -7,7 +7,8 @@ const valid = {
   BREVO_API_KEY: "present",
   NOTIFICATION_DISPATCH_SECRET: "present",
   NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: "present",
-  NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+  CONFIGURATION_ENVIRONMENT: "staging",
+  NEXT_PUBLIC_SUPABASE_URL: "https://wztqqqashilusoppddxi.supabase.co",
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "present",
   NEXT_PUBLIC_SITE_URL: "https://staging.tracepointhq.com",
   TRACEPOINT_DATA_PROVIDER: "supabase",
@@ -42,4 +43,11 @@ test("fails closed for a non-staging public site URL", () => {
     () => validateTracePointRuntimeConfig({ ...valid, NEXT_PUBLIC_SITE_URL: "https://tracepointhq.com" }),
     /NEXT_PUBLIC_SITE_URL/,
   );
+});
+
+test("production hosting keeps production providers and rejects staging credentials", () => {
+ const production = { ...valid, CONFIGURATION_ENVIRONMENT: "production", NEXT_PUBLIC_SITE_URL: "https://tracepointhq.com", NEXT_PUBLIC_SUPABASE_URL: "https://izlkwggluhlhzlumtzes.supabase.co" };
+ assert.doesNotThrow(() => validateTracePointRuntimeConfig(production));
+ assert.throws(() => validateTracePointRuntimeConfig({...production,NEXT_PUBLIC_SUPABASE_URL:valid.NEXT_PUBLIC_SUPABASE_URL}), /NEXT_PUBLIC_SUPABASE_URL/);
+ assert.throws(() => validateTracePointRuntimeConfig({...valid,CONFIGURATION_ENVIRONMENT:undefined}), /CONFIGURATION_ENVIRONMENT/);
 });

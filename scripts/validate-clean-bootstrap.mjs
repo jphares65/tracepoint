@@ -155,6 +155,37 @@ try {
     throw new Error(`Focused schema checks failed: ${failedChecks.join(", ")}`);
   }
 
+  await client.query(await readFile('scripts/validate-local-tenant-isolation.sql', 'utf8'));
+  console.log('Local tenant isolation passed: own-tenant read, foreign-tenant read denial, foreign-tenant write denial, non-manager write denial.');
+  if (process.argv.includes("--rehearse-restore")) {
+  // Rehearse export/restore using only this disposable database and synthetic seed data.
+  const binaryDir = process.env.TRACEPOINT_PG_BIN || path.dirname(postgres.process.spawnfile);
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  const dumpPath = path.join(databaseDir, 'rehearsal.dump');
+  const localEnv = { ...process.env, PGPASSWORD: 'local-bootstrap-only' };
+  const connectionArgs = ['-h', '127.0.0.1', '-p', String(port), '-U', 'postgres'];
+  await execFileAsync(path.join(binaryDir, 'pg_dump'+suffix), [...connectionArgs, '-Fc', '--no-owner', '-f', dumpPath, 'postgres'], { env:localEnv, timeout:60000 });
+  await client.query('create database tracepoint_restore');
+  const startedAt = Date.now();
+  await execFileAsync(path.join(binaryDir, 'pg_restore'+suffix), [...connectionArgs, '--no-owner', '--exit-on-error', '-d', 'tracepoint_restore', dumpPath], { env:localEnv, timeout:60000 });
+  const restored = new client.constructor({host:'127.0.0.1',port,user:'postgres',password:'local-bootstrap-only',database:'tracepoint_restore'});
+  try {
+    await restored.connect();
+    const fingerprint = async connection => {
+      const {rows:tables}=await connection.query("select tablename from pg_tables where schemaname='public' order by tablename");
+      const result=[];
+      for(const {tablename} of tables) {
+        const quoted='"'+tablename.replaceAll('"','""')+'"';
+        const {rows:[row]}=await connection.query('select count(*)::int as count, md5(coalesce(string_agg(to_jsonb(t)::text, chr(10) order by to_jsonb(t)::text),'+"''"+')) as checksum from public.'+quoted+' t');
+        result.push({table:tablename,...row});
+      }
+      const {rows:policies}=await connection.query("select tablename,policyname,roles,cmd,qual,with_check from pg_policies where schemaname='public' order by tablename,policyname");
+      return JSON.stringify({tables:result,policies});
+    };
+    if(await fingerprint(client)!==await fingerprint(restored)) throw new Error('Local restore row/checksum/RLS reconciliation failed');
+    console.log(`Local dump/restore and all-table count/checksum/RLS reconciliation passed in ${Date.now()-startedAt} ms.`);
+  } finally { await restored.end(); }
+  }
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations.`);
 } finally {
   if (client) await client.end().catch(() => {});

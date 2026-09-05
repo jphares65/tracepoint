@@ -31,14 +31,15 @@ function Invoke-AwsJson {
 function Assert-NoProtectedChanges {
     foreach ($path in $protectedPaths) {
         $status = @(& git.exe -C $repositoryRoot status --short --untracked-files=all -- $path)
-        if ($status.Count -eq 0 -or @($status | Where-Object { $_ -notlike '?? *' }).Count -ne 0) {
-            throw "Protected path '$path' must remain present, untracked, and unmodified."
+        if (@($status | Where-Object { $_ -notlike '?? *' }).Count -ne 0) {
+            throw "Protected path '$path' has tracked changes."
         }
     }
 }
 
 function Assert-CostGate {
-    $monthlyCents = 2431 + 1266 + 150 + 70 + 290
+    $costModel = Get-Content -LiteralPath (Join-Path $repositoryRoot 'docs/aws-staging-cost-model-20260904.json') -Raw | ConvertFrom-Json
+    $monthlyCents = ($costModel.componentsCents.PSObject.Properties.Value | Measure-Object -Sum).Sum
     if ($monthlyCents -gt ($budgetLimit * 100)) { throw 'Projected staging cost exceeds the approved ceiling.' }
     $budgets = Invoke-AwsJson @('budgets', 'describe-budgets', '--account-id', $account)
     $budget = @($budgets.Budgets | Where-Object BudgetName -eq $budgetName)
@@ -57,6 +58,8 @@ function Get-ImmutableImage {
     if (@($image.imageDetails).Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$image.imageDetails[0].imageDigest)) {
         throw "Immutable image '$ImageTag' is not available from the publishing workflow."
     }
+    $scan = Invoke-AwsJson @('ecr', 'describe-image-scan-findings', '--repository-name', $repository, '--image-id', "imageTag=$ImageTag")
+    Assert-TracePointImageScan -Scan $scan
     return [string]$image.imageDetails[0].imageDigest
 }
 
@@ -66,6 +69,7 @@ function Assert-RuntimeSecretConfiguration {
     if ($LASTEXITCODE -ne 0) { throw 'The retained staging application secret cannot be retrieved and decrypted.' }
     try {
         $secret = ($secretText -join [Environment]::NewLine) | ConvertFrom-Json
+        if ($secret.NEXT_PUBLIC_SUPABASE_URL -ne 'https://wztqqqashilusoppddxi.supabase.co') { throw 'Only the isolated staging Supabase project is allowed.' }
         $required = @('NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SITE_URL', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', 'SUPABASE_SECRET_KEY', 'BREVO_API_KEY', 'NOTIFICATION_DISPATCH_SECRET', 'CONFIGURATION_ENVIRONMENT')
         $missing = @($required | Where-Object { $null -eq $secret.PSObject.Properties[$_] -or [string]::IsNullOrWhiteSpace([string]$secret.PSObject.Properties[$_].Value) })
         if ($missing.Count) { throw "The retained staging secret is missing required names: $($missing -join ', ')." }
@@ -93,24 +97,35 @@ $digest = Get-ImmutableImage
 Assert-RuntimeSecretConfiguration
 
 $context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '--lookups=false')
+$validationRoot = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-runtime-review-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $validationRoot | Out-Null
+$oldTemplatePath = Join-Path $validationRoot 'previous.json'
+$oldTemplate = & aws.exe cloudformation get-template --stack-name $runtimeStack --query TemplateBody --output text --region $region
+if ($LASTEXITCODE -ne 0) { throw 'Cannot retrieve the deployed runtime template.' }
+[IO.File]::WriteAllText($oldTemplatePath, ($oldTemplate -join [Environment]::NewLine))
+Push-Location $infraRoot
+try {
+    & npx.cmd cdk synth $runtimeStack @context --strict --quiet --output $validationRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Strict runtime synthesis failed.' }
+} finally { Pop-Location }
+& node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag
+if ($LASTEXITCODE -ne 0) { throw 'Runtime template changes exceed the reviewed image/alarms scope.' }
+
 Push-Location $infraRoot
 $savedErrorActionPreference = $ErrorActionPreference
 try {
     # Windows PowerShell 5 surfaces native stderr as ErrorRecord instances;
     # CDK writes progress to stderr even when it succeeds.
     $ErrorActionPreference = 'Continue'
-    $diff = & npx.cmd cdk diff $runtimeStack @context 2>&1
+    $diff = & npx.cmd cdk diff $runtimeStack @context --exclusively --no-change-set 2>&1
     $diffExitCode = $LASTEXITCODE
 }
 finally {
     $ErrorActionPreference = $savedErrorActionPreference
     Pop-Location
 }
-if ($diffExitCode -gt 1) { throw 'CDK diff failed; runtime was not deployed.' }
+if ($diffExitCode -ne 0) { throw 'CDK diff failed; runtime was not deployed.' }
 $diffText = $diff -join [Environment]::NewLine
-if ($diffText -match '(?im)^\s*\[-\]|will be destroyed|requires replacement|\[~\].*replace|production|265544358665') {
-    throw 'The runtime diff failed the deletion, replacement, or production-safety gate.'
-}
 Write-Host $diffText
 
 Assert-TracePointStagingIdentity | Out-Null

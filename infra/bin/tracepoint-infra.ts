@@ -8,25 +8,19 @@ import { ImageBuildStack } from "../lib/image-build-stack";
 
 const app = new cdk.App();
 
-const environmentName = app.node.tryGetContext("environment");
-const account = app.node.tryGetContext("account");
-const region = app.node.tryGetContext("region") ?? process.env.CDK_DEFAULT_REGION;
-const workloadEnvironment = "staging";
-
-if (environmentName !== "tracepoint-staging") {
-  throw new Error("This assembly requires -c environment=tracepoint-staging");
-}
-if (!account || !/^\d{12}$/.test(account)) {
-  throw new Error("The staging account must be supplied with -c account=559054714699");
-}
-if (account === "265544358665") {
-  throw new Error("Refusing to target AWS Organizations management account 265544358665");
-}
-if (account !== "559054714699") {
-  throw new Error("This assembly is restricted to staging account 559054714699");
-}
-if (region !== "us-east-1") {
-  throw new Error("This assembly requires -c region=us-east-1");
+// Production templates are an offline preview, never an authorized deployment target.
+const productionPreview = app.node.tryGetContext("productionPreview") === "true";
+const environmentName = productionPreview ? "tracepoint-production" : app.node.tryGetContext("environment");
+const account = productionPreview ? "111111111111" : app.node.tryGetContext("account");
+const region = app.node.tryGetContext("region");
+const workloadEnvironment = productionPreview ? "production" : "staging";
+if (app.node.tryGetContext("account") === "265544358665") throw new Error("Management account is forbidden");
+if (region !== "us-east-1") throw new Error("Region must equal us-east-1");
+if (productionPreview) {
+  if (app.node.tryGetContext("account") !== "111111111111") throw new Error("Production preview requires placeholder account 111111111111");
+  if (process.env.CDK_DEFAULT_ACCOUNT && process.env.CDK_DEFAULT_ACCOUNT !== "111111111111") throw new Error("Production preview must run offline without AWS credentials");
+} else if (environmentName !== "tracepoint-staging" || account !== "559054714699") {
+  throw new Error("Deployment assembly is restricted to tracepoint-staging account 559054714699");
 }
 
 // Keep synthesis offline and deterministic. These two AZs were verified in the
@@ -40,7 +34,7 @@ const env: cdk.Environment = { account, region };
 const commonProps = {
   env,
   terminationProtection: true,
-  description: "TracePoint staging AWS foundation",
+  description: productionPreview ? "TracePoint production OFFLINE PREVIEW - not authorized for deployment" : "TracePoint staging AWS foundation",
   tags: {
     Application: "TracePoint",
     Environment: workloadEnvironment,
@@ -70,6 +64,7 @@ const compute = new ComputeFoundationStack(app, `${environmentName}-compute`, {
   environmentName: workloadEnvironment,
   vpc: network.vpc,
   dataKey: security.dataKey,
+  logRetention: productionPreview ? cdk.aws_logs.RetentionDays.ONE_YEAR : cdk.aws_logs.RetentionDays.ONE_MONTH,
 });
 compute.addStackDependency(network);
 compute.addStackDependency(security);
@@ -113,6 +108,9 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
+    desiredCount: productionPreview ? 2 : 1,
+    maxCapacity: productionPreview ? 4 : undefined,
+    deletionProtection: productionPreview,
   });
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);

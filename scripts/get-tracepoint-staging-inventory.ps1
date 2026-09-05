@@ -4,7 +4,7 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 
 $identity = Assert-TracePointStagingIdentity
 Write-Host "Verified account $($identity.Account), role TracePointMigrationStaging, region us-east-1."
-Write-Host 'Inventory is metadata-only; no secret values, objects, logs, records, or DNS data are read.'
+Write-Host 'Inventory is metadata-only; no secret values, object contents, database records, or log message contents are printed.'
 
 function Invoke-InventoryQuery {
     param(
@@ -71,4 +71,15 @@ Invoke-InventoryQuery 'Issued staging certificates' @(
 Invoke-InventoryQuery 'Staging budget' @(
     'budgets', 'describe-budgets', '--account-id', '559054714699',
     '--query', "Budgets[?BudgetName=='tracepoint-staging-monthly-75'].[BudgetName,BudgetLimit.Amount,BudgetLimit.Unit]"
+)
+
+& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
+Invoke-InventoryQuery 'Staging alarm states' @(
+    'cloudwatch', 'describe-alarms', '--alarm-name-prefix', 'tracepoint-staging-',
+    '--query', 'MetricAlarms[].[AlarmName,StateValue,ActionsEnabled,length(AlarmActions)]'
+)
+$since = [DateTimeOffset]::UtcNow.AddMinutes(-30).ToUnixTimeMilliseconds().ToString()
+Invoke-InventoryQuery 'Recent error event count (no log contents)' @(
+    'logs', 'filter-log-events', '--log-group-name', '/tracepoint/staging/application',
+    '--start-time', $since, '--filter-pattern', '?ERROR ?Exception ?Unhandled', '--query', 'length(events)'
 )

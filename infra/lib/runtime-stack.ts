@@ -22,6 +22,9 @@ export interface RuntimeStackProps extends cdk.StackProps {
   taskRole: iam.IRole;
   certificateArn: string;
   imageTag: string;
+  desiredCount?: number;
+  maxCapacity?: number;
+  deletionProtection?: boolean;
 }
 
 export class RuntimeStack extends cdk.Stack {
@@ -62,7 +65,7 @@ export class RuntimeStack extends cdk.Stack {
         redirectHTTP: true,
         certificate,
         protocol: elbv2.ApplicationProtocol.HTTPS,
-        desiredCount: 1,
+        desiredCount: props.desiredCount ?? 1,
         cpu: 256,
         memoryLimitMiB: 512,
         minHealthyPercent: 100,
@@ -126,6 +129,25 @@ export class RuntimeStack extends cdk.Stack {
       },
     );
 
+    if (props.deletionProtection) service.loadBalancer.setAttribute("deletion_protection.enabled", "true");
+    if (props.maxCapacity) {
+      const scaling = service.service.autoScaleTaskCount({ minCapacity: props.desiredCount ?? 1, maxCapacity: props.maxCapacity });
+      scaling.scaleOnCpuUtilization("CpuScaling", { targetUtilizationPercent: 60 });
+    }
+    new cloudwatch.Alarm(this, "Application5xxAlarm", {
+      alarmName: `tracepoint-${props.environmentName}-application-5xx`,
+      metric: service.targetGroup.metrics.httpCodeTarget(elbv2.HttpCodeTarget.TARGET_5XX_COUNT, {
+        statistic: "sum", period: cdk.Duration.minutes(1),
+      }),
+      threshold: 5, evaluationPeriods: 3, datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, "MemoryAlarm", {
+      alarmName: `tracepoint-${props.environmentName}-memory`,
+      metric: service.service.metricMemoryUtilization({ period: cdk.Duration.minutes(1) }),
+      threshold: 85, evaluationPeriods: 3,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
     const container = service.taskDefinition.defaultContainer;
     if (!container) { throw new Error("TracePoint runtime requires a default container"); }
     service.taskDefinition.addVolume({ name: "runtime-cache" });
