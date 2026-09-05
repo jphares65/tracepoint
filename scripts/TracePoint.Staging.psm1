@@ -38,9 +38,8 @@ function ConvertFrom-TracePointSecureString {
 function Assert-TracePointImageScan {
     param([Parameter(Mandatory)]$Scan)
     if ($Scan.imageScanStatus.status -ne 'COMPLETE') { throw 'Image scan must be COMPLETE.' }
-    foreach ($severity in @('HIGH', 'CRITICAL')) {
-        $finding = $Scan.imageScanFindings.findingSeverityCounts.PSObject.Properties[$severity]
-        if ($null -ne $finding -and [int]$finding.Value -gt 0) { throw "Image scan contains blocking $severity findings." }
+    foreach ($finding in $Scan.imageScanFindings.findingSeverityCounts.PSObject.Properties) {
+        if ([int]$finding.Value -ne 0) { throw "Image scan must contain zero findings at every severity." }
     }
 }
 

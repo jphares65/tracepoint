@@ -49,10 +49,10 @@ try {
         $scan.imageScanStatus.status=$state
         Must-Reject {Assert-TracePointImageScan -Scan $scan}
     }
-    foreach($severity in @('HIGH','CRITICAL')) {
+    foreach($severity in @('INFORMATIONAL','LOW','MEDIUM','HIGH','CRITICAL','UNDEFINED')) {
         $scan = ('{"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"'+$severity+'":1}}}') | ConvertFrom-Json
         Must-Reject {Assert-TracePointImageScan -Scan $scan}
     }
     Must-Reject {Assert-TracePointImageScan -Scan ([pscustomobject]@{})}
-    Write-Host 'Passed 15 staging identity/hostname/runtime safety cases; zero AWS API calls.'
+    Write-Host 'Passed 19 staging identity/hostname/runtime safety cases; zero AWS API calls.'
 } finally {Remove-Item Function:/aws.exe}
