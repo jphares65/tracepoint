@@ -5,7 +5,7 @@ import {
   hasAnyServerPermission,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
-import { createObjectStore } from "@/lib/storage/object-store";
+import { createObjectStore, departmentPatchPathFromMetadata } from "@/lib/storage/object-store";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const objectStore = createObjectStore(context.admin);
+  const objectStore = createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadDepartmentPatch({
     departmentId: context.departmentId,
     extension,
@@ -81,7 +81,12 @@ export async function POST(request: NextRequest) {
   }
   const storagePath = upload.path;
 
-  const patchUrl = objectStore.getDepartmentPatchPublicUrl(storagePath);
+  const delivery = await objectStore.createDepartmentPatchDelivery(storagePath);
+  if(delivery.error || !delivery.signedUrl){
+    await objectStore.removeDepartmentPatch(storagePath);
+    return NextResponse.json({error:"Patch delivery could not be prepared."},{status:500});
+  }
+  const patchUrl = delivery.signedUrl;
 
   const { error: updateError } = await context.admin
     .from("departments")
@@ -101,4 +106,17 @@ export async function POST(request: NextRequest) {
     ok: true,
     patchUrl,
   });
+}
+
+export async function GET(request:NextRequest) {
+ const access=await resolveServerAccess();if(!access.ok)return accessFailureResponse(access);
+ const {admin,departmentId}=access.context;
+ const path=departmentPatchPathFromMetadata(request.nextUrl.searchParams.get('path')||'',departmentId);
+ if(!path)return NextResponse.json({error:'Patch not found.'},{status:404});
+ const expected='/api/settings/department-patch?path='+encodeURIComponent(path);
+ const current=await admin.from('departments').select('patch_url').eq('id',departmentId).maybeSingle();
+ if(current.error||current.data?.patch_url!==expected)return NextResponse.json({error:'Patch not found.'},{status:404});
+ const delivery=await createObjectStore(admin,departmentId).createDepartmentPatchView(path);
+ if(delivery.error||!delivery.signedUrl)return NextResponse.json({error:'Patch delivery unavailable.'},{status:503});
+ return new NextResponse(null,{status:307,headers:{Location:delivery.signedUrl,'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
 }

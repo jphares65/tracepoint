@@ -1,3 +1,4 @@
+import { PrivateStorageStack } from "../lib/private-storage-stack";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import * as cdk from "aws-cdk-lib";
@@ -212,4 +213,12 @@ test("production template retains resources, scales two to four tasks, and separ
   Template.fromStack(compute).hasResourceProperties("AWS::Logs::LogGroup",{RetentionInDays:365});
   const serialized=JSON.stringify(template.toJSON());
   assert.doesNotMatch(serialized,/559054714699|wztqqqashilusoppddxi|tracepoint-staging/);
+});
+
+test('private storage encrypts, versions, retains and scopes runtime access',()=>{
+ const {app,compute}=foundations();const storage=new PrivateStorageStack(app,'storage',{env,environmentName:'staging',taskRole:compute.taskRole});
+ const template=Template.fromStack(storage);template.resourceCountIs('AWS::S3::Bucket',2);
+ template.hasResourceProperties('AWS::S3::Bucket',{BucketName:'tracepoint-staging-private-559054714699',VersioningConfiguration:{Status:'Enabled'},PublicAccessBlockConfiguration:{BlockPublicAcls:true,BlockPublicPolicy:true,IgnorePublicAcls:true,RestrictPublicBuckets:true},BucketEncryption:{ServerSideEncryptionConfiguration:[{ServerSideEncryptionByDefault:{SSEAlgorithm:'AES256'}}]},OwnershipControls:{Rules:[{ObjectOwnership:'BucketOwnerEnforced'}]},LoggingConfiguration:Match.objectLike({LogFilePrefix:'objects/'})});
+ for(const bucket of Object.values(template.findResources('AWS::S3::Bucket'))){assert.equal(bucket.DeletionPolicy,'Retain');assert.equal(bucket.UpdateReplacePolicy,'Retain');}
+ const policies=JSON.stringify(template.findResources('AWS::IAM::Policy'));assert.ok(policies.includes('s3:GetObject'));assert.ok(policies.includes('s3:ResourceAccount'));assert.ok(!policies.includes('s3:*'));assert.ok(!policies.includes('DeleteObjectVersion'));assert.ok(!policies.includes('ListBucket'));
 });

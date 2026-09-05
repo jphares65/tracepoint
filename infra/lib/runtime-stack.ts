@@ -23,6 +23,7 @@ export interface RuntimeStackProps extends cdk.StackProps {
   certificateArn: string;
   imageTag: string;
   emailFromAddress?: string;
+  storageBucketName?: string;
   desiredCount?: number;
   maxCapacity?: number;
   deletionProtection?: boolean;
@@ -93,7 +94,8 @@ export class RuntimeStack extends cdk.Stack {
             TRACEPOINT_DATA_PROVIDER: "supabase",
             TRACEPOINT_EMAIL_PROVIDER: "brevo",
             ...(emailFromAddress ? { TRACEPOINT_FROM_EMAIL: emailFromAddress } : {}),
-            TRACEPOINT_STORAGE_PROVIDER: "supabase",
+            TRACEPOINT_STORAGE_PROVIDER: props.storageBucketName ? "s3" : "supabase",
+            ...(props.storageBucketName ? { TRACEPOINT_S3_BUCKET:props.storageBucketName, TRACEPOINT_S3_EXPECTED_OWNER:this.account, AWS_REGION:this.region } : {}),
           },
           secrets: {
             CONFIGURATION_ENVIRONMENT: ecs.Secret.fromSecretsManager(

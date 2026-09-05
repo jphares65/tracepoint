@@ -6,6 +6,8 @@ import { ComputeFoundationStack } from "../lib/compute-foundation-stack";
 import { RuntimeStack } from "../lib/runtime-stack";
 import { ImageBuildStack } from "../lib/image-build-stack";
 
+import { PrivateStorageStack } from "../lib/private-storage-stack";
+
 const app = new cdk.App();
 
 // Production templates are an offline preview, never an authorized deployment target.
@@ -78,6 +80,12 @@ const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
 });
 imageBuild.addStackDependency(compute);
 
+const storageEnabled = app.node.tryGetContext("privateStorageEnabled") === "true";
+const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName}-storage`, {
+ ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,
+}) : undefined;
+const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
+if(!['supabase','s3'].includes(storageProvider)||storageProvider==='s3'&&!storage)throw new Error('Private storage must be explicitly provisioned before activation');
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {
   const certificateArn = app.node.tryGetContext("certificateArn");
@@ -108,6 +116,7 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
+    storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
     emailFromAddress: app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,

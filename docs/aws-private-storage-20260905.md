@@ -1,0 +1,18 @@
+# Private storage implementation
+
+The server-only storage factory now supports S3 using the default AWS credential chain and explicit account, region, environment, bucket and department gates. Supabase remains the default. Attachment keys retain their department-scoped metadata paths under the attachments namespace. Every S3 upload, download and delete revalidates its authorized tenant and rejects malformed encodings, traversal and control characters. Uploads use atomic create-if-absent writes, encryption and expected-owner checks. Download/view URLs expire after 60 seconds. SDK writes do not automatically retry ambiguous acceptance.
+
+Department patch delivery is asynchronous. Supabase retains its existing public URL behavior. S3 stores a stable authenticated application URL; the GET handler checks current department membership, validates the path, verifies that it is the department's current patch and then redirects to a short-lived signed URL with no-store headers. Expiring URLs are not persisted as department metadata. Existing upload routes retain their record/permission checks and audit behavior.
+
+Optional CDK privateStorageEnabled=true provisions two encrypted, versioned, retained buckets with ACLs disabled, all public access blocked and TLS required. Access logging uses a scoped service policy with source account and source bucket conditions. Runtime IAM allows only GetObject, PutObject and DeleteObject in the two object namespaces; it cannot list buckets or delete historical versions. Lifecycle expires incomplete uploads and old versions, not current application objects. storageProvider=s3 is rejected unless the storage foundation is explicitly enabled. Production preview uses its own account and bucket names.
+
+Validated: 14 storage contract tests; 3 copy/reconciliation tests; 7 infrastructure tests; TypeScript; production Next build; strict staging and offline production S3 synthesis. New storage code lint is clean. Five pre-existing any errors remain in three upload routes whose factory calls gained a department argument. npm dependency audit reports zero vulnerabilities.
+
+Live storage deployment and application activation are separate gates. Reviewed live diff adds only a compute role-name export and the new storage buckets, policies and outputs. Projected monthly staging model is 55.17 USD including a new 1 USD storage allowance, below 75 USD. Staging Supabase object inventory currently has zero objects. No production files were read or copied.
+
+Commands:
+
+- node --import tsx scripts/test-staging-s3.mjs --execute checks private controls, uploads/downloads/deletes, SHA-256 reconciliation, version restoration and zero-version fixture cleanup.
+- node --import tsx scripts/reconcile-staging-storage.mjs --department STAGING_UUID inventories and compares only the fixed staging source/target. Add --execute-copy to create missing objects and verify readback. Conflicts stop without overwrite; reruns are idempotent. Reports hash object names.
+
+Before activation: deploy reviewed storage foundation, pass live canary, publish and scan the new application image, review the exact runtime provider/environment diff, deploy staging, exercise authenticated file upload/download and patch delivery, verify audit/cleanup, and rehearse rollback. Keep Supabase storage available until metadata and object reconciliation is proven. Production activation and file transfer remain unauthorized.

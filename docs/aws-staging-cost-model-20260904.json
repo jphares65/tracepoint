@@ -1,4 +1,4 @@
-﻿{
+{
   "reviewDate": "2026-09-04",
   "account": "559054714699",
   "region": "us-east-1",
@@ -12,8 +12,15 @@
     "governance_allowance": 290,
     "CodeBuild_600_minutes_allowance": 300,
     "four_alarms": 40,
-    "data_transfer_allowance": 500
+    "data_transfer_allowance": 500,
+    "private_storage_requests_versions_logs_allowance": 100
   },
-  "actualSpendVerified": false,
-  "sources": ["https://aws.amazon.com/fargate/pricing/", "https://aws.amazon.com/elasticloadbalancing/pricing/", "https://aws.amazon.com/vpc/pricing/", "https://aws.amazon.com/codebuild/pricing/"]
+  "actualSpendVerified": true,
+  "sources": [
+    "https://aws.amazon.com/fargate/pricing/",
+    "https://aws.amazon.com/elasticloadbalancing/pricing/",
+    "https://aws.amazon.com/vpc/pricing/",
+    "https://aws.amazon.com/codebuild/pricing/"
+  ],
+  "actualSpendEvidence": "aws-cost-evidence-20260905.json"
 }

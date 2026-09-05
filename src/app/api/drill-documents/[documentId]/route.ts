@@ -19,7 +19,7 @@ export async function DELETE(_request: Request, routeContext: Context) {
   if (!existing.data) return NextResponse.json({ error: "Drill document not found." }, { status: 404 });
   const path = attachmentPathFromMetadata(existing.data.storage_path, departmentId);
   if (!path) return NextResponse.json({ error: "Drill document not found." }, { status: 404 });
-  const removed = await createObjectStore(admin).removeAttachment(path);
+  const removed = await createObjectStore(admin, departmentId).removeAttachment(path);
   if (removed.error) return NextResponse.json({ error: removed.error.message }, { status: 500 });
   const deleted = await admin.from("drill_documents").delete()
     .eq("id", documentId).eq("department_id", departmentId);

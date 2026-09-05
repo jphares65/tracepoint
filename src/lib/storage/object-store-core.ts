@@ -34,11 +34,12 @@ export interface ObjectStore {
   ): Promise<SignedDownloadResult>;
   createAttachmentView(path: AttachmentObjectPath): Promise<SignedDownloadResult>;
   uploadDepartmentPatch(input: DepartmentPatchUploadInput): Promise<StoredObjectResult<DepartmentAssetObjectPath>>;
-  getDepartmentPatchPublicUrl(path: DepartmentAssetObjectPath): string;
+  createDepartmentPatchDelivery(path: DepartmentAssetObjectPath): Promise<SignedDownloadResult>;
+  createDepartmentPatchView(path: DepartmentAssetObjectPath): Promise<SignedDownloadResult>;
   removeDepartmentPatch(path: DepartmentAssetObjectPath): Promise<ObjectStoreResult>;
 }
 
-type AttachmentUploadInput = {
+export type AttachmentUploadInput = {
   departmentId: string;
   recordId: string;
   objectId: string;
@@ -47,7 +48,7 @@ type AttachmentUploadInput = {
   contentType: string;
 };
 
-type DepartmentPatchUploadInput = {
+export type DepartmentPatchUploadInput = {
   departmentId: string;
   extension: "png" | "jpg" | "webp";
   bytes: Uint8Array;
@@ -239,9 +240,10 @@ export class SupabaseObjectStore implements ObjectStore {
     return { path, error: result.error };
   }
 
-  getDepartmentPatchPublicUrl(path: DepartmentAssetObjectPath) {
-    return this.client.storage.from("department-assets").getPublicUrl(path).data.publicUrl;
+  async createDepartmentPatchDelivery(path: DepartmentAssetObjectPath): Promise<SignedDownloadResult> {
+    return { signedUrl: this.client.storage.from("department-assets").getPublicUrl(path).data.publicUrl, error: null };
   }
+  createDepartmentPatchView(path: DepartmentAssetObjectPath) { return this.createDepartmentPatchDelivery(path); }
 
   async removeDepartmentPatch(path: DepartmentAssetObjectPath): Promise<ObjectStoreResult> {
     const result = await this.client.storage.from("department-assets").remove([path]);
