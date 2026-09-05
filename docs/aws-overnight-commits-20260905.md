@@ -1,6 +1,6 @@
-# Pushed overnight implementation commits
+# Pushed overnight commits
 
-Branch: codex/aws-staging-readiness-20260902. Starting checkpoint: 5df4247. The following exact commits are pushed through the final implementation slice. Subsequent evidence-only checkpoint commits are visible with `git log --reverse 5df4247..origin/codex/aws-staging-readiness-20260902`; the final report supplies the final branch SHA.
+Branch: codex/aws-staging-readiness-20260902. Starting checkpoint: 5df4247. These exact commits are pushed through implementation 98e3fcba21e25a329fce07fc0e81fc08ccf41215. The final evidence-only commit SHA accompanies the report. Complete remote history is reproducible with `git log --reverse 5df4247..origin/codex/aws-staging-readiness-20260902`.
 
 ```text
 dbfcca9f2617cdcbad28a77b510d4f7e1f82c0f0 Configure verified staging sender and preserve rollback task definitions
@@ -68,4 +68,6 @@ fc4bb470e841ad1f279d2986a38c0788e2089562 Allow guarded OIDC rollback to pass onl
 2f68fd15bbdf5e2905ad37ec5e55baf368f71524 Use Cognito Essentials to retain refresh rotation and adopt the empty retained pool
 6c5eb9176555c363358e4db9783d7454adc66bf7 Rehearse disabled Cognito MFA PKCE rotation and revocation live
 16d1fd4294b0e818c4731a31d4f83bbf723e5327 Compose disabled Cognito initial callbacks with durable session registration
+3c5e2fba65fdb633f93a6cedbbae65f5b7f6a8e3 Checkpoint overnight release provider rehearsals and production cutover gates
+98e3fcba21e25a329fce07fc0e81fc08ccf41215 Persist disabled Cognito refresh rotation with one-time consumption and revocation
 ```

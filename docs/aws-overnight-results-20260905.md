@@ -15,7 +15,7 @@ TracePoint is **staging operational**. It is **not production cutover-ready** an
 ## Implemented but activation remains gated
 
 - SES: deployed disabled DKIM identity, TLS configuration set, encrypted SNS/SQS/DLQ, retention and protection. Persistent suppression, signed feedback parsing, idempotent processing and partial-batch handling are tested. DKIM remains pending, sandbox restrictions remain, runtime has no SES send grant and no durable worker is active. Brevo remains selected.
-- Cognito: deployed disabled Essentials pool with required TOTP, SRP, PKCE, short-lived tokens and refresh rotation. Live MFA/PKCE/signed-token/rotation/revocation/logout tests passed, with all twelve fixture users removed. Callback interception and in-memory rehearsal mapping are explicit limitations. Durable initial-session composition now passes real-signature and PostgreSQL tests but is not selected by the application. Persistent refresh sessions, lifecycle routes and provider-compatible database/RLS access remain implementation/activation gates.
+- Cognito: deployed disabled Essentials pool with required TOTP, SRP, PKCE, short-lived tokens and refresh rotation. Live MFA/PKCE/signed-token/rotation/revocation/logout tests passed, with all twelve fixture users removed. Callback interception and in-memory rehearsal mapping are explicit limitations. Durable initial-session composition now passes real-signature and PostgreSQL tests but is not selected by the application. Encrypted refresh persistence is now implemented; application refresh transport, lifecycle routes and provider-compatible database/RLS access remain implementation/activation gates.
 - Production: separate-account assembly, exact role/region/expiring-authority gates, strict offline synthesis, provider-isolation tests, source archive validation and immutable publication command are implemented. No production account was used, no live production diff was possible and no production resource was deployed.
 
 ## Final staging evidence
@@ -30,13 +30,13 @@ ECR scan COMPLETE with zero findings. Rollback to revision 16 took **404.12 seco
 
 ## Validation and provenance
 
-Successful OIDC run **33958406346**, attempt 2, includes **45 script tests, 180 application tests, 22 infrastructure tests**, TypeScript, Windows safety and authenticated acceptance/cleanup. Later production-target/publication tests, strict production synth, twelve Cognito protocol tests, five new initial-session tests and seven PostgreSQL session-state tests passed. Changed-file lint and the production Next.js build passed. A first local build used the obsolete public-key variable; correcting the synthetic build environment resolved it without an application change. The final implementation Preview at 16d1fd4294b0e818c4731a31d4f83bbf723e5327 is successful.
+Successful OIDC run **33958406346**, attempt 2, includes **45 script tests, 180 application tests, 22 infrastructure tests**, TypeScript, Windows safety and authenticated acceptance/cleanup. Later production-target/publication tests, strict production synth, twelve Cognito protocol tests, five new initial-session tests and seven PostgreSQL session-state tests passed. Changed-file lint and the production Next.js build passed. A first local build used the obsolete public-key variable; correcting the synthetic build environment resolved it without an application change. The final implementation Preview at 98e3fcba21e25a329fce07fc0e81fc08ccf41215 is successful.
 
 Every pushed implementation commit is listed in aws-overnight-commits-20260905.md. The branch is codex/aws-staging-readiness-20260902. Production main remains e33e4a4f17b662dddec9bf653ebf4051c3eb78ab. Protected paths have no changes in this run. Final checkpoint SHA is supplied with the report.
 
 ## Cost
 
-Latest Cost Explorer estimate: **$1.3814978907 September month-to-date**, queried 2026-09-05T10:55:50.765Z. The low-usage monthly model is **$68.67**, or **$70.67** including a $2 rehearsal reserve, below the $75 ceiling. Billing lags and budget alerts are not a hard spending cap. No NAT or permanent AWS database was added. See aws-cost-evidence-20260905.json.
+Latest Cost Explorer estimate: **$1.3814978907 September month-to-date**, queried 2026-09-05T11:28:10.489Z. The low-usage monthly model is **$68.67**, or **$70.67** including a $2 rehearsal reserve, below the $75 ceiling. Billing lags and budget alerts are not a hard spending cap. No NAT or permanent AWS database was added. See aws-cost-evidence-20260905.json.
 
 ## Shortest critical path before Wednesday
 

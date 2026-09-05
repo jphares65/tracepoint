@@ -1,13 +1,13 @@
 {
-  "checkedAtUTC": "2026-09-05T11:10:36.681Z",
+  "checkedAtUTC": "2026-09-05T11:30:05.661Z",
   "startingPercent": 45.55,
   "endingPercent": 66.5,
-  "implementationHead": "16d1fd4294b0e818c4731a31d4f83bbf723e5327",
-  "remoteHeadVerified": "16d1fd4294b0e818c4731a31d4f83bbf723e5327",
+  "implementationHead": "98e3fcba21e25a329fce07fc0e81fc08ccf41215",
+  "remoteHeadVerified": "98e3fcba21e25a329fce07fc0e81fc08ccf41215",
   "productionMainUnchanged": "e33e4a4f17b662dddec9bf653ebf4051c3eb78ab",
   "protectedPathChanges": 0,
   "preview": {
-    "commit": "16d1fd4294b0e818c4731a31d4f83bbf723e5327",
+    "commit": "98e3fcba21e25a329fce07fc0e81fc08ccf41215",
     "vercelStatus": "success",
     "description": "Deployment has completed"
   },
@@ -15,7 +15,7 @@
     "account": "559054714699",
     "region": "us-east-1",
     "imageTag": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
-    "checkedAt": "2026-09-05T10:57:20.531Z",
+    "checkedAt": "2026-09-05T11:28:08.904Z",
     "identityVerified": true,
     "stackStatus": "UPDATE_COMPLETE",
     "ecs": {
@@ -148,5 +148,68 @@
   },
   "productionDeploymentAuthorized": false,
   "productionDnsModified": false,
-  "productionDataTransferred": false
+  "productionDataTransferred": false,
+  "refreshPersistence": {
+    "project": "wztqqqashilusoppddxi",
+    "migrations": 67,
+    "exactLedger": true,
+    "applied": true,
+    "sha256": "8246140481052917737950b18d9a4d1fd265272adbce937c39f17bd30e8d5bfe",
+    "checks": {
+      "browser_grants": 0,
+      "browser_policies": 0,
+      "rls": true,
+      "rows": 0
+    },
+    "applicationProviderSwitched": false,
+    "checkedAtUTC": "2026-09-05T11:20:14.576Z",
+    "idempotentVerification": {
+      "project": "wztqqqashilusoppddxi",
+      "migrations": 67,
+      "exactLedger": true,
+      "applied": false,
+      "sha256": "8246140481052917737950b18d9a4d1fd265272adbce937c39f17bd30e8d5bfe",
+      "checks": {
+        "browser_grants": 0,
+        "browser_policies": 0,
+        "rls": true,
+        "rows": 0
+      },
+      "applicationProviderSwitched": false,
+      "checkedAtUTC": "2026-09-05T11:23:15.918Z"
+    },
+    "local": {
+      "cleanStandardPostgresMigrations": 67,
+      "fullRestoreManifestPassed": true,
+      "restoreMilliseconds": 2423,
+      "refreshStoreTests": 10,
+      "scriptSafetyTests": 2,
+      "broadApplicationTests": 194,
+      "broadScriptTests": 50,
+      "additionalFocusedCasesAfterBroadRun": 2,
+      "typescript": true,
+      "changedFileLint": true
+    },
+    "runtimeProviderActivated": false,
+    "scoreCredit": 0
+  },
+  "cost": {
+    "account": "559054714699",
+    "region": "us-east-1",
+    "queriedAtUTC": "2026-09-05T11:28:10.489Z",
+    "period": {
+      "start": "2026-09-01",
+      "endExclusive": "2026-09-06"
+    },
+    "unblendedCostUSD": 1.3814978907,
+    "estimated": true,
+    "budgetActualUSD": 1.381,
+    "budgetLimitUSD": 75,
+    "modeledMonthlyUSD": 68.67,
+    "billingLagNote": "Estimated billing can lag builds, deployments, WAF, SES and disposable RDS rehearsals. Low-usage monthly allowances are not a measured bill; budget alerts do not impose a hard cap.",
+    "requestControlsModeledUSD": 10,
+    "disposableRehearsalReserveUSD": 2,
+    "completedBuildsThisMonth": 28,
+    "elapsedBuildMinutesUpperBound": 80
+  }
 }
