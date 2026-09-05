@@ -108,6 +108,7 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
+    emailFromAddress: app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,
     deletionProtection: productionPreview,

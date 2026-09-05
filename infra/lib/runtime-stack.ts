@@ -22,6 +22,7 @@ export interface RuntimeStackProps extends cdk.StackProps {
   taskRole: iam.IRole;
   certificateArn: string;
   imageTag: string;
+  emailFromAddress?: string;
   desiredCount?: number;
   maxCapacity?: number;
   deletionProtection?: boolean;
@@ -31,6 +32,8 @@ export class RuntimeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RuntimeStackProps) {
     super(scope, id, props);
 
+    const emailFromAddress = props.emailFromAddress ?? (props.environmentName === "staging" ? "contact@tracepointhq.com" : undefined);
+    if (emailFromAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromAddress)) throw new Error("Invalid email sender address");
     const certificate = acm.Certificate.fromCertificateArn(
       this,
       "Certificate",
@@ -89,6 +92,7 @@ export class RuntimeStack extends cdk.Stack {
             PORT: "3000",
             TRACEPOINT_DATA_PROVIDER: "supabase",
             TRACEPOINT_EMAIL_PROVIDER: "brevo",
+            ...(emailFromAddress ? { TRACEPOINT_FROM_EMAIL: emailFromAddress } : {}),
             TRACEPOINT_STORAGE_PROVIDER: "supabase",
           },
           secrets: {
@@ -148,6 +152,8 @@ export class RuntimeStack extends cdk.Stack {
       threshold: 85, evaluationPeriods: 3,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+    // Retain prior ACTIVE definitions so the rollback command has a usable target.
+    service.taskDefinition.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
     const container = service.taskDefinition.defaultContainer;
     if (!container) { throw new Error("TracePoint runtime requires a default container"); }
     service.taskDefinition.addVolume({ name: "runtime-cache" });

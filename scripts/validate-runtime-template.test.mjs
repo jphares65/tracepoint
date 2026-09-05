@@ -10,3 +10,13 @@ test('runtime release denies deletion, IAM additions, secret changes, count chan
   const t=updated();mutate(t);assert.throws(()=>validateRuntimeTemplate(old,t,commit));
  }
 });
+
+test('reviewed control gate admits only verified sender addition and retention',()=>{
+ const t=updated();t.Resources.Task.Properties.ContainerDefinitions[0].Environment=[{Name:'TRACEPOINT_FROM_EMAIL',Value:'contact@tracepointhq.com'}];
+ t.Resources.Task.DeletionPolicy='Retain';t.Resources.Task.UpdateReplacePolicy='Retain';
+ assert.throws(()=>validateRuntimeTemplate(old,t,commit));
+ assert.equal(validateRuntimeTemplate(old,t,commit,{allowReviewedControls:true}).safe,true);
+ for(const mutate of [x=>x.Resources.Task.Properties.ContainerDefinitions[0].Environment[0].Value='other@example.invalid',x=>x.Resources.Task.UpdateReplacePolicy='Delete',x=>x.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'UNREVIEWED',Value:'1'})]){
+  const bad=structuredClone(t);mutate(bad);assert.throws(()=>validateRuntimeTemplate(old,bad,commit,{allowReviewedControls:true}));
+ }
+});

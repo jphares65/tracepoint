@@ -184,11 +184,13 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
         Environment: Match.arrayWith([
           { Name: "TRACEPOINT_DATA_PROVIDER", Value: "supabase" },
           { Name: "TRACEPOINT_EMAIL_PROVIDER", Value: "brevo" },
+          { Name: "TRACEPOINT_FROM_EMAIL", Value: "contact@tracepointhq.com" },
           { Name: "TRACEPOINT_STORAGE_PROVIDER", Value: "supabase" },
         ]),
       }),
     ]),
   });
+  template.hasResource("AWS::ECS::TaskDefinition", { DeletionPolicy: "Retain", UpdateReplacePolicy: "Retain" });
   template.resourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 2);
   template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
   assert.match(JSON.stringify(template.toJSON()), /CONFIGURATION_ENVIRONMENT/);

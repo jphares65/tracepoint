@@ -1,7 +1,7 @@
 ﻿import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {canonical} from './migration-manifest.mjs';
-export function validateRuntimeTemplate(before,after,commit) {
+export function validateRuntimeTemplate(before,after,commit,{allowReviewedControls=false}={}) {
  if(!/^[0-9a-f]{40}$/.test(commit))throw new Error('Full commit SHA required');
  for(const [id,resource] of Object.entries(before.Resources)) {
   const candidate=after.Resources[id];if(!candidate)throw new Error('Runtime resource removal refused');
@@ -18,6 +18,20 @@ export function validateRuntimeTemplate(before,after,commit) {
   parts[parts.length-1]=':'+commit;
   if(canonical(image)!==canonical(expected))throw new Error('Image must retain the staging repository and select the exact commit');
   newContainers[0].Image=oldContainers[0].Image;
+  if(allowReviewedControls) {
+   const oldEnv=oldContainers[0].Environment??[];
+   const newEnv=newContainers[0].Environment??[];
+   const oldSender=oldEnv.filter(e=>e.Name==='TRACEPOINT_FROM_EMAIL');
+   const newSender=newEnv.filter(e=>e.Name==='TRACEPOINT_FROM_EMAIL');
+   if(!oldSender.length&&newSender.length===1&&newSender[0].Value==='contact@tracepointhq.com') {
+    const remaining=newEnv.filter(e=>e.Name!=='TRACEPOINT_FROM_EMAIL');
+    if(oldContainers[0].Environment===undefined&&remaining.length===0) delete newContainers[0].Environment;
+    else newContainers[0].Environment=remaining;
+   }
+   for(const key of ['DeletionPolicy','UpdateReplacePolicy']) if(newCopy[key]==='Retain') {
+    if(oldCopy[key]===undefined) delete newCopy[key]; else newCopy[key]=oldCopy[key];
+   }
+  }
   if(canonical(oldCopy)!==canonical(newCopy))throw new Error('Only the container image may change in a runtime release');
  }
  for(const [id,resource] of Object.entries(after.Resources))if(!before.Resources[id]&&resource.Type!=='AWS::CloudWatch::Alarm')throw new Error('Only additional alarms are permitted in a runtime release');
@@ -25,10 +39,10 @@ export function validateRuntimeTemplate(before,after,commit) {
   if(['Resources','Metadata','Description'].includes(key))continue;
   if(canonical(before[key])!==canonical(after[key]))throw new Error('Unexpected template parameter, condition or output change');
  }
- return {safe:true,scope:'image replacement and additive alarms only'};
+ return {safe:true,scope:allowReviewedControls?'image, verified sender addition, task retention and additive alarms':'image replacement and additive alarms only'};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const [a,b,commit]=process.argv.slice(2);
  const parse=async p=>JSON.parse((await readFile(p,'utf8')).replace(/^\uFEFF/,''));
- console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),commit)));
+ console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),commit,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls')})));
 }

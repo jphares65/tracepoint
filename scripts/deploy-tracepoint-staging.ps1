@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Verify', 'DeployRuntime')][string]$Action = 'Verify',
     [string]$ImageTag,
-    [string]$CertificateArn
+    [string]$CertificateArn,
+    [switch]$IncludeReviewedRuntimeControls
 )
 
 Set-StrictMode -Version Latest
@@ -112,7 +113,9 @@ try {
     & npx.cmd cdk synth $runtimeStack @context --strict --quiet --output $validationRoot
     if ($LASTEXITCODE -ne 0) { throw 'Strict runtime synthesis failed.' }
 } finally { Pop-Location }
-& node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag
+$structuralOptions = @()
+if ($IncludeReviewedRuntimeControls) { $structuralOptions += '--allow-reviewed-runtime-controls' }
+& node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag @structuralOptions
 if ($LASTEXITCODE -ne 0) { throw 'Runtime template changes exceed the reviewed image/alarms scope.' }
 
 Push-Location $infraRoot
@@ -137,7 +140,7 @@ Push-Location $infraRoot
 $savedErrorActionPreference = $ErrorActionPreference
 try {
     $ErrorActionPreference = 'Continue'
-    & npx.cmd cdk deploy $runtimeStack @context --require-approval never
+    & npx.cmd cdk deploy $runtimeStack @context --exclusively --require-approval never
     $deployExitCode = $LASTEXITCODE
 }
 finally {
