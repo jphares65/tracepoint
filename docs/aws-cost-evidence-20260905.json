@@ -1,17 +1,19 @@
 {
   "account": "559054714699",
   "region": "us-east-1",
-  "queriedAtUTC": "2026-09-05T05:59:13.936Z",
+  "queriedAtUTC": "2026-09-05T08:19:15.955Z",
   "period": {
     "start": "2026-09-01",
     "endExclusive": "2026-09-06"
   },
-  "unblendedCostUSD": 0.9478775816,
+  "unblendedCostUSD": 1.3814978907,
   "estimated": true,
-  "budgetActualUSD": 0.948,
+  "budgetActualUSD": 1.381,
   "budgetLimitUSD": 75,
   "modeledMonthlyUSD": 67.17,
-  "billingLagNote": "Estimated month-to-date bill can lag recent builds, deployments and the new alert stack. WAF logging resources incur charges even while ALB association is pending.",
+  "billingLagNote": "Estimated billing can lag builds, deployments, WAF and disposable RDS rehearsals. Monthly model includes low-usage allowances; budget alerts do not impose a hard spending cap.",
   "requestControlsModeledUSD": 10,
-  "disposableRehearsalReserveUSD": 2
+  "disposableRehearsalReserveUSD": 2,
+  "completedBuildsThisMonth": 26,
+  "elapsedBuildMinutesUpperBound": 75
 }

@@ -38,7 +38,7 @@ async function main(){
   // RDS master is not a PostgreSQL superuser: explicitly authorize SET ROLE used
   // by the synthetic RLS suite, without granting any production identity access.
   await client.query('grant anon, authenticated, service_role to tprehearsal');
-  phase='migration source gate';const files=(await readdir('supabase/migrations')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(files.length,65);
+  phase='migration source gate';const files=(await readdir('supabase/migrations')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(files.length,66);
   await client.query('create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)');
   for(const file of files){
    phase='ordered migrations';
