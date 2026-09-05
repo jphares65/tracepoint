@@ -1,8 +1,10 @@
 {
-  "reviewedCommit": "d377ad176b99d6cc35f0c80ef679636caca5cab7",
   "environment": "staging",
   "account": "559054714699",
   "region": "us-east-1",
-  "action": "publish-and-deploy",
-  "reason": "Release reviewed email reconciliation and aggregate queue gates after successful hosted Linux validation and OIDC proof."
+  "action": "deploy-existing",
+  "imageCommit": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
+  "reviewedCommit": "4d80c789af6cc3c0f6d5efd04efd90509976c615",
+  "rollbackPriorTaskArn": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:16",
+  "reason": "Resume accepted scan-clean image through OIDC and rehearse rollback then return"
 }
