@@ -11,3 +11,5 @@ Validation: 64 clean PostgreSQL migrations, real armory SQL writes, capability m
 Recovery run 1f7632ef-d8e8-4d0b-8df4-9c710cff3265 validated one-time Supabase recovery token exchange, password replacement, new-password login, rejected token replay and global refresh-token revocation. Cleanup passed. The token was generated server-side for a disposable account; recovery email delivery and the browser recovery UI are not claimed.
 
 Run: `node --import tsx scripts/run-disposable-staging-acceptance.mjs --execute --range-documents --extended-workflows` with the gated staging AWS profile and installed Playwright Chromium. No acceptance credentials are required from the user.
+
+A subsequent real-role SQL regression exposed missing checklist grants/policies. Migration 65 enables RLS on firearm_inspection_items, scopes reads through the protected parent, and permits inserts only for inspection/firearm managers. No update/delete client grants were introduced. The 65-migration bootstrap proves manager writes and officer read/write separation; it was applied only to staging after exact 64-ledger and previous-security-state guards.
