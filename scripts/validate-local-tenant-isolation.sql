@@ -9,9 +9,7 @@ insert into public.department_memberships(department_id,user_id) values ('000000
 insert into public.equipment_types(department_id,name) values
  ('00000000-0000-4000-8000-000000000011','RLS type A'),
  ('00000000-0000-4000-8000-000000000012','RLS type B');
--- Emulate Supabase default table grants in this disposable standard PostgreSQL only.
-grant usage on schema public,auth to authenticated;
-grant select,insert,update,delete on all tables in schema public to authenticated;
+-- Exercise the grants supplied by migrations, without test-only grants.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
 do $$

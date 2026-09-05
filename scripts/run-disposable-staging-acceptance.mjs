@@ -44,7 +44,7 @@ try {
   requireSuccess(await admin.from('department_memberships').insert({ department_id: departmentIds[0], user_id: userId, is_active: true }), 'Create membership');
   requireSuccess(await admin.from('department_membership_roles').insert({ department_id: departmentIds[0], user_id: userId, role_code: 'administrator' }), 'Create manager role');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
-  result = await new Promise((resolve, reject) => {
+  result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
@@ -54,14 +54,20 @@ try {
   result = 1;
 } finally {
   let cleanupFailed = false;
-  for (const id of createdDepartments) {
-    const removal = await admin.from('departments').delete().eq('id', id).like('slug', 'acceptance-' + run + '-%');
-    const verify = await admin.from('departments').select('id').eq('id', id);
-    if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
-  }
   if (userId) {
     const removal = await admin.auth.admin.deleteUser(userId);
     const verify = await admin.from('profiles').select('id').eq('id', userId);
+    if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
+  }
+  for (const id of createdDepartments) {
+    // Delete auto-seeded audited children while the tenant still exists. A
+    // parent-first cascade would make their audit inserts violate the tenant FK.
+    for (const table of ['department_role_permissions', 'department_rules', 'department_security_settings']) {
+      const removal = await admin.from(table).delete().eq('department_id', id);
+      if (removal.error) cleanupFailed = true;
+    }
+    const removal = await admin.from('departments').delete().eq('id', id).like('slug', 'acceptance-' + run + '-%');
+    const verify = await admin.from('departments').select('id').eq('id', id);
     if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
   }
   console.log(JSON.stringify({ fixtureRun: run, cleanup: cleanupFailed ? 'FAILED: remove only this run identifiers' : 'verified' }));

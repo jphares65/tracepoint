@@ -48,7 +48,7 @@ try {
   const failed = Object.entries(checks)
     .filter(([key, value]) => key !== "migration_count" && value !== true)
     .map(([key]) => key);
-  if (checks.migration_count !== 56 || missingTables.length || failed.length) {
+  if (checks.migration_count !== expectedVersions.length || missingTables.length || failed.length) {
     throw new Error("Focused staging schema verification failed.");
   }
   console.log(JSON.stringify({ host: expectedHost, missingTables, ...checks }));
