@@ -20,7 +20,7 @@ for(const environmentName of ['staging','production'] as const){
   template.hasResourceProperties('AWS::SES::EmailIdentity',{EmailIdentity:environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com',MailFromAttributes:{BehaviorOnMxFailure:'REJECT_MESSAGE',MailFromDomain:'bounce.'+(environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com')}});
   template.hasResourceProperties('AWS::SNS::Topic',{KmsMasterKeyId:Match.anyValue()});template.hasResourceProperties('AWS::KMS::Key',{EnableKeyRotation:true});
   template.hasResourceProperties('AWS::SES::ConfigurationSet',{SuppressionOptions:{SuppressedReasons:['BOUNCE','COMPLAINT']},DeliveryOptions:{TlsPolicy:'REQUIRE'}});
-  template.resourceCountIs('AWS::Route53::RecordSet',0);template.resourceCountIs('AWS::SNS::Subscription',0);
+  template.resourceCountIs('AWS::Route53::RecordSet',0);template.resourceCountIs('AWS::SNS::Subscription',1);template.resourceCountIs('AWS::SQS::Queue',2);template.hasResourceProperties('AWS::SQS::Queue',{SqsManagedSseEnabled:true,MessageRetentionPeriod:1209600,RedrivePolicy:{deadLetterTargetArn:Match.anyValue(),maxReceiveCount:5}});template.hasResourceProperties('AWS::SNS::Subscription',{RawMessageDelivery:false,Protocol:'sqs'});
   const policy=Object.values(template.findResources('AWS::IAM::Policy'))[0] as {Properties:{PolicyDocument:{Statement:Array<{Action:string;Condition:unknown}>}}};
   assert.equal(policy.Properties.PolicyDocument.Statement[0].Action,'ses:SendEmail');assert.ok(policy.Properties.PolicyDocument.Statement[0].Condition);
  });
