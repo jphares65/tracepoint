@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -60,6 +60,7 @@ jobs:
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name" }
           }
       - name: Bind deliberate push request to reviewed source
+        id: request
         if: github.event_name == 'push'
         run: node scripts/validate-staging-release-request.mjs
       - run: npm ci
@@ -81,8 +82,11 @@ jobs:
           allowed-account-ids: '559054714699'
           role-duration-seconds: 7200
       - name: Publish tracked source and wait for scan
+        if: github.event_name != 'push' || steps.request.outputs.publish == 'true'
         shell: pwsh
         run: ./scripts/publish-tracepoint-staging-image.ps1 -Wait
       - name: Guarded release with authenticated smoke and automatic recovery
         shell: pwsh
-        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3
+        env:
+          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit || github.sha }}
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:RELEASE_IMAGE -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3
