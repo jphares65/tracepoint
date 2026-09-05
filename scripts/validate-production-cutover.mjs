@@ -10,7 +10,7 @@ export function validateCutover(input) {
   if(input.hostname!=='tracepointhq.com')fail('Canonical production hostname must be reviewed');
   if(!input.certificateArn?.startsWith(`arn:aws:acm:us-east-1:${input.account}:certificate/`))fail('Production account certificate required');
   if(input.dataMode!=='retain-production-providers')fail('Data transfer requires a separate authorized, rehearsed procedure');
-  const required=['accountIdentityVerified','certificateIssued','secretValidated','imageScanPassed','authenticatedAcceptancePassed','alarmsDelivered','backupRestoreRehearsed','rollbackRehearsed','costApproved','dnsRecordsCaptured','agencyApproval'];
+  const required=['accountIdentityVerified','certificateIssued','secretValidated','imageScanPassed','authenticatedAcceptancePassed','alarmsDelivered','backupRestoreRehearsed','rollbackRehearsed','costApproved','dnsRecordsCaptured','agencyApproval','schemaCompatibilityVerified','productionClientBuildVerified'];
   for(const gate of required)if(input.gates?.[gate]!==true)fail(`Unmet cutover gate: ${gate}`);
   return {readyForReview:true,executionAuthorized:false,account:input.account,region:input.region,hostname:input.hostname,dataMode:input.dataMode};
 }

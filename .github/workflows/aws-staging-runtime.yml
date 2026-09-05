@@ -90,3 +90,11 @@ jobs:
         env:
           RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit || github.sha }}
         run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:RELEASE_IMAGE -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3
+
+      - name: Controlled staging rollback and return to accepted image
+        if: steps.request.outputs.rollbackPriorTaskArn != ''
+        shell: pwsh
+        env:
+          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit }}
+          ROLLBACK_TASK: ${{ steps.request.outputs.rollbackPriorTaskArn }}
+        run: ./scripts/rehearse-staging-rollback.ps1 -CurrentImageTag $env:RELEASE_IMAGE -PriorTaskDefinitionArn $env:ROLLBACK_TASK -Execute

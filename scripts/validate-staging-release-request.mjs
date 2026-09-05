@@ -6,8 +6,9 @@ export function validateReleaseRequest(request,context){
  assert.equal(context.branch,'refs/heads/codex/aws-staging-readiness-20260902');assert.match(context.head,/^[0-9a-f]{40}$/);assert.match(request.reviewedCommit,/^[0-9a-f]{40}$/);assert.equal(request.reviewedCommit,context.parent);
  assert.deepEqual(context.changedFiles,['.github/staging-release.json']);assert.equal(request.environment,'staging');assert.equal(request.account,'559054714699');assert.equal(request.region,'us-east-1');assert.ok(['publish-and-deploy','deploy-existing'].includes(request.action));
  if(request.action==='deploy-existing'){assert.match(request.imageCommit,/^[0-9a-f]{40}$/);assert.equal(context.imageIsAncestor,true);assert.equal(context.runtimeSourceMatches,true);}
+ if(request.rollbackPriorTaskArn!==undefined)assert.match(request.rollbackPriorTaskArn,new RegExp('^arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:[0-9]+$'));
  assert.equal(typeof request.reason,'string');assert.ok(request.reason.length>0&&request.reason.length<=240);assert.ok(!/[\r\n\x00-\x1f]/.test(request.reason));
- return {accepted:true,reviewedCommit:request.reviewedCommit,imageSourceCommit:request.action==='deploy-existing'?request.imageCommit:context.head,publish:request.action==='publish-and-deploy',account:request.account,region:request.region};
+ return {accepted:true,reviewedCommit:request.reviewedCommit,imageSourceCommit:request.action==='deploy-existing'?request.imageCommit:context.head,publish:request.action==='publish-and-deploy',rollbackPriorTaskArn:request.rollbackPriorTaskArn??'',account:request.account,region:request.region};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  try{
@@ -22,7 +23,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
    runtimeSourceMatches=git(['diff','--name-only',request.imageCommit,head,'--',...paths])==='';
   }
   const result=validateReleaseRequest(request,{branch:process.env.GITHUB_REF,head,parent,changedFiles:git(['diff','--name-only',parent,head]).split(/\r?\n/),imageIsAncestor,runtimeSourceMatches});
-  if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,'imageCommit='+result.imageSourceCommit+'\npublish='+result.publish+'\n');
+  if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,'imageCommit='+result.imageSourceCommit+'\npublish='+result.publish+'\nrollbackPriorTaskArn='+result.rollbackPriorTaskArn+'\n');
   console.log(JSON.stringify(result));
  }catch{console.error('Staging release request failed its reviewed-source boundary.');process.exitCode=1;}
 }
