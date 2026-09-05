@@ -1,0 +1,152 @@
+{
+  "checkedAtUTC": "2026-09-05T11:10:36.681Z",
+  "startingPercent": 45.55,
+  "endingPercent": 66.5,
+  "implementationHead": "16d1fd4294b0e818c4731a31d4f83bbf723e5327",
+  "remoteHeadVerified": "16d1fd4294b0e818c4731a31d4f83bbf723e5327",
+  "productionMainUnchanged": "e33e4a4f17b662dddec9bf653ebf4051c3eb78ab",
+  "protectedPathChanges": 0,
+  "preview": {
+    "commit": "16d1fd4294b0e818c4731a31d4f83bbf723e5327",
+    "vercelStatus": "success",
+    "description": "Deployment has completed"
+  },
+  "runtime": {
+    "account": "559054714699",
+    "region": "us-east-1",
+    "imageTag": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
+    "checkedAt": "2026-09-05T10:57:20.531Z",
+    "identityVerified": true,
+    "stackStatus": "UPDATE_COMPLETE",
+    "ecs": {
+      "desired": 1,
+      "running": 1,
+      "pending": 0,
+      "revision": 17,
+      "completed": true
+    },
+    "scan": {
+      "status": "COMPLETE",
+      "findings": {}
+    },
+    "expectedDigest": "sha256:b79e5bb37a1b58035c9b28a6a1120c51a7669f659913da3a3395e318b0b3515b",
+    "runningDigest": "sha256:b79e5bb37a1b58035c9b28a6a1120c51a7669f659913da3a3395e318b0b3515b",
+    "imageMatches": true,
+    "targets": [
+      "healthy"
+    ],
+    "alarms": [
+      {
+        "name": "tracepoint-staging-alb-5xx-rate",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-application-5xx",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-memory",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-request-flood",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-unhealthy-target",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-runtime-alert",
+        "state": "OK"
+      }
+    ],
+    "public": [
+      {
+        "route": "/api/health",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "route": "/login",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "route": "/auth/confirm",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/auth/callback",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/equipment",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/range-days",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/firearms",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/off-duty-firearms",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/qualifications",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/training",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/fleet-management",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/notifications",
+        "status": 307,
+        "passed": true
+      }
+    ],
+    "logs": {
+      "currentTaskOnly": true,
+      "matchingErrors": 0,
+      "filesystemPermissionErrors": 0
+    },
+    "notificationQueue": {
+      "failed": 0,
+      "staleProcessing": 0,
+      "readOnly": true
+    },
+    "passed": true
+  },
+  "cognitoProtocolPassed": true,
+  "initialSessionComposition": {
+    "implemented": true,
+    "active": false,
+    "focusedTests": 5,
+    "postgresStateTests": 7,
+    "typescript": true,
+    "changedFileLint": true,
+    "nextProductionBuild": true,
+    "buildConfiguration": "synthetic public configuration, no production credentials"
+  },
+  "productionDeploymentAuthorized": false,
+  "productionDnsModified": false,
+  "productionDataTransferred": false
+}
