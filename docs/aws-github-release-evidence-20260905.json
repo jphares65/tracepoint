@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-09-05T10:16:07.018Z",
+  "run": 33958406346,
+  "attempt": 2,
+  "releaseJob": 101287432745,
+  "status": "success",
+  "requestCommit": "8b91f7c37cf30e28848f82b320b7ad1e87aaba05",
+  "imageCommit": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
+  "imagePublicationRun": 33956951366,
+  "imageRebuilt": false,
+  "oidc": true,
+  "role": "TracePointMigrationStagingGitHub",
+  "rollback": {
+    "currentTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:17",
+    "priorTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:16",
+    "imageTag": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
+    "rollbackVerified": true,
+    "rollbackSeconds": 404.1160928,
+    "returnSeconds": 436.6072648,
+    "correctedRuntimeRestored": true
+  },
+  "validation": {
+    "scriptTests": 45,
+    "applicationTests": 180,
+    "infrastructureTests": 22,
+    "typescript": true,
+    "windowsSafety": true,
+    "authenticatedAcceptance": true,
+    "fixtureCleanup": true
+  }
+}

@@ -2,7 +2,7 @@
   "account": "559054714699",
   "region": "us-east-1",
   "imageTag": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
-  "checkedAt": "2026-09-05T09:32:38.387Z",
+  "checkedAt": "2026-09-05T10:08:34.712Z",
   "identityVerified": true,
   "stackStatus": "UPDATE_COMPLETE",
   "ecs": {

@@ -1,8 +1,8 @@
 {
   "date": "2026-09-05",
-  "method": "Same weighted binary capability checklist. Credit restored only for deployed and live-validated authentication/email configuration, authenticated browser sessions, S3 application storage, and executed deployment/rollback. No credit for incomplete range workflows, local synthetic copy tests alone, disabled SES/Cognito, or documentation. Live staging manifest credit requires two equal repeatable-read snapshots with exact ledger, row hashes, relationship checks and schema/security fingerprints. Full authenticated staging acceptance credited after revision 16 passed 52 application checks, supported browser password recovery, logout origin/session revocation, audit verification and zero-fixture cleanup. Live WAF logging/count/enforcement/recovery and bounded authenticated concurrency passed; this does not establish production capacity.",
+  "method": "Same weighted binary capability checklist. Credit restored only for deployed and live-validated authentication/email configuration, authenticated browser sessions, S3 application storage, and executed deployment/rollback. No credit for incomplete range workflows, local synthetic copy tests alone, disabled SES/Cognito, or documentation. Live staging manifest credit requires two equal repeatable-read snapshots with exact ledger, row hashes, relationship checks and schema/security fingerprints. Full authenticated staging acceptance credited after revision 16 passed 52 application checks, supported browser password recovery, logout origin/session revocation, audit verification and zero-fixture cleanup. Live WAF logging/count/enforcement/recovery and bounded authenticated concurrency passed; this does not establish production capacity. GitHub OIDC release run 33958406346 attempt 2 passed release, authenticated acceptance, zero-fixture cleanup and actual revision 17 to 16 to 17 rollback; CI/CD execution now credited. Disabled SES/Cognito and production scaffolding remain uncredited.",
   "before": 45.55,
-  "after": 64.9,
+  "after": 66.5,
   "categories": [
     {
       "category": "AWS account/governance",
@@ -254,7 +254,7 @@
         {
           "capability": "OIDC release executed",
           "before": false,
-          "after": false
+          "after": true
         },
         {
           "capability": "executable runtime safety tests",
