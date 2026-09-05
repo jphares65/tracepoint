@@ -1,0 +1,15 @@
+# Reviewed production assembly
+
+The new infra/bin/production-infra.ts entry point accepts a non-secret reviewed target JSON. It reuses the validated network/security/compute/build/runtime constructs without changing the staging entry point. The hosting configuration retains production Supabase database/auth/storage and Brevo, uses two tasks scaling to four, one-year application logs, retained secrets and task definitions, and ALB/stack deletion protection. No production resource was deployed.
+
+Offline command from infra, with AWS credentials/profile and CDK_DEFAULT_ACCOUNT absent:
+
+    npx cdk synth --app "npx ts-node bin/production-infra.ts" -c productionOperation=preview -c productionConfig=production-target.example.json --strict --lookups=false --output cdk.production-preview
+
+The example account 111111111111 is a placeholder accepted only offline. Its image tag is a source commit, not permission to promote a staging image. Production must publish its own image with production public values. A real target file must name the exact account, TracePointMigrationProduction role, us-east-1 certificate, confirmed production hostname/sender and immutable production image tag. No credentials belong in that JSON.
+
+Future authorized mode requires productionOperation=authorized, a deploymentAuthorization object containing matching account/role, an approval reference and expiry within 24 hours, and a matching TRACEPOINT_PRODUCTION_AUTHORIZATION process value. It verifies the actual STS account/exact assumed role/region and both configured availability zones before constructing stacks. Management/staging/placeholder accounts and role-name suffix matches are rejected. This mode was not executed. The configuration acknowledgement is an additional guard; it does not replace Jason's explicit authority or validate service credentials.
+
+After authority exists, use the same entry point for live diff and separately reviewed foundation/build/runtime phases. Bootstrap, actual production image scan, private provider probes, actual schema compatibility, certificate status, human monitoring, backup/restore and traffic approval remain gates. The cutover validator still reports executionAuthorized=false and now requires both schemaCompatibilityVerified and productionClientBuildVerified. Neither production data transfer nor DNS change is implemented by this assembly.
+
+Three focused production tests pass: rejected target/authority inputs, exact identity checks and synthesized provider/capacity/retention/isolation. Strict offline synthesis of all five stacks passed. No production account or credentials were available, so no live production diff is claimed.

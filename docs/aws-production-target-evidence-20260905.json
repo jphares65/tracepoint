@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-09-05T09:50:16.364Z",
+  "mode": "offline-preview",
+  "account": "111111111111",
+  "region": "us-east-1",
+  "strictSynthPassed": true,
+  "targetAndInfrastructureTests": 3,
+  "productionDeployment": false,
+  "productionCredentialsUsed": false,
+  "templates": [
+    {
+      "name": "tracepoint-production-compute.template.json",
+      "sha256": "30f543b519dd094325751082f5f2a03cafdf5d6978bd2a55614f13d8eb19efa4",
+      "resources": 8
+    },
+    {
+      "name": "tracepoint-production-image-build.template.json",
+      "sha256": "fc4970c0076721db68bb33e6795e2b5b49086932c013a4e40721fdd8e99147f2",
+      "resources": 9
+    },
+    {
+      "name": "tracepoint-production-network.template.json",
+      "sha256": "5fbe89fc1e74d5cc6ca29fe0b5dfb76cda7497eb1574810f4630bbf7044cc224",
+      "resources": 20
+    },
+    {
+      "name": "tracepoint-production-runtime.template.json",
+      "sha256": "6b1c46156ac1492710f40f01231e6813bcf6ea069823d438df1d3b31e4d0b2b8",
+      "resources": 17
+    },
+    {
+      "name": "tracepoint-production-security.template.json",
+      "sha256": "08f505b56211bc8b8bfcbbaefd17ae212f637244a3953d577a9b1fe088d0f18f",
+      "resources": 3
+    }
+  ]
+}

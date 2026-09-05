@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "test": "ts-node test/infrastructure.test.ts && ts-node test/provider-foundations.test.ts && ts-node test/alert-delivery.test.ts && ts-node test/postgres-rehearsal.test.ts && ts-node test/request-controls.test.ts && ts-node test/github-staging.test.ts",
+    "test": "ts-node test/infrastructure.test.ts && ts-node test/provider-foundations.test.ts && ts-node test/alert-delivery.test.ts && ts-node test/postgres-rehearsal.test.ts && ts-node test/request-controls.test.ts && ts-node test/github-staging.test.ts && ts-node test/production-target.test.ts",
     "watch": "tsc -w",
     "cdk": "cdk",
     "synth": "cdk synth",
