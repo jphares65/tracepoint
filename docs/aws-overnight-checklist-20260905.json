@@ -380,5 +380,15 @@
     "aws-live-storage-copy-20260905.md",
     "aws-auth-callback-repair-20260905.md",
     "aws-request-controls-20260905.md"
-  ]
+  ],
+  "latestRelease": {
+    "date": "2026-09-05",
+    "before": 66.5,
+    "after": 66.5,
+    "revision": 18,
+    "imageCommit": "af8304f40bad8ccd7336b35cacd026a89be5149a",
+    "evidence": "aws-release18-evidence-20260905.json",
+    "workflowRun": 33974564913,
+    "creditAdded": 0
+  }
 }

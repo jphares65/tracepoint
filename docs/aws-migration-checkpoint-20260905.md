@@ -1,3 +1,5 @@
+> Latest runtime checkpoint: revision 18, image af8304f, successful OIDC release/acceptance and 18 -> 17 -> 18 rollback. See [release 18 checkpoint](aws-release18-checkpoint-20260905.md) and aws-release18-evidence-20260905.json. Readiness remains 66.50%. Historical revision 17 details below are superseded only for current runtime state.
+
 # TracePoint migration checkpoint ? September 5, 2026
 
 Staging is operational. Production cutover remains gated; TracePoint is not fully migrated. Starting weighted score **45.55%**; current credited score **66.50%**. The same binary checklist is retained for comparability. Disabled code and documentation earn no credit. The storage category measures the staging foundation, not production object transfer. Production Supabase database/auth/storage and Brevo remain unchanged.

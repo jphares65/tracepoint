@@ -1,0 +1,174 @@
+{
+  "startingCheckpoint": "62da52a85563906de2f0435a20d4abf57b435995",
+  "startingReadinessPercent": 66.5,
+  "endingReadinessPercent": 66.5,
+  "scoreReason": "Existing release/CI/rollback capabilities revalidated. Cognito remains disabled, so packaging the foundation earns no new migration credit.",
+  "runtime": {
+    "account": "559054714699",
+    "region": "us-east-1",
+    "imageTag": "af8304f40bad8ccd7336b35cacd026a89be5149a",
+    "checkedAt": "2026-09-05T16:08:51.834Z",
+    "identityVerified": true,
+    "stackStatus": "UPDATE_COMPLETE",
+    "ecs": {
+      "desired": 1,
+      "running": 1,
+      "pending": 0,
+      "revision": 18,
+      "completed": true
+    },
+    "scan": {
+      "status": "COMPLETE",
+      "findings": {}
+    },
+    "expectedDigest": "sha256:6a4c9d5dfb5d89b9d2b9d1be2c3dab2a0abba8fa73aa70da401c00b6c1b8f503",
+    "runningDigest": "sha256:6a4c9d5dfb5d89b9d2b9d1be2c3dab2a0abba8fa73aa70da401c00b6c1b8f503",
+    "imageMatches": true,
+    "targets": [
+      "healthy"
+    ],
+    "alarms": [
+      {
+        "name": "tracepoint-staging-alb-5xx-rate",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-application-5xx",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-memory",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-request-flood",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-unhealthy-target",
+        "state": "OK"
+      },
+      {
+        "name": "tracepoint-staging-runtime-alert",
+        "state": "OK"
+      }
+    ],
+    "public": [
+      {
+        "route": "/api/health",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "route": "/login",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "route": "/auth/confirm",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/auth/callback",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/equipment",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/range-days",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/firearms",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/off-duty-firearms",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/qualifications",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/training",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/fleet-management",
+        "status": 307,
+        "passed": true
+      },
+      {
+        "route": "/notifications",
+        "status": 307,
+        "passed": true
+      }
+    ],
+    "logs": {
+      "currentTaskOnly": true,
+      "matchingErrors": 0,
+      "filesystemPermissionErrors": 0
+    },
+    "notificationQueue": {
+      "failed": 0,
+      "staleProcessing": 0,
+      "readOnly": true
+    },
+    "passed": true
+  },
+  "workflow": {
+    "run": 33974564913,
+    "attempt": 1,
+    "url": "https://github.com/jphares65/tracepoint/actions/runs/33974564913",
+    "conclusion": "success",
+    "preview": "success",
+    "resourceDiff": [
+      "[~] AWS::ECS::TaskDefinition Service/TaskDef ServiceTaskDef1922A00F replace"
+    ]
+  },
+  "validation": {
+    "applicationTests": 196,
+    "scriptTests": 50,
+    "infrastructureTests": 26,
+    "typescript": true,
+    "windowsSafety": true,
+    "authenticatedAcceptance": true,
+    "fixtureCleanup": true
+  },
+  "rollback": {
+    "currentTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:18",
+    "priorTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:17",
+    "imageTag": "af8304f40bad8ccd7336b35cacd026a89be5149a",
+    "rollbackVerified": true,
+    "rollbackSeconds": 411.9726504,
+    "returnSeconds": 421.5280032,
+    "correctedRuntimeRestored": true
+  },
+  "brevo": {
+    "run": "f6f4e795-af49-4ceb-ba52-11746ed6442c",
+    "messageId": "<202609051611.32275655596@smtp-relay.mailin.fr>",
+    "taskRevision": 18,
+    "submitted": true,
+    "delivery": "verified",
+    "deliveredAtUTC": "2026-09-05T16:11:35Z",
+    "recipientAddressRecorded": false
+  },
+  "schema": {
+    "migrations": 67,
+    "priorExactLedgerEvidence": "aws-refresh-session-evidence-20260905.json",
+    "reapplied": false,
+    "reason": "Already applied and idempotently verified at the starting checkpoint; no new migration existed."
+  },
+  "productionModified": false
+}
