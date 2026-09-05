@@ -1,9 +1,9 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -20,79 +20,6 @@ function parseInteger(value: unknown) {
 function parseDecimal(value: unknown) {
   const parsed = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-async function getCurrentUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { user: null, error: "You must be signed in to use Armory." };
-  }
-
-  return { user, error: null };
-}
-
-async function getDepartmentId(admin: any, userId: string) {
-  const { data, error } = await admin
-    .from("department_memberships")
-    .select("department_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data?.department_id ?? null;
-}
-
-async function getAccess(admin: any, departmentId: string, userId: string) {
-  const { data: roleRows, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", userId);
-
-  if (roleError) throw new Error(roleError.message);
-
-  const roleCodes = Array.from(
-    new Set(
-      (roleRows ?? [])
-        .map((row: any) => row.role_code)
-        .filter((value: unknown): value is string => Boolean(value)),
-    ),
-  );
-
-  let permissions: string[] = [];
-
-  if (roleCodes.length > 0) {
-    const { data: permissionRows, error: permissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes);
-
-    if (permissionError) throw new Error(permissionError.message);
-
-    permissions = Array.from(
-      new Set(
-        (permissionRows ?? [])
-          .map((row: any) => row.permission_code)
-          .filter((value: unknown): value is string => Boolean(value)),
-      ),
-    );
-  }
-
-  return (
-    roleCodes.includes("armorer") ||
-    roleCodes.includes("range_master") ||
-    roleCodes.includes("administrator") ||
-    permissions.includes("manage_firearms") ||
-    permissions.includes("administer_department")
-  );
 }
 
 async function loadLedger(admin: any, departmentId: string) {
@@ -156,32 +83,12 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
+  const { admin, departmentId } = resolved.context;
+  if (!hasAnyServerPermission(resolved.context, ["manage_firearms"])) {
+    return permissionDeniedResponse("Firearms-management permission is required to manage ammunition.");
   }
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
-
-    const allowed = await getAccess(admin, departmentId, user.id);
-
-    if (!allowed) {
-      return NextResponse.json(
-        { error: "You do not have permission to manage ammunition." },
-        { status: 403 },
-      );
-    }
-
     return NextResponse.json(await loadLedger(admin, departmentId));
   } catch (error) {
     return NextResponse.json(
@@ -212,35 +119,15 @@ export async function POST(request: NextRequest) {
   if (featureError) {
     return featureError;
   }
-  const { user, error: authError } = await getCurrentUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: authError }, { status: 401 });
+  const { admin, departmentId, user } = resolved.context;
+  if (!hasAnyServerPermission(resolved.context, ["manage_firearms"])) {
+    return permissionDeniedResponse("Firearms-management permission is required to manage ammunition.");
   }
 
   const body = (await request.json().catch(() => ({}))) as any;
   const action = String(body.action ?? "");
 
   try {
-    const admin = createAdminClient() as any;
-    const departmentId = await getDepartmentId(admin, user.id);
-
-    if (!departmentId) {
-      return NextResponse.json(
-        { error: "No active department membership was found." },
-        { status: 403 },
-      );
-    }
-
-    const allowed = await getAccess(admin, departmentId, user.id);
-
-    if (!allowed) {
-      return NextResponse.json(
-        { error: "You do not have permission to manage ammunition." },
-        { status: 403 },
-      );
-    }
-
     if (action === "create_lot") {
       const category = body.category === "Training" ? "Training" : "Duty";
       const caliber = cleanText(body.caliber);

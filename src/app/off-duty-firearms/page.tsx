@@ -9,10 +9,6 @@ import {
 } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
-  CHIEF_PROFILE,
-  CURRENT_USER_PROFILE,
-} from "@/app/lib/tracepoint/current-user";
-import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
@@ -1256,6 +1252,7 @@ export default function OffDutyFirearmsPage() {
   const [records, setRecords] = useState<OffDutyFirearm[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [canReview, setCanReview] = useState(false);
+  const [canSubmit, setCanSubmit] = useState(false);
   const [canManageInspections, setCanManageInspections] =
     useState(false);
   const [loading, setLoading] = useState(true);
@@ -1282,6 +1279,7 @@ export default function OffDutyFirearmsPage() {
           id?: string;
         };
         canReview?: boolean;
+        canSubmit?: boolean;
         canManageInspections?: boolean;
         error?: string;
       };
@@ -1295,6 +1293,7 @@ export default function OffDutyFirearmsPage() {
       setRecords(Array.isArray(payload.records) ? payload.records : []);
       setCurrentUserId(payload.currentUser?.id ?? "");
       setCanReview(payload.canReview === true);
+      setCanSubmit(payload.canSubmit === true);
       setCanManageInspections(
         payload.canManageInspections === true,
       );
@@ -1556,7 +1555,7 @@ export default function OffDutyFirearmsPage() {
 
   return (
     <TracePointShell activePage="Off-Duty Firearms">
-      {requestDrawerOpen && (
+      {requestDrawerOpen && canSubmit && (
         <RequestDrawer
           initialRecord={editingRecord}
           onClose={() => {
@@ -1659,7 +1658,7 @@ export default function OffDutyFirearmsPage() {
               </div>
               )}
 
-              {portalMode === "Officer Portal" && (
+              {portalMode === "Officer Portal" && canSubmit && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1823,6 +1822,7 @@ export default function OffDutyFirearmsPage() {
                   </button>
 
                   {portalMode === "Officer Portal" &&
+                    canSubmit &&
                     record.requestStatus === "Returned for Correction" && (
                       <button
                         type="button"

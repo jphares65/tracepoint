@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
-const MANAGE = ["manage_training", "manage_certifications", "manage_range_days"] as const;
+const MANAGE = ["manage_training"] as const;
 
 export async function POST(_request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();

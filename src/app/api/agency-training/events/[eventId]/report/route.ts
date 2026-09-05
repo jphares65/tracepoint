@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 type RouteContext = { params: Promise<{ eventId: string }> };
 function csv(value: unknown) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
@@ -7,6 +7,9 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
   const context = resolved.context;
+  if (!hasAnyServerPermission(context, ["manage_training"])) {
+    return permissionDeniedResponse("Agency-training management permission is required to export an event report.");
+  }
   const { eventId } = await routeContext.params;
   try {
   const data = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getReport({ departmentId: context.departmentId, eventId });

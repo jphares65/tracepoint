@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -556,6 +558,9 @@ export async function GET() {
 
   if (featureError) {
     return featureError;
+  }
+  if (!hasAnyServerPermission(resolved.context, ["view_analytics"])) {
+    return permissionDeniedResponse("Analytics permission is required to view department performance data.");
   }
 
   const { admin, departmentId } =

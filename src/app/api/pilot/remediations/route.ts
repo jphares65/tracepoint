@@ -2,6 +2,8 @@
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -30,6 +32,9 @@ export async function GET() {
 
   if (featureError) {
     return featureError;
+  }
+  if (!hasAnyServerPermission(resolved.context, ["manage_training", "view_analytics"])) {
+    return permissionDeniedResponse("Training or analytics permission is required to view remediation records.");
   }
   const {
     admin,
@@ -71,6 +76,9 @@ export async function PUT(request: Request) {
 
   if (featureError) {
     return featureError;
+  }
+  if (!hasAnyServerPermission(resolved.context, ["manage_training"])) {
+    return permissionDeniedResponse("Agency-training management permission is required to update remediation records.");
   }
   const {
     admin,

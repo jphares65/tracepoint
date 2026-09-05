@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
@@ -91,10 +92,22 @@ export async function GET() {
   const context = access.context;
   const admin = context.admin as any;
   const departmentId = context.departmentId;
+  const canViewDepartment = hasAnyServerPermission(context, [
+    "manage_users",
+    "view_command_dashboard",
+    "manage_range_days",
+    "score_range_days",
+    "manage_qualifications",
+    "manage_training",
+  ]);
 
   try {
     const readData = await createRangeReadRepository(admin, departmentId).getPersonnel(departmentId);
-    const safeMemberships = readData.memberships;
+    const safeMemberships = canViewDepartment
+      ? readData.memberships
+      : readData.memberships.filter(
+          (membership) => membership.user_id === context.userId,
+        );
     const profilesById = new Map<string, any>();
     const rolesByUserId = new Map<string, string[]>();
       readData.profiles.forEach((profile: any) => {

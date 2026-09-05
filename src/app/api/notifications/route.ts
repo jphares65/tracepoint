@@ -1093,13 +1093,7 @@ function canReviewDepartmentInbox(context: any) {
 
   return (
     context?.isSupportMode === true ||
-    permissions.includes("administer_department") ||
-    [
-      "review_off_duty_requests",
-      "approve_off_duty_requests",
-      "return_off_duty_requests",
-      "deny_off_duty_requests",
-    ].some((permission) => permissions.includes(permission))
+    permissions.includes("review_off_duty_requests")
   );
 }
 

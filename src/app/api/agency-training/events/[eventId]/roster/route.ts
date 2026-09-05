@@ -11,9 +11,7 @@ import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-r
 type RouteContext = { params: Promise<{ eventId: string }> };
 
 const MANAGE_PERMISSIONS = [
-  "manage_certifications",
   "manage_training",
-  "manage_range_days",
 ] as const;
 
 const ATTENDANCE_STATUSES = new Set([

@@ -75,6 +75,7 @@ export async function GET() {
 
     return NextResponse.json({
       departmentId,
+      userId: resolved.context.userId,
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
       canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
       workspace: data.workspace,

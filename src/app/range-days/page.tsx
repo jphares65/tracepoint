@@ -53,12 +53,6 @@ import {
   getRangeDayCompletionSummary,
 } from "@/app/lib/tracepoint/range-day-utils";
 
-import { CURRENT_USER_PROFILE } from "@/app/lib/tracepoint/current-user";
-
-const CURRENT_USER = {
-  id: CURRENT_USER_PROFILE.id,
-};
-
 type RangeDayType =
   | "Qualification"
   | "Rifle"
@@ -1109,6 +1103,7 @@ function normalizeRangeDayDrillsForWorkspace(
 
 function normalizeRangeDaysForWorkspace(
   storedRangeDays: PlannedRangeDay[],
+  currentUserId: string,
 ): PlannedRangeDay[] {
   return storedRangeDays.map((rangeDay) => {
     const storedInstructorIds = Array.isArray(rangeDay.instructorIds)
@@ -1116,7 +1111,7 @@ function normalizeRangeDaysForWorkspace(
       : [];
 
     const fallbackLeadInstructorId =
-      rangeDay.leadInstructorId || storedInstructorIds[0] || CURRENT_USER.id;
+      rangeDay.leadInstructorId || storedInstructorIds[0] || currentUserId;
 
     const instructorIds = storedInstructorIds.includes(fallbackLeadInstructorId)
       ? storedInstructorIds
@@ -1771,6 +1766,7 @@ function PrintableRangePacket({
 }
 
 export default function RangeDaysPage() {
+  const [currentUserId, setCurrentUserId] = useState("");
   const [rangeDays, setRangeDays] =
     useState<PlannedRangeDay[]>(INITIAL_RANGE_DAYS);
 
@@ -1887,6 +1883,7 @@ export default function RangeDaysPage() {
           qualificationStandards?: QualificationStandardReference[];
           canManage?: boolean;
           canScore?: boolean;
+          userId?: string;
         };
 
         if (!cancelled) {
@@ -1895,6 +1892,7 @@ export default function RangeDaysPage() {
           );
           setCanManageRangeDays(payload.canManage === true);
           setCanScoreRangeDays(payload.canScore === true);
+          setCurrentUserId(payload.userId ?? "");
         }
       } catch (error) {
         console.warn(
@@ -2313,6 +2311,7 @@ export default function RangeDaysPage() {
   }, [firearms]);
 
   useEffect(() => {
+    if (!currentUserId) return;
     let isMounted = true;
 
     async function loadWorkspace() {
@@ -2325,7 +2324,7 @@ export default function RangeDaysPage() {
       if (remoteWorkspace) {
         writeStoredRangeDayWorkspace({
           rangeDays: Array.isArray(remoteWorkspace.rangeDays)
-            ? normalizeRangeDaysForWorkspace(remoteWorkspace.rangeDays)
+            ? normalizeRangeDaysForWorkspace(remoteWorkspace.rangeDays, currentUserId)
             : [],
           drillLibrary: Array.isArray(remoteWorkspace.drillLibrary)
             ? normalizeDrillLibraryForWorkspace(remoteWorkspace.drillLibrary)
@@ -2346,7 +2345,7 @@ export default function RangeDaysPage() {
       }
 
       if (Array.isArray(storedWorkspace?.rangeDays)) {
-        setRangeDays(normalizeRangeDaysForWorkspace(storedWorkspace.rangeDays));
+        setRangeDays(normalizeRangeDaysForWorkspace(storedWorkspace.rangeDays, currentUserId));
       }
 
       if (Array.isArray(storedWorkspace?.drillLibrary)) {
@@ -2381,7 +2380,7 @@ export default function RangeDaysPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!hasLoadedStoredWorkspace) return;
@@ -2699,8 +2698,8 @@ export default function RangeDaysPage() {
       status: "Planned",
       rangeType: "Training",
       packetStatus: "Needs Setup",
-      leadInstructorId: CURRENT_USER.id,
-      instructorIds: [CURRENT_USER.id],
+      leadInstructorId: currentUserId,
+      instructorIds: [currentUserId],
       weather: "",
       staffingNotes: "",
       outline: getDefaultOutlineForRangeType("Training"),
@@ -2913,7 +2912,7 @@ export default function RangeDaysPage() {
 
     const nextLeadInstructorId =
       selectedRangeDay.leadInstructorId === userId
-        ? remainingInstructorIds[0] ?? CURRENT_USER.id
+        ? remainingInstructorIds[0] ?? currentUserId
         : selectedRangeDay.leadInstructorId;
 
     const nextInstructorIds = remainingInstructorIds.includes(
@@ -3287,7 +3286,7 @@ export default function RangeDaysPage() {
           scoringFormat === "Notes Only" ? undefined : finalPassed,
         departmentStandardSnapshot: departmentStandardSnapshot ?? undefined,
         departmentStandardPassed,
-        instructorId: CURRENT_USER.id,
+        instructorId: currentUserId,
         notes: row.notes.trim(),
         deficiencyObserved: finalPassed === false || departmentStandardPassed === false,
         remedialTrainingRecommended:
@@ -3311,7 +3310,7 @@ export default function RangeDaysPage() {
           removedFromService: row.malfunctionType === "Catastrophic Failure",
           inspectionRequired: true,
           notes: row.malfunctionNotes.trim(),
-          reportedByUserId: CURRENT_USER.id,
+          reportedByUserId: currentUserId,
         });
       }
 
@@ -3352,7 +3351,7 @@ export default function RangeDaysPage() {
   function handleGeneratePacket() {
     if (!selectedRangeDay) return;
 
-    const packet = createRangePacket(selectedRangeDay, CURRENT_USER.id);
+    const packet = createRangePacket(selectedRangeDay, currentUserId);
     console.log("Generated range packet:", packet);
 
     writeStoredRangeDayWorkspace({
@@ -3418,7 +3417,7 @@ export default function RangeDaysPage() {
         .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean),
-      createdByUserId: CURRENT_USER.id,
+      createdByUserId: currentUserId,
       notes: newDrillNotes.trim() || undefined,
     });
 

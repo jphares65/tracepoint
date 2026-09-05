@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 
 import {
+  hasAnyServerPermission,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -14,7 +15,11 @@ export default async function CommandDashboardLayout({
   const resolved = await resolveServerAccess();
 
   if (!resolved.ok) {
-    redirect("/");
+    redirect("/unauthorized");
+  }
+
+  if (!hasAnyServerPermission(resolved.context, ["view_command_dashboard"])) {
+    redirect("/unauthorized?from=/command-dashboard");
   }
 
   const featureError = requireServerFeature(

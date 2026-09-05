@@ -11,8 +11,6 @@ type RouteContext = { params: Promise<{ courseId: string }> };
 
 const MANAGE_PERMISSIONS = [
   "manage_training",
-  "manage_certifications",
-  "manage_range_days",
 ] as const;
 
 function text(value: unknown) {
