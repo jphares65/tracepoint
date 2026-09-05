@@ -1,16 +1,16 @@
-FROM node:24-trixie-slim AS dependencies
+FROM node:24-alpine AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-FROM postgres:18-trixie
-# Refresh the published base's OS packages before the mandatory ECR scan.
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
-COPY --from=dependencies /usr/local/bin/node /usr/local/bin/node
+FROM node:24-alpine
+# This is a database client, not a server. Keep the server, Perl tooling and
+# unrelated Debian packages out; retain normal package metadata for ECR scanning.
+RUN apk upgrade --no-cache && apk add --no-cache postgresql18-client
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql ./scripts/
 COPY supabase/migrations ./supabase/migrations
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN chmod 444 /app/rds-ca.pem
-USER postgres
+USER node
 ENTRYPOINT ["node","scripts/run-aws-postgres-rehearsal.mjs"]

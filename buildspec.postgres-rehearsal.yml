@@ -17,4 +17,5 @@ phases:
     commands:
       - docker build --pull -f Dockerfile.postgres-rehearsal --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=disposable-synthetic-only -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/run-aws-postgres-rehearsal.test.mjs
+      - docker run --rm --entrypoint pg_dump "$ECR_REPOSITORY_URI:$IMAGE_TAG" --version | grep -E 'PostgreSQL\) 18\.'
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
