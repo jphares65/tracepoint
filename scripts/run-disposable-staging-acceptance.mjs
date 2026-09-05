@@ -30,6 +30,9 @@ const departmentIds = [randomUUID(), randomUUID()];
 const email = 'acceptance-' + run + '@example.invalid';
 const password = randomBytes(36).toString('base64url') + 'Aa1!';
 let userId;
+const extraUsers=[];
+const officerEmail='officer-'+run+'@example.invalid';
+const officerPassword=randomBytes(36).toString('base64url')+'Aa1!';
 const createdDepartments = [];
 let result = 1;
 function requireSuccess(value, label) { if (value.error) { console.error(JSON.stringify({step: label, code: value.error.code ?? value.error.status ?? 'unknown'})); throw new Error('Fixture request failed'); } return value.data; }
@@ -43,22 +46,40 @@ try {
   }
   requireSuccess(await admin.from('department_memberships').insert({ department_id: departmentIds[0], user_id: userId, is_active: true }), 'Create membership');
   requireSuccess(await admin.from('department_membership_roles').insert({ department_id: departmentIds[0], user_id: userId, role_code: 'administrator' }), 'Create manager role');
+  for(const [index,departmentId] of departmentIds.entries()) {
+    const extra = requireSuccess(await admin.auth.admin.createUser({email:index===0?officerEmail:'foreign-'+run+'@example.invalid',password:officerPassword,email_confirm:true}), 'Create disposable officer');
+    extraUsers.push(extra.user.id);
+    requireSuccess(await admin.from('profiles').upsert({id:extra.user.id,full_name:'Disposable acceptance officer'}), 'Officer profile');
+    requireSuccess(await admin.from('department_memberships').insert({department_id:departmentId,user_id:extra.user.id,is_active:true}), 'Officer membership');
+    requireSuccess(await admin.from('department_membership_roles').insert({department_id:departmentId,user_id:extra.user.id,role_code:'officer'}), 'Officer role');
+  }
   const features = requireSuccess(await admin.from('feature_catalog').select('code').eq('is_active',true), 'Load feature codes');
   requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
+  if(result===0&&!process.argv.includes('--fixtures-only')) {
+    const history=requireSuccess(await admin.from('equipment_asset_assignments').select('returned_at').eq('department_id',departmentIds[0]), 'Verify custody history');
+    const audit=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','equipment_assets'), 'Verify audit creation');
+    assert.ok(history.length>=2&&history.every(x=>x.returned_at));assert.ok(audit.length>=3);
+    console.log(JSON.stringify({fixtureRun:run,custodyHistory:'verified',auditCreation:'verified'}));
+  }
 } catch {
   // Avoid SDK request/response details and credentials in logs.
   console.error('Disposable staging setup or execution failed; sensitive details suppressed.');
   result = 1;
 } finally {
   let cleanupFailed = false;
-  if (userId) {
-    const removal = await admin.auth.admin.deleteUser(userId);
-    const verify = await admin.from('profiles').select('id').eq('id', userId);
+  for(const id of createdDepartments) for(const table of ['equipment_asset_assignments','equipment_assets','equipment_types']) {
+    const removal=await admin.from(table).delete().eq('department_id',id);
+    const verify=await admin.from(table).select('id').eq('department_id',id);
+    if(removal.error||verify.error||verify.data?.length!==0)cleanupFailed=true;
+  }
+  for (const createdUserId of [userId,...extraUsers].filter(Boolean)) {
+    const removal = await admin.auth.admin.deleteUser(createdUserId);
+    const verify = await admin.from('profiles').select('id').eq('id', createdUserId);
     if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
   }
   for (const id of createdDepartments) {
