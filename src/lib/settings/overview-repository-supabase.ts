@@ -16,7 +16,7 @@ export class SupabaseSettingsOverviewDataSource implements SettingsOverviewDataS
   getSecurity(id: string) { return this.db.from("department_security_settings").select("*").eq("department_id", id).maybeSingle() as PromiseLike<SettingsResult<SettingsRow>>; }
   listRoles() { return this.admin.from("roles").select("code,display_name,description,sort_order").order("sort_order") as PromiseLike<SettingsResult<SettingsRow[]>>; }
   listPermissions() { return this.admin.from("permissions").select("code,display_name,description") as PromiseLike<SettingsResult<SettingsRow[]>>; }
-  listRolePermissions(id: string) { return this.db.from("department_role_permissions").select("role_code,permission_code").eq("department_id", id) as PromiseLike<SettingsResult<SettingsRow[]>>; }
+  listRolePermissions(id: string) { return this.admin.from("department_role_permissions").select("role_code,permission_code").eq("department_id", id) as PromiseLike<SettingsResult<SettingsRow[]>>; }
   listMemberships(id: string) { return this.admin.from("department_memberships").select("user_id,badge_number,rank_title,unit_name,employee_number,is_active,joined_at,activation_status").eq("department_id", id) as PromiseLike<SettingsResult<SettingsRow[]>>; }
   listMembershipRoles(id: string) { return this.admin.from("department_membership_roles").select("user_id,role_code").eq("department_id", id) as PromiseLike<SettingsResult<SettingsRow[]>>; }
   listDepartmentRolePermissions(id: string) { return this.admin.from("department_role_permissions").select("role_code,permission_code").eq("department_id", id) as PromiseLike<SettingsResult<SettingsRow[]>>; }

@@ -19,11 +19,12 @@ export async function GET() {
     let members = overview.members;
     if (canManageUsers && !context.isSupportMode) {
       const result = await context.db.rpc("get_department_members", { p_department_id: context.departmentId });
-      if (result.error) return NextResponse.json({ error: typeof result.error.message === "string" ? result.error.message : "Settings could not be loaded." }, { status: 500 });
+      if (result.error) return NextResponse.json({ error: "Settings could not be loaded." }, { status: 500 });
       members = result.data ?? [];
     }
     return NextResponse.json({ ...overview, members });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Settings could not be loaded." }, { status: 500 });
+    console.error("Settings overview failed", error);
+    return NextResponse.json({ error: "Settings could not be loaded." }, { status: 500 });
   }
 }

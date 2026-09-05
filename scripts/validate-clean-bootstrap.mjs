@@ -18,7 +18,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 57;
+const expectedMigrationCount = 58;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = 56000 + Math.floor(Math.random() * 4000);
@@ -105,6 +105,11 @@ try {
     }
   }
 
+  const authorityMigration = "202609050002_granular_permission_authority.sql";
+  await client.query("begin");
+  await client.query(await readFile(path.join(migrationsDir, authorityMigration), "utf8"));
+  await client.query("commit");
+
   const requiredTables = [
     "profiles", "departments", "department_memberships",
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
@@ -147,6 +152,16 @@ try {
         where schemaname = 'public' and tablename = 'certification_types'
           and policyname = 'department members can view certification types'
       ) as certification_type_policy
+      ,(select count(*) = 21 from public.permissions) as permission_catalog_complete
+      ,exists (
+        select 1 from pg_trigger
+        where tgname = 'protect_final_administrator_role' and not tgisinternal
+      ) as final_administrator_guard
+      ,exists (
+        select 1 from pg_proc
+        where proname = 'has_department_permission'
+          and pg_get_functiondef(oid) like '%membership_role.role_code = ''administrator''%'
+      ) as administrator_inheritance
   `);
   const failedChecks = Object.entries(checks.rows[0])
     .filter(([, passed]) => !passed)
@@ -155,7 +170,150 @@ try {
     throw new Error(`Focused schema checks failed: ${failedChecks.join(", ")}`);
   }
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations.`);
+  const departmentA = "10000000-0000-0000-0000-000000000001";
+  const departmentB = "10000000-0000-0000-0000-000000000002";
+  const users = {
+    granted: "20000000-0000-0000-0000-000000000001",
+    denied: "20000000-0000-0000-0000-000000000002",
+    inactive: "20000000-0000-0000-0000-000000000003",
+    crossTenant: "20000000-0000-0000-0000-000000000004",
+    administrator: "20000000-0000-0000-0000-000000000005",
+    platform: "20000000-0000-0000-0000-000000000006",
+  };
+  await client.query(`
+    insert into auth.users (id, email) values
+      ('${users.granted}', 'granted@example.test'), ('${users.denied}', 'denied@example.test'),
+      ('${users.inactive}', 'inactive@example.test'), ('${users.crossTenant}', 'cross@example.test'),
+      ('${users.administrator}', 'admin@example.test'), ('${users.platform}', 'platform@example.test');
+    insert into public.profiles (id, full_name, email)
+      select id, split_part(email, '@', 1), email from auth.users
+      on conflict (id) do update set full_name=excluded.full_name, email=excluded.email;
+    insert into public.departments (id, name, slug) values
+      ('${departmentA}', 'Permission Audit A', 'permission-audit-a'),
+      ('${departmentB}', 'Permission Audit B', 'permission-audit-b');
+    insert into public.roles (code, display_name) values
+      ('audit_granted', 'Audit Granted'), ('audit_denied', 'Audit Denied');
+    insert into public.department_memberships (department_id, user_id, is_active) values
+      ('${departmentA}', '${users.granted}', true), ('${departmentA}', '${users.denied}', true),
+      ('${departmentA}', '${users.inactive}', false), ('${departmentB}', '${users.crossTenant}', true),
+      ('${departmentA}', '${users.administrator}', true);
+    insert into public.department_membership_roles (department_id, user_id, role_code) values
+      ('${departmentA}', '${users.granted}', 'audit_granted'), ('${departmentA}', '${users.denied}', 'audit_denied'),
+      ('${departmentA}', '${users.inactive}', 'audit_granted'), ('${departmentB}', '${users.crossTenant}', 'audit_granted'),
+      ('${departmentA}', '${users.administrator}', 'administrator');
+    insert into public.department_role_permissions (department_id, role_code, permission_code)
+      values ('${departmentA}', 'audit_granted', 'manage_equipment'), ('${departmentB}', 'audit_granted', 'manage_equipment');
+    insert into public.platform_admins (user_id, display_name, is_active)
+      values ('${users.platform}', 'Permission Audit Platform', true);
+  `);
+
+  async function permissionAs(userId, departmentId, permissionCode) {
+    await client.query("begin");
+    try {
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
+      const result = await client.query(
+        "select public.has_department_permission($1, $2) as allowed",
+        [departmentId, permissionCode],
+      );
+      await client.query("commit");
+      return result.rows[0].allowed;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  }
+
+  const matrixChecks = {
+    explicit_grant: await permissionAs(users.granted, departmentA, "manage_equipment"),
+    role_without_grant: !(await permissionAs(users.denied, departmentA, "manage_equipment")),
+    inactive_denied: !(await permissionAs(users.inactive, departmentA, "manage_equipment")),
+    cross_tenant_denied: !(await permissionAs(users.crossTenant, departmentA, "manage_equipment")),
+    administrator_inherits_current: await permissionAs(users.administrator, departmentA, "manage_equipment"),
+    administrator_inherits_new: await permissionAs(users.administrator, departmentA, "approve_personal_rifles"),
+    platform_not_department_member: !(await permissionAs(users.platform, departmentA, "manage_equipment")),
+  };
+  const failedMatrixChecks = Object.entries(matrixChecks).filter(([, passed]) => !passed).map(([name]) => name);
+  if (failedMatrixChecks.length) throw new Error(`Permission actor matrix failed: ${failedMatrixChecks.join(", ")}`);
+
+  const catalog = (await client.query("select code from public.permissions order by code")).rows.map((row) => row.code);
+  const generatedFailures = [];
+  for (const permissionCode of catalog) {
+    if (permissionCode !== "administer_department") {
+      await client.query(
+        "delete from public.department_role_permissions where role_code='audit_granted' and department_id = any($1::uuid[])",
+        [[departmentA, departmentB]],
+      );
+      await client.query(
+        "insert into public.department_role_permissions (department_id, role_code, permission_code) values ($1, 'audit_granted', $3), ($2, 'audit_granted', $3)",
+        [departmentA, departmentB, permissionCode],
+      );
+    }
+    const permissionChecks = {
+      granted: permissionCode === "administer_department"
+        ? await permissionAs(users.administrator, departmentA, permissionCode)
+        : await permissionAs(users.granted, departmentA, permissionCode),
+      without_grant: !(await permissionAs(users.denied, departmentA, permissionCode)),
+      inactive: !(await permissionAs(users.inactive, departmentA, permissionCode)),
+      cross_tenant: !(await permissionAs(users.crossTenant, departmentA, permissionCode)),
+      administrator: await permissionAs(users.administrator, departmentA, permissionCode),
+      platform_without_membership: !(await permissionAs(users.platform, departmentA, permissionCode)),
+    };
+    for (const [actor, passed] of Object.entries(permissionChecks)) {
+      if (!passed) generatedFailures.push(`${permissionCode}:${actor}`);
+    }
+  }
+  if (generatedFailures.length) throw new Error(`Generated permission matrix failed: ${generatedFailures.join(", ")}`);
+
+  await client.query("begin");
+  await client.query("set local role authenticated");
+  await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.administrator]);
+  const saved = await client.query(
+    "select public.set_department_role_permissions($1, $2, $3::text[]) as permissions",
+    [departmentA, "audit_denied", ["manage_training"]],
+  );
+  await client.query("commit");
+  if (String(saved.rows[0].permissions) !== "manage_training") throw new Error("Atomic role-permission replacement was not returned for verification.");
+  if (!(await permissionAs(users.denied, departmentA, "manage_training"))) throw new Error("Saved role permission was not immediately effective.");
+
+  await client.query("begin");
+  await client.query("set local role authenticated");
+  await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.administrator]);
+  await client.query(
+    "select public.set_department_member_roles($1, $2, $3::text[])",
+    [departmentA, users.administrator, ["administrator", "chief"]],
+  );
+  await client.query(
+    "select public.set_department_member_roles($1, $2, $3::text[])",
+    [departmentA, users.administrator, ["administrator"]],
+  );
+  await client.query("commit");
+
+  let finalAdministratorProtected = false;
+  await client.query("begin");
+  try {
+    await client.query("delete from public.department_membership_roles where department_id=$1 and user_id=$2 and role_code='administrator'", [departmentA, users.administrator]);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    finalAdministratorProtected = error.code === "23514";
+  }
+  if (!finalAdministratorProtected) throw new Error("Direct database removal of the final Administrator was not blocked.");
+
+  await client.query("begin");
+  await client.query("set local role authenticated");
+  await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.platform]);
+  const platformSave = await client.query(
+    "select public.set_department_role_permissions($1, $2, $3::text[]) as permissions",
+    [departmentA, "audit_denied", ["view_audit_log"]],
+  );
+  await client.query("commit");
+  if (String(platformSave.rows[0].permissions) !== "view_audit_log") throw new Error("Platform administrator explicit-department permission save failed.");
+
+  const fixtureCount = await client.query("select count(*)::int as count from public.departments where slug like 'permission-audit-%'");
+  if (fixtureCount.rows[0].count !== 2) throw new Error("Disposable permission fixture setup was incomplete.");
+
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission actor matrix passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {

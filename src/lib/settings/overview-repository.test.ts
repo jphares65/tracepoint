@@ -41,6 +41,23 @@ test("preserves support-mode member aggregation and sorting", async () => {
   assert.deepEqual(result.members[1].role_codes, ["admin", "officer"]); assert.deepEqual(result.members[1].effective_permissions, ["a", "z"]);
 });
 
+test("shows exact Administrator permissions as inherited from the live catalog", async () => {
+  const repository = new TenantBoundSettingsOverviewRepository(source({
+    async listPermissions() { return ok([{ code: "alpha" }, { code: "future_permission" }]); },
+    async listRolePermissions() { return ok([{ role_code: "administrator", permission_code: "stale" }]); },
+    async listMemberships() { return ok([{ user_id: "admin-user", is_active: true }]); },
+    async listMembershipRoles() { return ok([{ user_id: "admin-user", role_code: "administrator" }]); },
+    async listDepartmentRolePermissions() { return ok([]); },
+    async listProfiles() { return ok([{ id: "admin-user", full_name: "Administrator" }]); },
+  }), "agency-a");
+  const result = await repository.getOverview({ departmentId: "agency-a", canViewSecurity: true, includeSupportMembers: true });
+  assert.deepEqual(result.rolePermissions, [
+    { role_code: "administrator", permission_code: "alpha", inherited: true },
+    { role_code: "administrator", permission_code: "future_permission", inherited: true },
+  ]);
+  assert.deepEqual(result.members[0].effective_permissions, ["alpha", "future_permission"]);
+});
+
 test("skips empty profile reads and preserves provider error behavior", async () => {
   let profilesCalled = false;
   await new TenantBoundSettingsOverviewRepository(source({ async listProfiles() { profilesCalled = true; return ok([]); } }), "agency-a").getOverview({ departmentId: "agency-a", canViewSecurity: true, includeSupportMembers: true });

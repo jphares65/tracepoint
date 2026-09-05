@@ -5,10 +5,8 @@ import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import {
-  isTracePointPermission,
-  type TracePointPermission,
-} from "@/lib/tracepoint/permissions";
+import type { TracePointPermission } from "@/lib/tracepoint/permissions";
+import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
 type AccessFailure = {
   ok: false;
@@ -47,6 +45,7 @@ export type ServerAccessContext = ServerAccessPayload & {
   user: any;
   admin: any;
   db: any;
+  authDb: Awaited<ReturnType<typeof createServerClient>>;
 };
 
 type MembershipRow = {
@@ -234,6 +233,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
         user,
         admin,
         db: admin,
+        authDb: server,
         userId: user.id,
         email: clean(user.email),
         fullName,
@@ -437,20 +437,10 @@ let membership: MembershipRow | undefined;
       roleCodes.includes(roleCode),
     ) ?? roleCodes[0];
 
-  const administratorRole = roleCodes.some((roleCode) =>
-    ["administrator", "department_admin", "admin"].includes(roleCode),
-  );
-
-  const permissions = uniqueStrings(
+  const permissions = effectiveDepartmentPermissions(
+    roleCodes,
     permissionRows.map((row) => row.permission_code),
-  ).filter(isTracePointPermission);
-
-  if (
-    administratorRole &&
-    !permissions.includes("administer_department")
-  ) {
-    permissions.push("administer_department");
-  }
+  );
 
   const isSuperAdmin =
     platformAdminResult.data?.is_active === true;
@@ -475,6 +465,7 @@ let membership: MembershipRow | undefined;
       user,
       admin,
       db: server,
+      authDb: server,
       userId: user.id,
       email: clean(user.email),
       fullName,
@@ -507,14 +498,12 @@ let membership: MembershipRow | undefined;
 export function toAccessPayload(
   context: ServerAccessContext,
 ): ServerAccessPayload {
-  const {
-    user: _user,
-    admin: _admin,
-    db: _db,
-    ...payload
-  } = context;
-
-  return payload;
+  const payload = { ...context } as Partial<ServerAccessContext>;
+  delete payload.user;
+  delete payload.admin;
+  delete payload.db;
+  delete payload.authDb;
+  return payload as ServerAccessPayload;
 }
 
 export function hasServerPermission(
@@ -543,7 +532,12 @@ export function accessFailureResponse(
   result: AccessFailure,
 ) {
   return NextResponse.json(
-    { error: result.error },
+    {
+      error:
+        result.status >= 500
+          ? "TracePoint access could not be verified."
+          : result.error,
+    },
     {
       status: result.status,
       headers: { "Cache-Control": "no-store" },

@@ -4,8 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   getRoutePermissionRequirement,
   meetsPermissionRequirement,
-  type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
+import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
 import type { Database } from "./database.types";
 
@@ -319,14 +319,10 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  const permissions = Array.from(
-    new Set(
-      ((permissionData ?? []) as RolePermissionRow[])
-        .map((row) => row.permission_code)
-        .filter(
-          (value): value is TracePointPermission =>
-            Boolean(value),
-        ),
+  const permissions = effectiveDepartmentPermissions(
+    roleCodes,
+    ((permissionData ?? []) as RolePermissionRow[]).map(
+      (row) => row.permission_code,
     ),
   );
 

@@ -4607,7 +4607,7 @@ export type Database = {
           p_permission_codes: string[]
           p_role_code: string
         }
-        Returns: undefined
+        Returns: string[]
       }
       submit_off_duty_firearm_request: {
         Args: {

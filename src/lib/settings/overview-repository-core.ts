@@ -54,6 +54,7 @@ function supportMembers(
   membershipRoles: SettingsRow[],
   rolePermissions: SettingsRow[],
   profiles: SettingsRow[],
+  permissionCatalog: SettingsRow[],
 ): SettingsMemberRow[] {
   const profileById = new Map(profiles.map((profile) => [String(profile.id), profile]));
   const rolesByUser = new Map<string, Set<string>>();
@@ -87,7 +88,9 @@ function supportMembers(
       joined_at: membership.joined_at ?? null,
       activation_status: membership.activation_status ?? null,
       role_codes: roleCodes,
-      effective_permissions: Array.from(new Set(roleCodes.flatMap((role) => Array.from(permissionsByRole.get(role) ?? [])))).sort(),
+      effective_permissions: roleCodes.includes("administrator")
+        ? permissionCatalog.map((permission) => String(permission.code)).filter(Boolean).sort()
+        : Array.from(new Set(roleCodes.flatMap((role) => Array.from(permissionsByRole.get(role) ?? [])))).sort(),
     } as SettingsMemberRow;
   });
   members.sort((a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? ""));
@@ -126,8 +129,16 @@ export class TenantBoundSettingsOverviewRepository {
       const userIds = membershipRows.map((row) => row.user_id).filter(Boolean).map(String);
       const profiles = userIds.length ? await this.source.listProfiles(userIds) : { data: [], error: null };
       if (profiles.error) throw new SettingsOverviewRepositoryError(providerMessage(profiles.error));
-      members = supportMembers(membershipRows, memberRoles.data ?? [], memberPermissions.data ?? [], profiles.data ?? []);
+      members = supportMembers(membershipRows, memberRoles.data ?? [], memberPermissions.data ?? [], profiles.data ?? [], permissions.data ?? []);
     }
-    return { department: department.data, rules: rules.data, security: security.data, roles: roles.data ?? [], permissions: permissions.data ?? [], rolePermissions: rolePermissions.data ?? [], members };
+    const effectiveRolePermissions = [
+      ...(rolePermissions.data ?? []).filter((row) => row.role_code !== "administrator"),
+      ...(permissions.data ?? []).map((permission) => ({
+        role_code: "administrator",
+        permission_code: permission.code,
+        inherited: true,
+      })),
+    ];
+    return { department: department.data, rules: rules.data, security: security.data, roles: roles.data ?? [], permissions: permissions.data ?? [], rolePermissions: effectiveRolePermissions, members };
   }
 }
