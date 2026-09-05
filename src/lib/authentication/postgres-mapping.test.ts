@@ -1,3 +1,4 @@
+import {localPostgresPort} from '../../test-support/local-postgres-port.mjs';
 import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -9,8 +10,8 @@ import { PostgresIdentityMappingStore } from './postgres-mapping';
 let postgres:EmbeddedPostgres,pool:pg.Pool,directory:string;
 const user='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 before(async()=>{
- directory=await mkdtemp(path.join(tmpdir(),'tracepoint-identity-test-'));const port=56000+Math.floor(Math.random()*4000);
- postgres=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await postgres.initialise();await postgres.start();
+ directory=await mkdtemp(path.join(tmpdir(),'tracepoint-identity-test-'));const port=await localPostgresPort();
+ postgres=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await postgres.initialise();await postgres.start();
  pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});
  await pool.query(`create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key);insert into profiles values('${user}'),('${other}')`);
  await pool.query(await readFile('supabase/migrations/202609050006_authentication_identity_links.sql','utf8'));

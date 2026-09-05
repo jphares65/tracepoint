@@ -1,3 +1,4 @@
+import {localPostgresPort} from '../src/test-support/local-postgres-port.mjs';
 import {catalogSql,manifestSql} from './staging-management-manifest.mjs';
 import {supabasePrerequisites} from "./postgres-bootstrap-prerequisites.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
@@ -23,14 +24,14 @@ const execFileAsync = promisify(execFile);
 const expectedMigrationCount = 66;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
-const port = 56000 + Math.floor(Math.random() * 4000);
+const port = await localPostgresPort();
 const postgres = new EmbeddedPostgres({
   databaseDir,
   user: "postgres",
   password: "local-bootstrap-only",
   port,
   persistent: false,
-  initdbFlags: ["--encoding=UTF8", "--locale=C"],
+  postgresFlags:['-h','127.0.0.1'],initdbFlags: ["--encoding=UTF8", "--locale=C"],
   onLog: () => {},
   onError: (message) => console.error(message),
 });

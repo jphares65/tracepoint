@@ -1,3 +1,4 @@
+import {localPostgresPort} from '../src/test-support/local-postgres-port.mjs';
 import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -7,10 +8,11 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { catalogSql, manifestSql } from './staging-management-manifest.mjs';
 let server,client,directory;
+const startupDiagnostics=[];
 before(async()=>{
- directory=await mkdtemp(path.join(tmpdir(),'tracepoint-manifest-test-'));const port=56000+Math.floor(Math.random()*4000);
- server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});
- await server.initialise();await server.start();client=new pg.Client({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});await client.connect();
+ directory=await mkdtemp(path.join(tmpdir(),'tracepoint-manifest-test-'));const port=await localPostgresPort();
+ server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:message=>{if(/FATAL|ERROR|could not|cannot/.test(message))startupDiagnostics.push(message)},onError:()=>{}});
+ await server.initialise();try{await server.start();}catch{throw Error('Disposable PostgreSQL startup failed: '+startupDiagnostics.join(' ').replace(/[A-Z]:[^\n]+/gi,'[local test path]').replace(/password[^\n]+/gi,'[suppressed]').slice(0,400));}client=new pg.Client({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});await client.connect();
  await client.query(`create schema supabase_migrations;create table supabase_migrations.schema_migrations(version text);insert into supabase_migrations.schema_migrations values('202601010001');
  create table parents(id serial primary key);create table children(id serial primary key,parent_id integer references parents(id),value text);
  insert into parents default values;insert into children(parent_id,value) values(1,'synthetic'),(1,'synthetic');alter table children enable row level security;`);

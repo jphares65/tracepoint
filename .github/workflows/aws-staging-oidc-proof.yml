@@ -30,6 +30,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Validate disposable PostgreSQL on the hosted runner
+        run: node --test --test-reporter=tap scripts/staging-management-manifest.test.mjs
       - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
         with:
           role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}

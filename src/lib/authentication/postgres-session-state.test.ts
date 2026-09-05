@@ -1,4 +1,5 @@
-﻿import assert from 'node:assert/strict';
+import {localPostgresPort} from '../../test-support/local-postgres-port.mjs';
+import assert from 'node:assert/strict';
 import {test,before,after} from 'node:test';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
@@ -8,7 +9,7 @@ import {PostgresCognitoSessionStore} from './postgres-sessions';
 import {createCognitoPkce} from './cognito-pkce';
 const user='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',subject='33333333-3333-4333-8333-333333333333',issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Synthetic';
 let server:EmbeddedPostgres,pool:pg.Pool,directory:string;
-before(async()=>{directory=await mkdtemp(path.join(tmpdir(),'tracepoint-session-test-'));const port=56000+Math.floor(Math.random()*4000);server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});
+before(async()=>{directory=await mkdtemp(path.join(tmpdir(),'tracepoint-session-test-'));const port=await localPostgresPort();server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:false,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});
  await pool.query('create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key)');await pool.query('insert into profiles values($1),($2)',[user,other]);
  for(const f of ['202609050006_authentication_identity_links.sql','202609050010_authentication_session_state.sql'])await pool.query(await readFile('supabase/migrations/'+f,'utf8'));
  await pool.query("insert into authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state) values('cognito',$1,$2,$3,'active')",[issuer,subject,user]);
