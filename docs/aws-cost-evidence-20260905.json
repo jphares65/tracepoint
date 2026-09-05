@@ -1,0 +1,16 @@
+{
+  "account": "559054714699",
+  "region": "us-east-1",
+  "queriedAtUTC": "2026-09-05T02:07:51.770Z",
+  "period": {
+    "start": "2026-09-01",
+    "endExclusive": "2026-09-05"
+  },
+  "unblendedCostUSD": 0.9478775816,
+  "estimated": true,
+  "budgetActualUSD": 0.948,
+  "budgetLimitUSD": 75,
+  "forecast": "DataUnavailableException: insufficient history",
+  "modeledMonthlyUSD": 54.17,
+  "additionalAlarmsIncludedInModel": true
+}
