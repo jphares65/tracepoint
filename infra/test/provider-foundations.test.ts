@@ -9,7 +9,7 @@ for(const environmentName of ['staging','production'] as const){
  test(environmentName+' Cognito uses short sessions, rotation, TOTP and exact callback domain',()=>{
   const account=environmentName==='staging'?'559054714699':'111111111111';const app=new cdk.App();
   const stack=new CognitoFoundationStack(app,'auth',{env:{account,region:'us-east-1'},environmentName});const template=Template.fromStack(stack);
-  template.hasResourceProperties('AWS::Cognito::UserPool',{DeletionProtection:'ACTIVE',MfaConfiguration:'ON',EnabledMfas:['SOFTWARE_TOKEN_MFA'],AdminCreateUserConfig:{AllowAdminCreateUserOnly:true}});
+  template.hasResourceProperties('AWS::Cognito::UserPool',{UserPoolTier:'ESSENTIALS',DeletionProtection:'ACTIVE',MfaConfiguration:'ON',EnabledMfas:['SOFTWARE_TOKEN_MFA'],AdminCreateUserConfig:{AllowAdminCreateUserOnly:true}});
   template.hasResourceProperties('AWS::Cognito::UserPoolClient',{GenerateSecret:false,AllowedOAuthFlows:['code'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10},AccessTokenValidity:5,IdTokenValidity:5,
    CallbackURLs:[(environmentName==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback']});
   template.hasResource('AWS::Cognito::UserPool',{DeletionPolicy:'Retain'});
