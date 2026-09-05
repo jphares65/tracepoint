@@ -9,7 +9,7 @@ import {
 
 import type { Database } from "./database.types";
 
-const PUBLIC_PATHS = ["/landing", "/login", "/auth/callback", "/auth/confirm", "/activate", "/api/notifications/email-dispatch"];
+const PUBLIC_PATHS = ["/landing", "/login", "/auth/callback", "/auth/confirm", "/activate", "/api/health", "/api/notifications/email-dispatch"];
 const AUTH_FLOW_PATHS = [
   "/auth/setup",
   "/auth/signout",
@@ -221,6 +221,19 @@ export async function updateSession(request: NextRequest) {
   const memberships = (membershipRows ?? []) as MembershipRow[];
 
   if (memberships.length === 0) {
+    if (pathname.toLowerCase().startsWith("/api/")) {
+      return copyCookies(
+        response,
+        NextResponse.json(
+          { error: "No active department membership was found." },
+          {
+            status: 403,
+            headers: { "Cache-Control": "no-store" },
+          },
+        ),
+      );
+    }
+
     return redirectWithCookies(
       request,
       response,

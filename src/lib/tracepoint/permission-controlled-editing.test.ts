@@ -63,6 +63,16 @@ test("database policies deny inactive and unauthorized writes while audit trigge
   assert.match(migration, /Finalized range history cannot be changed/);
 });
 
+test("the request proxy exposes health and returns a direct 403 for inactive API callers", async () => {
+  const proxy = await readFile("src/lib/supabase/proxy.ts", "utf8");
+  assert.match(proxy, /PUBLIC_PATHS = \[[^\]]*"\/api\/health"/);
+  const inactiveBranch = proxy.slice(proxy.indexOf("if (memberships.length === 0)"));
+  assert.match(inactiveBranch, /pathname\.toLowerCase\(\)\.startsWith\("\/api\/"\)/);
+  assert.match(inactiveBranch, /No active department membership was found/);
+  assert.match(inactiveBranch, /status: 403/);
+  assert.match(inactiveBranch, /"Cache-Control": "no-store"/);
+});
+
 test("fleet UI exposes compact manager-only create and edit dialog with refresh and reason", async () => {
   const page = await readFile("src/app/fleet-management/page.tsx", "utf8");
   assert.match(page, /canManage \? \(/);
