@@ -43,6 +43,8 @@ try {
   }
   requireSuccess(await admin.from('department_memberships').insert({ department_id: departmentIds[0], user_id: userId, is_active: true }), 'Create membership');
   requireSuccess(await admin.from('department_membership_roles').insert({ department_id: departmentIds[0], user_id: userId, role_code: 'administrator' }), 'Create manager role');
+  const features = requireSuccess(await admin.from('feature_catalog').select('code').eq('is_active',true), 'Load feature codes');
+  requireSuccess(await admin.from('department_features').insert(features.map(f=>({department_id:departmentIds[0],feature_code:f.code,is_enabled:true}))), 'Enable disposable department features');
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
@@ -62,7 +64,7 @@ try {
   for (const id of createdDepartments) {
     // Delete auto-seeded audited children while the tenant still exists. A
     // parent-first cascade would make their audit inserts violate the tenant FK.
-    for (const table of ['department_role_permissions', 'department_rules', 'department_security_settings']) {
+    for (const table of ['department_feature_events', 'department_features', 'department_role_permissions', 'department_rules', 'department_security_settings']) {
       const removal = await admin.from(table).delete().eq('department_id', id);
       if (removal.error) cleanupFailed = true;
     }

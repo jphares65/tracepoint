@@ -5,7 +5,7 @@ const routes = ['/', '/landing', '/equipment', '/range-days', '/firearms', '/off
 const results = [];
 async function check(name, work) {
   try { await work(); results.push({ name, status: 'pass' }); }
-  catch { results.push({ name, status: 'fail' }); }
+  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined } : { code: 'REQUEST_OR_BROWSER_FAILURE' } }); }
 }
 for (const path of ['/login', '/api/health', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
   const r = await fetch(baseURL + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });

@@ -18,7 +18,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 58;
+const expectedMigrationCount = 59;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = 56000 + Math.floor(Math.random() * 4000);
@@ -106,7 +106,7 @@ try {
   }
 
   const requiredTables = [
-    "profiles", "departments", "department_memberships",
+    "profiles", "departments", "department_memberships", "feature_catalog", "department_features", "department_feature_events",
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",

@@ -25,7 +25,7 @@ try {
   const ledger = await client.query('select version from supabase_migrations.schema_migrations order by version');
   if (JSON.stringify(ledger.rows.map(row => row.version)) !== JSON.stringify(expectedVersions)) throw new Error('Staging migration versions differ from repository');
   const requiredTables = [
-    "profiles", "departments", "department_memberships",
+    "profiles", "departments", "department_memberships", "feature_catalog", "department_features", "department_feature_events",
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",

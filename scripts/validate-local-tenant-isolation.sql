@@ -9,11 +9,20 @@ insert into public.department_memberships(department_id,user_id) values ('000000
 insert into public.equipment_types(department_id,name) values
  ('00000000-0000-4000-8000-000000000011','RLS type A'),
  ('00000000-0000-4000-8000-000000000012','RLS type B');
+insert into public.department_features(department_id,feature_code,is_enabled) values
+ ('00000000-0000-4000-8000-000000000011','equipment_readiness',true),
+ ('00000000-0000-4000-8000-000000000012','equipment_readiness',true);
 -- Exercise the grants supplied by migrations, without test-only grants.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
 do $$
 begin
+ if (select count(*) from public.department_features) <> 1 then raise exception 'Entitlement tenant isolation failed'; end if;
+ begin
+  update public.department_features set is_enabled=false where department_id='00000000-0000-4000-8000-000000000011';
+  raise exception 'Member entitlement change accepted';
+ exception when insufficient_privilege then null;
+ end;
  if (select count(*) from public.equipment_types) <> 1 then raise exception 'Tenant read isolation failed'; end if;
  if exists(select 1 from public.equipment_types where name='RLS type B') then raise exception 'Foreign tenant leaked'; end if;
  begin
