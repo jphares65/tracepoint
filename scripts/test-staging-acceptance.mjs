@@ -146,6 +146,12 @@ else try {
   });
   if(process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled')await exerciseRangeDocuments({context,browser,baseURL,department,check});
   if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await exerciseExtendedWorkflows({context,browser,baseURL,check});
+  if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await check('bounded authenticated read concurrency',async()=>{
+    const durations=[];
+    await Promise.all(Array.from({length:4},async()=>{for(let i=0;i<5;i++){const start=Date.now();const r=await context.request.get('/api/access',{timeout:10000});assert.equal(r.status(),200);assert.equal((await r.json()).access.departmentId,department);durations.push(Date.now()-start);}}));
+    const p95=[...durations].sort((a,b)=>a-b)[Math.ceil(durations.length*.95)-1];assert.ok(p95<5000,'Bounded staging authenticated reads exceeded five-second p95');
+    console.log(JSON.stringify({authenticatedReadProbe:{requests:durations.length,concurrency:4,p95Milliseconds:p95,allTenantChecksPassed:true,productionCapacityProof:false}}));
+  });
   await check('logout',async()=>{
     const logout=await context.request.post('/auth/signout',{maxRedirects:0});assert.equal(logout.status(),303);assert.equal(new URL(logout.headers().location,baseURL).origin,baseURL);
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));
