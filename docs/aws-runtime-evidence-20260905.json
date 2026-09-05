@@ -1,23 +1,23 @@
 {
   "account": "559054714699",
   "region": "us-east-1",
-  "imageTag": "34633a75d23c6edcd7aca364506159624a48ab28",
-  "checkedAt": "2026-09-05T05:41:02.914Z",
+  "imageTag": "5a511edbf2d1543fd384f0ed11734a548d6272e7",
+  "checkedAt": "2026-09-05T06:54:04.336Z",
   "identityVerified": true,
   "stackStatus": "UPDATE_COMPLETE",
   "ecs": {
     "desired": 1,
     "running": 1,
     "pending": 0,
-    "revision": 14,
+    "revision": 16,
     "completed": true
   },
   "scan": {
     "status": "COMPLETE",
     "findings": {}
   },
-  "expectedDigest": "sha256:e5f3ce876be51a0f24340ca3efadc236af231811c30d0c4ad7c9c5de2d1fb7ea",
-  "runningDigest": "sha256:e5f3ce876be51a0f24340ca3efadc236af231811c30d0c4ad7c9c5de2d1fb7ea",
+  "expectedDigest": "sha256:c8e547ac34888fab9f8b73d2882f20ad7494850096971db7924a51ff99af3301",
+  "runningDigest": "sha256:c8e547ac34888fab9f8b73d2882f20ad7494850096971db7924a51ff99af3301",
   "imageMatches": true,
   "targets": [
     "healthy"
@@ -38,6 +38,10 @@
     {
       "name": "tracepoint-staging-unhealthy-target",
       "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-runtime-alert",
+      "state": "OK"
     }
   ],
   "public": [
@@ -49,6 +53,16 @@
     {
       "route": "/login",
       "status": 200,
+      "passed": true
+    },
+    {
+      "route": "/auth/confirm",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/auth/callback",
+      "status": 307,
       "passed": true
     },
     {
