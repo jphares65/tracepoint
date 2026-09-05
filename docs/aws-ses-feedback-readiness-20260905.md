@@ -1,0 +1,13 @@
+# Disabled SES feedback implementation
+
+Brevo remains selected in the application and ECS. No SES message, identity, DNS record or provider switch was performed in this slice.
+
+Implemented: bounded SNS Notification signature validation (exact topic/account boundary, HTTPS AWS certificate host/path restriction, redirect rejection, certificate size/validity checks, RSA SHA-1/SHA-256 verification); SES Delivery/Bounce/Complaint parsing; accepted-message-to-department correlation; atomic PostgreSQL event deduplication and persistent suppression; a prepared provider composition that checks suppression before sending and records acceptance without retrying an ambiguous result. Provider tags cannot select the department. Recipient addresses are stored only as SHA-256 digests, which remain sensitive pseudonymous metadata and are not exposed to clients. A later Delivery never clears a Complaint. Department deletion never removes global suppression.
+
+Migration 202609050005 is locally validated and not yet applied to staging. It adds only three isolated server-side tables, with RLS and no authenticated/anon access. The prepared PostgreSQL adapter requires a trusted server pool. Event acceptance that arrives before message registration fails for later retry; it never causes a resend. A persistence failure after SES acceptance requires reconciliation. There is no public webhook or live event subscription yet.
+
+Validation: 21 email tests passed, including real disposable PostgreSQL persistence, duplicate events, wrong-message/recipient denial, tenant-tag spoofing, complaint durability, client privilege denial, malformed events, valid/tampered SNS signatures and ambiguous-send handling. TypeScript, changed-file lint and clean 61-migration bootstrap passed. Initial unconfigured Next build failed because public Supabase build variables were absent; the build with staging URL and a synthetic public build key then passed.
+
+Remaining activation gates: SES domain/custom MAIL FROM/DKIM/SPF/DMARC setup, configuration set and encrypted event transport, authenticated event consumer and retry/dead-letter handling, verified persistent server pool, account suppression/opt-out import, sandbox exit where necessary, live sender delivery and bounce/complaint tests. The live provider selector intentionally rejects SES until these pass. These local components do not earn deployed email-migration credit.
+
+Sources: [SNS signature validation](https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message-verify-message-signature.html), [SES event contents](https://docs.aws.amazon.com/ses/latest/dg/event-publishing-retrieving-sns-contents.html), [SES message correlation](https://docs.aws.amazon.com/ses/latest/dg/troubleshoot-notifications.html).
