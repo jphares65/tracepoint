@@ -44,7 +44,7 @@ New independent live evidence: login and `/api/health` return 200; public landin
 | Infrastructure tests | 6 pass, including production separation/scaling/retention assertions |
 | Strict staging and production synth | Pass offline; production identity/certificate are placeholders |
 | Template review | Offline comparison against 6b0e302: two added alarms, CodeBuild environment change, zero removed resources; no network/security/compute changes. Not a live AWS drift review |
-| Source archive | 329 tracked files validated at 544467b; final source revalidated after the prepared SES addition |
+| Source archive | Final committed source archive passed: 332 tracked files |
 | Public staging smoke | HTTP and Chromium form checks pass |
 | Authenticated staging | Blocked on disposable account credentials; additional mutation/file/export fixtures remain engineering work |
 | CloudWatch/ECR/ECS private checks | Blocked on AWS access; checkpoint values retained as historical |
@@ -94,6 +94,21 @@ The initial AWS production hosting cutover must retain production Supabase datab
 5. **Before cutover:** assign on-call/backup owners, verify production Supabase backup/PITR and a restore, approve RTO/RPO and agency pilot, complete real production configuration/acceptance and rollback rehearsal.
 6. **Final manual gate:** separately approve the production deployment/DNS traffic window and captured rollback records. No production-data transfer is needed for hosting-only cutover. Any provider/data exit needs a new explicit transfer authorization and rehearsal.
 
-The next autonomous run should start from the pushed AWS branch, verify restored staging credentials, deploy/rehearse the patched staging release, complete disposable authenticated fixtures/workflows, confirm alarms/errors/cost, and validate the exact production target. Further independent engineering remains in authenticated mutation coverage and actual provider adapters; these are not disguised as documentation-only manual gates. A full Supabase/Auth/Storage/Brevo exit cannot responsibly be represented as complete by the hosting cutover alone.
+The next autonomous run should recover the bundle, restore GitHub authentication, push the AWS branch, verify restored staging credentials, deploy/rehearse the patched staging release, complete disposable authenticated fixtures/workflows, confirm alarms/errors/cost, and validate the exact production target. Further independent engineering remains in authenticated mutation coverage and actual provider adapters; these are not disguised as documentation-only manual gates. A full Supabase/Auth/Storage/Brevo exit cannot responsibly be represented as complete by the hosting cutover alone.
 
 Detailed commands, evidence limits, rollback triggers and provider-exit boundaries are in `aws-cutover-execution-20260904.md`. The original shared `docs/aws-migration-status.md` and all protected user files/edits were preserved.
+
+## Final validation and recovery record
+
+Final application tests: 127 passed. Script tests: 12 passed. Infrastructure tests: 6 passed. Mocked deployment safety cases: 15 passed. TypeScript, changed-file lint, Next.js 16.3.4 production build and full npm audit pass (zero reported vulnerabilities). Final implementation archive: 332 tracked files at 10749e940bafc9b5a77c1fc6b3ed7c966e4b311f. The dependency patch is 1b41cdb; release/readiness tooling is 544467b. The prepared SES adapter is 10749e9 and remains disabled. GitHub remote was independently verified still at 6b0e3028f3e5e97d567de20c05637bb0cb64e7b7 after failed push attempts.
+
+Recover the incremental bundle in a checkout that already contains the remote baseline (or fetch that baseline first):
+
+```powershell
+git bundle verify C:/Users/jphar/tracepoint/tracepoint-aws-readiness-20260904.bundle
+git fetch C:/Users/jphar/tracepoint/tracepoint-aws-readiness-20260904.bundle codex/aws-staging-readiness-20260902:refs/heads/codex/aws-readiness-recovered-20260904
+git switch codex/aws-readiness-recovered-20260904
+git push origin HEAD:codex/aws-staging-readiness-20260902
+```
+
+Do not force-push. If the remote moved, reconcile it first while preserving this work. A later clean checkout of the AWS branch is required by the image publisher's exact branch guard. The clean implementation checkout is C:/Users/jphar/AppData/Local/Temp/tracepoint-migration-20260904. No production or staging provider secret is embedded in the bundle.

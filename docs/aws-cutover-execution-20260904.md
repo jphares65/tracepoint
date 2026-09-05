@@ -4,7 +4,7 @@ Status: staging operational; production cutover is NOT authorized or ready. Targ
 
 Final provider addendum: `src/lib/email/ses-provider.ts` now exposes a prepared server-only SES v2 adapter using the default credential chain and one SDK attempt. Five mocked tests cover content mapping, mandatory configuration sets, suppression/outage blocking, header rejection and ambiguous outcomes. The live selector still rejects SES. Supply persistent suppression state and validated bounce/complaint events before activation; an SES MessageId proves acceptance, not delivery. No email was sent. The later SES implementation checklist below still requires live integration and validation.
 
-Private S3 integration must first replace the synchronous `departmentPatchPublicUrl` contract with authorized delivery or asynchronous signing and update callers. Making a bucket public is not a substitute. GitHub push was unavailable in this run; recover the committed Git bundle and push before using release commands.
+Private S3 integration must first replace the synchronous `getDepartmentPatchPublicUrl` contract with authorized delivery or asynchronous signing and update callers. Making a bucket public is not a substitute. GitHub push was unavailable in this run; recover the committed Git bundle and push before using release commands.
 
 ## Commands available now
 

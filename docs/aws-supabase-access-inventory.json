@@ -12,7 +12,7 @@
       "*.bak",
       "src/app/integration-demo/**"
     ],
-    "sourceFiles": 274,
+    "sourceFiles": 276,
     "note": "Deterministic static source evidence only; regex analysis does not prove runtime authorization, RLS, transactionality, or reachability."
   },
   "counts": {

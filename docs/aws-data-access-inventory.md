@@ -1,4 +1,4 @@
-> 2026-09-04 refresh: the current generated JSON now scans 274 source files and records 495 .from calls, 65 RPC calls, 39 matched Auth calls, 24 browser data calls, 536 server data calls, 399 statically identified service-role calls and 125 uncertain client contexts. The historical analysis below describes its dated snapshot. Regex inventory is not runtime authorization proof. See aws-migration-checkpoint-20260904.md for current migration decisions.
+> 2026-09-04 refresh: the current generated JSON now scans 276 source files and records 495 .from calls, 65 RPC calls, 39 matched Auth calls, 24 browser data calls, 536 server data calls, 399 statically identified service-role calls and 125 uncertain client contexts. The historical analysis below describes its dated snapshot. Regex inventory is not runtime authorization proof. See aws-migration-checkpoint-20260904.md for current migration decisions.
 
 # Supabase data-access inventory
 
