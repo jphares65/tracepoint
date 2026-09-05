@@ -2,9 +2,8 @@
   "environment": "staging",
   "account": "559054714699",
   "region": "us-east-1",
-  "action": "deploy-existing",
-  "imageCommit": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
-  "reviewedCommit": "4d80c789af6cc3c0f6d5efd04efd90509976c615",
-  "rollbackPriorTaskArn": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:16",
-  "reason": "Resume accepted scan-clean image through OIDC and rehearse rollback then return"
+  "action": "publish-and-deploy",
+  "reviewedCommit": "62da52a85563906de2f0435a20d4abf57b435995",
+  "rollbackPriorTaskArn": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:17",
+  "reason": "Release reviewed disabled Cognito session and refresh foundation after verified migration 67; rehearse rollback and return"
 }
