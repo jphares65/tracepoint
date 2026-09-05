@@ -15,7 +15,7 @@ export type EmailSendResult = {
 };
 
 export interface EmailProvider {
-  readonly name: "Brevo";
+  readonly name: "Brevo" | "SES";
   send(message: EmailMessage): Promise<EmailSendResult>;
 }
 

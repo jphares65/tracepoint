@@ -2,6 +2,10 @@
 
 TracePoint is **staging operational, not production cutover-ready, and not fully migrated**. Production remains Vercel plus production Supabase/Brevo. No production DNS, customer data, provider configuration or management-account workload was changed. No AWS resources were mutated in this run.
 
+Final addendum: a prepared server-only SES v2 adapter has five additional passing tests covering request mapping, suppression/outage rejection, header validation, sanitized ambiguous outcomes and no automatic retry. Runtime selection remains Brevo; SES is not deployed or enabled. Persistent suppression/event integration and live delivery validation remain required. The score stays 47.80% because its email checks require live capabilities. Private S3 integration also requires replacing the synchronous public department-asset URL contract with authorized delivery.
+
+Delivery limitation: GitHub fetch succeeded, but push failed because the configured VS Code askpass helper is inaccessible; GitHub CLI is absent. Commits are preserved locally and in the final Git bundle. The next run must recover and push those commits before deploying. No remote advancement is claimed.
+
 ## Starting state and access limits
 
 Fetched GitHub through a clean temporary clone because the shared workspace Git metadata is read-only. `origin/main=e33e4a4f17b662dddec9bf653ebf4051c3eb78ab`; AWS branch began at `6b0e3028f3e5e97d567de20c05637bb0cb64e7b7`. Application fixes are already equivalent; no duplicate cherry-picks were performed. The existing Officer/equipment/range behavior was preserved. New dependency patches are additional AWS-branch changes and have NOT reached Vercel production.
@@ -28,7 +32,7 @@ New independent live evidence: login and `/api/health` return 200; public landin
 
 | Gate | Result and limit |
 |---|---|
-| Application tests | 122 passed after dependency update |
+| Application tests | 127 passed after dependency update and prepared SES adapter |
 | Script tests | 12 passed, including spreadsheet, manifests, runtime configuration, structural diff and production preflight |
 | PowerShell safety cases | 15 passed; all scripts parse; zero AWS API calls in mocks |
 | TypeScript | Application and infrastructure pass |
@@ -40,7 +44,7 @@ New independent live evidence: login and `/api/health` return 200; public landin
 | Infrastructure tests | 6 pass, including production separation/scaling/retention assertions |
 | Strict staging and production synth | Pass offline; production identity/certificate are placeholders |
 | Template review | Offline comparison against 6b0e302: two added alarms, CodeBuild environment change, zero removed resources; no network/security/compute changes. Not a live AWS drift review |
-| Source archive | Tracked-only archive validation must be run against the final committed tree; result recorded in final report |
+| Source archive | 329 tracked files validated at 544467b; final source revalidated after the prepared SES addition |
 | Public staging smoke | HTTP and Chromium form checks pass |
 | Authenticated staging | Blocked on disposable account credentials; additional mutation/file/export fixtures remain engineering work |
 | CloudWatch/ECR/ECS private checks | Blocked on AWS access; checkpoint values retained as historical |
