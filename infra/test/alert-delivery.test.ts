@@ -5,6 +5,7 @@ import {strict as assert} from 'node:assert';
 import {AlertDeliveryStack} from '../lib/alert-delivery-stack';
 test('staging alert fanout is encrypted, retained, scoped and contains no human recipient',()=>{
  const stack=new AlertDeliveryStack(new cdk.App(),'alerts',{env:{account:'559054714699',region:'us-east-1'}});const t=Template.fromStack(stack);
+ assert.match(JSON.stringify(t.findResources('AWS::CloudWatch::CompositeAlarm')),/request-flood/);
  t.resourceCountIs('AWS::CloudWatch::Alarm',0);t.resourceCountIs('AWS::CloudWatch::CompositeAlarm',1);
  t.hasResourceProperties('AWS::CloudWatch::CompositeAlarm',{AlarmName:'tracepoint-staging-runtime-alert',AlarmActions:Match.anyValue(),OKActions:Match.anyValue()});
  t.hasResourceProperties('AWS::SNS::Topic',{KmsMasterKeyId:Match.anyValue()});t.hasResourceProperties('AWS::SNS::Subscription',{Protocol:'sqs',RawMessageDelivery:false});t.resourceCountIs('AWS::SNS::Subscription',1);

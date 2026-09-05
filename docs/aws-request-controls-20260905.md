@@ -20,3 +20,7 @@ node scripts/test-staging-request-controls.mjs --execute --mode enforce
 ```
 
 No live WAF capability is credited until association, logging, Count, blocking, normal-route preservation and recovery have been observed. Human alarm delivery and production tuning remain separate gates. Operators can inspect the [regional ACL console](https://us-east-1.console.aws.amazon.com/wafv2/homev2/web-acls?region=us-east-1); automated evidence is collected by the commands above.
+
+## Live enforcement
+
+Logging, count and enforce gates passed on September 5. Count mode allowed all 120 probes while observing 65 threshold matches and zero global-rule matches. Enforcement returned 429 with Retry-After 60 after 29 allowed probes, then recovered in 90,483 ms. Redacted log delivery was verified. Normal health, login and protected routes remained healthy. The complete disposable authenticated acceptance suite and runtime evidence collector passed behind enforcement; runtime remains revision 16 on the accepted 5a511ed image. No production capacity claim is made from this bounded staging test.

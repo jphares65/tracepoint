@@ -1,8 +1,8 @@
 {
   "date": "2026-09-05",
-  "method": "Same weighted binary capability checklist. Credit restored only for deployed and live-validated authentication/email configuration, authenticated browser sessions, S3 application storage, and executed deployment/rollback. No credit for incomplete range workflows, local synthetic copy tests alone, disabled SES/Cognito, or documentation. Live staging manifest credit requires two equal repeatable-read snapshots with exact ledger, row hashes, relationship checks and schema/security fingerprints. Full authenticated staging acceptance credited after revision 16 passed 52 application checks, supported browser password recovery, logout origin/session revocation, audit verification and zero-fixture cleanup.",
+  "method": "Same weighted binary capability checklist. Credit restored only for deployed and live-validated authentication/email configuration, authenticated browser sessions, S3 application storage, and executed deployment/rollback. No credit for incomplete range workflows, local synthetic copy tests alone, disabled SES/Cognito, or documentation. Live staging manifest credit requires two equal repeatable-read snapshots with exact ledger, row hashes, relationship checks and schema/security fingerprints. Full authenticated staging acceptance credited after revision 16 passed 52 application checks, supported browser password recovery, logout origin/session revocation, audit verification and zero-fixture cleanup. Live WAF logging/count/enforcement/recovery and bounded authenticated concurrency passed; this does not establish production capacity.",
   "before": 45.55,
-  "after": 63.65,
+  "after": 64.9,
   "categories": [
     {
       "category": "AWS account/governance",
@@ -310,7 +310,7 @@
         {
           "capability": "WAF and load controls validated",
           "before": false,
-          "after": false
+          "after": true
         },
         {
           "capability": "actual cost verified below ceiling",
@@ -378,6 +378,7 @@
     "aws-staging-acceptance-schema-20260905.md",
     "aws-live-data-reconciliation-20260905.md",
     "aws-live-storage-copy-20260905.md",
-    "aws-auth-callback-repair-20260905.md"
+    "aws-auth-callback-repair-20260905.md",
+    "aws-request-controls-20260905.md"
   ]
 }

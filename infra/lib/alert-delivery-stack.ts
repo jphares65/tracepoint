@@ -21,7 +21,7 @@ export class AlertDeliveryStack extends cdk.Stack {
   const failures=new sqs.Queue(this,'DeliveryFailures',{queueName:'tracepoint-staging-alert-delivery-failures',encryption:sqs.QueueEncryption.SQS_MANAGED,enforceSSL:true,retentionPeriod:cdk.Duration.days(14),removalPolicy:cdk.RemovalPolicy.RETAIN});
   const receipts=new sqs.Queue(this,'Receipts',{queueName:'tracepoint-staging-alert-receipts',encryption:sqs.QueueEncryption.SQS_MANAGED,enforceSSL:true,retentionPeriod:cdk.Duration.days(14),visibilityTimeout:cdk.Duration.seconds(60),deadLetterQueue:{queue:failures,maxReceiveCount:5},removalPolicy:cdk.RemovalPolicy.RETAIN});
   topic.addSubscription(new subscriptions.SqsSubscription(receipts,{rawMessageDelivery:false,deadLetterQueue:failures}));
-  const names=['application-5xx','memory','alb-5xx-rate','unhealthy-target'];
+  const names=['application-5xx','memory','alb-5xx-rate','unhealthy-target','request-flood'];
   const alarm=new cloudwatch.CompositeAlarm(this,'RuntimeAlert',{compositeAlarmName:alarmName,alarmDescription:'TracePoint staging runtime incident; human subscription confirmation remains a cutover gate.',alarmRule:cloudwatch.AlarmRule.anyOf(...names.map((name,index)=>cloudwatch.AlarmRule.fromAlarm(cloudwatch.Alarm.fromAlarmName(this,'Observed'+index,'tracepoint-staging-'+name),cloudwatch.AlarmState.ALARM)))});
   alarm.addAlarmAction(new actions.SnsAction(topic));alarm.addOkAction(new actions.SnsAction(topic));
   new cdk.CfnOutput(this,'AlertTopicArn',{value:topic.topicArn});
