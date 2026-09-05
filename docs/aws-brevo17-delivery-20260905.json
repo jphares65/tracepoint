@@ -1,0 +1,15 @@
+{
+  "run": "08a60d72-6254-4f22-b346-53b3b8080bdf",
+  "messageId": "<202609050931.37473267732@smtp-relay.mailin.fr>",
+  "delivery": "verified",
+  "events": [
+    {
+      "event": "delivered",
+      "date": "2026-09-05T05:31:19.000-04:00"
+    },
+    {
+      "event": "requests",
+      "date": "2026-09-05T05:31:17.928-04:00"
+    }
+  ]
+}

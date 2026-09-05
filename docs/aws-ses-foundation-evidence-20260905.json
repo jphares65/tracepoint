@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-05T09:32:21.049Z",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "stackArn": "arn:aws:cloudformation:us-east-1:559054714699:stack/tracepoint-staging-ses-foundation/306c9480-a90c-11f1-9d7d-0afff8ef0f95",
+  "status": "CREATE_COMPLETE",
+  "terminationProtection": true,
+  "providerActivation": "disabled",
+  "runtimeSendPermission": false,
+  "dnsModified": false,
+  "dnsRecords": [
+    {
+      "type": "CNAME",
+      "name": "3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging.tracepointhq.com",
+      "value": "3drryitjdubjinnkgryh3tbpzxoinewk.dkim.amazonses.com"
+    },
+    {
+      "type": "CNAME",
+      "name": "vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging.tracepointhq.com",
+      "value": "vzklmpevtuvf4g3sqev3y3z7eknsmsu5.dkim.amazonses.com"
+    },
+    {
+      "type": "CNAME",
+      "name": "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging.tracepointhq.com",
+      "value": "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu.dkim.amazonses.com"
+    },
+    {
+      "type": "MX",
+      "name": "bounce.staging.tracepointhq.com",
+      "value": "10 feedback-smtp.us-east-1.amazonses.com"
+    },
+    {
+      "type": "TXT",
+      "name": "bounce.staging.tracepointhq.com",
+      "value": "v=spf1 include:amazonses.com -all"
+    },
+    {
+      "type": "TXT",
+      "name": "_dmarc.staging.tracepointhq.com",
+      "value": "v=DMARC1; p=none;"
+    }
+  ],
+  "configurationSet": "tracepoint-staging",
+  "feedbackTopicArn": "arn:aws:sns:us-east-1:559054714699:tracepoint-staging-ses-feedback",
+  "feedbackQueueArn": "arn:aws:sqs:us-east-1:559054714699:tracepoint-staging-ses-foundation-FeedbackQueueC15639F7-YvUodgnMIlt7",
+  "dkimStatus": "PENDING",
+  "verifiedForSending": false,
+  "productionAccessEnabled": false,
+  "tlsPolicy": "REQUIRE",
+  "suppressionReasons": [
+    "BOUNCE",
+    "COMPLAINT"
+  ]
+}

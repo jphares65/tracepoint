@@ -1,5 +1,7 @@
 ﻿# TracePoint cutover execution package — 2026-09-04
 
+> Historical September 4 checkpoint. Superseded by `aws-migration-checkpoint-20260905.md` and the September 5 evidence files. Earlier claims about unavailable GitHub/AWS, missing S3 integration, and unexecuted staging acceptance/rollback are no longer current.
+
 Status: staging operational; production cutover is NOT authorized or ready. Target Wednesday, September 9, 2026. This package intentionally retains production Supabase and Brevo for the first AWS hosting cutover. Database/Auth/Storage/email provider replacement remains a separate migration.
 
 Final provider addendum: `src/lib/email/ses-provider.ts` now exposes a prepared server-only SES v2 adapter using the default credential chain and one SDK attempt. Five mocked tests cover content mapping, mandatory configuration sets, suppression/outage blocking, header rejection and ambiguous outcomes. The live selector still rejects SES. Supply persistent suppression state and validated bounce/complaint events before activation; an SES MessageId proves acceptance, not delivery. No email was sent. The later SES implementation checklist below still requires live integration and validation.
