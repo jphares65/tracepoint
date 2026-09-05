@@ -131,6 +131,8 @@ test("API denials distinguish unauthenticated and unauthorized callers without d
   assert.match(access, /status: 401[\s\S]*Authentication is required/);
   assert.match(access, /status: 403[\s\S]*No active department membership/);
   assert.match(access, /result\.status >= 500[\s\S]*TracePoint access could not be verified/);
-  assert.match(proxy, /pathname\.toLowerCase\(\)\.startsWith\("\/api\/"\)[\s\S]*status: 403/);
+  assert.match(proxy, /function isApiPath[\s\S]*startsWith\("\/api\/"\)/);
+  assert.match(proxy, /function apiAccessFailure[\s\S]*status: 401 \| 403[\s\S]*"Cache-Control": "no-store"/);
+  assert.match(proxy, /function forbiddenOrRedirect[\s\S]*apiAccessFailure\([\s\S]*403/);
   assert.doesNotMatch(settings, /error\.message/);
 });

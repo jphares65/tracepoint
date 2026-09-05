@@ -67,10 +67,10 @@ test("the request proxy exposes health and returns a direct 403 for inactive API
   const proxy = await readFile("src/lib/supabase/proxy.ts", "utf8");
   assert.match(proxy, /PUBLIC_PATHS = \[[^\]]*"\/api\/health"/);
   const inactiveBranch = proxy.slice(proxy.indexOf("if (memberships.length === 0)"));
-  assert.match(inactiveBranch, /pathname\.toLowerCase\(\)\.startsWith\("\/api\/"\)/);
+  assert.match(inactiveBranch, /isApiPath\(pathname\)/);
   assert.match(inactiveBranch, /No active department membership was found/);
-  assert.match(inactiveBranch, /status: 403/);
-  assert.match(inactiveBranch, /"Cache-Control": "no-store"/);
+  assert.match(inactiveBranch, /apiAccessFailure\([\s\S]*403/);
+  assert.match(proxy, /function apiAccessFailure[\s\S]*"Cache-Control": "no-store"/);
 });
 
 test("fleet UI exposes compact manager-only create and edit dialog with refresh and reason", async () => {
