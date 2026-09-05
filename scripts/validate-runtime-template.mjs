@@ -6,7 +6,13 @@ export function validateRuntimeTemplate(before,after,commit,{allowReviewedContro
  for(const [id,resource] of Object.entries(before.Resources)) {
   const candidate=after.Resources[id];if(!candidate)throw new Error('Runtime resource removal refused');
   if(canonical(resource)===canonical(candidate)&&resource.Type!=='AWS::ECS::TaskDefinition')continue;
-  if(resource.Type!=='AWS::ECS::TaskDefinition'||candidate.Type!==resource.Type)throw new Error('Unexpected runtime resource change');
+  // CDK telemetry includes the synthesizer's Node patch version. It has no runtime authority.
+  if(resource.Type==='AWS::CDK::Metadata'&&candidate.Type===resource.Type) {
+   const oldTelemetry=structuredClone(resource),newTelemetry=structuredClone(candidate);
+   delete oldTelemetry.Properties.Analytics;delete newTelemetry.Properties.Analytics;
+   if(canonical(oldTelemetry)===canonical(newTelemetry))continue;
+  }
+  if(resource.Type!=='AWS::ECS::TaskDefinition'||candidate.Type!==resource.Type)throw new Error('Unexpected runtime resource change: '+id+' ('+resource.Type+')');
   const oldCopy=structuredClone(resource);const newCopy=structuredClone(candidate);
   const oldContainers=oldCopy.Properties.ContainerDefinitions;const newContainers=newCopy.Properties.ContainerDefinitions;
   if(oldContainers.length!==1||newContainers.length!==1||newContainers[0].Name!=='tracepoint')throw new Error('Unexpected container layout');

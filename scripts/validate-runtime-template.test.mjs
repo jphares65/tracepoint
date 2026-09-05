@@ -27,3 +27,10 @@ test('private storage activation requires exact account bucket region and no unr
  assert.throws(()=>validateRuntimeTemplate(before,after,commit));assert.equal(validateRuntimeTemplate(before,after,commit,{allowPrivateStorage:true}).safe,true);
  for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment[2].Value='other-bucket',t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'AWS_REGION',Value:'us-west-2'}),t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[],t=>t.Resources.Service.Properties.DesiredCount=2]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,commit,{allowPrivateStorage:true}));}
 });
+
+test('CDK telemetry can vary across runners without admitting resource changes',()=>{
+ const before=structuredClone(old);before.Resources.CDKMetadata={Type:'AWS::CDK::Metadata',Properties:{Analytics:'node24.15'},Condition:'TelemetryEnabled'};
+ const after=updated();after.Resources.CDKMetadata=structuredClone(before.Resources.CDKMetadata);after.Resources.CDKMetadata.Properties.Analytics='node24.19';
+ assert.equal(validateRuntimeTemplate(before,after,commit).safe,true);
+ for(const mutate of [t=>t.Resources.CDKMetadata.Condition='Changed',t=>t.Resources.CDKMetadata.Properties.Other='changed',t=>t.Resources.CDKMetadata.Type='AWS::IAM::Role',t=>delete t.Resources.CDKMetadata]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,commit));}
+});
