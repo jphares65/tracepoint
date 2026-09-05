@@ -10,7 +10,27 @@ concurrency:
   group: tracepoint-staging-release
   cancel-in-progress: false
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - run: node --test --test-concurrency=1 scripts/*.test.mjs
+      - run: node scripts/run-application-tests.mjs
+      - run: npm test --prefix infra
+      - run: npx tsc --noEmit
   release:
+    needs: validate
     if: github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'
     runs-on: windows-latest
     timeout-minutes: 90
@@ -45,17 +65,11 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix infra
       - run: npx playwright install chromium
-      - name: Local validation
+      - name: Windows deployment safety validation
         shell: pwsh
         run: |
-          node --test --test-concurrency=1 scripts/*.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'Script tests failed' }
           ./scripts/test-deployment-safety.ps1
           ./scripts/test-release-orchestration.ps1
-          npm test --prefix infra
-          if ($LASTEXITCODE -ne 0) { throw 'Infrastructure tests failed' }
-          npx tsc --noEmit
-          if ($LASTEXITCODE -ne 0) { throw 'TypeScript failed' }
       - name: Require repaired Vercel branch Preview
         env:
           GITHUB_TOKEN: ${{ github.token }}
