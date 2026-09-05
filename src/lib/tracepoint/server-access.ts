@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { getServerAuthenticatedUser } from "@/lib/authentication/server-provider";
 import {
   isTracePointPermission,
   type TracePointPermission,
@@ -114,12 +115,9 @@ function uniqueStrings(values: unknown[]) {
 
 export async function resolveServerAccess(): Promise<ServerAccessResult> {
   const server = await createServerClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await server.auth.getUser();
+  const user = await getServerAuthenticatedUser(server);
 
-  if (authError || !user) {
+  if (!user) {
     return {
       ok: false,
       status: 401,
