@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Next.js 16's standalone output contains the minimal production server and
-  // traced runtime dependencies needed by the ECS container image.
-  output: "standalone",
+  // Vercel packages its own server output; standalone is for the ECS image.
+  // Next.js 16.3 standalone tracing conflicts with Vercel's build adapter.
+  output: process.env.VERCEL === "1" ? undefined : "standalone",
   deploymentId: process.env.DEPLOYMENT_VERSION,
 };
 
