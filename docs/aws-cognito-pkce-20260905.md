@@ -1,0 +1,9 @@
+# Disabled Cognito authorization-code boundary
+
+The server-only composition export now prepares S256 PKCE, random state/nonce, a five-minute Secure/HttpOnly/SameSite=Lax __Host- transaction cookie, exact environment/account/client/callback binding and atomic one-time transaction consumption. The verifier is retained only in the mandatory server-side transaction store. Token exchange is HTTPS POST with redirect rejection, bounded response parsing and no retry after an ambiguous response. No access, ID or refresh token is returned by the callback boundary.
+
+The callback verifier validates signed Cognito ID tokens and nonce, then requires an access-token identity with matching issuer/subject, stable TracePoint mapping and the existing mandatory durable-session check. Department and role claims do not grant access. Twelve combined PKCE/access-verifier tests pass, including real RSA signatures, wrong nonce/audience/subject, expiry, state mismatch, concurrent replay, transport ambiguity, tampering, unmapped/revoked sessions and cross-department permission resolution. TypeScript and changed-file lint pass.
+
+This code is not imported by active authentication. No Cognito user pool, app route, user migration or session switch was deployed. Production composition still requires encrypted durable transaction storage with atomic consume, encrypted refresh-token/session persistence and revocation, supported invite/activation/reset/logout handlers, provider-to-database RLS compatibility and a live staging cohort. The transaction store is a mandatory port; no in-memory production fallback is supplied. No weighted migration credit is claimed for this disabled work.
+
+Protocol references: [Cognito authorization endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/authorization-endpoint.html) and [token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html).
