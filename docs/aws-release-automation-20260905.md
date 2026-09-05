@@ -1,0 +1,7 @@
+# Staging release automation correction
+
+The release wrapper now requires S3 explicitly, creates disposable staging acceptance users through the existing isolated fixture owner, waits for a completed rollout and target drain, runs the implemented authenticated range/document scenarios, and collects exact-image, alarm, current-task log and public-route evidence. Failed acceptance or evidence restores the captured prior task definition. Preflight failure prevents deployment. Four offline orchestration tests validate these outcomes without network calls; the existing 15 identity/scan/health rejection cases also pass.
+
+The GitHub OIDC workflow no longer requires stored acceptance passwords and invokes the corrected wrapper with S3. Its YAML parses, and it runs orchestration tests before AWS credentials are obtained. Actual GitHub OIDC dispatch remains unvalidated; the dedicated trust role/environment and default-branch workflow availability must be checked before enabling it. No main-branch change or long-lived AWS key was created.
+
+One-command evidence: node scripts/collect-staging-release-evidence.mjs --image FULL_SHA. The tool captures only resource metadata and error counts, never raw logs, credentials or fixture contents. Revision 12 passed live collection after authenticated acceptance; see aws-runtime-evidence-20260905.json. The wrapper itself was tested with controlled mocks; this slice did not redundantly redeploy the already-current image merely to exercise wrapper syntax.

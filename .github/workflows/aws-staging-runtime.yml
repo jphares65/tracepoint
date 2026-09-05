@@ -18,9 +18,6 @@ jobs:
     env:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
-      TRACEPOINT_ACCEPTANCE_EMAIL: ${{ secrets.STAGING_ACCEPTANCE_EMAIL }}
-      TRACEPOINT_ACCEPTANCE_PASSWORD: ${{ secrets.STAGING_ACCEPTANCE_PASSWORD }}
-      TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: ${{ vars.STAGING_ACCEPTANCE_DEPARTMENT_ID }}
       CERTIFICATE_ARN: ${{ vars.STAGING_CERTIFICATE_ARN }}
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +28,7 @@ jobs:
       - name: Validate release inputs before any AWS mutation
         shell: pwsh
         run: |
-          foreach ($name in @('TRACEPOINT_ACCEPTANCE_EMAIL','TRACEPOINT_ACCEPTANCE_PASSWORD','TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID','CERTIFICATE_ARN')) {
+          foreach ($name in @('CERTIFICATE_ARN')) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name" }
           }
       - run: npm ci
@@ -43,6 +40,7 @@ jobs:
           node --test scripts/*.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Script tests failed' }
           ./scripts/test-deployment-safety.ps1
+          ./scripts/test-release-orchestration.ps1
           npm test --prefix infra
           if ($LASTEXITCODE -ne 0) { throw 'Infrastructure tests failed' }
           npx tsc --noEmit
@@ -58,4 +56,4 @@ jobs:
         run: ./scripts/publish-tracepoint-staging-image.ps1 -Wait
       - name: Guarded release with authenticated smoke and automatic recovery
         shell: pwsh
-        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3

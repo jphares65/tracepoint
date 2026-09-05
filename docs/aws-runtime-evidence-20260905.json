@@ -1,0 +1,101 @@
+{
+  "account": "559054714699",
+  "region": "us-east-1",
+  "imageTag": "ccdfa225bdb54542f49906632bfe93b584c1a177",
+  "checkedAt": "2026-09-05T04:26:39.343Z",
+  "identityVerified": true,
+  "stackStatus": "UPDATE_COMPLETE",
+  "ecs": {
+    "desired": 1,
+    "running": 1,
+    "pending": 0,
+    "revision": 12,
+    "completed": true
+  },
+  "scan": {
+    "status": "COMPLETE",
+    "findings": {}
+  },
+  "expectedDigest": "sha256:e600bc1bd2253b8960fcd3c3e7fd5ffefd5aac3ff2f71bda34ee3b3fa535032d",
+  "runningDigest": "sha256:e600bc1bd2253b8960fcd3c3e7fd5ffefd5aac3ff2f71bda34ee3b3fa535032d",
+  "imageMatches": true,
+  "targets": [
+    "healthy"
+  ],
+  "alarms": [
+    {
+      "name": "tracepoint-staging-alb-5xx-rate",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-application-5xx",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-memory",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-unhealthy-target",
+      "state": "OK"
+    }
+  ],
+  "public": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "route": "/login",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "route": "/equipment",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/range-days",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/firearms",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/off-duty-firearms",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/qualifications",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/training",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/fleet-management",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/notifications",
+      "status": 307,
+      "passed": true
+    }
+  ],
+  "logs": {
+    "currentTaskOnly": true,
+    "matchingErrors": 0,
+    "filesystemPermissionErrors": 0
+  },
+  "passed": true
+}
