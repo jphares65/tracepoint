@@ -54,3 +54,7 @@ $global:ReleaseTestRevision=1
  if([IO.Path]::GetDirectoryName($resolved).TrimEnd('\') -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or [IO.Path]::GetFileName($resolved) -notlike 'tracepoint-release-test-*'){throw 'Temporary cleanup boundary failed'}
  Remove-Item -LiteralPath $resolved -Recurse -Force
 }
+
+# Expected mock failures must not become the GitHub pwsh step exit code.
+# This line is reached only when every assertion and cleanup succeeded.
+$global:LASTEXITCODE=0
