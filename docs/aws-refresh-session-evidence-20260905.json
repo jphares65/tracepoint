@@ -1,0 +1,44 @@
+{
+  "project": "wztqqqashilusoppddxi",
+  "migrations": 67,
+  "exactLedger": true,
+  "applied": true,
+  "sha256": "8246140481052917737950b18d9a4d1fd265272adbce937c39f17bd30e8d5bfe",
+  "checks": {
+    "browser_grants": 0,
+    "browser_policies": 0,
+    "rls": true,
+    "rows": 0
+  },
+  "applicationProviderSwitched": false,
+  "checkedAtUTC": "2026-09-05T11:20:14.576Z",
+  "idempotentVerification": {
+    "project": "wztqqqashilusoppddxi",
+    "migrations": 67,
+    "exactLedger": true,
+    "applied": false,
+    "sha256": "8246140481052917737950b18d9a4d1fd265272adbce937c39f17bd30e8d5bfe",
+    "checks": {
+      "browser_grants": 0,
+      "browser_policies": 0,
+      "rls": true,
+      "rows": 0
+    },
+    "applicationProviderSwitched": false,
+    "checkedAtUTC": "2026-09-05T11:23:15.918Z"
+  },
+  "local": {
+    "cleanStandardPostgresMigrations": 67,
+    "fullRestoreManifestPassed": true,
+    "restoreMilliseconds": 2423,
+    "refreshStoreTests": 10,
+    "scriptSafetyTests": 2,
+    "broadApplicationTests": 194,
+    "broadScriptTests": 50,
+    "additionalFocusedCasesAfterBroadRun": 2,
+    "typescript": true,
+    "changedFileLint": true
+  },
+  "runtimeProviderActivated": false,
+  "scoreCredit": 0
+}

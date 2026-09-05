@@ -5,3 +5,4 @@ export {createCognitoPkce,createCognitoPkceTokenVerifier} from './cognito-pkce';
 export {AuthenticationStateSealer,PostgresAuthorizationTransactionStore} from './postgres-transactions';
 export {PostgresCognitoSessionStore} from './postgres-sessions';
 export {createCognitoInitialSessionVerifier} from './cognito-initial-session';
+export {PostgresCognitoRefreshStore,RefreshSessionSealer} from './postgres-refresh-sessions';
