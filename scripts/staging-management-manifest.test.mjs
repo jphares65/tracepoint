@@ -26,6 +26,15 @@ test('RLS policy and schema changes alter metadata fingerprints',async()=>{
  const first=await manifest();await client.query('create policy visible on children for select using(true)');const changed=await manifest();assert.notEqual(first.metadata.policies,changed.metadata.policies);
  await client.query('alter table children add column detail text');assert.notEqual(changed.metadata.columns,(await manifest()).metadata.columns);
 });
+test('constraint canonicalization survives deparse round trips and detects semantic changes',async()=>{
+ await client.query("alter table children add constraint bounded check (value <> 'fixed' or ((parent_id >= 1 and parent_id <= 12) and (id >= 1 and id <= 31)))");
+ const before=await manifest();const definition=(await client.query("select pg_get_constraintdef(oid) as definition from pg_constraint where conname='bounded'")).rows[0].definition;
+ await client.query('alter table children drop constraint bounded');await client.query('alter table children add constraint bounded '+definition);
+ assert.equal((await manifest()).metadata.constraints,before.metadata.constraints);
+ await client.query('alter table children drop constraint bounded');await client.query("alter table children add constraint bounded check (value <> 'fixed' or (parent_id >= 1 and parent_id <= 11 and id >= 1 and id <= 31))");
+ assert.notEqual((await manifest()).metadata.constraints,before.metadata.constraints);
+ await client.query('alter table children drop constraint bounded');
+});
 test('ledger and catalog drift fail closed without mutations',async()=>{
  const catalog=(await client.query(catalogSql)).rows[0];await client.query("insert into supabase_migrations.schema_migrations values('202601010002')");
  await assert.rejects(manifest(catalog),/Unexpected migration ledger/);await client.query('rollback');

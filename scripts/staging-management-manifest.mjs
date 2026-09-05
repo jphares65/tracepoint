@@ -31,7 +31,9 @@ export function manifestSql(catalog, versions) {
  const sequenceQueries=catalog.sequences.map(name=>`select ${literal(name)} as name,last_value,is_called from public.${identifier(name)}`);
  const metadata={
   columns:`select table_name,column_name,ordinal_position,column_default,is_nullable,data_type,udt_schema,udt_name from information_schema.columns where table_schema='public'`,
-  constraints:`select t.relname,c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) as definition from pg_constraint c join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace where n.nspname='public'`,
+  // Pretty deparse removes redundant Boolean parentheses that pg_dump/reparse normalizes.
+  // Names, types, validation state and the complete expression remain fingerprinted.
+  constraints:`select t.relname,c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid,true) as definition from pg_constraint c join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace where n.nspname='public'`,
   policies:`select schemaname,tablename,policyname,permissive,roles,cmd,qual,with_check from pg_policies where schemaname='public'`,
   functions:`select p.proname,pg_get_function_identity_arguments(p.oid) as arguments,pg_get_functiondef(p.oid) as definition from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p')`,
   triggers:`select c.relname,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid) as definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal`,

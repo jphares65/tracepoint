@@ -42,7 +42,7 @@ async function main(){
   try{await execute('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{cwd:path.resolve('infra'),env,maxBuffer:5*1024*1024,timeout:180000});}catch{throw Error('Strict rehearsal synthesis failed; no resources created');}
   evidence.phase='structural gate';const templatePath=path.join(directory,name+'.template.json');const template=JSON.parse(await readFile(templatePath,'utf8'));validateRehearsalTemplate(template,run);
   try{await aws(['cloudformation','describe-stacks','--stack-name',name]);throw Error('Existing stack cannot be used for a disposable rehearsal');}catch(error){if(!error.missing)throw error;}
-  // The existing monthly model is $57.17. This one bounded rehearsal reserves $2.
+  // The current committed monthly model is checked below; this bounded rehearsal reserves $2.
   // No recurring database/service or NAT is created. Unique stack must be absent.
   assert.ok(evidence.monthlyModelWithReserve<75);
   evidence.phase='private stack creation';await identity();const result=await aws(['cloudformation','create-stack','--stack-name',name,'--template-body','file://'+templatePath,'--capabilities','CAPABILITY_IAM','--tags','Key=RehearsalRun,Value='+run,'Key=Purpose,Value=disposable-synthetic-only','Key=Environment,Value=staging','Key=Application,Value=TracePoint']);created=true;evidence.stackArn=result.StackId;console.log(JSON.stringify({run,stackArn:result.StackId,phase:evidence.phase}));

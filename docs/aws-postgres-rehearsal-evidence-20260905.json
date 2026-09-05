@@ -1,23 +1,32 @@
 {
-  "run": "f5200b57a258",
+  "run": "8642e96d0c58",
   "account": "559054714699",
   "region": "us-east-1",
-  "imageTag": "ed7e0329a4e312e2f0c6bdc149f8c9c65090806f-postgres-rehearsal",
-  "imageDigest": "sha256:129b70bd2c69284a50559d119fac3f0f118c5dbe997f065c82025f6586d5cd60",
+  "imageTag": "bff6d200c343ea05905aa3229688eeb785fbe36b-postgres-rehearsal",
+  "imageDigest": "sha256:b2d6e896214a2124db8017bb1a9715684db84d3cda71fa372b61b25c1cfe1ed5",
   "monthlyModelWithReserve": 59.17,
   "maximumRunHours": 2,
-  "startedAt": "2026-09-05T06:48:01.475Z",
+  "startedAt": "2026-09-05T07:10:53.935Z",
   "phase": "synthetic migration and restore",
-  "stackArn": "arn:aws:cloudformation:us-east-1:559054714699:stack/tracepoint-postgres-rehearsal-f5200b57a258/ccbe6640-a8f5-11f1-a67a-0affcbeeb0f1",
-  "taskArn": "arn:aws:ecs:us-east-1:559054714699:task/tracepoint-postgres-rehearsal-f5200b57a258-RunnerClusterB1138987-Omx1ePDO3zLk/772440cdfb654a57a031cb16a1f4fda7",
+  "stackArn": "arn:aws:cloudformation:us-east-1:559054714699:stack/tracepoint-postgres-rehearsal-8642e96d0c58/00f957a0-a8f9-11f1-8804-1230ea3d4c35",
+  "taskArn": "arn:aws:ecs:us-east-1:559054714699:task/tracepoint-postgres-rehearsal-8642e96d0c58-RunnerClusterB1138987-85MwH41hUuIc/ccb8149498134841acf5a4e17d30a1fc",
   "runnerExitCode": 1,
   "failureCodes": [
     {
+      "reconciliationDifferences": [
+        "metadata"
+      ],
+      "metadataDifferences": [
+        "constraints"
+      ]
+    },
+    {
+      "phase": "restore reconciliation",
       "sqlState": "ERR_ASSERTION",
       "errorName": "AssertionError"
     }
   ],
   "cleanup": "verified stack deletion",
-  "elapsedSeconds": 846.88,
+  "elapsedSeconds": 934.024,
   "passed": false
 }

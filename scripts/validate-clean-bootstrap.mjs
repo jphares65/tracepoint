@@ -1,3 +1,4 @@
+import {catalogSql,manifestSql} from './staging-management-manifest.mjs';
 import {supabasePrerequisites} from "./postgres-bootstrap-prerequisites.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -62,6 +63,7 @@ try {
   await client.connect();
   await client.query("set statement_timeout = '20s'");
   await client.query(supabasePrerequisites);
+  await client.query('create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)');
 
   for (const file of migrationFiles) {
     console.log(`Applying ${file}`);
@@ -70,6 +72,7 @@ try {
     try {
       await client.query("begin");
       await client.query(sql);
+      await client.query('insert into supabase_migrations.schema_migrations(version) values($1)',[file.split('_')[0]]);
       await client.query("commit");
     } catch (error) {
       await client.query("rollback");
@@ -148,18 +151,20 @@ try {
   try {
     await restored.connect();
     const fingerprint = async connection => {
-      const {rows:tables}=await connection.query("select tablename from pg_tables where schemaname='public' order by tablename");
-      const result=[];
-      for(const {tablename} of tables) {
-        const quoted='"'+tablename.replaceAll('"','""')+'"';
-        const {rows:[row]}=await connection.query('select count(*)::int as count, md5(coalesce(string_agg(to_jsonb(t)::text, chr(10) order by to_jsonb(t)::text),'+"''"+')) as checksum from public.'+quoted+' t');
-        result.push({table:tablename,...row});
-      }
-      const {rows:policies}=await connection.query("select tablename,policyname,roles,cmd,qual,with_check from pg_policies where schemaname='public' order by tablename,policyname");
-      return JSON.stringify({tables:result,policies});
+      const catalog=(await connection.query(catalogSql)).rows[0];
+      const results=await connection.query(manifestSql(catalog,versions));
+      return results.find(result=>result.rows?.[0]?.manifest)?.rows[0].manifest;
     };
-    if(await fingerprint(client)!==await fingerprint(restored)) throw new Error('Local restore row/checksum/RLS reconciliation failed');
-    console.log(`Local dump/restore and all-table count/checksum/RLS reconciliation passed in ${Date.now()-startedAt} ms.`);
+    const before=await fingerprint(client),after=await fingerprint(restored);
+    if(JSON.stringify(before)!==JSON.stringify(after)) {
+      console.log(JSON.stringify({metadataDifferences:Object.keys(before.metadata).filter(k=>before.metadata[k]!==after.metadata[k])}));
+      const sql="select t.relname,c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid,true) as definition from pg_constraint c join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace where n.nspname='public' order by t.relname,c.conname";
+      const source=(await client.query(sql)).rows,target=(await restored.query(sql)).rows;
+      const sourceSet=new Set(source.map(x=>JSON.stringify(x))),targetSet=new Set(target.map(x=>JSON.stringify(x)));
+      console.log(JSON.stringify({sourceOnlyConstraints:source.filter(x=>!targetSet.has(JSON.stringify(x))),restoredOnlyConstraints:target.filter(x=>!sourceSet.has(JSON.stringify(x)))}));
+      throw new Error('Local restore full manifest reconciliation failed');
+    }
+    console.log(`Local dump/restore and full table/relationship/metadata/RLS reconciliation passed in ${Date.now()-startedAt} ms.`);
   } finally { await restored.end(); }
   }
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations.`);
