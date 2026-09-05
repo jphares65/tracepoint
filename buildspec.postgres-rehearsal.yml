@@ -1,0 +1,20 @@
+version: 0.2
+env:
+  shell: bash
+phases:
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$AWS_ACCOUNT_ID" = "559054714699"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "559054714699"
+      - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+      - test "$IMAGE_TAG" = "${SOURCE_COMMIT}-postgres-rehearsal"
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "559054714699.dkr.ecr.us-east-1.amazonaws.com"
+  build:
+    on-failure: ABORT
+    commands:
+      - docker build --pull -f Dockerfile.postgres-rehearsal --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=disposable-synthetic-only -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
+      - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/run-aws-postgres-rehearsal.test.mjs
+      - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"

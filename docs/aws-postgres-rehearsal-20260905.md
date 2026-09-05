@@ -1,0 +1,11 @@
+# Disposable AWS PostgreSQL rehearsal
+
+This is a synthetic portability/restore rehearsal, not a production migration or a replacement for Supabase authentication. No production data or existing database is imported. The runner reuses the clean-bootstrap compatibility scaffolding and the live manifest generator rather than creating another reconciliation format.
+
+Implemented: 65 migrations, manager/officer and cross-tenant RLS probes, verified RDS TLS, managed master-secret injection through ECS, custom master identity, encrypted private single-AZ 20 GB gp3 database, a separate network with no NAT, and all-table row/hash/relationship plus schema/function/trigger/grant/policy/sequence reconciliation after dump/restore. The runner rejects pre-existing public tables or a restore database. Its image has a `-postgres-rehearsal` suffix and cannot pass the application's 40-hex runtime-image gate. Logs contain aggregate evidence and sanitized failure codes only.
+
+The disposable stack deliberately disables backups and deletion protection for newly created synthetic fixtures, and its deletion policy removes only that run's resources. It does not import the existing staging network, service or storage. The image must have a COMPLETE zero-findings ECR scan before provisioning. The exact staging identity must be checked before every mutation. No application provider is switched.
+
+Live RDS APIs confirmed PostgreSQL 18.6 and 18.4 available in us-east-1, including db.t4g.micro with gp3 minimum 20 GB. Use 18.4 for this rehearsal to match the previously validated embedded PostgreSQL major/minor and the installed CDK CloudFormation schema; no claim that 18.4 is the newest release. AWS Pricing API returned $0.016/instance-hour and $0.115/GB-month on September 5. A maximum two-hour execution plus runner/build/log/key/secret overhead is reserved at $2, increasing the existing $57.17 monthly model to a conservative $59.17 for one rehearsal. Provisioning must not proceed if that reserve or the $75 ceiling cannot be respected.
+
+Validation so far: exact-target rejection tests, infrastructure assertions and TypeScript; the shared bootstrap still applies all 65 migrations and passes tenant isolation. AWS creation, restore timing and verified resource removal remain unproven until execution evidence is recorded here.

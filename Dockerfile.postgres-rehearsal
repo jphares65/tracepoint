@@ -1,0 +1,14 @@
+FROM node:24-trixie-slim AS dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+FROM postgres:18-trixie
+COPY --from=dependencies /usr/local/bin/node /usr/local/bin/node
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql ./scripts/
+COPY supabase/migrations ./supabase/migrations
+ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
+RUN chmod 444 /app/rds-ca.pem
+USER postgres
+ENTRYPOINT ["node","scripts/run-aws-postgres-rehearsal.mjs"]
