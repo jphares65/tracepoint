@@ -22,7 +22,10 @@ export async function GET() {
       if (result.error) return NextResponse.json({ error: "Settings could not be loaded." }, { status: 500 });
       members = result.data ?? [];
     }
-    return NextResponse.json({ ...overview, members });
+    return NextResponse.json(
+      { ...overview, members },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("Settings overview failed", error);
     return NextResponse.json({ error: "Settings could not be loaded." }, { status: 500 });

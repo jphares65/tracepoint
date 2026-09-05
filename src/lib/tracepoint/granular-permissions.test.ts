@@ -50,14 +50,16 @@ test("database authority validates active membership, tenant, catalog, exact gra
 });
 
 test("Settings saves through an authenticated tenant-bound API and reports success after verified persistence", async () => {
-  const [route, page] = await Promise.all([
+  const [route, overviewRoute, page] = await Promise.all([
     readFile("src/app/api/settings/role-permissions/route.ts", "utf8"),
+    readFile("src/app/api/settings/overview/route.ts", "utf8"),
     readFile("src/app/settings/page.tsx", "utf8"),
   ]);
   assert.match(route, /resolveServerAccess\(\)/);
   assert.match(route, /departmentId !== context\.departmentId/);
   assert.match(route, /context\.authDb\.rpc\("set_department_role_permissions"/);
   assert.match(route, /saved permissions could not be verified/i);
+  assert.match(overviewRoute, /"Cache-Control": "no-store"/);
   assert.match(page, /fetch\("\/api\/settings\/role-permissions"/);
   const save = page.slice(page.indexOf("async function saveRolePermissions"), page.indexOf("async function inviteUser"));
   assert.ok(save.indexOf("await Promise.all([loadSettings(), refreshAccess()])") < save.indexOf("showNotice(\"success\""));
