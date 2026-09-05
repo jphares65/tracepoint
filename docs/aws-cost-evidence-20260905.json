@@ -1,7 +1,7 @@
 {
   "account": "559054714699",
   "region": "us-east-1",
-  "queriedAtUTC": "2026-09-05T08:19:15.955Z",
+  "queriedAtUTC": "2026-09-05T09:38:48.476Z",
   "period": {
     "start": "2026-09-01",
     "endExclusive": "2026-09-06"
@@ -10,10 +10,10 @@
   "estimated": true,
   "budgetActualUSD": 1.381,
   "budgetLimitUSD": 75,
-  "modeledMonthlyUSD": 67.17,
-  "billingLagNote": "Estimated billing can lag builds, deployments, WAF and disposable RDS rehearsals. Monthly model includes low-usage allowances; budget alerts do not impose a hard spending cap.",
+  "modeledMonthlyUSD": 68.42,
+  "billingLagNote": "Estimated billing can lag builds, deployments, WAF, SES and disposable RDS rehearsals. Low-usage monthly allowances are not a measured bill; budget alerts do not impose a hard cap.",
   "requestControlsModeledUSD": 10,
   "disposableRehearsalReserveUSD": 2,
-  "completedBuildsThisMonth": 26,
-  "elapsedBuildMinutesUpperBound": 75
+  "completedBuildsThisMonth": 28,
+  "elapsedBuildMinutesUpperBound": 80
 }

@@ -1,12 +1,23 @@
 {
-  "checkedAt": "2026-09-05T09:32:21.049Z",
+  "checkedAt": "2026-09-05T09:38:15.081Z",
   "account": "559054714699",
   "region": "us-east-1",
   "stackArn": "arn:aws:cloudformation:us-east-1:559054714699:stack/tracepoint-staging-ses-foundation/306c9480-a90c-11f1-9d7d-0afff8ef0f95",
   "status": "CREATE_COMPLETE",
   "terminationProtection": true,
   "providerActivation": "disabled",
+  "runtimeEmailProvider": "brevo",
   "runtimeSendPermission": false,
+  "runtimeIamSimulation": [
+    {
+      "action": "ses:SendEmail",
+      "decision": "implicitDeny"
+    },
+    {
+      "action": "ses:SendRawEmail",
+      "decision": "implicitDeny"
+    }
+  ],
   "dnsModified": false,
   "dnsRecords": [
     {
@@ -50,5 +61,22 @@
   "suppressionReasons": [
     "BOUNCE",
     "COMPLAINT"
+  ],
+  "keyRotation": true,
+  "queues": [
+    {
+      "logicalId": "FeedbackDeadLetters07994F3B",
+      "encryption": "SQS_MANAGED",
+      "retentionSeconds": 1209600,
+      "pendingMessages": 0,
+      "redriveConfigured": false
+    },
+    {
+      "logicalId": "FeedbackQueueC15639F7",
+      "encryption": "SQS_MANAGED",
+      "retentionSeconds": 1209600,
+      "pendingMessages": 0,
+      "redriveConfigured": true
+    }
   ]
 }
