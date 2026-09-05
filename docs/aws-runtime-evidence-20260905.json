@@ -2,7 +2,7 @@
   "account": "559054714699",
   "region": "us-east-1",
   "imageTag": "5a511edbf2d1543fd384f0ed11734a548d6272e7",
-  "checkedAt": "2026-09-05T06:54:04.336Z",
+  "checkedAt": "2026-09-05T08:04:35.828Z",
   "identityVerified": true,
   "stackStatus": "UPDATE_COMPLETE",
   "ecs": {
@@ -33,6 +33,10 @@
     },
     {
       "name": "tracepoint-staging-memory",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-request-flood",
       "state": "OK"
     },
     {
