@@ -1,0 +1,8 @@
+{
+  "reviewedCommit": "0ad535f13c270e83be850274eda2aecbefa80c87",
+  "environment": "staging",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "action": "publish-and-deploy",
+  "reason": "Deploy reviewed email reconciliation fix after local gates; preserve active Supabase authentication and Brevo."
+}
