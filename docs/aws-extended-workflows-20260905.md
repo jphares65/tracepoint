@@ -13,3 +13,7 @@ Recovery run 1f7632ef-d8e8-4d0b-8df4-9c710cff3265 validated one-time Supabase re
 Run: `node --import tsx scripts/run-disposable-staging-acceptance.mjs --execute --range-documents --extended-workflows` with the gated staging AWS profile and installed Playwright Chromium. No acceptance credentials are required from the user.
 
 A subsequent real-role SQL regression exposed missing checklist grants/policies. Migration 65 enables RLS on firearm_inspection_items, scopes reads through the protected parent, and permits inserts only for inspection/firearm managers. No update/delete client grants were introduced. The 65-migration bootstrap proves manager writes and officer read/write separation; it was applied only to staging after exact 64-ledger and previous-security-state guards.
+
+Repair release 34633a75d23c6edcd7aca364506159624a48ab28 passed 50 implemented checks with zero failures, including all added off-duty, armory, certification, fleet, training and CSV workflows. Fixture run 39c4a858-8c8a-4d29-b2c3-195ddaadfb8f verified document/custody audit and complete cleanup. Current-task logs were clean. Browser recovery is a subsequent independent gate: it exposed an incorrect callback hostname behind ECS, now under repair.
+
+Two fresh live management snapshots matched exactly at 65 migrations, 81 tables and 229 relationships with zero orphan relationships. Local 65-migration dump/restore reconciliation completed in 2138 ms. No production data was read or transferred.

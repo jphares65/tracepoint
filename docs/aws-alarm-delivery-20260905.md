@@ -12,3 +12,7 @@ npx.cmd cdk deploy --app 'npx ts-node --prefer-ts-exts bin/staging-alert-deliver
 ```
 
 The topic is prepared for an approved human destination. Jason must subscribe and confirm his chosen operational email endpoint, then verify receipt and name the backup responder before production cutover. No human endpoint is selected or messaged by this stack. Queue delivery alone does not establish human escalation or earn the notification-escalation completion check.
+
+Live deployment completed as stack arn:aws:cloudformation:us-east-1:559054714699:stack/tracepoint-staging-alert-delivery/3874a4c0-a8ed-11f1-9ed7-0e7c0f4679df. Topic: arn:aws:sns:us-east-1:559054714699:tracepoint-staging-runtime-alerts. Receipt queue: https://sqs.us-east-1.amazonaws.com/559054714699/tracepoint-staging-alert-receipts.
+
+Rehearsal 8fa57636-e652-4076-9641-99bc52ae3afd received both incident and recovery messages, verified their SNS signatures, acknowledged only matching run messages, and left all five alarms OK in 23.803 seconds. The safety-gated command is `node --import tsx scripts/test-staging-alarm-delivery.mjs --execute`; omit --execute for read-only preflight. It refuses any unexpected or human subscriber and does not change the four underlying alarm definitions. Latest estimated MTD cost remains $0.9478775816, with billing lag; the $57.17 monthly model includes this deployed stack.

@@ -1,23 +1,23 @@
 {
   "account": "559054714699",
   "region": "us-east-1",
-  "imageTag": "3ac59c5a1cccd79d4fd534212ce8973abeaecd98",
-  "checkedAt": "2026-09-05T04:53:28.767Z",
+  "imageTag": "34633a75d23c6edcd7aca364506159624a48ab28",
+  "checkedAt": "2026-09-05T05:41:02.914Z",
   "identityVerified": true,
   "stackStatus": "UPDATE_COMPLETE",
   "ecs": {
     "desired": 1,
     "running": 1,
     "pending": 0,
-    "revision": 13,
+    "revision": 14,
     "completed": true
   },
   "scan": {
     "status": "COMPLETE",
     "findings": {}
   },
-  "expectedDigest": "sha256:677781bafe818ad4d86ceeef8d591b419e33cf58bf81e0c9bc11ff6660b60c83",
-  "runningDigest": "sha256:677781bafe818ad4d86ceeef8d591b419e33cf58bf81e0c9bc11ff6660b60c83",
+  "expectedDigest": "sha256:e5f3ce876be51a0f24340ca3efadc236af231811c30d0c4ad7c9c5de2d1fb7ea",
+  "runningDigest": "sha256:e5f3ce876be51a0f24340ca3efadc236af231811c30d0c4ad7c9c5de2d1fb7ea",
   "imageMatches": true,
   "targets": [
     "healthy"

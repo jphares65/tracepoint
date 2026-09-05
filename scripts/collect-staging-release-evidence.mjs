@@ -20,7 +20,8 @@ try {
  report.runningDigest=task.containers[0].imageDigest;report.imageMatches=task.containers[0].image.endsWith(':'+tag)&&report.expectedDigest===report.runningDigest;
  const target=service.loadBalancers[0].targetGroupArn;
  report.targets=aws(['elbv2','describe-target-health','--target-group-arn',target]).TargetHealthDescriptions.map(x=>x.TargetHealth.State);
- report.alarms=aws(['cloudwatch','describe-alarms','--alarm-name-prefix','tracepoint-staging']).MetricAlarms.map(x=>({name:x.AlarmName,state:x.StateValue}));
+ const alarms=aws(['cloudwatch','describe-alarms','--alarm-name-prefix','tracepoint-staging','--alarm-types','MetricAlarm','CompositeAlarm']);
+ report.alarms=[...alarms.MetricAlarms,...alarms.CompositeAlarms].map(x=>({name:x.AlarmName,state:x.StateValue}));
  report.public=[];
  for(const route of ['/api/health','/login','/equipment','/range-days','/firearms','/off-duty-firearms','/qualifications','/training','/fleet-management','/notifications']){
   const response=await fetch(base+route,{redirect:'manual',signal:AbortSignal.timeout(15000)});await response.body?.cancel();

@@ -1,7 +1,7 @@
 {
   "account": "559054714699",
   "region": "us-east-1",
-  "queriedAtUTC": "2026-09-05T04:20:00.669Z",
+  "queriedAtUTC": "2026-09-05T05:59:13.936Z",
   "period": {
     "start": "2026-09-01",
     "endExclusive": "2026-09-06"
@@ -10,8 +10,6 @@
   "estimated": true,
   "budgetActualUSD": 0.948,
   "budgetLimitUSD": 75,
-  "forecast": "DataUnavailableException: insufficient history",
-  "modeledMonthlyUSD": 55.17,
-  "additionalAlarmsIncludedInModel": true,
-  "billingLagNote": "Cost Explorer still reports the same estimated 0.9478775816 USD; recent builds and requests may not yet be reflected."
+  "modeledMonthlyUSD": 57.17,
+  "billingLagNote": "Estimated month-to-date bill can lag recent builds, deployments and the new alert stack."
 }
