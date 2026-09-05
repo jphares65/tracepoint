@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
-FROM node:20-bookworm-slim AS dependencies
+FROM node:24-trixie-slim AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:20-bookworm-slim AS builder
+FROM node:24-trixie-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SUPABASE_URL
@@ -29,7 +29,7 @@ RUN mkdir -p /runtime-volumes/cache /runtime-volumes/tmp && \
     touch /runtime-volumes/cache/.tracepoint-volume /runtime-volumes/tmp/.tracepoint-volume && \
     chown -R 65532:65532 /runtime-volumes
 
-FROM gcr.io/distroless/nodejs20-debian12:nonroot AS runner
+FROM gcr.io/distroless/nodejs24-debian13:nonroot AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
