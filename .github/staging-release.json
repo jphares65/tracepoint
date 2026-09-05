@@ -1,8 +1,8 @@
 {
-  "reviewedCommit": "0ad535f13c270e83be850274eda2aecbefa80c87",
+  "reviewedCommit": "d377ad176b99d6cc35f0c80ef679636caca5cab7",
   "environment": "staging",
   "account": "559054714699",
   "region": "us-east-1",
   "action": "publish-and-deploy",
-  "reason": "Deploy reviewed email reconciliation fix after local gates; preserve active Supabase authentication and Brevo."
+  "reason": "Release reviewed email reconciliation and aggregate queue gates after successful hosted Linux validation and OIDC proof."
 }
