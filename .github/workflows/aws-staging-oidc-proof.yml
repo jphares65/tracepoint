@@ -1,0 +1,47 @@
+name: AWS staging OIDC proof
+on:
+  push:
+    branches: [codex/aws-staging-readiness-20260902]
+    paths: [.github/workflows/aws-staging-oidc-proof.yml]
+permissions:
+  contents: read
+concurrency:
+  group: tracepoint-staging-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    environment: aws-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TRACEPOINT_DIRECT_STAGING_DEPLOYMENT: 'true'
+      ACCEPTED_IMAGE: 5a511edbf2d1543fd384f0ed11734a548d6272e7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '559054714699'
+          role-duration-seconds: 3600
+      - name: Validate isolated provider credentials, immutable image and budget
+        shell: pwsh
+        run: |
+          ./scripts/deploy-tracepoint-staging.ps1 -Action Verify -ImageTag $env:ACCEPTED_IMAGE -StorageProvider s3
+      - name: Validate live runtime through the OIDC role
+        shell: pwsh
+        run: |
+          node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE
+          if ($LASTEXITCODE -ne 0) { throw 'OIDC runtime evidence gate failed' }
