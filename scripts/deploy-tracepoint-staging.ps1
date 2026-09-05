@@ -109,10 +109,12 @@ if ($oldTemplate -isnot [string]) { $oldTemplate = $oldTemplate | ConvertTo-Json
 if ($LASTEXITCODE -ne 0) { throw 'Cannot retrieve the deployed runtime template.' }
 [IO.File]::WriteAllText($oldTemplatePath, ($oldTemplate -join [Environment]::NewLine))
 Push-Location $infraRoot
+$synthErrorPreference = $ErrorActionPreference
 try {
+    $ErrorActionPreference = 'Continue'
     & npx.cmd cdk synth $runtimeStack @context --strict --quiet --output $validationRoot
     if ($LASTEXITCODE -ne 0) { throw 'Strict runtime synthesis failed.' }
-} finally { Pop-Location }
+} finally { $ErrorActionPreference = $synthErrorPreference; Pop-Location }
 $structuralOptions = @()
 if ($IncludeReviewedRuntimeControls) { $structuralOptions += '--allow-reviewed-runtime-controls' }
 & node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag @structuralOptions
