@@ -62,8 +62,11 @@ try {
         CONFIGURATION_ENVIRONMENT = $plain.ConfigurationEnvironment
     } | ConvertTo-Json -Compress
 
+    $payload | & node (Join-Path $PSScriptRoot 'validate-staging-provider-config.mjs')
+    if ($LASTEXITCODE -ne 0) { throw 'Staging provider credentials failed; retained secret was not changed.' }
+
     if (-not $PSCmdlet.ShouldProcess('tracepoint/staging/application in account 559054714699', 'Replace the complete staging secret value')) { return }
-    & aws.exe secretsmanager put-secret-value --secret-id tracepoint/staging/application --secret-string $payload --region us-east-1 --no-cli-pager --output json | Out-Null
+    $payload | & node (Join-Path $PSScriptRoot 'replace-staging-secret.mjs')
     if ($LASTEXITCODE -ne 0) { throw 'Secret replacement failed.' }
     Write-Host 'The staging application secret was replaced atomically; no value was printed or written to local storage.'
 }

@@ -69,6 +69,8 @@ if (-not $ValidateArchiveOnly) {
         if ($missing.Count) { throw "Staging secret is missing required names: $($missing -join ', ')" }
         if ([string]$secret.CONFIGURATION_ENVIRONMENT -ne 'staging') { throw 'CONFIGURATION_ENVIRONMENT must equal staging.' }
         if ([string]$secret.NEXT_PUBLIC_SITE_URL -ne 'https://staging.tracepointhq.com') { throw 'NEXT_PUBLIC_SITE_URL must identify the staging hostname.' }
+        $secret | ConvertTo-Json -Compress | & node (Join-Path $PSScriptRoot 'validate-staging-provider-config.mjs') --supabase-only
+        if ($LASTEXITCODE -ne 0) { throw 'Staging provider credentials failed validation; no publication or deployment is permitted.' }
     }
     finally {
         $secretText = $null

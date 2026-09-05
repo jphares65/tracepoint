@@ -76,6 +76,8 @@ function Assert-RuntimeSecretConfiguration {
         if ($secret.CONFIGURATION_ENVIRONMENT -ne 'staging' -or $secret.NEXT_PUBLIC_SITE_URL -ne 'https://staging.tracepointhq.com') {
             throw 'The retained secret fails the staging/production-safety gate.'
         }
+        $secret | ConvertTo-Json -Compress | & node (Join-Path $PSScriptRoot 'validate-staging-provider-config.mjs')
+        if ($LASTEXITCODE -ne 0) { throw 'Staging provider credentials failed validation; deployment is blocked.' }
     }
     finally { $secretText = $null; $secret = $null }
 }
@@ -100,7 +102,9 @@ $context = @('-c', "account=$account", '-c', "region=$region", '-c', "environmen
 $validationRoot = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-runtime-review-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $validationRoot | Out-Null
 $oldTemplatePath = Join-Path $validationRoot 'previous.json'
-$oldTemplate = & aws.exe cloudformation get-template --stack-name $runtimeStack --query TemplateBody --output text --region $region
+$oldTemplateResponse = Invoke-AwsJson @('cloudformation', 'get-template', '--stack-name', $runtimeStack)
+$oldTemplate = $oldTemplateResponse.TemplateBody
+if ($oldTemplate -isnot [string]) { $oldTemplate = $oldTemplate | ConvertTo-Json -Depth 100 -Compress }
 if ($LASTEXITCODE -ne 0) { throw 'Cannot retrieve the deployed runtime template.' }
 [IO.File]::WriteAllText($oldTemplatePath, ($oldTemplate -join [Environment]::NewLine))
 Push-Location $infraRoot
