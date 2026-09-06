@@ -41,12 +41,13 @@ jobs:
           allowed-account-ids: '559054714699'
           role-duration-seconds: 3600
           role-session-name: staging-operations-${{ github.run_id }}
-          managed-session-policies: arn:aws:iam::aws:ReadOnlyAccess
-          # Session permissions intersect the existing scoped staging role.
-          # These two extra read operations permit the existing sanitized
-          # staging queue-health check; secrets never enter workflow output.
+          # STS session policies must use customer managed policy ARNs when
+          # referencing managed policies. Use an explicit inline read allowlist.
+          # It intersects the existing resource-scoped role and grants no writes.
           inline-session-policy: >-
             {"Version":"2012-10-17","Statement":[
+              {"Effect":"Allow","Action":["cloudformation:DescribeStacks","ecs:DescribeServices","ecs:DescribeTasks","ecs:ListTasks","ecs:DescribeTaskDefinition","ecr:DescribeImageScanFindings","elasticloadbalancing:DescribeTargetHealth","cloudwatch:DescribeAlarms","logs:FilterLogEvents","ce:GetCostAndUsage"],"Resource":"*","Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}},
+              {"Effect":"Allow","Action":"budgets:ViewBudget","Resource":"arn:aws:budgets::559054714699:budget/tracepoint-staging-monthly-75"},
               {"Effect":"Allow","Action":"secretsmanager:GetSecretValue","Resource":"arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/application-p4ZFsw"},
               {"Effect":"Allow","Action":"kms:Decrypt","Resource":"arn:aws:kms:us-east-1:559054714699:key/8a158690-ddbc-4887-8f61-0927dc279701","Condition":{"StringEquals":{"kms:ViaService":"secretsmanager.us-east-1.amazonaws.com"}}}
             ]}

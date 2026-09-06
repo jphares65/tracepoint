@@ -5,9 +5,9 @@ evidence and actual budget metadata without image publication, ECS changes or
 CloudFormation deployment. It shares release concurrency, so it cannot overlap
 an AWS release in this repository. It does not use the expired local AWS session.
 
-The existing environment-scoped GitHub role is further restricted with the AWS
-ReadOnlyAccess session policy and two narrowly scoped additional reads: the
-staging application secret and its KMS decryption through Secrets Manager.
+The existing environment-scoped GitHub role is further restricted with an inline
+allowlist of specific metadata reads, the exact staging budget, the staging
+application secret and its KMS decryption through Secrets Manager.
 Session policies intersect the existing role; no IAM role policy is changed.
 See the action's [session-policy interface](https://github.com/aws-actions/configure-aws-credentials#session-policies).
 
@@ -42,3 +42,8 @@ node scripts/collect-staging-workflow-evidence.mjs <request-commit-sha> --operat
 Five focused workflow/request/log-sanitization tests and changed-file lint pass.
 This tooling checkpoint alone does not claim a successful live operations run
 or change weighted readiness. Production hotfix integration remains deferred.
+
+The first request (`e00afe8`, run 34035819964) passed source/request validation
+but STS rejected the AWS-managed ReadOnlyAccess ARN as a session policy reference.
+No AWS evidence reads or mutations ran. The corrected workflow uses the explicit
+inline read allowlist; the saved failed-run evidence is retained for accuracy.
