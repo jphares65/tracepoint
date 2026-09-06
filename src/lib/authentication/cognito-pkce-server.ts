@@ -8,3 +8,4 @@ export {createCognitoInitialSessionVerifier} from './cognito-initial-session';
 export {PostgresCognitoRefreshStore,RefreshSessionSealer} from './postgres-refresh-sessions';
 export {createCognitoTransport} from './cognito-transport';
 export {createCognitoRefreshRotator} from './cognito-refresh';
+export {createCognitoTokenEndpoint} from './cognito-token-endpoint';

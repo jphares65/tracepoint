@@ -11,13 +11,13 @@ export interface AuthorizationTransactionStore {
  take(handle:string):Promise<AuthorizationTransaction|null>;
 }
 export type CognitoTokens={accessToken:string;idToken:string;refreshToken:string;expiresIn:number};
-function assertConfiguration(config:CognitoVerificationConfig){
+export function assertCognitoConfiguration(config:CognitoVerificationConfig){
  if(config.region!=='us-east-1'||!/^\d{12}$/.test(config.account)||config.account==='265544358665'||
   (config.environment==='staging'?config.account!=='559054714699':config.environment!=='production'||['559054714699','111111111111'].includes(config.account))||
   !/^us-east-1_[A-Za-z0-9]+$/.test(config.userPoolId)||!/^[A-Za-z0-9]{1,128}$/.test(config.clientId))throw Error('Invalid Cognito PKCE boundary.');
 }
 export function createCognitoPkce(config:CognitoVerificationConfig,store:AuthorizationTransactionStore,fetchImpl:typeof fetch=fetch,now:()=>number=Date.now){
- assertConfiguration(config);if(typeof store?.put!=='function'||typeof store?.take!=='function')throw Error('Invalid transaction store.');
+ assertCognitoConfiguration(config);if(typeof store?.put!=='function'||typeof store?.take!=='function')throw Error('Invalid transaction store.');
  const domain='https://tracepoint-'+config.environment+'-'+config.account+'.auth.us-east-1.amazoncognito.com';
  const callback=(config.environment==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback';
  const random=()=>randomBytes(32).toString('base64url');
@@ -57,7 +57,7 @@ export function createCognitoPkce(config:CognitoVerificationConfig,store:Authori
 // Compose with the existing access-token verifier, stable mapping and mandatory
 // durable session check. JWT claims never supply a department or permission.
 export function createCognitoPkceTokenVerifier(config:CognitoVerificationConfig,access:AuthenticationProvider,options:{jwksCache?:JwksCache}={}){
- assertConfiguration(config);
+ assertCognitoConfiguration(config);
  const issuer='https://cognito-idp.'+config.region+'.amazonaws.com/'+config.userPoolId;
  const verifier=CognitoJwtVerifier.create({userPoolId:config.userPoolId,clientId:config.clientId,tokenUse:'id',includeRawJwtInErrors:false,graceSeconds:0,
   customJwtCheck:({header,payload})=>{const now=Math.floor(Date.now()/1000);if(header.alg!=='RS256'||typeof payload.iat!=='number'||typeof payload.exp!=='number'||payload.iat>now+30||payload.exp<=payload.iat||payload.exp-payload.iat>900)throw Error('Invalid ID token.');}
