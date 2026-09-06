@@ -46,6 +46,7 @@ const officerEmail='officer-'+run+'@example.invalid';
 const officerPassword=randomBytes(36).toString('base64url')+'Aa1!';
 const createdDepartments = [];
 let result = 1;
+let acceptanceHarnessStage = 'fixture-setup';
 function requireSuccess(value, label) { if (value.error) { console.error(JSON.stringify({step: label, code: value.error.code ?? value.error.status ?? 'unknown'})); throw new Error('Fixture request failed'); } return value.data; }
 try {
  if(cleanupOnly){
@@ -88,16 +89,20 @@ try {
   console.log(JSON.stringify({ fixtureRun: run, stagingOnly: true, departments: departmentIds }));
   if(process.argv.includes('--auth-recovery')||process.argv.includes('--browser-recovery'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId,browserRecovery:process.argv.includes('--browser-recovery')});
   if(process.argv.includes('--storage-migration'))await exerciseStorageCopy({admin,department:departmentIds[0],env,run});
+  acceptanceHarnessStage = 'authenticated-acceptance';
   result = process.argv.includes('--fixtures-only') ? 0 : await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('./test-staging-acceptance.mjs', import.meta.url)), '--smoke'], { env: { ...env, TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS:process.argv.includes('--extended-workflows')?'enabled':'', TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:process.argv.includes('--range-documents')?'enabled':'', TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:storageProvider, TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:'foreign-'+run+'@example.invalid', TRACEPOINT_ACCEPTANCE_MANAGER_ID:userId, TRACEPOINT_ACCEPTANCE_OFFICER_ID:extraUsers[0], TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:extraUsers[1], TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL:officerEmail, TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD:officerPassword, TRACEPOINT_ACCEPTANCE_EMAIL: email, TRACEPOINT_ACCEPTANCE_PASSWORD: password, TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID: departmentIds[0], TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID: departmentIds[1], TRACEPOINT_ACCEPTANCE_WRITES: 'disposable-staging' }, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', reject); child.on('exit', code => resolve(code ?? 1));
   });
   if(result===0&&!process.argv.includes('--fixtures-only')) {
+    acceptanceHarnessStage = 'browser-recovery';
     if(process.argv.includes('--extended-workflows'))await exerciseAuthRecovery({admin,url:secret.NEXT_PUBLIC_SUPABASE_URL,publicKey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,email,userId,browserRecovery:true});
+    acceptanceHarnessStage = 'custody-evidence';
     const history=requireSuccess(await admin.from('equipment_asset_assignments').select('returned_at').eq('department_id',departmentIds[0]), 'Verify custody history');
     const audit=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','equipment_assets'), 'Verify audit creation');
     assert.ok(history.length>=2&&history.every(x=>x.returned_at));assert.ok(audit.length>=3);
     if(process.argv.includes('--range-documents')){
+      acceptanceHarnessStage = 'document-evidence';
       const documents=requireSuccess(await admin.from('audit_events').select('id').eq('department_id',departmentIds[0]).eq('entity_type','drill_document'), 'Document audit verification');assert.ok(documents.length>=2);
       console.log(JSON.stringify({fixtureRun:run,documentAudit:'verified'}));
     }
@@ -106,6 +111,7 @@ try {
  }
 } catch {
   // Avoid SDK request/response details and credentials in logs.
+  console.error(JSON.stringify({acceptanceHarness:'failed',stage:acceptanceHarnessStage,sensitiveDetailsPrinted:false}));
   console.error('Disposable staging setup or execution failed; sensitive details suppressed.');
   result = 1;
 } finally {
