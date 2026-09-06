@@ -7,3 +7,4 @@ export {PostgresCognitoSessionStore} from './postgres-sessions';
 export {createCognitoInitialSessionVerifier} from './cognito-initial-session';
 export {PostgresCognitoRefreshStore,RefreshSessionSealer} from './postgres-refresh-sessions';
 export {createCognitoTransport} from './cognito-transport';
+export {createCognitoRefreshRotator} from './cognito-refresh';
