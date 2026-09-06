@@ -1,5 +1,6 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import assert from "node:assert/strict";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import os from "node:os";
@@ -310,10 +311,237 @@ try {
   await client.query("commit");
   if (String(platformSave.rows[0].permissions) !== "view_audit_log") throw new Error("Platform administrator explicit-department permission save failed.");
 
+  // Reproduce the six production-only catalog rows and exercise them entirely
+  // inside this disposable database. They are intentionally not migrations.
+  const legacyPermissions = [
+    "create_remediations",
+    "manage_remediations",
+    "resolve_remediations",
+    "view_training_alerts",
+    "manage_training_alerts",
+    "view_command_training_alerts",
+  ];
+  const broaderByLegacyPermission = {
+    create_remediations: "manage_training",
+    manage_remediations: "manage_training",
+    resolve_remediations: "manage_training",
+    view_training_alerts: "view_analytics",
+    manage_training_alerts: "manage_training",
+    view_command_training_alerts: "view_analytics",
+  };
+  const legacyActors = {
+    legacyOnly: "21000000-0000-0000-0000-000000000001",
+    broaderOnly: "21000000-0000-0000-0000-000000000002",
+    both: "21000000-0000-0000-0000-000000000003",
+    neither: "21000000-0000-0000-0000-000000000004",
+    inactive: "21000000-0000-0000-0000-000000000005",
+    crossDepartment: "21000000-0000-0000-0000-000000000006",
+  };
+
+  await client.query(`
+    insert into auth.users (id, email) values
+      ('${legacyActors.legacyOnly}', 'legacy-only@example.test'),
+      ('${legacyActors.broaderOnly}', 'broader-only@example.test'),
+      ('${legacyActors.both}', 'legacy-and-broader@example.test'),
+      ('${legacyActors.neither}', 'neither@example.test'),
+      ('${legacyActors.inactive}', 'inactive-legacy@example.test'),
+      ('${legacyActors.crossDepartment}', 'cross-department-legacy@example.test');
+    insert into public.profiles (id, full_name, email)
+      select id, split_part(email, '@', 1), email
+      from auth.users
+      where id::text like '21000000-%'
+      on conflict (id) do update
+      set full_name=excluded.full_name, email=excluded.email;
+    insert into public.roles (code, display_name) values
+      ('audit_legacy_only', 'Audit Legacy Only'),
+      ('audit_broader_only', 'Audit Broader Only'),
+      ('audit_legacy_and_broader', 'Audit Legacy And Broader'),
+      ('audit_neither', 'Audit Neither');
+    insert into public.department_memberships (department_id, user_id, is_active) values
+      ('${departmentA}', '${legacyActors.legacyOnly}', true),
+      ('${departmentA}', '${legacyActors.broaderOnly}', true),
+      ('${departmentA}', '${legacyActors.both}', true),
+      ('${departmentA}', '${legacyActors.neither}', true),
+      ('${departmentA}', '${legacyActors.inactive}', false),
+      ('${departmentB}', '${legacyActors.crossDepartment}', true);
+    insert into public.department_membership_roles (department_id, user_id, role_code) values
+      ('${departmentA}', '${legacyActors.legacyOnly}', 'audit_legacy_only'),
+      ('${departmentA}', '${legacyActors.broaderOnly}', 'audit_broader_only'),
+      ('${departmentA}', '${legacyActors.both}', 'audit_legacy_and_broader'),
+      ('${departmentA}', '${legacyActors.neither}', 'audit_neither'),
+      ('${departmentA}', '${legacyActors.inactive}', 'audit_legacy_only'),
+      ('${departmentB}', '${legacyActors.crossDepartment}', 'audit_legacy_only');
+    insert into public.permissions (code, display_name, description) values
+      ('create_remediations', 'Create Remediations', 'Disposable production-drift fixture.'),
+      ('manage_remediations', 'Manage Remediations', 'Disposable production-drift fixture.'),
+      ('resolve_remediations', 'Resolve Remediations', 'Disposable production-drift fixture.'),
+      ('view_training_alerts', 'View Training Alerts', 'Disposable production-drift fixture.'),
+      ('manage_training_alerts', 'Manage Training Alerts', 'Disposable production-drift fixture.'),
+      ('view_command_training_alerts', 'View Command Training Alerts', 'Disposable production-drift fixture.');
+  `);
+
+  for (const permissionCode of legacyPermissions) {
+    const broaderPermission = broaderByLegacyPermission[permissionCode];
+    await client.query(
+      `insert into public.role_permissions (role_code, permission_code)
+       values ('audit_legacy_only', $1)`,
+      [permissionCode],
+    );
+    await client.query(
+      `insert into public.department_role_permissions (department_id, role_code, permission_code)
+       values
+         ($1, 'audit_legacy_only', $3),
+         ($1, 'audit_legacy_and_broader', $3),
+         ($2, 'audit_legacy_only', $3)`,
+      [departmentA, departmentB, permissionCode],
+    );
+    await client.query(
+      `insert into public.department_role_permissions (department_id, role_code, permission_code)
+       values
+         ($1, 'audit_broader_only', $2),
+         ($1, 'audit_legacy_and_broader', $2)
+       on conflict do nothing`,
+      [departmentA, broaderPermission],
+    );
+
+    const legacyMatrix = {
+      legacy_only_legacy: await permissionAs(legacyActors.legacyOnly, departmentA, permissionCode),
+      legacy_only_broader: !(await permissionAs(legacyActors.legacyOnly, departmentA, broaderPermission)),
+      broader_only_legacy: !(await permissionAs(legacyActors.broaderOnly, departmentA, permissionCode)),
+      broader_only_broader: await permissionAs(legacyActors.broaderOnly, departmentA, broaderPermission),
+      both_legacy: await permissionAs(legacyActors.both, departmentA, permissionCode),
+      both_broader: await permissionAs(legacyActors.both, departmentA, broaderPermission),
+      neither_legacy: !(await permissionAs(legacyActors.neither, departmentA, permissionCode)),
+      administrator_legacy: await permissionAs(users.administrator, departmentA, permissionCode),
+      inactive_legacy: !(await permissionAs(legacyActors.inactive, departmentA, permissionCode)),
+      cross_department_legacy: !(await permissionAs(legacyActors.crossDepartment, departmentA, permissionCode)),
+    };
+    const failedLegacyChecks = Object.entries(legacyMatrix)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failedLegacyChecks.length) {
+      throw new Error(
+        `Legacy permission matrix failed for ${permissionCode}: ${failedLegacyChecks.join(", ")}`,
+      );
+    }
+  }
+
+  const legacyExpression = legacyPermissions.join("|");
+  const directAuthorityReferences = await client.query(
+    `select
+      (select count(*)::int from pg_policies
+       where schemaname = 'public'
+         and (coalesce(qual, '') ~ $1 or coalesce(with_check, '') ~ $1)) as policy_count,
+      (select count(*)::int from pg_proc
+       where pronamespace = 'public'::regnamespace
+         and prokind = 'f'
+         and pg_get_functiondef(oid) ~ $1) as function_count`,
+    [legacyExpression],
+  );
+  if (directAuthorityReferences.rows[0].policy_count !== 0 || directAuthorityReferences.rows[0].function_count !== 0) {
+    throw new Error("Legacy permissions unexpectedly control an RLS policy or RPC.");
+  }
+
+  // Production has this pilot table with RLS enabled and no policies. Mirror
+  // that metadata to prove direct authenticated reads and updates are denied
+  // even when has_department_permission returns true for a legacy code.
+  await client.query(`
+    create table public.pilot_remediation_workspaces (
+      department_id uuid primary key references public.departments(id) on delete cascade,
+      remediations jsonb not null default '[]'::jsonb,
+      updated_by uuid references public.profiles(id),
+      updated_at timestamptz not null default now()
+    );
+    alter table public.pilot_remediation_workspaces enable row level security;
+    grant select, insert, update on public.pilot_remediation_workspaces to authenticated;
+    insert into public.pilot_remediation_workspaces (department_id, remediations)
+    values ('${departmentA}', '[{"id":"disposable-remediation"}]'::jsonb);
+  `);
+
+  async function pilotRemediationAccessAs(userId) {
+    await client.query("begin");
+    try {
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
+      const selected = await client.query(
+        "select count(*)::int as count from public.pilot_remediation_workspaces where department_id=$1",
+        [departmentA],
+      );
+      const updated = await client.query(
+        "update public.pilot_remediation_workspaces set updated_at=now() where department_id=$1 returning department_id",
+        [departmentA],
+      );
+      await client.query("commit");
+      return { selected: selected.rows[0].count, updated: updated.rowCount };
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  }
+
+  for (const [actor, userId] of Object.entries({
+    legacyOnly: legacyActors.legacyOnly,
+    broaderOnly: legacyActors.broaderOnly,
+    both: legacyActors.both,
+    neither: legacyActors.neither,
+    administrator: users.administrator,
+    inactive: legacyActors.inactive,
+    crossDepartment: legacyActors.crossDepartment,
+  })) {
+    assert.deepEqual(
+      await pilotRemediationAccessAs(userId),
+      { selected: 0, updated: 0 },
+      `pilot remediation direct access: ${actor}`,
+    );
+  }
+
+  const proposalPath = path.resolve(
+    "supabase/proposals/202609050003_retire_legacy_training_alert_permissions.sql",
+  );
+  const proposal = await readFile(proposalPath, "utf8");
+  const canonicalAssignmentCountBefore = Number((await client.query(`
+    select
+      (select count(*) from public.role_permissions where permission_code in ('manage_training', 'view_analytics')) +
+      (select count(*) from public.department_role_permissions where permission_code in ('manage_training', 'view_analytics'))
+      as count
+  `)).rows[0].count);
+
+  await client.query(proposal);
+  await client.query(proposal);
+
+  const retirement = await client.query(`
+    select
+      (select count(*)::int from public.permissions where code = any($1)) as catalog_rows,
+      (select count(*)::int from public.role_permissions where permission_code = any($1)) as global_rows,
+      (select count(*)::int from public.department_role_permissions where permission_code = any($1)) as department_rows,
+      (select count(*)::int from public.retired_permission_assignment_audit where permission_code = any($1)) as audit_rows,
+      (select count(*)::int from public.retired_permission_assignment_audit where record_scope='catalog' and permission_code = any($1)) as catalog_audit_rows,
+      (select count(*)::int from public.retired_permission_assignment_audit where record_scope='global_role_default' and permission_code = any($1)) as global_audit_rows,
+      (select count(*)::int from public.retired_permission_assignment_audit where record_scope='department_role' and permission_code = any($1)) as department_audit_rows
+  `, [legacyPermissions]);
+  assert.deepEqual(retirement.rows[0], {
+    catalog_rows: 0,
+    global_rows: 0,
+    department_rows: 0,
+    audit_rows: 30,
+    catalog_audit_rows: 6,
+    global_audit_rows: 6,
+    department_audit_rows: 18,
+  });
+  const canonicalAssignmentCountAfter = Number((await client.query(`
+    select
+      (select count(*) from public.role_permissions where permission_code in ('manage_training', 'view_analytics')) +
+      (select count(*) from public.department_role_permissions where permission_code in ('manage_training', 'view_analytics'))
+      as count
+  `)).rows[0].count);
+  if (canonicalAssignmentCountAfter !== canonicalAssignmentCountBefore) {
+    throw new Error("Inactive retirement proposal changed broader permission assignments.");
+  }
+
   const fixtureCount = await client.query("select count(*)::int as count from public.departments where slug like 'permission-audit-%'");
   if (fixtureCount.rows[0].count !== 2) throw new Error("Disposable permission fixture setup was incomplete.");
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission actor matrix passed; disposable database removed.`);
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; canonical and six-code legacy matrices passed; inactive retirement proposal passed twice; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {

@@ -35,6 +35,7 @@ import {
 
 import {
   meetsPermissionRequirement,
+  TRAINING_ALERTS_MODULE_PERMISSIONS,
   type PermissionRequirement,
   type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
@@ -167,7 +168,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         href: "/training-alerts",
         featureCode: "range_training",
         icon: BellRing,
-        requirement: { anyOf: ["manage_training", "view_analytics"] },
+        requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS },
       },
     ],
   },

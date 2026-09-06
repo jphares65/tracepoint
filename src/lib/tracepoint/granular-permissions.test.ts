@@ -121,7 +121,7 @@ test("agency training, certifications, equipment, range, exports, and pilot muta
   assert.match(range, /authorizeRangeWorkspaceMutation/);
   assert.match(report, /manage_training/);
   assert.match(ammunition, /manage_firearms/);
-  assert.match(remediation, /manage_training/);
+  assert.match(remediation, /TRAINING_ALERTS_REMEDIATION_WRITE_PERMISSIONS/);
 });
 
 test("API denials distinguish unauthenticated and unauthorized callers without database details", async () => {

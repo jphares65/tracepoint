@@ -8,6 +8,10 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import {
+  TRAINING_ALERTS_REMEDIATION_READ_PERMISSIONS,
+  TRAINING_ALERTS_REMEDIATION_WRITE_PERMISSIONS,
+} from "@/lib/tracepoint/permissions";
 
 type RemediationPayload = {
   remediations?: unknown;
@@ -33,7 +37,7 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
-  if (!hasAnyServerPermission(resolved.context, ["manage_training", "view_analytics"])) {
+  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_REMEDIATION_READ_PERMISSIONS)) {
     return permissionDeniedResponse("Training or analytics permission is required to view remediation records.");
   }
   const {
@@ -77,7 +81,7 @@ export async function PUT(request: Request) {
   if (featureError) {
     return featureError;
   }
-  if (!hasAnyServerPermission(resolved.context, ["manage_training"])) {
+  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_REMEDIATION_WRITE_PERMISSIONS)) {
     return permissionDeniedResponse("Agency-training management permission is required to update remediation records.");
   }
   const {

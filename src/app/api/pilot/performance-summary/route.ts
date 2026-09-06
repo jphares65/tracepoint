@@ -8,6 +8,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import { TRAINING_ALERTS_GENERATED_READ_PERMISSIONS } from "@/lib/tracepoint/permissions";
 
 type Risk = "Low" | "Medium" | "High";
 
@@ -559,7 +560,7 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
-  if (!hasAnyServerPermission(resolved.context, ["view_analytics"])) {
+  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_GENERATED_READ_PERMISSIONS)) {
     return permissionDeniedResponse("Analytics permission is required to view department performance data.");
   }
 

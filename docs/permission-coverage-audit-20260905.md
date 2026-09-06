@@ -1,5 +1,12 @@
 # Granular department permission audit — 2026-09-05
 
+> **Production catalog correction:** the subsequent focused audit found six
+> manually provisioned production catalog codes and assignments that were not
+> represented by the tracked migration chain. See
+> `docs/legacy-production-permission-audit-20260905.md`. References below to
+> dead Training Alert codes being absent from the catalog mean the reproducible
+> migration catalog, not the live production catalog.
+
 ## Authority and scope
 
 The saved `department_role_permissions` matrix is authoritative for every active non-Administrator department member. The exact `administrator` role inherits every row in the `permissions` catalog at evaluation time, including permissions added later. No other role name grants authority. Platform administrators retain the existing control-plane and explicitly selected Support Mode paths; they do not become department members and `has_department_permission` returns false without an active membership.
@@ -51,7 +58,7 @@ The canonical display name, description, action list, module, route, and table m
 4. **RPC regression:** the platform-support migration replaced `set_department_member_roles` and removed validation, audit, and final-Administrator protection. The RPC is restored with tenant authorization, role validation, set-difference updates, audit details and database triggers that also cover direct writes.
 5. **Certification false denial:** certification APIs invoked `has_department_permission` through a service-role client, where `auth.uid()` is absent. Configured managers were denied. APIs now evaluate the already authenticated effective permission context; RLS uses `manage_certifications`.
 6. **Training overreach:** agency-training policies accepted `manage_certifications` or `manage_range_days`. Every agency-training mutation and report now requires `manage_training`; attendee reads remain scoped.
-7. **Dead Training Alert codes:** the UI checked six codes that were never in the catalog. Training Alerts now use `manage_training` for management and `view_analytics` for read-only department analysis. The dead codes were not added.
+7. **Dead Training Alert codes:** the UI checked six codes that were absent from the tracked migration catalog but were later found as manually provisioned production rows. Training Alerts now use `manage_training` for management and `view_analytics` for read-only department analysis. The dead codes were not added to the tracked catalog.
 8. **Settings save race:** the UI announced success before reloading the saved matrix and used a direct browser RPC. A tenant-bound API now performs atomic replacement, returns the normalized persisted list, then the client reloads Settings and access state before reporting success. Failed saves retain the draft.
 9. **Ungated operational endpoints:** performance summary, ammunition pilot mutations, remediation mutation, off-duty submission, attachment download, and full personnel-directory reads had incomplete checks. Exact permissions, owner/assignment checks and tenant scope now apply.
 10. **Internal denial detail:** access failures now return controlled 401/403 responses and sanitize server-side database access failures. Denied browser routes use `/unauthorized`.
@@ -60,7 +67,7 @@ The canonical display name, description, action list, module, route, and table m
 
 ## Dead, misleading, duplicated, or overbroad controls
 
-- Removed runtime references: `view_training_alerts`, `manage_training_alerts`, `approve_off_duty_requests`, `return_off_duty_requests`, and `deny_off_duty_requests`. These were not catalog permissions.
+- Removed runtime references: `view_training_alerts`, `manage_training_alerts`, `approve_off_duty_requests`, `return_off_duty_requests`, and `deny_off_duty_requests`. The first two were later confirmed as manually provisioned production catalog rows; none was in the tracked migration catalog.
 - `manage_qualifications` no longer controls certification tables.
 - `manage_range_days` and `manage_certifications` no longer control agency-training writes.
 - `manage_firearms` no longer implies final personal-rifle approval or off-duty command review.

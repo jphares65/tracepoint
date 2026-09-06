@@ -14,6 +14,33 @@ export type PermissionAction = "View" | "Create" | "Edit" | "Delete/Archive" | "
 export type PermissionRequirement = { anyOf?: readonly TracePointPermission[]; allOf?: readonly TracePointPermission[] };
 export type PermissionCoverage = { code: TracePointPermission; displayName: string; description: string; actions: readonly PermissionAction[]; modules: readonly string[]; routes: readonly string[]; tables: readonly string[] };
 
+/**
+ * Canonical authorities for the current Training Alerts pilot.
+ *
+ * The generated alert feed is analytics data. Remediation persistence is an
+ * agency-training management operation. Keep these arrays separate because a
+ * manage_training-only actor can reach the module and remediation endpoint but
+ * cannot load the generated alert feed, while a view_analytics-only actor can
+ * load the feed but cannot persist remediation changes.
+ */
+export const TRAINING_ALERTS_MODULE_PERMISSIONS = [
+  "manage_training",
+  "view_analytics",
+] as const satisfies readonly TracePointPermission[];
+
+export const TRAINING_ALERTS_GENERATED_READ_PERMISSIONS = [
+  "view_analytics",
+] as const satisfies readonly TracePointPermission[];
+
+export const TRAINING_ALERTS_REMEDIATION_READ_PERMISSIONS = [
+  "manage_training",
+  "view_analytics",
+] as const satisfies readonly TracePointPermission[];
+
+export const TRAINING_ALERTS_REMEDIATION_WRITE_PERMISSIONS = [
+  "manage_training",
+] as const satisfies readonly TracePointPermission[];
+
 /** Reviewable source map used by the generated permission coverage audit. */
 export const PERMISSION_COVERAGE: readonly PermissionCoverage[] = [
   { code: "view_command_dashboard", displayName: "View Command Dashboard", description: "View department-wide command metrics, readiness, and operational queues; this does not grant module editing.", actions: ["View", "Export"], modules: ["Command Dashboard", "Reports"], routes: ["/command-dashboard", "/api/command-dashboard"], tables: ["qualification_results", "range_days", "notification_events"] },
@@ -49,7 +76,7 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
   { prefix: "/agency-training", requirement: {} },
   { prefix: "/training/certifications", requirement: {} },
   { prefix: "/training", requirement: {} },
-  { prefix: "/training-alerts", requirement: { anyOf: ["manage_training", "view_analytics"] } },
+  { prefix: "/training-alerts", requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS } },
   { prefix: "/range-days", requirement: {} },
   { prefix: "/qualifications", requirement: {} },
   { prefix: "/off-duty-firearms", requirement: { anyOf: ["submit_off_duty_requests", "review_off_duty_requests"] } },
