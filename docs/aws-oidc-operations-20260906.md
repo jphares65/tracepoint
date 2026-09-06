@@ -6,8 +6,9 @@ CloudFormation deployment. It shares release concurrency, so it cannot overlap
 an AWS release in this repository. It does not use the expired local AWS session.
 
 The existing environment-scoped GitHub role is further restricted with an inline
-allowlist of specific metadata reads, the exact staging budget, the staging
-application secret and its KMS decryption through Secrets Manager.
+allowlist of specific metadata reads, budget reads, secret reads and decryption.
+The existing intersected role retains the exact staging budget, application
+secret, KMS key and Secrets Manager service restrictions.
 Session policies intersect the existing role; no IAM role policy is changed.
 See the action's [session-policy interface](https://github.com/aws-actions/configure-aws-credentials#session-policies).
 
@@ -47,3 +48,8 @@ The first request (`e00afe8`, run 34035819964) passed source/request validation
 but STS rejected the AWS-managed ReadOnlyAccess ARN as a session policy reference.
 No AWS evidence reads or mutations ran. The corrected workflow uses the explicit
 inline read allowlist; the saved failed-run evidence is retained for accuracy.
+
+The second request (`dd66e34`, run 34036177287) reached STS but exceeded its packed
+policy limit at 102%. The compact correction removes resource restrictions that
+are already enforced by the intersected role and omits unusable Cost Explorer
+permission. It retains the explicit read-only action list and regional boundary.
