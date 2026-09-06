@@ -27,10 +27,7 @@ import CommandOperationsPanel from "@/app/components/CommandOperationsPanel";
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
-import {
-  evaluateQualificationReadiness,
-  type QualificationReadinessStatus,
-} from "@/lib/tracepoint/qualification-readiness";
+import type { QualificationReadinessStatus } from "@/lib/tracepoint/qualification-readiness";
 import type {
   DrillRunResult,
   DrillTemplate,
@@ -38,6 +35,11 @@ import type {
   RangeDayDrill,
   RangeRosterEntry,
 } from "@/app/lib/tracepoint/range-day-types";
+import {
+  DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+  normalizeAnalyticsDashboardConfiguration,
+  type AnalyticsDashboardConfiguration,
+} from "@/lib/tracepoint/analytics-dashboard-config";
 
 type PilotPersonnel = {
   id: string;
@@ -166,8 +168,27 @@ type EquipmentReadinessPayload = {
   summary: EquipmentReadinessSummary;
   rows: EquipmentReadinessRow[];
 };
-
-const DEFAULT_QUALIFICATION_VALID_DAYS = 365;
+type PerformanceSummaryPayload = {
+  metrics: Record<string, string>;
+  qualificationTrends: Array<{
+    officerId: string;
+    name: string;
+    status: QualificationReadinessStatus | "Expired";
+    detail?: string;
+    trend: string;
+  }>;
+  drillTrends: unknown[];
+  broadCategoryTrends: unknown[];
+  rangeSummary?: {
+    totalRangeDays: number;
+    activeRangeDays: number;
+    upcomingRangeDayCount: number;
+    incompletePacketCount: number;
+    rosterAssignmentCount: number;
+    plannedDrillCount: number;
+    upcomingRangeDays: unknown[];
+  };
+};
 
 const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   rangeDays: [],
@@ -235,8 +256,7 @@ async function loadDashboardData() {
   const rulesPayload = rulesResponse.ok
     ? ((await rulesResponse.json()) as {
         rules?: {
-          qualification_valid_days?: number;
-          qualification_due_soon_days?: number;
+          analytics_dashboard?: unknown;
         };
       })
     : {};
@@ -258,8 +278,8 @@ async function loadDashboardData() {
         };
 
 
-  const performanceSummaryPayload = performanceSummaryResponse.ok
-    ? await performanceSummaryResponse.json()
+  const performanceSummaryPayload: PerformanceSummaryPayload = performanceSummaryResponse.ok
+    ? ((await performanceSummaryResponse.json()) as PerformanceSummaryPayload)
     : {
         metrics: {},
         qualificationTrends: [],
@@ -297,11 +317,9 @@ async function loadDashboardData() {
     workspace: workspacePayload.workspace
       ? normalizeWorkspace(workspacePayload.workspace)
       : EMPTY_WORKSPACE,
-    qualificationValidDays:
-      Number(rulesPayload.rules?.qualification_valid_days) ||
-      DEFAULT_QUALIFICATION_VALID_DAYS,
-    qualificationDueSoonDays:
-      Number(rulesPayload.rules?.qualification_due_soon_days) || 30,
+    analyticsDashboard: normalizeAnalyticsDashboardConfiguration(
+      rulesPayload.rules?.analytics_dashboard,
+    ),
     certificationReadiness: certificationReadinessPayload,
     equipmentReadiness: equipmentReadinessPayload,
     performanceSummary: performanceSummaryPayload,
@@ -321,16 +339,6 @@ function getDateValue(date?: string) {
 function getTodayValue() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-}
-
-function getDaysSince(date?: string) {
-  const value = getDateValue(date);
-  if (!value) return undefined;
-
-  return Math.max(
-    Math.floor((getTodayValue() - value) / (1000 * 60 * 60 * 24)),
-    0,
-  );
 }
 
 function formatDate(date?: string) {
@@ -354,10 +362,6 @@ function isQualificationDrill(drill?: RangeDayDrill | null) {
     drill.category === "Qualification" ||
     name.includes("qualification")
   );
-}
-
-function isPassed(result: DrillRunResult) {
-  return typeof result.passed === "boolean" ? result.passed : result.completed;
 }
 
 function toneClasses(tone: Tone) {
@@ -448,10 +452,10 @@ export default function DashboardPage() {
   const [firearms, setFirearms] = useState<LiveFirearm[]>([]);
   const [workspace, setWorkspace] =
     useState<StoredRangeDayWorkspace>(EMPTY_WORKSPACE);
-  const [qualificationValidDays, setQualificationValidDays] = useState(
-    DEFAULT_QUALIFICATION_VALID_DAYS,
-  );
-  const [qualificationDueSoonDays, setQualificationDueSoonDays] = useState(30);
+  const [analyticsDashboard, setAnalyticsDashboard] =
+    useState<AnalyticsDashboardConfiguration>(
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+    );
     const [certificationReadiness, setCertificationReadiness] =
     useState<CertificationReadinessPayload>({
       summary: {
@@ -466,7 +470,7 @@ export default function DashboardPage() {
       },
       rows: [],
     });
-  const [performanceSummary, setPerformanceSummary] = useState<any>({
+  const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummaryPayload>({
     metrics: {},
     qualificationTrends: [],
     drillTrends: [],
@@ -506,8 +510,7 @@ const [loading, setLoading] = useState(true);
         setPersonnel(data.personnel.filter((person) => person.isActive !== false));
         setFirearms(data.firearms.filter((firearm) => firearm.is_active !== false));
         setWorkspace(data.workspace);
-        setQualificationValidDays(data.qualificationValidDays);
-        setQualificationDueSoonDays(data.qualificationDueSoonDays);
+        setAnalyticsDashboard(data.analyticsDashboard);
         setCertificationReadiness(data.certificationReadiness);
         setEquipmentReadiness(data.equipmentReadiness);
         setPerformanceSummary(data.performanceSummary);
@@ -528,11 +531,6 @@ const [loading, setLoading] = useState(true);
     };
   }, []);
 
-  const rangeDaysById = useMemo(
-    () => new Map(workspace.rangeDays.map((day) => [day.id, day])),
-    [workspace.rangeDays],
-  );
-
   const drillsById = useMemo(
     () => new Map(workspace.rangeDayDrills.map((drill) => [drill.id, drill])),
     [workspace.rangeDayDrills],
@@ -551,7 +549,7 @@ const [loading, setLoading] = useState(true);
       ? performanceSummary.qualificationTrends
       : [];
 
-    return rows.map((row: any) => ({
+    return rows.map((row) => ({
       officerId: row.officerId,
       officerName: row.name,
       status:
@@ -639,9 +637,7 @@ const [loading, setLoading] = useState(true);
     (officer) => officer.scoreTrend === "Improving",
   ).length;
 
-  const averageScore = improvingCount;
-
-  const attentionItems = useMemo<AttentionItem[]>(() => {
+  const attentionItems: AttentionItem[] = (() => {
     const items: AttentionItem[] = [];
 
     if (hasQualifications) {
@@ -783,21 +779,8 @@ const [loading, setLoading] = useState(true);
       });
     }
 
-    return items.slice(0, 8);
-  }, [
-    certificationReadiness.rows,
-    equipmentReadiness.rows,
-    declining,
-    firearmAlerts,
-    incompletePackets,
-    officerSummaries,
-    hasQualifications,
-    hasCertifications,
-    hasEquipment,
-    hasFirearms,
-    hasRangeTraining,
-    hasAnalytics,
-  ]);
+    return items.slice(0, analyticsDashboard.command_attention_item_limit);
+  })();
   const qualificationTone: Tone =
     failedOrOverdueCount > 0
       ? "red"
@@ -873,7 +856,8 @@ const [loading, setLoading] = useState(true);
         <CommandOperationsPanel />
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-          {hasQualifications && (
+          {hasQualifications &&
+            analyticsDashboard.command_dashboard_cards.qualification_readiness && (
             <PulseCard
               title="Qualification Readiness"
               value={loading ? "—" : `${currentCount}/${personnel.length}`}
@@ -936,6 +920,7 @@ const [loading, setLoading] = useState(true);
 
           {hasRangeTraining && (
             <>
+              {analyticsDashboard.command_dashboard_cards.range_readiness ? (
               <PulseCard
                 title="Range Readiness"
                 value={loading ? "—" : authoritativeRange.upcomingRangeDayCount}
@@ -944,24 +929,29 @@ const [loading, setLoading] = useState(true);
                 icon={CalendarDays}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
+              ) : null}
 
+              {analyticsDashboard.command_dashboard_cards.records_health ? (
               <PulseCard
-                title="Records Health"
+                title="Range Records"
                 value={loading ? "—" : authoritativeRange.totalRangeDays}
                 label="Range days saved"
                 detail={`${authoritativeRange.rosterAssignmentCount} roster assignments · ${authoritativeRange.plannedDrillCount} planned drills.`}
                 icon={FileText}
                 tone={incompletePackets.length > 0 ? "amber" : "green"}
               />
+              ) : null}
 
+              {analyticsDashboard.command_dashboard_cards.performance_signal ? (
               <PulseCard
                 title="Performance Signal"
-                value={loading ? "—" : averageScore ?? "—"}
-                label="Officers improving"
+                value={loading ? "—" : improvingCount}
+                label="Personnel improving"
                 detail={`${declining.length} declining · ${improvingCount} improving.`}
                 icon={TrendingUp}
                 tone={declining.length > 0 ? "amber" : "blue"}
               />
+              ) : null}
             </>
           )}
 
@@ -977,13 +967,27 @@ const [loading, setLoading] = useState(true);
           )}
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[1fr_430px]">
+        {analyticsDashboard.command_dashboard_sections.critical_attention ||
+        (hasQualifications &&
+          analyticsDashboard.command_dashboard_sections.qualification_snapshot) ||
+        analyticsDashboard.command_dashboard_sections.module_snapshot ? (
+        <section
+          className={`grid gap-5 ${
+            analyticsDashboard.command_dashboard_sections.critical_attention &&
+            ((hasQualifications &&
+              analyticsDashboard.command_dashboard_sections.qualification_snapshot) ||
+              analyticsDashboard.command_dashboard_sections.module_snapshot)
+              ? "xl:grid-cols-[1fr_430px]"
+              : "grid-cols-1"
+          }`}
+        >
+          {analyticsDashboard.command_dashboard_sections.critical_attention ? (
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h2 className="flex items-center gap-2 text-[18px] font-bold text-white">
                   <Activity size={18} className="text-blue-400" />
-                  Critical Attention
+                  Items Requiring Attention
                 </h2>
                 <p className="mt-1 text-[12px] text-slate-500">
                   Live qualification, certification, equipment, firearm, range-packet, and performance items requiring review.
@@ -996,7 +1000,7 @@ const [loading, setLoading] = useState(true);
             </div>
 
             {attentionItems.length === 0 ? (
-              <EmptyPanel message="No command attention items are currently identified." />
+              <EmptyPanel message="No current readiness or performance exceptions were identified in the enabled modules." />
             ) : (
               <div className="space-y-3">
                 {attentionItems.map((item) => {
@@ -1037,8 +1041,14 @@ const [loading, setLoading] = useState(true);
               </div>
             )}
           </div>
+          ) : null}
 
+          {(hasQualifications &&
+            analyticsDashboard.command_dashboard_sections.qualification_snapshot) ||
+          analyticsDashboard.command_dashboard_sections.module_snapshot ? (
           <div className="space-y-5">
+            {hasQualifications &&
+            analyticsDashboard.command_dashboard_sections.qualification_snapshot ? (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="text-[17px] font-bold text-white">
                 Qualification Snapshot
@@ -1080,7 +1090,9 @@ const [loading, setLoading] = useState(true);
                 })}
               </div>
             </div>
+            ) : null}
 
+            {analyticsDashboard.command_dashboard_sections.module_snapshot ? (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="text-[17px] font-bold text-white">
                 Module Snapshot
@@ -1151,9 +1163,13 @@ const [loading, setLoading] = useState(true);
               </div>
 
             </div>
+            ) : null}
           </div>
+          ) : null}
         </section>
-        {hasRangeTraining && (
+        ) : null}
+        {hasRangeTraining &&
+        analyticsDashboard.command_dashboard_sections.upcoming_range_days && (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -1168,7 +1184,7 @@ const [loading, setLoading] = useState(true);
           </div>
 
           {upcomingRangeDays.length === 0 ? (
-            <EmptyPanel message="No upcoming range days are currently saved." />
+            <EmptyPanel message="No upcoming range days are scheduled. Completed, locked, and archived events are excluded." />
           ) : (
             <div className="grid gap-3 lg:grid-cols-2">
               {upcomingRangeDays.map((day) => (

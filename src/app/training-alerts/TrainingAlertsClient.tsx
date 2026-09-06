@@ -709,7 +709,7 @@ export default function TrainingAlertsClient({
 
                     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                        Routed To
+                        Suggested Review Roles
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {alert.recipients.map((recipient) => (
@@ -993,11 +993,12 @@ export default function TrainingAlertsClient({
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
             <h3 className="flex items-center gap-2 text-[14px] font-bold text-white">
               <Users size={16} className="text-blue-400" />
-              Role Routing
+              Visibility & Follow-Up
             </h3>
             <p className="mt-2 text-[11px] leading-5 text-slate-500">
-              Alerts route to Range Masters, instructors, training supervisors,
-              and command staff based on severity, source, and permission.
+              Feed visibility follows Analytics and Agency Training permissions.
+              The listed roles are review guidance; per-alert role routing is not
+              currently implemented.
             </p>
           </div>
 
