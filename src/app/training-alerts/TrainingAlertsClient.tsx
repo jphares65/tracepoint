@@ -117,10 +117,15 @@ function MetricCard({
   );
 }
 
-export default function TrainingAlertsClient() {
+export default function TrainingAlertsClient({
+  canManage,
+}: {
+  canManage: boolean;
+}) {
   const [activeView, setActiveView] = useState<ActiveView>("alerts");
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [remediationsLoaded, setRemediationsLoaded] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [alerts, setAlerts] = useState<TrainingAlert[]>([]);
@@ -136,17 +141,19 @@ export default function TrainingAlertsClient() {
             method: "GET",
             cache: "no-store",
           }),
-          fetch("/api/pilot/remediations", {
-            method: "GET",
-            cache: "no-store",
-          }),
+          canManage
+            ? fetch("/api/pilot/remediations", {
+                method: "GET",
+                cache: "no-store",
+              })
+            : Promise.resolve(null),
         ]);
 
         if (!summaryResponse.ok) {
           throw new Error("Unable to load training alerts.");
         }
 
-        if (!remediationsResponse.ok) {
+        if (remediationsResponse && !remediationsResponse.ok) {
           throw new Error("Unable to load remediation records.");
         }
 
@@ -154,15 +161,18 @@ export default function TrainingAlertsClient() {
           trainingAlerts?: TrainingAlert[];
         };
 
-        const remediationPayload = (await remediationsResponse.json()) as {
-          remediations?: RemediationRecord[];
-        };
+        const remediationPayload = remediationsResponse
+          ? (await remediationsResponse.json()) as {
+              remediations?: RemediationRecord[];
+            }
+          : {};
 
         if (!isMounted) return;
 
         const liveAlerts = summaryPayload.trainingAlerts ?? [];
         const liveRemediations = remediationPayload.remediations ?? [];
         const storedAlerts = (() => {
+          if (!canManage) return [];
           try {
             const raw = window.localStorage.getItem(
               TRAINING_ALERTS_STORAGE_KEY,
@@ -212,7 +222,7 @@ export default function TrainingAlertsClient() {
 
         setAlerts(hydratedAlerts);
         setRemediations(liveRemediations);
-        setRemediationsLoaded(true);
+        setRemediationsLoaded(canManage);
         setLoadError(null);
         setLoaded(true);
       } catch (error) {
@@ -235,19 +245,19 @@ export default function TrainingAlertsClient() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [canManage]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !canManage) return;
 
     window.localStorage.setItem(
       TRAINING_ALERTS_STORAGE_KEY,
       JSON.stringify(alerts),
     );
-  }, [alerts, loaded]);
+  }, [alerts, canManage, loaded]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !canManage) return;
 
     window.localStorage.setItem(
       REMEDIATIONS_STORAGE_KEY,
@@ -259,25 +269,39 @@ export default function TrainingAlertsClient() {
     const controller = new AbortController();
 
     const saveTimer = window.setTimeout(() => {
-      void fetch("/api/pilot/remediations", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ remediations }),
-        signal: controller.signal,
-      }).catch((error) => {
-        if (error?.name !== "AbortError") {
-          console.warn("Could not save remediation records.", error);
+      void (async () => {
+        try {
+          const response = await fetch("/api/pilot/remediations", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ remediations }),
+            signal: controller.signal,
+          });
+          const payload = await response.json().catch(() => ({})) as {
+            error?: string;
+          };
+          if (!response.ok) {
+            throw new Error(payload.error || "Remediation changes could not be saved.");
+          }
+          setMutationError(null);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setMutationError(
+            error instanceof Error
+              ? error.message
+              : "Remediation changes could not be saved.",
+          );
         }
-      });
+      })();
     }, 500);
 
     return () => {
       window.clearTimeout(saveTimer);
       controller.abort();
     };
-  }, [loaded, remediations, remediationsLoaded]);
+  }, [canManage, loaded, remediations, remediationsLoaded]);
 
   const metrics = useMemo(() => {
     const openAlerts = alerts.filter(
@@ -316,6 +340,7 @@ export default function TrainingAlertsClient() {
     status: TrainingAlertStatus,
     auditEntry: string,
   ) {
+    if (!canManage) return;
     setAlerts((current) =>
       current.map((alert) =>
         alert.id === alertId
@@ -330,6 +355,7 @@ export default function TrainingAlertsClient() {
   }
 
   function createRemediation(alert: TrainingAlert) {
+    if (!canManage) return;
     if (alert.remediationId) {
       setActiveView("remediations");
       return;
@@ -359,6 +385,7 @@ export default function TrainingAlertsClient() {
   }
 
   function assignRemediation(recordId: string) {
+    if (!canManage) return;
     setRemediations((current) =>
       current.map((record) =>
         record.id === recordId
@@ -381,6 +408,7 @@ export default function TrainingAlertsClient() {
     record: RemediationRecord,
     status: RemediationStatus,
   ) {
+    if (!canManage) return;
     const statusAudit = `Remediation status changed to ${status}.`;
 
     setRemediations((current) =>
@@ -435,6 +463,7 @@ export default function TrainingAlertsClient() {
   }
 
   function addRemediationNote(recordId: string) {
+    if (!canManage) return;
     const note = noteDrafts[recordId]?.trim();
     if (!note) return;
 
@@ -484,6 +513,23 @@ export default function TrainingAlertsClient() {
           </section>
         ) : null}
 
+        {mutationError ? (
+          <section
+            role="alert"
+            className="rounded-3xl border border-red-500/30 bg-red-500/[0.1] p-4 text-[12px] font-semibold text-red-100"
+          >
+            Changes were not saved: {mutationError}
+          </section>
+        ) : null}
+
+        {!canManage ? (
+          <section className="rounded-3xl border border-blue-500/25 bg-blue-500/[0.07] p-4 text-[12px] text-blue-100">
+            Read-only access: you can review generated Training Alerts, but
+            remediation and alert mutation controls require Agency Training
+            management permission.
+          </section>
+        ) : null}
+
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="Open Alerts"
@@ -497,12 +543,14 @@ export default function TrainingAlertsClient() {
             detail="Items requiring command visibility"
             icon={ShieldAlert}
           />
-          <MetricCard
-            label="Active Remediations"
-            value={String(metrics.activeRemediations)}
-            detail="Corrective training records in progress"
-            icon={ClipboardCheck}
-          />
+          {canManage ? (
+            <MetricCard
+              label="Active Remediations"
+              value={String(metrics.activeRemediations)}
+              detail="Corrective training records in progress"
+              icon={ClipboardCheck}
+            />
+          ) : null}
           <MetricCard
             label="Resolved"
             value={String(metrics.resolved)}
@@ -524,7 +572,8 @@ export default function TrainingAlertsClient() {
               </p>
             </div>
 
-            <div className="flex rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
+            {canManage ? (
+              <div className="flex rounded-2xl border border-slate-800 bg-slate-950/60 p-1">
               <button
                 type="button"
                 onClick={() => setActiveView("alerts")}
@@ -547,7 +596,8 @@ export default function TrainingAlertsClient() {
               >
                 Remediations
               </button>
-            </div>
+              </div>
+            ) : null}
           </div>
 
           {activeView === "alerts" ? (
@@ -596,7 +646,8 @@ export default function TrainingAlertsClient() {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    {canManage ? (
+                      <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() =>
@@ -635,7 +686,8 @@ export default function TrainingAlertsClient() {
                       >
                         Resolve
                       </button>
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_0.85fr]">
@@ -699,7 +751,7 @@ export default function TrainingAlertsClient() {
                 </article>
               ))}
             </div>
-          ) : (
+          ) : canManage ? (
             <div className="mt-4 space-y-3">
               {remediations.length === 0 ? (
                 <div className="rounded-3xl border border-slate-800 bg-slate-950/40 p-6 text-center">
@@ -922,7 +974,7 @@ export default function TrainingAlertsClient() {
                 ))
               )}
             </div>
-          )}
+          ) : null}
         </section>
 
         <section className="grid gap-4 xl:grid-cols-3">

@@ -4166,6 +4166,54 @@ export type Database = {
           },
         ]
       }
+      retired_permission_assignment_audit: {
+        Row: {
+          department_id: string | null
+          description: string | null
+          display_name: string | null
+          granted_at: string | null
+          granted_by: string | null
+          id: number
+          permission_code: string
+          record_scope: string
+          replacement_permission_code: string | null
+          retired_at: string
+          retirement_reason: string
+          role_code: string | null
+          snapshot: Json
+        }
+        Insert: {
+          department_id?: string | null
+          description?: string | null
+          display_name?: string | null
+          granted_at?: string | null
+          granted_by?: string | null
+          id?: never
+          permission_code: string
+          record_scope: string
+          replacement_permission_code?: string | null
+          retired_at?: string
+          retirement_reason: string
+          role_code?: string | null
+          snapshot?: Json
+        }
+        Update: {
+          department_id?: string | null
+          description?: string | null
+          display_name?: string | null
+          granted_at?: string | null
+          granted_by?: string | null
+          id?: never
+          permission_code?: string
+          record_scope?: string
+          replacement_permission_code?: string | null
+          retired_at?: string
+          retirement_reason?: string
+          role_code?: string | null
+          snapshot?: Json
+        }
+        Relationships: []
+      }
       role_permissions: {
         Row: {
           permission_code: string

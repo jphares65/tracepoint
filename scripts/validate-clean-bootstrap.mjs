@@ -1,5 +1,6 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import assert from "node:assert/strict";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import os from "node:os";
@@ -18,7 +19,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 58;
+const expectedMigrationCount = 59;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = 56000 + Math.floor(Math.random() * 4000);
@@ -310,10 +311,75 @@ try {
   await client.query("commit");
   if (String(platformSave.rows[0].permissions) !== "view_audit_log") throw new Error("Platform administrator explicit-department permission save failed.");
 
+  const legacyPermissions = [
+    "create_remediations",
+    "manage_remediations",
+    "resolve_remediations",
+    "view_training_alerts",
+    "manage_training_alerts",
+    "view_command_training_alerts",
+  ];
+  await client.query(`
+    insert into public.permissions (code, display_name, description)
+    select code, initcap(replace(code, '_', ' ')), 'Disposable retirement fixture.'
+    from unnest($1::text[]) as codes(code)
+  `, [legacyPermissions]);
+  await client.query(`
+    insert into public.role_permissions (role_code, permission_code)
+    select 'administrator', code from unnest($1::text[]) as codes(code)
+  `, [legacyPermissions]);
+  await client.query(`
+    insert into public.department_role_permissions (
+      department_id, role_code, permission_code
+    )
+    select $2::uuid, 'audit_granted', code
+    from unnest($1::text[]) as codes(code)
+  `, [legacyPermissions, departmentA]);
+
+  const broaderAssignmentsBefore = Number((await client.query(`
+    select
+      (select count(*) from public.role_permissions
+       where permission_code in ('manage_training', 'view_analytics')) +
+      (select count(*) from public.department_role_permissions
+       where permission_code in ('manage_training', 'view_analytics')) as count
+  `)).rows[0].count);
+  const retirementMigration = await readFile(
+    path.join(migrationsDir, "202609060001_retire_legacy_training_alert_permissions.sql"),
+    "utf8",
+  );
+  await client.query(retirementMigration);
+  await client.query(retirementMigration);
+
+  const retirement = await client.query(`
+    select
+      (select count(*)::int from public.permissions where code = any($1)) as catalog_rows,
+      (select count(*)::int from public.role_permissions where permission_code = any($1)) as global_rows,
+      (select count(*)::int from public.department_role_permissions where permission_code = any($1)) as department_rows,
+      (select count(*)::int from public.retired_permission_assignment_audit where permission_code = any($1)) as audit_rows
+  `, [legacyPermissions]);
+  assert.deepEqual(retirement.rows[0], {
+    catalog_rows: 0,
+    global_rows: 0,
+    department_rows: 0,
+    audit_rows: 18,
+  });
+  const broaderAssignmentsAfter = Number((await client.query(`
+    select
+      (select count(*) from public.role_permissions
+       where permission_code in ('manage_training', 'view_analytics')) +
+      (select count(*) from public.department_role_permissions
+       where permission_code in ('manage_training', 'view_analytics')) as count
+  `)).rows[0].count);
+  assert.equal(
+    broaderAssignmentsAfter,
+    broaderAssignmentsBefore,
+    "Legacy retirement must not add or remove broader authority.",
+  );
+
   const fixtureCount = await client.query("select count(*)::int as count from public.departments where slug like 'permission-audit-%'");
   if (fixtureCount.rows[0].count !== 2) throw new Error("Disposable permission fixture setup was incomplete.");
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission actor matrix passed; disposable database removed.`);
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {

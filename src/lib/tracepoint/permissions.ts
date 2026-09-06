@@ -14,10 +14,24 @@ export type PermissionAction = "View" | "Create" | "Edit" | "Delete/Archive" | "
 export type PermissionRequirement = { anyOf?: readonly TracePointPermission[]; allOf?: readonly TracePointPermission[] };
 export type PermissionCoverage = { code: TracePointPermission; displayName: string; description: string; actions: readonly PermissionAction[]; modules: readonly string[]; routes: readonly string[]; tables: readonly string[] };
 
+export const TRAINING_ALERTS_MODULE_PERMISSIONS = [
+  "manage_training",
+  "view_analytics",
+] as const satisfies readonly TracePointPermission[];
+
+export const TRAINING_ALERTS_FEED_PERMISSIONS = [
+  "manage_training",
+  "view_analytics",
+] as const satisfies readonly TracePointPermission[];
+
+export const TRAINING_ALERTS_WORKFLOW_PERMISSIONS = [
+  "manage_training",
+] as const satisfies readonly TracePointPermission[];
+
 /** Reviewable source map used by the generated permission coverage audit. */
 export const PERMISSION_COVERAGE: readonly PermissionCoverage[] = [
   { code: "view_command_dashboard", displayName: "View Command Dashboard", description: "View department-wide command metrics, readiness, and operational queues; this does not grant module editing.", actions: ["View", "Export"], modules: ["Command Dashboard", "Reports"], routes: ["/command-dashboard", "/api/command-dashboard"], tables: ["qualification_results", "range_days", "notification_events"] },
-  { code: "view_analytics", displayName: "View Analytics", description: "View department-wide qualification, drill, firearm, training, equipment, and performance analytics; this does not grant editing.", actions: ["View", "Export"], modules: ["Analytics", "Reports", "Readiness"], routes: ["/analytics", "/api/pilot/performance-summary", "/api/readiness"], tables: ["qualification_results", "drill_run_results"] },
+  { code: "view_analytics", displayName: "View Analytics", description: "View department-wide qualification, drill, firearm, training-alert, equipment, and performance analytics; this does not grant editing.", actions: ["View", "Export"], modules: ["Analytics", "Reports", "Readiness", "Training Alerts"], routes: ["/analytics", "/training-alerts", "/api/pilot/performance-summary", "/api/readiness"], tables: ["qualification_results", "drill_run_results"] },
   { code: "manage_users", displayName: "Manage Users", description: "Manage non-administrator department memberships, activation, role assignments, groups, ranks, and units.", actions: ["View", "Create", "Edit"], modules: ["Personnel", "Settings"], routes: ["/settings", "/api/settings/users"], tables: ["department_memberships", "department_membership_roles", "department_group_members"] },
   { code: "manage_firearms", displayName: "Manage Firearms", description: "Create, edit, assign, archive, and restore department firearm and ammunition records.", actions: ["View", "Create", "Edit", "Delete/Archive"], modules: ["Firearms", "Ammunition"], routes: ["/firearms", "/api/armory/firearms", "/api/armory/ammunition"], tables: ["firearms", "firearm_assignments", "ammunition_lots", "ammunition_transactions"] },
   { code: "manage_inspections", displayName: "Manage Inspections", description: "Record and manage firearm inspections, malfunctions, maintenance, and armorer review steps.", actions: ["View", "Create", "Edit", "Approve"], modules: ["Firearm Inspections", "Personal Rifles"], routes: ["/firearms/inspections", "/api/armory/inspections", "/api/armory/personal-rifles"], tables: ["firearm_inspections", "firearm_malfunctions", "personal_rifles"] },
@@ -26,7 +40,7 @@ export const PERMISSION_COVERAGE: readonly PermissionCoverage[] = [
   { code: "score_range_days", displayName: "Score Range Days", description: "Enter and update drill and qualification results for active, non-finalized range records.", actions: ["View", "Score"], modules: ["Range Days", "Qualification Scoring"], routes: ["/range-days", "/api/pilot/range-workspace"], tables: ["drill_run_results", "qualification_results"] },
   { code: "manage_qualifications", displayName: "Manage Qualifications", description: "Manage qualification standards, course versions, imported history, evidence, and qualification records.", actions: ["View", "Create", "Edit", "Delete/Archive", "Configure", "Export"], modules: ["Qualifications"], routes: ["/qualifications", "/api/qualifications"], tables: ["qualification_standards", "qualification_courses", "qualification_results"] },
   { code: "manage_certifications", displayName: "Manage Certifications", description: "Manage certification types, requirements, officer certification records, and certification evidence.", actions: ["View", "Create", "Edit", "Delete/Archive", "Configure", "Export"], modules: ["Certifications"], routes: ["/training/certifications", "/api/training/certifications"], tables: ["certification_types", "department_certification_requirements", "training_certifications"] },
-  { code: "manage_training", displayName: "Manage Agency Training", description: "Create and manage agency training courses, events, rosters, attendance, closeout, remediation, and training exports.", actions: ["View", "Create", "Edit", "Delete/Archive", "Approve", "Export", "Configure"], modules: ["Agency Training", "Training Alerts"], routes: ["/agency-training", "/api/agency-training", "/api/pilot/remediations"], tables: ["agency_training_courses", "agency_training_events", "agency_training_attendees", "agency_training_requirements"] },
+  { code: "manage_training", displayName: "Manage Agency Training", description: "Create and manage agency training courses, events, rosters, attendance, closeout, Training Alerts remediation, and training exports.", actions: ["View", "Create", "Edit", "Delete/Archive", "Approve", "Export", "Configure"], modules: ["Agency Training", "Training Alerts"], routes: ["/agency-training", "/training-alerts", "/api/agency-training", "/api/pilot/performance-summary", "/api/pilot/remediations"], tables: ["agency_training_courses", "agency_training_events", "agency_training_attendees", "agency_training_requirements"] },
   { code: "manage_equipment", displayName: "Manage Equipment", description: "Create, edit, assign, archive, and remove equipment assets, types, and readiness requirements; members retain access to their own assignments.", actions: ["View", "Create", "Edit", "Delete/Archive", "Configure", "Export"], modules: ["Equipment", "Readiness"], routes: ["/equipment", "/api/equipment", "/api/readiness/equipment"], tables: ["equipment_assets", "equipment_types", "equipment_asset_assignments", "department_equipment_requirements"] },
   { code: "view_fleet", displayName: "View Fleet", description: "View department vehicles, readiness, inspections, maintenance, equipment, documents, and Fleet reports.", actions: ["View", "Export"], modules: ["Fleet"], routes: ["/fleet-management", "/api/fleet"], tables: ["fleet_vehicles", "fleet_vehicle_inspections", "fleet_work_orders"] },
   { code: "manage_fleet", displayName: "Manage Fleet", description: "Create and edit vehicles, vehicle status, assignments, equipment, documents, and Fleet operational records.", actions: ["View", "Create", "Edit", "Delete/Archive"], modules: ["Fleet"], routes: ["/fleet-management", "/api/fleet/vehicles"], tables: ["fleet_vehicles", "fleet_vehicle_equipment", "fleet_vehicle_documents"] },
@@ -49,7 +63,7 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
   { prefix: "/agency-training", requirement: {} },
   { prefix: "/training/certifications", requirement: {} },
   { prefix: "/training", requirement: {} },
-  { prefix: "/training-alerts", requirement: { anyOf: ["manage_training", "view_analytics"] } },
+  { prefix: "/training-alerts", requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS } },
   { prefix: "/range-days", requirement: {} },
   { prefix: "/qualifications", requirement: {} },
   { prefix: "/off-duty-firearms", requirement: { anyOf: ["submit_off_duty_requests", "review_off_duty_requests"] } },

@@ -13,10 +13,14 @@ import {
 } from "@/lib/tracepoint/certification-readiness";
 
 import {
-  evaluateQualificationReadiness,
+  evaluateCanonicalQualificationReadiness,
 } from "@/lib/tracepoint/qualification-readiness";
 import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
 import { createNotificationEventWriter } from "@/lib/notifications/event-writer";
+import {
+  buildNotificationEventReconciliationRow,
+  notificationEventShouldResolve,
+} from "@/lib/notifications/event-reconciliation";
 
 type Priority = "Critical" | "High" | "Normal";
 type Source =
@@ -47,6 +51,9 @@ type ExistingNotificationEvent = {
   first_seen_at?: string | null;
   acknowledged_at?: string | null;
   snoozed_until?: string | null;
+  resolved_at?: string | null;
+  source?: string | null;
+  id?: string | null;
 };
 const CONDITION_BASED_NOTIFICATION_KINDS = new Set([
   "required_certification_missing",
@@ -529,11 +536,6 @@ function collectQualificationReadiness(
   authoritativeResults: any[],
   context: any,
 ): GeneratedAlert[] {
-  const workspace = rangePayload?.workspace ?? rangePayload ?? {};
-  const rangeDays = list(workspace, "rangeDays", "range_days");
-  const drills = list(workspace, "rangeDayDrills", "range_day_drills");
-  const results = list(workspace, "results");
-
   const personnel =
     [personnelPayload?.personnel, personnelPayload?.items]
       .find(Array.isArray) ?? [];
@@ -548,71 +550,6 @@ function collectQualificationReadiness(
 
   const qualificationDueSoonDays =
     Number(rules.qualification_due_soon_days) || 30;
-
-  const rangeDaysById = new Map(
-    rangeDays.map((day: any) => [text(day.id), day]),
-  );
-
-  const drillsById = new Map(
-    drills.map((drill: any) => [text(drill.id), drill]),
-  );
-
-  function isQualificationDrill(drill: any) {
-    const category = text(drill?.category).toLowerCase();
-    const name = text(drill?.name).toLowerCase();
-
-    return (
-      category === "qualification" ||
-      name.includes("qualification")
-    );
-  }
-
-  function isRifleDrill(drill: any) {
-    const name = text(drill?.name).toLowerCase();
-    const category = text(drill?.category).toLowerCase();
-    const firearmType = text(
-      get(drill, "firearmType", "firearm_type"),
-    ).toLowerCase();
-
-    return (
-      name.includes("rifle") ||
-      category.includes("rifle") ||
-      firearmType.includes("rifle")
-    );
-  }
-
-  function resultOfficerId(result: any) {
-    return text(get(result, "officerId", "officer_id"));
-  }
-
-  function resultDrillId(result: any) {
-    return text(get(result, "drillId", "drill_id"));
-  }
-
-  function resultRangeDayId(result: any) {
-    return text(get(result, "rangeDayId", "range_day_id"));
-  }
-
-  function resultRunNumber(result: any) {
-    return Number(
-      get(result, "runNumber", "run_number") ?? 1,
-    );
-  }
-
-  function isPassed(result: any) {
-    return typeof result?.passed === "boolean"
-      ? result.passed
-      : result?.completed === true;
-  }
-
-  const qualificationResults = results.filter((result: any) => {
-    const drill = drillsById.get(resultDrillId(result));
-
-    return (
-      isQualificationDrill(drill) &&
-      !isRifleDrill(drill)
-    );
-  });
 
   const alerts: GeneratedAlert[] = [];
 
@@ -633,201 +570,11 @@ function collectQualificationReadiness(
       continue;
     }
 
-    const officerName =
-      text(
-        get(
-          person,
-          "displayName",
-          "display_name",
-          "fullName",
-          "full_name",
-          "name",
-        ),
-      ) || "Officer";
-
-    const officerResults = qualificationResults
-      .filter(
-        (result: any) =>
-          resultOfficerId(result) === officerId,
-      )
-      .sort(
-        (a: any, b: any) =>
-          dateValue(
-            get(
-              rangeDaysById.get(resultRangeDayId(b)),
-              "date",
-            ),
-          ) -
-          dateValue(
-            get(
-              rangeDaysById.get(resultRangeDayId(a)),
-              "date",
-            ),
-          ),
-      );
-
-    const passed = officerResults.filter(isPassed);
-
-    const day = passed.find(
-      (result: any) => resultRunNumber(result) === 1,
-    );
-
-    const night = passed.find(
-      (result: any) => resultRunNumber(result) === 2,
-    );
-
-    const failedQualifications = officerResults
-      .filter(
-        (result: any) => result?.passed === false,
-      )
-      .map((result: any) => {
-        const runNumber = resultRunNumber(result);
-
-        return {
-          date:
-            text(
-              get(
-                rangeDaysById.get(
-                  resultRangeDayId(result),
-                ),
-                "date",
-              ),
-            ) || "",
-          runLabel:
-            runNumber === 1
-              ? "Day Qualification"
-              : runNumber === 2
-                ? "Night Qualification"
-                : `Run ${runNumber}`,
-        };
-      });
-
-    const lastDayQualification = day
-      ? {
-          date:
-            text(
-              get(
-                rangeDaysById.get(
-                  resultRangeDayId(day),
-                ),
-                "date",
-              ),
-            ) || "",
-          runLabel: "Day Qualification",
-        }
-      : undefined;
-
-    const lastNightQualification = night
-      ? {
-          date:
-            text(
-              get(
-                rangeDaysById.get(
-                  resultRangeDayId(night),
-                ),
-                "date",
-              ),
-            ) || "",
-          runLabel: "Night Qualification",
-        }
-      : undefined;
-
-    const importedOfficerResults = storedQualificationResults
-      .filter((result: any) => {
-        const resultUserId = text(
-          get(result, "officerUserId", "officer_user_id"),
-        );
-        const origin = text(
-          get(result, "recordOrigin", "record_origin"),
-        ).toLowerCase();
-        const qualificationType = text(
-          get(
-            result,
-            "historicalQualificationType",
-            "historical_qualification_type",
-          ),
-        ).toLowerCase();
-
-        return (
-          resultUserId === userId &&
-          origin === "historical_import" &&
-          qualificationType === "handgun" &&
-          result?.passed === true
-        );
-      })
-      .sort(
-        (a: any, b: any) =>
-          dateValue(
-            get(b, "qualificationDate", "qualification_date"),
-          ) -
-          dateValue(
-            get(a, "qualificationDate", "qualification_date"),
-          ),
-      );
-
-    const importedDay = importedOfficerResults.find(
-      (result: any) =>
-        text(
-          get(result, "lightingCondition", "lighting_condition"),
-        ).toLowerCase() === "day",
-    );
-
-    const importedNight = importedOfficerResults.find(
-      (result: any) =>
-        text(
-          get(result, "lightingCondition", "lighting_condition"),
-        ).toLowerCase() === "night",
-    );
-
-    const importedDayQualification = importedDay
-      ? {
-          date: text(
-            get(importedDay, "qualificationDate", "qualification_date"),
-          ),
-          runLabel: "Day Qualification",
-        }
-      : undefined;
-
-    const importedNightQualification = importedNight
-      ? {
-          date: text(
-            get(importedNight, "qualificationDate", "qualification_date"),
-          ),
-          runLabel: "Night Qualification",
-        }
-      : undefined;
-
-    const newestQualification = (
-      rangeResult:
-        | { date: string; runLabel: string }
-        | undefined,
-      importedResult:
-        | { date: string; runLabel: string }
-        | undefined,
-    ) => {
-      if (!rangeResult) return importedResult;
-      if (!importedResult) return rangeResult;
-
-      return dateValue(importedResult.date) >
-        dateValue(rangeResult.date)
-        ? importedResult
-        : rangeResult;
-    };
-
-    const resolvedLastDayQualification = newestQualification(
-      lastDayQualification,
-      importedDayQualification,
-    );
-
-    const resolvedLastNightQualification = newestQualification(
-      lastNightQualification,
-      importedNightQualification,
-    );
-
-    const readiness = evaluateQualificationReadiness({
-      lastDayQualification: resolvedLastDayQualification,
-      lastNightQualification: resolvedLastNightQualification,
-      failedQualifications,
+    const readiness = evaluateCanonicalQualificationReadiness({
+      workspace: rangePayload,
+      qualificationResults: storedQualificationResults,
+      officerId,
+      officerUserId: userId,
       qualificationValidDays,
       qualificationDueSoonDays,
     });
@@ -836,24 +583,18 @@ function collectQualificationReadiness(
 
     
     const base = {
-      key: `qualification-readiness-${userId || officerId}`,
+      key: `qualification-readiness-${userId || officerId}-${readiness.scopeKey}`,
       source: "Qualifications" as Source,
       href: "/qualifications",
       detail: readiness.statusReason,
     };
 
     const createdAt =
-      readiness.status === "Failed"
-        ? failedQualifications[0]?.date ?? null
-        : resolvedLastDayQualification &&
-            resolvedLastNightQualification
-          ? dateValue(resolvedLastDayQualification.date) <
-            dateValue(resolvedLastNightQualification.date)
-            ? resolvedLastDayQualification.date
-            : resolvedLastNightQualification.date
-          : resolvedLastDayQualification?.date ??
-            resolvedLastNightQualification?.date ??
-            null;
+      readiness.matchingAttempts.find(
+        (attempt) => readiness.status === "Failed" && attempt.passed === false,
+      )?.date ??
+      readiness.matchingAttempts.at(-1)?.date ??
+      null;
 
     const config = {
       "No Record": {
@@ -1329,28 +1070,15 @@ export async function GET(request: NextRequest) {
 
     for (const item of filtered) {
       const prior = byKey.get(item.key);
-      const fingerprint = JSON.stringify(item);
-      const changed = prior && String(prior.fingerprint) !== fingerprint;
-
-      await eventWriter.upsertEvent({
-        department_id: context.departmentId,
-        user_id: context.user.id,
-        notification_key: item.key,
-        source: item.source,
-        kind: item.kind,
-        title: item.title,
-        detail: item.detail,
-        href: item.href,
-        priority: item.priority,
-        fingerprint,
-        source_created_at: item.createdAt || null,
-        first_seen_at: prior?.first_seen_at ?? now,
-        last_seen_at: now,
-        resolved_at: null,
-        acknowledged_at: changed ? null : prior?.acknowledged_at ?? null,
-        snoozed_until: changed ? null : prior?.snoozed_until ?? null,
-        updated_at: now,
+      const reconciliation = buildNotificationEventReconciliationRow({
+        departmentId: context.departmentId,
+        userId: context.user.id,
+        item,
+        prior,
+        now,
       });
+      const { fingerprint } = reconciliation;
+      await eventWriter.upsertEvent(reconciliation.row);
 
       if (
         preferences.email_enabled &&
@@ -1386,7 +1114,11 @@ export async function GET(request: NextRequest) {
 
     const activeKeys = new Set(filtered.map((item) => item.key));
     for (const row of existing ?? []) {
-      if (successful.has(String(row.source)) && !activeKeys.has(String(row.notification_key)) && !row.resolved_at) {
+      if (notificationEventShouldResolve({
+        event: row,
+        successfulSources: successful,
+        activeKeys,
+      })) {
         await eventWriter.resolveEvent(String(row.id), now);
       }
     }
