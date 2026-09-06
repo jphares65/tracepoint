@@ -9,3 +9,6 @@ test('authorization, configuration, database and network failures remain distinc
  const report=classifyStagingLogs(['AccessDenied','configuration missing','PGRST database error','JWT invalid','fetch failed','heap limit','NEXT_REDIRECT'].map(message=>({message,timestamp:Date.now()})));
  for(const category of ['aws-authorization','configuration','database-or-connection','authentication','network','memory','next-control-flow'])assert.equal(report.categories[category],1);
 });
+test('unknown error features contain only fixed technical terms',()=>{
+ const report=classifyStagingLogs([{message:'TypeError: undefined workers sensitive fixture',timestamp:Date.now()}]);assert.deepEqual(report.unknownFeatures[0].features,['TypeError','undefined','workers']);assert.equal(JSON.stringify(report).includes('sensitive'),false);
+});

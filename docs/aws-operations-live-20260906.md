@@ -28,6 +28,13 @@ Classification is now embedded in the existing runtime collector's already-read
 events, with no additional AWS query. Seven focused tests pass, including
 extraction of nested sanitized classification. The strict error gate is unchanged.
 
+Run 34037910721 (`f2001e6`) successfully classified the ten matches: eight rejected
+Server Action requests and two unclassified events, all between 12:06:43.605Z and
+12:06:45.833Z on September 6. There were zero matching errors in the preceding
+60 minutes at 14:02Z. The strict task-lifetime gate remains failed. The unclassified
+events are not assumed harmless; a fixed technical-vocabulary diagnostic was
+added to investigate without logging messages or personal data.
+
 The two preceding OIDC attempts failed before AWS reads: an invalid managed-policy
 reference, then STS packed-policy size. Both failed-run reports are retained.
 The compact explicit read allowlist succeeded without modifying the IAM role.

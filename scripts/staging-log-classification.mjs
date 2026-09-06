@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 export function classifyStagingLogs(events,now=Date.now()){
- const report={total:events.length,recent60Minutes:0,categories:{},unknownFingerprints:[],firstAt:null,lastAt:null};
+ const report={total:events.length,recent60Minutes:0,categories:{},unknownFingerprints:[],unknownFeatures:[],firstAt:null,lastAt:null};
  for(const event of events){
   const text=String(event.message??''),timestamp=Number(event.timestamp);
   const category=/EACCES|EROFS|permission denied.*(?:mkdir|open|write)/i.test(text)?'filesystem':
@@ -17,7 +17,11 @@ export function classifyStagingLogs(events,now=Date.now()){
    if(timestamp>=now-3600000)report.recent60Minutes++;
    const iso=new Date(timestamp).toISOString();if(!report.firstAt||iso<report.firstAt)report.firstAt=iso;if(!report.lastAt||iso>report.lastAt)report.lastAt=iso;
   }
-  if(category==='unclassified')report.unknownFingerprints.push(createHash('sha256').update(text).digest('hex'));
+  if(category==='unclassified'){
+   const fingerprint=createHash('sha256').update(text).digest('hex');report.unknownFingerprints.push(fingerprint);
+   const vocabulary=['TypeError','ReferenceError','SyntaxError','RangeError','URIError','AggregateError','JSON','parse','undefined','null','workers','payload','headers','decrypt','encryption','Unexpected','Invalid','Server Action','request','body','digest','ENOENT','ENOTFOUND','ECONNRESET','timeout'];
+   report.unknownFeatures.push({fingerprint,features:vocabulary.filter(word=>text.includes(word))});
+  }
  }
  report.unknownFingerprints=[...new Set(report.unknownFingerprints)];return report;
 }

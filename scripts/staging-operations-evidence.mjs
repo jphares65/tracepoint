@@ -25,11 +25,13 @@ export function operationsEvidence(logs){
     if(value.logClassification)reports.push(...operationsEvidence(JSON.stringify({account:value.account,region:value.region,kind:'log-diagnostics',revision:value.ecs.revision,classification:value.logClassification,messagesPrinted:false},null,2)));
    }else if(value.kind==='log-diagnostics'&&Number.isInteger(value.revision)&&value.classification){
     safe.kind='log-diagnostics';safe.revision=value.revision;safe.messagesPrinted=value.messagesPrinted===true;
-    safe.classification={categories:{},unknownFingerprints:[]};
+    safe.classification={categories:{},unknownFingerprints:[],unknownFeatures:[]};
     for(const key of ['total','recent60Minutes'])if(Number.isInteger(value.classification[key]))safe.classification[key]=value.classification[key];
     for(const key of ['firstAt','lastAt'])if(typeof value.classification[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.classification[key]))safe.classification[key]=value.classification[key];
     for(const key of ['filesystem','server-action-request-rejected','aws-authorization','configuration','database-or-connection','authentication','network','memory','next-control-flow','unclassified'])if(Number.isInteger(value.classification.categories?.[key]))safe.classification.categories[key]=value.classification.categories[key];
-    safe.classification.unknownFingerprints=(value.classification.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));reports.push(safe);
+    safe.classification.unknownFingerprints=(value.classification.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));
+    const vocabulary=['TypeError','ReferenceError','SyntaxError','RangeError','URIError','AggregateError','JSON','parse','undefined','null','workers','payload','headers','decrypt','encryption','Unexpected','Invalid','Server Action','request','body','digest','ENOENT','ENOTFOUND','ECONNRESET','timeout'];
+    safe.classification.unknownFeatures=(value.classification.unknownFeatures??[]).filter(x=>/^[0-9a-f]{64}$/.test(x.fingerprint)).map(x=>({fingerprint:x.fingerprint,features:(x.features??[]).filter(word=>vocabulary.includes(word))}));reports.push(safe);
    }else if(typeof value.queriedAtUTC==='string'&&Number.isFinite(value.budgetActualUSD)){
     safe.kind='cost';if(/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.queriedAtUTC))safe.queriedAtUTC=value.queriedAtUTC;
     for(const key of ['budgetActualUSD','budgetLimitUSD','modeledMonthlyUSD','disposableRehearsalReserveUSD'])if(Number.isFinite(value[key]))safe[key]=value[key];
