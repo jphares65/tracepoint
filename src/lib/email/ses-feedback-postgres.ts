@@ -30,8 +30,12 @@ export class PostgresSesFeedbackStore implements SesFeedbackStore {
       if (inserted.rowCount === 0) { await client.query('commit'); return 'duplicate'; }
       if (event.kind !== 'Delivery') {
         for (const hash of event.recipientHashes) await client.query(`insert into public.email_suppressions(recipient_hash,reason,source_event_id)
-          values($1,$2,$3) on conflict(recipient_hash) do update set reason=case when email_suppressions.reason='Complaint' then 'Complaint' else excluded.reason end,
-          source_event_id=excluded.source_event_id,updated_at=now()`, [hash, event.kind, event.eventId]);
+          values($1,$2,$3) on conflict(recipient_hash) do update set reason=case
+          when email_suppressions.reason in ('OptOut','Complaint') then email_suppressions.reason else excluded.reason end,
+          source_event_id=case when email_suppressions.reason='OptOut'
+          or (email_suppressions.reason='Complaint' and excluded.reason='Bounce')
+          then email_suppressions.source_event_id else excluded.source_event_id end,
+          updated_at=now()`, [hash, event.kind, event.eventId]);
       }
       await client.query('commit'); return 'applied';
     } catch {
