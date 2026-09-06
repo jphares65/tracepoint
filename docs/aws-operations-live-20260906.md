@@ -22,6 +22,12 @@ do not call these logs clean. A separate read-only classifier now reports counts
 categories and timestamps without messages, credentials or personal data.
 Six focused classifier/workflow/sanitization tests and changed-file lint pass.
 
+Run 34037214873 (`c7a1130`) reconfirmed those runtime and budget readings, but
+the separate diagnostic query sequence failed and did not produce classification.
+Classification is now embedded in the existing runtime collector's already-read
+events, with no additional AWS query. Seven focused tests pass, including
+extraction of nested sanitized classification. The strict error gate is unchanged.
+
 The two preceding OIDC attempts failed before AWS reads: an invalid managed-policy
 reference, then STS packed-policy size. Both failed-run reports are retained.
 The compact explicit read allowlist succeeded without modifying the IAM role.

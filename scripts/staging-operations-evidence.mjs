@@ -22,6 +22,7 @@ export function operationsEvidence(logs){
     safe.scan={status:value.scan?.status==='COMPLETE'?'COMPLETE':'not complete',findings:{}};
     for(const key of ['CRITICAL','HIGH','MEDIUM','LOW','INFORMATIONAL','UNDEFINED'])if(Number.isInteger(value.scan?.findings?.[key]))safe.scan.findings[key]=value.scan.findings[key];
     reports.push(safe);
+    if(value.logClassification)reports.push(...operationsEvidence(JSON.stringify({account:value.account,region:value.region,kind:'log-diagnostics',revision:value.ecs.revision,classification:value.logClassification,messagesPrinted:false},null,2)));
    }else if(value.kind==='log-diagnostics'&&Number.isInteger(value.revision)&&value.classification){
     safe.kind='log-diagnostics';safe.revision=value.revision;safe.messagesPrinted=value.messagesPrinted===true;
     safe.classification={categories:{},unknownFingerprints:[]};

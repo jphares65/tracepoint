@@ -14,3 +14,7 @@ test('log diagnostics retain only approved categories and fingerprints',()=>{
  const value={account:'559054714699',region:'us-east-1',kind:'log-diagnostics',revision:18,messagesPrinted:false,classification:{total:1,recent60Minutes:0,categories:{'server-action-request-rejected':1,sensitive:2},unknownFingerprints:['a'.repeat(64),'sensitive'],message:'sensitive'}};
  const reports=operationsEvidence(JSON.stringify(value,null,2));assert.equal(reports.length,1);assert.equal(reports[0].classification.total,1);assert.equal(JSON.stringify(reports).includes('sensitive'),false);
 });
+test('classification embedded in the runtime report is extracted without another AWS read',()=>{
+ const value={account:'559054714699',region:'us-east-1',imageTag:'a'.repeat(40),ecs:{revision:18},logClassification:{total:10,recent60Minutes:0,categories:{'server-action-request-rejected':10},unknownFingerprints:[]}};
+ const reports=operationsEvidence(JSON.stringify(value,null,2));assert.equal(reports.length,2);assert.equal(reports[1].kind,'log-diagnostics');assert.equal(reports[1].classification.total,10);
+});

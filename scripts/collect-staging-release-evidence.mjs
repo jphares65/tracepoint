@@ -1,4 +1,5 @@
 import {stagingQueueHealth} from './staging-queue-health.mjs';
+import {classifyStagingLogs} from './staging-log-classification.mjs';
 import { execFileSync } from 'node:child_process';
 const account='559054714699',region='us-east-1',base='https://staging.tracepointhq.com';
 const args=process.argv.slice(2),tag=args[args.indexOf('--image')+1];
@@ -35,6 +36,7 @@ try {
  const logStream=logOptions['awslogs-stream-prefix']+'/'+definition.name+'/'+task.taskArn.split('/').at(-1);
  const logs=aws(['logs','filter-log-events','--log-group-name',logOptions['awslogs-group'],'--log-stream-names',logStream,'--start-time',String(Math.floor(Date.parse(task.startedAt))),'--filter-pattern','?ERROR ?Error ?Unauthorized ?AccessDenied ?Exception']);
  report.logs={currentTaskOnly:true,matchingErrors:logs.events.length,filesystemPermissionErrors:logs.events.filter(x=>/EACCES/.test(x.message)).length};
+ report.logClassification=classifyStagingLogs(logs.events);
  const providerSecret=JSON.parse(aws(['secretsmanager','get-secret-value','--secret-id','tracepoint/staging/application']).SecretString);
  report.notificationQueue=await stagingQueueHealth(providerSecret);
  report.passed=report.notificationQueue.failed===0&&report.notificationQueue.staleProcessing===0&&report.stackStatus==='UPDATE_COMPLETE'&&report.ecs.desired===1&&report.ecs.running===1&&report.ecs.pending===0&&report.ecs.completed&&
