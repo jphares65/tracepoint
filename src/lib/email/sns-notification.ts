@@ -1,4 +1,5 @@
 import { verify, X509Certificate } from 'node:crypto';
+import {parseSnsTopic} from './sns-topic';
 
 type Envelope = Record<string, unknown>;
 export type VerifiedNotification = { notificationId: string; topicArn: string; message: string };
@@ -17,8 +18,8 @@ export function notificationSigningText(value: Envelope): string {
 export async function verifySnsNotification(body: string, expectedTopicArn: string,
   options: { fetch?: typeof fetch; now?: number } = {}): Promise<VerifiedNotification> {
   try {
-    const topic = /^arn:(aws|aws-us-gov):sns:([a-z0-9-]+):(\d{12}):[A-Za-z0-9_-]+$/.exec(expectedTopicArn);
-    if (!topic || topic[3] === '265544358665' || Buffer.byteLength(body) > 262144) invalid();
+    const topic = parseSnsTopic(expectedTopicArn);
+    if (Buffer.byteLength(body) > 262144) invalid();
     const envelope = JSON.parse(body) as Envelope;
     if (!envelope || envelope.Type !== 'Notification' || envelope.TopicArn !== expectedTopicArn ||
       (typeof envelope.SignatureVersion !== 'string' || !['1', '2'].includes(envelope.SignatureVersion)) || typeof envelope.MessageId !== 'string' ||
@@ -28,7 +29,7 @@ export async function verifySnsNotification(body: string, expectedTopicArn: stri
     // Permit SNS delivery retries for 23 days; durable event IDs prevent replay effects.
     if (!Number.isFinite(timestamp) || timestamp > now + 300000 || timestamp < now - 23 * 86400000) invalid();
     const certUrl = new URL(String(envelope.SigningCertURL));
-    if (certUrl.protocol !== 'https:' || certUrl.host !== `sns.${topic[2]}.amazonaws.com` ||
+    if (certUrl.protocol !== 'https:' || certUrl.host !== `sns.${topic.region}.amazonaws.com` ||
       certUrl.username || certUrl.password || certUrl.search || certUrl.hash ||
       !/^\/SimpleNotificationService-[a-zA-Z0-9_-]+\.pem$/.test(certUrl.pathname)) invalid();
     const response = await (options.fetch ?? fetch)(certUrl, { redirect: 'error', signal: AbortSignal.timeout(5000) });
