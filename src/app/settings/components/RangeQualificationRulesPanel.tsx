@@ -12,6 +12,10 @@ import {
 
 import { createClient } from "@/lib/supabase/client";
 
+export const FAILED_QUALIFICATION_THRESHOLD_UNIT = "qualifications";
+export const FAILED_QUALIFICATION_THRESHOLD_DESCRIPTION =
+  "Number of consecutive failed qualifications with the same firearm before that officer's authorization for the firearm becomes restricted. A later passing qualification resets the count.";
+
 type RangeQualificationRules = {
   schema_version: number;
 
@@ -114,9 +118,10 @@ function Toggle({
   );
 }
 
-function DaysInput({
+function QuantityInput({
   label,
   description,
+  unit = "days",
   value,
   min = 0,
   max = 3650,
@@ -125,6 +130,7 @@ function DaysInput({
 }: {
   label: string;
   description: string;
+  unit?: string;
   value: number;
   min?: number;
   max?: number;
@@ -142,6 +148,7 @@ function DaysInput({
       <div className="mt-3 flex items-center gap-2">
         <input
           type="number"
+          aria-label={`${label} in ${unit}`}
           min={min}
           max={max}
           value={value}
@@ -156,7 +163,7 @@ function DaysInput({
           className="w-28 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500 disabled:opacity-50"
         />
 
-        <span className="text-xs text-slate-500">days</span>
+        <span className="text-xs text-slate-500">{unit}</span>
       </div>
     </label>
   );
@@ -505,7 +512,7 @@ export default function RangeQualificationRulesPanel({
           {rules.require_rifle_familiarization ? (
             <>
               <div className="grid gap-3 sm:grid-cols-2">
-                <DaysInput
+                <QuantityInput
                   label="Familiarization validity"
                   description="How long a completed rifle familiarization remains current."
                   value={rules.rifle_familiarization_valid_days}
@@ -528,7 +535,7 @@ export default function RangeQualificationRulesPanel({
                   }}
                 />
 
-                <DaysInput
+                <QuantityInput
                   label="Familiarization warning"
                   description="How many days before expiration TracePoint should flag the requirement."
                   value={rules.rifle_familiarization_due_soon_days}
@@ -601,9 +608,10 @@ export default function RangeQualificationRulesPanel({
             />
 
             {rules.firearm_failure_lockout_enabled ? (
-              <DaysInput
+              <QuantityInput
                 label="Failed qualification threshold"
-                description="Number of consecutive recorded failures with the same firearm before that officer's authorization for the firearm becomes restricted."
+                description={FAILED_QUALIFICATION_THRESHOLD_DESCRIPTION}
+                unit={FAILED_QUALIFICATION_THRESHOLD_UNIT}
                 value={rules.firearm_failure_lockout_threshold}
                 min={1}
                 max={20}
@@ -618,7 +626,7 @@ export default function RangeQualificationRulesPanel({
             ) : (
               <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-4 text-xs leading-5 text-slate-500">
                 Repeated qualification failures will not automatically
-                restrict an officer's authorization for the associated
+                restrict an officer&apos;s authorization for the associated
                 firearm.
               </div>
             )}
@@ -705,7 +713,7 @@ export default function RangeQualificationRulesPanel({
             />
 
             {rules.qualification_failure_requires_remediation ? (
-              <DaysInput
+              <QuantityInput
                 label="Remediation deadline"
                 description="Maximum number of days permitted to complete required remediation."
                 value={rules.remediation_due_days}

@@ -35,6 +35,7 @@ import {
 
 import {
   meetsPermissionRequirement,
+  TRAINING_ALERTS_MODULE_PERMISSIONS,
   type PermissionRequirement,
   type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
@@ -155,13 +156,6 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         href: "/range-days",
         featureCode: "range_training",
         icon: CalendarRange,
-        requirement: {
-          anyOf: [
-            "manage_range_days",
-            "score_range_days",
-            "view_command_dashboard",
-          ],
-        },
       },
       {
         label: "Agency Training",
@@ -174,6 +168,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         href: "/training-alerts",
         featureCode: "range_training",
         icon: BellRing,
+        requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS },
       },
     ],
   },
@@ -186,13 +181,6 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         href: "/qualifications",
         featureCode: "qualifications",
         icon: ShieldCheck,
-        requirement: {
-          anyOf: [
-            "manage_qualifications",
-            "score_range_days",
-            "view_analytics",
-          ],
-        },
       },
       {
         label: "Certifications",
@@ -216,6 +204,15 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         label: "Fleet Management",
         href: "/fleet-management",
         icon: Boxes,
+        requirement: {
+          anyOf: [
+            "view_fleet",
+            "manage_fleet",
+            "perform_fleet_inspections",
+            "manage_fleet_maintenance",
+            "manage_fleet_rules",
+          ],
+        },
       },
     ],
   },  {
@@ -242,7 +239,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
     label: "Administration",
     icon: Settings,
     requirement: {
-      anyOf: ["manage_users", "administer_department"],
+      anyOf: ["manage_users", "view_audit_log", "administer_department"],
     },
     children: [
       {
@@ -254,6 +251,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         label: "Import / Export",
         href: "/settings/import-export",
         icon: BarChart3,
+        requirement: { anyOf: ["administer_department"] },
       },
     ],
   },

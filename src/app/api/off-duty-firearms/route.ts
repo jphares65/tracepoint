@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
+  permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -26,7 +27,7 @@ function canManageOffDutyInspections(context: any) {
 }
 
 function isCommandReviewer(context: any) {
-  return context.roleCodes.some((role: string) => role === "chief");
+  return hasAnyServerPermission(context, ["review_off_duty_requests"]);
 }
 
 async function loadOfficerIdentities(
@@ -307,11 +308,21 @@ async function loadRequests(context: any) {
 }
 
 async function loadOffDutyReviewerUserIds(context: any) {
-  const reviewerRoleCodes = ["chief"];
+  const { data: permissionRows, error: permissionError } =
+    await context.admin
+      .from("department_role_permissions")
+      .select("role_code")
+      .eq("department_id", context.departmentId)
+      .eq("permission_code", "review_off_duty_requests");
 
-  if (reviewerRoleCodes.length === 0) {
-    return [];
+  if (permissionError) {
+    throw new Error(permissionError.message);
   }
+
+  const reviewerRoleCodes = Array.from(new Set([
+    "administrator",
+    ...(permissionRows ?? []).map((row: { role_code?: unknown }) => String(row.role_code ?? "")),
+  ].filter(Boolean)));
 
   const { data: membershipRows, error: membershipError } =
     await context.admin
@@ -324,9 +335,23 @@ async function loadOffDutyReviewerUserIds(context: any) {
     throw new Error(membershipError.message);
   }
 
+  const reviewerUserIds = Array.from(new Set(
+    (membershipRows ?? []).map((row: { user_id?: unknown }) => String(row.user_id ?? "")).filter(Boolean),
+  ));
+  if (reviewerUserIds.length === 0) return [];
+
+  const { data: activeRows, error: activeError } = await context.admin
+    .from("department_memberships")
+    .select("user_id")
+    .eq("department_id", context.departmentId)
+    .eq("is_active", true)
+    .in("user_id", reviewerUserIds);
+
+  if (activeError) throw new Error(activeError.message);
+
   return Array.from(
     new Set(
-      (membershipRows ?? [])
+      (activeRows ?? [])
         .map((row: any) => String(row.user_id ?? ""))
         .filter(Boolean),
     ),
@@ -405,6 +430,7 @@ export async function GET() {
         role: context.primaryRoleLabel,
       },
       canReview: isCommandReviewer(context),
+      canSubmit: hasAnyServerPermission(context, ["submit_off_duty_requests"]),
       canManageInspections:
         canManageOffDutyInspections(context),
     });
@@ -438,6 +464,12 @@ export async function POST(request: NextRequest) {
 
   if (featureError) {
     return featureError;
+  }
+
+  if (!hasAnyServerPermission(context, ["submit_off_duty_requests"])) {
+    return permissionDeniedResponse(
+      "Off-duty request submission permission is required.",
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as {

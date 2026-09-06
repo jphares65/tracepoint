@@ -1,4 +1,5 @@
 import { resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
 export type PersonalRifleRules = {
   allow_personally_owned_rifles: boolean;
@@ -179,25 +180,15 @@ export async function getPersonalRifleAccess(
     );
   }
 
-  const administratorRoles = [
-    "chief",
-    "administrator",
-    "department_admin",
-    "admin",
-  ];
-  const armorerRoles = ["armorer", "range_master"];
-
-  const canConfigure =
-    roleCodes.some((role) => administratorRoles.includes(role)) ||
-    permissions.includes("administer_department");
-
-  const canChiefReview = canConfigure || roleCodes.includes("chief");
-
+  const effectivePermissions = effectiveDepartmentPermissions(
+    roleCodes,
+    permissions,
+  );
+  const canConfigure = effectivePermissions.includes("administer_department");
+  const canChiefReview =
+    canConfigure || effectivePermissions.includes("approve_personal_rifles");
   const canArmorerReview =
-    canConfigure ||
-    roleCodes.some((role) => armorerRoles.includes(role)) ||
-    permissions.includes("manage_firearms") ||
-    permissions.includes("manage_inspections");
+    canConfigure || effectivePermissions.includes("manage_inspections");
 
   return {
     canSubmit: true,

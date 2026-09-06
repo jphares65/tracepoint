@@ -18,17 +18,21 @@ insert into public.pilot_range_workspaces(department_id) values
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
 do $$
+declare affected integer;
 begin
  if (select count(*) from public.pilot_range_workspaces) <> 1 then raise exception 'Range workspace tenant isolation failed'; end if;
- begin
-  update public.pilot_range_workspaces set workspace='{}'::jsonb;
-  raise exception 'Direct member workspace mutation accepted';
- exception when insufficient_privilege then null;
- end;
+ update public.pilot_range_workspaces
+ set workspace='{"forbidden":true}'::jsonb
+ where department_id='00000000-0000-4000-8000-000000000011';
+ get diagnostics affected = row_count;
+ if affected <> 0 then raise exception 'Direct member workspace mutation accepted'; end if;
  if (select count(*) from public.department_features) <> 1 then raise exception 'Entitlement tenant isolation failed'; end if;
  begin
-  update public.department_features set is_enabled=false where department_id='00000000-0000-4000-8000-000000000011';
-  raise exception 'Member entitlement change accepted';
+  update public.department_features
+  set is_enabled=false
+  where department_id='00000000-0000-4000-8000-000000000011';
+  get diagnostics affected = row_count;
+  if affected <> 0 then raise exception 'Member entitlement change accepted'; end if;
  exception when insufficient_privilege then null;
  end;
  if (select count(*) from public.equipment_types) <> 1 then raise exception 'Tenant read isolation failed'; end if;

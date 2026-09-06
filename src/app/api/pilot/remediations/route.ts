@@ -2,10 +2,13 @@
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import { TRAINING_ALERTS_WORKFLOW_PERMISSIONS } from "@/lib/tracepoint/permissions";
 
 type RemediationPayload = {
   remediations?: unknown;
@@ -30,6 +33,9 @@ export async function GET() {
 
   if (featureError) {
     return featureError;
+  }
+  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_WORKFLOW_PERMISSIONS)) {
+    return permissionDeniedResponse("Agency-training management permission is required to view remediation records.");
   }
   const {
     admin,
@@ -71,6 +77,9 @@ export async function PUT(request: Request) {
 
   if (featureError) {
     return featureError;
+  }
+  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_WORKFLOW_PERMISSIONS)) {
+    return permissionDeniedResponse("Agency-training management permission is required to update remediation records.");
   }
   const {
     admin,

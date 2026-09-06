@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Plus,
+  Pencil,
   QrCode,
   RefreshCw,
   Search,
@@ -44,10 +45,16 @@ type FleetVehicle = {
   status: FleetStatus;
   inspection_due_date: string | null;
   registration_expiration_date: string | null;
+  insurance_expiration_date: string | null;
+  in_service_date: string | null;
   last_service_date: string | null;
+  last_service_mileage: number | null;
+  last_service_hours: number | null;
   next_service_date: string | null;
   next_service_mileage: number | null;
+  next_service_hours: number | null;
   open_issue_count: number;
+  comments: string | null;
   notes: string | null;
   updated_at: string;
 };
@@ -73,11 +80,18 @@ type VehicleForm = {
   status: FleetStatus;
   inspectionDueDate: string;
   registrationExpirationDate: string;
+  insuranceExpirationDate: string;
+  inServiceDate: string;
   lastServiceDate: string;
+  lastServiceMileage: string;
+  lastServiceHours: string;
   nextServiceDate: string;
   nextServiceMileage: string;
+  nextServiceHours: string;
   openIssueCount: string;
+  comments: string;
   notes: string;
+  reason: string;
 };
 
 const EMPTY_FORM: VehicleForm = {
@@ -96,11 +110,18 @@ const EMPTY_FORM: VehicleForm = {
   status: "Available",
   inspectionDueDate: "",
   registrationExpirationDate: "",
+  insuranceExpirationDate: "",
+  inServiceDate: "",
   lastServiceDate: "",
+  lastServiceMileage: "",
+  lastServiceHours: "",
   nextServiceDate: "",
   nextServiceMileage: "",
+  nextServiceHours: "",
   openIssueCount: "0",
+  comments: "",
   notes: "",
+  reason: "",
 };
 
 const STATUSES: FleetStatus[] = [
@@ -119,9 +140,44 @@ const PREVIEW_VEHICLE: FleetVehicle = {
   home_location: "Headquarters", current_mileage: 18422,
   current_hours: 2167.4, status: "Attention", inspection_due_date: "2026-09-12",
   registration_expiration_date: "2027-01-31", last_service_date: "2026-07-20",
+  insurance_expiration_date: "2027-01-31", in_service_date: "2025-02-01",
+  last_service_mileage: 16000, last_service_hours: 1900,
   next_service_date: "2026-09-05", next_service_mileage: 20000,
-  open_issue_count: 1, notes: "Local preview vehicle", updated_at: new Date().toISOString(),
+  next_service_hours: 2300, open_issue_count: 1, comments: null,
+  notes: "Local preview vehicle", updated_at: new Date().toISOString(),
 };
+
+function formForVehicle(vehicle: FleetVehicle): VehicleForm {
+  return {
+    unitNumber: vehicle.unit_number,
+    vin: vehicle.vin ?? "",
+    licensePlate: vehicle.license_plate ?? "",
+    year: vehicle.year?.toString() ?? "",
+    make: vehicle.make ?? "",
+    model: vehicle.model ?? "",
+    vehicleType: vehicle.vehicle_type ?? "",
+    assignmentType: vehicle.assignment_type,
+    assignedTo: vehicle.assigned_to ?? "",
+    homeLocation: vehicle.home_location ?? "",
+    currentMileage: vehicle.current_mileage.toString(),
+    currentHours: vehicle.current_hours.toString(),
+    status: vehicle.status,
+    inspectionDueDate: vehicle.inspection_due_date ?? "",
+    registrationExpirationDate: vehicle.registration_expiration_date ?? "",
+    insuranceExpirationDate: vehicle.insurance_expiration_date ?? "",
+    inServiceDate: vehicle.in_service_date ?? "",
+    lastServiceDate: vehicle.last_service_date ?? "",
+    lastServiceMileage: vehicle.last_service_mileage?.toString() ?? "",
+    lastServiceHours: vehicle.last_service_hours?.toString() ?? "",
+    nextServiceDate: vehicle.next_service_date ?? "",
+    nextServiceMileage: vehicle.next_service_mileage?.toString() ?? "",
+    nextServiceHours: vehicle.next_service_hours?.toString() ?? "",
+    openIssueCount: vehicle.open_issue_count.toString(),
+    comments: vehicle.comments ?? "",
+    notes: vehicle.notes ?? "",
+    reason: "",
+  };
+}
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -230,7 +286,27 @@ export default function FleetManagementPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | FleetStatus>("All");
   const [showForm, setShowForm] = useState(false);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
+
+  function openCreateForm() {
+    setEditingVehicleId(null);
+    setForm(EMPTY_FORM);
+    setShowForm(true);
+  }
+
+  function openEditForm(vehicle: FleetVehicle) {
+    setEditingVehicleId(vehicle.id);
+    setForm(formForVehicle(vehicle));
+    setShowForm(true);
+  }
+
+  function closeForm(force = false) {
+    if (saving && !force) return;
+    setShowForm(false);
+    setEditingVehicleId(null);
+    setForm(EMPTY_FORM);
+  }
 
   async function loadFleet() {
     setLoading(true);
@@ -303,20 +379,26 @@ export default function FleetManagementPage() {
       setError("Unit number is required.");
       return;
     }
+    if (editingVehicleId && !form.reason.trim()) {
+      setError("Enter a reason for this vehicle update.");
+      return;
+    }
     setSaving(true);
     setError("");
     setMessage("");
     try {
       const response = await fetch("/api/fleet/vehicles", {
-        method: "POST",
+        method: editingVehicleId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify(form),
+        body: JSON.stringify(editingVehicleId ? { ...form, id: editingVehicleId } : form),
       });
       if (!response.ok) throw new Error(await responseError(response));
-      setForm(EMPTY_FORM);
-      setShowForm(false);
-      setMessage("Vehicle added and recorded in the audit log.");
+      const wasEditing = Boolean(editingVehicleId);
+      closeForm(true);
+      setMessage(wasEditing
+        ? "Vehicle changes saved and recorded in the audit log."
+        : "Vehicle added and recorded in the audit log.");
       await loadFleet();
     } catch (saveError) {
       setError(
@@ -382,7 +464,7 @@ export default function FleetManagementPage() {
               {canManage ? (
                 <button
                   type="button"
-                  onClick={() => setShowForm(true)}
+                  onClick={openCreateForm}
                   className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
                 >
                   <Plus size={15} /> Add Vehicle
@@ -485,7 +567,7 @@ export default function FleetManagementPage() {
               {vehicles.length === 0 && canManage ? (
                 <button
                   type="button"
-                  onClick={() => setShowForm(true)}
+                  onClick={openCreateForm}
                   className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500"
                 >
                   <Plus size={14} /> Add First Vehicle
@@ -596,13 +678,24 @@ export default function FleetManagementPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <Link
-                            href={`/fleet-management/${vehicle.id}`}
-                            onClick={(event) => event.stopPropagation()}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition group-hover:border-blue-500/40 group-hover:text-blue-300"
-                          >
-                            Open <ChevronRight size={13} />
-                          </Link>
+                          <div className="flex justify-end gap-2">
+                            {canManage ? (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); openEditForm(vehicle); }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition hover:border-blue-500/40 hover:text-blue-300"
+                              >
+                                <Pencil size={12} /> Edit
+                              </button>
+                            ) : null}
+                            <Link
+                              href={`/fleet-management/${vehicle.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition group-hover:border-blue-500/40 group-hover:text-blue-300"
+                            >
+                              Open <ChevronRight size={13} />
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -642,10 +735,10 @@ export default function FleetManagementPage() {
             <div className="w-full max-w-3xl rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
                 <div>
-                  <h2 className="font-bold text-white">Add Fleet Vehicle</h2>
-                  <p className="mt-1 text-[11px] text-slate-500">Create the authoritative inventory record for this unit.</p>
+                  <h2 className="font-bold text-white">{editingVehicleId ? "Edit Fleet Vehicle" : "Add Fleet Vehicle"}</h2>
+                  <p className="mt-1 text-[11px] text-slate-500">{editingVehicleId ? "Update this vehicle without replacing its history or linked records." : "Create the authoritative inventory record for this unit."}</p>
                 </div>
-                <button type="button" onClick={() => setShowForm(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-800 hover:text-white">
+                <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-lg p-2 text-slate-500 hover:bg-slate-800 hover:text-white disabled:opacity-50">
                   <X size={18} />
                 </button>
               </div>
@@ -666,16 +759,23 @@ export default function FleetManagementPage() {
                 <Field label="Open Issues"><input type="number" min="0" value={form.openIssueCount} onChange={(event) => setForm({ ...form, openIssueCount: event.target.value })} className={inputClass} /></Field>
                 <Field label="Inspection Due"><input type="date" value={form.inspectionDueDate} onChange={(event) => setForm({ ...form, inspectionDueDate: event.target.value })} className={inputClass} /></Field>
                 <Field label="Registration Expires"><input type="date" value={form.registrationExpirationDate} onChange={(event) => setForm({ ...form, registrationExpirationDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Insurance Expires"><input type="date" value={form.insuranceExpirationDate} onChange={(event) => setForm({ ...form, insuranceExpirationDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="In Service Date"><input type="date" value={form.inServiceDate} onChange={(event) => setForm({ ...form, inServiceDate: event.target.value })} className={inputClass} /></Field>
                 <Field label="Last Service"><input type="date" value={form.lastServiceDate} onChange={(event) => setForm({ ...form, lastServiceDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Last Service Mileage"><input type="number" min="0" value={form.lastServiceMileage} onChange={(event) => setForm({ ...form, lastServiceMileage: event.target.value })} className={inputClass} /></Field>
+                <Field label="Last Service Hours"><input type="number" min="0" step="0.1" value={form.lastServiceHours} onChange={(event) => setForm({ ...form, lastServiceHours: event.target.value })} className={inputClass} /></Field>
                 <Field label="Next Service Date"><input type="date" value={form.nextServiceDate} onChange={(event) => setForm({ ...form, nextServiceDate: event.target.value })} className={inputClass} /></Field>
                 <Field label="Next Service Mileage"><input type="number" min="0" value={form.nextServiceMileage} onChange={(event) => setForm({ ...form, nextServiceMileage: event.target.value })} className={inputClass} /></Field>
+                <Field label="Next Service Hours"><input type="number" min="0" step="0.1" value={form.nextServiceHours} onChange={(event) => setForm({ ...form, nextServiceHours: event.target.value })} className={inputClass} /></Field>
+                <Field label="Operational Comments" span><textarea value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} className={`${inputClass} min-h-20 resize-y`} /></Field>
                 <Field label="Notes" span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className={`${inputClass} min-h-24 resize-y`} /></Field>
+                {editingVehicleId ? <Field label="Reason for Change" span><textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-20 resize-y`} placeholder="Explain why these vehicle details are changing." /></Field> : null}
               </div>
               <div className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
-                <button type="button" onClick={() => setShowForm(false)} className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white">Cancel</button>
+                <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white disabled:opacity-50">Cancel</button>
                 <button type="button" onClick={() => void saveVehicle()} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
                   {saving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  Save Vehicle
+                  {editingVehicleId ? "Save Changes" : "Save Vehicle"}
                 </button>
               </div>
             </div>

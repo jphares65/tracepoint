@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
+    "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
     "db:verify-staging": "node scripts/verify-staging-schema.mjs"
   },
   "dependencies": {

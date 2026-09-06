@@ -8,7 +8,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
-const MANAGE_PERMISSIONS = ["manage_training", "manage_certifications"] as const;
+const MANAGE_PERMISSIONS = ["manage_training"] as const;
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";

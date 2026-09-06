@@ -16,14 +16,12 @@ type RouteContext = {
   params: Promise<{ requestId: string }>;
 };
 
-const COMMAND_ROLES = ["chief"];
-
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function isCommandReviewer(context: any) {
-  return context.roleCodes.some((role: string) => role === "chief");
+  return hasAnyServerPermission(context, ["review_off_duty_requests"]);
 }
 
 async function loadRequest(context: any, requestId: string) {
@@ -256,17 +254,16 @@ async function loadOffDutyReviewerUserIds(context: any) {
       .from("department_role_permissions")
       .select("role_code,permission_code")
       .eq("department_id", context.departmentId)
-      .in("permission_code", [
-        "review_off_duty_requests",
-        "manage_firearms",
-        "administer_department",
-      ]);
+      .eq("permission_code", "review_off_duty_requests");
 
   if (permissionError) {
     throw new Error(permissionError.message);
   }
 
-  const reviewerRoleCodes = COMMAND_ROLES;
+  const reviewerRoleCodes = Array.from(new Set([
+    "administrator",
+    ...(permissionRows ?? []).map((row: { role_code?: unknown }) => String(row.role_code ?? "")),
+  ].filter(Boolean)));
 
   const { data: membershipRows, error: membershipError } =
     await context.admin
@@ -279,9 +276,23 @@ async function loadOffDutyReviewerUserIds(context: any) {
     throw new Error(membershipError.message);
   }
 
+  const reviewerUserIds = Array.from(new Set(
+    (membershipRows ?? []).map((row: { user_id?: unknown }) => String(row.user_id ?? "")).filter(Boolean),
+  ));
+  if (reviewerUserIds.length === 0) return [];
+
+  const { data: activeRows, error: activeError } = await context.admin
+    .from("department_memberships")
+    .select("user_id")
+    .eq("department_id", context.departmentId)
+    .eq("is_active", true)
+    .in("user_id", reviewerUserIds);
+
+  if (activeError) throw new Error(activeError.message);
+
   return Array.from(
     new Set(
-      (membershipRows ?? [])
+      (activeRows ?? [])
         .map((row: any) => String(row.user_id ?? ""))
         .filter(Boolean),
     ),
@@ -393,9 +404,13 @@ export async function PATCH(
       );
     }
 
-    const now = new Date().toISOString();
-
     if (body.action === "Resubmit") {
+      if (!hasAnyServerPermission(context, ["submit_off_duty_requests"])) {
+        return permissionDeniedResponse(
+          "Off-duty request submission permission is required.",
+        );
+      }
+
       if (existing.officer_user_id !== context.userId) {
         return permissionDeniedResponse(
           "Only the submitting officer may resubmit this request.",

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 
 type RouteContext = { params: Promise<{ eventId: string; certificateId: string }> };
@@ -15,6 +15,9 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   try {
   const data = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getCertificate({ departmentId: context.departmentId, eventId, certificateId });
   if (!data) return NextResponse.json({ error: "Certificate not found." }, { status: 404 });
+  if (String(data.certificate.user_id ?? "") !== context.userId && !hasAnyServerPermission(context, ["manage_training"])) {
+    return permissionDeniedResponse("You may download only your own training certificates.");
+  }
   const result = { data: data.certificate as any };
   const profile = { data: data.profile };
 

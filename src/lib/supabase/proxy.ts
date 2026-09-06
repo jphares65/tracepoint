@@ -4,12 +4,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   getRoutePermissionRequirement,
   meetsPermissionRequirement,
-  type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
+import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
 import type { Database } from "./database.types";
 
-const PUBLIC_PATHS = ["/landing", "/login", "/auth/callback", "/auth/confirm", "/activate", "/api/notifications/email-dispatch"];
+const PUBLIC_PATHS = ["/landing", "/login", "/auth/callback", "/auth/confirm", "/activate", "/api/health", "/api/notifications/email-dispatch"];
 const AUTH_FLOW_PATHS = [
   "/auth/setup",
   "/auth/signout",
@@ -56,6 +56,49 @@ function copyCookies(source: NextResponse, target: NextResponse) {
   });
 
   return target;
+}
+
+function isApiPath(pathname: string) {
+  return pathname.toLowerCase().startsWith("/api/");
+}
+
+function apiAccessFailure(
+  response: NextResponse,
+  status: 401 | 403,
+  error: string,
+) {
+  return copyCookies(
+    response,
+    NextResponse.json(
+      { error },
+      {
+        status,
+        headers: { "Cache-Control": "no-store" },
+      },
+    ),
+  );
+}
+
+function forbiddenOrRedirect(
+  request: NextRequest,
+  response: NextResponse,
+  pathname: string,
+  parameters?: Record<string, string>,
+) {
+  if (isApiPath(request.nextUrl.pathname)) {
+    return apiAccessFailure(
+      response,
+      403,
+      "You do not have permission to perform this request.",
+    );
+  }
+
+  return redirectWithCookies(
+    request,
+    response,
+    pathname,
+    parameters,
+  );
 }
 
 function redirectWithCookies(
@@ -112,6 +155,14 @@ export async function updateSession(request: NextRequest) {
   const authenticated = Boolean(claims?.sub);
 
   if (!authenticated && !isPublicPath(pathname)) {
+    if (isApiPath(pathname)) {
+      return apiAccessFailure(
+        response,
+        401,
+        "Authentication is required.",
+      );
+    }
+
     if (pathname === "/") {
       return redirectWithCookies(request, response, "/landing");
     }
@@ -210,7 +261,7 @@ export async function updateSession(request: NextRequest) {
       .eq("is_active", true);
 
   if (membershipError) {
-    return redirectWithCookies(
+    return forbiddenOrRedirect(
       request,
       response,
       "/auth/setup",
@@ -221,6 +272,14 @@ export async function updateSession(request: NextRequest) {
   const memberships = (membershipRows ?? []) as MembershipRow[];
 
   if (memberships.length === 0) {
+    if (isApiPath(pathname)) {
+      return apiAccessFailure(
+        response,
+        403,
+        "No active department membership was found.",
+      );
+    }
+
     return redirectWithCookies(
       request,
       response,
@@ -246,7 +305,7 @@ export async function updateSession(request: NextRequest) {
       return response;
     }
 
-    return redirectWithCookies(
+    return forbiddenOrRedirect(
       request,
       response,
       "/",
@@ -269,7 +328,7 @@ export async function updateSession(request: NextRequest) {
     .eq("user_id", userId);
 
   if (roleError) {
-    return redirectWithCookies(
+    return forbiddenOrRedirect(
       request,
       response,
       "/unauthorized",
@@ -282,7 +341,7 @@ export async function updateSession(request: NextRequest) {
     .filter((value): value is string => Boolean(value));
 
   if (roleCodes.length === 0) {
-    return redirectWithCookies(
+    return forbiddenOrRedirect(
       request,
       response,
       "/unauthorized",
@@ -298,7 +357,7 @@ export async function updateSession(request: NextRequest) {
       .in("role_code", roleCodes);
 
   if (permissionError) {
-    return redirectWithCookies(
+    return forbiddenOrRedirect(
       request,
       response,
       "/unauthorized",
@@ -306,19 +365,15 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  const permissions = Array.from(
-    new Set(
-      ((permissionData ?? []) as RolePermissionRow[])
-        .map((row) => row.permission_code)
-        .filter(
-          (value): value is TracePointPermission =>
-            Boolean(value),
-        ),
+  const permissions = effectiveDepartmentPermissions(
+    roleCodes,
+    ((permissionData ?? []) as RolePermissionRow[]).map(
+      (row) => row.permission_code,
     ),
   );
 
   if (!meetsPermissionRequirement(permissions, requirement)) {
-    return redirectWithCookies(
+    return forbiddenOrRedirect(
       request,
       response,
       "/unauthorized",

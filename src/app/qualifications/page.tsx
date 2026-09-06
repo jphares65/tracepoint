@@ -22,7 +22,8 @@ import {
 
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
 import {
-  evaluateQualificationReadiness,
+  evaluateCanonicalQualificationReadiness,
+  type QualificationStandardSummary,
   type QualificationReadinessStatus,
 } from "@/lib/tracepoint/qualification-readiness";
 
@@ -69,6 +70,7 @@ type StoredRangeDayWorkspace = {
   rangeRoster: RangeRosterEntry[];
   results: DrillRunResult[];
   malfunctions: FirearmMalfunction[];
+  qualificationStandards?: QualificationStandardSummary[];
 };
 
 type OfficerQualificationEvent = {
@@ -134,6 +136,7 @@ const EMPTY_WORKSPACE: StoredRangeDayWorkspace = {
   rangeRoster: [],
   results: [],
   malfunctions: [],
+  qualificationStandards: [],
 };
 
 const EMPTY_PERSONNEL: PilotPersonnel[] = [];
@@ -202,6 +205,7 @@ async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | 
 
     const payload = (await response.json()) as {
       workspace?: Partial<StoredRangeDayWorkspace> | null;
+      qualificationStandards?: QualificationStandardSummary[];
     };
 
     if (!payload.workspace) return null;
@@ -224,6 +228,9 @@ async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | 
         : [],
       malfunctions: Array.isArray(payload.workspace.malfunctions)
         ? payload.workspace.malfunctions
+        : [],
+      qualificationStandards: Array.isArray(payload.qualificationStandards)
+        ? payload.qualificationStandards
         : [],
     };
 
@@ -250,24 +257,6 @@ function getDateValue(date?: string) {
   const value = new Date(`${date}T00:00:00`).getTime();
 
   return Number.isNaN(value) ? 0 : value;
-}
-
-function getDaysSince(date?: string) {
-  const dateValue = getDateValue(date);
-
-  if (!dateValue) return undefined;
-
-  const now = new Date();
-  const today = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).getTime();
-
-  return Math.max(
-    Math.floor((today - dateValue) / (1000 * 60 * 60 * 24)),
-    0,
-  );
 }
 
 function getUserName(userId?: string) {
@@ -595,10 +584,12 @@ function buildOfficerHistories(
       (event) => event.passed === false,
     );
 
-    const evaluatedStatus = evaluateQualificationReadiness({
-      lastDayQualification,
-      lastNightQualification,
-      failedQualifications,
+    const evaluatedStatus = evaluateCanonicalQualificationReadiness({
+      workspace,
+      qualificationResults: historicalResults,
+      qualificationStandards: workspace.qualificationStandards,
+      officerId: officer.id,
+      officerUserId: officer.userId,
       qualificationValidDays,
       qualificationDueSoonDays,
     });
@@ -616,7 +607,10 @@ function buildOfficerHistories(
       lastRifleQualification,
       failedQualifications,
       malfunctionCount: officerMalfunctions.length,
-      ...evaluatedStatus,
+      status: evaluatedStatus.status,
+      statusReason: evaluatedStatus.statusReason,
+      daysSinceLastQualification:
+        evaluatedStatus.daysSinceLastQualification,
     };
   }).sort((a, b) => a.officerName.localeCompare(b.officerName));
 }

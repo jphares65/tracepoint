@@ -12,9 +12,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const MANAGE_PERMISSIONS = [
-  "manage_certifications",
   "manage_training",
-  "manage_range_days",
 ] as const;
 
 const VALID_STATUSES = new Set([

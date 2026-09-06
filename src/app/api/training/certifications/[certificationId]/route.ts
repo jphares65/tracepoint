@@ -51,9 +51,7 @@ async function contextForRequest() {
     departmentId,
   } = resolved.context;
 
-  const canManage = hasAnyServerPermission(resolved.context, ['manage_certifications', 'administer_department']);
-
-  if (!canManage) {
+  if (!hasAnyServerPermission(resolved.context, ["manage_certifications"])) {
     return {
       error:
         "You do not have permission to manage certifications.",

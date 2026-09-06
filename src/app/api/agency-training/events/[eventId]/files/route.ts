@@ -5,7 +5,7 @@ import { createObjectStore } from "@/lib/storage/object-store";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
-const MANAGE = ["manage_training", "manage_certifications", "manage_range_days"] as const;
+const MANAGE = ["manage_training"] as const;
 
 async function eventExists(admin: any, departmentId: string, eventId: string) {
   return admin.from("agency_training_events").select("id,status").eq("department_id", departmentId).eq("id", eventId).maybeSingle();

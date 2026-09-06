@@ -2,10 +2,21 @@ import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import {
+  evaluateCanonicalQualificationReadiness,
+  type QualificationStandardSummary,
+} from "@/lib/tracepoint/qualification-readiness";
+import { TRAINING_ALERTS_FEED_PERMISSIONS } from "@/lib/tracepoint/permissions";
+import {
+  createCurrentRulesRepository,
+  mapCurrentRules,
+} from "@/lib/department-rules/current-rules-repository";
 
 type Risk = "Low" | "Medium" | "High";
 
@@ -110,6 +121,8 @@ function getRiskFromQualificationStatus(status: string): Risk {
   if (
     status === "Failed" ||
     status === "Expired" ||
+    status === "Missing Day" ||
+    status === "Missing Night" ||
     status === "No Record"
   ) {
     return "High";
@@ -122,81 +135,34 @@ function getRiskFromQualificationStatus(status: string): Risk {
   return "Low";
 }
 
-function getLatest(
-  rows: QualificationRow[],
-  predicate?: (row: QualificationRow) => boolean,
-) {
-  return [...rows]
-    .filter((row) => (predicate ? predicate(row) : true))
-    .sort(
-      (a, b) =>
-        dateValue(b.qualification_date) -
-        dateValue(a.qualification_date),
-    )[0];
-}
-
-function qualificationStatus(latest?: QualificationRow) {
-  if (!latest) return "No Record";
-
-  if (!latest.passed) {
-    return "Failed";
-  }
-
-  if (!latest.expires_on) {
-    return "Current";
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiration = new Date(`${latest.expires_on}T00:00:00`);
-
-  if (expiration.getTime() < today.getTime()) {
-    return "Expired";
-  }
-
-  const dueSoon = new Date(today);
-  dueSoon.setDate(dueSoon.getDate() + 30);
-
-  if (expiration.getTime() <= dueSoon.getTime()) {
-    return "Due Soon";
-  }
-
-  return "Current";
-}
-
 function buildQualificationTrends(
   officerLabels: OfficerLabelMap,
   qualificationResults: QualificationRow[],
+  workspace: unknown,
+  qualificationStandards: QualificationStandardSummary[],
+  qualificationValidDays: number,
+  qualificationDueSoonDays: number,
 ) {
   return Object.keys(officerLabels).map((officerId) => {
     const label = officerLabels[officerId];
-    const officerResults = qualificationResults
-      .filter((row) => row.officer_user_id === officerId)
-      .sort((a, b) => dateValue(a.qualification_date) - dateValue(b.qualification_date));
-
-    const latest = getLatest(officerResults);
-    const dayResults = officerResults.filter(
-      (row) => row.lighting_condition === "day" || row.lighting_condition === "not_applicable",
-    );
-    const nightResults = officerResults.filter(
-      (row) => row.lighting_condition === "night" || row.lighting_condition === "low_light",
-    );
-    const latestDay = getLatest(dayResults);
-    const latestNight = getLatest(nightResults);
-
-    const componentStatuses = [latestDay, latestNight]
-      .filter((row): row is QualificationRow => Boolean(row))
-      .map(qualificationStatus);
-    const status = componentStatuses.includes("Failed")
-      ? "Failed"
-      : componentStatuses.includes("Expired")
-        ? "Expired"
-        : componentStatuses.includes("Due Soon")
-          ? "Due Soon"
-          : componentStatuses.includes("Current")
-            ? "Current"
-            : "No Record";
+    const readiness = evaluateCanonicalQualificationReadiness({
+      workspace,
+      qualificationResults,
+      qualificationStandards,
+      officerId,
+      officerUserId: officerId,
+      qualificationValidDays,
+      qualificationDueSoonDays,
+    });
+    const officerResults = readiness.matchingAttempts
+      .slice()
+      .sort((a, b) => dateValue(a.date) - dateValue(b.date));
+    const latest = officerResults.at(-1);
+    const dayResults = officerResults.filter((row) => row.component === "day");
+    const nightResults = officerResults.filter((row) => row.component === "night");
+    const latestDay = dayResults.at(-1);
+    const latestNight = nightResults.at(-1);
+    const status = readiness.status === "Overdue" ? "Expired" : readiness.status;
 
     const comparisons: Array<{
       component: string;
@@ -212,7 +178,7 @@ function buildQualificationTrends(
     ] as const) {
       const scored = rows
         .map((row) => ({ row, score: numericValue(row.score) }))
-        .filter((item): item is { row: QualificationRow; score: number } => item.score !== undefined);
+        .filter((item): item is { row: typeof officerResults[number]; score: number } => item.score !== undefined);
       if (scored.length < 2) continue;
       const previous = scored[scored.length - 2].score;
       const current = scored[scored.length - 1].score;
@@ -221,7 +187,13 @@ function buildQualificationTrends(
     }
 
     let trend: Trend = "Baseline";
-    if (status === "Failed" || status === "Expired" || status === "No Record") {
+    if (
+      status === "Failed" ||
+      status === "Expired" ||
+      status === "Missing Day" ||
+      status === "Missing Night" ||
+      status === "No Record"
+    ) {
       trend = "Action Needed";
     } else if (status === "Due Soon") {
       trend = "Monitor";
@@ -241,21 +213,15 @@ function buildQualificationTrends(
     const nightScore = numericValue(latestNight?.score);
     const coverage = latestDay && latestNight
       ? "Day + Night"
-      : latestDay?.lighting_condition === "not_applicable"
-        ? "Single Course"
-        : latestDay
+      : latestDay
           ? "Day Only"
           : latestNight
             ? "Night Only"
             : "No Record";
     const risk = getRiskFromQualificationStatus(status);
 
-    let detail = "Current qualification record is on file; additional same-component history is needed for a trend.";
-    if (status === "No Record") detail = "No qualification result is recorded.";
-    else if (status === "Failed") detail = "A most-recent qualification component is failed and requires review.";
-    else if (status === "Expired") detail = "A most-recent qualification component has expired.";
-    else if (status === "Due Soon") detail = "Qualification is current but approaching expiration.";
-    else if (comparisons.length > 0) {
+    let detail = readiness.statusReason;
+    if (status === "Current" && comparisons.length > 0) {
       detail = comparisons
         .map((item) => `${item.component} changed from ${item.previous} to ${item.current}`)
         .join("; ") + ".";
@@ -266,11 +232,11 @@ function buildQualificationTrends(
       name: label.name,
       assignment: label.assignment,
       status,
-      dayScore: dayScore !== undefined ? String(dayScore) : latest && !latestNight ? String(latest.score) : "Missing",
+      dayScore: dayScore !== undefined ? String(dayScore) : "Missing",
       nightScore: nightScore !== undefined ? String(nightScore) : "N/A",
       trend,
       dayNightGap: coverage,
-      lastQualified: formatDate(latest?.qualification_date),
+      lastQualified: formatDate(latest?.date),
       risk,
       detail,
     };
@@ -468,6 +434,10 @@ function buildAlerts(
             ? "Qualification has expired"
             : row.status === "No Record"
               ? "Qualification record missing"
+              : row.status === "Missing Day"
+                ? "Day qualification component missing"
+                : row.status === "Missing Night"
+                  ? "Night qualification component missing"
               : "Qualification renewal approaching",
       basis: row.detail,
       recommendedAction:
@@ -557,12 +527,22 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
+  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_FEED_PERMISSIONS)) {
+    return permissionDeniedResponse("Analytics read or agency-training management permission is required to view department performance data.");
+  }
 
   const { admin, departmentId } =
     resolved.context;
 
   try {
-    const inputs = await createRangeReadRepository(admin, departmentId).getPerformanceInputs(departmentId);
+    const repository = createRangeReadRepository(admin, departmentId);
+    const [inputs, qualificationWorkspace, qualificationRuleRow] = await Promise.all([
+      repository.getPerformanceInputs(departmentId),
+      repository.getWorkspace(departmentId),
+      createCurrentRulesRepository(admin, departmentId)
+        .getCurrentRules({ departmentId }),
+    ]);
+    const qualificationRules = mapCurrentRules(qualificationRuleRow);
     const personnelLabels = inputs.personnelLabels as OfficerLabelMap;
     const qualificationResults = inputs.qualificationResults as QualificationRow[];
     const rangeDays = inputs.rangeDays as RangeDayRow[];
@@ -573,6 +553,10 @@ export async function GET() {
       buildQualificationTrends(
         personnelLabels,
         qualificationResults,
+        qualificationWorkspace.workspace,
+        qualificationWorkspace.qualificationStandards as QualificationStandardSummary[],
+        qualificationRules.qualification_valid_days,
+        qualificationRules.qualification_due_soon_days,
       );
 
     const drillTrends = buildDrillTrends(

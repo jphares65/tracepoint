@@ -52,13 +52,11 @@ async function getContext() {
     departmentId,
   } = resolved.context;
 
-  const canManage = hasAnyServerPermission(resolved.context, ['manage_certifications', 'administer_department']);
-
   return {
     admin,
     user,
     departmentId,
-    canManage,
+    canManage: hasAnyServerPermission(resolved.context, ["manage_certifications"]),
   } as const;
 }
 

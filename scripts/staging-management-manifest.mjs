@@ -78,6 +78,6 @@ async function main() {
   if(compare>=0){const previous=JSON.parse(readFileSync(process.argv[compare+1],'utf8').replace(/^\uFEFF/,''));assert.deepEqual(manifest,previous);console.log(JSON.stringify({equal:true,tables:manifest.tables.length,relationships:manifest.relationships.length,migrations:manifest.migrationCount}));}
   else console.log(JSON.stringify(manifest,null,2));
  } catch {console.error('Staging management manifest failed; query contents, credentials and row data suppressed.');process.exitCode=1;}
- finally {if(directory){const resolved=path.resolve(directory);if(path.dirname(resolved)!==path.resolve(tmpdir())||!path.basename(resolved).startsWith('tracepoint-readonly-manifest-'))throw Error('Cleanup boundary failed');rmSync(resolved,{recursive:true,force:true});}}
+ finally {if(directory){const resolved=path.resolve(directory);if(path.dirname(resolved)!==path.resolve(tmpdir())||!path.basename(resolved).startsWith('tracepoint-readonly-manifest-'))throw Error('Cleanup boundary failed');rmSync(resolved,{recursive:true,force:true,maxRetries:20,retryDelay:250});}}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();

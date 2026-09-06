@@ -50,6 +50,10 @@ do $$ begin
  end;
 end $$;
 reset role;
+insert into auth.users(id,email) values ('00000000-0000-4000-8000-000000000002','local-admin-retainer@example.invalid');
+insert into public.profiles(id,full_name) values ('00000000-0000-4000-8000-000000000002','Disposable retained administrator') on conflict(id) do nothing;
+insert into public.department_memberships(department_id,user_id) values ('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000002');
+insert into public.department_membership_roles(department_id,user_id,role_code) values('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000002','administrator');
 delete from public.department_membership_roles where department_id='00000000-0000-4000-8000-000000000011' and user_id='00000000-0000-4000-8000-000000000001';
 insert into public.department_membership_roles(department_id,user_id,role_code) values('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000001','officer');
 set local role authenticated;

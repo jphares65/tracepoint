@@ -2,6 +2,7 @@
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -108,65 +109,6 @@ async function reconciliationCycleRules(
     fall_cycle_end:
       data?.fall_cycle_end ?? DEFAULT_CYCLE_RULES.fall_cycle_end,
   };
-}
-
-async function reconciliationAccess(
-  admin: any,
-  departmentId: string,
-  userId: string,
-) {
-  const { data: roleRows, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", userId);
-
-  if (roleError) throw new Error(roleError.message);
-
-  const roleCodes = Array.from(
-    new Set(
-      (roleRows ?? [])
-        .map((row: any) => row.role_code)
-        .filter((value: unknown): value is string => Boolean(value)),
-    ),
-  );
-
-  let permissions: string[] = [];
-
-  if (roleCodes.length > 0) {
-    const { data: permissionRows, error: permissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes);
-
-    if (permissionError) throw new Error(permissionError.message);
-
-    permissions = Array.from(
-      new Set(
-        (permissionRows ?? [])
-          .map((row: any) => row.permission_code)
-          .filter((value: unknown): value is string => Boolean(value)),
-      ),
-    );
-  }
-
-  const canManage =
-    roleCodes.includes("armorer") ||
-    roleCodes.includes("range_master") ||
-    roleCodes.includes("administrator") ||
-    roleCodes.includes("chief") ||
-    roleCodes.includes("command_staff") ||
-    permissions.includes("manage_firearms") ||
-    permissions.includes("administer_department");
-
-  const canCertify =
-    roleCodes.includes("administrator") ||
-    roleCodes.includes("chief") ||
-    roleCodes.includes("command_staff") ||
-    permissions.includes("administer_department");
-
-  return { canManage, canCertify };
 }
 
 async function userNames(admin: any) {
@@ -334,17 +276,13 @@ export async function GET() {
   }
   const {
     admin,
-    user,
     departmentId,
   } = resolved.context;
 
   try {
 
-    const access = await reconciliationAccess(
-      admin,
-      departmentId,
-      user.id,
-    );
+    const canManage = hasAnyServerPermission(resolved.context, ["manage_firearms"]);
+    const access = { canManage, canCertify: canManage };
 
     if (!access.canManage) {
       return NextResponse.json(
@@ -413,11 +351,8 @@ export async function POST(request: NextRequest) {
 
   try {
 
-    const access = await reconciliationAccess(
-      admin,
-      departmentId,
-      user.id,
-    );
+    const canManage = hasAnyServerPermission(resolved.context, ["manage_firearms"]);
+    const access = { canManage, canCertify: canManage };
 
     if (!access.canManage) {
       return NextResponse.json(

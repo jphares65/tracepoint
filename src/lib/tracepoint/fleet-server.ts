@@ -18,15 +18,6 @@ export function numeric(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
 }
 
-function rolesFor(context: any) {
-  return Array.isArray(context?.roleCodes) ? context.roleCodes : [];
-}
-
-function hasAnyRole(context: any, configured: unknown, fallback: string[]) {
-  const allowed = Array.isArray(configured) && configured.length ? configured : fallback;
-  return rolesFor(context).some((role: string) => allowed.includes(role));
-}
-
 export function canConfigureFleet(context: any) {
   const permissions = Array.isArray(context?.permissions) ? context.permissions : [];
   return Boolean(
@@ -36,32 +27,33 @@ export function canConfigureFleet(context: any) {
   );
 }
 
-export function canManageFleet(context: any, rules?: any) {
+export function canManageFleet(context: any, rules?: unknown) {
+  void rules;
   const permissions = Array.isArray(context?.permissions) ? context.permissions : [];
   return Boolean(
-    canConfigureFleet(context) ||
-      permissions.includes("manage_fleet") ||
-      hasAnyRole(context, rules?.fleet_manager_role_codes, ["fleet_manager"])
+    context?.isSuperAdmin ||
+      permissions.includes("administer_department") ||
+      permissions.includes("manage_fleet")
   );
 }
 
 export function canPerformFleetMaintenance(context: any, rules?: any) {
+  void rules;
   const permissions = Array.isArray(context?.permissions) ? context.permissions : [];
   return Boolean(
     canManageFleet(context, rules) ||
-      permissions.includes("manage_fleet_maintenance") ||
-      hasAnyRole(context, rules?.mechanic_role_codes, ["mechanic", "fleet_mechanic"])
+      permissions.includes("manage_fleet_maintenance")
   );
 }
 
 export function canViewNetworkDetails(context: any, rules?: any) {
+  void rules;
   const permissions = Array.isArray(context?.permissions) ? context.permissions : [];
-  const roles = Array.isArray(context?.roleCodes) ? context.roleCodes : [];
   return Boolean(
     context?.isSuperAdmin ||
       permissions.includes("administer_department") ||
-      hasAnyRole(context, rules?.fleet_manager_role_codes, ["fleet_manager"]) ||
-      roles.some((role: string) => ["it", "it_manager"].includes(role)),
+      permissions.includes("manage_fleet") ||
+      permissions.includes("manage_fleet_rules"),
   );
 }
 

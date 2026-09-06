@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  hasAnyServerPermission,
+  permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
@@ -39,6 +41,9 @@ export async function GET() {
   }
 
   const context = access.context;
+  if (!hasAnyServerPermission(context, ["manage_firearms"])) {
+    return permissionDeniedResponse("Firearms-management permission is required to view the ammunition ledger.");
+  }
   const admin = context.admin as any;
   const departmentId = context.departmentId;
 
@@ -71,6 +76,9 @@ export async function PUT(request: Request) {
   }
 
   const context = access.context;
+  if (!hasAnyServerPermission(context, ["manage_firearms"])) {
+    return permissionDeniedResponse("Firearms-management permission is required to update the ammunition ledger.");
+  }
   const admin = context.admin as any;
   const departmentId = context.departmentId;
   const userId = context.user.id;

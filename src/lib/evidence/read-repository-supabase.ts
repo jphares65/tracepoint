@@ -8,5 +8,5 @@ export class SupabaseEvidenceReadDataSource implements EvidenceReadDataSource {
   getRangeWorkspace(d:string){return this.client.from("pilot_range_workspaces").select("workspace").eq("department_id",d).maybeSingle();}
   listQualificationEvidence(d:string,id:string){return this.client.from("attachments").select("id,attachment_type,file_name,mime_type,file_size,description,uploaded_by_user_id,uploaded_at").eq("department_id",d).eq("entity_type","qualification").eq("entity_key",id).is("archived_at",null).order("uploaded_at",{ascending:false});}
   listDrillDocuments(d:string,id:string){return this.client.from("drill_documents").select("id,drill_template_id,original_filename,mime_type,file_size,uploaded_by_user_id,created_at").eq("department_id",d).eq("drill_template_id",id).order("created_at",{ascending:false});}
-  getAttachment(d:string,id:string){return this.client.from("attachments").select("storage_path,file_name").eq("id",id).eq("department_id",d).is("archived_at",null).maybeSingle();}
+  getAttachment(d:string,id:string){return this.client.from("attachments").select("storage_path,file_name,entity_type,entity_id,entity_key,uploaded_by_user_id").eq("id",id).eq("department_id",d).is("archived_at",null).maybeSingle();}
 }

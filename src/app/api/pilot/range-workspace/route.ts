@@ -1,4 +1,3 @@
-import {validateWorkspaceWrite} from "@/lib/range/workspace-write-policy";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -11,6 +10,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -75,7 +75,9 @@ export async function GET() {
 
     return NextResponse.json({
       departmentId,
+      userId: resolved.context.userId,
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
+      canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
       workspace: data.workspace,
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
@@ -116,9 +118,6 @@ export async function PUT(request: NextRequest) {
     departmentId,
   } = resolved.context;
 
-  const canManage=hasAnyServerPermission(resolved.context,["manage_range_days"]);
-  const canScore=hasAnyServerPermission(resolved.context,["score_range_days"]);
-  if(!canManage&&!canScore)return NextResponse.json({error:"Range administration or scoring permission is required."},{status:403});
   const body = (await request.json().catch(() => ({}))) as {
     workspace?: unknown;
   };
@@ -126,20 +125,73 @@ export async function PUT(request: NextRequest) {
   const workspace = normalizeWorkspace(body.workspace);
 
   try {
-    const previous=await admin.from("pilot_range_workspaces").select("workspace,updated_at").eq("department_id",departmentId).maybeSingle();
-    if(previous.error)throw new Error("The range workspace could not be loaded for validation.");
-    const policy=validateWorkspaceWrite({canManage,canScore,previous:previous.data?.workspace,next:workspace,departmentId});
-    if(!policy.ok)return NextResponse.json({error:policy.error},{status:policy.status});
-    const updatedAt=new Date(Math.max(Date.now(),previous.data ? Date.parse(previous.data.updated_at)+1 : 0)).toISOString();
-    const payload={department_id:departmentId,workspace,updated_by_user_id:user.id,updated_at:updatedAt};
-    const write=previous.data
-      ? await admin.from("pilot_range_workspaces").update(payload).eq("department_id",departmentId).eq("updated_at",previous.data.updated_at).select("department_id").maybeSingle()
-      : await admin.from("pilot_range_workspaces").insert(payload).select("department_id").maybeSingle();
-    if(write.error?.code==="23505" || (!write.error&&!write.data))return NextResponse.json({error:"The workspace changed during validation. Reload before saving."},{status:409});
-    const error=write.error;
+    const existingResult = await admin.from("pilot_range_workspaces")
+      .select("workspace,updated_at")
+      .eq("department_id", departmentId)
+      .maybeSingle();
+    if (existingResult.error) {
+      throw new Error("The current range workspace could not be loaded.");
+    }
 
-    if (error) {
-      throw new Error(error.message);
+    const decision = authorizeRangeWorkspaceMutation({
+      existingWorkspace: existingResult.data?.workspace ?? {},
+      nextWorkspace: workspace,
+      departmentId,
+      permissions: resolved.context.permissions,
+    });
+    if (!decision.ok) {
+      return NextResponse.json(
+        { error: decision.error },
+        { status: decision.status, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    const updatedAt = new Date(
+      Math.max(
+        Date.now(),
+        existingResult.data
+          ? Date.parse(existingResult.data.updated_at) + 1
+          : 0,
+      ),
+    ).toISOString();
+    const payload = {
+      department_id: departmentId,
+      workspace,
+      updated_by_user_id: user.id,
+      updated_at: updatedAt,
+    };
+    const write = existingResult.data
+      ? await admin
+          .from("pilot_range_workspaces")
+          .update(payload)
+          .eq("department_id", departmentId)
+          .eq("updated_at", existingResult.data.updated_at)
+          .select("department_id")
+          .maybeSingle()
+      : await admin
+          .from("pilot_range_workspaces")
+          .insert(payload)
+          .select("department_id")
+          .maybeSingle();
+
+    if (
+      write.error?.code === "23505" ||
+      (!write.error && !write.data)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The workspace changed during validation. Reload before saving.",
+        },
+        {
+          status: 409,
+          headers: { "Cache-Control": "no-store" },
+        },
+      );
+    }
+
+    if (write.error) {
+      throw new Error("The range workspace could not be saved.");
     }
 
     return NextResponse.json({

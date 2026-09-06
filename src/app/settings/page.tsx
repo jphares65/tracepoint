@@ -1977,22 +1977,31 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase.rpc("set_department_role_permissions", {
-        p_department_id: departmentId,
-        p_role_code: editingRoleCode,
-        p_permission_codes: rolePermissionDraft,
+      const response = await fetch("/api/settings/role-permissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          departmentId,
+          roleCode: editingRoleCode,
+          permissionCodes: rolePermissionDraft,
+        }),
       });
-
-      if (error) throw error;
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        permissionCodes?: string[];
+      };
+      if (!response.ok) {
+        throw new Error(result.error || "The role permission matrix could not be updated.");
+      }
 
       const roleLabel =
         roleMap.get(editingRoleCode)?.display_name ?? humanize(editingRoleCode);
 
+      await Promise.all([loadSettings(), refreshAccess()]);
       setEditingRoleCode(null);
       setRolePermissionDraft([]);
       showNotice("success", `${roleLabel} permissions were updated.`);
-
-      await Promise.all([loadSettings(), refreshAccess()]);
     } catch (error) {
       showNotice(
         "error",
@@ -3227,7 +3236,7 @@ export default function AdminSettingsPage() {
                               {role.display_name}
                             </h3>
                             {locked ? (
-                              <StatusPill label="Locked" tone="slate" />
+                              <StatusPill label="Inherited: all permissions" tone="green" />
                             ) : null}
                           </div>
                           <p className="mt-1 text-xs leading-5 text-slate-600">
@@ -3533,21 +3542,6 @@ export default function AdminSettingsPage() {
                   departmentId={departmentId}
                   canAdminister={canAdminister}
                 />
-                <div className="xl:col-span-2">
-                  <SettingsCard
-                    title="Qualification Scoring"
-                    description="Qualification thresholds are configured on the qualification drill that uses them."
-                  >
-                    <div className="rounded-2xl border border-blue-500/25 bg-blue-500/[0.06] p-4">
-                      <p className="text-sm font-semibold text-blue-100">
-                        Scoring moved to Range &amp; Training
-                      </p>
-                      <p className="mt-2 text-xs leading-5 text-slate-400">
-                        Open Range &amp; Training, choose Add Drill, and create or edit a Qualification drill. Each drill can define Day, Night, or other agency-specific components with its own passing score, time, or hit threshold.
-                      </p>
-                    </div>
-                  </SettingsCard>
-                </div>
                 <div className="hidden">
                   <SettingsCard
                     title="Qualification Standards"
