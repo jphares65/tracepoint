@@ -1,0 +1,332 @@
+{
+  "date": "2026-09-06",
+  "sourceChecklist": "aws-overnight-checklist-20260905.json",
+  "originalBaseline": 45.55,
+  "continuationStart": 66.5,
+  "continuationEnd": 66.5,
+  "method": "Unchanged existing weighted capability checklist. No new credit for disabled code or repeat health reads. Storage and CI/CD fractions cover staging capabilities, not production provider exit.",
+  "liveEvidence": "aws-operations-366a0cd371e72ad2a38941254fcc0c531fb7245e.json",
+  "strictLogGatePassed": false,
+  "categories": [
+    {
+      "category": "AWS account/governance",
+      "weight": 6,
+      "completePercent": 50,
+      "checks": [
+        {
+          "capability": "isolated staging account",
+          "complete": true
+        },
+        {
+          "capability": "exact staging identity boundary",
+          "complete": true
+        },
+        {
+          "capability": "production account authorized",
+          "complete": false
+        },
+        {
+          "capability": "organization controls validated",
+          "complete": false
+        }
+      ]
+    },
+    {
+      "category": "network and compute",
+      "weight": 10,
+      "completePercent": 60,
+      "checks": [
+        {
+          "capability": "staging ECS and ALB operational checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "staging ingress/TLS configured",
+          "complete": true
+        },
+        {
+          "capability": "lean network synthesized without NAT",
+          "complete": true
+        },
+        {
+          "capability": "production network deployed",
+          "complete": false
+        },
+        {
+          "capability": "production load/failure test",
+          "complete": false
+        }
+      ]
+    },
+    {
+      "category": "runtime deployment",
+      "weight": 8,
+      "completePercent": 75,
+      "checks": [
+        {
+          "capability": "immutable staging image deployed checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "production runtime deployed",
+          "complete": false
+        },
+        {
+          "capability": "full authenticated staging acceptance",
+          "complete": true
+        },
+        {
+          "capability": "live rollback rehearsal",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "category": "database/schema/data migration",
+      "weight": 16,
+      "completePercent": 62.5,
+      "checks": [
+        {
+          "capability": "isolated staging schema checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "repository migration clean bootstrap",
+          "complete": true
+        },
+        {
+          "capability": "database RLS tenant-negative execution",
+          "complete": true
+        },
+        {
+          "capability": "synthetic export/restore reconciliation",
+          "complete": true
+        },
+        {
+          "capability": "live staging manifest reconciled",
+          "complete": true
+        },
+        {
+          "capability": "production data rehearsal",
+          "complete": false
+        },
+        {
+          "capability": "production database moved",
+          "complete": false
+        },
+        {
+          "capability": "production PITR restore timed",
+          "complete": false
+        }
+      ]
+    },
+    {
+      "category": "authentication",
+      "weight": 10,
+      "completePercent": 60,
+      "checks": [
+        {
+          "capability": "staging Supabase configuration checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "server access repository tests",
+          "complete": true
+        },
+        {
+          "capability": "authenticated staging browser acceptance",
+          "complete": true
+        },
+        {
+          "capability": "replacement identity provider deployed",
+          "complete": false
+        },
+        {
+          "capability": "MFA and session cutover validated",
+          "complete": false
+        }
+      ]
+    },
+    {
+      "category": "storage",
+      "weight": 8,
+      "completePercent": 100,
+      "checks": [
+        {
+          "capability": "provider interface tested",
+          "complete": true
+        },
+        {
+          "capability": "checksum corruption/loss tests",
+          "complete": true
+        },
+        {
+          "capability": "S3 application provider deployed",
+          "complete": true
+        },
+        {
+          "capability": "live object migration reconciled",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "category": "email",
+      "weight": 6,
+      "completePercent": 50,
+      "checks": [
+        {
+          "capability": "provider interface tested",
+          "complete": true
+        },
+        {
+          "capability": "staging Brevo configuration checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "SES application provider deployed",
+          "complete": false
+        },
+        {
+          "capability": "bounce/suppression delivery verified",
+          "complete": false
+        }
+      ]
+    },
+    {
+      "category": "DNS/TLS",
+      "weight": 8,
+      "completePercent": 50,
+      "checks": [
+        {
+          "capability": "staging hostname resolves and TLS works",
+          "complete": true
+        },
+        {
+          "capability": "staging login and health HTTP 200",
+          "complete": true
+        },
+        {
+          "capability": "production AWS certificate verified",
+          "complete": false
+        },
+        {
+          "capability": "production DNS cutover validated",
+          "complete": false
+        }
+      ]
+    },
+    {
+      "category": "CI/CD",
+      "weight": 8,
+      "completePercent": 100,
+      "checks": [
+        {
+          "capability": "commit-addressed publication checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "OIDC release executed",
+          "complete": true
+        },
+        {
+          "capability": "executable runtime safety tests",
+          "complete": true
+        },
+        {
+          "capability": "scan rejection tests",
+          "complete": true
+        },
+        {
+          "capability": "full build/deploy/recovery chain executed",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "category": "security/monitoring/backups",
+      "weight": 10,
+      "completePercent": 75,
+      "checks": [
+        {
+          "capability": "retained encrypted infrastructure",
+          "complete": true
+        },
+        {
+          "capability": "application log retention",
+          "complete": true
+        },
+        {
+          "capability": "staging alarms checkpoint",
+          "complete": true
+        },
+        {
+          "capability": "source dependency audit clean",
+          "complete": true
+        },
+        {
+          "capability": "notification escalation tested",
+          "complete": false
+        },
+        {
+          "capability": "production backup restore validated",
+          "complete": false
+        },
+        {
+          "capability": "WAF and load controls validated",
+          "complete": true
+        },
+        {
+          "capability": "actual cost verified below ceiling",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "category": "production account readiness",
+      "weight": 6,
+      "completePercent": 50,
+      "checks": [
+        {
+          "capability": "dedicated production account authorized",
+          "complete": false
+        },
+        {
+          "capability": "exact live production role gate",
+          "complete": false
+        },
+        {
+          "capability": "strict offline production preview",
+          "complete": true
+        },
+        {
+          "capability": "production scaling/retention/separation assertions",
+          "complete": true
+        }
+      ]
+    },
+    {
+      "category": "cutover/rollback validation",
+      "weight": 4,
+      "completePercent": 50,
+      "checks": [
+        {
+          "capability": "executable cutover input rejection tests",
+          "complete": true
+        },
+        {
+          "capability": "DNS rollback rehearsed",
+          "complete": false
+        },
+        {
+          "capability": "application rollback rehearsed",
+          "complete": true
+        },
+        {
+          "capability": "agency cutover approved",
+          "complete": false
+        }
+      ]
+    }
+  ]
+}
