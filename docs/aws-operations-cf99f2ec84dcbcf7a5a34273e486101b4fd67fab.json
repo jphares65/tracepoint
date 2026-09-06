@@ -1,0 +1,263 @@
+{
+  "commit": "cf99f2ec84dcbcf7a5a34273e486101b4fd67fab",
+  "workflowFound": true,
+  "run": 34038259119,
+  "attempt": 1,
+  "status": "completed",
+  "conclusion": "failure",
+  "url": "https://github.com/jphares65/tracepoint/actions/runs/34038259119",
+  "preview": "success",
+  "checkedAtUTC": "2026-09-06T14:12:32.349Z",
+  "jobs": [
+    {
+      "id": 101500205271,
+      "name": "evidence",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Bind evidence request to reviewed source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate operations safety contract",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect sanitized live runtime evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Read actual budget and optional cost detail",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "execution": [
+    {
+      "job": "evidence",
+      "testCounts": [
+        2
+      ],
+      "fixtures": [],
+      "structuralGates": [],
+      "resourceDiff": [],
+      "operations": [
+        {
+          "account": "559054714699",
+          "region": "us-east-1",
+          "kind": "runtime",
+          "imageTag": "af8304f40bad8ccd7336b35cacd026a89be5149a",
+          "checkedAt": "2026-09-06T14:09:26.490Z",
+          "stackStatus": "UPDATE_COMPLETE",
+          "expectedDigest": "sha256:6a4c9d5dfb5d89b9d2b9d1be2c3dab2a0abba8fa73aa70da401c00b6c1b8f503",
+          "runningDigest": "sha256:6a4c9d5dfb5d89b9d2b9d1be2c3dab2a0abba8fa73aa70da401c00b6c1b8f503",
+          "identityVerified": true,
+          "imageMatches": true,
+          "passed": false,
+          "ecs": {
+            "desired": 1,
+            "running": 1,
+            "pending": 0,
+            "revision": 18,
+            "completed": true
+          },
+          "targets": [
+            "healthy"
+          ],
+          "alarms": [
+            {
+              "name": "tracepoint-staging-alb-5xx-rate",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-application-5xx",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-memory",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-request-flood",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-unhealthy-target",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-runtime-alert",
+              "state": "OK"
+            }
+          ],
+          "public": [
+            {
+              "route": "/api/health",
+              "status": 200,
+              "passed": true
+            },
+            {
+              "route": "/login",
+              "status": 200,
+              "passed": true
+            },
+            {
+              "route": "/auth/confirm",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/auth/callback",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/equipment",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/range-days",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/firearms",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/off-duty-firearms",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/qualifications",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/training",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/fleet-management",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/notifications",
+              "status": 307,
+              "passed": true
+            }
+          ],
+          "logs": {
+            "matchingErrors": 10,
+            "filesystemPermissionErrors": 0,
+            "currentTaskOnly": true
+          },
+          "notificationQueue": {
+            "failed": 0,
+            "staleProcessing": 0
+          },
+          "scan": {
+            "status": "COMPLETE",
+            "findings": {}
+          }
+        },
+        {
+          "account": "559054714699",
+          "region": "us-east-1",
+          "kind": "log-diagnostics",
+          "revision": 18,
+          "messagesPrinted": false,
+          "classification": {
+            "categories": {
+              "server-action-request-rejected": 8,
+              "unclassified": 2
+            },
+            "unknownFingerprints": [
+              "57cb906547a828187a684a87974e4bdcd1d1e14ef33842390fc44b59c0913a2e",
+              "0d6f004ef8a16ab0df5fd5df7bcea67a36cb1c6ab034c96cf5b0aee8a1680eef"
+            ],
+            "unknownFeatures": [
+              {
+                "fingerprint": "57cb906547a828187a684a87974e4bdcd1d1e14ef33842390fc44b59c0913a2e",
+                "features": []
+              },
+              {
+                "fingerprint": "0d6f004ef8a16ab0df5fd5df7bcea67a36cb1c6ab034c96cf5b0aee8a1680eef",
+                "features": []
+              }
+            ],
+            "total": 10,
+            "recent60Minutes": 0,
+            "firstAt": "2026-09-06T12:06:43.605Z",
+            "lastAt": "2026-09-06T12:06:45.833Z"
+          }
+        },
+        {
+          "account": "559054714699",
+          "region": "us-east-1",
+          "kind": "cost",
+          "queriedAtUTC": "2026-09-06T14:09:46.015Z",
+          "budgetActualUSD": 2.983,
+          "budgetLimitUSD": 75,
+          "modeledMonthlyUSD": 68.67,
+          "disposableRehearsalReserveUSD": 2,
+          "withinCeiling": true,
+          "costExplorer": {
+            "available": false
+          }
+        }
+      ]
+    }
+  ]
+}

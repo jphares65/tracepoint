@@ -19,8 +19,8 @@ export function classifyStagingLogs(events,now=Date.now()){
   }
   if(category==='unclassified'){
    const fingerprint=createHash('sha256').update(text).digest('hex');report.unknownFingerprints.push(fingerprint);
-   const vocabulary=['TypeError','ReferenceError','SyntaxError','RangeError','URIError','AggregateError','JSON','parse','undefined','null','workers','payload','headers','decrypt','encryption','Unexpected','Invalid','Server Action','request','body','digest','ENOENT','ENOTFOUND','ECONNRESET','timeout'];
-   report.unknownFeatures.push({fingerprint,features:vocabulary.filter(word=>text.includes(word))});
+   const vocabulary=['TypeError','ReferenceError','SyntaxError','RangeError','URIError','AggregateError','JSON','parse','undefined','null','workers','payload','headers','decrypt','encryption','Unexpected','Invalid','Server Action','request','body','digest','ENOENT','ENOTFOUND','ECONNRESET','timeout','connection','closed','aborted','pipe','response','socket','premature','command','spawn','exit','EPIPE','MODULE_NOT_FOUND','exception','multipart','stream','failed'];
+   report.unknownFeatures.push({fingerprint,features:vocabulary.filter(word=>text.toLowerCase().includes(word.toLowerCase()))});
   }
  }
  report.unknownFingerprints=[...new Set(report.unknownFingerprints)];return report;

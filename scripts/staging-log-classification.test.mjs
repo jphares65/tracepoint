@@ -12,3 +12,6 @@ test('authorization, configuration, database and network failures remain distinc
 test('unknown error features contain only fixed technical terms',()=>{
  const report=classifyStagingLogs([{message:'TypeError: undefined workers sensitive fixture',timestamp:Date.now()}]);assert.deepEqual(report.unknownFeatures[0].features,['TypeError','undefined','workers']);assert.equal(JSON.stringify(report).includes('sensitive'),false);
 });
+test('transport diagnostics tolerate capitalization without exposing message content',()=>{
+ const report=classifyStagingLogs([{message:'Error: Connection CLOSED sensitive fixture',timestamp:Date.now()}]);assert.deepEqual(report.unknownFeatures[0].features,['connection','closed']);assert.equal(JSON.stringify(report).includes('sensitive'),false);
+});
