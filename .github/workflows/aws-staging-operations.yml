@@ -54,3 +54,6 @@ jobs:
       - name: Read actual budget and optional cost detail
         if: always() && steps.credentials.outcome == 'success'
         run: node scripts/collect-staging-operations-cost.mjs
+      - name: Classify current task error matches without printing messages
+        if: always() && steps.credentials.outcome == 'success'
+        run: node scripts/collect-staging-log-diagnostics.mjs

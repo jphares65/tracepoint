@@ -22,6 +22,13 @@ export function operationsEvidence(logs){
     safe.scan={status:value.scan?.status==='COMPLETE'?'COMPLETE':'not complete',findings:{}};
     for(const key of ['CRITICAL','HIGH','MEDIUM','LOW','INFORMATIONAL','UNDEFINED'])if(Number.isInteger(value.scan?.findings?.[key]))safe.scan.findings[key]=value.scan.findings[key];
     reports.push(safe);
+   }else if(value.kind==='log-diagnostics'&&Number.isInteger(value.revision)&&value.classification){
+    safe.kind='log-diagnostics';safe.revision=value.revision;safe.messagesPrinted=value.messagesPrinted===true;
+    safe.classification={categories:{},unknownFingerprints:[]};
+    for(const key of ['total','recent60Minutes'])if(Number.isInteger(value.classification[key]))safe.classification[key]=value.classification[key];
+    for(const key of ['firstAt','lastAt'])if(typeof value.classification[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.classification[key]))safe.classification[key]=value.classification[key];
+    for(const key of ['filesystem','server-action-request-rejected','aws-authorization','configuration','database-or-connection','authentication','network','memory','next-control-flow','unclassified'])if(Number.isInteger(value.classification.categories?.[key]))safe.classification.categories[key]=value.classification.categories[key];
+    safe.classification.unknownFingerprints=(value.classification.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));reports.push(safe);
    }else if(typeof value.queriedAtUTC==='string'&&Number.isFinite(value.budgetActualUSD)){
     safe.kind='cost';if(/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.queriedAtUTC))safe.queriedAtUTC=value.queriedAtUTC;
     for(const key of ['budgetActualUSD','budgetLimitUSD','modeledMonthlyUSD','disposableRehearsalReserveUSD'])if(Number.isFinite(value[key]))safe[key]=value[key];

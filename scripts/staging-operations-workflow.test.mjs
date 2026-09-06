@@ -21,6 +21,7 @@ test('operations workflow cannot publish or deploy and restricts its OIDC sessio
   'node --test scripts/validate-staging-operations-request.test.mjs',
   'node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE',
   'node scripts/collect-staging-operations-cost.mjs',
+  'node scripts/collect-staging-log-diagnostics.mjs',
  ]);
  for(const step of job.steps.filter(step=>step.uses))assert.match(step.uses,/@[0-9a-f]{40}$/);
 });
