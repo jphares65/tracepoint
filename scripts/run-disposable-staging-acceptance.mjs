@@ -128,11 +128,6 @@ try {
     const verify=await admin.from(table).select('department_id').eq('department_id',id);
     if(removal.error||verify.error||verify.data?.length!==0)cleanupFailed=true;
   }
-  for (const createdUserId of [userId,...extraUsers].filter(Boolean)) {
-    const removal = await admin.auth.admin.deleteUser(createdUserId);
-    const verify = await admin.from('profiles').select('id').eq('id', createdUserId);
-    if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
-  }
   for (const id of createdDepartments) {
     // Delete auto-seeded audited children while the tenant still exists. A
     // parent-first cascade would make their audit inserts violate the tenant FK.
@@ -142,6 +137,13 @@ try {
     }
     const removal = await admin.from('departments').delete().eq('id', id).like('slug', 'acceptance-' + run + '-%');
     const verify = await admin.from('departments').select('id').eq('id', id);
+    if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
+  }
+  // Remove the tenant before its identities so the final-Administrator trigger
+  // distinguishes an authorized parent teardown from an unsafe role removal.
+  for (const createdUserId of [userId,...extraUsers].filter(Boolean)) {
+    const removal = await admin.auth.admin.deleteUser(createdUserId);
+    const verify = await admin.from('profiles').select('id').eq('id', createdUserId);
     if (removal.error || verify.error || verify.data?.length !== 0) cleanupFailed = true;
   }
   console.log(JSON.stringify({ fixtureRun: run, cleanup: cleanupFailed ? 'FAILED: remove only this run identifiers' : 'verified' }));
