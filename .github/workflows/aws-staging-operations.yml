@@ -51,6 +51,9 @@ jobs:
         env:
           ACCEPTED_IMAGE: ${{ steps.request.outputs.imageCommit }}
         run: node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE
+      - name: Verify Brevo delivery prerequisites without sending
+        if: always() && steps.credentials.outcome == 'success'
+        run: node scripts/test-staging-brevo-delivery.mjs --prerequisites-only
       - name: Read actual budget and optional cost detail
         if: always() && steps.credentials.outcome == 'success'
         run: node scripts/collect-staging-operations-cost.mjs

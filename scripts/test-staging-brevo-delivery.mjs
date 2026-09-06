@@ -1,8 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createEmailProvider } from '../src/lib/email/provider-core.ts';
-if (!process.argv.includes('--send-to-account-owner')) throw new Error('Explicit --send-to-account-owner is required for one transactional test.');
+const sendRequested=process.argv.includes('--send-to-account-owner');
+const prerequisitesOnly=process.argv.includes('--prerequisites-only');
+if(sendRequested===prerequisitesOnly)throw new Error('Choose exactly one explicit Brevo verification mode.');
 const env = {...process.env, AWS_REGION:'us-east-1', AWS_DEFAULT_REGION:'us-east-1'};
+let stage='identity',submitted=false;
 function aws(args) {
   try { return JSON.parse(execFileSync('aws.exe',[...args,'--region','us-east-1','--output','json'],{env,encoding:'utf8',stdio:['ignore','pipe','pipe']})); }
   catch { throw new Error('Staging metadata unavailable'); }
@@ -10,8 +13,10 @@ function aws(args) {
 try {
   const identity=aws(['sts','get-caller-identity']);
   if(identity.Account!=='559054714699'||!identity.Arn.includes(':assumed-role/')||!identity.Arn.includes('TracePointMigrationStaging'))throw new Error('Identity mismatch');
+  stage='secret';
   let secret;try{secret=JSON.parse(aws(['secretsmanager','get-secret-value','--secret-id','tracepoint/staging/application']).SecretString);}catch{throw new Error('Invalid staging secret');}
   if(secret.CONFIGURATION_ENVIRONMENT!=='staging'||secret.NEXT_PUBLIC_SUPABASE_URL!=='https://wztqqqashilusoppddxi.supabase.co'||secret.NEXT_PUBLIC_SITE_URL!=='https://staging.tracepointhq.com')throw new Error('Staging provider target mismatch');
+  stage='task-configuration';
   const service=aws(['ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging']).services[0];
   const task=aws(['ecs','describe-task-definition','--task-definition',service.taskDefinition]).taskDefinition;
   const configuration=Object.fromEntries(task.containerDefinitions[0].environment.map(x=>[x.name,x.value]));
@@ -21,14 +26,19 @@ try {
     if(!r.ok)throw new Error('Brevo metadata rejected: HTTP '+r.status);
     return r.json();
   }
+  stage='account-metadata';
   const account=await read('/account');
+  stage='sender-metadata';
   const senders=await read('/senders');
   if(!senders.senders?.some(s=>s.active&&s.email===configuration.TRACEPOINT_FROM_EMAIL))throw new Error('Live sender is not verified');
   if(typeof account.email!=='string'||!account.email.includes('@'))throw new Error('Account-owner recipient unavailable');
+  if(prerequisitesOnly){console.log(JSON.stringify({brevoPrerequisites:'verified',taskRevision:task.revision,sender:'verified',recipient:'verified Brevo account owner'}));process.exit(0);}
+  stage='submission';
   const run=randomUUID();
   const provider=createEmailProvider({...secret,...configuration});
   const sent=await provider.send({to:[{email:account.email}],subject:'TracePoint AWS staging delivery check '+run,htmlContent:'<p>This is the authorized TracePoint AWS staging transactional delivery check. No customer data is included.</p>',textContent:'This is the authorized TracePoint AWS staging transactional delivery check. No customer data is included.'});
   if(!sent.messageId)throw new Error('No message ID; do not retry an ambiguous submission');
+  submitted=true;stage='delivery-events';
   console.log(JSON.stringify({run,messageId:sent.messageId,submitted:true,recipient:'verified Brevo account owner',taskRevision:task.revision}));
   const deadline=Date.now()+300000;
   while(Date.now()<deadline){
@@ -40,4 +50,4 @@ try {
     await new Promise(resolve=>setTimeout(resolve,15000));
   }
   throw new Error('Delivery not observed within five minutes; submission was not retried');
-} catch { console.error('Staging delivery verification failed; sensitive details suppressed. Check prerequisites and the printed message ID before any retry.');process.exitCode=1; }
+} catch { console.error(JSON.stringify({brevoDelivery:'failed',stage,submitted,sensitiveDetailsPrinted:false}));process.exitCode=1; }

@@ -20,7 +20,9 @@ test('operations workflow cannot publish or deploy and restricts its OIDC sessio
   'node scripts/validate-staging-operations-request.mjs',
   'node --test scripts/validate-staging-operations-request.test.mjs',
   'node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE',
+  'node scripts/test-staging-brevo-delivery.mjs --prerequisites-only',
   'node scripts/collect-staging-operations-cost.mjs',
  ]);
+ assert.equal(job.steps.find(step=>step.name==='Verify Brevo delivery prerequisites without sending').if,"always() && steps.credentials.outcome == 'success'");
  for(const step of job.steps.filter(step=>step.uses))assert.match(step.uses,/@[0-9a-f]{40}$/);
 });
