@@ -29,3 +29,10 @@ Supabase remains the application authentication provider.
 
 Weighted readiness remains **66.50%**. Disabled, locally validated composition
 does not earn production authentication migration credit.
+
+The later broad Windows run exposed the embedded PostgreSQL library's immediate
+directory-deletion race in this fixture and the identity-mapping fixture. Both
+harnesses now stop the process, validate their exact temporary paths, retry file
+locks and verify directory absence themselves. Both leftovers were removed and
+verified absent. The subsequent full application run passed **224/224** tests;
+the script suite passed **66/66**, and TypeScript/changed-file lint passed.

@@ -20,14 +20,14 @@ cache.addJwks(issuer+'/.well-known/jwks.json',{keys:[{...publicKey.export({forma
 let server:EmbeddedPostgres,pool:pg.Pool,directory:string;
 before(async()=>{
  directory=await mkdtemp(path.join(tmpdir(),'tracepoint-cognito-compose-'));const port=await localPostgresPort();
- server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'synthetic-local-only',port,persistent:false,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});
+ server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'synthetic-local-only',port,persistent:true,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});
  await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'synthetic-local-only',database:'postgres'});
  await pool.query('create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key)');
  for(const file of ['202609050006_authentication_identity_links.sql','202609050010_authentication_session_state.sql','202609050011_authentication_refresh_state.sql'])await pool.query(await readFile('supabase/migrations/'+file,'utf8'));
 });
 after(async()=>{
  await pool?.end();await server?.stop();
- if(directory){const resolved=path.resolve(directory);assert.ok(resolved.startsWith(path.resolve(tmpdir())+path.sep));assert.ok(path.basename(resolved).startsWith('tracepoint-cognito-compose-'));await rm(resolved,{recursive:true,force:true});await assert.rejects(access(resolved));}
+ if(directory){const resolved=path.resolve(directory);assert.ok(resolved.startsWith(path.resolve(tmpdir())+path.sep));assert.ok(path.basename(resolved).startsWith('tracepoint-cognito-compose-'));await rm(resolved,{recursive:true,force:true,maxRetries:10,retryDelay:100});await assert.rejects(access(resolved));}
 });
 async function fixture(){
  const userId=randomUUID(),subject=randomUUID(),authTime=Math.floor(Date.now()/1000)-60;
