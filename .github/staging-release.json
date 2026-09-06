@@ -3,7 +3,7 @@
   "account": "559054714699",
   "region": "us-east-1",
   "action": "publish-and-deploy",
-  "reviewedCommit": "abb85fa27a35e919126693da75fd4714d1358e9b",
+  "reviewedCommit": "cdfe88302f30467142de1cfbc2b6f256ec54be51",
   "rollbackPriorTaskArn": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:18",
-  "reason": "Publish the 73-migration reconciled hotfix with guarded teardown repair and mandatory live Brevo delivery; rehearse revision 18 rollback and restore"
+  "reason": "Publish reconciled hotfix with saved range-evidence protection, corrected acceptance contracts, and mandatory Brevo delivery; restore via revision 18"
 }
