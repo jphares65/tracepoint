@@ -2,6 +2,6 @@
   "action": "collect-read-only-evidence",
   "account": "559054714699",
   "region": "us-east-1",
-  "reviewedCommit": "2f9229157dc46fb98e7b2a3c26f21ef81260d7a0",
+  "reviewedCommit": "b3fd26d707c9ebe0b3996eab4c07eb38ab86dc6d",
   "imageCommit": "af8304f40bad8ccd7336b35cacd026a89be5149a"
 }
