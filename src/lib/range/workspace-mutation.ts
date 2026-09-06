@@ -96,6 +96,22 @@ function finalizedHistoryChanged(existing: WorkspaceRecord, next: WorkspaceRecor
   });
 }
 
+function historicalEvidenceRemoved(existing: WorkspaceRecord, next: WorkspaceRecord) {
+  return [
+    ["results", "drill_run_results"],
+    ["malfunctions", "firearm_malfunctions"],
+  ].some(([camel, snake]) => {
+    const before = collection(existing, camel, snake);
+    const after = collection(next, camel, snake);
+    return before.some((item) => {
+      const id = text(item.id);
+      return !after.some((candidate) => id
+        ? text(candidate.id) === id
+        : same(candidate, item));
+    });
+  });
+}
+
 export function authorizeRangeWorkspaceMutation(input: {
   existingWorkspace: unknown;
   nextWorkspace: unknown;
@@ -116,6 +132,9 @@ export function authorizeRangeWorkspaceMutation(input: {
   }
   if (finalizedHistoryChanged(existing, next)) {
     return { ok: false, status: 409, error: "Completed, locked, archived, or finalized range records cannot be changed." };
+  }
+  if (historicalEvidenceRemoved(existing, next)) {
+    return { ok: false, status: 409, error: "Saved scores and malfunction history cannot be removed from the range workspace." };
   }
 
   if (!canManage) {

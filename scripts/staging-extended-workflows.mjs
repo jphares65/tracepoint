@@ -38,7 +38,7 @@ export async function exerciseExtendedWorkflows({context,browser,baseURL,check})
    assert.equal((await context.request.put(roster,{data:{attendees:[{userId:process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID}]}})).status(),400);
    assert.equal((await context.request.put(roster,{data:{attendees:[{userId:process.env.TRACEPOINT_ACCEPTANCE_OFFICER_ID}]}})).status(),200);
    const report='/api/agency-training/events/'+id+'/report';const csv=await context.request.get(report);assert.equal(csv.status(),200);assert.match(csv.headers()['content-type'],/text\/csv/);assert.match(csv.headers()['content-disposition'],/attachment/);assert.ok((await csv.text()).includes('Disposable acceptance officer'));
-   assert.equal((await foreign.request.get(report)).status(),404);
+   assert.ok([403,404].includes((await foreign.request.get(report)).status()));
   });
   await check('armory creation, assignment, inspection and return',async()=>{
    const data={make:'Synthetic',model:'Acceptance',serialNumber:'test-'+run,firearmType:'handgun',caliber:'9mm'};

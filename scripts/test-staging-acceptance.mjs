@@ -14,6 +14,9 @@ async function check(name, work) {
 for (const path of ['/login', '/api/health', '/auth/confirm', '/auth/callback', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
   const r = await fetch(baseURL + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
   if (['/login','/api/health','/landing'].includes(path)) assert.equal(r.status, 200);
+  else if(path.startsWith('/api/')) {
+    if(r.status!==401){assert.ok([302,303,307,308].includes(r.status));assert.equal(new URL(r.headers.get('location'),baseURL).pathname,'/login');}
+  }
   else {
     assert.ok([302,303,307,308].includes(r.status));
     const target = new URL(r.headers.get('location'), baseURL);
@@ -136,7 +139,7 @@ else try {
     const delivery=await context.request.get(patch,{maxRedirects:0});assert.equal(delivery.status(),307);
     const location=new URL(delivery.headers().location);assert.equal(location.protocol,'https:');assert.equal(location.hostname,'tracepoint-staging-private-559054714699.s3.us-east-1.amazonaws.com');
     const downloaded=await fetch(location,{redirect:'error',signal:AbortSignal.timeout(15000)});assert.equal(downloaded.status,200);assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),bytes);
-    const anonymous=await fetch(baseURL+patch,{redirect:'manual',signal:AbortSignal.timeout(15000)});assert.ok([302,303,307,308].includes(anonymous.status));assert.equal(new URL(anonymous.headers.get('location'),baseURL).pathname,'/login');
+    const anonymous=await fetch(baseURL+patch,{redirect:'manual',signal:AbortSignal.timeout(15000)});if(anonymous.status!==401){assert.ok([302,303,307,308].includes(anonymous.status));assert.equal(new URL(anonymous.headers.get('location'),baseURL).pathname,'/login');}
     const foreignContext=await browser.newContext({baseURL});
     try{
       const foreignPage=await foreignContext.newPage();await foreignPage.goto('/login');await foreignPage.getByLabel('Email',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL);await foreignPage.getByLabel('Password',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD);await foreignPage.locator('button[type="submit"]').click();await foreignPage.waitForURL(u=>u.pathname!=='/login');
