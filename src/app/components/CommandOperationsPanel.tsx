@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { AnalyticsDashboardConfiguration } from "@/lib/tracepoint/analytics-dashboard-config";
+
 type AttentionItem = {
   id: string;
   title: string;
@@ -71,11 +73,25 @@ function formatDate(value: string) {
       }).format(date);
 }
 
-export default function CommandOperationsPanel() {
+export default function CommandOperationsPanel({
+  configuration,
+  agencyTrainingEnabled,
+  fleetEnabled,
+}: {
+  configuration: AnalyticsDashboardConfiguration;
+  agencyTrainingEnabled: boolean;
+  fleetEnabled: boolean;
+}) {
   const [data, setData] = useState<OperationsPayload | null>(null);
   const [error, setError] = useState("");
+  const showAgencyTraining = agencyTrainingEnabled &&
+    configuration.command_dashboard_cards.agency_training;
+  const showFleet = fleetEnabled &&
+    configuration.command_dashboard_cards.fleet_readiness;
 
   useEffect(() => {
+    if (!showAgencyTraining && !showFleet) return;
+
     let active = true;
     void fetch("/api/command-dashboard/operations", { cache: "no-store" })
       .then(async (response) => {
@@ -103,7 +119,9 @@ export default function CommandOperationsPanel() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [showAgencyTraining, showFleet]);
+
+  if (!showAgencyTraining && !showFleet) return null;
 
   if (error) {
     return (
@@ -121,14 +139,19 @@ export default function CommandOperationsPanel() {
     );
   }
 
+  const agencyTrainingVisible = showAgencyTraining && data.agencyTraining.available;
+  const fleetVisible = showFleet && data.fleet.available;
   const attention = [
-    ...data.agencyTraining.attention,
-    ...data.fleet.attentionItems,
-  ].slice(0, 8);
+    ...(agencyTrainingVisible ? data.agencyTraining.attention : []),
+    ...(fleetVisible ? data.fleet.attentionItems : []),
+  ].slice(0, configuration.command_operations_attention_item_limit);
+
+  if (!agencyTrainingVisible && !fleetVisible) return null;
 
   return (
     <section className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className={`grid gap-4 ${agencyTrainingVisible && fleetVisible ? "xl:grid-cols-2" : "grid-cols-1"}`}>
+        {agencyTrainingVisible ? (
         <Link
           href="/agency-training"
           className="group rounded-3xl border border-blue-500/20 bg-slate-900 p-5 transition hover:border-blue-500/45"
@@ -161,7 +184,9 @@ export default function CommandOperationsPanel() {
             ))}
           </div>
         </Link>
+        ) : null}
 
+        {fleetVisible ? (
         <Link
           href="/fleet-management"
           className="group rounded-3xl border border-violet-500/20 bg-slate-900 p-5 transition hover:border-violet-500/45"
@@ -194,10 +219,12 @@ export default function CommandOperationsPanel() {
             ))}
           </div>
         </Link>
+        ) : null}
       </div>
 
-      {(data.agencyTraining.upcoming.length > 0 || attention.length > 0) && (
-        <div className="grid gap-4 xl:grid-cols-2">
+      {((agencyTrainingVisible && data.agencyTraining.upcoming.length > 0) || attention.length > 0) && (
+        <div className={`grid gap-4 ${agencyTrainingVisible && attention.length > 0 ? "xl:grid-cols-2" : "grid-cols-1"}`}>
+          {agencyTrainingVisible ? (
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center gap-2">
               <CalendarDays size={16} className="text-blue-400" />
@@ -205,7 +232,7 @@ export default function CommandOperationsPanel() {
             </div>
             <div className="mt-4 space-y-2">
               {data.agencyTraining.upcoming.length === 0 ? (
-                <p className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 text-xs text-slate-500">No training is scheduled in the next 30 days.</p>
+                <p className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 text-xs text-slate-500">No training is scheduled in the next {configuration.command_training_upcoming_window_days} days.</p>
               ) : data.agencyTraining.upcoming.map((event) => (
                 <Link key={event.id} href="/agency-training" className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/40 p-3 hover:border-blue-500/40">
                   <div><p className="text-xs font-bold text-white">{event.title}</p><p className="mt-1 text-[10px] text-slate-500">{formatDate(event.startsAt)} / {event.attendeeCount} assigned</p></div>
@@ -214,7 +241,9 @@ export default function CommandOperationsPanel() {
               ))}
             </div>
           </div>
+          ) : null}
 
+          {attention.length > 0 ? (
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center gap-2">
               <AlertTriangle size={16} className="text-amber-400" />
@@ -231,6 +260,7 @@ export default function CommandOperationsPanel() {
               ))}
             </div>
           </div>
+          ) : null}
         </div>
       )}
     </section>

@@ -435,7 +435,7 @@ function EmptyPanel({ message }: { message: string }) {
 }
 
 export default function DashboardPage() {
-  const { enabledFeatures } = useTracePointAccess();
+  const { enabledFeatures, hasAnyPermission } = useTracePointAccess();
   const featureSet = useMemo(
     () => new Set(enabledFeatures),
     [enabledFeatures],
@@ -447,6 +447,13 @@ export default function DashboardPage() {
   const hasRangeTraining = featureSet.has("range_training");
   const hasFirearms = featureSet.has("firearms");
   const hasAnalytics = featureSet.has("analytics");
+  const hasFleet = hasAnyPermission([
+    "view_fleet",
+    "manage_fleet",
+    "perform_fleet_inspections",
+    "manage_fleet_maintenance",
+    "manage_fleet_rules",
+  ]);
 
   const [personnel, setPersonnel] = useState<PilotPersonnel[]>([]);
   const [firearms, setFirearms] = useState<LiveFirearm[]>([]);
@@ -576,7 +583,7 @@ const [loading, setLoading] = useState(true);
   const upcomingRangeDays = [...activeRangeDays]
     .filter((day) => getDateValue(day.date) >= getTodayValue())
     .sort((a, b) => getDateValue(a.date) - getDateValue(b.date))
-    .slice(0, 4);
+    .slice(0, analyticsDashboard.upcoming_range_days_item_limit);
 
   const incompletePackets = activeRangeDays.filter(
     (day) =>
@@ -853,7 +860,11 @@ const [loading, setLoading] = useState(true);
           </div>
         )}
 
-        <CommandOperationsPanel />
+        <CommandOperationsPanel
+          configuration={analyticsDashboard}
+          agencyTrainingEnabled={hasRangeTraining}
+          fleetEnabled={hasFleet}
+        />
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           {hasQualifications &&
@@ -868,7 +879,8 @@ const [loading, setLoading] = useState(true);
             />
           )}
 
-          {hasCertifications && (
+          {hasCertifications &&
+            analyticsDashboard.command_dashboard_cards.certification_readiness && (
             <PulseCard
               title="Certification Readiness"
               value={
@@ -893,7 +905,8 @@ const [loading, setLoading] = useState(true);
             />
           )}
 
-          {hasEquipment && (
+          {hasEquipment &&
+            analyticsDashboard.command_dashboard_cards.equipment_readiness && (
             <PulseCard
               title="Equipment Readiness"
               value={
@@ -955,7 +968,8 @@ const [loading, setLoading] = useState(true);
             </>
           )}
 
-          {hasFirearms && (
+          {hasFirearms &&
+            analyticsDashboard.command_dashboard_cards.firearm_reliability && (
             <PulseCard
               title="Firearm Reliability"
               value={loading ? "—" : firearmAlerts.length}

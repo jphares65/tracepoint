@@ -73,3 +73,25 @@ test("normalizes configurable thresholds to safe supported ranges", () => {
     DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.trend_change_threshold,
   );
 });
+
+test("normalizes command presentation windows and list limits while preserving defaults", () => {
+  const normalized = normalizeAnalyticsDashboardConfiguration({
+    command_training_attention_window_days: 0,
+    command_training_upcoming_window_days: 45.4,
+    command_fleet_attention_window_days: 999,
+    command_training_upcoming_item_limit: 2,
+    command_training_attention_item_limit: 30,
+    command_fleet_attention_item_limit: "invalid",
+    command_operations_attention_item_limit: 6.6,
+    upcoming_range_days_item_limit: 12,
+  });
+
+  assert.equal(normalized.command_training_attention_window_days, 1);
+  assert.equal(normalized.command_training_upcoming_window_days, 45);
+  assert.equal(normalized.command_fleet_attention_window_days, 365);
+  assert.equal(normalized.command_training_upcoming_item_limit, 2);
+  assert.equal(normalized.command_training_attention_item_limit, 25);
+  assert.equal(normalized.command_fleet_attention_item_limit, 8);
+  assert.equal(normalized.command_operations_attention_item_limit, 7);
+  assert.equal(normalized.upcoming_range_days_item_limit, 12);
+});

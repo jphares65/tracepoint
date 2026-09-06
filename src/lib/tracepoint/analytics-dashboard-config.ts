@@ -1,8 +1,13 @@
 export type CommandDashboardCardKey =
   | "qualification_readiness"
+  | "certification_readiness"
+  | "equipment_readiness"
   | "range_readiness"
   | "records_health"
-  | "performance_signal";
+  | "performance_signal"
+  | "firearm_reliability"
+  | "agency_training"
+  | "fleet_readiness";
 
 export type CommandDashboardSectionKey =
   | "critical_attention"
@@ -31,14 +36,27 @@ export type AnalyticsDashboardConfiguration = {
   trend_change_threshold: number;
   repeated_deficiency_count: number;
   command_attention_item_limit: number;
+  command_training_attention_window_days: number;
+  command_training_upcoming_window_days: number;
+  command_fleet_attention_window_days: number;
+  command_training_upcoming_item_limit: number;
+  command_training_attention_item_limit: number;
+  command_fleet_attention_item_limit: number;
+  command_operations_attention_item_limit: number;
+  upcoming_range_days_item_limit: number;
 };
 
 export const DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION: AnalyticsDashboardConfiguration = {
   command_dashboard_cards: {
     qualification_readiness: true,
+    certification_readiness: true,
+    equipment_readiness: true,
     range_readiness: true,
     records_health: true,
     performance_signal: true,
+    firearm_reliability: true,
+    agency_training: true,
+    fleet_readiness: true,
   },
   command_dashboard_sections: {
     critical_attention: true,
@@ -62,6 +80,14 @@ export const DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION: AnalyticsDashboardConfig
   trend_change_threshold: 1,
   repeated_deficiency_count: 2,
   command_attention_item_limit: 8,
+  command_training_attention_window_days: 7,
+  command_training_upcoming_window_days: 30,
+  command_fleet_attention_window_days: 30,
+  command_training_upcoming_item_limit: 5,
+  command_training_attention_item_limit: 5,
+  command_fleet_attention_item_limit: 8,
+  command_operations_attention_item_limit: 8,
+  upcoming_range_days_item_limit: 4,
 };
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -133,6 +159,54 @@ export function normalizeAnalyticsDashboardConfiguration(
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_attention_item_limit,
       1,
       25,
+    ),
+    command_training_attention_window_days: integerWithin(
+      candidate.command_training_attention_window_days,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_training_attention_window_days,
+      1,
+      90,
+    ),
+    command_training_upcoming_window_days: integerWithin(
+      candidate.command_training_upcoming_window_days,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_training_upcoming_window_days,
+      1,
+      365,
+    ),
+    command_fleet_attention_window_days: integerWithin(
+      candidate.command_fleet_attention_window_days,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_fleet_attention_window_days,
+      1,
+      365,
+    ),
+    command_training_upcoming_item_limit: integerWithin(
+      candidate.command_training_upcoming_item_limit,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_training_upcoming_item_limit,
+      1,
+      25,
+    ),
+    command_training_attention_item_limit: integerWithin(
+      candidate.command_training_attention_item_limit,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_training_attention_item_limit,
+      1,
+      25,
+    ),
+    command_fleet_attention_item_limit: integerWithin(
+      candidate.command_fleet_attention_item_limit,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_fleet_attention_item_limit,
+      1,
+      25,
+    ),
+    command_operations_attention_item_limit: integerWithin(
+      candidate.command_operations_attention_item_limit,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_operations_attention_item_limit,
+      1,
+      25,
+    ),
+    upcoming_range_days_item_limit: integerWithin(
+      candidate.upcoming_range_days_item_limit,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.upcoming_range_days_item_limit,
+      1,
+      20,
     ),
   };
 }

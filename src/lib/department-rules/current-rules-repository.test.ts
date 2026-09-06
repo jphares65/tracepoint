@@ -6,7 +6,7 @@ import { createCurrentRulesRepository, CURRENT_RULES_FIELDS, CurrentRulesAuthori
 function client(result: { data: CurrentRulesRow | null; error: { message: string } | null }, calls: string[]): CurrentRulesSupabaseClient { return { from(table) { calls.push(`from:${table}`); return { select(fields) { calls.push(`select:${fields}`); return { eq(column, value) { calls.push(`eq:${column}:${value}`); return { maybeSingle() { calls.push("maybeSingle"); return Promise.resolve(result); } }; } }; } }; } }; }
 
 test("preserves the exact tenant-bound read-only query", async () => { const calls: string[] = []; const repository = new SupabaseCurrentRulesRepository(client({ data: null, error: null }, calls), "department-a"); assert.equal(await repository.getCurrentRules({ departmentId: "department-a" }), null); assert.deepEqual(calls, [`from:department_rules`, `select:${CURRENT_RULES_FIELDS}`, "eq:department_id:department-a", "maybeSingle"]); assert.equal("insert" in repository || "update" in repository || "delete" in repository, false); });
-test("preserves defaults, nulls, and numeric coercion", () => { assert.deepEqual(mapCurrentRules(null), { spring_cycle_start: "04-01", spring_cycle_end: "06-30", fall_cycle_start: "09-01", fall_cycle_end: "11-30", qualification_valid_days: 365, qualification_due_soon_days: 30, inspection_interval_days: 180, battery_check_interval_days: 180, off_duty_renewal_days: 365, analytics_dashboard: DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION }); assert.equal(mapCurrentRules({ spring_cycle_start: null, spring_cycle_end: null, fall_cycle_start: null, fall_cycle_end: null, qualification_valid_days: "400", qualification_due_soon_days: "0", inspection_interval_days: "90", battery_check_interval_days: "0", off_duty_renewal_days: "700" }).qualification_due_soon_days, 0); });
+test("preserves defaults, nulls, and numeric coercion", () => { assert.deepEqual(mapCurrentRules(null), { spring_cycle_start: "04-01", spring_cycle_end: "06-30", fall_cycle_start: "09-01", fall_cycle_end: "11-30", qualification_valid_days: 365, qualification_due_soon_days: 30, inspection_interval_days: 180, battery_check_interval_days: 180, off_duty_renewal_days: 365, required_handgun_qualification_components: ["day", "night"], analytics_dashboard: DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION }); assert.equal(mapCurrentRules({ spring_cycle_start: null, spring_cycle_end: null, fall_cycle_start: null, fall_cycle_end: null, qualification_valid_days: "400", qualification_due_soon_days: "0", inspection_interval_days: "90", battery_check_interval_days: "0", off_duty_renewal_days: "700" }).qualification_due_soon_days, 0); });
 
 test("maps analytics dashboard preferences from the existing range rules contract", () => {
   const mapped = mapCurrentRules({
@@ -30,6 +30,26 @@ test("maps analytics dashboard preferences from the existing range rules contrac
   assert.equal(mapped.analytics_dashboard.command_dashboard_cards.performance_signal, false);
   assert.equal(mapped.analytics_dashboard.command_dashboard_cards.records_health, true);
   assert.equal(mapped.analytics_dashboard.trend_change_threshold, 4);
+});
+
+test("maps agency handgun component requirements from the existing range rules contract", () => {
+  const mapped = mapCurrentRules({
+    spring_cycle_start: null,
+    spring_cycle_end: null,
+    fall_cycle_start: null,
+    fall_cycle_end: null,
+    qualification_valid_days: null,
+    qualification_due_soon_days: null,
+    inspection_interval_days: null,
+    battery_check_interval_days: null,
+    off_duty_renewal_days: null,
+    range_qualification_rules: {
+      require_day_handgun_qualification: true,
+      require_night_handgun_qualification: false,
+    },
+  });
+
+  assert.deepEqual(mapped.required_handgun_qualification_components, ["day"]);
 });
 test("rejects missing and cross-department context before querying", async () => { const calls: string[] = []; assert.throws(() => new SupabaseCurrentRulesRepository(client({ data: null, error: null }, calls), ""), CurrentRulesAuthorizationError); const repository = new SupabaseCurrentRulesRepository(client({ data: null, error: null }, calls), "department-a"); await assert.rejects(repository.getCurrentRules({ departmentId: "department-b" }), CurrentRulesAuthorizationError); assert.deepEqual(calls, []); });
 test("maps provider failure and rejects unsupported providers", async () => { const repository = new SupabaseCurrentRulesRepository(client({ data: null, error: { message: "synthetic internal detail" } }, []), "department-a"); await assert.rejects(repository.getCurrentRules({ departmentId: "department-a" }), (error) => error instanceof CurrentRulesRepositoryError && !error.message.includes("internal")); assert.throws(() => createCurrentRulesRepository(client({ data: null, error: null }, []), "department-a", { TRACEPOINT_DATA_PROVIDER: "aurora" }), CurrentRulesRepositoryConfigurationError); });

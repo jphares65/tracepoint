@@ -10,6 +10,7 @@ import {
 import { createRangeReadRepository } from "@/lib/range/read-repository";
 import {
   evaluateCanonicalQualificationReadiness,
+  type QualificationComponent,
   type QualificationStandardSummary,
 } from "@/lib/tracepoint/qualification-readiness";
 import { TRAINING_ALERTS_FEED_PERMISSIONS } from "@/lib/tracepoint/permissions";
@@ -141,6 +142,7 @@ function buildQualificationTrends(
   qualificationStandards: QualificationStandardSummary[],
   qualificationValidDays: number,
   qualificationDueSoonDays: number,
+  requiredComponents: readonly QualificationComponent[],
   analyticsDashboard: AnalyticsDashboardConfiguration,
 ) {
   return Object.keys(officerLabels).map((officerId) => {
@@ -151,6 +153,7 @@ function buildQualificationTrends(
       qualificationStandards,
       officerId,
       officerUserId: officerId,
+      scope: { requiredComponents },
       qualificationValidDays,
       qualificationDueSoonDays,
     });
@@ -211,13 +214,18 @@ function buildQualificationTrends(
 
     const dayScore = numericValue(latestDay?.score);
     const nightScore = numericValue(latestNight?.score);
-    const coverage = latestDay && latestNight
-      ? "Day + Night"
-      : latestDay
-          ? "Day Only"
-          : latestNight
-            ? "Night Only"
-            : "No Record";
+    const requiredCoverage = requiredComponents.filter((component) =>
+      component === "day" ? Boolean(latestDay) : Boolean(latestNight),
+    );
+    const coverage = requiredComponents.length === 0
+      ? "Not Required"
+      : requiredCoverage.length === requiredComponents.length
+        ? requiredComponents.length === 2
+          ? "Day + Night"
+          : `${requiredComponents[0] === "day" ? "Day" : "Night"} Complete`
+        : requiredCoverage.length === 0
+          ? "No Record"
+          : `${requiredCoverage[0] === "day" ? "Day" : "Night"} Only`;
     const risk = getRiskFromQualificationStatus(status);
 
     let detail = readiness.statusReason;
@@ -564,6 +572,7 @@ export async function GET() {
         qualificationWorkspace.qualificationStandards as QualificationStandardSummary[],
         qualificationRules.qualification_valid_days,
         qualificationRules.qualification_due_soon_days,
+        qualificationRules.required_handgun_qualification_components,
         qualificationRules.analytics_dashboard,
       );
 

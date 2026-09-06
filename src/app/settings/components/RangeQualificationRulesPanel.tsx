@@ -779,9 +779,14 @@ export default function RangeQualificationRulesPanel({
             <div className="mt-2 grid gap-3 lg:grid-cols-2">
               {[
                 ["qualification_readiness", "Qualification readiness", "Show current, due, missing, failed, and overdue qualification status."],
+                ["certification_readiness", "Certification readiness", "Show readiness against required agency certifications."],
+                ["equipment_readiness", "Equipment readiness", "Show readiness against required equipment assignments and inspections."],
                 ["range_readiness", "Range readiness", "Show upcoming range activity and packet readiness."],
                 ["records_health", "Range records", "Show saved range days, roster assignments, and planned drills."],
                 ["performance_signal", "Performance signal", "Show improving and declining qualification or drill trends."],
+                ["firearm_reliability", "Firearm reliability", "Show active firearms and current reliability flags."],
+                ["agency_training", "Agency Training", "Show agency training operations when that module is available."],
+                ["fleet_readiness", "Fleet readiness", "Show fleet operations when that module is available."],
               ].map(([key, title, description]) => (
                 <Toggle
                   key={key}
@@ -916,6 +921,91 @@ export default function RangeQualificationRulesPanel({
               disabled={!canAdminister}
               onChange={(value) => patchAnalyticsDashboard("command_attention_item_limit", value)}
             />
+            <QuantityInput
+              label="Upcoming Range Days limit"
+              description="Maximum number of scheduled range events shown in the Upcoming Range Days section."
+              unit="items"
+              value={rules.analytics_dashboard.upcoming_range_days_item_limit}
+              min={1}
+              max={20}
+              disabled={!canAdminister}
+              onChange={(value) => patchAnalyticsDashboard("upcoming_range_days_item_limit", value)}
+            />
+          </div>
+
+          <div>
+            <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Command operations windows and limits
+            </h5>
+            <div className="mt-2 grid gap-3 lg:grid-cols-3">
+              <QuantityInput
+                label="Training attention window"
+                description="Days ahead used to flag scheduled training that has no roster assignments."
+                value={rules.analytics_dashboard.command_training_attention_window_days}
+                min={1}
+                max={90}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_training_attention_window_days", value)}
+              />
+              <QuantityInput
+                label="Upcoming training window"
+                description="Days ahead included in the upcoming Agency Training list."
+                value={rules.analytics_dashboard.command_training_upcoming_window_days}
+                min={1}
+                max={365}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_training_upcoming_window_days", value)}
+              />
+              <QuantityInput
+                label="Fleet attention window"
+                description="Days ahead used to flag approaching service, inspection, and registration dates."
+                value={rules.analytics_dashboard.command_fleet_attention_window_days}
+                min={1}
+                max={365}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_fleet_attention_window_days", value)}
+              />
+              <QuantityInput
+                label="Upcoming training limit"
+                description="Maximum events shown in the upcoming Agency Training list."
+                unit="items"
+                value={rules.analytics_dashboard.command_training_upcoming_item_limit}
+                min={1}
+                max={25}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_training_upcoming_item_limit", value)}
+              />
+              <QuantityInput
+                label="Training attention limit"
+                description="Maximum Agency Training exceptions available to Command Operations."
+                unit="items"
+                value={rules.analytics_dashboard.command_training_attention_item_limit}
+                min={1}
+                max={25}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_training_attention_item_limit", value)}
+              />
+              <QuantityInput
+                label="Fleet attention limit"
+                description="Maximum Fleet exceptions available to Command Operations."
+                unit="items"
+                value={rules.analytics_dashboard.command_fleet_attention_item_limit}
+                min={1}
+                max={25}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_fleet_attention_item_limit", value)}
+              />
+              <QuantityInput
+                label="Combined operations limit"
+                description="Maximum Training and Fleet exceptions shown together."
+                unit="items"
+                value={rules.analytics_dashboard.command_operations_attention_item_limit}
+                min={1}
+                max={25}
+                disabled={!canAdminister}
+                onChange={(value) => patchAnalyticsDashboard("command_operations_attention_item_limit", value)}
+              />
+            </div>
           </div>
         </div>
 
