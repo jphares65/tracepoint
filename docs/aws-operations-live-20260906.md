@@ -1,5 +1,12 @@
 # Read-only OIDC operations evidence
 
+> Superseded by `aws-final-staging-release-20260906.md` and
+> `aws-operations-488e13fadedad11e35a05d7e59b314e8a135cfb4.json`. The current
+> restored runtime is revision 21 on image `8406719`, with matching digest,
+> completed zero-finding scan, ECS `1/1/0`, one healthy target, six alarms `OK`,
+> zero current-task error matches, and queue counts `0/0`. The historical notes
+> below are retained to preserve the investigation trail for revision 18.
+
 Run 34036686190 (`1791a34`) successfully assumed the restricted staging OIDC role
 and collected evidence at 2026-09-06T13:38Z. It did not deploy or mutate AWS.
 

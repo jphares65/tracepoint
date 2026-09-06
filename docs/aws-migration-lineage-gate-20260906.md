@@ -1,5 +1,13 @@
 # Migration lineage gate before main integration
 
+> Completed by the final reconciled release. Main `d31be2f` was merged at
+> `f721088`; production-applied identifiers were preserved, historical staging
+> collisions became upgrade fixtures, and unique forward migrations
+> `202609060002` through `202609060006` reconcile both histories. Clean bootstrap
+> plus production and staging upgrade paths pass with 73 migrations. See
+> `aws-final-staging-release-20260906.md` for current evidence. The material below
+> records the pre-integration gate and is retained for provenance.
+
 The new comparison reads exact Git migration blobs from origin/main and the isolated AWS HEAD. It reports same-version SQL collisions, branch-only versions, unmatched ledger entries, differing applied-statement hashes and missing applied SQL evidence. File equality uses raw SHA-256 bytes; even comment/line-ending changes remain distinct. Ledger statements use a separately identified JSON-array hash and are never compared as though they were source-file hashes.
 
 Six focused tests pass, including same-version/different-SQL collisions already marked applied on both sides, identical source files with conflicting ledger contents, absent statements, duplicate identifiers and unique forward migrations. Changed-file lint passed. The tool never executes SQL or authorizes deployment.

@@ -1,5 +1,10 @@
 # TracePoint AWS continuation checkpoint - September 6
 
+> Superseded by `aws-final-staging-release-20260906.md`. The final release merges
+> main `d31be2f`, deploys immutable revision 21, completes acceptance and Brevo
+> delivery, rehearses rollback/restore, and records fresh read-only operations.
+> The remainder of this file is the earlier pre-hotfix checkpoint.
+
 **Staging operational; not production cutover-ready; not fully migrated.**
 Continuation score **66.50% -> 66.50%**. Original overnight baseline: 45.55%.
 No credit was added for disabled provider code, documentation or another health
