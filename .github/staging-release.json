@@ -3,7 +3,7 @@
   "account": "559054714699",
   "region": "us-east-1",
   "action": "publish-and-deploy",
-  "reviewedCommit": "f72108877395cf629394aa19f462e053d1dd16ca",
+  "reviewedCommit": "abb85fa27a35e919126693da75fd4714d1358e9b",
   "rollbackPriorTaskArn": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:18",
-  "reason": "Publish the reconciled production hotfix and AWS lineage after 71-migration validation; rehearse revision 18 rollback and restore"
+  "reason": "Publish the 73-migration reconciled hotfix with guarded teardown repair and mandatory live Brevo delivery; rehearse revision 18 rollback and restore"
 }
