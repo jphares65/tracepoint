@@ -39,7 +39,7 @@ const detectorIds = optional(['guardduty', 'list-detectors'], {DetectorIds:[]}).
 const guardDutyDetectors = detectorIds.map((detectorId: string) => ({
   Status: optional(['guardduty', 'get-detector', '--detector-id', detectorId], {}).Status,
 }));
-const securityHubEnabled = Boolean(optional(['securityhub', 'describe-hub'], {}).HubArn);
+const securityHubEnabled = Boolean(optional(['securityhub', 'describe-security-hub-v2'], {}).HubV2Arn);
 const policies = optional(['organizations', 'list-policies-for-target', '--target-id', target.account, '--filter', 'SERVICE_CONTROL_POLICY'], null);
 const budgetResponse = optional(['budgets', 'describe-budgets', '--account-id', target.account, '--max-results', '100'], {Budgets:[]});
 

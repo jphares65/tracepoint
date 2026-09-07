@@ -1,0 +1,103 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyAccountDepartureOrClosure",
+      "Effect": "Deny",
+      "Action": [
+        "organizations:LeaveOrganization",
+        "account:CloseAccount"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyProductionDnsChanges",
+      "Effect": "Deny",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53domains:AssociateDelegationSignerToDomain",
+        "route53domains:DeleteDomain",
+        "route53domains:DisableDomainAutoRenew",
+        "route53domains:DisableDomainTransferLock",
+        "route53domains:DisassociateDelegationSignerFromDomain",
+        "route53domains:EnableDomainAutoRenew",
+        "route53domains:EnableDomainTransferLock",
+        "route53domains:RegisterDomain",
+        "route53domains:RenewDomain",
+        "route53domains:TransferDomain",
+        "route53domains:UpdateDomainContact",
+        "route53domains:UpdateDomainContactPrivacy",
+        "route53domains:UpdateDomainNameservers"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KeepCognitoAndSesDisabled",
+      "Effect": "Deny",
+      "Action": [
+        "cognito-idp:Create*",
+        "cognito-idp:Update*",
+        "cognito-idp:Delete*",
+        "ses:Create*",
+        "ses:Put*",
+        "ses:Send*",
+        "ses:Update*",
+        "ses:Delete*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ProtectSecurityAuditServices",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:StopLogging",
+        "config:DeleteConfigurationRecorder",
+        "config:DeleteDeliveryChannel",
+        "config:StopConfigurationRecorder",
+        "guardduty:DeleteDetector",
+        "guardduty:DisassociateFromAdministratorAccount",
+        "guardduty:DisableOrganizationAdminAccount",
+        "securityhub:DisableSecurityHub",
+        "securityhub:DisassociateFromAdministratorAccount"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyOutsideUsEast1",
+      "Effect": "Deny",
+      "NotAction": [
+        "account:*",
+        "artifact:*",
+        "aws-marketplace:*",
+        "budgets:*",
+        "ce:*",
+        "cloudfront:*",
+        "cur:*",
+        "globalaccelerator:*",
+        "health:*",
+        "iam:*",
+        "networkmanager:*",
+        "organizations:*",
+        "pricing:*",
+        "route53:*",
+        "route53domains:*",
+        "s3:GetAccountPublicAccessBlock",
+        "s3:ListAllMyBuckets",
+        "s3:ListMultiRegionAccessPoints",
+        "savingsplans:*",
+        "shield:*",
+        "sts:*",
+        "support:*",
+        "tag:GetResources",
+        "trustedadvisor:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    }
+  ]
+}
