@@ -6,6 +6,7 @@ import {
   DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
   mergeAnalyticsDashboardConfiguration,
   normalizeAnalyticsDashboardConfiguration,
+  resetAnalyticsDashboardConfiguration,
   reachesRepeatedDeficiencyThreshold,
 } from "./analytics-dashboard-config.ts";
 
@@ -49,6 +50,81 @@ test("accepts known visibility preferences without allowing unknown keys", () =>
   assert.equal(normalized.command_dashboard_cards.range_readiness, true);
   assert.equal(normalized.analytics_sections.drill_trends, false);
   assert.equal("invented_card" in normalized.command_dashboard_cards, false);
+});
+
+test("normalizes saved dashboard card order, sizes, and analytics section order", () => {
+  const normalized = normalizeAnalyticsDashboardConfiguration({
+    command_dashboard_card_order: [
+      "performance_signal",
+      "qualification_readiness",
+      "performance_signal",
+      "invented_card",
+    ],
+    command_dashboard_card_sizes: {
+      performance_signal: "wide",
+      qualification_readiness: "enormous",
+      invented_card: "compact",
+    },
+    analytics_section_order: [
+      "performance_inputs",
+      "qualification_trends",
+      "performance_inputs",
+      "invented_section",
+    ],
+  });
+
+  assert.deepEqual(normalized.command_dashboard_card_order.slice(0, 2), [
+    "performance_signal",
+    "qualification_readiness",
+  ]);
+  assert.equal(new Set(normalized.command_dashboard_card_order).size, 9);
+  assert.equal(normalized.command_dashboard_card_sizes.performance_signal, "wide");
+  assert.equal(normalized.command_dashboard_card_sizes.qualification_readiness, "compact");
+  assert.equal("invented_card" in normalized.command_dashboard_card_sizes, false);
+  assert.deepEqual(normalized.analytics_section_order.slice(0, 2), [
+    "performance_inputs",
+    "qualification_trends",
+  ]);
+  assert.equal(new Set(normalized.analytics_section_order).size, 5);
+});
+
+test("legacy saved documents receive the recommended layout without losing visibility", () => {
+  const normalized = normalizeAnalyticsDashboardConfiguration({
+    command_dashboard_cards: { records_health: false },
+    analytics_sections: { category_trends: false },
+    trend_change_threshold: 4,
+  });
+
+  assert.deepEqual(
+    normalized.command_dashboard_card_order,
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_order,
+  );
+  assert.deepEqual(
+    normalized.analytics_section_order,
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.analytics_section_order,
+  );
+  assert.equal(normalized.command_dashboard_cards.records_health, false);
+  assert.equal(normalized.analytics_sections.category_trends, false);
+  assert.equal(normalized.trend_change_threshold, 4);
+});
+
+test("reset returns an independent recommended configuration", () => {
+  const reset = resetAnalyticsDashboardConfiguration();
+  reset.command_dashboard_card_order.reverse();
+  reset.analytics_section_order.reverse();
+
+  assert.notDeepEqual(
+    reset.command_dashboard_card_order,
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_order,
+  );
+  assert.notDeepEqual(
+    reset.analytics_section_order,
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.analytics_section_order,
+  );
+  assert.equal(
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_cards.qualification_readiness,
+    true,
+  );
 });
 
 test("normalizes configurable thresholds to safe supported ranges", () => {

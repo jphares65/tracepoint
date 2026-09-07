@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -25,6 +25,11 @@ import {
 } from "lucide-react";
 
 import CommandOperationsPanel from "@/app/components/CommandOperationsPanel";
+import {
+  AdvancedSettings,
+  CustomizationBar,
+  useVisualConfigurationEditor,
+} from "@/app/components/VisualCustomization";
 import TracePointShell from "@/app/components/TracePointShell";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
@@ -40,6 +45,8 @@ import {
   DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
   normalizeAnalyticsDashboardConfiguration,
   type AnalyticsDashboardConfiguration,
+  type CommandDashboardCardKey,
+  type CommandDashboardSectionKey,
 } from "@/lib/tracepoint/analytics-dashboard-config";
 
 type PilotPersonnel = {
@@ -80,6 +87,58 @@ type StoredRangeDayWorkspace = {
 type ReadinessStatus = QualificationReadinessStatus;
 
 type Tone = "blue" | "green" | "amber" | "red" | "slate";
+
+const DASHBOARD_CARD_DETAILS: Record<
+  CommandDashboardCardKey,
+  { title: string; description: string }
+> = {
+  qualification_readiness: {
+    title: "Qualification Readiness",
+    description: "Current qualification coverage and exceptions.",
+  },
+  certification_readiness: {
+    title: "Certification Readiness",
+    description: "Required certification coverage across the agency.",
+  },
+  equipment_readiness: {
+    title: "Equipment Readiness",
+    description: "Assignment, expiration, and inspection readiness.",
+  },
+  range_readiness: {
+    title: "Range Readiness",
+    description: "Upcoming activity and packet readiness.",
+  },
+  records_health: {
+    title: "Range Records",
+    description: "Saved range days, rosters, and planned drills.",
+  },
+  performance_signal: {
+    title: "Performance Signal",
+    description: "Improving and declining personnel trends.",
+  },
+  firearm_reliability: {
+    title: "Firearm Reliability",
+    description: "Active weapons and current reliability flags.",
+  },
+  agency_training: {
+    title: "Agency Training",
+    description: "Scheduled training events and roster activity.",
+  },
+  fleet_readiness: {
+    title: "Fleet Readiness",
+    description: "Vehicle availability and attention items.",
+  },
+};
+
+const DASHBOARD_SECTION_DETAILS: Array<{
+  key: CommandDashboardSectionKey;
+  title: string;
+}> = [
+  { key: "critical_attention", title: "Items Requiring Attention" },
+  { key: "qualification_snapshot", title: "Qualification Snapshot" },
+  { key: "module_snapshot", title: "Module Snapshot" },
+  { key: "upcoming_range_days", title: "Upcoming Range Days" },
+];
 
 type OfficerSummary = {
   officerId: string;
@@ -403,7 +462,7 @@ function PulseCard({
   tone: Tone;
 }) {
   return (
-    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+    <div className="h-full rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
@@ -436,7 +495,7 @@ function EmptyPanel({ message }: { message: string }) {
 }
 
 export default function DashboardPage() {
-  const { enabledFeatures, hasAnyPermission, hasPermission } =
+  const { departmentId, enabledFeatures, hasAnyPermission, hasPermission } =
     useTracePointAccess();
   const featureSet = useMemo(
     () => new Set(enabledFeatures),
@@ -506,8 +565,19 @@ export default function DashboardPage() {
       rows: [],
     });
 
-const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [addCardsOpen, setAddCardsOpen] = useState(false);
+  const editor = useVisualConfigurationEditor({
+    configuration: analyticsDashboard,
+    departmentId,
+    canAdminister: canConfigure,
+    editorName: "dashboard",
+    onSaved: setAnalyticsDashboard,
+  });
+  const displayConfiguration = editor.editing
+    ? editor.draft
+    : analyticsDashboard;
 
   useEffect(() => {
     let mounted = true;
@@ -586,7 +656,7 @@ const [loading, setLoading] = useState(true);
   const upcomingRangeDays = [...activeRangeDays]
     .filter((day) => getDateValue(day.date) >= getTodayValue())
     .sort((a, b) => getDateValue(a.date) - getDateValue(b.date))
-    .slice(0, analyticsDashboard.upcoming_range_days_item_limit);
+    .slice(0, displayConfiguration.upcoming_range_days_item_limit);
 
   const incompletePackets = activeRangeDays.filter(
     (day) =>
@@ -789,7 +859,7 @@ const [loading, setLoading] = useState(true);
       });
     }
 
-    return items.slice(0, analyticsDashboard.command_attention_item_limit);
+    return items.slice(0, displayConfiguration.command_attention_item_limit);
   })();
   const qualificationTone: Tone =
     failedOrOverdueCount > 0
@@ -818,6 +888,169 @@ const [loading, setLoading] = useState(true);
         ? "amber"
         : "green";
 
+  const availableCardKeys = displayConfiguration.command_dashboard_card_order.filter(
+    (key) =>
+      (key === "qualification_readiness" && hasQualifications) ||
+      (key === "certification_readiness" && hasCertifications) ||
+      (key === "equipment_readiness" && hasEquipment) ||
+      ((key === "range_readiness" ||
+        key === "records_health" ||
+        key === "performance_signal" ||
+        key === "agency_training") &&
+        hasRangeTraining) ||
+      (key === "firearm_reliability" && hasFirearms) ||
+      (key === "fleet_readiness" && hasFleet),
+  );
+
+  function patchDraft(
+    patch: Partial<AnalyticsDashboardConfiguration>,
+  ) {
+    editor.setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function moveDashboardCard(
+    key: CommandDashboardCardKey,
+    direction: -1 | 1,
+  ) {
+    const visible = displayConfiguration.command_dashboard_card_order.filter(
+      (candidate) =>
+        availableCardKeys.includes(candidate) &&
+        displayConfiguration.command_dashboard_cards[candidate],
+    );
+    const visibleIndex = visible.indexOf(key);
+    const neighbor = visible[visibleIndex + direction];
+    if (!neighbor) return;
+
+    const next = [...displayConfiguration.command_dashboard_card_order];
+    const index = next.indexOf(key);
+    const neighborIndex = next.indexOf(neighbor);
+    [next[index], next[neighborIndex]] = [next[neighborIndex], next[index]];
+    patchDraft({ command_dashboard_card_order: next });
+  }
+
+  const dashboardCards: Partial<
+    Record<CommandDashboardCardKey, ReactNode>
+  > = {
+    ...(hasQualifications
+      ? {
+          qualification_readiness: (
+            <PulseCard
+              title="Qualification Readiness"
+              value={loading ? "—" : `${currentCount}/${personnel.length}`}
+              label="Officers current"
+              detail={`${missingDayCount} missing day/no record · ${missingNightCount} missing night · ${dueSoonCount} due soon · ${failedOrOverdueCount} failed/overdue.`}
+              icon={Shield}
+              tone={qualificationTone}
+            />
+          ),
+        }
+      : {}),
+    ...(hasCertifications
+      ? {
+          certification_readiness: (
+            <PulseCard
+              title="Certification Readiness"
+              value={
+                loading
+                  ? "—"
+                  : certificationReadiness.summary.totalRequiredChecks === 0
+                    ? "—"
+                    : `${certificationReadiness.summary.readinessPercent}%`
+              }
+              label={
+                certificationReadiness.summary.totalRequiredChecks === 0
+                  ? "No requirements configured"
+                  : "Required checks ready"
+              }
+              detail={
+                certificationReadiness.summary.totalRequiredChecks === 0
+                  ? "Configure required certifications to begin agency readiness tracking."
+                  : `${certificationReadiness.summary.dueSoon} due soon · ${certificationReadiness.summary.expired} expired · ${certificationReadiness.summary.missing} missing.`
+              }
+              icon={ShieldCheck}
+              tone={certificationTone}
+            />
+          ),
+        }
+      : {}),
+    ...(hasEquipment
+      ? {
+          equipment_readiness: (
+            <PulseCard
+              title="Equipment Readiness"
+              value={
+                loading
+                  ? "—"
+                  : equipmentReadiness.summary.totalRequiredChecks === 0
+                    ? "—"
+                    : `${equipmentReadiness.summary.readinessPercent}%`
+              }
+              label={
+                equipmentReadiness.summary.totalRequiredChecks === 0
+                  ? "No requirements configured"
+                  : "Required checks ready"
+              }
+              detail={
+                equipmentReadiness.summary.totalRequiredChecks === 0
+                  ? "Configure required equipment to begin agency readiness tracking."
+                  : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
+              }
+              icon={Boxes}
+              tone={equipmentTone}
+            />
+          ),
+        }
+      : {}),
+    ...(hasRangeTraining
+      ? {
+          range_readiness: (
+            <PulseCard
+              title="Range Readiness"
+              value={loading ? "—" : authoritativeRange.upcomingRangeDayCount}
+              label="Upcoming range days"
+              detail={`${authoritativeRange.incompletePacketCount} packet${authoritativeRange.incompletePacketCount === 1 ? "" : "s"} need setup or review.`}
+              icon={CalendarDays}
+              tone={incompletePackets.length > 0 ? "amber" : "green"}
+            />
+          ),
+          records_health: (
+            <PulseCard
+              title="Range Records"
+              value={loading ? "—" : authoritativeRange.totalRangeDays}
+              label="Range days saved"
+              detail={`${authoritativeRange.rosterAssignmentCount} roster assignments · ${authoritativeRange.plannedDrillCount} planned drills.`}
+              icon={FileText}
+              tone={incompletePackets.length > 0 ? "amber" : "green"}
+            />
+          ),
+          performance_signal: (
+            <PulseCard
+              title="Performance Signal"
+              value={loading ? "—" : improvingCount}
+              label="Personnel improving"
+              detail={`${declining.length} declining · ${improvingCount} improving.`}
+              icon={TrendingUp}
+              tone={declining.length > 0 ? "amber" : "blue"}
+            />
+          ),
+        }
+      : {}),
+    ...(hasFirearms
+      ? {
+          firearm_reliability: (
+            <PulseCard
+              title="Firearm Reliability"
+              value={loading ? "—" : firearmAlerts.length}
+              label="Weapons flagged"
+              detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
+              icon={Crosshair}
+              tone={firearmAlerts.length > 0 ? "red" : "green"}
+            />
+          ),
+        }
+      : {}),
+  };
+
 
   return (
     <TracePointShell activePage="Command Dashboard">
@@ -834,14 +1067,15 @@ const [loading, setLoading] = useState(true);
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {canConfigure ? (
-                <Link
-                  href="/settings/command-dashboard-analytics"
+              {canConfigure && !editor.editing ? (
+                <button
+                  type="button"
+                  onClick={editor.begin}
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
                 >
                   <SlidersHorizontal size={14} />
-                  Configure
-                </Link>
+                  Customize Dashboard
+                </button>
               ) : null}
 
               {hasRangeTraining && (
@@ -867,6 +1101,125 @@ const [loading, setLoading] = useState(true);
           </div>
         </header>
 
+        {editor.editing ? (
+          <CustomizationBar
+            title="Build your Command Dashboard"
+            description="Arrange the operational cards your agency needs. Changes appear here immediately and remain private until you save."
+            addLabel="Add Card"
+            addOpen={addCardsOpen}
+            dirty={editor.dirty}
+            saving={editor.saving}
+            notice={editor.notice}
+            onToggleAdd={() => setAddCardsOpen((open) => !open)}
+            onReset={editor.reset}
+            onCancel={editor.cancel}
+            onSave={() => void editor.save()}
+          >
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                Available cards
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {availableCardKeys.map((key) => {
+                  const visible = editor.draft.command_dashboard_cards[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() =>
+                        patchDraft({
+                          command_dashboard_cards: {
+                            ...editor.draft.command_dashboard_cards,
+                            [key]: !visible,
+                          },
+                        })
+                      }
+                      className={`rounded-2xl border p-3 text-left transition ${
+                        visible
+                          ? "border-blue-500/35 bg-blue-500/10"
+                          : "border-slate-800 bg-slate-950/50 hover:border-slate-700"
+                      }`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-100">
+                          {DASHBOARD_CARD_DETAILS[key].title}
+                        </span>
+                        <span className={`text-[10px] font-semibold ${visible ? "text-blue-300" : "text-slate-500"}`}>
+                          {visible ? "Added" : "Add"}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-[10px] leading-4 text-slate-500">
+                        {DASHBOARD_CARD_DETAILS[key].description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Page sections
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {DASHBOARD_SECTION_DETAILS.map((section) => {
+                    const visible = editor.draft.command_dashboard_sections[section.key];
+                    return (
+                      <button
+                        key={section.key}
+                        type="button"
+                        role="switch"
+                        aria-checked={visible}
+                        onClick={() =>
+                          patchDraft({
+                            command_dashboard_sections: {
+                              ...editor.draft.command_dashboard_sections,
+                              [section.key]: !visible,
+                            },
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold transition ${
+                          visible
+                            ? "border-blue-500/35 bg-blue-500/10 text-blue-200"
+                            : "border-slate-700 text-slate-500"
+                        }`}
+                      >
+                        {section.title}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <AdvancedSettings>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      ["command_attention_item_limit", "Attention items", 1, 25],
+                      ["upcoming_range_days_item_limit", "Upcoming range days", 1, 20],
+                    ].map(([key, label, min, max]) => (
+                      <label key={String(key)} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                        <span className="block text-xs font-semibold text-slate-300">{String(label)}</span>
+                        <input
+                          type="number"
+                          min={Number(min)}
+                          max={Number(max)}
+                          value={Number(editor.draft[key as "command_attention_item_limit" | "upcoming_range_days_item_limit"])}
+                          onChange={(event) =>
+                            patchDraft({
+                              [key]: Math.max(Number(min), Math.min(Number(max), Number(event.target.value))),
+                            })
+                          }
+                          className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </AdvancedSettings>
+              </div>
+            </div>
+          </CustomizationBar>
+        ) : null}
+
         {loadError && (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] text-red-200">
             {loadError}
@@ -874,141 +1227,45 @@ const [loading, setLoading] = useState(true);
         )}
 
         <CommandOperationsPanel
-          configuration={analyticsDashboard}
+          configuration={displayConfiguration}
           agencyTrainingEnabled={hasRangeTraining}
           fleetEnabled={hasFleet}
+          cards={dashboardCards}
+          customizing={editor.editing}
+          onHideCard={(key) =>
+            patchDraft({
+              command_dashboard_cards: {
+                ...editor.draft.command_dashboard_cards,
+                [key]: false,
+              },
+            })
+          }
+          onMoveCard={moveDashboardCard}
+          onSizeCard={(key, size) =>
+            patchDraft({
+              command_dashboard_card_sizes: {
+                ...editor.draft.command_dashboard_card_sizes,
+                [key]: size,
+              },
+            })
+          }
         />
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-          {hasQualifications &&
-            analyticsDashboard.command_dashboard_cards.qualification_readiness && (
-            <PulseCard
-              title="Qualification Readiness"
-              value={loading ? "—" : `${currentCount}/${personnel.length}`}
-              label="Officers current"
-              detail={`${missingDayCount} missing day/no record ? ${missingNightCount} missing night ? ${dueSoonCount} due soon ? ${failedOrOverdueCount} failed/overdue.`}
-              icon={Shield}
-              tone={qualificationTone}
-            />
-          )}
-
-          {hasCertifications &&
-            analyticsDashboard.command_dashboard_cards.certification_readiness && (
-            <PulseCard
-              title="Certification Readiness"
-              value={
-                loading
-                  ? "—"
-                  : certificationReadiness.summary.totalRequiredChecks === 0
-                    ? "—"
-                    : `${certificationReadiness.summary.readinessPercent}%`
-              }
-              label={
-                certificationReadiness.summary.totalRequiredChecks === 0
-                  ? "No requirements configured"
-                  : "Required checks ready"
-              }
-              detail={
-                certificationReadiness.summary.totalRequiredChecks === 0
-                  ? "Configure required certifications to begin agency readiness tracking."
-                  : `${certificationReadiness.summary.dueSoon} due soon · ${certificationReadiness.summary.expired} expired · ${certificationReadiness.summary.missing} missing.`
-              }
-              icon={ShieldCheck}
-              tone={certificationTone}
-            />
-          )}
-
-          {hasEquipment &&
-            analyticsDashboard.command_dashboard_cards.equipment_readiness && (
-            <PulseCard
-              title="Equipment Readiness"
-              value={
-                loading
-                  ? "—"
-                  : equipmentReadiness.summary.totalRequiredChecks === 0
-                    ? "—"
-                    : `${equipmentReadiness.summary.readinessPercent}%`
-              }
-              label={
-                equipmentReadiness.summary.totalRequiredChecks === 0
-                  ? "No requirements configured"
-                  : "Required checks ready"
-              }
-              detail={
-                equipmentReadiness.summary.totalRequiredChecks === 0
-                  ? "Configure required equipment to begin agency readiness tracking."
-                  : `${equipmentReadiness.summary.missing} missing · ${equipmentReadiness.summary.expired} expired · ${equipmentReadiness.summary.inspectionOverdue} inspection overdue · ${equipmentReadiness.summary.outOfService} out of service.`
-              }
-              icon={Boxes}
-              tone={equipmentTone}
-            />
-          )}
-
-          {hasRangeTraining && (
-            <>
-              {analyticsDashboard.command_dashboard_cards.range_readiness ? (
-              <PulseCard
-                title="Range Readiness"
-                value={loading ? "—" : authoritativeRange.upcomingRangeDayCount}
-                label="Upcoming range days"
-                detail={`${authoritativeRange.incompletePacketCount} packet${authoritativeRange.incompletePacketCount === 1 ? "" : "s"} need setup or review.`}
-                icon={CalendarDays}
-                tone={incompletePackets.length > 0 ? "amber" : "green"}
-              />
-              ) : null}
-
-              {analyticsDashboard.command_dashboard_cards.records_health ? (
-              <PulseCard
-                title="Range Records"
-                value={loading ? "—" : authoritativeRange.totalRangeDays}
-                label="Range days saved"
-                detail={`${authoritativeRange.rosterAssignmentCount} roster assignments · ${authoritativeRange.plannedDrillCount} planned drills.`}
-                icon={FileText}
-                tone={incompletePackets.length > 0 ? "amber" : "green"}
-              />
-              ) : null}
-
-              {analyticsDashboard.command_dashboard_cards.performance_signal ? (
-              <PulseCard
-                title="Performance Signal"
-                value={loading ? "—" : improvingCount}
-                label="Personnel improving"
-                detail={`${declining.length} declining · ${improvingCount} improving.`}
-                icon={TrendingUp}
-                tone={declining.length > 0 ? "amber" : "blue"}
-              />
-              ) : null}
-            </>
-          )}
-
-          {hasFirearms &&
-            analyticsDashboard.command_dashboard_cards.firearm_reliability && (
-            <PulseCard
-              title="Firearm Reliability"
-              value={loading ? "—" : firearmAlerts.length}
-              label="Weapons flagged"
-              detail={`${firearms.length} active firearm record${firearms.length === 1 ? "" : "s"} loaded.`}
-              icon={Crosshair}
-              tone={firearmAlerts.length > 0 ? "red" : "green"}
-            />
-          )}
-        </section>
-
-        {analyticsDashboard.command_dashboard_sections.critical_attention ||
+        {displayConfiguration.command_dashboard_sections.critical_attention ||
         (hasQualifications &&
-          analyticsDashboard.command_dashboard_sections.qualification_snapshot) ||
-        analyticsDashboard.command_dashboard_sections.module_snapshot ? (
+          displayConfiguration.command_dashboard_sections.qualification_snapshot) ||
+        displayConfiguration.command_dashboard_sections.module_snapshot ? (
         <section
           className={`grid gap-5 ${
-            analyticsDashboard.command_dashboard_sections.critical_attention &&
+            displayConfiguration.command_dashboard_sections.critical_attention &&
             ((hasQualifications &&
-              analyticsDashboard.command_dashboard_sections.qualification_snapshot) ||
-              analyticsDashboard.command_dashboard_sections.module_snapshot)
+              displayConfiguration.command_dashboard_sections.qualification_snapshot) ||
+              displayConfiguration.command_dashboard_sections.module_snapshot)
               ? "xl:grid-cols-[1fr_430px]"
               : "grid-cols-1"
           }`}
         >
-          {analyticsDashboard.command_dashboard_sections.critical_attention ? (
+          {displayConfiguration.command_dashboard_sections.critical_attention ? (
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -1071,11 +1328,11 @@ const [loading, setLoading] = useState(true);
           ) : null}
 
           {(hasQualifications &&
-            analyticsDashboard.command_dashboard_sections.qualification_snapshot) ||
-          analyticsDashboard.command_dashboard_sections.module_snapshot ? (
+            displayConfiguration.command_dashboard_sections.qualification_snapshot) ||
+          displayConfiguration.command_dashboard_sections.module_snapshot ? (
           <div className="space-y-5">
             {hasQualifications &&
-            analyticsDashboard.command_dashboard_sections.qualification_snapshot ? (
+            displayConfiguration.command_dashboard_sections.qualification_snapshot ? (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="text-[17px] font-bold text-white">
                 Qualification Snapshot
@@ -1119,7 +1376,7 @@ const [loading, setLoading] = useState(true);
             </div>
             ) : null}
 
-            {analyticsDashboard.command_dashboard_sections.module_snapshot ? (
+            {displayConfiguration.command_dashboard_sections.module_snapshot ? (
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
               <h2 className="text-[17px] font-bold text-white">
                 Module Snapshot
@@ -1196,7 +1453,7 @@ const [loading, setLoading] = useState(true);
         </section>
         ) : null}
         {hasRangeTraining &&
-        analyticsDashboard.command_dashboard_sections.upcoming_range_days && (
+        displayConfiguration.command_dashboard_sections.upcoming_range_days && (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
