@@ -1,0 +1,47 @@
+{
+  "checkedAtUTC": "2026-09-07T02:43:37.528Z",
+  "profile": "tracepoint-staging",
+  "authentication": "AWS IAM Identity Center temporary session",
+  "callerAccount": "265544358665",
+  "callerRole": "AWSReservedSSO_TracePointMigrationStaging_*",
+  "organizationInventoryAuthorized": true,
+  "organizationFeatureSet": "ALL",
+  "accounts": [
+    {
+      "id": "265544358665",
+      "name": "TracePoint-Management",
+      "state": "ACTIVE",
+      "placement": "Root"
+    },
+    {
+      "id": "559054714699",
+      "name": "TracePoint-Staging",
+      "state": "ACTIVE",
+      "placement": "Root/Workloads/NonProduction"
+    }
+  ],
+  "productionAccount": null,
+  "dedicatedProductionAccountExists": false,
+  "productionOrganizationalUnit": {
+    "id": "ou-9qyd-crf8dgl2",
+    "name": "Production",
+    "parent": "Root/Workloads",
+    "accountCount": 0
+  },
+  "nonProductionOrganizationalUnit": {
+    "id": "ou-9qyd-q4llvsm2",
+    "name": "NonProduction",
+    "accountIds": ["559054714699"]
+  },
+  "serviceControlPolicies": {
+    "available": ["FullAWSAccess"],
+    "attachedTargets": [],
+    "productionGuardrailsValidated": false
+  },
+  "productionRoleAvailable": false,
+  "productionRegionValidated": false,
+  "productionPreflightRun": false,
+  "managementAccountUsedAsRuntime": false,
+  "mutationsPerformed": false,
+  "ownerBoundary": "Authorize creation of a dedicated TracePoint-Production member account with an owner-controlled unique email; place it in Root/Workloads/Production."
+}

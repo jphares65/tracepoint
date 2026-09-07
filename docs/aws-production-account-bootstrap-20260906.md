@@ -1,10 +1,13 @@
 # TracePoint production account bootstrap path
 
-Status: **prepared, not executed**. Local AWS credentials are unavailable. OIDC
-run `34074005467` reconfirmed the staging identity has neither Organizations metadata
-nor account-inventory authority, so production-account existence remains
-indeterminate rather than absent. The
-AWS management account must never host the TracePoint runtime.
+Status: **live inventory complete; dedicated production account absent**. An
+approved IAM Identity Center session for the management-visible
+`tracepoint-staging` profile enumerated the organization without mutation on
+2026-09-07 UTC. The only accounts are `TracePoint-Management` (`265544358665`)
+and `TracePoint-Staging` (`559054714699`). The existing
+`Root/Workloads/Production` OU (`ou-9qyd-crf8dgl2`) is empty; staging is correctly
+under `Root/Workloads/NonProduction`. The AWS management account must never host
+the TracePoint runtime.
 
 ## Account decision and creation
 
@@ -15,13 +18,19 @@ only after an authorized account inventory contains no unique active account
 named for TracePoint production, and reports the exact account ID only when one
 unambiguous candidate exists. It does not assume another role or mutate AWS.
 
-If no account exists, an Organizations owner must create `TracePoint Production`
-with an owner-controlled unique email, wait for `CreateAccountStatus=SUCCEEDED`,
-move it to the approved production-workloads OU, and record its 12-digit account
-ID. This is the only account-creation step and requires owner approval. Do not
-reuse account `265544358665` (management) or `559054714699` (staging).
+The next owner action is singular: authorize creation of a dedicated
+`TracePoint-Production` member account using an owner-controlled unique email
+and placement in the existing `Root/Workloads/Production` OU. The authorized
+execution will wait for `CreateAccountStatus=SUCCEEDED`, move the new account to
+that OU, and record its 12-digit account ID. Do not reuse account `265544358665`
+(management) or `559054714699` (staging).
 
 ## Required account guardrails
+
+Live discovery found only the AWS-managed `FullAWSAccess` SCP and no attached
+SCP targets. Therefore effective production guardrails are not present and
+cannot be credited. Guardrail policy design may be prepared, but attachment to
+the future account/OU is a separate reviewed organization change.
 
 Before CDK bootstrap, the Organizations/security owner must verify effective
 SCPs and centrally owned services: deny leaving the organization; restrict

@@ -1,7 +1,7 @@
 # AWS production-readiness continuation
 
-Status: **technical preparation advanced; production account and cutover remain
-unauthorized/unavailable**. Weighted readiness remains **66.50%**. This work
+Status: **technical preparation advanced; live organization inventory proves the
+dedicated production account is absent**. Weighted readiness remains **66.50%**. This work
 does not repeat or re-credit staging acceptance and does not claim production
 capacity, backup/PITR, account authorization, deployment, certificate, DNS or
 traffic completion.
@@ -86,9 +86,8 @@ alerts in the dedicated account.
   image/scan, production provider probes, production deploy/health/load/quota
   test, production rollback, isolated Supabase database and object recovery,
   production log/alarm/queue baseline, and secret rotation/revocation rehearsal.
-- Account/permission: determine the dedicated production account through an
-  authorized Organizations inventory (latest OIDC run `34074005467`
-  proved the staging role lacks this authority); validate its region/SCPs/security
+- Account/permission: authorize creation of `TracePoint-Production` in the
+  existing empty `Root/Workloads/Production` OU; validate its region/SCPs/security
   services; obtain the exact production role; bootstrap CDK; prepare/request
   the production ACM certificate; configure measured cost evidence.
 - Agency/business approval: account owner and payer, effective guardrails,
