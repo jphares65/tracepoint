@@ -328,3 +328,62 @@ export function AdvancedSettings({
     </details>
   );
 }
+
+export function AdvancedSettingControl({
+  setting,
+  value,
+  onChange,
+}: {
+  setting: {
+    key: string;
+    label: string;
+    description: string;
+    guidance?: string;
+    unit: string;
+    recommended: string;
+    min: number;
+    max: number;
+  };
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label
+      data-advanced-setting-key={setting.key}
+      className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-3"
+    >
+      <span className="flex flex-wrap items-start justify-between gap-2">
+        <span className="text-xs font-semibold text-slate-200">
+          {setting.label}
+        </span>
+        <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-1 text-[9px] font-semibold text-slate-400">
+          Recommended: {setting.recommended}
+        </span>
+      </span>
+      <span className="mt-1.5 block text-[10px] leading-4 text-slate-500">
+        {setting.description}
+      </span>
+      {setting.guidance ? (
+        <span className="mt-2 block border-l-2 border-blue-500/30 pl-2 text-[10px] leading-4 text-slate-400">
+          {setting.guidance}
+        </span>
+      ) : null}
+      <span className="mt-auto flex items-center gap-2 pt-3">
+        <input
+          type="number"
+          aria-label={`${setting.label} in ${setting.unit}`}
+          min={setting.min}
+          max={setting.max}
+          value={value}
+          onChange={(event) => {
+            const parsed = Number(event.target.value);
+            if (!Number.isFinite(parsed)) return;
+            onChange(Math.max(setting.min, Math.min(setting.max, parsed)));
+          }}
+          className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+        />
+        <span className="text-[10px] text-slate-500">{setting.unit}</span>
+      </span>
+    </label>
+  );
+}

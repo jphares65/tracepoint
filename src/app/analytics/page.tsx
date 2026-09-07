@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
+  AdvancedSettingControl,
   AdvancedSettings,
   CustomizationBar,
   ReorderButtons,
@@ -30,6 +31,10 @@ import {
   type AnalyticsMetricKey,
   type AnalyticsSectionKey,
 } from "@/lib/tracepoint/analytics-dashboard-config";
+import {
+  ANALYTICS_ADVANCED_SETTINGS,
+  type AnalyticsAdvancedSettingKey,
+} from "@/lib/tracepoint/dashboard-advanced-settings";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Risk = "Low" | "Medium" | "High";
@@ -49,165 +54,6 @@ const ANALYTICS_SECTION_DETAILS: Record<AnalyticsSectionKey, string> = {
   alert_logic_guide: "Signal Explanation",
   performance_inputs: "Performance Inputs",
 };
-
-type AdvancedSettingKey = keyof Pick<
-  AnalyticsDashboardConfiguration,
-  | "trend_change_threshold"
-  | "repeated_deficiency_count"
-  | "command_attention_item_limit"
-  | "command_training_attention_window_days"
-  | "command_training_upcoming_window_days"
-  | "command_fleet_attention_window_days"
-  | "command_training_upcoming_item_limit"
-  | "command_training_attention_item_limit"
-  | "command_fleet_attention_item_limit"
-  | "command_operations_attention_item_limit"
-  | "upcoming_range_days_item_limit"
->;
-
-type AdvancedSetting = {
-  key: AdvancedSettingKey;
-  label: string;
-  description: string;
-  guidance?: string;
-  unit: "days" | "items" | "points" | "range days";
-  recommended: string;
-  min: number;
-  max: number;
-};
-
-const ADVANCED_SETTING_GROUPS: Array<{
-  title: string;
-  layoutClassName: string;
-  settings: AdvancedSetting[];
-}> = [
-  {
-    title: "Signal sensitivity",
-    layoutClassName: "sm:grid-cols-2",
-    settings: [
-      {
-        key: "trend_change_threshold",
-        label: "Meaningful trend change",
-        description:
-          "Minimum amount a score or performance measure must change before TracePoint labels the trend Improving or Declining. Smaller changes are treated as Stable.",
-        guidance:
-          "Lower values detect smaller changes and create more trend signals. Higher values require a larger change before a trend is identified.",
-        unit: "points",
-        recommended: "1",
-        min: 0,
-        max: 100,
-      },
-      {
-        key: "repeated_deficiency_count",
-        label: "Repeated deficiency",
-        description:
-          "How many separate range days with the same deficiency are needed before TracePoint treats it as a recurring pattern.",
-        guidance:
-          "Lower values flag patterns sooner. Higher values require more repeated evidence before escalation.",
-        unit: "range days",
-        recommended: "2 range days",
-        min: 1,
-        max: 20,
-      },
-    ],
-  },
-  {
-    title: "Display & look-ahead limits",
-    layoutClassName: "sm:grid-cols-2 xl:grid-cols-3",
-    settings: [
-      {
-        key: "command_attention_item_limit",
-        label: "Command attention limit",
-        description:
-          "Maximum number of readiness or performance exceptions shown in the Command Dashboard attention list.",
-        unit: "items",
-        recommended: "8 items",
-        min: 1,
-        max: 25,
-      },
-      {
-        key: "command_training_attention_window_days",
-        label: "Training attention window",
-        description:
-          "How far ahead TracePoint looks for scheduled training that may require command attention.",
-        unit: "days",
-        recommended: "7 days",
-        min: 1,
-        max: 90,
-      },
-      {
-        key: "command_training_upcoming_window_days",
-        label: "Upcoming training window",
-        description:
-          "How many days of future training events are included in the upcoming training view.",
-        unit: "days",
-        recommended: "30 days",
-        min: 1,
-        max: 365,
-      },
-      {
-        key: "command_fleet_attention_window_days",
-        label: "Fleet attention window",
-        description:
-          "How far ahead TracePoint looks for approaching service, inspection, or registration deadlines.",
-        unit: "days",
-        recommended: "30 days",
-        min: 1,
-        max: 365,
-      },
-      {
-        key: "command_training_upcoming_item_limit",
-        label: "Upcoming training limit",
-        description:
-          "Maximum number of upcoming training events shown at one time.",
-        unit: "items",
-        recommended: "5 items",
-        min: 1,
-        max: 25,
-      },
-      {
-        key: "command_training_attention_item_limit",
-        label: "Training attention limit",
-        description:
-          "Maximum number of training-related exceptions shown in Command Operations.",
-        unit: "items",
-        recommended: "5 items",
-        min: 1,
-        max: 25,
-      },
-      {
-        key: "command_fleet_attention_item_limit",
-        label: "Fleet attention limit",
-        description:
-          "Maximum number of fleet-related exceptions shown in Command Operations.",
-        unit: "items",
-        recommended: "8 items",
-        min: 1,
-        max: 25,
-      },
-      {
-        key: "command_operations_attention_item_limit",
-        label: "Combined operations limit",
-        description:
-          "Maximum total number of Training and Fleet exceptions shown together.",
-        unit: "items",
-        recommended: "8 items",
-        min: 1,
-        max: 25,
-      },
-      {
-        key: "upcoming_range_days_item_limit",
-        label: "Upcoming operational event limit",
-        description:
-          "Maximum number of future operational events shown on the Command Dashboard.",
-        unit: "items",
-        recommended: "4 items",
-        min: 1,
-        max: 20,
-      },
-    ],
-  },
-];
 
 type QualificationTrend = {
   officerId: string;
@@ -455,6 +301,13 @@ export default function AnalyticsPage() {
     editor.setDraft((current) => ({ ...current, ...patch }));
   }
 
+  function patchAdvancedSetting(
+    key: AnalyticsAdvancedSettingKey,
+    value: number,
+  ) {
+    editor.setDraft((current) => ({ ...current, [key]: value }));
+  }
+
   const orderedVisibleSections = displayConfiguration.analytics_section_order.filter(
     (key) => displayConfiguration.analytics_sections[key],
   );
@@ -609,62 +462,23 @@ export default function AnalyticsPage() {
                   Advanced Settings affect how TracePoint interprets and summarizes agency data. The recommended defaults are appropriate for most agencies. Adjust them only when your agency wants more or less sensitivity.
                 </p>
 
-                <div className="mt-4 space-y-5">
-                  {ADVANCED_SETTING_GROUPS.map((group) => (
-                    <section key={group.title}>
-                      <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400">
-                        {group.title}
-                      </h3>
-                      <div className={`mt-2 grid gap-2.5 ${group.layoutClassName}`}>
-                        {group.settings.map((setting) => (
-                          <label
-                            key={setting.key}
-                            data-advanced-setting-key={setting.key}
-                            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-3"
-                          >
-                            <span className="flex flex-wrap items-start justify-between gap-2">
-                              <span className="text-xs font-semibold text-slate-200">
-                                {setting.label}
-                              </span>
-                              <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-1 text-[9px] font-semibold text-slate-400">
-                                Recommended: {setting.recommended}
-                              </span>
-                            </span>
-                            <span className="mt-1.5 block text-[10px] leading-4 text-slate-500">
-                              {setting.description}
-                            </span>
-                            {setting.guidance ? (
-                              <span className="mt-2 block border-l-2 border-blue-500/30 pl-2 text-[10px] leading-4 text-slate-400">
-                                {setting.guidance}
-                              </span>
-                            ) : null}
-                            <span className="mt-auto flex items-center gap-2 pt-3">
-                              <input
-                                type="number"
-                                aria-label={`${setting.label} in ${setting.unit}`}
-                                min={setting.min}
-                                max={setting.max}
-                                value={editor.draft[setting.key]}
-                                onChange={(event) =>
-                                  patchDraft({
-                                    [setting.key]: Math.max(
-                                      setting.min,
-                                      Math.min(setting.max, Number(event.target.value)),
-                                    ),
-                                  })
-                                }
-                                className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                              />
-                              <span className="text-[10px] text-slate-500">
-                                {setting.unit}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
+                <section className="mt-4">
+                  <h3 className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400">
+                    Signal sensitivity
+                  </h3>
+                  <div className="mt-2 grid gap-2.5 sm:grid-cols-2">
+                    {ANALYTICS_ADVANCED_SETTINGS.map((setting) => (
+                      <AdvancedSettingControl
+                        key={setting.key}
+                        setting={setting}
+                        value={editor.draft[setting.key]}
+                        onChange={(value) =>
+                          patchAdvancedSetting(setting.key, value)
+                        }
+                      />
+                    ))}
+                  </div>
+                </section>
               </AdvancedSettings>
             </div>
           </CustomizationBar>

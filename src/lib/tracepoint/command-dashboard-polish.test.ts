@@ -6,12 +6,20 @@ import {
   DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
   normalizeAnalyticsDashboardConfiguration,
 } from "./analytics-dashboard-config.ts";
+import {
+  ANALYTICS_ADVANCED_SETTINGS,
+  COMMAND_DASHBOARD_ADVANCED_SETTINGS,
+} from "./dashboard-advanced-settings.ts";
 import { getRoutePermissionRequirement } from "./permissions.ts";
 
-const ADVANCED_SETTING_KEYS = [
+const ANALYTICS_ADVANCED_SETTING_KEYS = [
   "trend_change_threshold",
   "repeated_deficiency_count",
+] as const;
+
+const COMMAND_DASHBOARD_ADVANCED_SETTING_KEYS = [
   "command_attention_item_limit",
+  "upcoming_range_days_item_limit",
   "command_training_attention_window_days",
   "command_training_upcoming_window_days",
   "command_fleet_attention_window_days",
@@ -19,7 +27,6 @@ const ADVANCED_SETTING_KEYS = [
   "command_training_attention_item_limit",
   "command_fleet_attention_item_limit",
   "command_operations_attention_item_limit",
-  "upcoming_range_days_item_limit",
 ] as const;
 
 test("remaining command module cards consume their individual presentation toggles", async () => {
@@ -126,40 +133,28 @@ test("dashboard and analytics expose permission-gated visual builders with secon
   );
 });
 
-test("analytics renders every supported advanced setting without filtering", async () => {
-  const analytics = await readFile("src/app/analytics/page.tsx", "utf8");
-  const definitionsStart = analytics.indexOf("const ADVANCED_SETTING_GROUPS");
-  const definitionsEnd = analytics.indexOf("type QualificationTrend");
-  const advancedSettingsStart = analytics.indexOf("<AdvancedSettings>");
-  const advancedSettingsEnd = analytics.indexOf("</AdvancedSettings>");
-
-  assert.notEqual(definitionsStart, -1);
-  assert.notEqual(definitionsEnd, -1);
-  assert.notEqual(advancedSettingsStart, -1);
-  assert.notEqual(advancedSettingsEnd, -1);
-
-  const definitions = analytics.slice(definitionsStart, definitionsEnd);
-  const renderedAdvancedSettings = analytics.slice(
-    advancedSettingsStart,
-    advancedSettingsEnd,
-  );
-  const renderedKeys = Array.from(
-    definitions.matchAll(/\bkey: "([^"]+)"/g),
-    (match) => match[1],
+test("dashboard renders all nine operational advanced controls", async () => {
+  const [dashboard, visual] = await Promise.all([
+    readFile("src/app/command-dashboard/page.tsx", "utf8"),
+    readFile("src/app/components/VisualCustomization.tsx", "utf8"),
+  ]);
+  const renderedKeys = COMMAND_DASHBOARD_ADVANCED_SETTINGS.map(
+    (setting) => setting.key,
   );
 
-  assert.deepEqual(renderedKeys, [...ADVANCED_SETTING_KEYS]);
-  assert.equal(new Set(renderedKeys).size, ADVANCED_SETTING_KEYS.length);
-  assert.match(renderedAdvancedSettings, /ADVANCED_SETTING_GROUPS\.map/);
-  assert.match(renderedAdvancedSettings, /group\.settings\.map/);
+  assert.deepEqual(renderedKeys, [...COMMAND_DASHBOARD_ADVANCED_SETTING_KEYS]);
+  assert.equal(new Set(renderedKeys).size, 9);
+  assert.match(dashboard, /COMMAND_DASHBOARD_ADVANCED_SETTINGS\.map/);
+  assert.match(dashboard, /<AdvancedSettingControl/);
   assert.match(
-    renderedAdvancedSettings,
-    /data-advanced-setting-key=\{setting\.key\}/,
+    dashboard,
+    /Advanced Settings control how much operational information TracePoint surfaces to command staff\. The recommended defaults are appropriate for most agencies\./,
   );
-  assert.doesNotMatch(renderedAdvancedSettings, /\.filter\(/);
+  assert.match(visual, /data-advanced-setting-key=\{setting\.key\}/);
+  assert.match(visual, /Recommended: \{setting\.recommended\}/);
 
   const normalized = normalizeAnalyticsDashboardConfiguration({});
-  for (const key of ADVANCED_SETTING_KEYS) {
+  for (const key of COMMAND_DASHBOARD_ADVANCED_SETTING_KEYS) {
     assert.equal(
       Object.hasOwn(DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION, key),
       true,
@@ -171,4 +166,54 @@ test("analytics renders every supported advanced setting without filtering", asy
       `${key} is missing after normalization`,
     );
   }
+});
+
+test("dashboard advanced controls include descriptions and recommended metadata", () => {
+  const expectedMetadata = [
+    ["Command attention limit", "Maximum number of readiness or performance exceptions shown in Items Requiring Attention.", "8 items"],
+    ["Upcoming operational event limit", "Maximum number of future operational events shown on the Command Dashboard.", "4 items"],
+    ["Training attention window", "How far ahead TracePoint looks for scheduled training that may require command attention.", "7 days"],
+    ["Upcoming training window", "How many days of future Agency Training events can be considered for Upcoming Operational Events.", "30 days"],
+    ["Fleet attention window", "How far ahead TracePoint looks for approaching service, inspection, or registration deadlines.", "30 days"],
+    ["Upcoming training limit", "Maximum number of upcoming Agency Training events considered for the command view.", "5 items"],
+    ["Training attention limit", "Maximum number of training-related exceptions considered for Items Requiring Attention.", "5 items"],
+    ["Fleet attention limit", "Maximum number of fleet-related exceptions considered for Items Requiring Attention.", "8 items"],
+    ["Combined operations limit", "Maximum total number of Training and Fleet exceptions considered together.", "8 items"],
+  ];
+
+  assert.deepEqual(
+    COMMAND_DASHBOARD_ADVANCED_SETTINGS.map(
+      ({ label, description, recommended }) => [
+        label,
+        description,
+        recommended,
+      ],
+    ),
+    expectedMetadata,
+  );
+  for (const setting of COMMAND_DASHBOARD_ADVANCED_SETTINGS) {
+    assert.ok(setting.description.length > 0);
+    assert.ok(setting.recommended.length > 0);
+    assert.ok(setting.unit.length > 0);
+  }
+});
+
+test("analytics keeps only analytics-specific advanced controls", async () => {
+  const analytics = await readFile("src/app/analytics/page.tsx", "utf8");
+  const analyticsKeys = ANALYTICS_ADVANCED_SETTINGS.map((setting) => setting.key);
+
+  assert.deepEqual(analyticsKeys, [...ANALYTICS_ADVANCED_SETTING_KEYS]);
+  assert.deepEqual(
+    ANALYTICS_ADVANCED_SETTINGS.map(({ label }) => label),
+    ["Meaningful trend change", "Repeated deficiency"],
+  );
+  assert.match(analytics, /ANALYTICS_ADVANCED_SETTINGS\.map/);
+  assert.match(analytics, /<AdvancedSettingControl/);
+  assert.doesNotMatch(analytics, /COMMAND_DASHBOARD_ADVANCED_SETTINGS/);
+  for (const key of COMMAND_DASHBOARD_ADVANCED_SETTING_KEYS) {
+    assert.doesNotMatch(analytics, new RegExp(key));
+  }
+
+  const dashboardKeys = new Set<string>(COMMAND_DASHBOARD_ADVANCED_SETTING_KEYS);
+  assert.equal(analyticsKeys.some((key) => dashboardKeys.has(key)), false);
 });

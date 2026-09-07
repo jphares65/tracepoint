@@ -30,6 +30,7 @@ import CommandOperationsPanel, {
   useCommandOperationsData,
 } from "@/app/components/CommandOperationsPanel";
 import {
+  AdvancedSettingControl,
   AdvancedSettings,
   CustomizationBar,
   ReorderButtons,
@@ -53,6 +54,10 @@ import {
   type CommandDashboardCardKey,
   type CommandDashboardSectionKey,
 } from "@/lib/tracepoint/analytics-dashboard-config";
+import {
+  COMMAND_DASHBOARD_ADVANCED_SETTINGS,
+  type CommandDashboardAdvancedSettingKey,
+} from "@/lib/tracepoint/dashboard-advanced-settings";
 import {
   buildUpcomingOperationalEvents,
   type UpcomingOperationalEvent,
@@ -1147,6 +1152,13 @@ export default function DashboardPage() {
     editor.setDraft((current) => ({ ...current, ...patch }));
   }
 
+  function patchAdvancedSetting(
+    key: CommandDashboardAdvancedSettingKey,
+    value: number,
+  ) {
+    editor.setDraft((current) => ({ ...current, [key]: value }));
+  }
+
   function moveDashboardCard(
     key: CommandDashboardCardKey,
     direction: -1 | 1,
@@ -1652,26 +1664,19 @@ export default function DashboardPage() {
 
               <div className="mt-4">
                 <AdvancedSettings>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {[
-                      ["command_attention_item_limit", "Attention items", 1, 25],
-                      ["upcoming_range_days_item_limit", "Upcoming operational events", 1, 20],
-                    ].map(([key, label, min, max]) => (
-                      <label key={String(key)} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                        <span className="block text-xs font-semibold text-slate-300">{String(label)}</span>
-                        <input
-                          type="number"
-                          min={Number(min)}
-                          max={Number(max)}
-                          value={Number(editor.draft[key as "command_attention_item_limit" | "upcoming_range_days_item_limit"])}
-                          onChange={(event) =>
-                            patchDraft({
-                              [key]: Math.max(Number(min), Math.min(Number(max), Number(event.target.value))),
-                            })
-                          }
-                          className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                        />
-                      </label>
+                  <p className="rounded-xl border border-blue-500/20 bg-blue-500/[0.06] px-3 py-2.5 text-[11px] leading-5 text-slate-400">
+                    Advanced Settings control how much operational information TracePoint surfaces to command staff. The recommended defaults are appropriate for most agencies.
+                  </p>
+                  <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                    {COMMAND_DASHBOARD_ADVANCED_SETTINGS.map((setting) => (
+                      <AdvancedSettingControl
+                        key={setting.key}
+                        setting={setting}
+                        value={editor.draft[setting.key]}
+                        onChange={(value) =>
+                          patchAdvancedSetting(setting.key, value)
+                        }
+                      />
                     ))}
                   </div>
                 </AdvancedSettings>
