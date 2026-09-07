@@ -1,7 +1,7 @@
 # TracePoint production account bootstrap path
 
 Status: **prepared, not executed**. Local AWS credentials are unavailable. OIDC
-run `34071010058` proved the staging identity has neither Organizations metadata
+run `34072001491` reconfirmed the staging identity has neither Organizations metadata
 nor account-inventory authority, so production-account existence remains
 indeterminate rather than absent. The
 AWS management account must never host the TracePoint runtime.
@@ -46,7 +46,23 @@ policy. Create a separate protected GitHub `aws-production` environment with a
 required external reviewer and exact production role variable. Do not copy
 staging secrets, OIDC role trust, account IDs or environment approvals.
 
+Deploy in reversible phases. First deploy network, security, compute and image-
+build foundations without a runtime service. Populate
+`tracepoint/production/application` through the approved secret workflow and
+validate its exact eight-key schema without printing values. Build and scan the
+immutable image. Only then deploy runtime, request controls and alert delivery.
+This ordering prevents a placeholder secret from starting an unhealthy task and
+keeps runtime creation behind the separately reviewed deployment authorization.
+
 ## Live validation sequence
+
+Run the non-mutating preflight with `node --experimental-strip-types
+scripts/validate-production-live-readiness.mts --config <reviewed-target>`. It
+never requests a secret value. Its single pass gate requires the exact
+production identity and region, both Availability Zones, an issued DNS-
+validated certificate with more than 30 days remaining, custom-KMS secret
+metadata, logging CloudTrail, recording Config, enabled GuardDuty and Security
+Hub, visible attached SCPs, and the named USD production budget.
 
 1. Record `aws sts get-caller-identity` for the exact production role and prove
    management/staging/wrong-region identities fail the repository gate.

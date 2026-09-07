@@ -17,7 +17,7 @@ export function operationsEvidence(logs){
     safe.targets=(value.targets??[]).filter(x=>['healthy','unhealthy','initial','draining','unused','unavailable'].includes(x));
     safe.alarms=(value.alarms??[]).filter(x=>/^tracepoint-staging[-A-Za-z0-9]+$/.test(x.name)&&['OK','ALARM','INSUFFICIENT_DATA'].includes(x.state)).map(x=>({name:x.name,state:x.state}));
     safe.public=(value.public??[]).filter(x=>/^\/[A-Za-z0-9/-]*$/.test(x.route)&&Number.isInteger(x.status)).map(x=>({route:x.route,status:x.status,passed:x.passed===true}));
-    safe.logs={};for(const key of ['matchingErrors','filesystemPermissionErrors'])if(Number.isInteger(value.logs?.[key]))safe.logs[key]=value.logs[key];safe.logs.currentTaskOnly=value.logs?.currentTaskOnly===true;
+    safe.logs={};for(const key of ['matchingErrors','recentMatchingErrors','evaluationWindowMinutes','filesystemPermissionErrors'])if(Number.isInteger(value.logs?.[key]))safe.logs[key]=value.logs[key];safe.logs.currentTaskOnly=value.logs?.currentTaskOnly===true;
     safe.notificationQueue={};for(const key of ['failed','staleProcessing'])if(Number.isInteger(value.notificationQueue?.[key]))safe.notificationQueue[key]=value.notificationQueue[key];
     safe.scan={status:value.scan?.status==='COMPLETE'?'COMPLETE':'not complete',findings:{}};
     for(const key of ['CRITICAL','HIGH','MEDIUM','LOW','INFORMATIONAL','UNDEFINED'])if(Number.isInteger(value.scan?.findings?.[key]))safe.scan.findings[key]=value.scan.findings[key];

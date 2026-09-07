@@ -58,9 +58,14 @@ unhealthy targets, request flood, CPU and p99 latency. Queues are encrypted,
 TLS-only, retained for 14 days and include a DLQ. Still required live: named
 human/on-call subscription and alarm-delivery test, production log/queue/zero-
 alarm baseline, centrally owned CloudTrail/Config/GuardDuty/Security Hub, and
-production rollback. The two historical staging unclassified events remain a
-historical log-classification issue; this work neither exposed nor reclassified
-sensitive text.
+production rollback. Read-only run `34072001491` reconfirmed the healthy
+staging stack, revision 21 rollout, one healthy target, all six alarms `OK`,
+empty failed/stale notification queues, matching immutable digest and completed
+zero-finding scan. Three older same-fingerprint log matches occurred at the
+exact time of the earlier controlled invalid-authentication probe; no message
+text was exposed. The following clean probe produced no new match, and the
+one-hour operational window contained zero events. Historical matches remain
+visible in evidence instead of being deleted or silently reclassified.
 
 The deterministic production planning model is $99.23/month baseline and
 $124.55/month at four continuously running tasks. It includes conservative
@@ -76,8 +81,8 @@ alerts in the dedicated account.
   test, production rollback, isolated Supabase database and object recovery,
   production log/alarm/queue baseline, and secret rotation/revocation rehearsal.
 - Account/permission: determine the dedicated production account through an
-  authorized Organizations inventory (OIDC run `34071010058` proved the staging
-  role lacks this authority); validate its region/SCPs/security
+  authorized Organizations inventory (OIDC runs `34071010058` and `34072001491`
+  proved the staging role lacks this authority); validate its region/SCPs/security
   services; obtain the exact production role; bootstrap CDK; prepare/request
   the production ACM certificate; configure measured cost evidence.
 - Agency/business approval: account owner and payer, effective guardrails,

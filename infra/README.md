@@ -119,6 +119,13 @@ and review a real `cdk diff`. Database, identity, Supabase/Brevo migration,
 CloudFront, production deployment, certificate/DNS, human alert subscription,
 account security baseline and live-agency cutover remain deferred.
 
+The production deployment is phased: deploy foundations, populate and validate
+the retained application secret, publish and scan the immutable image, then
+deploy runtime/control/alert stacks. The read-only live account check is
+`node --experimental-strip-types scripts/validate-production-live-readiness.mts
+--config <reviewed-target>` from the repository root; it never retrieves a
+secret value or changes account state.
+
 Run `npm test` in `infra/` to verify lean-network, encryption, retention, ECR,
 IAM, disabled-runtime, provider-pin, task-size, TLS-listener, rollback, request
 controls, alert delivery, and production invariants. `scripts/get-tracepoint-staging-inventory.ps1` performs the matching

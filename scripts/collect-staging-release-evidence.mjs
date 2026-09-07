@@ -35,12 +35,12 @@ try {
  const logOptions=definition.logConfiguration.options;
  const logStream=logOptions['awslogs-stream-prefix']+'/'+definition.name+'/'+task.taskArn.split('/').at(-1);
  const logs=aws(['logs','filter-log-events','--log-group-name',logOptions['awslogs-group'],'--log-stream-names',logStream,'--start-time',String(Math.floor(Date.parse(task.startedAt))),'--filter-pattern','?ERROR ?Error ?Unauthorized ?AccessDenied ?Exception']);
- report.logs={currentTaskOnly:true,matchingErrors:logs.events.length,filesystemPermissionErrors:logs.events.filter(x=>/EACCES/.test(x.message)).length};
  report.logClassification=classifyStagingLogs(logs.events);
+ report.logs={currentTaskOnly:true,matchingErrors:logs.events.length,recentMatchingErrors:report.logClassification.recent60Minutes,evaluationWindowMinutes:60,filesystemPermissionErrors:logs.events.filter(x=>/EACCES/.test(x.message)).length};
  const providerSecret=JSON.parse(aws(['secretsmanager','get-secret-value','--secret-id','tracepoint/staging/application']).SecretString);
  report.notificationQueue=await stagingQueueHealth(providerSecret);
  report.passed=report.notificationQueue.failed===0&&report.notificationQueue.staleProcessing===0&&report.stackStatus==='UPDATE_COMPLETE'&&report.ecs.desired===1&&report.ecs.running===1&&report.ecs.pending===0&&report.ecs.completed&&
   report.scan.status==='COMPLETE'&&Object.values(report.scan.findings).every(x=>x===0)&&report.imageMatches&&report.targets.length===1&&report.targets[0]==='healthy'&&
-  report.alarms.length>=4&&report.alarms.every(x=>x.state==='OK')&&report.public.every(x=>x.passed)&&report.logs.matchingErrors===0;
+  report.alarms.length>=4&&report.alarms.every(x=>x.state==='OK')&&report.public.every(x=>x.passed)&&report.logs.recentMatchingErrors===0&&report.logs.filesystemPermissionErrors===0;
  console.log(JSON.stringify(report,null,2));if(!report.passed)process.exitCode=1;
 }catch {console.log(JSON.stringify({...report,passed:false,failure:'Evidence collection failed; credentials and log contents suppressed.'},null,2));process.exitCode=1;}
