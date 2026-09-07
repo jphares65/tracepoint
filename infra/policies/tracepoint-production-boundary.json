@@ -57,6 +57,8 @@
         "StringEquals": {
           "iam:PassedToService": [
             "cloudformation.amazonaws.com",
+            "cloudtrail.amazonaws.com",
+            "config.amazonaws.com",
             "ecs-tasks.amazonaws.com",
             "codebuild.amazonaws.com",
             "application-autoscaling.amazonaws.com"
@@ -77,6 +79,7 @@
             "guardduty.amazonaws.com",
             "config.amazonaws.com",
             "securityhub.amazonaws.com",
+            "securityhubv2.amazonaws.com",
             "application-autoscaling.amazonaws.com"
           ]
         }

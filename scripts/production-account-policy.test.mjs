@@ -13,8 +13,11 @@ test('production boundary reserves account, DNS, identity-provider and email mut
   const passRole = boundary.Statement.find(statement => statement.Sid === 'AllowPassOnlyTracePointAndCdkRoles');
   assert.ok(passRole.Resource.every(resource => resource.startsWith('arn:aws:iam::193644343389:role/')));
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('cloudformation.amazonaws.com'));
+  assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('cloudtrail.amazonaws.com'));
+  assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('config.amazonaws.com'));
   const serviceLinkedRole = boundary.Statement.find(statement => statement.Sid === 'AllowRequiredServiceLinkedRoles');
   assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('ecs.amazonaws.com'));
+  assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('securityhubv2.amazonaws.com'));
 });
 
 test('production migration role trusts only the exact management SSO role', () => {
@@ -30,7 +33,7 @@ test('production migration role trusts only the exact management SSO role', () =
 
 test('production SCP confines regions and protects explicit owner-controlled gates', () => {
   const text = JSON.stringify(guardrails);
-  for (const action of ['organizations:LeaveOrganization', 'account:CloseAccount', 'route53:ChangeResourceRecordSets', 'cloudtrail:StopLogging', 'guardduty:DeleteDetector', 'securityhub:DisableSecurityHub']) assert.ok(text.includes(action));
+  for (const action of ['organizations:LeaveOrganization', 'account:CloseAccount', 'route53:ChangeResourceRecordSets', 'cloudtrail:StopLogging', 'guardduty:DeleteDetector', 'securityhub:DisableSecurityHub', 'securityhub:DisableSecurityHubV2']) assert.ok(text.includes(action));
   const region = guardrails.Statement.find(statement => statement.Sid === 'DenyOutsideUsEast1');
   assert.equal(region.Condition.StringNotEquals['aws:RequestedRegion'], 'us-east-1');
   assert.ok(region.NotAction.includes('iam:*'));

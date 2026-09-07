@@ -10,7 +10,8 @@ test('production account baseline owns protected audit and security services', (
   const stack = new ProductionAccountBaselineStack(new cdk.App(), 'Baseline', {env, accountId: env.account, terminationProtection: true});
   const template = Template.fromStack(stack);
   template.hasResourceProperties('AWS::CloudTrail::Trail', {EnableLogFileValidation: true, IncludeGlobalServiceEvents: true, IsMultiRegionTrail: true, IsLogging: true});
-  template.hasResourceProperties('AWS::Config::ConfigurationRecorder', {RecordingMode: {RecordingFrequency: 'CONTINUOUS'}, RecordingGroup: {AllSupported: false, IncludeGlobalResourceTypes: false, RecordingStrategy: {UseOnly: 'INCLUSION_BY_RESOURCE_TYPES'}}});
+  template.resourceCountIs('AWS::Config::ConfigurationRecorder', 0);
+  template.resourceCountIs('AWS::Config::DeliveryChannel', 0);
   template.hasResourceProperties('AWS::GuardDuty::Detector', {Enable: true, FindingPublishingFrequency: 'FIFTEEN_MINUTES'});
   template.resourceCountIs('AWS::SecurityHub::HubV2', 1);
   template.hasResourceProperties('AWS::S3::Bucket', {BucketEncryption: Match.anyValue(), PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}, VersioningConfiguration: {Status: 'Enabled'}});

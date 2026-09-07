@@ -2,7 +2,6 @@ import * as cdk from 'aws-cdk-lib';
 import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as ce from 'aws-cdk-lib/aws-ce';
 import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
-import * as config from 'aws-cdk-lib/aws-config';
 import * as guardduty from 'aws-cdk-lib/aws-guardduty';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
@@ -18,35 +17,6 @@ import {Construct} from 'constructs';
 export interface ProductionAccountBaselineStackProps extends cdk.StackProps {
   readonly accountId: string;
 }
-
-const configResourceTypes = [
-  'AWS::CloudFormation::Stack',
-  'AWS::CloudTrail::Trail',
-  'AWS::CodeBuild::Project',
-  'AWS::EC2::EIP',
-  'AWS::EC2::InternetGateway',
-  'AWS::EC2::NetworkAcl',
-  'AWS::EC2::RouteTable',
-  'AWS::EC2::SecurityGroup',
-  'AWS::EC2::Subnet',
-  'AWS::EC2::VPC',
-  'AWS::EC2::VPCEndpoint',
-  'AWS::ECR::Repository',
-  'AWS::ECS::Cluster',
-  'AWS::ECS::Service',
-  'AWS::ECS::TaskDefinition',
-  'AWS::ElasticLoadBalancingV2::Listener',
-  'AWS::ElasticLoadBalancingV2::LoadBalancer',
-  'AWS::ElasticLoadBalancingV2::TargetGroup',
-  'AWS::IAM::Role',
-  'AWS::KMS::Key',
-  'AWS::Logs::LogGroup',
-  'AWS::S3::Bucket',
-  'AWS::SecretsManager::Secret',
-  'AWS::SNS::Topic',
-  'AWS::SQS::Queue',
-  'AWS::WAFv2::WebACL',
-];
 
 export class ProductionAccountBaselineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ProductionAccountBaselineStackProps) {
@@ -68,9 +38,35 @@ export class ProductionAccountBaselineStack extends cdk.Stack {
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    const trailLogGroupArn = cdk.Stack.of(this).formatArn({
+      service: 'logs',
+      resource: 'log-group',
+      resourceName: '/tracepoint/production/account/cloudtrail-primary',
+      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+    });
+    const trailArn = cdk.Stack.of(this).formatArn({
+      service: 'cloudtrail',
+      resource: 'trail',
+      resourceName: 'tracepoint-production-audit-primary',
+    });
+    auditKey.addToResourcePolicy(new iam.PolicyStatement({
+      principals: [new iam.ServicePrincipal(`logs.${this.region}.amazonaws.com`)],
+      actions: ['kms:Encrypt', 'kms:Decrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey*', 'kms:DescribeKey'],
+      resources: ['*'],
+      conditions: {ArnEquals: {'kms:EncryptionContext:aws:logs:arn': trailLogGroupArn}},
+    }));
+    auditKey.addToResourcePolicy(new iam.PolicyStatement({
+      principals: [new iam.ServicePrincipal('cloudtrail.amazonaws.com')],
+      actions: ['kms:GenerateDataKey*', 'kms:DescribeKey'],
+      resources: ['*'],
+      conditions: {
+        StringEquals: {'aws:SourceArn': trailArn},
+        StringLike: {'kms:EncryptionContext:aws:cloudtrail:arn': cdk.Stack.of(this).formatArn({service: 'cloudtrail', region: '*', resource: 'trail', resourceName: '*'})},
+      },
+    }));
 
     const accessLogs = new s3.Bucket(this, 'AuditAccessLogs', {
-      bucketName: `tracepoint-production-audit-access-${props.accountId}`,
+      bucketName: `tracepoint-production-audit-access-primary-${props.accountId}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
@@ -83,7 +79,7 @@ export class ProductionAccountBaselineStack extends cdk.Stack {
     }], true);
 
     const auditBucket = new s3.Bucket(this, 'AuditBucket', {
-      bucketName: `tracepoint-production-audit-${props.accountId}`,
+      bucketName: `tracepoint-production-audit-primary-${props.accountId}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: auditKey,
@@ -94,13 +90,13 @@ export class ProductionAccountBaselineStack extends cdk.Stack {
     });
 
     const trailLogs = new logs.LogGroup(this, 'TrailLogs', {
-      logGroupName: '/tracepoint/production/account/cloudtrail',
+      logGroupName: '/tracepoint/production/account/cloudtrail-primary',
       encryptionKey: auditKey,
       retention: logs.RetentionDays.ONE_YEAR,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    new cloudtrail.Trail(this, 'AuditTrail', {
-      trailName: 'tracepoint-production-audit',
+    const trail = new cloudtrail.Trail(this, 'AuditTrail', {
+      trailName: 'tracepoint-production-audit-primary',
       bucket: auditBucket,
       cloudWatchLogGroup: trailLogs,
       encryptionKey: auditKey,
@@ -137,36 +133,20 @@ export class ProductionAccountBaselineStack extends cdk.Stack {
       reason: 'AWS Config must write configuration objects beneath the exact account-scoped config/AWSLogs prefix; no broader bucket or action wildcard is granted.',
     }], true);
 
-    const recorder = new config.CfnConfigurationRecorder(this, 'ConfigurationRecorder', {
-      name: 'tracepoint-production',
-      roleArn: configRole.roleArn,
-      recordingGroup: {
-        allSupported: false,
-        includeGlobalResourceTypes: false,
-        resourceTypes: configResourceTypes,
-        recordingStrategy: {useOnly: 'INCLUSION_BY_RESOURCE_TYPES'},
-      },
-      recordingMode: {recordingFrequency: 'CONTINUOUS'},
-    });
-    const channel = new config.CfnDeliveryChannel(this, 'ConfigurationDeliveryChannel', {
-      name: 'tracepoint-production',
-      s3BucketName: auditBucket.bucketName,
-      s3KeyPrefix: 'config',
-      configSnapshotDeliveryProperties: {deliveryFrequency: 'TwentyFour_Hours'},
-    });
-    channel.addResourceDependency(recorder);
-
-    new guardduty.CfnDetector(this, 'GuardDutyDetector', {
+    const detector = new guardduty.CfnDetector(this, 'GuardDutyDetector', {
       enable: true,
       findingPublishingFrequency: 'FIFTEEN_MINUTES',
       tags: [{key: 'Application', value: 'TracePoint'}, {key: 'Environment', value: 'production'}],
     });
-    new securityhub.CfnHubV2(this, 'SecurityHub', {
+    const hub = new securityhub.CfnHubV2(this, 'SecurityHub', {
       tags: {Application: 'TracePoint', Environment: 'production'},
     });
+    detector.node.addDependency(trail);
+    hub.node.addDependency(trail);
 
     new cdk.CfnOutput(this, 'AuditBucketName', {value: auditBucket.bucketName});
     new cdk.CfnOutput(this, 'AuditKeyArn', {value: auditKey.keyArn});
+    new cdk.CfnOutput(this, 'ConfigRoleArn', {value: configRole.roleArn});
   }
 }
 

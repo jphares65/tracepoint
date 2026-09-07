@@ -59,6 +59,7 @@
         "guardduty:DisassociateFromAdministratorAccount",
         "guardduty:DisableOrganizationAdminAccount",
         "securityhub:DisableSecurityHub",
+        "securityhub:DisableSecurityHubV2",
         "securityhub:DisassociateFromAdministratorAccount"
       ],
       "Resource": "*"
