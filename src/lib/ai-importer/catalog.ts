@@ -1,0 +1,88 @@
+import type { ImportDomain, ImportField } from "./types.ts";
+
+export const DOMAIN_LABELS: Record<ImportDomain, string> = {
+  personnel: "Personnel",
+  firearms: "Firearms",
+  certifications: "Certifications",
+  vehicles: "Vehicles",
+  equipment: "Equipment",
+};
+
+export const IMPORT_FIELDS: Record<ImportDomain, ImportField[]> = {
+  personnel: [
+    { key: "employeeNumber", label: "Employee ID", aliases: ["employee id", "employee number", "officer id", "personnel id"] },
+    { key: "badgeNumber", label: "Badge number", required: true, aliases: ["badge", "badge number", "shield", "shield number"] },
+    { key: "fullName", label: "Full name", aliases: ["full name", "name", "officer name", "employee name", "personnel name"] },
+    { key: "firstName", label: "First name", aliases: ["first", "first name", "given name"] },
+    { key: "middleName", label: "Middle name", aliases: ["middle", "middle name", "middle initial"] },
+    { key: "lastName", label: "Last name", aliases: ["last", "last name", "surname", "family name"] },
+    { key: "email", label: "Email", required: true, kind: "email", aliases: ["email", "email address", "work email", "agency email"] },
+    { key: "phone", label: "Phone", aliases: ["phone", "phone number", "mobile", "cell"] },
+    { key: "rankTitle", label: "Rank / title", aliases: ["rank", "rank title", "title", "position"] },
+    { key: "unitName", label: "Unit / assignment", aliases: ["unit", "assignment", "division", "bureau", "team"] },
+    { key: "active", label: "Active status", kind: "boolean", aliases: ["active", "status", "employment status"] },
+  ],
+  firearms: [
+    { key: "serialNumber", label: "Serial number", required: true, aliases: ["serial", "serial number", "serial no", "s n", "weapon serial"] },
+    { key: "assetNumber", label: "Asset number", aliases: ["asset", "asset number", "property number", "inventory number", "firearm id"] },
+    { key: "make", label: "Make / manufacturer", aliases: ["make", "manufacturer", "brand"] },
+    { key: "model", label: "Model", aliases: ["model"] },
+    { key: "caliber", label: "Caliber / gauge", aliases: ["caliber", "calibre", "gauge", "caliber gauge"] },
+    { key: "firearmType", label: "Firearm type", aliases: ["firearm type", "weapon type", "type", "category"] },
+    { key: "conditionStatus", label: "Status", aliases: ["status", "condition", "condition status"] },
+    { key: "assignedPersonnel", label: "Assigned person", aliases: ["assigned officer", "assigned to", "officer", "employee", "assignee", "badge"] },
+    { key: "acquisitionDate", label: "Acquisition date", kind: "date", aliases: ["acquisition date", "purchase date", "acquired", "date acquired"] },
+    { key: "notes", label: "Notes", aliases: ["notes", "comments", "remarks"] },
+  ],
+  certifications: [
+    { key: "personnelIdentifier", label: "Personnel identifier", required: true, aliases: ["employee id", "employee number", "badge", "badge number", "officer", "employee", "personnel", "name"] },
+    { key: "certificationTitle", label: "Certification type / name", required: true, aliases: ["certification", "certification title", "certification type", "credential", "course"] },
+    { key: "credentialNumber", label: "Certification number", aliases: ["credential number", "certification number", "certificate number", "cert number", "license number"] },
+    { key: "issueDate", label: "Issue date", kind: "date", aliases: ["issue date", "issued", "date issued", "effective date"] },
+    { key: "expirationDate", label: "Expiration date", kind: "date", aliases: ["expiration date", "expires", "expiry date", "renewal date"] },
+    { key: "issuingOrganization", label: "Issuing authority", aliases: ["issuing authority", "issuing organization", "issuer", "organization", "agency"] },
+    { key: "notes", label: "Notes", aliases: ["notes", "comments", "remarks"] },
+  ],
+  vehicles: [
+    { key: "unitNumber", label: "Unit number", required: true, aliases: ["unit", "unit number", "vehicle number", "fleet number", "asset number"] },
+    { key: "vin", label: "VIN", aliases: ["vin", "vehicle identification number"] },
+    { key: "licensePlate", label: "License plate", aliases: ["plate", "license plate", "registration plate"] },
+    { key: "year", label: "Year", kind: "integer", aliases: ["year", "model year"] },
+    { key: "make", label: "Make", aliases: ["make", "manufacturer"] },
+    { key: "model", label: "Model", aliases: ["model"] },
+    { key: "vehicleType", label: "Vehicle type", aliases: ["vehicle type", "type", "class"] },
+    { key: "status", label: "Status", aliases: ["status", "vehicle status"] },
+    { key: "currentMileage", label: "Mileage", kind: "integer", aliases: ["mileage", "current mileage", "odometer", "miles"] },
+    { key: "currentHours", label: "Hours", kind: "decimal", aliases: ["hours", "current hours", "engine hours"] },
+    { key: "comments", label: "Comments", aliases: ["comments", "notes", "remarks"] },
+    { key: "mdtSerial", label: "MDT serial", aliases: ["mdt", "mdt serial", "mdt serial number"] },
+    { key: "modemSerial", label: "Modem serial", aliases: ["modem", "modem serial", "modem serial number"] },
+    { key: "mvrSerial", label: "MVR serial", aliases: ["mvr", "mvr serial", "camera serial", "mobile video serial"] },
+    { key: "radarSerial", label: "Radar serial", aliases: ["radar", "radar serial", "radar serial number"] },
+    { key: "radarTuningForkSerial", label: "Radar tuning-fork serial", aliases: ["tuning fork", "tuning fork serial", "radar tuning fork"] },
+    { key: "mdtWarrantyExpiration", label: "MDT warranty expiration", kind: "date", aliases: ["mdt warranty", "mdt warranty expiration"] },
+    { key: "modemWarrantyExpiration", label: "Modem warranty expiration", kind: "date", aliases: ["modem warranty", "modem warranty expiration"] },
+    { key: "mvrWarrantyExpiration", label: "MVR warranty expiration", kind: "date", aliases: ["mvr warranty", "camera warranty expiration"] },
+    { key: "radarWarrantyExpiration", label: "Radar warranty expiration", kind: "date", aliases: ["radar warranty", "radar warranty expiration"] },
+  ],
+  equipment: [
+    { key: "equipmentType", label: "Equipment type", required: true, aliases: ["equipment type", "asset type", "type", "category"] },
+    { key: "assetNumber", label: "Asset number", aliases: ["asset", "asset id", "asset number", "property number", "inventory number"] },
+    { key: "serialNumber", label: "Serial number", aliases: ["serial", "serial number", "serial no", "s n"] },
+    { key: "manufacturer", label: "Make / manufacturer", aliases: ["manufacturer", "make", "brand"] },
+    { key: "model", label: "Model", aliases: ["model"] },
+    { key: "lotNumber", label: "Lot number", aliases: ["lot", "lot number", "batch", "batch number"] },
+    { key: "lifecycleStatus", label: "Status", aliases: ["status", "lifecycle status", "condition"] },
+    { key: "assignedPersonnel", label: "Assigned person", aliases: ["assigned officer", "assigned to", "officer", "employee", "assignee", "badge"] },
+    { key: "assignedLocation", label: "Assigned location", aliases: ["location", "assigned location", "storage location"] },
+    { key: "issueDate", label: "Issue date", kind: "date", aliases: ["issue date", "issued", "date issued"] },
+    { key: "expirationDate", label: "Expiration date", kind: "date", aliases: ["expiration date", "expires", "expiry date", "replacement date"] },
+    { key: "lastInspectionDate", label: "Last inspection date", kind: "date", aliases: ["last inspection", "last inspection date", "inspection date"] },
+    { key: "nextInspectionDate", label: "Next inspection date", kind: "date", aliases: ["next inspection", "next inspection date", "inspection due"] },
+    { key: "notes", label: "Notes", aliases: ["notes", "comments", "remarks"] },
+  ],
+};
+
+export function fieldFor(domain: ImportDomain, key: string) {
+  return IMPORT_FIELDS[domain].find((field) => field.key === key);
+}
