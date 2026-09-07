@@ -1,7 +1,9 @@
 # TracePoint production account bootstrap path
 
-Status: **prepared, not executed**. Local AWS credentials are unavailable and the
-staging identity is not assumed to have Organizations inventory authority. The
+Status: **prepared, not executed**. Local AWS credentials are unavailable. OIDC
+run `34071010058` proved the staging identity has neither Organizations metadata
+nor account-inventory authority, so production-account existence remains
+indeterminate rather than absent. The
 AWS management account must never host the TracePoint runtime.
 
 ## Account decision and creation
@@ -59,4 +61,3 @@ staging secrets, OIDC role trust, account IDs or environment approvals.
 GovCloud remains a separate target account, partition, certificate, bootstrap,
 roles, images and evidence set. Nothing in this path treats commercial-region
 credentials or ARNs as GovCloud deployment authority.
-

@@ -33,9 +33,9 @@ cross-contamination, uses tracked-only source and requires a completed zero-
 finding ECR scan before returning an immutable digest.
 
 A bounded live test reused the staging acceptance concurrency helper: 200
-health requests at concurrency 8 passed at 233 ms p95; 20 invalid-auth requests
-returned no protected data at 73 ms p95; 20 post-failure health requests passed
-at 41 ms p95; HTTP redirected to HTTPS. This validates production-equivalent
+health requests at concurrency 8 passed at 236 ms p95; 20 anonymous protected-
+route requests returned no protected data at 52 ms p95; 20 post-failure health
+requests passed at 43 ms p95; HTTP redirected to HTTPS. This validates production-equivalent
 edge behavior against non-production. It does not validate production account
 capacity, autoscaling or provider quotas, so the corresponding weighted check
 remains incomplete.
@@ -76,7 +76,8 @@ alerts in the dedicated account.
   test, production rollback, isolated Supabase database and object recovery,
   production log/alarm/queue baseline, and secret rotation/revocation rehearsal.
 - Account/permission: determine the dedicated production account through an
-  authorized Organizations inventory; validate its region/SCPs/security
+  authorized Organizations inventory (OIDC run `34071010058` proved the staging
+  role lacks this authority); validate its region/SCPs/security
   services; obtain the exact production role; bootstrap CDK; prepare/request
   the production ACM certificate; configure measured cost evidence.
 - Agency/business approval: account owner and payer, effective guardrails,

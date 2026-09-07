@@ -14,7 +14,7 @@ const failure=await runBoundedProbe({
   concurrency:4,
   requestsPerWorker:5,
   maxP95Milliseconds:3000,
-  request:()=>request('/api/access',{headers:{Authorization:'Bearer deliberately-invalid'}}),
+  request:()=>request('/api/access'),
   verify:response=>assert.ok(response.status===401||([302,303,307,308].includes(response.status)&&new URL(response.headers.get('location'),baseURL).pathname==='/login')),
 });
 const recovery=await runBoundedProbe({

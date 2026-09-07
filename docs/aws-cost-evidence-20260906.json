@@ -1,9 +1,9 @@
 {
   "account": "559054714699",
   "region": "us-east-1",
-  "queriedAtUTC": "2026-09-06T21:40:58.002Z",
-  "source": "aws-operations-488e13fadedad11e35a05d7e59b314e8a135cfb4.json",
-  "budgetActualUSD": 3.539,
+  "queriedAtUTC": "2026-09-07T00:50:07.139Z",
+  "source": "aws-operations-15e705fe934ecf4a242b78ff84fa944ec42ed14d.json",
+  "budgetActualUSD": 4.102,
   "budgetLimitUSD": 75,
   "modeledMonthlyUSD": 68.67,
   "disposableRehearsalReserveUSD": 2,
