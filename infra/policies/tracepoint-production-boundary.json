@@ -60,6 +60,7 @@
             "cloudtrail.amazonaws.com",
             "config.amazonaws.com",
             "vpc-flow-logs.amazonaws.com",
+            "lambda.amazonaws.com",
             "ecs-tasks.amazonaws.com",
             "codebuild.amazonaws.com",
             "application-autoscaling.amazonaws.com"

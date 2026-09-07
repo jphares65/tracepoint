@@ -16,6 +16,7 @@ test('production boundary reserves account, DNS, identity-provider and email mut
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('cloudtrail.amazonaws.com'));
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('config.amazonaws.com'));
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('vpc-flow-logs.amazonaws.com'));
+  assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('lambda.amazonaws.com'));
   const serviceLinkedRole = boundary.Statement.find(statement => statement.Sid === 'AllowRequiredServiceLinkedRoles');
   assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('ecs.amazonaws.com'));
   assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('securityhubv2.amazonaws.com'));
