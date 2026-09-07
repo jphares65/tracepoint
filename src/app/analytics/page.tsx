@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
@@ -9,6 +10,7 @@ import {
   LineChart,
   Moon,
   ShieldAlert,
+  SlidersHorizontal,
   Sun,
   Target,
   TrendingDown,
@@ -16,6 +18,13 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
+import {
+  DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+  normalizeAnalyticsDashboardConfiguration,
+  type AnalyticsDashboardConfiguration,
+  type AnalyticsMetricKey,
+} from "@/lib/tracepoint/analytics-dashboard-config";
+import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Risk = "Low" | "Medium" | "High";
 type Trend = "Baseline" | "Improving" | "Stable" | "Monitor" | "Declining" | "Action Needed";
@@ -68,6 +77,7 @@ type PerformanceSummary = {
   broadCategoryTrends: BroadDrillTrend[];
   hasWorkspaceData: boolean;
   workspaceUpdatedAt?: string | null;
+  configuration: AnalyticsDashboardConfiguration;
 };
 
 const FALLBACK_SUMMARY: PerformanceSummary = {
@@ -81,28 +91,8 @@ const FALLBACK_SUMMARY: PerformanceSummary = {
   drillTrends: [],
   broadCategoryTrends: [],
   hasWorkspaceData: false,
+  configuration: DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
 };
-
-const WATCHLIST = [
-  {
-    title: "Qualification compliance gap",
-    detail:
-      "Separate day and night qualification status should drive compliance alerts and command visibility.",
-    severity: "High",
-  },
-  {
-    title: "Repeated drill deficiency",
-    detail:
-      "Drill trends should generate remedial follow-up when deficiencies repeat across multiple range days.",
-    severity: "Medium",
-  },
-  {
-    title: "Qualification vs drill mismatch",
-    detail:
-      "An officer may be qualification-current but still show declining practical drill performance.",
-    severity: "Medium",
-  },
-];
 
 function getRiskClasses(risk: string) {
   if (risk === "High") {
@@ -155,6 +145,8 @@ function MetricCard({
 }
 
 export default function AnalyticsPage() {
+  const { hasPermission } = useTracePointAccess();
+  const canConfigure = hasPermission("administer_department");
   const [summary, setSummary] =
     useState<PerformanceSummary>(FALLBACK_SUMMARY);
   const [loading, setLoading] = useState(true);
@@ -188,6 +180,9 @@ export default function AnalyticsPage() {
           qualificationTrends: payload.qualificationTrends ?? [],
           drillTrends: payload.drillTrends ?? [],
           broadCategoryTrends: payload.broadCategoryTrends ?? [],
+          configuration: normalizeAnalyticsDashboardConfiguration(
+            payload.configuration,
+          ),
         });
       } catch (error) {
         if (!isMounted) return;
@@ -212,25 +207,29 @@ export default function AnalyticsPage() {
   const overviewMetrics = useMemo(
     () => [
       {
+        id: "qualification_coverage" as AnalyticsMetricKey,
         label: "Qualification Coverage",
         value: summary.metrics.qualificationCoverage,
         detail: "Officers with current day and night records",
         icon: Target,
       },
       {
+        id: "drill_performance" as AnalyticsMetricKey,
         label: "Drill Performance",
         value: summary.metrics.drillPerformance,
         detail: "Average change across comparable drill histories",
         icon: TrendingUp,
       },
       {
+        id: "training_follow_ups" as AnalyticsMetricKey,
         label: "Training Follow-Ups",
         value: summary.metrics.trainingFollowUps,
         detail: "Generated drill-performance concerns",
         icon: AlertTriangle,
       },
       {
-        label: "Officer Watchlist",
+        id: "officer_watchlist" as AnalyticsMetricKey,
+        label: "Personnel Requiring Review",
         value: summary.metrics.officerWatchlist,
         detail: "Officers with qualification or drill-performance risk",
         icon: ShieldAlert,
@@ -238,6 +237,25 @@ export default function AnalyticsPage() {
     ],
     [summary.metrics],
   );
+
+  const visibleOverviewMetrics = overviewMetrics.filter(
+    (metric) => summary.configuration.analytics_metrics[metric.id],
+  );
+  const alertLogicItems = [
+    {
+      title: "Qualification readiness exceptions",
+      detail:
+        "Failed, expired, due-soon, or missing required qualification records generate a signal using the agency's qualification requirements and renewal warning window.",
+    },
+    {
+      title: "Repeated drill deficiency",
+      detail: `A historical drill pattern becomes high priority after ${summary.configuration.repeated_deficiency_count} range-day record${summary.configuration.repeated_deficiency_count === 1 ? "" : "s"} with a failure, observed deficiency, or remediation recommendation. A latest failed or remediation-recommended result is already high priority.`,
+    },
+    {
+      title: "Performance movement",
+      detail: `A comparable result is labeled improving or declining only when movement exceeds ${summary.configuration.trend_change_threshold} point${summary.configuration.trend_change_threshold === 1 ? "" : "s"}; smaller changes remain stable.`,
+    },
+  ];
 
   return (
     <TracePointShell activePage="Analytics">
@@ -256,7 +274,15 @@ export default function AnalyticsPage() {
                 follow-ups, and officers requiring attention.
               </p>
             </div>
-
+            {canConfigure ? (
+              <Link
+                href="/settings/command-dashboard-analytics"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+              >
+                <SlidersHorizontal size={14} />
+                Configure
+              </Link>
+            ) : null}
           </div>
         </header>
 
@@ -267,12 +293,15 @@ export default function AnalyticsPage() {
           </section>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {overviewMetrics.map((metric) => (
-            <MetricCard key={metric.label} {...metric} />
-          ))}
-        </section>
+        {visibleOverviewMetrics.length > 0 ? (
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {visibleOverviewMetrics.map((metric) => (
+              <MetricCard key={metric.id} {...metric} />
+            ))}
+          </section>
+        ) : null}
 
+        {summary.configuration.analytics_sections.qualification_trends ? (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -306,7 +335,8 @@ export default function AnalyticsPage() {
             <div className="divide-y divide-slate-800">
               {summary.qualificationTrends.length === 0 ? (
                 <div className="px-4 py-5 text-[12px] text-slate-500">
-                  No qualification trends are available yet.
+                  No qualification trend rows are available. Add active
+                  personnel and save qualification results to populate this view.
                 </div>
               ) : (
                 summary.qualificationTrends.map((officer) => (
@@ -369,7 +399,9 @@ export default function AnalyticsPage() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {summary.configuration.analytics_sections.drill_trends ? (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -403,7 +435,8 @@ export default function AnalyticsPage() {
             <div className="divide-y divide-slate-800">
               {summary.drillTrends.length === 0 ? (
                 <div className="px-4 py-5 text-[12px] text-slate-500">
-                  No drill-performance trends are available yet.
+                  No drill-performance history is available. Save results for
+                  the same drill on multiple range days to establish a trend.
                 </div>
               ) : (
                 summary.drillTrends.map((officer) => (
@@ -469,8 +502,12 @@ export default function AnalyticsPage() {
             </div>
           </div>
         </section>
+        ) : null}
 
-        <section className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+        {summary.configuration.analytics_sections.category_trends ||
+        summary.configuration.analytics_sections.alert_logic_guide ? (
+        <section className="grid gap-4 xl:grid-cols-2">
+          {summary.configuration.analytics_sections.category_trends ? (
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
               <BarChart3 size={18} className="text-blue-400" />
@@ -484,8 +521,8 @@ export default function AnalyticsPage() {
             <div className="mt-4 space-y-2">
               {summary.broadCategoryTrends.length === 0 ? (
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-[12px] text-slate-500">
-                  Broad drill category trends will populate after drill results
-                  are saved.
+                  No category trend is available yet. Save comparable drill
+                  results on at least two range days to establish direction.
                 </div>
               ) : (
                 summary.broadCategoryTrends.map((trend) => (
@@ -517,33 +554,28 @@ export default function AnalyticsPage() {
               )}
             </div>
           </div>
+          ) : null}
 
+          {summary.configuration.analytics_sections.alert_logic_guide ? (
           <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
             <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
               <ShieldAlert size={18} className="text-amber-300" />
-              Training Watchlist
+              How Analytics Signals Are Interpreted
             </h2>
             <p className="mt-1 text-[11px] leading-5 text-slate-500">
-              Issues that should generate command visibility or range-staff
-              follow-up once analytics are connected to live data.
+              This is an explanation of the configured signal logic, not a
+              separate list of personnel or an operational standard.
             </p>
 
             <div className="mt-4 space-y-2">
-              {WATCHLIST.map((item) => (
+              {alertLogicItems.map((item) => (
                 <div
                   key={item.title}
                   className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-3"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-[13px] font-semibold text-white">
-                      {item.title}
-                    </p>
-                    <span className={getRiskClasses(item.severity)}>
-                      <span className="rounded-full border border-current/30 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide">
-                        {item.severity}
-                      </span>
-                    </span>
-                  </div>
+                  <p className="text-[13px] font-semibold text-white">
+                    {item.title}
+                  </p>
 
                   <p className="mt-2 text-[11px] leading-5 text-slate-400">
                     {item.detail}
@@ -555,20 +587,23 @@ export default function AnalyticsPage() {
             <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3">
               <p className="flex items-center gap-2 text-[12px] font-semibold text-emerald-200">
                 <CheckCircle2 size={15} />
-                Performance analytics are active.
+                Agency configuration is active.
               </p>
               <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                Qualification and drill results feed officer trends, alerts,
-                watchlists, and training follow-ups.
+                Qualification and drill results feed the visible metrics and
+                sections using the thresholds shown above.
               </p>
             </div>
           </div>
+          ) : null}
         </section>
+        ) : null}
 
+        {summary.configuration.analytics_sections.performance_inputs ? (
         <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
           <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
             <UserCheck size={18} className="text-blue-400" />
-            Officer Performance Inputs
+            Analytics Data Inputs
           </h2>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -586,13 +621,14 @@ export default function AnalyticsPage() {
                   {label}
                 </p>
                 <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                  Feeds officer trends, alerts, watchlists, and command-level
-                  training risk indicators.
+                  Used only when the record is present and relevant to the
+                  configured analytics sections.
                 </p>
               </div>
             ))}
           </div>
         </section>
+        ) : null}
       </div>
     </TracePointShell>
   );

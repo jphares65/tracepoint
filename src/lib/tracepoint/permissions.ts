@@ -50,7 +50,7 @@ export const PERMISSION_COVERAGE: readonly PermissionCoverage[] = [
   { code: "submit_off_duty_requests", displayName: "Submit Off-Duty Requests", description: "Create, edit, submit, correct, and resubmit the signed-in member's own off-duty firearm requests.", actions: ["View", "Create", "Edit"], modules: ["Off-Duty Firearms"], routes: ["/off-duty-firearms", "/api/off-duty-firearms"], tables: ["off_duty_firearm_requests", "off_duty_firearm_history"] },
   { code: "review_off_duty_requests", displayName: "Review Off-Duty Requests", description: "View department off-duty requests and approve, deny, return, revoke, or archive them.", actions: ["View", "Approve", "Delete/Archive"], modules: ["Off-Duty Firearms"], routes: ["/off-duty-firearms", "/api/off-duty-firearms"], tables: ["off_duty_firearm_requests", "off_duty_firearm_history"] },
   { code: "view_audit_log", displayName: "View Audit Log", description: "View and export department audit events; this does not grant permission to change records.", actions: ["View", "Export"], modules: ["Audit Log"], routes: ["/settings", "/api/settings/audit-log"], tables: ["audit_events"] },
-  { code: "administer_department", displayName: "Administer Department", description: "Configure department profile, security, appearance, rules, permissions, imports, exports, and administrator assignments.", actions: ["View", "Create", "Edit", "Delete/Archive", "Approve", "Score", "Export", "Configure", "Administer"], modules: ["Settings", "Department Administration"], routes: ["/settings", "/api/settings"], tables: ["departments", "department_rules", "department_security_settings", "department_role_permissions"] },
+  { code: "administer_department", displayName: "Administer Department", description: "Configure department profile, security, appearance, rules, permissions, imports, exports, and administrator assignments.", actions: ["View", "Create", "Edit", "Delete/Archive", "Approve", "Score", "Export", "Configure", "Administer"], modules: ["Settings", "Department Administration", "Command Dashboard", "Analytics"], routes: ["/settings", "/settings/command-dashboard-analytics", "/api/settings"], tables: ["departments", "department_rules", "department_security_settings", "department_role_permissions"] },
 ] as const;
 
 type RoutePermissionRule = { prefix: string; requirement: PermissionRequirement };
@@ -71,6 +71,7 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
   { prefix: "/fleet-management", requirement: { anyOf: ["view_fleet", "manage_fleet", "perform_fleet_inspections", "manage_fleet_maintenance", "manage_fleet_rules"] } },
   { prefix: "/settings/import-export", requirement: { anyOf: ["administer_department"] } },
   { prefix: "/settings/fleet", requirement: { anyOf: ["manage_fleet_rules"] } },
+  { prefix: "/settings/command-dashboard-analytics", requirement: { anyOf: ["administer_department"] } },
   { prefix: "/settings", requirement: { anyOf: ["manage_users", "view_audit_log", "administer_department"] } },
 ];
 
