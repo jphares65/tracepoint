@@ -13,7 +13,7 @@ export type CommandDashboardSectionKey =
   | "critical_attention"
   | "qualification_snapshot"
   | "module_snapshot"
-  | "upcoming_range_days";
+  | "upcoming_operational_events";
 
 export type AnalyticsMetricKey =
   | "qualification_coverage"
@@ -50,6 +50,13 @@ export const ANALYTICS_SECTION_ORDER: AnalyticsSectionKey[] = [
   "performance_inputs",
 ];
 
+export const COMMAND_DASHBOARD_SECTION_ORDER: CommandDashboardSectionKey[] = [
+  "critical_attention",
+  "qualification_snapshot",
+  "module_snapshot",
+  "upcoming_operational_events",
+];
+
 export type AnalyticsDashboardConfiguration = {
   command_dashboard_cards: Record<CommandDashboardCardKey, boolean>;
   command_dashboard_card_order: CommandDashboardCardKey[];
@@ -58,6 +65,7 @@ export type AnalyticsDashboardConfiguration = {
     CommandDashboardCardSize
   >;
   command_dashboard_sections: Record<CommandDashboardSectionKey, boolean>;
+  command_dashboard_section_order: CommandDashboardSectionKey[];
   analytics_metrics: Record<AnalyticsMetricKey, boolean>;
   analytics_sections: Record<AnalyticsSectionKey, boolean>;
   analytics_section_order: AnalyticsSectionKey[];
@@ -102,8 +110,9 @@ export const DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION: AnalyticsDashboardConfig
     critical_attention: true,
     qualification_snapshot: true,
     module_snapshot: true,
-    upcoming_range_days: true,
+    upcoming_operational_events: true,
   },
+  command_dashboard_section_order: COMMAND_DASHBOARD_SECTION_ORDER,
   analytics_metrics: {
     qualification_coverage: true,
     drill_performance: true,
@@ -148,6 +157,22 @@ function booleanMap<K extends string>(
       typeof candidate[key] === "boolean" ? candidate[key] : fallback,
     ]),
   ) as Record<K, boolean>;
+}
+
+function dashboardSectionMap(input: unknown) {
+  const candidate = objectValue(input);
+  const legacyUpcoming = candidate.upcoming_range_days;
+
+  return booleanMap(
+    {
+      ...candidate,
+      upcoming_operational_events:
+        typeof candidate.upcoming_operational_events === "boolean"
+          ? candidate.upcoming_operational_events
+          : legacyUpcoming,
+    },
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_sections,
+  );
 }
 
 function integerWithin(
@@ -214,9 +239,18 @@ export function normalizeAnalyticsDashboardConfiguration(
       candidate.command_dashboard_card_sizes,
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_sizes,
     ),
-    command_dashboard_sections: booleanMap(
+    command_dashboard_sections: dashboardSectionMap(
       candidate.command_dashboard_sections,
-      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_sections,
+    ),
+    command_dashboard_section_order: orderedKeys(
+      Array.isArray(candidate.command_dashboard_section_order)
+        ? candidate.command_dashboard_section_order.map((key) =>
+            key === "upcoming_range_days"
+              ? "upcoming_operational_events"
+              : key,
+          )
+        : candidate.command_dashboard_section_order,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_section_order,
     ),
     analytics_metrics: booleanMap(
       candidate.analytics_metrics,

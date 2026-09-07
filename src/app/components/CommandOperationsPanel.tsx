@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import {
-  AlertTriangle,
-  CalendarDays,
   ChevronRight,
   GraduationCap,
   Loader2,
@@ -29,7 +27,7 @@ type AttentionItem = {
   priority: "blue" | "amber" | "red";
 };
 
-type OperationsPayload = {
+export type OperationsPayload = {
   agencyTraining: {
     available: boolean;
     total: number;
@@ -56,62 +54,23 @@ type OperationsPayload = {
     maintenance: number;
     outOfService: number;
     openIssues: number;
+    upcoming: Array<{
+      id: string;
+      vehicleId: string;
+      unitNumber: string;
+      label: string;
+      dueDate: string;
+    }>;
     attentionItems: AttentionItem[];
   };
 };
 
-function tone(priority: AttentionItem["priority"]) {
-  return {
-    blue: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-    amber: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-    red: "border-red-500/30 bg-red-500/10 text-red-300",
-  }[priority];
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Date unavailable"
-    : new Intl.DateTimeFormat(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(date);
-}
-
-export default function CommandOperationsPanel({
-  configuration,
-  agencyTrainingEnabled,
-  fleetEnabled,
-  cards,
-  customizing = false,
-  onHideCard,
-  onMoveCard,
-  onSizeCard,
-}: {
-  configuration: AnalyticsDashboardConfiguration;
-  agencyTrainingEnabled: boolean;
-  fleetEnabled: boolean;
-  cards: Partial<Record<CommandDashboardCardKey, ReactNode>>;
-  customizing?: boolean;
-  onHideCard?: (key: CommandDashboardCardKey) => void;
-  onMoveCard?: (key: CommandDashboardCardKey, direction: -1 | 1) => void;
-  onSizeCard?: (
-    key: CommandDashboardCardKey,
-    size: CommandDashboardCardSize,
-  ) => void;
-}) {
+export function useCommandOperationsData(enabled: boolean) {
   const [data, setData] = useState<OperationsPayload | null>(null);
   const [error, setError] = useState("");
-  const showAgencyTraining = agencyTrainingEnabled &&
-    configuration.command_dashboard_cards.agency_training;
-  const showFleet = fleetEnabled &&
-    configuration.command_dashboard_cards.fleet_readiness;
 
   useEffect(() => {
-    if (!showAgencyTraining && !showFleet) return;
+    if (!enabled) return;
 
     let active = true;
     void fetch("/api/command-dashboard/operations", { cache: "no-store" })
@@ -140,15 +99,45 @@ export default function CommandOperationsPanel({
     return () => {
       active = false;
     };
-  }, [showAgencyTraining, showFleet]);
+  }, [enabled]);
+
+  return { data, error, loading: enabled && !data && !error };
+}
+
+export default function CommandOperationsPanel({
+  configuration,
+  agencyTrainingEnabled,
+  fleetEnabled,
+  cards,
+  data,
+  error,
+  customizing = false,
+  onHideCard,
+  onMoveCard,
+  onSizeCard,
+}: {
+  configuration: AnalyticsDashboardConfiguration;
+  agencyTrainingEnabled: boolean;
+  fleetEnabled: boolean;
+  cards: Partial<Record<CommandDashboardCardKey, ReactNode>>;
+  data: OperationsPayload | null;
+  error?: string;
+  customizing?: boolean;
+  onHideCard?: (key: CommandDashboardCardKey) => void;
+  onMoveCard?: (key: CommandDashboardCardKey, direction: -1 | 1) => void;
+  onSizeCard?: (
+    key: CommandDashboardCardKey,
+    size: CommandDashboardCardSize,
+  ) => void;
+}) {
+  const showAgencyTraining = agencyTrainingEnabled &&
+    configuration.command_dashboard_cards.agency_training;
+  const showFleet = fleetEnabled &&
+    configuration.command_dashboard_cards.fleet_readiness;
 
   const agencyTrainingVisible =
     showAgencyTraining && (data?.agencyTraining.available ?? true);
   const fleetVisible = showFleet && (data?.fleet.available ?? true);
-  const attention = [
-    ...(agencyTrainingVisible ? (data?.agencyTraining.attention ?? []) : []),
-    ...(fleetVisible ? (data?.fleet.attentionItems ?? []) : []),
-  ].slice(0, configuration.command_operations_attention_item_limit);
 
   const cardLabels: Record<CommandDashboardCardKey, string> = {
     qualification_readiness: "Qualification Readiness",
@@ -311,47 +300,6 @@ export default function CommandOperationsPanel({
         </div>
       ) : null}
 
-      {data && ((agencyTrainingVisible && data.agencyTraining.upcoming.length > 0) || attention.length > 0) && (
-        <div className={`grid gap-4 ${agencyTrainingVisible && attention.length > 0 ? "xl:grid-cols-2" : "grid-cols-1"}`}>
-          {agencyTrainingVisible ? (
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
-            <div className="flex items-center gap-2">
-              <CalendarDays size={16} className="text-blue-400" />
-              <h2 className="text-sm font-bold text-white">Upcoming Agency Training</h2>
-            </div>
-            <div className="mt-4 space-y-2">
-              {data.agencyTraining.upcoming.length === 0 ? (
-                <p className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 text-xs text-slate-500">No training is scheduled in the next {configuration.command_training_upcoming_window_days} days.</p>
-              ) : data.agencyTraining.upcoming.map((event) => (
-                <Link key={event.id} href="/agency-training" className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/40 p-3 hover:border-blue-500/40">
-                  <div><p className="text-xs font-bold text-white">{event.title}</p><p className="mt-1 text-[10px] text-slate-500">{formatDate(event.startsAt)} / {event.attendeeCount} assigned</p></div>
-                  <ChevronRight size={14} className="text-slate-600" />
-                </Link>
-              ))}
-            </div>
-          </div>
-          ) : null}
-
-          {attention.length > 0 ? (
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-amber-400" />
-              <h2 className="text-sm font-bold text-white">Training and Fleet Attention</h2>
-            </div>
-            <div className="mt-4 space-y-2">
-              {attention.length === 0 ? (
-                <p className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 text-xs text-slate-500">No Agency Training or Fleet attention items.</p>
-              ) : attention.map((item) => (
-                <Link key={`${item.href}-${item.id}`} href={item.href} className={`flex items-start justify-between gap-3 rounded-xl border p-3 ${tone(item.priority)}`}>
-                  <div><p className="text-xs font-bold text-white">{item.title}</p><p className="mt-1 text-[10px] leading-4 text-slate-400">{item.detail}</p></div>
-                  <ChevronRight size={14} className="mt-0.5 shrink-0" />
-                </Link>
-              ))}
-            </div>
-          </div>
-          ) : null}
-        </div>
-      )}
     </section>
   );
 }

@@ -23,18 +23,38 @@ test("remaining command module cards consume their individual presentation toggl
   assert.match(operations, /fleet\.available/);
 });
 
-test("command presentation settings drive operations and upcoming range list sizes", async () => {
-  const [dashboard, operations, route] = await Promise.all([
+test("command presentation settings drive operations and upcoming event list sizes", async () => {
+  const [dashboard, presentation, route] = await Promise.all([
     readFile("src/app/command-dashboard/page.tsx", "utf8"),
-    readFile("src/app/components/CommandOperationsPanel.tsx", "utf8"),
+    readFile("src/lib/tracepoint/command-operations.ts", "utf8"),
     readFile("src/app/api/command-dashboard/operations/route.ts", "utf8"),
   ]);
 
-  assert.match(dashboard, /slice\(0, displayConfiguration\.upcoming_range_days_item_limit\)/);
-  assert.match(operations, /configuration\.command_operations_attention_item_limit/);
-  assert.match(operations, /configuration\.command_training_upcoming_window_days/);
+  assert.match(dashboard, /buildUpcomingOperationalEvents/);
+  assert.match(dashboard, /displayConfiguration\.upcoming_range_days_item_limit/);
+  assert.match(dashboard, /displayConfiguration\.command_operations_attention_item_limit/);
+  assert.match(presentation, /configuration\.command_training_upcoming_window_days/);
   assert.match(route, /mapCurrentRules\(rulesRow\)\.analytics_dashboard/);
   assert.match(route, /buildCommandOperationsPresentation/);
+});
+
+test("command header and composed sections stay command-level and configurable", async () => {
+  const [dashboard, operations] = await Promise.all([
+    readFile("src/app/command-dashboard/page.tsx", "utf8"),
+    readFile("src/app/components/CommandOperationsPanel.tsx", "utf8"),
+  ]);
+
+  assert.doesNotMatch(dashboard, /Plan Range Day/);
+  assert.doesNotMatch(dashboard, /Upcoming Range Days/);
+  assert.doesNotMatch(operations, /Upcoming Agency Training/);
+  assert.doesNotMatch(operations, /Training and Fleet Attention/);
+  assert.match(dashboard, /Upcoming Operational Events/);
+  assert.match(dashboard, /command_dashboard_section_order/);
+  assert.match(dashboard, /visibleSectionKeys\.map/);
+  assert.match(dashboard, /moveDashboardSection/);
+  assert.match(dashboard, /Remove Section/);
+  assert.match(dashboard, /command_dashboard_sections:\s*\{/);
+  assert.match(dashboard, /upcoming_operational_events/);
 });
 
 test("dashboard and analytics expose permission-gated visual builders with secondary settings access", async () => {
@@ -68,8 +88,9 @@ test("dashboard and analytics expose permission-gated visual builders with secon
 
   assert.match(dashboard, /hasPermission\("administer_department"\)/);
   assert.match(dashboard, /Customize Dashboard/);
-  assert.match(dashboard, /Add Card/);
+  assert.match(dashboard, /Add Card \/ Section/);
   assert.match(dashboard, /command_dashboard_card_order/);
+  assert.match(dashboard, /command_dashboard_section_order/);
   assert.match(analytics, /hasPermission\("administer_department"\)/);
   assert.match(analytics, /Customize Analytics/);
   assert.match(analytics, /Add Metric \/ Section/);

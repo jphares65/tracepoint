@@ -45,7 +45,7 @@ const COMMAND_DASHBOARD_SECTIONS: readonly [
   ["critical_attention", "Items requiring attention", "Show the consolidated list of current readiness and performance exceptions."],
   ["qualification_snapshot", "Qualification snapshot", "Show qualification-status totals."],
   ["module_snapshot", "Module snapshot", "Show quick links and summary counts for enabled modules."],
-  ["upcoming_range_days", "Upcoming range days", "Show scheduled range events and packet status."],
+  ["upcoming_operational_events", "Upcoming operational events", "Show scheduled activity and approaching deadlines from available modules."],
 ];
 
 const ANALYTICS_METRICS: readonly [AnalyticsMetricKey, string, string][] = [
@@ -497,8 +497,8 @@ export default function AnalyticsDashboardSettingsPanel({
             onChange={(value) => patchConfiguration("command_attention_item_limit", value)}
           />
           <QuantityInput
-            label="Upcoming range-day display limit"
-            description="Maximum number of scheduled range events shown in the Upcoming Range Days section."
+            label="Upcoming operational event limit"
+            description="Maximum number of future operational events shown on the Command Dashboard."
             unit="items"
             value={configuration.upcoming_range_days_item_limit}
             min={1}

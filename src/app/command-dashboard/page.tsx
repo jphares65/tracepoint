@@ -13,6 +13,7 @@ import {
   ClipboardList,
   Crosshair,
   FileText,
+  GraduationCap,
   Moon,
   Shield,
   ShieldAlert,
@@ -21,13 +22,17 @@ import {
   Sun,
   TrendingDown,
   TrendingUp,
+  Truck,
   Wrench,
 } from "lucide-react";
 
-import CommandOperationsPanel from "@/app/components/CommandOperationsPanel";
+import CommandOperationsPanel, {
+  useCommandOperationsData,
+} from "@/app/components/CommandOperationsPanel";
 import {
   AdvancedSettings,
   CustomizationBar,
+  ReorderButtons,
   useVisualConfigurationEditor,
 } from "@/app/components/VisualCustomization";
 import TracePointShell from "@/app/components/TracePointShell";
@@ -48,6 +53,10 @@ import {
   type CommandDashboardCardKey,
   type CommandDashboardSectionKey,
 } from "@/lib/tracepoint/analytics-dashboard-config";
+import {
+  buildUpcomingOperationalEvents,
+  type UpcomingOperationalEvent,
+} from "@/lib/tracepoint/upcoming-operational-events";
 
 type PilotPersonnel = {
   id: string;
@@ -133,11 +142,28 @@ const DASHBOARD_CARD_DETAILS: Record<
 const DASHBOARD_SECTION_DETAILS: Array<{
   key: CommandDashboardSectionKey;
   title: string;
+  description: string;
 }> = [
-  { key: "critical_attention", title: "Items Requiring Attention" },
-  { key: "qualification_snapshot", title: "Qualification Snapshot" },
-  { key: "module_snapshot", title: "Module Snapshot" },
-  { key: "upcoming_range_days", title: "Upcoming Range Days" },
+  {
+    key: "critical_attention",
+    title: "Items Requiring Attention",
+    description: "Current exceptions from enabled operational modules.",
+  },
+  {
+    key: "qualification_snapshot",
+    title: "Qualification Snapshot",
+    description: "A focused breakdown of agency qualification readiness.",
+  },
+  {
+    key: "module_snapshot",
+    title: "Module Snapshot",
+    description: "Quick status and links for enabled agency modules.",
+  },
+  {
+    key: "upcoming_operational_events",
+    title: "Upcoming Operational Events",
+    description: "Scheduled activity and approaching operational deadlines.",
+  },
 ];
 
 type OfficerSummary = {
@@ -494,6 +520,98 @@ function EmptyPanel({ message }: { message: string }) {
   );
 }
 
+function formatOperationalEventDate(value: string) {
+  const date = new Date(value.includes("T") ? value : `${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    ...(value.includes("T")
+      ? { hour: "numeric", minute: "2-digit" }
+      : {}),
+  }).format(date);
+}
+
+function UpcomingOperationalEventsPanel({
+  events,
+  loading,
+}: {
+  events: UpcomingOperationalEvent[];
+  loading: boolean;
+}) {
+  const sourceClasses: Record<UpcomingOperationalEvent["source"], string> = {
+    "Agency Training": "border-blue-500/30 bg-blue-500/10 text-blue-200",
+    Certifications:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+    Fleet: "border-violet-500/30 bg-violet-500/10 text-violet-200",
+    "Range & Training": "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  };
+
+  return (
+    <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
+            <CalendarDays size={17} className="text-blue-400" />
+            Upcoming Operational Events
+          </h2>
+          <p className="mt-1 text-[12px] text-slate-500">
+            Scheduled activity and approaching deadlines from available agency modules.
+          </p>
+        </div>
+        <StatusPill label={`${events.length} upcoming`} />
+      </div>
+
+      {events.length === 0 ? (
+        <EmptyPanel
+          message={
+            loading
+              ? "Loading upcoming operational events..."
+              : "No upcoming operational events were found in the available modules."
+          }
+        />
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {events.map((event) => (
+            <Link
+              key={`${event.source}-${event.id}`}
+              href={event.href}
+              className="group rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-wide ${sourceClasses[event.source]}`}
+                    >
+                      {event.source}
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-500">
+                      {event.type}
+                    </span>
+                  </div>
+                  <p className="truncate text-[13px] font-bold text-white">
+                    {event.title}
+                  </p>
+                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                    {formatOperationalEventDate(event.date)} · {event.detail}
+                  </p>
+                </div>
+                <ChevronRight
+                  size={15}
+                  className="mt-1 shrink-0 text-slate-600 group-hover:text-blue-300"
+                />
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function DashboardPage() {
   const { departmentId, enabledFeatures, hasAnyPermission, hasPermission } =
     useTracePointAccess();
@@ -578,6 +696,18 @@ export default function DashboardPage() {
   const displayConfiguration = editor.editing
     ? editor.draft
     : analyticsDashboard;
+  const shouldLoadCommandOperations =
+    (hasRangeTraining || hasFleet) &&
+    (displayConfiguration.command_dashboard_cards.agency_training ||
+      displayConfiguration.command_dashboard_cards.fleet_readiness ||
+      displayConfiguration.command_dashboard_sections.critical_attention ||
+      displayConfiguration.command_dashboard_sections
+        .upcoming_operational_events);
+  const {
+    data: commandOperations,
+    error: commandOperationsError,
+    loading: commandOperationsLoading,
+  } = useCommandOperationsData(shouldLoadCommandOperations);
 
   useEffect(() => {
     let mounted = true;
@@ -654,9 +784,13 @@ export default function DashboardPage() {
   );
 
   const upcomingRangeDays = [...activeRangeDays]
-    .filter((day) => getDateValue(day.date) >= getTodayValue())
-    .sort((a, b) => getDateValue(a.date) - getDateValue(b.date))
-    .slice(0, displayConfiguration.upcoming_range_days_item_limit);
+    .filter(
+      (day) =>
+        day.status !== "Completed" &&
+        day.status !== "Locked" &&
+        getDateValue(day.date) >= getTodayValue(),
+    )
+    .sort((a, b) => getDateValue(a.date) - getDateValue(b.date));
 
   const incompletePackets = activeRangeDays.filter(
     (day) =>
@@ -859,6 +993,32 @@ export default function DashboardPage() {
       });
     }
 
+    const commandOperationAttention = [
+      ...(hasRangeTraining && commandOperations?.agencyTraining.available
+        ? commandOperations.agencyTraining.attention.map((item) => ({
+            ...item,
+            source: "training" as const,
+          }))
+        : []),
+      ...(hasFleet && commandOperations?.fleet.available
+        ? commandOperations.fleet.attentionItems.map((item) => ({
+            ...item,
+            source: "fleet" as const,
+          }))
+        : []),
+    ].slice(0, displayConfiguration.command_operations_attention_item_limit);
+
+    commandOperationAttention.forEach((item) => {
+      items.push({
+        id: `${item.source}-${item.id}`,
+        title: item.title,
+        detail: item.detail,
+        href: item.href,
+        tone: item.priority,
+        icon: item.source === "training" ? GraduationCap : Truck,
+      });
+    });
+
     return items.slice(0, displayConfiguration.command_attention_item_limit);
   })();
   const qualificationTone: Tone =
@@ -902,6 +1062,85 @@ export default function DashboardPage() {
       (key === "fleet_readiness" && hasFleet),
   );
 
+  const upcomingOperationalEvents = buildUpcomingOperationalEvents(
+    [
+      {
+        enabled: hasRangeTraining,
+        available: true,
+        events: upcomingRangeDays.map((day) => ({
+          id: day.id,
+          title: day.title,
+          date: day.date,
+          source: "Range & Training" as const,
+          type: "Range day",
+          detail: `${day.location || "Location not set"} · ${day.packetStatus ?? "Needs setup"}`,
+          href: "/range-days",
+        })),
+      },
+      {
+        enabled: hasRangeTraining,
+        available: commandOperations?.agencyTraining.available ?? false,
+        events: (commandOperations?.agencyTraining.upcoming ?? []).map(
+          (event) => ({
+            id: event.id,
+            title: event.title,
+            date: event.startsAt,
+            source: "Agency Training" as const,
+            type: event.trainingType || "Training",
+            detail: `${event.location || "Location not set"} · ${event.attendeeCount} assigned`,
+            href: "/agency-training",
+          }),
+        ),
+      },
+      {
+        enabled: hasFleet,
+        available: commandOperations?.fleet.available ?? false,
+        events: (commandOperations?.fleet.upcoming ?? []).map((event) => ({
+          id: event.id,
+          title: `Unit ${event.unitNumber}`,
+          date: event.dueDate,
+          source: "Fleet" as const,
+          type: event.label,
+          detail: "Approaching fleet deadline",
+          href: `/fleet-management/${event.vehicleId}`,
+        })),
+      },
+      {
+        enabled: hasCertifications,
+        available: true,
+        events: certificationReadiness.rows
+          .filter(
+            (row) => row.status === "due_soon" && Boolean(row.expirationDate),
+          )
+          .map((row) => ({
+            id: `${row.userId}-${row.certificationTypeId}`,
+            title: row.certificationName,
+            date: row.expirationDate as string,
+            source: "Certifications" as const,
+            type: "Expiration",
+            detail: `${row.officerName} · ${row.statusReason}`,
+            href: "/training/certifications",
+          })),
+      },
+    ],
+    displayConfiguration.upcoming_range_days_item_limit,
+  );
+
+  const availableSectionKeys =
+    displayConfiguration.command_dashboard_section_order.filter(
+      (key) =>
+        key !== "qualification_snapshot" || hasQualifications,
+    ).filter(
+      (key) =>
+        key !== "upcoming_operational_events" ||
+        hasRangeTraining ||
+        hasFleet ||
+        hasCertifications,
+    );
+  const visibleSectionKeys = availableSectionKeys.filter(
+    (key) => displayConfiguration.command_dashboard_sections[key],
+  );
+
   function patchDraft(
     patch: Partial<AnalyticsDashboardConfiguration>,
   ) {
@@ -926,6 +1165,21 @@ export default function DashboardPage() {
     const neighborIndex = next.indexOf(neighbor);
     [next[index], next[neighborIndex]] = [next[neighborIndex], next[index]];
     patchDraft({ command_dashboard_card_order: next });
+  }
+
+  function moveDashboardSection(
+    key: CommandDashboardSectionKey,
+    direction: -1 | 1,
+  ) {
+    const visibleIndex = visibleSectionKeys.indexOf(key);
+    const neighbor = visibleSectionKeys[visibleIndex + direction];
+    if (!neighbor) return;
+
+    const next = [...displayConfiguration.command_dashboard_section_order];
+    const index = next.indexOf(key);
+    const neighborIndex = next.indexOf(neighbor);
+    [next[index], next[neighborIndex]] = [next[neighborIndex], next[index]];
+    patchDraft({ command_dashboard_section_order: next });
   }
 
   const dashboardCards: Partial<
@@ -1051,6 +1305,199 @@ export default function DashboardPage() {
       : {}),
   };
 
+  const dashboardSections: Record<CommandDashboardSectionKey, ReactNode> = {
+    critical_attention: (
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-[18px] font-bold text-white">
+              <Activity size={18} className="text-blue-400" />
+              Items Requiring Attention
+            </h2>
+            <p className="mt-1 text-[12px] text-slate-500">
+              Live readiness, training, fleet, range-packet, firearm, and performance exceptions from enabled modules.
+            </p>
+          </div>
+          <StatusPill
+            label={`${attentionItems.length} active`}
+            tone={attentionItems.length > 0 ? "amber" : "green"}
+          />
+        </div>
+
+        {attentionItems.length === 0 ? (
+          <EmptyPanel message="No current readiness or performance exceptions were identified in the enabled modules." />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {attentionItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className={`group flex items-start justify-between gap-3 rounded-2xl border p-3 transition hover:border-blue-500/40 ${toneClasses(
+                    item.tone,
+                  )}`}
+                >
+                  <div className="flex gap-3">
+                    <div
+                      className={`h-fit rounded-xl border p-2 ${toneClasses(
+                        item.tone,
+                      )}`}
+                    >
+                      <Icon size={15} />
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-bold text-white">
+                        {item.title}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {item.detail}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight
+                    size={15}
+                    className="mt-1 shrink-0 text-slate-600 group-hover:text-blue-300"
+                  />
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    ),
+    qualification_snapshot: (
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <h2 className="text-[17px] font-bold text-white">
+          Qualification Snapshot
+        </h2>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          {[
+            ["Current", currentCount, CheckCircle2, "green" as Tone],
+            ["Missing Day", missingDayCount, Sun, "blue" as Tone],
+            ["Missing Night", missingNightCount, Moon, "amber" as Tone],
+            ["Due Soon", dueSoonCount, CalendarDays, "amber" as Tone],
+            [
+              "Failed/Overdue",
+              failedOrOverdueCount,
+              AlertTriangle,
+              "red" as Tone,
+            ],
+          ].map(([label, value, Icon, tone]) => {
+            const MetricIcon = Icon as typeof Shield;
+            return (
+              <div
+                key={String(label)}
+                className={`rounded-2xl border p-3 ${toneClasses(tone as Tone)}`}
+              >
+                <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest">
+                  <MetricIcon size={13} />
+                  {String(label)}
+                </p>
+                <p className="mt-1 text-2xl font-bold text-white">
+                  {Number(value)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    ),
+    module_snapshot: (
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <h2 className="text-[17px] font-bold text-white">Module Snapshot</h2>
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {[
+            hasRangeTraining
+              ? [
+                  "Range & Training",
+                  "/range-days",
+                  `${authoritativeRange.activeRangeDays} active range days`,
+                ]
+              : null,
+            hasRangeTraining && commandOperations?.agencyTraining.available
+              ? [
+                  "Agency Training",
+                  "/agency-training",
+                  `${commandOperations.agencyTraining.scheduled + commandOperations.agencyTraining.inProgress} scheduled or active events`,
+                ]
+              : null,
+            hasQualifications
+              ? [
+                  "Qualifications",
+                  "/qualifications",
+                  `${qualificationResults.length} qualification results`,
+                ]
+              : null,
+            hasCertifications
+              ? [
+                  "Certifications",
+                  "/training/certifications",
+                  certificationReadiness.summary.totalRequiredChecks === 0
+                    ? "No requirements configured"
+                    : `${certificationReadiness.summary.notReady} readiness exceptions`,
+                ]
+              : null,
+            hasFirearms
+              ? [
+                  "Firearms",
+                  "/firearms",
+                  `${firearms.length} active firearms`,
+                ]
+              : null,
+            hasFleet && commandOperations?.fleet.available
+              ? [
+                  "Fleet",
+                  "/fleet-management",
+                  `${commandOperations.fleet.availableVehicles}/${commandOperations.fleet.total} vehicles available`,
+                ]
+              : null,
+            hasEquipment
+              ? [
+                  "Equipment Readiness",
+                  "/equipment",
+                  equipmentReadiness.summary.totalRequiredChecks === 0
+                    ? "No requirements configured"
+                    : `${equipmentReadiness.summary.notReady} readiness exceptions`,
+                ]
+              : null,
+            hasAnalytics && hasRangeTraining
+              ? [
+                  "Analytics",
+                  "/analytics",
+                  `${declining.length} declining trends`,
+                ]
+              : null,
+          ]
+            .filter(
+              (item): item is [string, string, string] => item !== null,
+            )
+            .map(([title, href, detail]) => (
+              <Link
+                key={title}
+                href={href}
+                className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 transition hover:border-blue-500/40"
+              >
+                <div>
+                  <p className="text-[13px] font-semibold text-white">
+                    {title}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">{detail}</p>
+                </div>
+                <ChevronRight size={15} className="text-slate-600" />
+              </Link>
+            ))}
+        </div>
+      </section>
+    ),
+    upcoming_operational_events: (
+      <UpcomingOperationalEventsPanel
+        events={upcomingOperationalEvents}
+        loading={loading || commandOperationsLoading}
+      />
+    ),
+  };
+
 
   return (
     <TracePointShell activePage="Command Dashboard">
@@ -1078,16 +1525,6 @@ export default function DashboardPage() {
                 </button>
               ) : null}
 
-              {hasRangeTraining && (
-                <Link
-                  href="/range-days"
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
-                >
-                  <CalendarDays size={14} />
-                  Plan Range Day
-                </Link>
-              )}
-
               {hasAnalytics && hasRangeTraining && (
                 <Link
                   href="/analytics"
@@ -1104,8 +1541,8 @@ export default function DashboardPage() {
         {editor.editing ? (
           <CustomizationBar
             title="Build your Command Dashboard"
-            description="Arrange the operational cards your agency needs. Changes appear here immediately and remain private until you save."
-            addLabel="Add Card"
+            description="Arrange cards and command-level sections into the operational view your agency needs. Changes preview here until you save."
+            addLabel="Add Card / Section"
             addOpen={addCardsOpen}
             dirty={editor.dirty}
             saving={editor.saving}
@@ -1156,12 +1593,23 @@ export default function DashboardPage() {
                 })}
               </div>
 
-              <div className="mt-4 border-t border-slate-800 pt-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Page sections
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {DASHBOARD_SECTION_DETAILS.map((section) => {
+              <div className="mt-5 border-t border-slate-800 pt-4">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400">
+                      Dashboard sections
+                    </p>
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Full-width command components shown below the cards.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {availableSectionKeys.map((key) => {
+                    const section = DASHBOARD_SECTION_DETAILS.find(
+                      (candidate) => candidate.key === key,
+                    );
+                    if (!section) return null;
                     const visible = editor.draft.command_dashboard_sections[section.key];
                     return (
                       <button
@@ -1177,13 +1625,25 @@ export default function DashboardPage() {
                             },
                           })
                         }
-                        className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold transition ${
+                        className={`rounded-2xl border p-3 text-left transition ${
                           visible
-                            ? "border-blue-500/35 bg-blue-500/10 text-blue-200"
-                            : "border-slate-700 text-slate-500"
+                            ? "border-violet-500/35 bg-violet-500/10"
+                            : "border-slate-800 bg-slate-950/50 hover:border-slate-700"
                         }`}
                       >
-                        {section.title}
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-slate-100">
+                            {section.title}
+                          </span>
+                          <span
+                            className={`text-[10px] font-semibold ${visible ? "text-violet-300" : "text-slate-500"}`}
+                          >
+                            {visible ? "Added" : "Add section"}
+                          </span>
+                        </span>
+                        <span className="mt-1 block text-[10px] leading-4 text-slate-500">
+                          {section.description}
+                        </span>
                       </button>
                     );
                   })}
@@ -1195,7 +1655,7 @@ export default function DashboardPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {[
                       ["command_attention_item_limit", "Attention items", 1, 25],
-                      ["upcoming_range_days_item_limit", "Upcoming range days", 1, 20],
+                      ["upcoming_range_days_item_limit", "Upcoming operational events", 1, 20],
                     ].map(([key, label, min, max]) => (
                       <label key={String(key)} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
                         <span className="block text-xs font-semibold text-slate-300">{String(label)}</span>
@@ -1231,6 +1691,8 @@ export default function DashboardPage() {
           agencyTrainingEnabled={hasRangeTraining}
           fleetEnabled={hasFleet}
           cards={dashboardCards}
+          data={commandOperations}
+          error={commandOperationsError}
           customizing={editor.editing}
           onHideCard={(key) =>
             patchDraft({
@@ -1251,256 +1713,60 @@ export default function DashboardPage() {
           }
         />
 
-        {displayConfiguration.command_dashboard_sections.critical_attention ||
-        (hasQualifications &&
-          displayConfiguration.command_dashboard_sections.qualification_snapshot) ||
-        displayConfiguration.command_dashboard_sections.module_snapshot ? (
-        <section
-          className={`grid gap-5 ${
-            displayConfiguration.command_dashboard_sections.critical_attention &&
-            ((hasQualifications &&
-              displayConfiguration.command_dashboard_sections.qualification_snapshot) ||
-              displayConfiguration.command_dashboard_sections.module_snapshot)
-              ? "xl:grid-cols-[1fr_430px]"
-              : "grid-cols-1"
-          }`}
-        >
-          {displayConfiguration.command_dashboard_sections.critical_attention ? (
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="flex items-center gap-2 text-[18px] font-bold text-white">
-                  <Activity size={18} className="text-blue-400" />
-                  Items Requiring Attention
-                </h2>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  Live qualification, certification, equipment, firearm, range-packet, and performance items requiring review.
-                </p>
-              </div>
-              <StatusPill
-                label={`${attentionItems.length} active`}
-                tone={attentionItems.length > 0 ? "amber" : "green"}
-              />
-            </div>
+        {visibleSectionKeys.map((key, index) => {
+          const section = DASHBOARD_SECTION_DETAILS.find(
+            (candidate) => candidate.key === key,
+          );
+          if (!section) return null;
 
-            {attentionItems.length === 0 ? (
-              <EmptyPanel message="No current readiness or performance exceptions were identified in the enabled modules." />
-            ) : (
-              <div className="space-y-3">
-                {attentionItems.map((item) => {
-                  const Icon = item.icon;
-
-                  return (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      className={`group flex items-start justify-between gap-3 rounded-2xl border p-3 transition hover:border-blue-500/40 ${toneClasses(
-                        item.tone,
-                      )}`}
+          return (
+            <div
+              key={key}
+              className={
+                editor.editing
+                  ? "rounded-[1.75rem] border border-dashed border-violet-400/45 bg-violet-500/[0.035] p-1.5"
+                  : ""
+              }
+            >
+              {editor.editing ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-2 pb-1.5 pt-0.5">
+                  <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-300">
+                    Section · {section.title}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <ReorderButtons
+                      label={section.title}
+                      first={index === 0}
+                      last={index === visibleSectionKeys.length - 1}
+                      onPrevious={() => moveDashboardSection(key, -1)}
+                      onNext={() => moveDashboardSection(key, 1)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patchDraft({
+                          command_dashboard_sections: {
+                            ...editor.draft.command_dashboard_sections,
+                            [key]: false,
+                          },
+                        })
+                      }
+                      className="rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-[9px] font-semibold text-slate-400 transition hover:border-red-500/40 hover:text-red-200"
                     >
-                      <div className="flex gap-3">
-                        <div
-                          className={`h-fit rounded-xl border p-2 ${toneClasses(
-                            item.tone,
-                          )}`}
-                        >
-                          <Icon size={15} />
-                        </div>
-                        <div>
-                          <p className="text-[13px] font-bold text-white">
-                            {item.title}
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            {item.detail}
-                          </p>
-                        </div>
-                      </div>
-                      <ChevronRight
-                        size={15}
-                        className="mt-1 text-slate-600 group-hover:text-blue-300"
-                      />
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
+                      Remove Section
+                    </button>
+                  </span>
+                </div>
+              ) : null}
+              {dashboardSections[key]}
+            </div>
+          );
+        })}
+        {editor.editing && visibleSectionKeys.length === 0 ? (
+          <div className="flex min-h-40 items-center justify-center rounded-3xl border border-dashed border-violet-500/35 bg-violet-500/[0.035] px-6 text-center text-xs text-slate-500">
+            No dashboard sections are shown. Use Add Card / Section above to add one.
           </div>
-          ) : null}
-
-          {(hasQualifications &&
-            displayConfiguration.command_dashboard_sections.qualification_snapshot) ||
-          displayConfiguration.command_dashboard_sections.module_snapshot ? (
-          <div className="space-y-5">
-            {hasQualifications &&
-            displayConfiguration.command_dashboard_sections.qualification_snapshot ? (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-              <h2 className="text-[17px] font-bold text-white">
-                Qualification Snapshot
-              </h2>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {[
-                  ["Current", currentCount, CheckCircle2, "green" as Tone],
-                  ["Missing Day", missingDayCount, Sun, "blue" as Tone],
-                  ["Missing Night", missingNightCount, Moon, "amber" as Tone],
-                  ["Due Soon", dueSoonCount, CalendarDays, "amber" as Tone],
-                  [
-                    "Failed/Overdue",
-                    failedOrOverdueCount,
-                    AlertTriangle,
-                    "red" as Tone,
-                  ],
-                ].map(([label, value, Icon, tone]) => {
-                  const MetricIcon = Icon as typeof Shield;
-
-                
-  
-  return (
-                    <div
-                      key={String(label)}
-                      className={`rounded-2xl border p-3 ${toneClasses(
-                        tone as Tone,
-                      )}`}
-                    >
-                      <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest">
-                        <MetricIcon size={13} />
-                        {String(label)}
-                      </p>
-                      <p className="mt-1 text-2xl font-bold text-white">
-                        {Number(value)}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            ) : null}
-
-            {displayConfiguration.command_dashboard_sections.module_snapshot ? (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-              <h2 className="text-[17px] font-bold text-white">
-                Module Snapshot
-              </h2>
-              <div className="mt-4 space-y-2">
-                {[
-                  hasRangeTraining
-                    ? [
-                        "Range & Training",
-                        "/range-days",
-                        `${authoritativeRange.activeRangeDays} active range days`,
-                      ]
-                    : null,
-                  hasQualifications
-                    ? [
-                        "Qualifications",
-                        "/qualifications",
-                        `${qualificationResults.length} qualification results`,
-                      ]
-                    : null,
-                  hasFirearms
-                    ? [
-                        "Firearms",
-                        "/firearms",
-                        `${firearms.length} active firearms`,
-                      ]
-                    : null,
-                  hasEquipment
-                    ? [
-                        "Equipment Readiness",
-                        "/equipment",
-                        equipmentReadiness.summary.totalRequiredChecks === 0
-                          ? "No requirements configured"
-                          : `${equipmentReadiness.summary.notReady} readiness exceptions`,
-                      ]
-                    : null,
-                  hasAnalytics && hasRangeTraining
-                    ? [
-                        "Analytics",
-                        "/analytics",
-                        `${declining.length} declining trends`,
-                      ]
-                    : null,
-                ]
-                  .filter(
-                    (
-                      item,
-                    ): item is [string, string, string] =>
-                      item !== null,
-                  )
-                  .map(([title, href, detail]) => (
-                    <Link
-                      key={title}
-                      href={href}
-                      className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 transition hover:border-blue-500/40"
-                    >
-                      <div>
-                        <p className="text-[13px] font-semibold text-white">
-                          {title}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {detail}
-                        </p>
-                      </div>
-                      <ChevronRight size={15} className="text-slate-600" />
-                    </Link>
-                  ))}
-              </div>
-
-            </div>
-            ) : null}
-          </div>
-          ) : null}
-        </section>
         ) : null}
-        {hasRangeTraining &&
-        displayConfiguration.command_dashboard_sections.upcoming_range_days && (
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-[17px] font-bold text-white">
-                Upcoming Range Days
-              </h2>
-              <p className="mt-1 text-[12px] text-slate-500">
-                Scheduled events and packet readiness.
-              </p>
-            </div>
-            <StatusPill label={`${upcomingRangeDays.length} upcoming`} />
-          </div>
-
-          {upcomingRangeDays.length === 0 ? (
-            <EmptyPanel message="No upcoming range days are scheduled. Completed, locked, and archived events are excluded." />
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {upcomingRangeDays.map((day) => (
-                <Link
-                  key={day.id}
-                  href="/range-days"
-                  className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3 transition hover:border-blue-500/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="mb-2 flex gap-2">
-                        <StatusPill label={day.status} />
-                        <StatusPill
-                          label={day.packetStatus ?? "Needs Setup"}
-                          tone={day.packetStatus === "Ready" ? "green" : "amber"}
-                        />
-                      </div>
-                      <p className="text-[14px] font-bold text-white">
-                        {day.title}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        {formatDate(day.date)} · {day.location}
-                      </p>
-                    </div>
-                    <ChevronRight size={15} className="text-slate-600" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-        )}
       </div>
     </TracePointShell>
   );

@@ -25,6 +25,14 @@ type FleetVehicle = {
   registration_expiration_date?: string | null;
 };
 
+type FleetUpcomingEvent = {
+  id: string;
+  vehicleId: string;
+  unitNumber: string;
+  label: string;
+  dueDate: string;
+};
+
 function dateValue(value: unknown) {
   if (typeof value !== "string" || !value) return 0;
   const parsed = new Date(value.includes("T") ? value : `${value}T00:00:00`).getTime();
@@ -127,6 +135,48 @@ export function buildCommandOperationsPresentation(
       };
     });
 
+  const current = new Date(now);
+  const today = new Date(
+    current.getFullYear(),
+    current.getMonth(),
+    current.getDate(),
+  ).getTime();
+  const fleetUpcoming = vehicles
+    .flatMap((vehicle) =>
+      [
+        {
+          key: "service",
+          label: "Service due",
+          dueDate: vehicle.next_service_date,
+        },
+        {
+          key: "inspection",
+          label: "Inspection due",
+          dueDate: vehicle.inspection_due_date,
+        },
+        {
+          key: "registration",
+          label: "Registration expires",
+          dueDate: vehicle.registration_expiration_date,
+        },
+      ].map((event) => ({
+        id: `${vehicle.id}-${event.key}`,
+        vehicleId: vehicle.id,
+        unitNumber: vehicle.unit_number,
+        label: event.label,
+        dueDate: event.dueDate,
+      })),
+    )
+    .filter((event): event is FleetUpcomingEvent => {
+      const dueAt = dateValue(event.dueDate);
+      return (
+        typeof event.dueDate === "string" &&
+        dueAt >= today &&
+        dueAt <= fleetAttentionLimit
+      );
+    })
+    .sort((left, right) => dateValue(left.dueDate) - dateValue(right.dueDate));
+
   return {
     agencyTraining: {
       available: !trainingResult.error,
@@ -156,6 +206,7 @@ export function buildCommandOperationsPresentation(
         (total, vehicle) => total + Number(vehicle.open_issue_count ?? 0),
         0,
       ),
+      upcoming: fleetUpcoming,
       attentionItems: fleetAttention,
     },
   };

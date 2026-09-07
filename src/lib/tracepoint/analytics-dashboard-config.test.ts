@@ -20,6 +20,16 @@ test("preserves the current dashboard and analytics experience by default", () =
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_cards,
     ).every(Boolean),
   );
+  assert.equal(
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_sections
+      .upcoming_operational_events,
+    true,
+  );
+  assert.equal(
+    "upcoming_range_days" in
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_sections,
+    false,
+  );
   assert.ok(
     Object.values(
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.analytics_sections,
@@ -41,6 +51,9 @@ test("accepts known visibility preferences without allowing unknown keys", () =>
       qualification_readiness: false,
       invented_card: false,
     },
+    command_dashboard_sections: {
+      critical_attention: false,
+    },
     analytics_sections: {
       drill_trends: false,
     },
@@ -48,8 +61,32 @@ test("accepts known visibility preferences without allowing unknown keys", () =>
 
   assert.equal(normalized.command_dashboard_cards.qualification_readiness, false);
   assert.equal(normalized.command_dashboard_cards.range_readiness, true);
+  assert.equal(normalized.command_dashboard_sections.critical_attention, false);
   assert.equal(normalized.analytics_sections.drill_trends, false);
   assert.equal("invented_card" in normalized.command_dashboard_cards, false);
+});
+
+test("migrates the legacy upcoming range section into the operational section", () => {
+  const normalized = normalizeAnalyticsDashboardConfiguration({
+    command_dashboard_sections: {
+      upcoming_range_days: false,
+    },
+    command_dashboard_section_order: [
+      "module_snapshot",
+      "upcoming_range_days",
+      "critical_attention",
+    ],
+  });
+
+  assert.equal(
+    normalized.command_dashboard_sections.upcoming_operational_events,
+    false,
+  );
+  assert.deepEqual(normalized.command_dashboard_section_order.slice(0, 3), [
+    "module_snapshot",
+    "upcoming_operational_events",
+    "critical_attention",
+  ]);
 });
 
 test("normalizes saved dashboard card order, sizes, and analytics section order", () => {
@@ -65,6 +102,12 @@ test("normalizes saved dashboard card order, sizes, and analytics section order"
       qualification_readiness: "enormous",
       invented_card: "compact",
     },
+    command_dashboard_section_order: [
+      "module_snapshot",
+      "critical_attention",
+      "module_snapshot",
+      "invented_section",
+    ],
     analytics_section_order: [
       "performance_inputs",
       "qualification_trends",
@@ -81,6 +124,11 @@ test("normalizes saved dashboard card order, sizes, and analytics section order"
   assert.equal(normalized.command_dashboard_card_sizes.performance_signal, "wide");
   assert.equal(normalized.command_dashboard_card_sizes.qualification_readiness, "compact");
   assert.equal("invented_card" in normalized.command_dashboard_card_sizes, false);
+  assert.deepEqual(normalized.command_dashboard_section_order.slice(0, 2), [
+    "module_snapshot",
+    "critical_attention",
+  ]);
+  assert.equal(new Set(normalized.command_dashboard_section_order).size, 4);
   assert.deepEqual(normalized.analytics_section_order.slice(0, 2), [
     "performance_inputs",
     "qualification_trends",
@@ -91,6 +139,7 @@ test("normalizes saved dashboard card order, sizes, and analytics section order"
 test("legacy saved documents receive the recommended layout without losing visibility", () => {
   const normalized = normalizeAnalyticsDashboardConfiguration({
     command_dashboard_cards: { records_health: false },
+    command_dashboard_sections: { upcoming_range_days: false },
     analytics_sections: { category_trends: false },
     trend_change_threshold: 4,
   });
@@ -100,22 +149,35 @@ test("legacy saved documents receive the recommended layout without losing visib
     DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_order,
   );
   assert.deepEqual(
+    normalized.command_dashboard_section_order,
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_section_order,
+  );
+  assert.deepEqual(
     normalized.analytics_section_order,
     DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.analytics_section_order,
   );
   assert.equal(normalized.command_dashboard_cards.records_health, false);
   assert.equal(normalized.analytics_sections.category_trends, false);
+  assert.equal(
+    normalized.command_dashboard_sections.upcoming_operational_events,
+    false,
+  );
   assert.equal(normalized.trend_change_threshold, 4);
 });
 
 test("reset returns an independent recommended configuration", () => {
   const reset = resetAnalyticsDashboardConfiguration();
   reset.command_dashboard_card_order.reverse();
+  reset.command_dashboard_section_order.reverse();
   reset.analytics_section_order.reverse();
 
   assert.notDeepEqual(
     reset.command_dashboard_card_order,
     DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_order,
+  );
+  assert.notDeepEqual(
+    reset.command_dashboard_section_order,
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_section_order,
   );
   assert.notDeepEqual(
     reset.analytics_section_order,

@@ -41,6 +41,8 @@ test("preserves the current command operations windows and list limits by defaul
   assert.equal(result.agencyTraining.upcoming.length, 5);
   assert.equal(result.agencyTraining.attention.length, 5);
   assert.equal(result.fleet.attentionItems.length, 8);
+  assert.equal(result.fleet.upcoming.length, 10);
+  assert.equal(result.fleet.upcoming[0].label, "Service due");
   assert.match(result.agencyTraining.attention[0].detail, /within 7 days/);
 });
 
@@ -66,5 +68,9 @@ test("applies agency command operations windows and limits independently", () =>
   assert.deepEqual(result.agencyTraining.upcoming.map((item) => item.id), ["training-0", "training-1"]);
   assert.deepEqual(result.agencyTraining.attention.map((item) => item.id), ["training-0"]);
   assert.deepEqual(result.fleet.attentionItems.map((item) => item.id), ["vehicle-0", "vehicle-1", "vehicle-2"]);
+  assert.deepEqual(
+    result.fleet.upcoming.map((item) => item.vehicleId),
+    ["vehicle-0", "vehicle-1", "vehicle-2", "vehicle-3"],
+  );
   assert.match(result.agencyTraining.attention[0].detail, /within 2 days/);
 });
