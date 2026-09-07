@@ -57,5 +57,5 @@ export function requiredIssue(value: unknown, field: string, label: string, issu
 }
 
 export function duplicateIssue(firstRow: number | undefined, field: string, label: string, issues: ValidationIssue[]) {
-  if (firstRow) issues.push({ severity: "error", field, message: `${label} duplicates spreadsheet row ${firstRow}. Resolve the duplicate before import.` });
+  if (firstRow) issues.push({ severity: "error", field, message: `${label} duplicates spreadsheet row ${firstRow}. Resolve the duplicate before import.`, conflict: { kind: "duplicate", conflictingRowNumber: firstRow } });
 }

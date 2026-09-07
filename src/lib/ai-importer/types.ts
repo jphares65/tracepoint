@@ -10,6 +10,30 @@ export type ImportDomain = (typeof IMPORT_DOMAINS)[number];
 export type MappingConfidence = "High" | "Medium" | "Needs Review";
 export type ImportAction = "CREATE" | "UPDATE" | "SKIP" | "CONFLICT";
 export type IssueSeverity = "warning" | "error";
+export type RemediationScope = "row" | "column" | "import";
+export type ResolutionControl = "text" | "number" | "date" | "enum";
+
+export type CanonicalOption = {
+  value: string;
+  label: string;
+};
+
+export type ValueOverride = {
+  rowNumber: number;
+  sourceColumn: string;
+  targetField: string;
+  originalValue: string;
+  replacementValue: string;
+  scope: RemediationScope;
+  approvedAt?: string;
+};
+
+export type RowDecision = {
+  rowNumber: number;
+  sourceConflictRowNumber: number;
+  resolution: "keep_first" | "keep_later" | "skip_row";
+  approvedAt?: string;
+};
 
 export type ImportField = {
   key: string;
@@ -64,12 +88,28 @@ export type ImportPayload = {
   headerRow: number;
   matrix: string[][];
   mappings: ColumnMapping[];
+  overrides?: ValueOverride[];
+  rowDecisions?: RowDecision[];
 };
 
 export type ValidationIssue = {
   severity: IssueSeverity;
   field?: string;
   message: string;
+  sourceColumn?: string;
+  sourceValue?: string;
+  originalValue?: string;
+  resolution?: {
+    control: ResolutionControl;
+    suggestedValue?: string;
+    options?: CanonicalOption[];
+    expectedFormat?: string;
+    allowImportScope?: boolean;
+  };
+  conflict?: {
+    kind: "duplicate" | "record";
+    conflictingRowNumber?: number;
+  };
 };
 
 export type ImportChange = {

@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Download,
   FileSpreadsheet,
+  Files,
   Loader2,
   RefreshCcw,
   Search,
@@ -6598,7 +6599,7 @@ function ImportWizardContent() {
               </p>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
               <a
                 href="#classic-import-mapper"
                 className="group flex min-h-56 flex-col rounded-3xl border border-emerald-700/60 bg-emerald-950/20 p-6 transition hover:border-emerald-500 hover:bg-emerald-950/30"
@@ -6643,6 +6644,19 @@ function ImportWizardContent() {
                   Open AI-Assisted Importer
                   <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" />
                 </span>
+              </Link>
+              <Link
+                href="/settings/import-export/migration"
+                className="group flex min-h-56 flex-col rounded-3xl border border-violet-600/60 bg-violet-950/25 p-6 transition hover:border-violet-400 hover:bg-violet-950/40"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <span className="rounded-full border border-violet-500/60 bg-violet-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-violet-200">Beta</span>
+                  <Files className="h-7 w-7 text-violet-300" aria-hidden="true" />
+                </div>
+                <h3 className="mt-5 text-xl font-bold text-white">Multi-File Migration</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">Organize a mixed batch into one migration plan across TracePoint modules.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">Shared mappings, cross-file duplicate review, dependencies, and resumable progress.</p>
+                <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-violet-200">Open Migration Workspace<ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
               </Link>
             </div>
 
