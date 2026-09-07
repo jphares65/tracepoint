@@ -1,7 +1,8 @@
 import { IMPORT_FIELDS } from "./catalog.ts";
 import { cleanText } from "./normalize.ts";
+import { annotateResolvableIssues, applyValueOverrides, importScopeIsSafe } from "./remediation.ts";
 import { materializeSheet, MAX_IMPORT_COLUMNS, MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS_PER_SHEET, MAX_IMPORT_SHEETS, MAX_IMPORT_TOTAL_CHARACTERS } from "./workbook.ts";
-import { IMPORT_DOMAINS, type ColumnMapping, type ImportDomain, type ImportPayload, type ImportReferenceData, type PreviewRow, type PreviewSummary, type ValidationIssue } from "./types.ts";
+import { IMPORT_DOMAINS, type ColumnMapping, type ImportDomain, type ImportPayload, type ImportReferenceData, type PreviewRow, type PreviewSummary, type RowDecision, type ValidationIssue, type ValueOverride } from "./types.ts";
 import { validateCertifications } from "./adapters/certifications.ts";
 import { validateEquipment } from "./adapters/equipment.ts";
 import { validateFirearms } from "./adapters/firearms.ts";
@@ -44,7 +45,7 @@ export function parseImportPayload(value: unknown): ImportPayload {
   });
   const file = value.file;
   if (typeof file.name !== "string" || typeof file.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(file.sha256) || typeof file.size !== "number" || file.size < 1 || file.size > MAX_IMPORT_FILE_BYTES || typeof file.type !== "string" || typeof file.sheetCount !== "number" || !Number.isInteger(file.sheetCount) || file.sheetCount < 1 || file.sheetCount > MAX_IMPORT_SHEETS) throw new Error("File metadata is malformed.");
-  return {
+  const payload: ImportPayload = {
     file: { name: cleanText(file.name, 250), size: file.size, sha256: file.sha256.toLowerCase(), type: cleanText(file.type, 150), sheetCount: file.sheetCount },
     domain: value.domain as ImportDomain,
     sheetName: cleanText(value.sheetName, 100),
@@ -52,6 +53,31 @@ export function parseImportPayload(value: unknown): ImportPayload {
     matrix,
     mappings,
   };
+  const materialized = materializeSheet(payload.matrix, payload.headerRow);
+  const mappedSource = new Map(payload.mappings.filter((mapping) => mapping.targetField).map((mapping) => [mapping.targetField!, mapping.sourceColumn]));
+  const sourceByRow = new Map(materialized.rows.map((row) => [row.rowNumber, row.source]));
+  if (value.overrides !== undefined && !Array.isArray(value.overrides)) throw new Error("Import remediation overrides are malformed.");
+  if (value.rowDecisions !== undefined && !Array.isArray(value.rowDecisions)) throw new Error("Import conflict decisions are malformed.");
+  if ((value.overrides?.length ?? 0) > MAX_IMPORT_ROWS_PER_SHEET || (value.rowDecisions?.length ?? 0) > MAX_IMPORT_ROWS_PER_SHEET) throw new Error("Import remediation exceeds the safe limit.");
+  payload.overrides = (value.overrides ?? []).map((candidate): ValueOverride => {
+    if (!isRecord(candidate) || !Number.isInteger(candidate.rowNumber) || typeof candidate.sourceColumn !== "string" || typeof candidate.targetField !== "string" || typeof candidate.originalValue !== "string" || typeof candidate.replacementValue !== "string" || !["row", "column", "import"].includes(String(candidate.scope))) throw new Error("An import remediation override is malformed.");
+    const targetField = cleanText(candidate.targetField, 100);
+    const sourceColumn = cleanText(candidate.sourceColumn, 250);
+    const rowNumber = Number(candidate.rowNumber);
+    if (mappedSource.get(targetField) !== sourceColumn) throw new Error("A remediation override must target its mapped source column.");
+    if (sourceByRow.get(rowNumber)?.[sourceColumn] !== candidate.originalValue) throw new Error("A remediation override does not match the immutable source value.");
+    const scope = candidate.scope as ValueOverride["scope"];
+    if (scope === "import" && !importScopeIsSafe(payload, targetField)) throw new Error("Cross-column remediation is not safe for this field. Use the mapped column scope.");
+    return { rowNumber, sourceColumn, targetField, originalValue: cleanText(candidate.originalValue, 4000), replacementValue: cleanText(candidate.replacementValue, 4000), scope, approvedAt: typeof candidate.approvedAt === "string" ? cleanText(candidate.approvedAt, 50) : undefined };
+  });
+  payload.rowDecisions = (value.rowDecisions ?? []).map((candidate): RowDecision => {
+    if (!isRecord(candidate) || !Number.isInteger(candidate.rowNumber) || !Number.isInteger(candidate.sourceConflictRowNumber) || !["keep_first", "keep_later", "skip_row"].includes(String(candidate.resolution))) throw new Error("An import conflict decision is malformed.");
+    const rowNumber = Number(candidate.rowNumber);
+    const sourceConflictRowNumber = Number(candidate.sourceConflictRowNumber);
+    if (!sourceByRow.has(rowNumber) || !sourceByRow.has(sourceConflictRowNumber)) throw new Error("An import conflict decision references a row outside the selected worksheet.");
+    return { rowNumber, sourceConflictRowNumber, resolution: candidate.resolution as RowDecision["resolution"], approvedAt: typeof candidate.approvedAt === "string" ? cleanText(candidate.approvedAt, 50) : undefined };
+  });
+  return payload;
 }
 
 export function validateMappings(payload: ImportPayload) {
@@ -80,11 +106,12 @@ export function validateMappings(payload: ImportPayload) {
     if (!usedTargets.has(field.key)) issues.push({ severity: "error", field: field.key, message: `${field.label} must be mapped before validation.` });
   }
   const mappingByTarget = new Map(payload.mappings.filter((mapping) => mapping.targetField).map((mapping) => [mapping.targetField!, mapping.sourceColumn]));
-  const mappedRows: MappedInputRow[] = rows.map((row) => ({
+  const originalMappedRows: MappedInputRow[] = rows.map((row) => ({
     rowNumber: row.rowNumber,
     values: Object.fromEntries(IMPORT_FIELDS[payload.domain].map((field) => [field.key, mappingByTarget.has(field.key) ? row.source[mappingByTarget.get(field.key)!] ?? "" : ""])),
   }));
-  return { issues, mappedRows };
+  const mappedRows = applyValueOverrides(originalMappedRows, originalMappedRows, payload);
+  return { issues, mappedRows, originalMappedRows };
 }
 
 const EMPTY_REFERENCE: ImportReferenceData = {
@@ -97,12 +124,35 @@ export function validateImport(payload: ImportPayload, reference: ImportReferenc
   if (mapped.issues.some((issue) => issue.severity === "error")) {
     rows = mapped.mappedRows.map((row) => ({ rowNumber: row.rowNumber, status: "blocked", action: "CONFLICT", values: row.values, issues: [{ severity: "error", message: "Resolve mapping errors before this row can be validated." }], changes: [] }));
   } else {
-    rows = payload.domain === "personnel" ? validatePersonnel(mapped.mappedRows, reference)
-      : payload.domain === "firearms" ? validateFirearms(mapped.mappedRows, reference)
-      : payload.domain === "certifications" ? validateCertifications(mapped.mappedRows, reference)
-      : payload.domain === "vehicles" ? validateVehicles(mapped.mappedRows, reference)
-      : validateEquipment(mapped.mappedRows, reference);
+    const validateRows = (input: MappedInputRow[]) => payload.domain === "personnel" ? validatePersonnel(input, reference)
+      : payload.domain === "firearms" ? validateFirearms(input, reference)
+      : payload.domain === "certifications" ? validateCertifications(input, reference)
+      : payload.domain === "vehicles" ? validateVehicles(input, reference)
+      : validateEquipment(input, reference);
+    const initialRows = validateRows(mapped.mappedRows);
+    const initialByRow = new Map(initialRows.map((row) => [row.rowNumber, row]));
+    const approvedSkips = new Set<number>();
+    for (const decision of payload.rowDecisions ?? []) {
+      const source = initialByRow.get(decision.sourceConflictRowNumber);
+      const target = initialByRow.get(decision.rowNumber);
+      const duplicatePointsToTarget = source?.issues.some((issue) => issue.conflict?.kind === "duplicate" && issue.conflict.conflictingRowNumber === decision.rowNumber);
+      const valid = Boolean(source && target && (
+        (decision.resolution === "keep_first" && decision.rowNumber === decision.sourceConflictRowNumber && source.action === "CONFLICT") ||
+        (decision.resolution === "keep_later" && duplicatePointsToTarget) ||
+        (decision.resolution === "skip_row" && decision.rowNumber === decision.sourceConflictRowNumber && source.action === "CONFLICT")
+      ));
+      if (valid) approvedSkips.add(decision.rowNumber);
+      else mapped.issues.push({ severity: "error", message: `The conflict decision for row ${decision.rowNumber} no longer matches the validated data. Review the conflict again.` });
+    }
+    const activeRows = mapped.mappedRows.filter((row) => !approvedSkips.has(row.rowNumber));
+    rows = validateRows(activeRows);
+    for (const rowNumber of approvedSkips) {
+      const mappedRow = mapped.mappedRows.find((row) => row.rowNumber === rowNumber)!;
+      rows.push({ rowNumber, status: "valid", action: "SKIP", values: mappedRow.values, issues: [], changes: [], matchReason: "Administrator explicitly skipped this conflicting row." });
+    }
+    rows.sort((left, right) => left.rowNumber - right.rowNumber);
   }
+  rows = annotateResolvableIssues(payload, rows, mapped.mappedRows, mapped.originalMappedRows, reference);
   return { mappingIssues: mapped.issues, rows, summary: summarizePreview(rows) };
 }
 

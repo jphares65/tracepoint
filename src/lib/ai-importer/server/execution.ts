@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- The generated Supabase type snapshot does not yet include the existing Fleet V1 tables used by this adapter. */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { ImportDomain, ImportExecutionResult, ImportPayload, PreviewRow } from "../types.ts";
 
@@ -139,13 +139,25 @@ async function persistRow(admin: any, domain: ImportDomain, departmentId: string
   return persistEquipment(admin, departmentId, actorId, row);
 }
 
-export async function executeApprovedImport(admin: any, payload: ImportPayload, departmentId: string, actorId: string, rows: PreviewRow[]): Promise<ImportExecutionResult> {
+type ExecutionAuditContext = {
+  workspaceId?: string;
+  sourceFiles?: Array<{ filename: string; sha256: string; sheet: string }>;
+  mappings?: Array<{ sourceId: string; sourceColumn: string; targetField: string | null; confidence: string }>;
+  remediations?: Array<{ sourceId: string; rowNumber: number; sourceColumn: string; targetField: string; originalValue: string; replacementValue: string; scope: string }>;
+  mergeRules?: Array<{ domain: string; strategy: string; groupKey?: string; field?: string; preferredSourceId?: string }>;
+};
+
+function valueFingerprint(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export async function executeApprovedImport(admin: any, payload: ImportPayload, departmentId: string, actorId: string, rows: PreviewRow[], auditContext: ExecutionAuditContext = {}): Promise<ImportExecutionResult> {
   const jobId = randomUUID();
   const result: ImportExecutionResult = { jobId, created: 0, updated: 0, skipped: 0, failed: 0, warnings: rows.filter((row) => row.status === "warning").length, failures: [], rejectedRows: [] };
   const startAudit = await admin.from("audit_events").insert({
     department_id: departmentId, actor_user_id: actorId, action: "ai_import_approved", entity_type: "ai_import_job", entity_id: jobId,
     summary: `${payload.domain} import approved for ${rows.length} rows.`,
-    details: { source: { filename: payload.file.name, size: payload.file.size, sha256: payload.file.sha256, sheet: payload.sheetName, header_row: payload.headerRow }, domain: payload.domain, mappings: payload.mappings.map((mapping) => ({ source: mapping.sourceColumn, target: mapping.targetField, confidence: mapping.confidence })), proposed: { create: rows.filter((row) => row.action === "CREATE").length, update: rows.filter((row) => row.action === "UPDATE").length, skip: rows.filter((row) => row.action === "SKIP").length }, raw_file_stored: false },
+    details: { source: { filename: payload.file.name, size: payload.file.size, sha256: payload.file.sha256, sheet: payload.sheetName, header_row: payload.headerRow }, workspace_id: auditContext.workspaceId, workspace_sources: auditContext.sourceFiles, domain: payload.domain, mappings: auditContext.mappings ?? payload.mappings.map((mapping) => ({ source: mapping.sourceColumn, target: mapping.targetField, confidence: mapping.confidence })), remediations: [...(payload.overrides ?? []), ...(auditContext.remediations ?? [])].map((override) => ({ source_id: "sourceId" in override ? override.sourceId : undefined, row_number: override.rowNumber, source_column: override.sourceColumn, target_field: override.targetField, scope: override.scope, original_value_sha256: valueFingerprint(override.originalValue), replacement_value_sha256: valueFingerprint(override.replacementValue) })), conflict_decisions: payload.rowDecisions ?? [], merge_rules: auditContext.mergeRules, final_validation: { total: rows.length, valid: rows.filter((row) => row.status === "valid").length, warnings: rows.filter((row) => row.status === "warning").length, blocked: rows.filter((row) => row.status === "blocked").length, create: rows.filter((row) => row.action === "CREATE").length, update: rows.filter((row) => row.action === "UPDATE").length, skip: rows.filter((row) => row.action === "SKIP").length, conflict: rows.filter((row) => row.action === "CONFLICT").length }, proposed: { create: rows.filter((row) => row.action === "CREATE").length, update: rows.filter((row) => row.action === "UPDATE").length, skip: rows.filter((row) => row.action === "SKIP").length }, raw_file_stored: false },
   });
   await assertResult(startAudit, "Import approval could not be audited, so no records were written.");
   for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
