@@ -187,7 +187,7 @@ export class ImageBuildStack extends cdk.Stack {
       NagSuppressions.addResourceSuppressions(buildPolicy, [{
         id:"AwsSolutions-IAM5",
         reason:"ECR authorization is not resource-scoped; CDK's source grant remains on one reviewed archive, KMS wildcard action suffixes remain on the exact build key, and CodeBuild streams remain under its own project group.",
-        appliesTo:["Resource::*","Action::s3:GetBucket*","Action::s3:GetObject*","Action::s3:List*","Action::kms:GenerateDataKey*","Action::kms:ReEncrypt*","Resource::arn:<AWS::Partition>:logs:us-east-1:111111111111:log-group:/aws/codebuild/<ImageBuildProject74D885BB>:*"]
+        appliesTo:["Resource::*","Action::s3:GetBucket*","Action::s3:GetObject*","Action::s3:List*","Action::kms:GenerateDataKey*","Action::kms:ReEncrypt*",`Resource::arn:<AWS::Partition>:logs:${this.region}:${this.account}:log-group:/aws/codebuild/<ImageBuildProject74D885BB>:*`]
       }]);
     }
 

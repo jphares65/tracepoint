@@ -7,6 +7,9 @@ import {evaluateProductionLiveReadiness} from './production-live-readiness-core.
 const args = process.argv.slice(2);
 const configIndex = args.indexOf('--config');
 assert.ok(configIndex >= 0 && args[configIndex + 1], 'Reviewed non-secret production target file required');
+const organizationsProfileIndex = args.indexOf('--organizations-profile');
+const organizationsProfile = organizationsProfileIndex >= 0 ? args[organizationsProfileIndex + 1] : undefined;
+if (organizationsProfileIndex >= 0) assert.ok(organizationsProfile, '--organizations-profile requires a value');
 const target: ProductionTarget = validateProductionTarget(
   JSON.parse(readFileSync(args[configIndex + 1], 'utf8').replace(/^\uFEFF/, '')),
   {offline: true},
@@ -29,7 +32,7 @@ const identity = aws(['sts', 'get-caller-identity']);
 const availabilityZones = aws(['ec2', 'describe-availability-zones', '--zone-names', 'us-east-1a', 'us-east-1b']).AvailabilityZones;
 const certificate = optional(['acm', 'describe-certificate', '--certificate-arn', target.certificateArn], {}).Certificate;
 const secretMetadata = optional(['secretsmanager', 'describe-secret', '--secret-id', 'tracepoint/production/application'], {});
-const trailList = optional(['cloudtrail', 'describe-trails', '--include-shadow-trails', 'false'], {trailList:[]}).trailList ?? [];
+const trailList = optional(['cloudtrail', 'describe-trails', '--no-include-shadow-trails'], {trailList:[]}).trailList ?? [];
 const cloudTrails = trailList.map((trail: {TrailARN?: string}) => ({
   IsLogging: trail.TrailARN ? optional(['cloudtrail', 'get-trail-status', '--name', trail.TrailARN], {}).IsLogging === true : false,
 }));
@@ -40,7 +43,7 @@ const guardDutyDetectors = detectorIds.map((detectorId: string) => ({
   Status: optional(['guardduty', 'get-detector', '--detector-id', detectorId], {}).Status,
 }));
 const securityHubEnabled = Boolean(optional(['securityhub', 'describe-security-hub-v2'], {}).HubV2Arn);
-const policies = optional(['organizations', 'list-policies-for-target', '--target-id', target.account, '--filter', 'SERVICE_CONTROL_POLICY'], null);
+const policies = optional(['organizations', 'list-policies-for-target', '--target-id', target.account, '--filter', 'SERVICE_CONTROL_POLICY', ...(organizationsProfile ? ['--profile', organizationsProfile] : [])], null);
 const budgetResponse = optional(['budgets', 'describe-budgets', '--account-id', target.account, '--max-results', '100'], {Budgets:[]});
 
 const report = evaluateProductionLiveReadiness({
