@@ -4,7 +4,7 @@ export type FleetClient = { from(table: string): FleetQuery };
 export class SupabaseFleetReadDataSource implements FleetReadDataSource {
   private readonly client: FleetClient; constructor(client: FleetClient) { this.client = client; }
   getRules(id: string, fields: string) { return this.client.from("fleet_rules").select(fields).eq("department_id", id).maybeSingle(); }
-  listVehicles(id: string, fields: string) { return this.client.from("fleet_vehicles").select(fields).eq("department_id", id).order("unit_number", { ascending: true }); }
+  listVehicles(id: string, fields: string) { return this.client.from("fleet_vehicles").select(fields).eq("department_id", id); }
   getVehicle(id: string, vehicleId: string) { return this.client.from("fleet_vehicles").select("*").eq("department_id", id).eq("id", vehicleId).maybeSingle(); }
   listWorkOrders(id: string, vehicleId: string) { return this.client.from("fleet_work_orders").select("*").eq("department_id", id).eq("vehicle_id", vehicleId).order("reported_at", { ascending: false }); }
   listEquipment(id: string, vehicleId: string) { return this.client.from("fleet_vehicle_equipment").select("*").eq("department_id", id).eq("vehicle_id", vehicleId).order("category"); }

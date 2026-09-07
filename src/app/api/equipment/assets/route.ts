@@ -8,6 +8,7 @@ import {
 } from "@/lib/tracepoint/equipment-server";
 import { createEquipmentReadRepository } from "@/lib/equipment/read-repository";
 import { equipmentAssignment, equipmentIdentifierConflict } from "@/lib/equipment/write-validation";
+import { sortFleetVehiclesByUnit } from "@/lib/fleet/unit-order";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +35,11 @@ export async function GET() {
     return NextResponse.json({
       ...result,
       vehicles: context.canManage
-        ? ((await context.admin
+        ? sortFleetVehiclesByUnit((await context.admin
             .from("fleet_vehicles")
             .select("id,unit_number,make,model,status")
             .eq("department_id", context.departmentId)
-            .neq("status", "Retired")
-            .order("unit_number")).data ?? [])
+            .neq("status", "Retired")).data ?? [])
         : [],
       canManage: context.canManage,
       canViewDepartment: context.canViewDepartment,
