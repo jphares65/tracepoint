@@ -40,7 +40,7 @@ export function operationsEvidence(logs){
     for(const key of ['server-action-request-rejected','unclassified'])if(Number.isInteger(value.application.categories?.[key]))safe.application.categories[key]=value.application.categories[key];
     safe.application.unknownFingerprints=(value.application.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));
     for(const key of ['firstAt','lastAt'])if(typeof value.application[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.application[key]))safe.application[key]=value.application[key];
-    safe.waf={requestActions:{}};for(const key of ['total','requestsWithNextActionHeader'])if(Number.isInteger(value.waf[key]))safe.waf[key]=value.waf[key];
+    safe.waf={authorized:value.waf.authorized===true,requestActions:{}};for(const key of ['total','requestsWithNextActionHeader'])if(Number.isInteger(value.waf[key]))safe.waf[key]=value.waf[key];
     for(const key of ['ALLOW','BLOCK','COUNT','CAPTCHA','CHALLENGE','OTHER'])if(Number.isInteger(value.waf.requestActions?.[key]))safe.waf.requestActions[key]=value.waf.requestActions[key];
     safe.unknownCorrelation=(value.unknownCorrelation??[]).filter(x=>/^[0-9a-f]{64}$/.test(x.fingerprint)&&(x.nearestWafRequestMilliseconds===null||Number.isInteger(x.nearestWafRequestMilliseconds))).map(x=>({fingerprint:x.fingerprint,nearestWafRequestMilliseconds:x.nearestWafRequestMilliseconds}));reports.push(safe);
    }else if(typeof value.queriedAtUTC==='string'&&Number.isFinite(value.budgetActualUSD)){

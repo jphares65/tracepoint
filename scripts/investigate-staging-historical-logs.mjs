@@ -18,8 +18,11 @@ const application = aws(['logs', 'filter-log-events', '--log-group-name', '/trac
   message:event.message,
   fingerprint:createHash('sha256').update(String(event.message ?? '')).digest('hex'),
 }));
-const waf = aws(['logs', 'filter-log-events', '--log-group-name', 'aws-waf-logs-tracepoint-staging-requests', ...windowArgs]).events.map(event => {
+let wafEvents = [], wafEvidenceAuthorized = true;
+try { wafEvents = aws(['logs', 'filter-log-events', '--log-group-name', 'aws-waf-logs-tracepoint-staging-requests', ...windowArgs]).events; }
+catch { wafEvidenceAuthorized = false; }
+const waf = wafEvents.map(event => {
   try { return JSON.parse(event.message); } catch { return null; }
 }).filter(Boolean);
-const result = correlateHistoricalLogs(application, waf);
+const result = correlateHistoricalLogs(application, waf, {wafEvidenceAuthorized});
 console.log(JSON.stringify({account, region, kind:'historical-log-correlation', windowStart:new Date(start).toISOString(), windowEnd:new Date(end).toISOString(), ...result}, null, 2));

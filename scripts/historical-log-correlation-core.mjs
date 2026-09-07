@@ -1,6 +1,6 @@
 import {classifyStagingLogs} from './staging-log-classification.mjs';
 
-export function correlateHistoricalLogs(applicationEvents, wafRecords) {
+export function correlateHistoricalLogs(applicationEvents, wafRecords, {wafEvidenceAuthorized = true} = {}) {
   const classification = classifyStagingLogs(applicationEvents);
   const wafTimes = wafRecords.map(record => Number(record.timestamp)).filter(Number.isFinite);
   const requestActions = {};
@@ -25,7 +25,7 @@ export function correlateHistoricalLogs(applicationEvents, wafRecords) {
       firstAt:classification.firstAt,
       lastAt:classification.lastAt,
     },
-    waf:{total:wafRecords.length, requestActions, requestsWithNextActionHeader},
+    waf:{authorized:wafEvidenceAuthorized, total:wafRecords.length, requestActions, requestsWithNextActionHeader},
     unknownCorrelation,
     messagesPrinted:false,
   };
