@@ -18,3 +18,7 @@ test('classification embedded in the runtime report is extracted without another
  const value={account:'559054714699',region:'us-east-1',imageTag:'a'.repeat(40),ecs:{revision:18},logClassification:{total:10,recent60Minutes:0,categories:{'server-action-request-rejected':10},unknownFingerprints:[]}};
  const reports=operationsEvidence(JSON.stringify(value,null,2));assert.equal(reports.length,2);assert.equal(reports[1].kind,'log-diagnostics');assert.equal(reports[1].classification.total,10);
 });
+test('historical correlation keeps only timing, counts and fingerprints',()=>{
+ const value={account:'559054714699',region:'us-east-1',kind:'historical-log-correlation',windowStart:'2026-09-06T12:06:35.000Z',windowEnd:'2026-09-06T12:06:55.000Z',application:{total:2,categories:{unclassified:2,sensitive:1},unknownFingerprints:['a'.repeat(64),'sensitive'],firstAt:'2026-09-06T12:06:43.605Z',lastAt:'2026-09-06T12:06:45.833Z'},waf:{total:10,requestActions:{ALLOW:10,sensitive:1},requestsWithNextActionHeader:8},unknownCorrelation:[{fingerprint:'a'.repeat(64),nearestWafRequestMilliseconds:5},{fingerprint:'sensitive',nearestWafRequestMilliseconds:1}],messagesPrinted:false,raw:'sensitive'};
+ const reports=operationsEvidence(JSON.stringify(value,null,2));assert.equal(reports.length,1);assert.equal(reports[0].waf.total,10);assert.deepEqual(reports[0].unknownCorrelation,[{fingerprint:'a'.repeat(64),nearestWafRequestMilliseconds:5}]);assert.equal(JSON.stringify(reports).includes('sensitive'),false);
+});

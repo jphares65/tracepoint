@@ -7,6 +7,7 @@
   "method": "Unchanged existing weighted binary capability checklist. Production technical preparation, strict seven-stack synthesis, compliance checks, offline hosting-recovery validation and live non-production resilience do not complete any previously-false live production/account/PITR/DNS/approval capability, so the score remains unchanged. Storage and CI/CD fractions cover staging capabilities, not production provider exit.",
   "releaseEvidence": "aws-workflow-840671929044a02c7845800c1f78150687fc3f28.json",
   "liveEvidence": "aws-operations-488e13fadedad11e35a05d7e59b314e8a135cfb4.json",
+  "latestReadOnlyOperationsEvidence": "aws-operations-4c4cd13aa2cf41852ae48a20edae6d727ced5433.json",
   "costEvidence": "aws-cost-evidence-20260906.json",
   "productionPreparationEvidence": "aws-production-readiness-evidence-20260906.json",
   "productionCostModel": "aws-production-cost-model-20260906.json",
@@ -14,8 +15,9 @@
   "productionPitrValidated": false,
   "productionCapacityProof": false,
   "strictLogGatePassed": true,
-  "strictLogGateScope": "current restored ECS task revision 21",
+  "strictLogGateScope": "current restored ECS task revision 21; zero matching events in the latest 60-minute window and zero filesystem errors",
   "historicalUnclassifiedEvents": 2,
+  "controlledProbeHistoricalEvents": 3,
   "migrationLineage": {
     "originMain": "d31be2fc99160c4c4a55d6cb2fb307ec2d1ed04f",
     "mergeCommit": "f72108877395cf629394aa19f462e053d1dd16ca",

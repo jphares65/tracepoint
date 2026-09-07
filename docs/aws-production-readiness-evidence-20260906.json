@@ -1,10 +1,10 @@
 {
-  "checkedAtUTC": "2026-09-07T01:09:36.814Z",
+  "checkedAtUTC": "2026-09-07T01:29:31.802Z",
   "mode": "offline-production-preparation-and-live-staging-resilience",
   "productionAccount": null,
   "productionAccountInventory": "unavailable: staging OIDC role lacks Organizations metadata and inventory authority; local AWS credentials unavailable",
-  "accountDiscoveryRuns": [34071010058, 34072001491],
-  "accountDiscoveryEvidence": "aws-operations-f80e4a9bea93077f1723fd1ecd675517ceedebfc.json",
+  "accountDiscoveryRuns": [34071010058, 34072001491, 34073084446],
+  "accountDiscoveryEvidence": "aws-operations-4c4cd13aa2cf41852ae48a20edae6d727ced5433.json",
   "organizationMetadataVisible": false,
   "accountInventoryAuthorized": false,
   "dedicatedProductionAccountExists": null,
@@ -48,7 +48,7 @@
     "productionCapacityProof": false
   },
   "latestOperationalEvidence": {
-    "run": 34072001491,
+    "run": 34073084446,
     "stackStatus": "UPDATE_COMPLETE",
     "taskRevision": 21,
     "desiredRunningPending": [1, 1, 0],

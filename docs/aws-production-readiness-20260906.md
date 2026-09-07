@@ -58,7 +58,7 @@ unhealthy targets, request flood, CPU and p99 latency. Queues are encrypted,
 TLS-only, retained for 14 days and include a DLQ. Still required live: named
 human/on-call subscription and alarm-delivery test, production log/queue/zero-
 alarm baseline, centrally owned CloudTrail/Config/GuardDuty/Security Hub, and
-production rollback. Read-only run `34072001491` reconfirmed the healthy
+production rollback. Read-only run `34073084446` reconfirmed the healthy
 staging stack, revision 21 rollout, one healthy target, all six alarms `OK`,
 empty failed/stale notification queues, matching immutable digest and completed
 zero-finding scan. Three older same-fingerprint log matches occurred at the
@@ -81,7 +81,7 @@ alerts in the dedicated account.
   test, production rollback, isolated Supabase database and object recovery,
   production log/alarm/queue baseline, and secret rotation/revocation rehearsal.
 - Account/permission: determine the dedicated production account through an
-  authorized Organizations inventory (OIDC runs `34071010058` and `34072001491`
+  authorized Organizations inventory (latest OIDC run `34073084446`
   proved the staging role lacks this authority); validate its region/SCPs/security
   services; obtain the exact production role; bootstrap CDK; prepare/request
   the production ACM certificate; configure measured cost evidence.

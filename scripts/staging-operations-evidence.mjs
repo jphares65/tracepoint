@@ -32,6 +32,17 @@ export function operationsEvidence(logs){
     safe.classification.unknownFingerprints=(value.classification.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));
     const vocabulary=['TypeError','ReferenceError','SyntaxError','RangeError','URIError','AggregateError','JSON','parse','undefined','null','workers','payload','headers','decrypt','encryption','Unexpected','Invalid','Server Action','request','body','digest','ENOENT','ENOTFOUND','ECONNRESET','timeout','connection','closed','aborted','pipe','response','socket','premature','command','spawn','exit','EPIPE','MODULE_NOT_FOUND','exception','multipart','stream','failed'];
     safe.classification.unknownFeatures=(value.classification.unknownFeatures??[]).filter(x=>/^[0-9a-f]{64}$/.test(x.fingerprint)).map(x=>({fingerprint:x.fingerprint,features:(x.features??[]).filter(word=>vocabulary.includes(word))}));reports.push(safe);
+   }else if(value.kind==='historical-log-correlation'&&value.application&&value.waf){
+    safe.kind='historical-log-correlation';safe.messagesPrinted=value.messagesPrinted===true;
+    for(const key of ['windowStart','windowEnd'])if(typeof value[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value[key]))safe[key]=value[key];
+    safe.application={categories:{},unknownFingerprints:[]};
+    if(Number.isInteger(value.application.total))safe.application.total=value.application.total;
+    for(const key of ['server-action-request-rejected','unclassified'])if(Number.isInteger(value.application.categories?.[key]))safe.application.categories[key]=value.application.categories[key];
+    safe.application.unknownFingerprints=(value.application.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));
+    for(const key of ['firstAt','lastAt'])if(typeof value.application[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.application[key]))safe.application[key]=value.application[key];
+    safe.waf={requestActions:{}};for(const key of ['total','requestsWithNextActionHeader'])if(Number.isInteger(value.waf[key]))safe.waf[key]=value.waf[key];
+    for(const key of ['ALLOW','BLOCK','COUNT','CAPTCHA','CHALLENGE','OTHER'])if(Number.isInteger(value.waf.requestActions?.[key]))safe.waf.requestActions[key]=value.waf.requestActions[key];
+    safe.unknownCorrelation=(value.unknownCorrelation??[]).filter(x=>/^[0-9a-f]{64}$/.test(x.fingerprint)&&(x.nearestWafRequestMilliseconds===null||Number.isInteger(x.nearestWafRequestMilliseconds))).map(x=>({fingerprint:x.fingerprint,nearestWafRequestMilliseconds:x.nearestWafRequestMilliseconds}));reports.push(safe);
    }else if(typeof value.queriedAtUTC==='string'&&Number.isFinite(value.budgetActualUSD)){
     safe.kind='cost';if(/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.queriedAtUTC))safe.queriedAtUTC=value.queriedAtUTC;
     for(const key of ['budgetActualUSD','budgetLimitUSD','modeledMonthlyUSD','disposableRehearsalReserveUSD'])if(Number.isFinite(value[key]))safe[key]=value[key];

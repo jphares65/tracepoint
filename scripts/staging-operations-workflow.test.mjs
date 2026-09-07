@@ -22,6 +22,7 @@ test('operations workflow cannot publish or deploy and restricts its OIDC sessio
   'node --test scripts/validate-staging-operations-request.test.mjs',
   'node scripts/collect-production-account-readiness.mjs',
   'node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE',
+  'node scripts/investigate-staging-historical-logs.mjs',
   'node scripts/test-staging-brevo-delivery.mjs --prerequisites-only',
   'node scripts/collect-staging-operations-cost.mjs',
  ]);
