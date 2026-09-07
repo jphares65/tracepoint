@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   Activity,
+  BarChart3,
   Building2,
   Check,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   FileText,
   ImagePlus,
   LoaderCircle,
+  LayoutDashboard,
   Lock,
   Mail,
   Palette,
@@ -56,6 +58,7 @@ type TabId =
   | "organization"
   | "users"
   | "rules"
+  | "views"
   | "branding"
   | "importExport"
   | "notifications"
@@ -848,6 +851,11 @@ export default function AdminSettingsPage() {
         id: "branding",
         label: "Branding",
         icon: Palette,
+      });
+      items.push({
+        id: "views",
+        label: "Dashboard Views",
+        icon: LayoutDashboard,
       });
       items.push({
         id: "importExport",
@@ -2561,6 +2569,49 @@ export default function AdminSettingsPage() {
               </div>
             </SettingsCard>
           </div>
+        ) : null}
+        {!loading && !accessLoading && activeTab === "views" ? (
+          <SettingsCard
+            title="Operational Views"
+            description="Open either page in its visual builder to shape the agency&apos;s command experience."
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <a
+                href="/command-dashboard?customize=dashboard"
+                className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-blue-500/50 hover:bg-slate-900"
+              >
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600/20 text-blue-300">
+                  <LayoutDashboard size={20} />
+                </span>
+                <h3 className="mt-4 text-sm font-semibold text-white">
+                  Command Dashboard
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Arrange operational cards, choose card sizes, and control dashboard sections in a live preview.
+                </p>
+                <p className="mt-4 text-xs font-semibold text-blue-300">
+                  Customize Dashboard →
+                </p>
+              </a>
+              <a
+                href="/analytics?customize=analytics"
+                className="group rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-violet-500/50 hover:bg-slate-900"
+              >
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-600/20 text-violet-300">
+                  <BarChart3 size={20} />
+                </span>
+                <h3 className="mt-4 text-sm font-semibold text-white">
+                  Analytics
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Choose summary metrics, arrange analysis sections, and tune advanced signal settings.
+                </p>
+                <p className="mt-4 text-xs font-semibold text-violet-300">
+                  Customize Analytics →
+                </p>
+              </a>
+            </div>
+          </SettingsCard>
         ) : null}
         {!loading && !accessLoading && activeTab === "agency" ? (
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">

@@ -28,11 +28,39 @@ export type AnalyticsSectionKey =
   | "alert_logic_guide"
   | "performance_inputs";
 
+export type CommandDashboardCardSize = "compact" | "standard" | "wide";
+
+export const COMMAND_DASHBOARD_CARD_ORDER: CommandDashboardCardKey[] = [
+  "agency_training",
+  "fleet_readiness",
+  "qualification_readiness",
+  "certification_readiness",
+  "equipment_readiness",
+  "range_readiness",
+  "records_health",
+  "performance_signal",
+  "firearm_reliability",
+];
+
+export const ANALYTICS_SECTION_ORDER: AnalyticsSectionKey[] = [
+  "qualification_trends",
+  "drill_trends",
+  "category_trends",
+  "alert_logic_guide",
+  "performance_inputs",
+];
+
 export type AnalyticsDashboardConfiguration = {
   command_dashboard_cards: Record<CommandDashboardCardKey, boolean>;
+  command_dashboard_card_order: CommandDashboardCardKey[];
+  command_dashboard_card_sizes: Record<
+    CommandDashboardCardKey,
+    CommandDashboardCardSize
+  >;
   command_dashboard_sections: Record<CommandDashboardSectionKey, boolean>;
   analytics_metrics: Record<AnalyticsMetricKey, boolean>;
   analytics_sections: Record<AnalyticsSectionKey, boolean>;
+  analytics_section_order: AnalyticsSectionKey[];
   trend_change_threshold: number;
   repeated_deficiency_count: number;
   command_attention_item_limit: number;
@@ -58,6 +86,18 @@ export const DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION: AnalyticsDashboardConfig
     agency_training: true,
     fleet_readiness: true,
   },
+  command_dashboard_card_order: COMMAND_DASHBOARD_CARD_ORDER,
+  command_dashboard_card_sizes: {
+    qualification_readiness: "compact",
+    certification_readiness: "compact",
+    equipment_readiness: "compact",
+    range_readiness: "compact",
+    records_health: "compact",
+    performance_signal: "compact",
+    firearm_reliability: "compact",
+    agency_training: "wide",
+    fleet_readiness: "wide",
+  },
   command_dashboard_sections: {
     critical_attention: true,
     qualification_snapshot: true,
@@ -77,6 +117,7 @@ export const DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION: AnalyticsDashboardConfig
     alert_logic_guide: true,
     performance_inputs: true,
   },
+  analytics_section_order: ANALYTICS_SECTION_ORDER,
   trend_change_threshold: 1,
   repeated_deficiency_count: 2,
   command_attention_item_limit: 8,
@@ -120,6 +161,41 @@ function integerWithin(
   return Math.max(minimum, Math.min(maximum, Math.round(numeric)));
 }
 
+function orderedKeys<K extends string>(
+  input: unknown,
+  defaults: readonly K[],
+): K[] {
+  const allowed = new Set<string>(defaults);
+  const normalized = Array.isArray(input)
+    ? input.filter(
+        (value, index, values): value is K =>
+          typeof value === "string" &&
+          allowed.has(value) &&
+          values.indexOf(value) === index,
+      )
+    : [];
+
+  return [...normalized, ...defaults.filter((key) => !normalized.includes(key))];
+}
+
+function cardSizeMap(
+  input: unknown,
+  defaults: Record<CommandDashboardCardKey, CommandDashboardCardSize>,
+) {
+  const candidate = objectValue(input);
+  return Object.fromEntries(
+    Object.entries(defaults).map(([key, fallback]) => {
+      const value = candidate[key];
+      return [
+        key,
+        value === "compact" || value === "standard" || value === "wide"
+          ? value
+          : fallback,
+      ];
+    }),
+  ) as Record<CommandDashboardCardKey, CommandDashboardCardSize>;
+}
+
 export function normalizeAnalyticsDashboardConfiguration(
   input: unknown,
 ): AnalyticsDashboardConfiguration {
@@ -129,6 +205,14 @@ export function normalizeAnalyticsDashboardConfiguration(
     command_dashboard_cards: booleanMap(
       candidate.command_dashboard_cards,
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_cards,
+    ),
+    command_dashboard_card_order: orderedKeys(
+      candidate.command_dashboard_card_order,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_order,
+    ),
+    command_dashboard_card_sizes: cardSizeMap(
+      candidate.command_dashboard_card_sizes,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.command_dashboard_card_sizes,
     ),
     command_dashboard_sections: booleanMap(
       candidate.command_dashboard_sections,
@@ -141,6 +225,10 @@ export function normalizeAnalyticsDashboardConfiguration(
     analytics_sections: booleanMap(
       candidate.analytics_sections,
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.analytics_sections,
+    ),
+    analytics_section_order: orderedKeys(
+      candidate.analytics_section_order,
+      DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION.analytics_section_order,
     ),
     trend_change_threshold: integerWithin(
       candidate.trend_change_threshold,
@@ -209,6 +297,12 @@ export function normalizeAnalyticsDashboardConfiguration(
       20,
     ),
   };
+}
+
+export function resetAnalyticsDashboardConfiguration(): AnalyticsDashboardConfiguration {
+  return normalizeAnalyticsDashboardConfiguration(
+    DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+  );
 }
 
 export function mergeAnalyticsDashboardConfiguration(

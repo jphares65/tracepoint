@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import TracePointShell from "@/app/components/TracePointShell";
+import {
+  AdvancedSettings,
+  CustomizationBar,
+  ReorderButtons,
+  useVisualConfigurationEditor,
+} from "@/app/components/VisualCustomization";
 import {
   AlertTriangle,
   BarChart3,
@@ -23,11 +28,27 @@ import {
   normalizeAnalyticsDashboardConfiguration,
   type AnalyticsDashboardConfiguration,
   type AnalyticsMetricKey,
+  type AnalyticsSectionKey,
 } from "@/lib/tracepoint/analytics-dashboard-config";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Risk = "Low" | "Medium" | "High";
 type Trend = "Baseline" | "Improving" | "Stable" | "Monitor" | "Declining" | "Action Needed";
+
+const ANALYTICS_METRIC_DETAILS: Record<AnalyticsMetricKey, string> = {
+  qualification_coverage: "Qualification Coverage",
+  drill_performance: "Drill Performance",
+  training_follow_ups: "Training Follow-Ups",
+  officer_watchlist: "Personnel Requiring Review",
+};
+
+const ANALYTICS_SECTION_DETAILS: Record<AnalyticsSectionKey, string> = {
+  qualification_trends: "Qualification Trends",
+  drill_trends: "Drill Performance Trends",
+  category_trends: "Drill Category Trends",
+  alert_logic_guide: "Signal Explanation",
+  performance_inputs: "Performance Inputs",
+};
 
 type QualificationTrend = {
   officerId: string;
@@ -145,12 +166,24 @@ function MetricCard({
 }
 
 export default function AnalyticsPage() {
-  const { hasPermission } = useTracePointAccess();
+  const { departmentId, hasPermission } = useTracePointAccess();
   const canConfigure = hasPermission("administer_department");
   const [summary, setSummary] =
     useState<PerformanceSummary>(FALLBACK_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [addSectionsOpen, setAddSectionsOpen] = useState(false);
+  const editor = useVisualConfigurationEditor({
+    configuration: summary.configuration,
+    departmentId,
+    canAdminister: canConfigure,
+    editorName: "analytics",
+    onSaved: (configuration) =>
+      setSummary((current) => ({ ...current, configuration })),
+  });
+  const displayConfiguration = editor.editing
+    ? editor.draft
+    : summary.configuration;
 
   useEffect(() => {
     let isMounted = true;
@@ -239,7 +272,7 @@ export default function AnalyticsPage() {
   );
 
   const visibleOverviewMetrics = overviewMetrics.filter(
-    (metric) => summary.configuration.analytics_metrics[metric.id],
+    (metric) => displayConfiguration.analytics_metrics[metric.id],
   );
   const alertLogicItems = [
     {
@@ -249,12 +282,66 @@ export default function AnalyticsPage() {
     },
     {
       title: "Repeated drill deficiency",
-      detail: `A historical drill pattern becomes high priority after ${summary.configuration.repeated_deficiency_count} range-day record${summary.configuration.repeated_deficiency_count === 1 ? "" : "s"} with a failure, observed deficiency, or remediation recommendation. A latest failed or remediation-recommended result is already high priority.`,
+      detail: `A historical drill pattern becomes high priority after ${displayConfiguration.repeated_deficiency_count} range-day record${displayConfiguration.repeated_deficiency_count === 1 ? "" : "s"} with a failure, observed deficiency, or remediation recommendation. A latest failed or remediation-recommended result is already high priority.`,
     },
     {
       title: "Performance movement",
-      detail: `A comparable result is labeled improving or declining only when movement exceeds ${summary.configuration.trend_change_threshold} point${summary.configuration.trend_change_threshold === 1 ? "" : "s"}; smaller changes remain stable.`,
+      detail: `A comparable result is labeled improving or declining only when movement exceeds ${displayConfiguration.trend_change_threshold} point${displayConfiguration.trend_change_threshold === 1 ? "" : "s"}; smaller changes remain stable.`,
     },
+  ];
+
+  function patchDraft(
+    patch: Partial<AnalyticsDashboardConfiguration>,
+  ) {
+    editor.setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  const orderedVisibleSections = displayConfiguration.analytics_section_order.filter(
+    (key) => displayConfiguration.analytics_sections[key],
+  );
+
+  function moveAnalyticsSection(key: AnalyticsSectionKey, direction: -1 | 1) {
+    const visibleIndex = orderedVisibleSections.indexOf(key);
+    const neighbor = orderedVisibleSections[visibleIndex + direction];
+    if (!neighbor) return;
+
+    const keyIndex = editor.draft.analytics_section_order.indexOf(key);
+    const neighborIndex = editor.draft.analytics_section_order.indexOf(neighbor);
+    const next = [...editor.draft.analytics_section_order];
+    [next[keyIndex], next[neighborIndex]] = [next[neighborIndex], next[keyIndex]];
+    patchDraft({ analytics_section_order: next });
+  }
+
+  const advancedSettings: Array<{
+    key: keyof Pick<
+      AnalyticsDashboardConfiguration,
+      | "trend_change_threshold"
+      | "repeated_deficiency_count"
+      | "command_attention_item_limit"
+      | "command_training_attention_window_days"
+      | "command_training_upcoming_window_days"
+      | "command_fleet_attention_window_days"
+      | "command_training_upcoming_item_limit"
+      | "command_training_attention_item_limit"
+      | "command_fleet_attention_item_limit"
+      | "command_operations_attention_item_limit"
+      | "upcoming_range_days_item_limit"
+    >;
+    label: string;
+    min: number;
+    max: number;
+  }> = [
+    { key: "trend_change_threshold", label: "Meaningful trend change", min: 0, max: 100 },
+    { key: "repeated_deficiency_count", label: "Repeated deficiency", min: 1, max: 20 },
+    { key: "command_attention_item_limit", label: "Command attention limit", min: 1, max: 25 },
+    { key: "command_training_attention_window_days", label: "Training attention window", min: 1, max: 90 },
+    { key: "command_training_upcoming_window_days", label: "Upcoming training window", min: 1, max: 365 },
+    { key: "command_fleet_attention_window_days", label: "Fleet attention window", min: 1, max: 365 },
+    { key: "command_training_upcoming_item_limit", label: "Upcoming training limit", min: 1, max: 25 },
+    { key: "command_training_attention_item_limit", label: "Training attention limit", min: 1, max: 25 },
+    { key: "command_fleet_attention_item_limit", label: "Fleet attention limit", min: 1, max: 25 },
+    { key: "command_operations_attention_item_limit", label: "Combined operations limit", min: 1, max: 25 },
+    { key: "upcoming_range_days_item_limit", label: "Upcoming range-day limit", min: 1, max: 20 },
   ];
 
   return (
@@ -274,17 +361,149 @@ export default function AnalyticsPage() {
                 follow-ups, and officers requiring attention.
               </p>
             </div>
-            {canConfigure ? (
-              <Link
-                href="/settings/command-dashboard-analytics"
+            {canConfigure && !editor.editing ? (
+              <button
+                type="button"
+                onClick={editor.begin}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
               >
                 <SlidersHorizontal size={14} />
-                Configure
-              </Link>
+                Customize Analytics
+              </button>
             ) : null}
           </div>
         </header>
+
+        {editor.editing ? (
+          <CustomizationBar
+            title="Compose your Analytics view"
+            description="Choose the signals your command staff needs and arrange detailed sections in the order they should be reviewed."
+            addLabel="Add Metric / Section"
+            addOpen={addSectionsOpen}
+            dirty={editor.dirty}
+            saving={editor.saving}
+            notice={editor.notice}
+            onToggleAdd={() => setAddSectionsOpen((open) => !open)}
+            onReset={editor.reset}
+            onCancel={editor.cancel}
+            onSave={() => void editor.save()}
+          >
+            <div className="grid gap-5 xl:grid-cols-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Summary metrics
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {(Object.keys(ANALYTICS_METRIC_DETAILS) as AnalyticsMetricKey[]).map((key) => {
+                    const visible = editor.draft.analytics_metrics[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="switch"
+                        aria-checked={visible}
+                        onClick={() =>
+                          patchDraft({
+                            analytics_metrics: {
+                              ...editor.draft.analytics_metrics,
+                              [key]: !visible,
+                            },
+                          })
+                        }
+                        className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition ${
+                          visible
+                            ? "border-blue-500/35 bg-blue-500/10 text-blue-100"
+                            : "border-slate-800 bg-slate-950/50 text-slate-500"
+                        }`}
+                      >
+                        {ANALYTICS_METRIC_DETAILS[key]}
+                        <span className="text-[9px]">{visible ? "Shown" : "Add"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Analytics sections
+                </p>
+                <div className="mt-3 space-y-2">
+                  {editor.draft.analytics_section_order.map((key) => {
+                    const visible = editor.draft.analytics_sections[key];
+                    const visibleIndex = orderedVisibleSections.indexOf(key);
+                    return (
+                      <div
+                        key={key}
+                        className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
+                          visible
+                            ? "border-blue-500/30 bg-blue-500/[0.08]"
+                            : "border-slate-800 bg-slate-950/50"
+                        }`}
+                      >
+                        <span className={`text-xs font-semibold ${visible ? "text-slate-200" : "text-slate-500"}`}>
+                          {ANALYTICS_SECTION_DETAILS[key]}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {visible ? (
+                            <ReorderButtons
+                              label={ANALYTICS_SECTION_DETAILS[key]}
+                              first={visibleIndex === 0}
+                              last={visibleIndex === orderedVisibleSections.length - 1}
+                              onPrevious={() => moveAnalyticsSection(key, -1)}
+                              onNext={() => moveAnalyticsSection(key, 1)}
+                            />
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              patchDraft({
+                                analytics_sections: {
+                                  ...editor.draft.analytics_sections,
+                                  [key]: !visible,
+                                },
+                              })
+                            }
+                            className="rounded-lg border border-slate-700 px-2 py-1.5 text-[9px] font-semibold text-slate-400 hover:text-white"
+                          >
+                            {visible ? "Remove" : "Add"}
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <AdvancedSettings>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {advancedSettings.map((setting) => (
+                    <label key={setting.key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                      <span className="block text-xs font-semibold text-slate-300">{setting.label}</span>
+                      <input
+                        type="number"
+                        min={setting.min}
+                        max={setting.max}
+                        value={editor.draft[setting.key]}
+                        onChange={(event) =>
+                          patchDraft({
+                            [setting.key]: Math.max(
+                              setting.min,
+                              Math.min(setting.max, Number(event.target.value)),
+                            ),
+                          })
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </AdvancedSettings>
+            </div>
+          </CustomizationBar>
+        ) : null}
 
         {(loadError || (!loading && !summary.hasWorkspaceData)) && (
           <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-[12px] text-amber-200">
@@ -301,8 +520,12 @@ export default function AnalyticsPage() {
           </section>
         ) : null}
 
-        {summary.configuration.analytics_sections.qualification_trends ? (
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <div className="flex flex-col gap-5">
+        {displayConfiguration.analytics_sections.qualification_trends ? (
+        <section
+          style={{ order: displayConfiguration.analytics_section_order.indexOf("qualification_trends") }}
+          className={`rounded-3xl border bg-slate-900 p-4 sm:p-5 ${editor.editing ? "border-blue-500/40 ring-1 ring-blue-500/10" : "border-slate-800"}`}
+        >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
@@ -401,8 +624,11 @@ export default function AnalyticsPage() {
         </section>
         ) : null}
 
-        {summary.configuration.analytics_sections.drill_trends ? (
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        {displayConfiguration.analytics_sections.drill_trends ? (
+        <section
+          style={{ order: displayConfiguration.analytics_section_order.indexOf("drill_trends") }}
+          className={`rounded-3xl border bg-slate-900 p-4 sm:p-5 ${editor.editing ? "border-blue-500/40 ring-1 ring-blue-500/10" : "border-slate-800"}`}
+        >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
@@ -504,11 +730,14 @@ export default function AnalyticsPage() {
         </section>
         ) : null}
 
-        {summary.configuration.analytics_sections.category_trends ||
-        summary.configuration.analytics_sections.alert_logic_guide ? (
-        <section className="grid gap-4 xl:grid-cols-2">
-          {summary.configuration.analytics_sections.category_trends ? (
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        {displayConfiguration.analytics_sections.category_trends ||
+        displayConfiguration.analytics_sections.alert_logic_guide ? (
+        <section className="contents">
+          {displayConfiguration.analytics_sections.category_trends ? (
+          <div
+            style={{ order: displayConfiguration.analytics_section_order.indexOf("category_trends") }}
+            className={`rounded-3xl border bg-slate-900 p-4 sm:p-5 ${editor.editing ? "border-blue-500/40 ring-1 ring-blue-500/10" : "border-slate-800"}`}
+          >
             <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
               <BarChart3 size={18} className="text-blue-400" />
               Broad Drill Category Trends
@@ -556,8 +785,11 @@ export default function AnalyticsPage() {
           </div>
           ) : null}
 
-          {summary.configuration.analytics_sections.alert_logic_guide ? (
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          {displayConfiguration.analytics_sections.alert_logic_guide ? (
+          <div
+            style={{ order: displayConfiguration.analytics_section_order.indexOf("alert_logic_guide") }}
+            className={`rounded-3xl border bg-slate-900 p-4 sm:p-5 ${editor.editing ? "border-blue-500/40 ring-1 ring-blue-500/10" : "border-slate-800"}`}
+          >
             <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
               <ShieldAlert size={18} className="text-amber-300" />
               How Analytics Signals Are Interpreted
@@ -599,8 +831,11 @@ export default function AnalyticsPage() {
         </section>
         ) : null}
 
-        {summary.configuration.analytics_sections.performance_inputs ? (
-        <section className="rounded-3xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
+        {displayConfiguration.analytics_sections.performance_inputs ? (
+        <section
+          style={{ order: displayConfiguration.analytics_section_order.indexOf("performance_inputs") }}
+          className={`rounded-3xl border bg-slate-900/60 p-4 sm:p-5 ${editor.editing ? "border-blue-500/40 ring-1 ring-blue-500/10" : "border-slate-800"}`}
+        >
           <h2 className="flex items-center gap-2 text-[17px] font-bold text-white">
             <UserCheck size={18} className="text-blue-400" />
             Analytics Data Inputs
@@ -629,6 +864,7 @@ export default function AnalyticsPage() {
           </div>
         </section>
         ) : null}
+        </div>
       </div>
     </TracePointShell>
   );
