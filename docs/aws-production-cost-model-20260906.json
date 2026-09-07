@@ -1,0 +1,36 @@
+{
+  "reviewDate": "2026-09-06",
+  "account": null,
+  "region": "us-east-1",
+  "basis": "Planning allowance for the strict offline production assembly: 730 hours, two 0.25-vCPU/0.5-GiB tasks scaling to four, public ALB and task IPv4 addresses, low LCU/request/log volume, enhanced ECS Container Insights, seven metric alarms and one composite alarm. It is not a measured bill or approved budget.",
+  "componentsCents": {
+    "alb_public_ipv4_and_low_lcu": 2431,
+    "two_fargate_tasks_and_public_ipv4": 2532,
+    "four_kms_keys_and_one_secret": 440,
+    "cloudwatch_and_s3_logs_allowance": 500,
+    "codebuild_600_minutes_allowance": 300,
+    "seven_metric_and_one_composite_alarm": 120,
+    "encrypted_sns_sqs_alert_delivery_allowance": 100,
+    "waf_acl_rule_and_low_requests_allowance": 1000,
+    "ecs_container_insights_allowance": 1000,
+    "data_transfer_allowance": 500,
+    "account_security_services_allowance": 1000
+  },
+  "baselineCents": 9923,
+  "fourTaskBurstIncrementCents": 2532,
+  "fourTaskBurstCents": 12455,
+  "calculation": "scripts/calculate-production-cost-model.mjs",
+  "actualSpendVerified": false,
+  "budgetConfigured": false,
+  "externalProviderCostsIncluded": false,
+  "sources": [
+    "https://aws.amazon.com/fargate/pricing/",
+    "https://aws.amazon.com/elasticloadbalancing/pricing/",
+    "https://aws.amazon.com/vpc/pricing/",
+    "https://aws.amazon.com/cloudwatch/pricing/",
+    "https://aws.amazon.com/waf/pricing/",
+    "https://aws.amazon.com/codebuild/pricing/",
+    "https://aws.amazon.com/kms/pricing/"
+  ],
+  "approvalGate": "Set an owner-approved production ceiling, create budget/anomaly alerts in the dedicated production account, and replace allowances with measured data after deployment."
+}

@@ -6,12 +6,14 @@ import * as kms from "aws-cdk-lib/aws-kms";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 export interface ImageBuildStackProps extends cdk.StackProps {
   environmentName: string;
   repository: ecr.IRepository;
   appSecrets: secretsmanager.ISecret;
+  productionControls?: boolean;
 }
 
 export class ImageBuildStack extends cdk.Stack {
@@ -51,6 +53,19 @@ export class ImageBuildStack extends cdk.Stack {
       }),
     );
 
+    const accessLogBucket = props.productionControls ? new s3.Bucket(this, "BuildAccessLogs", {
+      bucketName: `tracepoint-${props.environmentName}-build-access-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      lifecycleRules: [{id:"expire-build-access-logs",expiration:cdk.Duration.days(90)}],
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    }) : undefined;
+    if (accessLogBucket) NagSuppressions.addResourceSuppressions(accessLogBucket, [{
+      id: "AwsSolutions-S1",
+      reason: "This dedicated bucket is the terminal server-access-log destination; recursive access logging is neither useful nor supported.",
+    }]);
+
     this.sourceBucket = new s3.Bucket(this, "SourceBucket", {
       bucketName: `tracepoint-${props.environmentName}-build-source-${this.account}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -58,6 +73,8 @@ export class ImageBuildStack extends cdk.Stack {
       encryptionKey: buildKey,
       enforceSSL: true,
       versioned: true,
+      serverAccessLogsBucket: accessLogBucket,
+      serverAccessLogsPrefix: accessLogBucket ? "source/" : undefined,
       lifecycleRules: [
         {
           id: "expire-clean-source-archives",
@@ -90,7 +107,7 @@ export class ImageBuildStack extends cdk.Stack {
           StringEquals: { "aws:SourceAccount": this.account },
         },
       }),
-      description: "Builds a reviewed TracePoint commit and pushes only to staging ECR",
+      description: `Builds a reviewed TracePoint commit and pushes only to ${props.environmentName} ECR`,
     });
 
     this.sourceBucket.grantRead(buildRole, `source/tracepoint-${props.environmentName}-source.zip`);
@@ -108,7 +125,7 @@ export class ImageBuildStack extends cdk.Stack {
       }),
     );
     if (!props.appSecrets.encryptionKey) {
-      throw new Error("The staging application secret must use a customer-managed KMS key");
+      throw new Error(`The ${props.environmentName} application secret must use a customer-managed KMS key`);
     }
     buildRole.addToPolicy(
       new iam.PolicyStatement({
@@ -128,8 +145,9 @@ export class ImageBuildStack extends cdk.Stack {
 
     this.project = new codebuild.Project(this, "ImageBuildProject", {
       projectName,
-      description: "Builds immutable TracePoint staging images from a clean reviewed Git archive",
+      description: `Builds immutable TracePoint ${props.environmentName} images from a clean reviewed Git archive`,
       role: buildRole,
+      encryptionKey: buildKey,
       source: codebuild.Source.s3({
         bucket: this.sourceBucket,
         path: `source/tracepoint-${props.environmentName}-source.zip`,
@@ -163,6 +181,15 @@ export class ImageBuildStack extends cdk.Stack {
         },
       },
     });
+
+    if (props.productionControls) {
+      const buildPolicy = buildRole.node.findChild("DefaultPolicy");
+      NagSuppressions.addResourceSuppressions(buildPolicy, [{
+        id:"AwsSolutions-IAM5",
+        reason:"ECR authorization is not resource-scoped; CDK's source grant remains on one reviewed archive, KMS wildcard action suffixes remain on the exact build key, and CodeBuild streams remain under its own project group.",
+        appliesTo:["Resource::*","Action::s3:GetBucket*","Action::s3:GetObject*","Action::s3:List*","Action::kms:GenerateDataKey*","Action::kms:ReEncrypt*","Resource::arn:<AWS::Partition>:logs:us-east-1:111111111111:log-group:/aws/codebuild/<ImageBuildProject74D885BB>:*"]
+      }]);
+    }
 
     new cdk.CfnOutput(this, "ImageBuildProjectName", { value: this.project.projectName });
     new cdk.CfnOutput(this, "ImageBuildSourceBucketName", {

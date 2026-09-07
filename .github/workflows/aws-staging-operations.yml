@@ -46,7 +46,9 @@ jobs:
           # Resource and KMS service restrictions remain in the intersected role.
           # Keep the session compact enough for STS packed-policy limits.
           inline-session-policy: >-
-            {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["cloudformation:DescribeStacks","ecs:DescribeServices","ecs:DescribeTasks","ecs:ListTasks","ecs:DescribeTaskDefinition","ecr:DescribeImageScanFindings","elasticloadbalancing:DescribeTargetHealth","cloudwatch:DescribeAlarms","logs:FilterLogEvents","budgets:ViewBudget","secretsmanager:GetSecretValue","kms:Decrypt"],"Resource":"*","Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}}]}
+            {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["cloudformation:DescribeStacks","ecs:DescribeServices","ecs:DescribeTasks","ecs:ListTasks","ecs:DescribeTaskDefinition","ecr:DescribeImageScanFindings","elasticloadbalancing:DescribeTargetHealth","cloudwatch:DescribeAlarms","logs:FilterLogEvents","budgets:ViewBudget","secretsmanager:GetSecretValue","kms:Decrypt"],"Resource":"*","Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}},{"Effect":"Allow","Action":["organizations:DescribeOrganization","organizations:ListAccounts","organizations:ListPoliciesForTarget"],"Resource":"*"}]}
+      - name: Inspect production account readiness without mutation
+        run: node scripts/collect-production-account-readiness.mjs
       - name: Collect sanitized live runtime evidence
         env:
           ACCEPTED_IMAGE: ${{ steps.request.outputs.imageCommit }}

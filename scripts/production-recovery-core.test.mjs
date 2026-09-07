@@ -1,0 +1,21 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {validateProductionRecoveryAssembly} from './production-recovery-core.mjs';
+
+const retained = (Type, Properties={}) => ({Type,Properties,DeletionPolicy:'Retain',UpdateReplacePolicy:'Retain'});
+function fixture() {
+  const names=['network','security','compute','image-build','runtime','request-controls','alert-delivery'].map(name=>`tracepoint-production-${name}`);
+  const manifest={artifacts:Object.fromEntries(names.map(name=>[name,{type:'aws:cloudformation:stack',environment:'aws://111111111111/us-east-1',properties:{terminationProtection:true,templateFile:`${name}.json`}}]))};
+  const templates=Object.fromEntries(names.map(name=>[name,{Resources:{}}]));
+  templates['tracepoint-production-security'].Resources.Key=retained('AWS::KMS::Key');
+  templates['tracepoint-production-compute'].Resources={Repo:retained('AWS::ECR::Repository',{ImageTagMutability:'IMMUTABLE',ImageScanningConfiguration:{ScanOnPush:true}}),Secret:retained('AWS::SecretsManager::Secret'),Logs:retained('AWS::Logs::LogGroup'),Cluster:{Type:'AWS::ECS::Cluster',Properties:{ClusterSettings:[{Name:'containerInsights',Value:'enhanced'}]}}};
+  templates['tracepoint-production-image-build'].Resources={Bucket:retained('AWS::S3::Bucket',{VersioningConfiguration:{Status:'Enabled'},LoggingConfiguration:{DestinationBucketName:'logs'}}),LogsBucket:retained('AWS::S3::Bucket'),Logs:retained('AWS::Logs::LogGroup'),Project:{Type:'AWS::CodeBuild::Project',Properties:{EncryptionKey:'key'}}};
+  templates['tracepoint-production-runtime'].Resources={Task:retained('AWS::ECS::TaskDefinition',{ContainerDefinitions:[{Environment:[{Name:'TRACEPOINT_DATA_PROVIDER',Value:'supabase'},{Name:'TRACEPOINT_EMAIL_PROVIDER',Value:'brevo'},{Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'supabase'}]}]}),Service:{Type:'AWS::ECS::Service',Properties:{DesiredCount:2,DeploymentConfiguration:{DeploymentCircuitBreaker:{Enable:true,Rollback:true}}}},Alb:{Type:'AWS::ElasticLoadBalancingV2::LoadBalancer',Properties:{LoadBalancerAttributes:[{Key:'deletion_protection.enabled',Value:'true'},{Key:'access_logs.s3.enabled',Value:'true'}]}},AlbLogs:retained('AWS::S3::Bucket'),...Object.fromEntries(Array.from({length:6},(_,index)=>['Alarm'+index,{Type:'AWS::CloudWatch::Alarm'}]))};
+  templates['tracepoint-production-request-controls'].Resources={Acl:retained('AWS::WAFv2::WebACL',{Rules:[{Name:'RequestFlood',Action:{Block:{CustomResponse:{ResponseCode:429}}}}]}),Logs:retained('AWS::Logs::LogGroup')};
+  templates['tracepoint-production-alert-delivery'].Resources={Queue:retained('AWS::SQS::Queue'),Sub:{Type:'AWS::SNS::Subscription'},Alarm:{Type:'AWS::CloudWatch::CompositeAlarm',Properties:{AlarmRule:'tracepoint-production-cpu OR tracepoint-production-latency-p99'}}};
+  return {manifest,templates};
+}
+
+test('production recovery assembly proves retained stateless rollback without claiming PITR',()=>{const result=validateProductionRecoveryAssembly(fixture());assert.equal(result.validatedStackCount,7);assert.equal(result.productionPitrValidated,false);assert.equal(result.productionCustomerDataMutated,false);});
+test('production recovery assembly rejects disabled termination protection',()=>{const value=fixture();value.manifest.artifacts['tracepoint-production-runtime'].properties.terminationProtection=false;assert.throws(()=>validateProductionRecoveryAssembly(value),/termination protection/);});
+test('production recovery assembly rejects mutable images and synthetic production WAF rules',()=>{const mutable=fixture();mutable.templates['tracepoint-production-compute'].Resources.Repo.Properties.ImageTagMutability='MUTABLE';assert.throws(()=>validateProductionRecoveryAssembly(mutable),/IMMUTABLE/);const probe=fixture();probe.templates['tracepoint-production-request-controls'].Resources.Acl.Properties.Rules.push({Name:'SyntheticRateProbe'});assert.throws(()=>validateProductionRecoveryAssembly(probe),/falsy/);});

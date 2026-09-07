@@ -1,0 +1,3 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {calculateProductionCostModel,productionComponentsCents} from './calculate-production-cost-model.mjs';
+test('production cost model uses deterministic cents arithmetic',()=>{const result=calculateProductionCostModel();assert.equal(result.baselineCents,9923);assert.equal(result.fourTaskBurstCents,12455);assert.equal(Object.keys(productionComponentsCents).length,11);});
+test('production cost model rejects non-integer or negative cents',()=>{assert.throws(()=>calculateProductionCostModel({bad:.5}),/Invalid/);assert.throws(()=>calculateProductionCostModel({bad:-1}),/Invalid/);});

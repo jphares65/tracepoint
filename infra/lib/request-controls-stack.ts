@@ -11,7 +11,7 @@ export class RequestControlsStack extends cdk.Stack {
   super(scope,id,props);
   if(!['staging','production'].includes(props.environment)||!['logging','count','enforce'].includes(props.mode)||!/^\d{12}$/.test(props.expectedAccount)||this.account!==props.expectedAccount||this.account==='265544358665'||this.region!=='us-east-1')throw Error('Request controls target rejected');
   if((props.environment==='staging')!==(this.account==='559054714699'))throw Error('Environment/account separation failed');
-  if(!props.loadBalancerArn.startsWith(`arn:aws:elasticloadbalancing:${this.region}:${this.account}:loadbalancer/app/`))throw Error('Exact same-account ALB required');
+  if(!cdk.Token.isUnresolved(props.loadBalancerArn)&&!props.loadBalancerArn.startsWith(`arn:aws:elasticloadbalancing:${this.region}:${this.account}:loadbalancer/app/`))throw Error('Exact same-account ALB required');
   const name='tracepoint-'+props.environment+'-requests';
   const groupName='aws-waf-logs-'+name;
   const key=new kms.Key(this,'RequestLogKey',{enableKeyRotation:true,removalPolicy:cdk.RemovalPolicy.RETAIN});

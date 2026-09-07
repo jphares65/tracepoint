@@ -1,4 +1,4 @@
-import * as cdk from 'aws-cdk-lib';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {productionAssembly} from '../lib/production-assembly';import {validateProductionTarget,verifyProductionIdentity} from '../lib/production-target';
+import * as cdk from 'aws-cdk-lib';import {AwsSolutionsChecks} from 'cdk-nag';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {productionAssembly} from '../lib/production-assembly';import {validateProductionTarget,verifyProductionIdentity} from '../lib/production-target';
 const app=new cdk.App(),mode=app.node.tryGetContext('productionOperation'),path=app.node.tryGetContext('productionConfig');
 if(!['preview','authorized'].includes(mode)||typeof path!=='string'||!path)throw Error('Explicit production operation and reviewed config path required');
 const offline=mode==='preview',target=validateProductionTarget(JSON.parse(readFileSync(path,'utf8').replace(/^\uFEFF/,'')),{offline});
@@ -11,3 +11,4 @@ else{
  if(zones.length!==2||!zones.every((zone:{State:string;RegionName:string})=>zone.State==='available'&&zone.RegionName==='us-east-1'))throw Error('Production availability zones are not available');
 }
 productionAssembly(app,target,offline);
+cdk.Aspects.of(app).add(new AwsSolutionsChecks({verbose:true}));

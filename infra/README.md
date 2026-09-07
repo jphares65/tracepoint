@@ -34,6 +34,15 @@ The unused attachment bucket is deferred. CloudTrail, GuardDuty, Security Hub,
 and Config are excluded: they belong to a separate, organization-aware
 platform/security baseline with independent lifecycle ownership.
 
+The separate `bin/production-infra.ts` entry point composes seven production
+stacks: these five architecture layers plus enforced regional WAF request
+controls and encrypted composite-alarm delivery. Production enables enhanced
+Container Insights, ALB/build access logging, two-to-four task scaling, CPU and
+p99 latency alarms, one-year application logs, 90-day WAF logs and termination
+protection on every stack. It retains Supabase and Brevo providers. Strict
+offline production synthesis runs `AwsSolutionsChecks`; exceptions are scoped
+to exact resources/findings with operational reasons.
+
 ## Local synthesis
 
 All three target values are explicit and fixed:
@@ -106,12 +115,13 @@ guidance before a separate bootstrap approval.
 
 Use existing dependencies only. Before runtime deployment, build/scan the
 immutable image in CodeBuild, synthesize with the real account and certificate,
-and review a real `cdk diff`. Database, identity, Supabase/Brevo migration, CloudFront, WAF,
-multi-task capacity, production, and live-agency cutover remain deferred.
+and review a real `cdk diff`. Database, identity, Supabase/Brevo migration,
+CloudFront, production deployment, certificate/DNS, human alert subscription,
+account security baseline and live-agency cutover remain deferred.
 
 Run `npm test` in `infra/` to verify lean-network, encryption, retention, ECR,
-IAM, disabled-runtime, provider-pin, task-size, TLS-listener, rollback, and alarm
-invariants. `scripts/get-tracepoint-staging-inventory.ps1` performs the matching
+IAM, disabled-runtime, provider-pin, task-size, TLS-listener, rollback, request
+controls, alert delivery, and production invariants. `scripts/get-tracepoint-staging-inventory.ps1` performs the matching
 metadata-only account inventory after verifying the staging identity.
 
 The manual `.github/workflows/aws-staging-foundation.yml` workflow validates and

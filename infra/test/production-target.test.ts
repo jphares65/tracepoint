@@ -11,9 +11,13 @@ test('production identity rejects wrong role account and region',()=>{
  for(const bad of [{...identity,Account:'559054714699'},{...identity,Arn:identity.Arn.replace('Production/','ProductionExtra/')},{...identity,Arn:identity.Arn.replace('222222222222','265544358665')}])assert.throws(()=>verifyProductionIdentity(t,bad,'us-east-1'));assert.throws(()=>verifyProductionIdentity(t,identity,'us-west-2'));
 });
 test('production assembly retains provider isolation and two-to-four capacity',()=>{
- const stacks=productionAssembly(new cdk.App(),target,true),runtime=Template.fromStack(stacks.runtime),compute=Template.fromStack(stacks.compute);
+ const stacks=productionAssembly(new cdk.App(),target,true),runtime=Template.fromStack(stacks.runtime),compute=Template.fromStack(stacks.compute),requests=Template.fromStack(stacks.requestControls),alerts=Template.fromStack(stacks.alertDelivery);
  runtime.hasResourceProperties('AWS::ECS::Service',{DesiredCount:2,DeploymentConfiguration:{DeploymentCircuitBreaker:{Enable:true,Rollback:true}}});runtime.hasResourceProperties('AWS::ApplicationAutoScaling::ScalableTarget',{MinCapacity:2,MaxCapacity:4});
  runtime.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer',{LoadBalancerAttributes:Match.arrayWith([{Key:'deletion_protection.enabled',Value:'true'}])});
  runtime.hasResourceProperties('AWS::ECS::TaskDefinition',{ContainerDefinitions:Match.arrayWith([Match.objectLike({Environment:Match.arrayWith([{Name:'TRACEPOINT_EMAIL_PROVIDER',Value:'brevo'},{Name:'TRACEPOINT_FROM_EMAIL',Value:'contact@tracepointhq.com'},{Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'supabase'}])})])});
  compute.hasResourceProperties('AWS::SecretsManager::Secret',{Name:'tracepoint/production/application'});compute.hasResourceProperties('AWS::Logs::LogGroup',{RetentionInDays:365});compute.hasResource('AWS::SecretsManager::Secret',{DeletionPolicy:'Retain'});assert.equal(stacks.runtime.terminationProtection,true);
+ runtime.resourceCountIs('AWS::CloudWatch::Alarm',6);runtime.hasResourceProperties('AWS::CloudWatch::Alarm',{AlarmName:'tracepoint-production-latency-p99',Threshold:3});
+ requests.hasResourceProperties('AWS::WAFv2::WebACL',{Name:'tracepoint-production-requests',Rules:Match.arrayWith([Match.objectLike({Action:{Block:Match.anyValue()}})])});requests.hasResourceProperties('AWS::Logs::LogGroup',{RetentionInDays:90});
+ alerts.hasResourceProperties('AWS::CloudWatch::CompositeAlarm',{AlarmName:'tracepoint-production-runtime-alert'});alerts.resourceCountIs('AWS::SNS::Subscription',1);alerts.resourceCountIs('AWS::SQS::Queue',2);
+ assert.equal(stacks.requestControls.terminationProtection,true);assert.equal(stacks.alertDelivery.terminationProtection,true);
 });
