@@ -211,6 +211,20 @@ export function normalizeAnalyticsDashboardConfiguration(
   };
 }
 
+export function mergeAnalyticsDashboardConfiguration(
+  rangeRules: unknown,
+  configuration: unknown,
+): Record<string, unknown> {
+  const currentRangeRules = objectValue(rangeRules);
+
+  return {
+    ...currentRangeRules,
+    schema_version: currentRangeRules.schema_version ?? 1,
+    analytics_dashboard:
+      normalizeAnalyticsDashboardConfiguration(configuration),
+  };
+}
+
 export function classifyTrendChange(
   change: number,
   threshold: number,

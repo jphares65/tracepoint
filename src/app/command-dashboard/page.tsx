@@ -17,6 +17,7 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
   TrendingDown,
   TrendingUp,
@@ -435,7 +436,8 @@ function EmptyPanel({ message }: { message: string }) {
 }
 
 export default function DashboardPage() {
-  const { enabledFeatures, hasAnyPermission } = useTracePointAccess();
+  const { enabledFeatures, hasAnyPermission, hasPermission } =
+    useTracePointAccess();
   const featureSet = useMemo(
     () => new Set(enabledFeatures),
     [enabledFeatures],
@@ -447,6 +449,7 @@ export default function DashboardPage() {
   const hasRangeTraining = featureSet.has("range_training");
   const hasFirearms = featureSet.has("firearms");
   const hasAnalytics = featureSet.has("analytics");
+  const canConfigure = hasPermission("administer_department");
   const hasFleet = hasAnyPermission([
     "view_fleet",
     "manage_fleet",
@@ -831,6 +834,16 @@ const [loading, setLoading] = useState(true);
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {canConfigure ? (
+                <Link
+                  href="/settings/command-dashboard-analytics"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                >
+                  <SlidersHorizontal size={14} />
+                  Configure
+                </Link>
+              ) : null}
+
               {hasRangeTraining && (
                 <Link
                   href="/range-days"

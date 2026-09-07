@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   classifyTrendChange,
   DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+  mergeAnalyticsDashboardConfiguration,
   normalizeAnalyticsDashboardConfiguration,
   reachesRepeatedDeficiencyThreshold,
 } from "./analytics-dashboard-config.ts";
@@ -94,4 +95,35 @@ test("normalizes command presentation windows and list limits while preserving d
   assert.equal(normalized.command_fleet_attention_item_limit, 8);
   assert.equal(normalized.command_operations_attention_item_limit, 7);
   assert.equal(normalized.upcoming_range_days_item_limit, 12);
+});
+
+test("relocating presentation settings preserves unrelated range-rule values", () => {
+  const merged = mergeAnalyticsDashboardConfiguration(
+    {
+      schema_version: 7,
+      require_day_handgun_qualification: false,
+      remediation_due_days: 45,
+      custom_future_rule: { enabled: true },
+      analytics_dashboard: { trend_change_threshold: 9 },
+    },
+    {
+      trend_change_threshold: 3,
+      command_dashboard_cards: { performance_signal: false },
+    },
+  );
+
+  assert.equal(merged.schema_version, 7);
+  assert.equal(merged.require_day_handgun_qualification, false);
+  assert.equal(merged.remediation_due_days, 45);
+  assert.deepEqual(merged.custom_future_rule, { enabled: true });
+  assert.equal(
+    (merged.analytics_dashboard as typeof DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION)
+      .trend_change_threshold,
+    3,
+  );
+  assert.equal(
+    (merged.analytics_dashboard as typeof DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION)
+      .command_dashboard_cards.performance_signal,
+    false,
+  );
 });

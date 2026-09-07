@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import TracePointShell from "@/app/components/TracePointShell";
 import {
   AlertTriangle,
@@ -9,6 +10,7 @@ import {
   LineChart,
   Moon,
   ShieldAlert,
+  SlidersHorizontal,
   Sun,
   Target,
   TrendingDown,
@@ -22,6 +24,7 @@ import {
   type AnalyticsDashboardConfiguration,
   type AnalyticsMetricKey,
 } from "@/lib/tracepoint/analytics-dashboard-config";
+import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Risk = "Low" | "Medium" | "High";
 type Trend = "Baseline" | "Improving" | "Stable" | "Monitor" | "Declining" | "Action Needed";
@@ -142,6 +145,8 @@ function MetricCard({
 }
 
 export default function AnalyticsPage() {
+  const { hasPermission } = useTracePointAccess();
+  const canConfigure = hasPermission("administer_department");
   const [summary, setSummary] =
     useState<PerformanceSummary>(FALLBACK_SUMMARY);
   const [loading, setLoading] = useState(true);
@@ -269,7 +274,15 @@ export default function AnalyticsPage() {
                 follow-ups, and officers requiring attention.
               </p>
             </div>
-
+            {canConfigure ? (
+              <Link
+                href="/settings/command-dashboard-analytics"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+              >
+                <SlidersHorizontal size={14} />
+                Configure
+              </Link>
+            ) : null}
           </div>
         </header>
 

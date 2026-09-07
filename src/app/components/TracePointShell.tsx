@@ -248,6 +248,12 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         icon: Settings,
       },
       {
+        label: "Command Dashboard & Analytics",
+        href: "/settings/command-dashboard-analytics",
+        icon: BarChart3,
+        requirement: { anyOf: ["administer_department"] },
+      },
+      {
         label: "Import / Export",
         href: "/settings/import-export",
         icon: BarChart3,
