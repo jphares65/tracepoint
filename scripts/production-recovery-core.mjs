@@ -23,11 +23,16 @@ function retained(resources, label) {
 }
 
 export function validateProductionRecoveryAssembly({manifest, templates}) {
+  const environments = new Set(expectedStacks.map(stack => manifest.artifacts?.[stack]?.environment).filter(Boolean));
+  assert.equal(environments.size, 1, 'Production stack environments must be identical');
+  const environment = [...environments][0];
+  const match = /^aws:\/\/(\d{12})\/us-east-1$/.exec(environment ?? '');
+  assert.ok(match && !['265544358665','559054714699','111111111111'].includes(match[1]), 'A dedicated us-east-1 production account is required');
   for (const stack of expectedStacks) {
     const artifact = manifest.artifacts?.[stack];
     assert.equal(artifact?.type, 'aws:cloudformation:stack', `${stack} stack artifact is absent`);
     assert.equal(artifact.properties?.terminationProtection, true, `${stack} termination protection is disabled`);
-    assert.equal(artifact.environment, 'aws://111111111111/us-east-1', `${stack} preview target drifted`);
+    assert.equal(artifact.environment, environment, `${stack} preview target drifted`);
     assert.ok(templates[stack], `${stack} template is absent`);
   }
 

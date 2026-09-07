@@ -1,0 +1,130 @@
+{
+  "checkedAt": "2026-09-07T19:48:39Z",
+  "sourceHead": "9ddfba03adf4e07319be543e4b3c3c13c0668c72",
+  "readiness": {"before":66.5,"after":73.0,"checklist":"aws-readiness-20260907.json"},
+  "productionAccount": {
+    "accountId": "193644343389",
+    "name": "TracePoint-Production",
+    "status": "ACTIVE",
+    "region": "us-east-1",
+    "organizationalPath": "Root/Workloads/Production",
+    "organizationalUnitId": "ou-9qyd-crf8dgl2",
+    "runtimeInManagementAccount": false,
+    "migrationRoleArn": "arn:aws:iam::193644343389:role/TracePointMigrationProduction",
+    "permissionsBoundaryArn": "arn:aws:iam::193644343389:policy/TracePointProductionBoundary",
+    "permissionsBoundaryDefaultVersion": "v6",
+    "guardrailScpId": "p-rvx1u7q7",
+    "wrongRegionEc2Denied": true
+  },
+  "platformBaseline": {
+    "cdkBootstrapVersion": 32,
+    "cloudTrailLogging": true,
+    "configRecording": true,
+    "guardDutyDetectorId": "8e85ee0e1882469fb23c990c1503171a",
+    "guardDutyFindingCount": 0,
+    "securityHubV2Enabled": true,
+    "securityHubCoverageFindings": {"total":13,"informational":13,"passing":5,"notCovered":8,"threatFindings":0},
+    "monthlyBudgetUsd": 150,
+    "budgetActualUsd": 0,
+    "costAnomalyThresholdUsd": 10,
+    "costQueues": {"mainVisible":0,"mainInFlight":0,"deadLetterVisible":0,"kmsEncrypted":true,"retentionDays":14,"maxReceiveCount":3},
+    "humanNotificationRecipientConfigured": false
+  },
+  "stacks": [
+    {"name":"CDKToolkit","status":"CREATE_COMPLETE","terminationProtection":true},
+    {"name":"tracepoint-production-account-baseline","status":"CREATE_COMPLETE","terminationProtection":true},
+    {"name":"tracepoint-production-cost-controls","status":"CREATE_COMPLETE","terminationProtection":true},
+    {"name":"tracepoint-production-network","status":"CREATE_COMPLETE","terminationProtection":true},
+    {"name":"tracepoint-production-security","status":"CREATE_COMPLETE","terminationProtection":true},
+    {"name":"tracepoint-production-compute","status":"CREATE_COMPLETE","terminationProtection":true},
+    {"name":"tracepoint-production-image-build","status":"CREATE_COMPLETE","terminationProtection":true}
+  ],
+  "foundations": {
+    "vpcId": "vpc-04accb4047a914176",
+    "vpcCidr": "10.40.0.0/16",
+    "subnetIds": ["subnet-0f4cbed3e60d90bfc","subnet-0a117bec5cb98607f"],
+    "dataKeyArn": "arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55",
+    "ecsCluster": "tracepoint-production",
+    "ecsServices": 0,
+    "applicationLogRetentionDays": 365,
+    "runtimeLaunched": false
+  },
+  "image": {
+    "sourceCommit": "ae3d2a4ce87b2085e251b1995f51a7b07058ec4d",
+    "digest": "sha256:130cb32f05d3f8fad45eb9dfdae470dc2bf9769b128a3224f901554572ed98c3",
+    "repository": "tracepoint-production",
+    "tagMutability": "IMMUTABLE",
+    "encryption": "KMS",
+    "scanStatus": "COMPLETE",
+    "findingSeverityCounts": {},
+    "zeroFindings": true
+  },
+  "secretReadiness": {
+    "name": "tracepoint/production/application",
+    "kmsBacked": true,
+    "buildFieldsVerified": 4,
+    "fullRuntimeFieldsVerified": false,
+    "secretValuesInSource": false,
+    "secretValuesPrinted": false,
+    "brevoCredentialAvailableToCli": false,
+    "concealedFinalizerPrepared": true
+  },
+  "certificate": {
+    "arn": "arn:aws:acm:us-east-1:193644343389:certificate/79ea614e-54ad-4f40-9b49-9c3d1ee5ff18",
+    "status": "PENDING_VALIDATION",
+    "validationRecord": {"name":"_cf183eaeec77acfda74681d687456469.tracepointhq.com.","type":"CNAME","value":"_09b5cb9ef970b57b1d638cd814364d07.jkddzztszm.acm-validations.aws."},
+    "dnsChanged": false,
+    "trafficChanged": false
+  },
+  "capacity": {
+    "desiredTasks": 2,
+    "maximumTasks": 4,
+    "taskVcpu": 0.25,
+    "maximumRequiredVcpu": 1,
+    "fargateOnDemandVcpuQuota": 30,
+    "fargateOnDemandBurstLaunchRate": 100,
+    "applicationLoadBalancersQuota": 50,
+    "listenersPerAlbQuota": 50,
+    "targetGroupsPerAlbQuota": 100,
+    "quotaHeadroomVerified": true
+  },
+  "recovery": {
+    "awsRuntimeRollback": "blocked-until-runtime-exists",
+    "sevenStackStructuralRecoveryValidation": true,
+    "immutableRuntimeRollbackStructure": true,
+    "retainedControlPlaneArtifacts": true,
+    "supabaseProjectRef": "izlkwggluhlhzlumtzes",
+    "supabaseRegion": "us-east-1",
+    "supabaseStatus": "ACTIVE_HEALTHY",
+    "supabasePitrEnabled": false,
+    "supabasePhysicalBackupsAvailable": false,
+    "destructiveRestoreAttempted": false,
+    "productionObjectRecoveryValidated": false,
+    "secretRotationRehearsed": false
+  },
+  "remainingDeploymentDiff": {
+    "reviewedLiveWithChangeSets": true,
+    "stackCount": 3,
+    "stacks": ["tracepoint-production-runtime","tracepoint-production-request-controls","tracepoint-production-alert-delivery"],
+    "existingResourceReplacements": 0,
+    "existingResourceDeletions": 0,
+    "result": "new-stack additions only; deployment blocked by certificate and full runtime secret"
+  },
+  "validation": {
+    "typescript": "pass",
+    "focusedLint": "pass",
+    "scriptTests": {"passed":93,"failed":0},
+    "applicationTests": {"passed":266,"failed":0},
+    "infrastructureSuite": "pass",
+    "productionImageBuild": "pass",
+    "productionArchiveTrackedFiles": 385,
+    "productionRecoveryStructuralGate": "pass"
+  },
+  "liveReadinessValidator": {"identity":true,"availabilityZones":true,"certificate":false,"secretMetadata":true,"cloudTrail":true,"config":true,"guardDuty":true,"securityHub":true,"effectiveGuardrails":true,"budget":true,"passed":false,"secretValueRead":false,"mutationsPerformed":false},
+  "retainedRecoveryArtifacts": {
+    "priorAuditBucketsPreserved": ["tracepoint-production-audit-193644343389","tracepoint-production-audit-access-193644343389"],
+    "provisionalKmsKeysScheduledForDeletionAfterDays": 30,
+    "scheduledDeletionDate": "2026-10-07",
+    "keyIds": ["0cd94213-4a00-4ebc-82f7-d0856ca8e576","d709254a-8122-48fa-9c52-f3d80b491213","82a6ae39-2b8b-4a71-a9ab-7b27bde22785"]
+  }
+}
