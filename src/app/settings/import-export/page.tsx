@@ -2,6 +2,7 @@
 
 import { ChangeEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
@@ -6581,6 +6582,75 @@ function ImportWizardContent() {
             </div>
           </section>
 
+          <section
+            aria-labelledby="import-method-heading"
+            className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6 shadow-sm"
+          >
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                Import options
+              </p>
+              <h2 id="import-method-heading" className="mt-2 text-2xl font-bold text-white">
+                Choose your import experience
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+                Use the established manual workflow or try guided spreadsheet interpretation with the new beta importer.
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <a
+                href="#classic-import-mapper"
+                className="group flex min-h-56 flex-col rounded-3xl border border-emerald-700/60 bg-emerald-950/20 p-6 transition hover:border-emerald-500 hover:bg-emerald-950/30"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <span className="rounded-full border border-emerald-600/60 bg-emerald-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-emerald-200">
+                    Stable
+                  </span>
+                  <FileSpreadsheet className="h-7 w-7 text-emerald-300" aria-hidden="true" />
+                </div>
+                <h3 className="mt-5 text-xl font-bold text-white">Classic Import Mapper</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Existing stable manual mapping workflow.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Recommended for users who prefer full manual control.
+                </p>
+                <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-emerald-200">
+                  Use Classic Import Mapper
+                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" />
+                </span>
+              </a>
+
+              <Link
+                href="/settings/import-export/ai-importer"
+                className="group flex min-h-56 flex-col rounded-3xl border border-blue-600/60 bg-blue-950/25 p-6 transition hover:border-blue-400 hover:bg-blue-950/40"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <span className="rounded-full border border-blue-500/60 bg-blue-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-blue-200">
+                    Beta
+                  </span>
+                  <Shield className="h-7 w-7 text-blue-300" aria-hidden="true" />
+                </div>
+                <h3 className="mt-5 text-xl font-bold text-white">AI-Assisted Importer</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Automatically interprets spreadsheets and proposes mappings.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  An administrator reviews and approves every mapping and validation result before import.
+                </p>
+                <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-blue-200">
+                  Open AI-Assisted Importer
+                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" />
+                </span>
+              </Link>
+            </div>
+
+            <p className="mt-4 rounded-2xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-sm leading-6 text-amber-100">
+              AI-assisted import is currently in beta. Review all proposed mappings and validation results before importing.
+            </p>
+          </section>
+
           <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
             <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6">
               <div className="flex items-center gap-3">
@@ -7028,6 +7098,7 @@ function ImportWizardContent() {
             </div>
           </section>
 
+          <div id="classic-import-mapper" className="scroll-mt-6" aria-hidden="true" />
           <section className="rounded-[2rem] border border-sky-900/70 bg-sky-950/20 p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
