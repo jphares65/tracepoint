@@ -2,7 +2,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import {
+  DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+  normalizeAnalyticsDashboardConfiguration,
+} from "./analytics-dashboard-config.ts";
 import { getRoutePermissionRequirement } from "./permissions.ts";
+
+const ADVANCED_SETTING_KEYS = [
+  "trend_change_threshold",
+  "repeated_deficiency_count",
+  "command_attention_item_limit",
+  "command_training_attention_window_days",
+  "command_training_upcoming_window_days",
+  "command_fleet_attention_window_days",
+  "command_training_upcoming_item_limit",
+  "command_training_attention_item_limit",
+  "command_fleet_attention_item_limit",
+  "command_operations_attention_item_limit",
+  "upcoming_range_days_item_limit",
+] as const;
 
 test("remaining command module cards consume their individual presentation toggles", async () => {
   const [dashboard, operations] = await Promise.all([
@@ -106,4 +124,51 @@ test("dashboard and analytics expose permission-gated visual builders with secon
     getRoutePermissionRequirement("/settings/command-dashboard-analytics"),
     { anyOf: ["administer_department"] },
   );
+});
+
+test("analytics renders every supported advanced setting without filtering", async () => {
+  const analytics = await readFile("src/app/analytics/page.tsx", "utf8");
+  const definitionsStart = analytics.indexOf("const ADVANCED_SETTING_GROUPS");
+  const definitionsEnd = analytics.indexOf("type QualificationTrend");
+  const advancedSettingsStart = analytics.indexOf("<AdvancedSettings>");
+  const advancedSettingsEnd = analytics.indexOf("</AdvancedSettings>");
+
+  assert.notEqual(definitionsStart, -1);
+  assert.notEqual(definitionsEnd, -1);
+  assert.notEqual(advancedSettingsStart, -1);
+  assert.notEqual(advancedSettingsEnd, -1);
+
+  const definitions = analytics.slice(definitionsStart, definitionsEnd);
+  const renderedAdvancedSettings = analytics.slice(
+    advancedSettingsStart,
+    advancedSettingsEnd,
+  );
+  const renderedKeys = Array.from(
+    definitions.matchAll(/\bkey: "([^"]+)"/g),
+    (match) => match[1],
+  );
+
+  assert.deepEqual(renderedKeys, [...ADVANCED_SETTING_KEYS]);
+  assert.equal(new Set(renderedKeys).size, ADVANCED_SETTING_KEYS.length);
+  assert.match(renderedAdvancedSettings, /ADVANCED_SETTING_GROUPS\.map/);
+  assert.match(renderedAdvancedSettings, /group\.settings\.map/);
+  assert.match(
+    renderedAdvancedSettings,
+    /data-advanced-setting-key=\{setting\.key\}/,
+  );
+  assert.doesNotMatch(renderedAdvancedSettings, /\.filter\(/);
+
+  const normalized = normalizeAnalyticsDashboardConfiguration({});
+  for (const key of ADVANCED_SETTING_KEYS) {
+    assert.equal(
+      Object.hasOwn(DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION, key),
+      true,
+      `${key} is missing from the default configuration`,
+    );
+    assert.equal(
+      Object.hasOwn(normalized, key),
+      true,
+      `${key} is missing after normalization`,
+    );
+  }
 });

@@ -619,6 +619,7 @@ export default function AnalyticsPage() {
                         {group.settings.map((setting) => (
                           <label
                             key={setting.key}
+                            data-advanced-setting-key={setting.key}
                             className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-3"
                           >
                             <span className="flex flex-wrap items-start justify-between gap-2">
