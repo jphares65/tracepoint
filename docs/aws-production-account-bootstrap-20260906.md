@@ -1,7 +1,7 @@
 # TracePoint production account bootstrap path
 
 Status: **prepared, not executed**. Local AWS credentials are unavailable. OIDC
-run `34073084446` reconfirmed the staging identity has neither Organizations metadata
+run `34074005467` reconfirmed the staging identity has neither Organizations metadata
 nor account-inventory authority, so production-account existence remains
 indeterminate rather than absent. The
 AWS management account must never host the TracePoint runtime.

@@ -1,10 +1,10 @@
 {
-  "checkedAtUTC": "2026-09-07T01:29:31.802Z",
+  "checkedAtUTC": "2026-09-07T01:50:20.689Z",
   "mode": "offline-production-preparation-and-live-staging-resilience",
   "productionAccount": null,
   "productionAccountInventory": "unavailable: staging OIDC role lacks Organizations metadata and inventory authority; local AWS credentials unavailable",
-  "accountDiscoveryRuns": [34071010058, 34072001491, 34073084446],
-  "accountDiscoveryEvidence": "aws-operations-4c4cd13aa2cf41852ae48a20edae6d727ced5433.json",
+  "accountDiscoveryRuns": [34071010058, 34072001491, 34073084446, 34074005467],
+  "accountDiscoveryEvidence": "aws-operations-84a1d8359e1002f7ee5ca73697e11fb3ed3fc5aa.json",
   "organizationMetadataVisible": false,
   "accountInventoryAuthorized": false,
   "dedicatedProductionAccountExists": null,
@@ -48,7 +48,7 @@
     "productionCapacityProof": false
   },
   "latestOperationalEvidence": {
-    "run": 34073084446,
+    "run": 34074005467,
     "stackStatus": "UPDATE_COMPLETE",
     "taskRevision": 21,
     "desiredRunningPending": [1, 1, 0],
@@ -68,7 +68,17 @@
     "budgetActualUSD": 4.102,
     "budgetLimitUSD": 75,
     "modeledMonthlyUSD": 68.67,
-    "costExplorerAvailable": false
+    "costExplorerAvailable": false,
+    "historicalInvestigation": {
+      "windowStart": "2026-09-06T12:06:35.000Z",
+      "windowEnd": "2026-09-06T12:06:55.000Z",
+      "serverActionRequestRejected": 8,
+      "unclassified": 2,
+      "unclassifiedFingerprintCount": 2,
+      "wafEvidenceAuthorized": false,
+      "requestCorrelationEstablished": false,
+      "messagesPrinted": false
+    }
   },
   "trackedSecretInventory": {
     "environmentTemplates": [".env.local.example"],
