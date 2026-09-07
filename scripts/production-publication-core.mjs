@@ -25,4 +25,12 @@ export function validateProductionSecret(secret){
  if(key.startsWith('sb_secret_'))server=key.length>20;else{try{server=JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString()).role==='service_role';}catch{server=false;}}
  assert.ok(server,'Production server credential has an unsupported role or format');return true;
 }
+export function assembleProductionRuntimeSecret(existing,environment,brevoKey,newNotificationSecret){
+ validateProductionBuildSecret(existing);
+ assert.equal(environment.NEXT_PUBLIC_SUPABASE_URL,existing.NEXT_PUBLIC_SUPABASE_URL,'Local and built production Supabase URLs differ');
+ assert.equal(environment.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,existing.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,'Local and built production Supabase publishable keys differ');
+ const notification=typeof existing.NOTIFICATION_DISPATCH_SECRET==='string'&&existing.NOTIFICATION_DISPATCH_SECRET.length>=32?existing.NOTIFICATION_DISPATCH_SECRET:newNotificationSecret;
+ const secret={SUPABASE_SECRET_KEY:environment.SUPABASE_SECRET_KEY,BREVO_API_KEY:brevoKey.trim(),NOTIFICATION_DISPATCH_SECRET:notification,NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:existing.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY,NEXT_PUBLIC_SUPABASE_URL:existing.NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:existing.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,NEXT_PUBLIC_SITE_URL:existing.NEXT_PUBLIC_SITE_URL,CONFIGURATION_ENVIRONMENT:'production'};
+ validateProductionSecret(secret);return secret;
+}
 export function validateCleanProductionScan(scan){assert.equal(scan.imageScanStatus?.status,'COMPLETE');const findings=scan.imageScanFindings?.findingSeverityCounts;assert.ok(findings&&Object.values(findings).every(x=>typeof x==='number'&&x===0),'Production image scan must have zero findings at every severity');return true;}
