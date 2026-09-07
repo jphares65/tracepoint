@@ -1,6 +1,6 @@
 import {execFileSync} from 'node:child_process';import {readFileSync,mkdtempSync,unlinkSync,rmdirSync} from 'node:fs';import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import assert from 'node:assert/strict';
 import {validateProductionTarget,verifyProductionIdentity,type ProductionTarget} from '../infra/lib/production-target.ts';
-import {productionArchivePaths,validateProductionArchive,validateProductionSecret,validateCleanProductionScan} from './production-publication-core.mjs';
+import {productionArchivePaths,validateProductionArchive,validateProductionBuildSecret,validateCleanProductionScan} from './production-publication-core.mjs';
 const args=process.argv.slice(2),index=args.indexOf('--config');assert.ok(index>=0&&args[index+1],'Reviewed non-secret production target file required');
 const offline=args.includes('--validate-archive-only');const target:ProductionTarget=validateProductionTarget(JSON.parse(readFileSync(args[index+1],'utf8').replace(/^\uFEFF/,'')),{offline});
 const root=resolve(import.meta.dirname,'..');
@@ -10,11 +10,9 @@ function identityGate(){if(process.env.TRACEPOINT_PRODUCTION_AUTHORIZATION!==tar
 const commit=command('git.exe',['rev-parse','HEAD']);assert.equal(commit,target.imageTag,'Production image tag must identify the reviewed source checkout');
 assert.equal(command('git.exe',['status','--porcelain','--untracked-files=no','--',...productionArchivePaths]),'','Production archive source has tracked changes');
 if(!offline){
- identityGate();let secret;try{secret=JSON.parse(aws(['secretsmanager','get-secret-value','--secret-id','tracepoint/production/application']).SecretString);}catch{throw Error('Production secret could not be decoded; details suppressed');}validateProductionSecret(secret);
+ identityGate();let secret;try{secret=JSON.parse(aws(['secretsmanager','get-secret-value','--secret-id','tracepoint/production/application']).SecretString);}catch{throw Error('Production secret could not be decoded; details suppressed');}validateProductionBuildSecret(secret);
  async function probe(url:string,headers:Record<string,string>){try{const r=await fetch(url,{headers,redirect:'error',signal:AbortSignal.timeout(15000)});await r.body?.cancel();assert.ok(r.ok);}catch{throw Error('Production provider authentication probe failed; no source published');}}
  await probe(secret.NEXT_PUBLIC_SUPABASE_URL+'/auth/v1/settings',{apikey:secret.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY});
- await probe(secret.NEXT_PUBLIC_SUPABASE_URL+'/rest/v1/',{apikey:secret.SUPABASE_SECRET_KEY,Authorization:'Bearer '+secret.SUPABASE_SECRET_KEY,Accept:'application/openapi+json'});
- await probe('https://api.brevo.com/v3/account',{'api-key':secret.BREVO_API_KEY});
  const repo=aws(['ecr','describe-repositories','--repository-names','tracepoint-production']).repositories[0];assert.equal(repo.registryId,target.account);assert.equal(repo.imageTagMutability,'IMMUTABLE');
 }
 const directory=mkdtempSync(join(tmpdir(),'tracepoint-production-archive-')),archive=join(directory,'source.zip');
