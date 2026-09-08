@@ -82,7 +82,7 @@
             "config.amazonaws.com",
             "securityhub.amazonaws.com",
             "securityhubv2.amazonaws.com",
-            "application-autoscaling.amazonaws.com"
+            "ecs.application-autoscaling.amazonaws.com"
           ]
         }
       }

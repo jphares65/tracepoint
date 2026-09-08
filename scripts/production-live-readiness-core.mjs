@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 
 const allowedCertificateAlgorithms = new Set([
   'RSA_2048',
+  'RSA-2048',
   'EC_prime256v1',
+  'EC-prime256v1',
   'EC_secp384r1',
+  'EC-secp384r1',
 ]);
 
 export function evaluateProductionLiveReadiness(input, now = Date.now()) {

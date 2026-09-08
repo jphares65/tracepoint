@@ -18,7 +18,7 @@ test('production assembly retains provider isolation and two-to-four capacity',(
  compute.hasResourceProperties('AWS::SecretsManager::Secret',{Name:'tracepoint/production/application'});compute.hasResourceProperties('AWS::Logs::LogGroup',{RetentionInDays:365});compute.hasResource('AWS::SecretsManager::Secret',{DeletionPolicy:'Retain'});assert.equal(stacks.runtime.terminationProtection,true);
  runtime.resourceCountIs('AWS::CloudWatch::Alarm',6);runtime.hasResourceProperties('AWS::CloudWatch::Alarm',{AlarmName:'tracepoint-production-latency-p99',Threshold:3});
  requests.hasResourceProperties('AWS::WAFv2::WebACL',{Name:'tracepoint-production-requests',Rules:Match.arrayWith([Match.objectLike({Action:{Block:Match.anyValue()}})])});requests.hasResourceProperties('AWS::Logs::LogGroup',{RetentionInDays:90});
- alerts.hasResourceProperties('AWS::CloudWatch::CompositeAlarm',{AlarmName:'tracepoint-production-runtime-alert'});alerts.resourceCountIs('AWS::SNS::Subscription',1);alerts.resourceCountIs('AWS::SQS::Queue',2);
+ alerts.hasResourceProperties('AWS::CloudWatch::CompositeAlarm',{AlarmName:'tracepoint-production-runtime-alert'});alerts.hasResourceProperties('AWS::SNS::Subscription',{Protocol:'email',Endpoint:'contact@tracepointhq.com'});alerts.resourceCountIs('AWS::SNS::Subscription',2);alerts.resourceCountIs('AWS::SQS::Queue',2);
  for(const stack of Object.values(stacks))for(const role of Object.values(Template.fromStack(stack).findResources('AWS::IAM::Role')))assert.match(JSON.stringify(role.Properties.PermissionsBoundary),/TracePointProductionBoundary/);
  assert.equal(stacks.requestControls.terminationProtection,true);assert.equal(stacks.alertDelivery.terminationProtection,true);
 });

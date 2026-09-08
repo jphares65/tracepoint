@@ -15,7 +15,7 @@ function valid() {
       {ZoneName:'us-east-1a', RegionName:'us-east-1', State:'available'},
       {ZoneName:'us-east-1b', RegionName:'us-east-1', State:'available'},
     ],
-    certificate:{CertificateArn:certificateArn, DomainName:'tracepointhq.com', Status:'ISSUED', KeyAlgorithm:'RSA_2048', NotAfter:'2027-09-06T00:00:00.000Z', DomainValidationOptions:[{ValidationStatus:'SUCCESS'}]},
+    certificate:{CertificateArn:certificateArn, DomainName:'tracepointhq.com', Status:'ISSUED', KeyAlgorithm:'RSA-2048', NotAfter:'2027-09-06T00:00:00.000Z', DomainValidationOptions:[{ValidationStatus:'SUCCESS'}]},
     secretMetadata:{Name:'tracepoint/production/application', KmsKeyId:`arn:aws:kms:us-east-1:${account}:key/00000000-0000-4000-8000-000000000000`},
     cloudTrails:[{IsLogging:true}],
     configurationRecorders:[{recording:true}],
