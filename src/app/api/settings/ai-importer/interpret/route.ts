@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { inferImport } from "@/lib/ai-importer/provider";
+import { configuredProvider } from "@/lib/ai-importer/server/provider-factory";
 import { MAX_IMPORT_FILE_BYTES, parseWorkbook } from "@/lib/ai-importer/workbook";
 import { accessFailureResponse, hasServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
     if (candidate.size > MAX_IMPORT_FILE_BYTES) return NextResponse.json({ error: `The file is larger than the ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB import limit.` }, { status: 413 });
     const bytes = new Uint8Array(await candidate.arrayBuffer());
     const sheets = parseWorkbook(bytes, candidate.name);
-    const interpretation = await inferImport(sheets);
+    const interpretation = await inferImport(sheets, configuredProvider());
     return NextResponse.json({
       file: { name: candidate.name.slice(0, 250), size: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex"), type: candidate.type || "application/octet-stream", sheetCount: sheets.length },
       sheets,

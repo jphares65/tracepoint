@@ -8,6 +8,8 @@ export const IMPORT_DOMAINS = [
 
 export type ImportDomain = (typeof IMPORT_DOMAINS)[number];
 export type MappingConfidence = "High" | "Medium" | "Needs Review";
+export type InferenceMode = "ai-assisted" | "deterministic";
+export type SheetDisposition = "useful" | "junk" | "archive" | "instructions";
 export type ImportAction = "CREATE" | "UPDATE" | "SKIP" | "CONFLICT";
 export type IssueSeverity = "warning" | "error";
 export type RemediationScope = "row" | "column" | "import";
@@ -51,6 +53,24 @@ export type ColumnMapping = {
   reason?: string;
 };
 
+export type SheetAssessment = {
+  sheetName: string;
+  disposition: SheetDisposition;
+  domain: ImportDomain | null;
+  headerRow: number;
+  confidence: MappingConfidence;
+  reason: string;
+};
+
+export type NormalizationSuggestion = {
+  sourceColumn: string;
+  targetField: string;
+  sourceValue: string;
+  suggestedValue: string;
+  confidence: MappingConfidence;
+  reason: string;
+};
+
 export type ParsedSheet = {
   name: string;
   matrix: string[][];
@@ -70,6 +90,8 @@ export type FileMetadata = {
 export type ImportInterpretation = {
   provider: string;
   usedFallback: boolean;
+  assistanceMode: InferenceMode;
+  statusMessage: string;
   domain: ImportDomain;
   sheetName: string;
   headerRow: number;
@@ -79,6 +101,8 @@ export type ImportInterpretation = {
   nameColumns: string[];
   ignoredColumns: string[];
   notes: string[];
+  sheetAssessments: SheetAssessment[];
+  normalizationSuggestions: NormalizationSuggestion[];
 };
 
 export type ImportPayload = {
