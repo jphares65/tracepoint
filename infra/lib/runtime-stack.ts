@@ -123,6 +123,10 @@ export class RuntimeStack extends cdk.Stack {
               props.appSecrets,
               "SUPABASE_SECRET_KEY",
             ),
+            SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
+              props.appSecrets,
+              "SUPABASE_SECRET_KEY",
+            ),
             BREVO_API_KEY: ecs.Secret.fromSecretsManager(
               props.appSecrets,
               "BREVO_API_KEY",

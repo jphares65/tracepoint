@@ -29,6 +29,7 @@ try {
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",
+    "ai_migration_workspaces",
   ];
   const tables = await client.query(
     "select tablename from pg_tables where schemaname = 'public' and tablename = any($1)",
