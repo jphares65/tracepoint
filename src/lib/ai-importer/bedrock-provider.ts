@@ -1,6 +1,6 @@
 import { BedrockRuntimeClient, ConverseCommand, type ConverseCommandOutput } from "@aws-sdk/client-bedrock-runtime";
 
-import { recordAiInferenceEvent, type AiInferenceErrorCategory } from "./observability.ts";
+import { recordAiInferenceEvent, type AiCredentialResolutionStatus, type AiInferenceErrorCategory, type AiInferenceErrorClass } from "./observability.ts";
 import { buildImportInferenceTask, buildWorkspaceInferenceTask, IMPORT_INFERENCE_SYSTEM_PROMPT, WORKSPACE_INFERENCE_SYSTEM_PROMPT } from "./prompts.ts";
 import { IMPORT_INFERENCE_JSON_SCHEMA, WORKSPACE_INFERENCE_JSON_SCHEMA } from "./schemas.ts";
 import type { ImportInferenceProvider, InferenceInput } from "./provider.ts";
@@ -20,12 +20,32 @@ export type BedrockProviderOptions = {
 
 export class BedrockInferenceError extends Error {
   readonly category: AiInferenceErrorCategory;
+  readonly errorClass: AiInferenceErrorClass;
 
-  constructor(category: AiInferenceErrorCategory) {
+  constructor(category: AiInferenceErrorCategory, errorClass: AiInferenceErrorClass = "UnknownError") {
     super("AI assistance is temporarily unavailable.");
     this.name = "BedrockInferenceError";
     this.category = category;
+    this.errorClass = errorClass;
   }
+}
+
+const BEDROCK_ERROR_CLASSES = new Set<AiInferenceErrorClass>([
+  "AbortError",
+  "AccessDeniedException",
+  "CredentialsProviderError",
+  "InternalServerException",
+  "ModelTimeoutException",
+  "ResourceNotFoundException",
+  "ServiceUnavailableException",
+  "ThrottlingException",
+  "ValidationException",
+]);
+
+export function sanitizedBedrockErrorClass(error: unknown): AiInferenceErrorClass {
+  if (error instanceof BedrockInferenceError) return error.errorClass;
+  const name = error instanceof Error ? error.name : "";
+  return BEDROCK_ERROR_CLASSES.has(name as AiInferenceErrorClass) ? name as AiInferenceErrorClass : "UnknownError";
 }
 
 export function categorizeBedrockError(error: unknown): AiInferenceErrorCategory {
@@ -39,27 +59,37 @@ export function categorizeBedrockError(error: unknown): AiInferenceErrorCategory
   return "unknown";
 }
 
+function credentialResolutionStatus(category: AiInferenceErrorCategory): AiCredentialResolutionStatus {
+  if (category === "credentials") return "failed";
+  if (["access_denied", "configuration", "invalid_response", "service_unavailable", "throttled"].includes(category)) return "resolved";
+  return "unknown";
+}
+
 function responseText(response: ConverseCommandOutput) {
-  if (response.stopReason !== "end_turn" && response.stopReason !== "stop_sequence") throw new BedrockInferenceError("invalid_response");
+  if (response.stopReason !== "end_turn" && response.stopReason !== "stop_sequence") throw new BedrockInferenceError("invalid_response", "InvalidResponse");
   const content = response.output?.message?.content ?? [];
   const text = content.map((block) => block.text ?? "").join("").trim();
-  if (!text) throw new BedrockInferenceError("invalid_response");
+  if (!text) throw new BedrockInferenceError("invalid_response", "InvalidResponse");
   try { return JSON.parse(text) as unknown; }
-  catch { throw new BedrockInferenceError("invalid_response"); }
+  catch { throw new BedrockInferenceError("invalid_response", "InvalidResponse"); }
 }
 
 export class BedrockInferenceProvider implements ImportInferenceProvider, WorkspaceInferenceProvider {
   readonly name = "bedrock";
   readonly hosted = true;
   readonly modelId: string;
+  readonly region: string;
   private readonly client: BedrockSender;
+  private readonly credentialProvider: "default-node-chain" | "injected";
   private readonly timeoutMs: number;
   private readonly maxTokens: number;
 
   constructor(options: BedrockProviderOptions) {
     this.modelId = options.modelId;
+    this.region = options.region;
     this.timeoutMs = options.timeoutMs ?? 20_000;
     this.maxTokens = options.maxTokens ?? 4_096;
+    this.credentialProvider = options.client ? "injected" : "default-node-chain";
     this.client = options.client ?? new BedrockRuntimeClient({ region: options.region, maxAttempts: 5, retryMode: "adaptive" });
   }
 
@@ -84,12 +114,35 @@ export class BedrockInferenceProvider implements ImportInferenceProvider, Worksp
         outputConfig: { textFormat: { type: "json_schema", structure: { jsonSchema: { schema: JSON.stringify(schema), name: schemaName, description: "Strict TracePoint import inference output" } } } },
       }), { abortSignal: controller.signal });
       const parsed = responseText(response);
-      recordAiInferenceEvent({ task, provider: this.name, modelId: this.modelId, status: "success", latencyMs: Date.now() - started, inputTokens: response.usage?.inputTokens, outputTokens: response.usage?.outputTokens });
+      recordAiInferenceEvent({
+        task,
+        provider: this.name,
+        modelId: this.modelId,
+        region: this.region,
+        credentialProvider: this.credentialProvider,
+        credentialResolutionStatus: "resolved",
+        status: "success",
+        latencyMs: Date.now() - started,
+        inputTokens: response.usage?.inputTokens,
+        outputTokens: response.usage?.outputTokens,
+      });
       return parsed;
     } catch (error) {
       const category = error instanceof BedrockInferenceError ? error.category : categorizeBedrockError(error);
-      recordAiInferenceEvent({ task, provider: this.name, modelId: this.modelId, status: "failure", latencyMs: Date.now() - started, errorCategory: category });
-      throw new BedrockInferenceError(category);
+      const errorClass = sanitizedBedrockErrorClass(error);
+      recordAiInferenceEvent({
+        task,
+        provider: this.name,
+        modelId: this.modelId,
+        region: this.region,
+        credentialProvider: this.credentialProvider,
+        credentialResolutionStatus: credentialResolutionStatus(category),
+        status: "failure",
+        latencyMs: Date.now() - started,
+        errorCategory: category,
+        errorClass,
+      });
+      throw new BedrockInferenceError(category, errorClass);
     } finally {
       clearTimeout(timer);
     }

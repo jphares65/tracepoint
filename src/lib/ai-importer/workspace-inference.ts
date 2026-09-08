@@ -1,6 +1,6 @@
 import { IMPORT_FIELDS } from "./catalog.ts";
 import { normalizeLabel } from "./normalize.ts";
-import { inferenceInput, isConfidence, isRecord, type ImportInferenceProvider } from "./provider.ts";
+import { inferenceInput, isConfidence, isRecord, providerErrorCategory, type ImportInferenceProvider } from "./provider.ts";
 import { recordAiInferenceEvent } from "./observability.ts";
 import { IMPORT_DOMAINS, type ImportDomain, type ParsedSheet } from "./types.ts";
 import type {
@@ -32,6 +32,7 @@ export type WorkspaceInferenceInput = { sources: WorkspaceInferenceSource[] };
 export const MAX_WORKSPACE_INFERENCE_SOURCES = 25;
 export const MAX_WORKSPACE_INFERENCE_HEADERS = 40;
 export const MAX_WORKSPACE_INFERENCE_SAMPLE_COLUMNS = 20;
+const MAX_WORKSPACE_PROVIDER_SUGGESTIONS = 100;
 
 export interface WorkspaceInferenceProvider extends ImportInferenceProvider {
   analyzeWorkspace?(input: WorkspaceInferenceInput): Promise<unknown>;
@@ -79,8 +80,9 @@ export function workspaceInferenceInput(sources: WorkspaceSource[], sourceLimit 
 export function validateWorkspaceProviderOutput(value: unknown, input: WorkspaceInferenceInput) {
   if (!isRecord(value) || !exactKeys(value, ["relationships", "sharedMappings", "remediations", "merges"])) throw new Error("AI workspace inference returned an unexpected structure.");
   if (!Array.isArray(value.relationships) || !Array.isArray(value.sharedMappings) || !Array.isArray(value.remediations) || !Array.isArray(value.merges)) throw new Error("AI workspace inference returned malformed suggestion lists.");
+  if ([value.relationships, value.sharedMappings, value.remediations, value.merges].some((suggestions) => suggestions.length > MAX_WORKSPACE_PROVIDER_SUGGESTIONS)) throw new Error("AI workspace inference returned too many suggestions.");
 
-  const relationships = value.relationships.slice(0, 100).map((candidate): WorkspaceRelationshipSuggestion => {
+  const relationships = value.relationships.map((candidate): WorkspaceRelationshipSuggestion => {
     if (!isRecord(candidate) || !exactKeys(candidate, ["sourceIds", "relationship", "preferredSourceId", "confidence", "reason"])) throw new Error("AI workspace inference returned a malformed relationship.");
     const ids = sourceIds(candidate.sourceIds, input);
     if (!["same_domain", "older_newer", "overlapping", "probable_duplicate", "source_precedence"].includes(String(candidate.relationship))) throw new Error("AI workspace inference returned an unsupported relationship.");
@@ -89,7 +91,7 @@ export function validateWorkspaceProviderOutput(value: unknown, input: Workspace
     return { sourceIds: ids, relationship: candidate.relationship as WorkspaceRelationshipSuggestion["relationship"], preferredSourceId: candidate.preferredSourceId as string | null, confidence: candidate.confidence, reason: text(candidate.reason) };
   });
 
-  const sharedMappings = value.sharedMappings.slice(0, 100).map((candidate): WorkspaceSharedMappingSuggestion => {
+  const sharedMappings = value.sharedMappings.map((candidate): WorkspaceSharedMappingSuggestion => {
     if (!isRecord(candidate) || !exactKeys(candidate, ["domain", "sourceHeader", "targetField", "confidence", "reason"])) throw new Error("AI workspace inference returned a malformed shared mapping.");
     if (!IMPORT_DOMAINS.includes(candidate.domain as ImportDomain)) throw new Error("AI workspace inference returned an unsupported domain.");
     const domain = candidate.domain as ImportDomain;
@@ -99,7 +101,7 @@ export function validateWorkspaceProviderOutput(value: unknown, input: Workspace
     return { domain, sourceHeader: candidate.sourceHeader, targetField: candidate.targetField as string | null, confidence: candidate.confidence, reason: text(candidate.reason) };
   });
 
-  const remediations = value.remediations.slice(0, 100).map((candidate): WorkspaceRemediationSuggestion => {
+  const remediations = value.remediations.map((candidate): WorkspaceRemediationSuggestion => {
     if (!isRecord(candidate) || !exactKeys(candidate, ["sourceId", "sourceColumn", "targetField", "sourceValue", "suggestedValue", "scope", "confidence", "reason"])) throw new Error("AI workspace inference returned a malformed remediation.");
     const source = input.sources.find((item) => item.sourceId === candidate.sourceId);
     if (!source || typeof candidate.sourceColumn !== "string") throw new Error("AI workspace inference remediation referenced an unavailable source.");
@@ -112,7 +114,7 @@ export function validateWorkspaceProviderOutput(value: unknown, input: Workspace
     return { sourceId: source.sourceId, sourceColumn: candidate.sourceColumn, targetField: mapping.targetField, sourceValue: candidate.sourceValue, suggestedValue: candidate.suggestedValue.slice(0, 120), scope: candidate.scope as WorkspaceRemediationSuggestion["scope"], confidence: candidate.confidence, reason: text(candidate.reason) };
   });
 
-  const merges = value.merges.slice(0, 100).map((candidate): WorkspaceMergeSuggestion => {
+  const merges = value.merges.map((candidate): WorkspaceMergeSuggestion => {
     if (!isRecord(candidate) || !exactKeys(candidate, ["domain", "sourceIds", "strategy", "preferredSourceId", "field", "confidence", "reason"])) throw new Error("AI workspace inference returned a malformed merge suggestion.");
     if (!IMPORT_DOMAINS.includes(candidate.domain as ImportDomain)) throw new Error("AI workspace inference returned an unsupported merge domain.");
     const domain = candidate.domain as ImportDomain;
@@ -175,8 +177,8 @@ export async function inferWorkspace(sources: WorkspaceSource[], provider: Works
   if (provider.hosted && provider.analyzeWorkspace) {
     try {
       return { ...validateWorkspaceProviderOutput(await provider.analyzeWorkspace(input), input), provider: provider.name, usedFallback: false, assistanceMode: "ai-assisted", statusMessage: "AI-assisted" };
-    } catch {
-      recordAiInferenceEvent({ task: "workspace", provider: provider.name, status: "fallback", latencyMs: 0, errorCategory: "invalid_response" });
+    } catch (error) {
+      recordAiInferenceEvent({ task: "workspace", provider: provider.name, status: "fallback", latencyMs: 0, errorCategory: providerErrorCategory(error) });
       return { ...deterministicSuggestions(deterministicInput), provider: "deterministic", usedFallback: true, assistanceMode: "deterministic", statusMessage: "AI assistance unavailable — deterministic mapping used." };
     }
   }
