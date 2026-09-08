@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const state = parseWorkspaceState({ version: 1, sources, sharedMappings: [], remediations: [], mergeRules: [], inference } satisfies MigrationWorkspaceState);
     const admin = access.context.admin as any;
     const result = await admin.from("ai_migration_workspaces").insert({ department_id: access.context.departmentId, created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId, status: "draft", state, file_count: files.length, source_row_count: totalRows }).select("id,status,created_at,updated_at,completed_at,expires_at").single();
-    if (result.error || !result.data) throw new Error("Migration workspace could not be staged.");
+    if (result.error || !result.data) return NextResponse.json({ error: "Migration workspace could not be staged." }, { status: 500, headers: { "Cache-Control": "no-store" } });
     return NextResponse.json({ workspace: { id: result.data.id, status: result.data.status, state, createdAt: result.data.created_at, updatedAt: result.data.updated_at, completedAt: result.data.completed_at, expiresAt: result.data.expires_at } }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Migration workspace could not be created." }, { status: 400, headers: { "Cache-Control": "no-store" } });
