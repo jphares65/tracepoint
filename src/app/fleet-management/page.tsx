@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowDown,
+  ArrowUp,
   Car,
   ChevronRight,
   CheckCircle2,
@@ -13,47 +15,38 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Wrench,
   X,
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import {
+  ASSIGNMENT_TYPES,
+  FLEET_STATUSES,
+  activeAdvancedFilterCount,
+  applyInventoryView,
+  clearAdvancedFilters,
+  inspectionState,
+  parseInventoryQuery,
+  serializeInventoryQuery,
+  serviceState,
+  type AssignmentType,
+  type FleetInventoryVehicle,
+  type FleetStatus,
+  type InventoryQueryState,
+  type InventorySortColumn,
+  type ScheduleState,
+} from "@/lib/fleet/inventory-state";
 
-type FleetStatus =
-  | "Available"
-  | "Attention"
-  | "Maintenance"
-  | "Out of Service"
-  | "Retired";
-
-type AssignmentType = "Pool" | "Permanent" | "Specialized";
-
-type FleetVehicle = {
-  id: string;
-  unit_number: string;
-  vin: string | null;
-  license_plate: string | null;
-  year: number | null;
-  make: string | null;
-  model: string | null;
-  vehicle_type: string | null;
-  assignment_type: AssignmentType;
-  assigned_to: string | null;
-  home_location: string | null;
-  current_mileage: number;
-  current_hours: number;
-  status: FleetStatus;
-  inspection_due_date: string | null;
+type FleetVehicle = FleetInventoryVehicle & {
   registration_expiration_date: string | null;
   insurance_expiration_date: string | null;
   in_service_date: string | null;
   last_service_date: string | null;
   last_service_mileage: number | null;
   last_service_hours: number | null;
-  next_service_date: string | null;
-  next_service_mileage: number | null;
   next_service_hours: number | null;
-  open_issue_count: number;
   comments: string | null;
   notes: string | null;
   updated_at: string;
@@ -124,13 +117,7 @@ const EMPTY_FORM: VehicleForm = {
   reason: "",
 };
 
-const STATUSES: FleetStatus[] = [
-  "Available",
-  "Attention",
-  "Maintenance",
-  "Out of Service",
-  "Retired",
-];
+const STATUSES: FleetStatus[] = [...FLEET_STATUSES];
 
 const PREVIEW_VEHICLE: FleetVehicle = {
   id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001",
@@ -159,8 +146,8 @@ function formForVehicle(vehicle: FleetVehicle): VehicleForm {
     assignmentType: vehicle.assignment_type,
     assignedTo: vehicle.assigned_to ?? "",
     homeLocation: vehicle.home_location ?? "",
-    currentMileage: vehicle.current_mileage.toString(),
-    currentHours: vehicle.current_hours.toString(),
+    currentMileage: vehicle.current_mileage?.toString() ?? "",
+    currentHours: vehicle.current_hours?.toString() ?? "",
     status: vehicle.status,
     inspectionDueDate: vehicle.inspection_due_date ?? "",
     registrationExpirationDate: vehicle.registration_expiration_date ?? "",
@@ -172,7 +159,7 @@ function formForVehicle(vehicle: FleetVehicle): VehicleForm {
     nextServiceDate: vehicle.next_service_date ?? "",
     nextServiceMileage: vehicle.next_service_mileage?.toString() ?? "",
     nextServiceHours: vehicle.next_service_hours?.toString() ?? "",
-    openIssueCount: vehicle.open_issue_count.toString(),
+    openIssueCount: vehicle.open_issue_count?.toString() ?? "0",
     comments: vehicle.comments ?? "",
     notes: vehicle.notes ?? "",
     reason: "",
@@ -193,16 +180,6 @@ function formatDate(value: string | null) {
 function formatMileage(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "—";
   return `${Math.max(0, value).toLocaleString("en-US")} mi`;
-}
-
-function dateState(value: string | null) {
-  if (!value) return "none" as const;
-  const due = new Date(`${value}T23:59:59`);
-  if (Number.isNaN(due.getTime())) return "none" as const;
-  const days = Math.ceil((due.getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return "overdue" as const;
-  if (days <= 30) return "due-soon" as const;
-  return "current" as const;
 }
 
 function statusClasses(status: FleetStatus) {
@@ -275,19 +252,93 @@ function Field({
   );
 }
 
-export default function FleetManagementPage() {
+const SCHEDULE_LABELS: Record<ScheduleState, string> = {
+  current: "Current",
+  "due-soon": "Due Soon",
+  overdue: "Overdue",
+  "not-scheduled": "Not Scheduled",
+};
+
+type AdvancedFilterKey =
+  | "vehicle"
+  | "assignment"
+  | "location"
+  | "inspection"
+  | "service"
+  | "issues";
+
+function SortableHeader({
+  column,
+  label,
+  query,
+  onSort,
+}: {
+  column: InventorySortColumn;
+  label: string;
+  query: InventoryQueryState;
+  onSort: (column: InventorySortColumn) => void;
+}) {
+  const active = query.sort === column;
+  const ariaSort = active
+    ? query.direction === "asc" ? "ascending" : "descending"
+    : "none";
+  return (
+    <th className="px-2 py-1" aria-sort={ariaSort}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        aria-label={`Sort by ${label}${active ? `, currently ${ariaSort}` : ""}`}
+        className={`inline-flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left transition hover:bg-slate-800/70 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${active ? "text-blue-300" : "text-slate-500"}`}
+      >
+        <span>{label}</span>
+        {active ? (
+          query.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+        ) : (
+          <span aria-hidden="true" className="text-[11px] text-slate-700">↕</span>
+        )}
+      </button>
+    </th>
+  );
+}
+
+function FleetManagementContent() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const query = useMemo(
+    () => parseInventoryQuery(searchParams.toString()),
+    [searchParams],
+  );
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | FleetStatus>("All");
+  const [showFilters, setShowFilters] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
+
+  function replaceQuery(next: InventoryQueryState) {
+    const value = serializeInventoryQuery(next).toString();
+    window.history.replaceState(null, "", value ? `${pathname}?${value}` : pathname);
+  }
+
+  function updateQuery(patch: Partial<InventoryQueryState>) {
+    replaceQuery({ ...query, ...patch });
+  }
+
+  function sortBy(column: InventorySortColumn) {
+    updateQuery({
+      sort: column,
+      direction: query.sort === column && query.direction === "asc" ? "desc" : "asc",
+    });
+  }
+
+  function removeAdvancedFilter(key: AdvancedFilterKey) {
+    replaceQuery({ ...query, [key]: "" });
+  }
 
   function openCreateForm() {
     setEditingVehicleId(null);
@@ -349,30 +400,28 @@ export default function FleetManagementPage() {
     };
   }, [vehicles]);
 
-  const filteredVehicles = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
-    return vehicles.filter((vehicle) => {
-      if (statusFilter !== "All" && vehicle.status !== statusFilter) return false;
-      if (!normalized) return true;
-      return [
-        vehicle.unit_number,
-        vehicle.vin,
-        vehicle.license_plate,
-        vehicle.year,
-        vehicle.make,
-        vehicle.model,
-        vehicle.vehicle_type,
-        vehicle.assignment_type,
-        vehicle.assigned_to,
-        vehicle.home_location,
-        vehicle.status,
-      ]
-        .filter((value) => value !== null && value !== undefined)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized);
-    });
-  }, [search, statusFilter, vehicles]);
+  const filteredVehicles = useMemo(
+    () => applyInventoryView(vehicles, query),
+    [query, vehicles],
+  );
+
+  const locations = useMemo(
+    () => [...new Set(vehicles.map((vehicle) => vehicle.home_location?.trim()).filter((value): value is string => Boolean(value)))]
+      .sort((left, right) => left.localeCompare(right, "en-US", { numeric: true, sensitivity: "base" })),
+    [vehicles],
+  );
+  const activeFilterCount = activeAdvancedFilterCount(query);
+  const activeFilterChips: Array<{ key: AdvancedFilterKey; label: string }> = [
+    query.vehicle ? { key: "vehicle", label: `Vehicle: ${query.vehicle}` } : null,
+    query.assignment ? { key: "assignment", label: `Assignment: ${query.assignment}` } : null,
+    query.location ? { key: "location", label: `Location: ${query.location}` } : null,
+    query.inspection ? { key: "inspection", label: `Inspection: ${SCHEDULE_LABELS[query.inspection]}` } : null,
+    query.service ? { key: "service", label: `Service: ${SCHEDULE_LABELS[query.service]}` } : null,
+    query.issues ? { key: "issues", label: `Issues: ${query.issues === "open" ? "Has Open Issues" : "No Open Issues"}` } : null,
+  ].filter((chip): chip is { key: AdvancedFilterKey; label: string } => chip !== null);
+  const inventoryQueryString = serializeInventoryQuery(query).toString();
+  const vehicleHref = (vehicleId: string) =>
+    `/fleet-management/${vehicleId}${inventoryQueryString ? `?${inventoryQueryString}` : ""}`;
 
   async function saveVehicle() {
     if (!form.unitNumber.trim()) {
@@ -517,36 +566,140 @@ export default function FleetManagementPage() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
-          <div className="flex flex-col gap-3 border-b border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-white">Vehicle Inventory</h2>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Current status is authoritative until automated inspection rules are enabled.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-2.5 text-slate-600" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search unit, plate, make, assignment..."
-                  className="min-w-[280px] rounded-xl border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-xs text-white outline-none focus:border-blue-500"
-                />
+          <div className="border-b border-slate-800 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-white">Vehicle Inventory</h2>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Current status is authoritative until automated inspection rules are enabled.
+                </p>
               </div>
-              <select
-                value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as "All" | FleetStatus)
-                }
-                className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-              >
-                <option value="All">All statuses</option>
-                {STATUSES.map((status) => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                <div className="relative min-w-0 sm:min-w-[280px]">
+                  <Search size={14} className="absolute left-3 top-2.5 text-slate-600" />
+                  <input
+                    value={query.search}
+                    onChange={(event) => updateQuery({ search: event.target.value })}
+                    aria-label="Search vehicle inventory"
+                    placeholder="Search unit, plate, make, assignment..."
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-xs text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                <select
+                  value={query.status}
+                  onChange={(event) => updateQuery({ status: event.target.value as "All" | FleetStatus })}
+                  aria-label="Filter by status"
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                >
+                  <option value="All">All statuses</option>
+                  {STATUSES.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowFilters((visible) => !visible)}
+                  aria-expanded={showFilters}
+                  aria-controls="fleet-inventory-filters"
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${activeFilterCount > 0 || showFilters ? "border-blue-500/40 bg-blue-500/10 text-blue-200" : "border-slate-700 text-slate-400 hover:text-white"}`}
+                >
+                  <SlidersHorizontal size={14} />
+                  Filters
+                  {activeFilterCount > 0 ? (
+                    <span className="rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px]" aria-label={`${activeFilterCount} active filters`}>
+                      {activeFilterCount}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
             </div>
+
+            {showFilters ? (
+              <div id="fleet-inventory-filters" className="mt-3 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Vehicle details or type">
+                  <input
+                    value={query.vehicle}
+                    onChange={(event) => updateQuery({ vehicle: event.target.value })}
+                    placeholder="Year, make, model, or type"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Assignment type">
+                  <select
+                    value={query.assignment}
+                    onChange={(event) => updateQuery({ assignment: event.target.value as "" | AssignmentType })}
+                    className={inputClass}
+                  >
+                    <option value="">Any assignment</option>
+                    {ASSIGNMENT_TYPES.map((assignment) => <option key={assignment}>{assignment}</option>)}
+                  </select>
+                </Field>
+                <Field label="Location">
+                  <select
+                    value={query.location}
+                    onChange={(event) => updateQuery({ location: event.target.value })}
+                    className={inputClass}
+                  >
+                    <option value="">Any location</option>
+                    {locations.map((location) => <option key={location}>{location}</option>)}
+                  </select>
+                </Field>
+                <Field label="Inspection state">
+                  <select
+                    value={query.inspection}
+                    onChange={(event) => updateQuery({ inspection: event.target.value as "" | ScheduleState })}
+                    className={inputClass}
+                  >
+                    <option value="">Any inspection state</option>
+                    {Object.entries(SCHEDULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Service state">
+                  <select
+                    value={query.service}
+                    onChange={(event) => updateQuery({ service: event.target.value as "" | ScheduleState })}
+                    className={inputClass}
+                  >
+                    <option value="">Any service state</option>
+                    {Object.entries(SCHEDULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Issues">
+                  <select
+                    value={query.issues}
+                    onChange={(event) => updateQuery({ issues: event.target.value as InventoryQueryState["issues"] })}
+                    className={inputClass}
+                  >
+                    <option value="">Any</option>
+                    <option value="open">Has Open Issues</option>
+                    <option value="none">No Open Issues</option>
+                  </select>
+                </Field>
+              </div>
+            ) : null}
+
+            {activeFilterChips.length > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Active inventory filters">
+                {activeFilterChips.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() => removeAdvancedFilter(chip.key)}
+                    aria-label={`Remove ${chip.label} filter`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-semibold text-blue-200 hover:border-blue-400/60"
+                  >
+                    {chip.label} <X size={11} aria-hidden="true" />
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => replaceQuery(clearAdvancedFilters(query))}
+                  className="px-1 py-1 text-[10px] font-semibold text-slate-500 hover:text-white"
+                >
+                  Clear all
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {loading ? (
@@ -562,7 +715,7 @@ export default function FleetManagementPage() {
               <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">
                 {vehicles.length === 0
                   ? "Add the department fleet to begin tracking availability, mileage, assignments, service dates, and open issues."
-                  : "Adjust the search or status filter to see additional records."}
+                  : "Adjust the search or filters to see additional records."}
               </p>
               {vehicles.length === 0 && canManage ? (
                 <button
@@ -579,38 +732,40 @@ export default function FleetManagementPage() {
               <table className="w-full min-w-[1260px] text-left">
                 <thead className="border-b border-slate-800 bg-slate-950/40">
                   <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    <th className="px-4 py-3">Unit</th>
-                    <th className="px-4 py-3">Vehicle</th>
-                    <th className="px-4 py-3">Assignment</th>
-                    <th className="px-4 py-3">Mileage</th>
-                    <th className="px-4 py-3">Inspection</th>
-                    <th className="px-4 py-3">Next Service</th>
-                    <th className="px-4 py-3">Issues</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3"><span className="sr-only">Open vehicle</span></th>
+                    <SortableHeader column="unit" label="Unit" query={query} onSort={sortBy} />
+                    <SortableHeader column="vehicle" label="Vehicle" query={query} onSort={sortBy} />
+                    <SortableHeader column="assignment" label="Assignment" query={query} onSort={sortBy} />
+                    <SortableHeader column="mileage" label="Mileage" query={query} onSort={sortBy} />
+                    <SortableHeader column="inspection" label="Inspection" query={query} onSort={sortBy} />
+                    <SortableHeader column="service" label="Next Service" query={query} onSort={sortBy} />
+                    <SortableHeader column="issues" label="Issues" query={query} onSort={sortBy} />
+                    <SortableHeader column="status" label="Status" query={query} onSort={sortBy} />
+                    <th className="px-4 py-3" aria-label="Vehicle actions" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {filteredVehicles.map((vehicle) => {
-                    const inspectionState = dateState(vehicle.inspection_due_date);
-                    const serviceState = dateState(vehicle.next_service_date);
+                    const vehicleInspectionState = inspectionState(vehicle.inspection_due_date);
+                    const vehicleServiceState = serviceState(vehicle);
+                    const openIssueCount = vehicle.open_issue_count ?? 0;
+                    const href = vehicleHref(vehicle.id);
                     return (
                       <tr
                         key={vehicle.id}
                         role="link"
                         tabIndex={0}
-                        onClick={() => router.push(`/fleet-management/${vehicle.id}`)}
+                        onClick={() => router.push(href)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            router.push(`/fleet-management/${vehicle.id}`);
+                            router.push(href);
                           }
                         }}
                         className="group cursor-pointer align-top transition hover:bg-slate-950/60 focus:bg-slate-950/60 focus:outline-none"
                       >
                         <td className="px-4 py-3">
                           <Link
-                            href={`/fleet-management/${vehicle.id}`}
+                            href={href}
                             className="text-sm font-bold text-white hover:text-blue-300"
                           >
                             Unit {vehicle.unit_number}
@@ -638,23 +793,27 @@ export default function FleetManagementPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <p className={`text-xs ${inspectionState === "overdue" ? "font-semibold text-red-300" : inspectionState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
+                          <p className={`text-xs ${vehicleInspectionState === "overdue" ? "font-semibold text-red-300" : vehicleInspectionState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
                             {formatDate(vehicle.inspection_due_date)}
                           </p>
-                          {inspectionState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
-                          {inspectionState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
+                          {vehicleInspectionState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
+                          {vehicleInspectionState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
+                          {vehicleInspectionState === "not-scheduled" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">Not scheduled</p> : null}
                         </td>
                         <td className="px-4 py-3">
-                          <p className={`text-xs ${serviceState === "overdue" ? "font-semibold text-red-300" : serviceState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
+                          <p className={`text-xs ${vehicleServiceState === "overdue" ? "font-semibold text-red-300" : vehicleServiceState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
                             {formatDate(vehicle.next_service_date)}
                           </p>
                           <p className="mt-1 text-[10px] text-slate-500">
                             {vehicle.next_service_mileage ? `or ${formatMileage(vehicle.next_service_mileage)}` : "No mileage interval"}
                           </p>
+                          {vehicleServiceState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
+                          {vehicleServiceState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
+                          {vehicleServiceState === "not-scheduled" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">Not scheduled</p> : null}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={vehicle.open_issue_count > 0 ? "inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-300" : "text-xs text-slate-500"}>
-                            {vehicle.open_issue_count > 0 ? `${vehicle.open_issue_count} open` : "None"}
+                          <span className={openIssueCount > 0 ? "inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-300" : "text-xs text-slate-500"}>
+                            {openIssueCount > 0 ? `${openIssueCount} open` : "None"}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -689,7 +848,7 @@ export default function FleetManagementPage() {
                               </button>
                             ) : null}
                             <Link
-                              href={`/fleet-management/${vehicle.id}`}
+                              href={href}
                               onClick={(event) => event.stopPropagation()}
                               className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition group-hover:border-blue-500/40 group-hover:text-blue-300"
                             >
@@ -783,5 +942,21 @@ export default function FleetManagementPage() {
         ) : null}
       </div>
     </TracePointShell>
+  );
+}
+
+export default function FleetManagementPage() {
+  return (
+    <Suspense
+      fallback={(
+        <TracePointShell activePage="Fleet Management">
+          <div className="flex h-72 items-center justify-center">
+            <RefreshCw className="animate-spin text-blue-300" />
+          </div>
+        </TracePointShell>
+      )}
+    >
+      <FleetManagementContent />
+    </Suspense>
   );
 }
