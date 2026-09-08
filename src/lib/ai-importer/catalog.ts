@@ -10,7 +10,7 @@ export const DOMAIN_LABELS: Record<ImportDomain, string> = {
 
 export const IMPORT_FIELDS: Record<ImportDomain, ImportField[]> = {
   personnel: [
-    { key: "employeeNumber", label: "Employee ID", aliases: ["employee id", "employee number", "officer id", "personnel id"] },
+    { key: "employeeNumber", label: "Employee ID", aliases: ["employee id", "employee number", "officer id", "off id", "off. id", "personnel id"] },
     { key: "badgeNumber", label: "Badge number", required: true, aliases: ["badge", "badge number", "shield", "shield number"] },
     { key: "fullName", label: "Full name", aliases: ["full name", "name", "officer name", "employee name", "personnel name"] },
     { key: "firstName", label: "First name", aliases: ["first", "first name", "given name"] },
@@ -23,7 +23,7 @@ export const IMPORT_FIELDS: Record<ImportDomain, ImportField[]> = {
     { key: "active", label: "Active status", kind: "boolean", aliases: ["active", "status", "employment status"] },
   ],
   firearms: [
-    { key: "serialNumber", label: "Serial number", required: true, aliases: ["serial", "serial number", "serial no", "s n", "weapon serial"] },
+    { key: "serialNumber", label: "Serial number", required: true, aliases: ["serial", "serial number", "serial no", "s n", "weapon serial", "weapon s/n", "weapon s n"] },
     { key: "assetNumber", label: "Asset number", aliases: ["asset", "asset number", "property number", "inventory number", "firearm id"] },
     { key: "make", label: "Make / manufacturer", aliases: ["make", "manufacturer", "brand"] },
     { key: "model", label: "Model", aliases: ["model"] },
@@ -39,12 +39,12 @@ export const IMPORT_FIELDS: Record<ImportDomain, ImportField[]> = {
     { key: "certificationTitle", label: "Certification type / name", required: true, aliases: ["certification", "certification title", "certification type", "credential", "course"] },
     { key: "credentialNumber", label: "Certification number", aliases: ["credential number", "certification number", "certificate number", "cert number", "license number"] },
     { key: "issueDate", label: "Issue date", kind: "date", aliases: ["issue date", "issued", "date issued", "effective date"] },
-    { key: "expirationDate", label: "Expiration date", kind: "date", aliases: ["expiration date", "expires", "expiry date", "renewal date"] },
+    { key: "expirationDate", label: "Expiration date", kind: "date", aliases: ["expiration date", "expires", "expiry date", "renewal date", "cert exp"] },
     { key: "issuingOrganization", label: "Issuing authority", aliases: ["issuing authority", "issuing organization", "issuer", "organization", "agency"] },
     { key: "notes", label: "Notes", aliases: ["notes", "comments", "remarks"] },
   ],
   vehicles: [
-    { key: "unitNumber", label: "Unit number", required: true, aliases: ["unit", "unit number", "vehicle number", "fleet number", "asset number"] },
+    { key: "unitNumber", label: "Unit number", required: true, aliases: ["unit", "unit number", "vehicle number", "fleet number", "asset number", "car number", "car #"] },
     { key: "vin", label: "VIN", aliases: ["vin", "vehicle identification number"] },
     { key: "licensePlate", label: "License plate", aliases: ["plate", "license plate", "registration plate"] },
     { key: "year", label: "Year", kind: "integer", aliases: ["year", "model year"] },
@@ -76,7 +76,7 @@ export const IMPORT_FIELDS: Record<ImportDomain, ImportField[]> = {
     { key: "assignedPersonnel", label: "Assigned person", aliases: ["assigned officer", "assigned to", "officer", "employee", "assignee", "badge"] },
     { key: "assignedLocation", label: "Assigned location", aliases: ["location", "assigned location", "storage location"] },
     { key: "issueDate", label: "Issue date", kind: "date", aliases: ["issue date", "issued", "date issued"] },
-    { key: "expirationDate", label: "Expiration date", kind: "date", aliases: ["expiration date", "expires", "expiry date", "replacement date"] },
+    { key: "expirationDate", label: "Expiration date", kind: "date", aliases: ["expiration date", "expires", "expiry date", "replacement date", "vest exp"] },
     { key: "lastInspectionDate", label: "Last inspection date", kind: "date", aliases: ["last inspection", "last inspection date", "inspection date"] },
     { key: "nextInspectionDate", label: "Next inspection date", kind: "date", aliases: ["next inspection", "next inspection date", "inspection due"] },
     { key: "notes", label: "Notes", aliases: ["notes", "comments", "remarks"] },

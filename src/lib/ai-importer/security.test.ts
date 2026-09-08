@@ -38,7 +38,8 @@ test("execution scopes every domain write, batches safely, audits results, and d
 
 test("provider input minimizes data to headers and three representative rows", async () => {
   const source = await readFile("src/lib/ai-importer/provider.ts", "utf8");
-  assert.match(source, /rows\.slice\(0, 3\)/);
+  assert.match(source, /MAX_INFERENCE_SAMPLE_ROWS = 3/);
+  assert.match(source, /rows\.slice\(0, MAX_INFERENCE_SAMPLE_ROWS\)/);
   assert.doesNotMatch(source, /departmentId|department_id/);
   assert.doesNotMatch(source, /console\.(?:log|error|warn)/);
 });

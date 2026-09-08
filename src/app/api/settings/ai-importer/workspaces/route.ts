@@ -2,9 +2,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { inferImport } from "@/lib/ai-importer/provider";
+import { DeterministicInferenceProvider, inferImport } from "@/lib/ai-importer/provider";
 import { MAX_IMPORT_FILE_BYTES, parseWorkbook } from "@/lib/ai-importer/workbook";
 import { MAX_WORKSPACE_BYTES, MAX_WORKSPACE_FILES, MAX_WORKSPACE_ROWS, MAX_WORKSPACE_SOURCES, MAX_WORKSPACE_TOTAL_CHARACTERS, parseWorkspaceState } from "@/lib/ai-importer/server/workspace-state";
+import { configuredProvider } from "@/lib/ai-importer/server/provider-factory";
+import { inferWorkspace } from "@/lib/ai-importer/workspace-inference";
 import type { MigrationWorkspaceState, WorkspaceSource } from "@/lib/ai-importer/workspace-types";
 import { accessFailureResponse, hasServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -32,7 +34,8 @@ export async function POST(request: Request) {
     if (!files.length || files.length > MAX_WORKSPACE_FILES) throw new Error(`Choose between 1 and ${MAX_WORKSPACE_FILES} CSV, XLS, or XLSX files.`);
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
     if (totalBytes > MAX_WORKSPACE_BYTES) return NextResponse.json({ error: `The batch is larger than the ${MAX_WORKSPACE_BYTES / 1024 / 1024} MB workspace limit.` }, { status: 413 });
-    const sources: WorkspaceSource[] = [];
+    const pendingSources: Array<{ id: string; fileId: string; file: WorkspaceSource["file"]; sheet: ReturnType<typeof parseWorkbook>[number]; uploadedAt: string }> = [];
+    const provider = configuredProvider();
     let totalRows = 0;
     let totalCharacters = 0;
     for (const file of files) {
@@ -40,20 +43,26 @@ export async function POST(request: Request) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const fileId = randomUUID();
       const sheets = parseWorkbook(bytes, file.name);
-      if (sources.length + sheets.length > MAX_WORKSPACE_SOURCES) throw new Error(`The workspace exceeds the ${MAX_WORKSPACE_SOURCES} worksheet limit.`);
+      if (pendingSources.length + sheets.length > MAX_WORKSPACE_SOURCES) throw new Error(`The workspace exceeds the ${MAX_WORKSPACE_SOURCES} worksheet limit.`);
       totalCharacters += sheets.reduce((sum, sheet) => sum + sheet.matrix.reduce((matrixSum, row) => matrixSum + row.reduce((rowSum, cell) => rowSum + cell.length, 0), 0), 0);
       if (totalCharacters > MAX_WORKSPACE_TOTAL_CHARACTERS) throw new Error("The expanded workspace exceeds the safe structured-staging limit.");
       const metadata = { name: file.name.slice(0, 250), size: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex"), type: file.type || "application/octet-stream", sheetCount: sheets.length };
       for (const sheet of sheets) {
         totalRows += sheet.rowCount;
         if (totalRows > MAX_WORKSPACE_ROWS) throw new Error(`The workspace exceeds the ${MAX_WORKSPACE_ROWS.toLocaleString()} source-row limit.`);
-        const interpretation = await inferImport([sheet]);
-        const reviewMappings = interpretation.mappings.filter((mapping) => mapping.targetField && mapping.confidence === "Needs Review").length;
-        const headerConfidence = reviewMappings ? "Needs Review" : interpretation.mappings.some((mapping) => mapping.confidence === "Medium") ? "Medium" : "High";
-        sources.push({ id: randomUUID(), fileId, file: metadata, sheetName: sheet.name, matrix: sheet.matrix, domain: interpretation.domain, headerRow: interpretation.headerRow, mappings: interpretation.mappings, excluded: false, headerConfidence, uploadedAt: new Date(file.lastModified || Date.now()).toISOString() });
+        pendingSources.push({ id: randomUUID(), fileId, file: metadata, sheet, uploadedAt: new Date(file.lastModified || Date.now()).toISOString() });
       }
     }
-    const state = parseWorkspaceState({ version: 1, sources, sharedMappings: [], remediations: [], mergeRules: [] } satisfies MigrationWorkspaceState);
+    const deterministic = new DeterministicInferenceProvider();
+    const interpretations = await Promise.all(pendingSources.map((pending, index) => inferImport([pending.sheet], provider.hosted && index >= 8 ? deterministic : provider)));
+    const sources: WorkspaceSource[] = pendingSources.map((pending, index) => {
+      const interpretation = interpretations[index];
+      const reviewMappings = interpretation.mappings.filter((mapping) => mapping.targetField && mapping.confidence === "Needs Review").length;
+      const headerConfidence = reviewMappings ? "Needs Review" : interpretation.mappings.some((mapping) => mapping.confidence === "Medium") ? "Medium" : "High";
+      return { id: pending.id, fileId: pending.fileId, file: pending.file, sheetName: pending.sheet.name, matrix: pending.sheet.matrix, domain: interpretation.domain, headerRow: interpretation.headerRow, mappings: interpretation.mappings, excluded: false, headerConfidence, uploadedAt: pending.uploadedAt };
+    });
+    const inference = await inferWorkspace(sources, provider);
+    const state = parseWorkspaceState({ version: 1, sources, sharedMappings: [], remediations: [], mergeRules: [], inference } satisfies MigrationWorkspaceState);
     const admin = access.context.admin as any;
     const result = await admin.from("ai_migration_workspaces").insert({ department_id: access.context.departmentId, created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId, status: "draft", state, file_count: files.length, source_row_count: totalRows }).select("id,status,created_at,updated_at,completed_at,expires_at").single();
     if (result.error || !result.data) throw new Error("Migration workspace could not be staged.");

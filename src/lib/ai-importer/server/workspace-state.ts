@@ -5,6 +5,7 @@ import { cleanText } from "../normalize.ts";
 import { parseImportPayload } from "../validation.ts";
 import { IMPORT_DOMAINS, type ImportDomain } from "../types.ts";
 import { materializeSheet } from "../workbook.ts";
+import { parseWorkspaceInferenceSuggestions } from "../workspace-inference.ts";
 import { EMPTY_WORKSPACE_STATE, type MigrationWorkspaceState, type SharedMappingRule, type WorkspaceMergeRule, type WorkspaceRemediationRule, type WorkspaceSource } from "../workspace-types.ts";
 
 export const MAX_WORKSPACE_FILES = 50;
@@ -62,5 +63,6 @@ export function parseWorkspaceState(value: unknown): MigrationWorkspaceState {
     if (candidate.field !== undefined && (typeof candidate.field !== "string" || !IMPORT_FIELDS[ruleDomain].some((field) => field.key === candidate.field))) throw new Error("A merge rule targets an unsupported field.");
     return { domain: ruleDomain, strategy: candidate.strategy as WorkspaceMergeRule["strategy"], groupKey: typeof candidate.groupKey === "string" ? cleanText(candidate.groupKey, 64) : undefined, preferredSourceId: candidate.preferredSourceId as string | undefined, field: candidate.field as string | undefined, approvedAt: cleanText(candidate.approvedAt, 50) };
   });
-  return { ...EMPTY_WORKSPACE_STATE, version: 1, sources, sharedMappings, remediations, mergeRules };
+  const inference = value.inference === undefined ? undefined : parseWorkspaceInferenceSuggestions(value.inference, sources);
+  return { ...EMPTY_WORKSPACE_STATE, version: 1, sources, sharedMappings, remediations, mergeRules, inference };
 }

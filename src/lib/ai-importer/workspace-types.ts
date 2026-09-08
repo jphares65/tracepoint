@@ -1,4 +1,52 @@
-import type { ColumnMapping, FileMetadata, ImportDomain, ImportPayload, ImportPreview, ParsedSheet, RemediationScope } from "./types.ts";
+import type { ColumnMapping, FileMetadata, ImportDomain, ImportPayload, ImportPreview, InferenceMode, MappingConfidence, ParsedSheet, RemediationScope } from "./types.ts";
+
+export type WorkspaceRelationshipSuggestion = {
+  sourceIds: string[];
+  relationship: "same_domain" | "older_newer" | "overlapping" | "probable_duplicate" | "source_precedence";
+  preferredSourceId: string | null;
+  confidence: MappingConfidence;
+  reason: string;
+};
+
+export type WorkspaceSharedMappingSuggestion = {
+  domain: ImportDomain;
+  sourceHeader: string;
+  targetField: string | null;
+  confidence: MappingConfidence;
+  reason: string;
+};
+
+export type WorkspaceRemediationSuggestion = {
+  sourceId: string;
+  sourceColumn: string;
+  targetField: string;
+  sourceValue: string;
+  suggestedValue: string;
+  scope: "column" | "file" | "workspace";
+  confidence: MappingConfidence;
+  reason: string;
+};
+
+export type WorkspaceMergeSuggestion = {
+  domain: ImportDomain;
+  sourceIds: string[];
+  strategy: "skip_exact_duplicates" | "nonblank" | "newest" | "preferred_source" | "field_source";
+  preferredSourceId: string | null;
+  field: string | null;
+  confidence: MappingConfidence;
+  reason: string;
+};
+
+export type WorkspaceInferenceSuggestions = {
+  provider: string;
+  usedFallback: boolean;
+  assistanceMode: InferenceMode;
+  statusMessage: string;
+  relationships: WorkspaceRelationshipSuggestion[];
+  sharedMappings: WorkspaceSharedMappingSuggestion[];
+  remediations: WorkspaceRemediationSuggestion[];
+  merges: WorkspaceMergeSuggestion[];
+};
 
 export type WorkspaceSource = {
   id: string;
@@ -49,6 +97,7 @@ export type MigrationWorkspaceState = {
   sharedMappings: SharedMappingRule[];
   remediations: WorkspaceRemediationRule[];
   mergeRules: WorkspaceMergeRule[];
+  inference?: WorkspaceInferenceSuggestions;
 };
 
 export type WorkspaceOverlap = {
