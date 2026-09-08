@@ -25,6 +25,7 @@ try {
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",
+    "ai_migration_workspaces",
   ];
   const tables = await client.query(
     "select tablename from pg_tables where schemaname = 'public' and tablename = any($1)",
@@ -44,7 +45,7 @@ try {
   const failed = Object.entries(checks)
     .filter(([key, value]) => key !== "migration_count" && value !== true)
     .map(([key]) => key);
-  if (checks.migration_count !== 56 || missingTables.length || failed.length) {
+  if (checks.migration_count !== 75 || missingTables.length || failed.length) {
     throw new Error("Focused staging schema verification failed.");
   }
   console.log(JSON.stringify({ host: expectedHost, missingTables, ...checks }));

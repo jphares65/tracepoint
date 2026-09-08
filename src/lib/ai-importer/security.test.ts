@@ -91,6 +91,7 @@ test("multi-file workspace routes enforce active-department permission and never
   }
   assert.match(files[0], /form\.getAll\("files"\)/);
   assert.match(files[0], /parseWorkbook/);
+  assert.match(files[0], /result\.error \|\| !result\.data\)[^;]+status: 500/);
   assert.match(files[2], /workspaceApprovalToken/);
   assert.ok(files[3].indexOf("verifyWorkspaceApprovalToken") < files[3].indexOf("executeApprovedImport"));
   assert.ok(files[3].indexOf("buildWorkspacePlans") < files[3].lastIndexOf("executeApprovedImport"));
@@ -99,7 +100,10 @@ test("multi-file workspace routes enforce active-department permission and never
 });
 
 test("migration staging schema is additive, tenant isolated, expiring, and stores no raw file bytes", async () => {
-  const migration = await readFile("supabase/migrations/202609070001_ai_migration_workspaces.sql", "utf8");
+  const [migration, privileges] = await Promise.all([
+    readFile("supabase/migrations/202609070001_ai_migration_workspaces.sql", "utf8"),
+    readFile("supabase/migrations/202609080001_ai_migration_workspace_privileges.sql", "utf8"),
+  ]);
   assert.match(migration, /create table if not exists public\.ai_migration_workspaces/);
   assert.match(migration, /department_id uuid not null/);
   assert.match(migration, /enable row level security/);
@@ -107,6 +111,10 @@ test("migration staging schema is additive, tenant isolated, expiring, and store
   assert.match(migration, /expires_at/);
   assert.match(migration, /expire_ai_migration_workspaces/);
   assert.doesNotMatch(migration, /bytea|raw_file|workbook_bytes/);
+  assert.match(privileges, /revoke all on table public\.ai_migration_workspaces from anon/);
+  assert.match(privileges, /grant select, insert, update, delete on table public\.ai_migration_workspaces to authenticated/);
+  assert.match(privileges, /grant select, insert, update, delete on table public\.ai_migration_workspaces to service_role/);
+  assert.match(privileges, /notify pgrst, 'reload schema'/);
 });
 
 test("all three beta-era import experiences remain additive", async () => {
@@ -133,4 +141,9 @@ test("single-file execution revalidates override-bearing payloads and audit stor
   assert.match(execution, /replacement_value_sha256/);
   assert.doesNotMatch(execution, /original_value:\s*override\.originalValue/);
   assert.doesNotMatch(execution, /replacement_value:\s*override\.replacementValue/);
+});
+
+test("approval signing supports the preferred and legacy Supabase server key names", async () => {
+  const fingerprint = await readFile("src/lib/ai-importer/fingerprint.ts", "utf8");
+  assert.match(fingerprint, /TRACEPOINT_IMPORT_APPROVAL_SECRET \|\| process\.env\.SUPABASE_SECRET_KEY \|\| process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
 });
