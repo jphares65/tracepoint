@@ -4,7 +4,7 @@ import { IMPORT_DOMAINS } from "./types.ts";
 const confidence = { type: "string", enum: ["High", "Medium", "Needs Review"] } as const;
 const domain = { type: "string", enum: [...IMPORT_DOMAINS] } as const;
 const targetField = { type: "string", enum: [...new Set(Object.values(IMPORT_FIELDS).flatMap((fields) => fields.map((field) => field.key)))] } as const;
-const stringArray = { type: "array", items: { type: "string" }, maxItems: 50 } as const;
+const stringArray = { type: "array", items: { type: "string" } } as const;
 
 export const IMPORT_INFERENCE_JSON_SCHEMA = {
   type: "object",
@@ -13,10 +13,9 @@ export const IMPORT_INFERENCE_JSON_SCHEMA = {
   properties: {
     domain,
     sheetName: { type: "string" },
-    headerRow: { type: "integer", minimum: 1, maximum: 25 },
+    headerRow: { type: "integer" },
     mappings: {
       type: "array",
-      maxItems: 150,
       items: {
         type: "object",
         additionalProperties: false,
@@ -25,7 +24,7 @@ export const IMPORT_INFERENCE_JSON_SCHEMA = {
           sourceColumn: { type: "string" },
           targetField: { anyOf: [targetField, { type: "null" }] },
           confidence,
-          samples: { type: "array", items: { type: "string" }, maxItems: 3 },
+          samples: { type: "array", items: { type: "string" } },
           reason: { type: "string" },
         },
       },
@@ -37,7 +36,6 @@ export const IMPORT_INFERENCE_JSON_SCHEMA = {
     notes: stringArray,
     sheetAssessments: {
       type: "array",
-      maxItems: 50,
       items: {
         type: "object",
         additionalProperties: false,
@@ -46,7 +44,7 @@ export const IMPORT_INFERENCE_JSON_SCHEMA = {
           sheetName: { type: "string" },
           disposition: { type: "string", enum: ["useful", "junk", "archive", "instructions"] },
           domain: { anyOf: [domain, { type: "null" }] },
-          headerRow: { type: "integer", minimum: 1, maximum: 25 },
+          headerRow: { type: "integer" },
           confidence,
           reason: { type: "string" },
         },
@@ -54,7 +52,6 @@ export const IMPORT_INFERENCE_JSON_SCHEMA = {
     },
     normalizationSuggestions: {
       type: "array",
-      maxItems: 50,
       items: {
         type: "object",
         additionalProperties: false,
@@ -78,24 +75,24 @@ export const WORKSPACE_INFERENCE_JSON_SCHEMA = {
   required: ["relationships", "sharedMappings", "remediations", "merges"],
   properties: {
     relationships: {
-      type: "array", maxItems: 100, items: { type: "object", additionalProperties: false,
+      type: "array", items: { type: "object", additionalProperties: false,
         required: ["sourceIds", "relationship", "preferredSourceId", "confidence", "reason"],
-        properties: { sourceIds: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 20 }, relationship: { type: "string", enum: ["same_domain", "older_newer", "overlapping", "probable_duplicate", "source_precedence"] }, preferredSourceId: { anyOf: [{ type: "string" }, { type: "null" }] }, confidence, reason: { type: "string" } } },
+        properties: { sourceIds: { type: "array", items: { type: "string" } }, relationship: { type: "string", enum: ["same_domain", "older_newer", "overlapping", "probable_duplicate", "source_precedence"] }, preferredSourceId: { anyOf: [{ type: "string" }, { type: "null" }] }, confidence, reason: { type: "string" } } },
     },
     sharedMappings: {
-      type: "array", maxItems: 100, items: { type: "object", additionalProperties: false,
+      type: "array", items: { type: "object", additionalProperties: false,
         required: ["domain", "sourceHeader", "targetField", "confidence", "reason"],
         properties: { domain, sourceHeader: { type: "string" }, targetField: { anyOf: [targetField, { type: "null" }] }, confidence, reason: { type: "string" } } },
     },
     remediations: {
-      type: "array", maxItems: 100, items: { type: "object", additionalProperties: false,
+      type: "array", items: { type: "object", additionalProperties: false,
         required: ["sourceId", "sourceColumn", "targetField", "sourceValue", "suggestedValue", "scope", "confidence", "reason"],
         properties: { sourceId: { type: "string" }, sourceColumn: { type: "string" }, targetField, sourceValue: { type: "string" }, suggestedValue: { type: "string" }, scope: { type: "string", enum: ["column", "file", "workspace"] }, confidence, reason: { type: "string" } } },
     },
     merges: {
-      type: "array", maxItems: 100, items: { type: "object", additionalProperties: false,
+      type: "array", items: { type: "object", additionalProperties: false,
         required: ["domain", "sourceIds", "strategy", "preferredSourceId", "field", "confidence", "reason"],
-        properties: { domain, sourceIds: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 20 }, strategy: { type: "string", enum: ["skip_exact_duplicates", "nonblank", "newest", "preferred_source", "field_source"] }, preferredSourceId: { anyOf: [{ type: "string" }, { type: "null" }] }, field: { anyOf: [targetField, { type: "null" }] }, confidence, reason: { type: "string" } } },
+        properties: { domain, sourceIds: { type: "array", items: { type: "string" } }, strategy: { type: "string", enum: ["skip_exact_duplicates", "nonblank", "newest", "preferred_source", "field_source"] }, preferredSourceId: { anyOf: [{ type: "string" }, { type: "null" }] }, field: { anyOf: [targetField, { type: "null" }] }, confidence, reason: { type: "string" } } },
     },
   },
 } as const;

@@ -3,10 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { ConverseCommand, type ConverseCommandOutput } from "@aws-sdk/client-bedrock-runtime";
 
-import { BedrockInferenceError, BedrockInferenceProvider } from "./bedrock-provider.ts";
+import { BedrockInferenceError, BedrockInferenceProvider, sanitizedBedrockErrorClass } from "./bedrock-provider.ts";
 import { validateImportAiConfiguration } from "./configuration.ts";
-import { DeterministicInferenceProvider, inferImport, inferenceInput, MAX_INFERENCE_CELL_LENGTH, MAX_INFERENCE_SAMPLE_ROWS } from "./provider.ts";
-import { inferWorkspace, workspaceInferenceInput } from "./workspace-inference.ts";
+import { DeterministicInferenceProvider, inferImport, inferenceInput, MAX_INFERENCE_CELL_LENGTH, MAX_INFERENCE_SAMPLE_ROWS, validateProviderOutput } from "./provider.ts";
+import { IMPORT_INFERENCE_JSON_SCHEMA, WORKSPACE_INFERENCE_JSON_SCHEMA } from "./schemas.ts";
+import { inferWorkspace, validateWorkspaceProviderOutput, workspaceInferenceInput } from "./workspace-inference.ts";
 import type { ParsedSheet } from "./types.ts";
 import type { WorkspaceSource } from "./workspace-types.ts";
 
@@ -35,6 +36,52 @@ async function deterministicOutput(sheets: ParsedSheet[]) {
   const input = inferenceInput(sheets);
   return await new DeterministicInferenceProvider().infer(input) as unknown as Record<string, unknown>;
 }
+
+function unsupportedBedrockSchemaKeywords(value: unknown, path = "$"): string[] {
+  if (Array.isArray(value)) return value.flatMap((item, index) => unsupportedBedrockSchemaKeywords(item, `${path}[${index}]`));
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, item]) => {
+    const currentPath = `${path}.${key}`;
+    const unsupported = ["minimum", "maximum", "multipleOf", "maxItems"].includes(key) || (key === "minItems" && (typeof item !== "number" || item > 1));
+    return [...(unsupported ? [currentPath] : []), ...unsupportedBedrockSchemaKeywords(item, currentPath)];
+  });
+}
+
+test("Bedrock-facing schemas use only supported numeric and array cardinality keywords", () => {
+  assert.deepEqual(unsupportedBedrockSchemaKeywords(IMPORT_INFERENCE_JSON_SCHEMA), []);
+  assert.deepEqual(unsupportedBedrockSchemaKeywords(WORKSPACE_INFERENCE_JSON_SCHEMA), []);
+});
+
+test("runtime validation preserves constraints removed from the Bedrock-facing import schema", async () => {
+  const sheets = [sheet([["Badge"], ["1"]])];
+  const input = inferenceInput(sheets);
+  const valid = await deterministicOutput(sheets);
+
+  for (const headerRow of [0, 26]) {
+    assert.throws(() => validateProviderOutput({ ...valid, headerRow }, input), /invalid header row/);
+  }
+  assert.throws(() => validateProviderOutput({ ...valid, mappings: Array.from({ length: 151 }, () => (valid.mappings as unknown[])[0]) }, input), /mappings are invalid/);
+
+  const excessiveSamples = structuredClone(valid);
+  (excessiveSamples.mappings as Array<Record<string, unknown>>)[0].samples = ["1", "2", "3", "4"];
+  assert.throws(() => validateProviderOutput(excessiveSamples, input), /samples are invalid/);
+  assert.throws(() => validateProviderOutput({ ...valid, notes: Array.from({ length: 51 }, () => "note") }, input), /notes are invalid/);
+  assert.throws(() => validateProviderOutput({ ...valid, sheetAssessments: Array.from({ length: 51 }, () => (valid.sheetAssessments as unknown[])[0]) }, input), /assessments are incomplete/);
+  assert.throws(() => validateProviderOutput({ ...valid, normalizationSuggestions: Array.from({ length: 51 }, () => ({})) }, input), /normalization suggestions are invalid/);
+});
+
+test("runtime validation preserves constraints removed from the Bedrock-facing workspace schema", () => {
+  const first = workspaceSource("00000001-0000-4000-8000-000000000000", "old.csv", "2025-01-01T00:00:00.000Z");
+  const second = workspaceSource("00000002-0000-4000-8000-000000000000", "new.csv", "2026-01-01T00:00:00.000Z");
+  const input = workspaceInferenceInput([first, second]);
+  const relationship = { sourceIds: [first.id, second.id], relationship: "older_newer", preferredSourceId: second.id, confidence: "High", reason: "Later source timestamp." };
+  const valid = { relationships: [relationship], sharedMappings: [], remediations: [], merges: [] };
+
+  assert.throws(() => validateWorkspaceProviderOutput({ ...valid, relationships: [{ ...relationship, sourceIds: [first.id] }] }, input), /malformed source references/);
+  for (const key of ["relationships", "sharedMappings", "remediations", "merges"] as const) {
+    assert.throws(() => validateWorkspaceProviderOutput({ ...valid, [key]: Array.from({ length: 101 }, () => ({})) }, input), /too many suggestions/);
+  }
+});
 
 test("Bedrock Converse uses structured output and returns domain, qualitative mappings, and remediation suggestions", async () => {
   const sheets = [sheet([["Shield", "Status"], ["101", "IN SERVICE"]])];
@@ -86,6 +133,43 @@ test("timeouts, AccessDenied, and throttling are sanitized and categorized", asy
     const provider = new BedrockInferenceProvider({ region: "us-east-1", modelId: "model", client: mock.client });
     await assert.rejects(provider.infer(inferenceInput([sheet([["Badge"], ["1"]])])), (error: unknown) => error instanceof BedrockInferenceError && error.category === category && !error.message.includes("sensitive"));
   }
+});
+
+test("privacy-safe diagnostics report provider resolution and preserve the AWS failure category", async () => {
+  const entries: string[] = [];
+  const originalInfo = console.info;
+  console.info = (...values: unknown[]) => entries.push(values.map(String).join(" "));
+  try {
+    const mock = mockClient(async () => { throw Object.assign(new Error("sensitive service response"), { name: "ResourceNotFoundException" }); });
+    const result = await inferImport([sheet([["Badge"], ["1"]])], new BedrockInferenceProvider({ region: "us-east-1", modelId: "us.example.model", client: mock.client }));
+    assert.equal(result.usedFallback, true);
+  } finally {
+    console.info = originalInfo;
+  }
+
+  const events = entries.map((entry) => JSON.parse(entry.slice(entry.indexOf("{") )) as Record<string, unknown>);
+  const failure = events.find((event) => event.status === "failure");
+  const fallback = events.find((event) => event.status === "fallback");
+  assert.deepEqual(failure && {
+    provider: failure.provider,
+    modelId: failure.modelId,
+    region: failure.region,
+    credentialProvider: failure.credentialProvider,
+    credentialResolutionStatus: failure.credentialResolutionStatus,
+    errorCategory: failure.errorCategory,
+    errorClass: failure.errorClass,
+  }, {
+    provider: "bedrock",
+    modelId: "us.example.model",
+    region: "us-east-1",
+    credentialProvider: "injected",
+    credentialResolutionStatus: "resolved",
+    errorCategory: "configuration",
+    errorClass: "ResourceNotFoundException",
+  });
+  assert.equal(fallback?.errorCategory, "configuration");
+  assert.doesNotMatch(entries.join("\n"), /sensitive service response/);
+  assert.equal(sanitizedBedrockErrorClass(Object.assign(new Error("private"), { name: "UnexpectedPrivateError" })), "UnknownError");
 });
 
 test("malformed JSON and invalid schema fall back safely without blocking manual mapping", async () => {

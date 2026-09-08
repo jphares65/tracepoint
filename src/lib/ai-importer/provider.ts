@@ -1,6 +1,6 @@
 import { IMPORT_FIELDS } from "./catalog.ts";
 import { normalizeLabel } from "./normalize.ts";
-import { recordAiInferenceEvent } from "./observability.ts";
+import { recordAiInferenceEvent, type AiInferenceErrorCategory } from "./observability.ts";
 import { domainScores, materializeSheet } from "./workbook.ts";
 import {
   IMPORT_DOMAINS,
@@ -16,6 +16,8 @@ import {
 
 export const MAX_INFERENCE_SAMPLE_ROWS = 3;
 export const MAX_INFERENCE_CELL_LENGTH = 120;
+const MAX_PROVIDER_MAPPINGS = 150;
+const MAX_PROVIDER_LIST_ITEMS = 50;
 
 export type InferenceSheet = {
   name: string;
@@ -32,6 +34,13 @@ export interface ImportInferenceProvider {
   readonly name: string;
   readonly hosted?: boolean;
   infer(input: InferenceInput): Promise<unknown>;
+}
+
+const AI_INFERENCE_ERROR_CATEGORIES = new Set<AiInferenceErrorCategory>(["access_denied", "configuration", "credentials", "invalid_response", "service_unavailable", "throttled", "timeout", "unknown"]);
+
+export function providerErrorCategory(error: unknown): AiInferenceErrorCategory {
+  if (!isRecord(error) || error.name !== "BedrockInferenceError" || typeof error.category !== "string") return "invalid_response";
+  return AI_INFERENCE_ERROR_CATEGORIES.has(error.category as AiInferenceErrorCategory) ? error.category as AiInferenceErrorCategory : "invalid_response";
 }
 
 function exactKeys(value: Record<string, unknown>, keys: string[]) {
@@ -52,8 +61,8 @@ function safeText(value: unknown, maximum = 300) {
 }
 
 function validateStringArray(candidate: unknown, label: string) {
-  if (!Array.isArray(candidate) || candidate.some((item) => typeof item !== "string")) throw new Error(`AI inference ${label} are invalid.`);
-  return candidate.slice(0, 50).map((item) => String(item).slice(0, 300));
+  if (!Array.isArray(candidate) || candidate.length > MAX_PROVIDER_LIST_ITEMS || candidate.some((item) => typeof item !== "string")) throw new Error(`AI inference ${label} are invalid.`);
+  return candidate.map((item) => String(item).slice(0, 300));
 }
 
 export function validateProviderOutput(value: unknown, input: InferenceInput): Omit<ImportInterpretation, "provider" | "usedFallback" | "assistanceMode" | "statusMessage"> {
@@ -64,20 +73,20 @@ export function validateProviderOutput(value: unknown, input: InferenceInput): O
   const sheet = input.sheets.find((item) => item.name === value.sheetName);
   if (!sheet) throw new Error("AI inference returned an unknown worksheet.");
   if (!Number.isInteger(value.headerRow) || Number(value.headerRow) < 1 || Number(value.headerRow) > Math.min(25, sheet.matrixRowCount)) throw new Error("AI inference returned an invalid header row.");
-  if (!Array.isArray(value.mappings)) throw new Error("AI inference mappings are invalid.");
+  if (!Array.isArray(value.mappings) || value.mappings.length > MAX_PROVIDER_MAPPINGS) throw new Error("AI inference mappings are invalid.");
   const allowedFields = new Set(IMPORT_FIELDS[domain].map((field) => field.key));
   const mappings = value.mappings.map((mapping): ColumnMapping => {
     if (!isRecord(mapping) || !exactKeys(mapping, ["sourceColumn", "targetField", "confidence", "samples", "reason"])) throw new Error("AI inference returned a malformed mapping.");
     if (typeof mapping.sourceColumn !== "string" || !sheet.headers.includes(mapping.sourceColumn)) throw new Error("AI inference mapped an unknown source column.");
     if (mapping.targetField !== null && (typeof mapping.targetField !== "string" || !allowedFields.has(mapping.targetField))) throw new Error("AI inference mapped an unsupported target field.");
     if (!isConfidence(mapping.confidence)) throw new Error("AI inference returned an invalid confidence level.");
-    if (!Array.isArray(mapping.samples) || mapping.samples.some((sample) => typeof sample !== "string")) throw new Error("AI inference samples are invalid.");
+    if (!Array.isArray(mapping.samples) || mapping.samples.length > MAX_INFERENCE_SAMPLE_ROWS || mapping.samples.some((sample) => typeof sample !== "string")) throw new Error("AI inference samples are invalid.");
     const columnIndex = sheet.headers.indexOf(mapping.sourceColumn);
     return { sourceColumn: mapping.sourceColumn, targetField: mapping.targetField, confidence: mapping.confidence, samples: sheet.samples.map((row) => row[columnIndex] ?? "").filter(Boolean).slice(0, MAX_INFERENCE_SAMPLE_ROWS), reason: safeText(mapping.reason) };
   });
   if (mappings.length !== sheet.headers.length || new Set(mappings.map((mapping) => mapping.sourceColumn)).size !== sheet.headers.length) throw new Error("AI inference must account for every source column exactly once.");
 
-  if (!Array.isArray(value.sheetAssessments) || value.sheetAssessments.length !== input.sheets.length) throw new Error("AI inference worksheet assessments are incomplete.");
+  if (!Array.isArray(value.sheetAssessments) || value.sheetAssessments.length > MAX_PROVIDER_LIST_ITEMS || value.sheetAssessments.length !== input.sheets.length) throw new Error("AI inference worksheet assessments are incomplete.");
   const sheetAssessments = value.sheetAssessments.map((candidate): SheetAssessment => {
     if (!isRecord(candidate) || !exactKeys(candidate, ["sheetName", "disposition", "domain", "headerRow", "confidence", "reason"])) throw new Error("AI inference returned a malformed worksheet assessment.");
     const assessed = input.sheets.find((item) => item.name === candidate.sheetName);
@@ -92,8 +101,8 @@ export function validateProviderOutput(value: unknown, input: InferenceInput): O
   const selectedAssessment = sheetAssessments.find((assessment) => assessment.sheetName === sheet.name);
   if (!selectedAssessment || selectedAssessment.disposition !== "useful" || selectedAssessment.domain !== domain) throw new Error("AI inference selected a worksheet inconsistent with its assessments.");
 
-  if (!Array.isArray(value.normalizationSuggestions)) throw new Error("AI inference normalization suggestions are invalid.");
-  const normalizationSuggestions = value.normalizationSuggestions.slice(0, 50).map((candidate): NormalizationSuggestion => {
+  if (!Array.isArray(value.normalizationSuggestions) || value.normalizationSuggestions.length > MAX_PROVIDER_LIST_ITEMS) throw new Error("AI inference normalization suggestions are invalid.");
+  const normalizationSuggestions = value.normalizationSuggestions.map((candidate): NormalizationSuggestion => {
     if (!isRecord(candidate) || !exactKeys(candidate, ["sourceColumn", "targetField", "sourceValue", "suggestedValue", "confidence", "reason"])) throw new Error("AI inference returned a malformed normalization suggestion.");
     const mapping = mappings.find((item) => item.sourceColumn === candidate.sourceColumn);
     if (!mapping?.targetField || mapping.targetField !== candidate.targetField || !allowedFields.has(mapping.targetField)) throw new Error("AI inference normalization targets an unsupported mapping.");
@@ -211,8 +220,8 @@ export async function inferImport(sheets: ParsedSheet[], provider: ImportInferen
     const output = validateProviderOutput(await provider.infer(input), input);
     const hosted = provider.hosted === true;
     return { ...output, provider: provider.name, usedFallback: false, assistanceMode: hosted ? "ai-assisted" : "deterministic", statusMessage: hosted ? "AI-assisted" : "Deterministic fallback" };
-  } catch {
-    if (provider.hosted) recordAiInferenceEvent({ task: "import", provider: provider.name, status: "fallback", latencyMs: 0, errorCategory: "invalid_response" });
+  } catch (error) {
+    if (provider.hosted) recordAiInferenceEvent({ task: "import", provider: provider.name, status: "fallback", latencyMs: 0, errorCategory: providerErrorCategory(error) });
     const fallback = new DeterministicInferenceProvider();
     const output = validateProviderOutput(await fallback.infer(input), input);
     return { ...output, provider: fallback.name, usedFallback: true, assistanceMode: "deterministic", statusMessage: "AI assistance unavailable — deterministic mapping used.", notes: [...output.notes, "AI assistance was unavailable or invalid, so TracePoint used deterministic field matching."] };
