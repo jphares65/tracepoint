@@ -1,7 +1,7 @@
 ﻿import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {canonical} from './migration-manifest.mjs';
-export function validateRuntimeTemplate(before,after,commit,{allowReviewedControls=false,allowPrivateStorage=false}={}) {
+export function validateRuntimeTemplate(before,after,commit,{allowReviewedControls=false,allowPrivateStorage=false,allowImporterSecretAlias=false}={}) {
  if(!/^[0-9a-f]{40}$/.test(commit))throw new Error('Full commit SHA required');
  for(const [id,resource] of Object.entries(before.Resources)) {
   const candidate=after.Resources[id];if(!candidate)throw new Error('Runtime resource removal refused');
@@ -46,6 +46,13 @@ export function validateRuntimeTemplate(before,after,commit,{allowReviewedContro
     if(oldCopy[key]===undefined) delete newCopy[key]; else newCopy[key]=oldCopy[key];
    }
   }
+  if(allowImporterSecretAlias) {
+   const oldSecrets=oldContainers[0].Secrets??[],newSecrets=newContainers[0].Secrets??[];
+   const source=oldSecrets.filter(secret=>secret.Name==='SUPABASE_SECRET_KEY');
+   const aliases=newSecrets.filter(secret=>secret.Name==='SUPABASE_SERVICE_ROLE_KEY');
+   if(source.length!==1||aliases.length!==1||oldSecrets.some(secret=>secret.Name==='SUPABASE_SERVICE_ROLE_KEY')||canonical(aliases[0].ValueFrom)!==canonical(source[0].ValueFrom))throw new Error('Unexpected importer secret alias');
+   newContainers[0].Secrets=newSecrets.filter(secret=>secret.Name!=='SUPABASE_SERVICE_ROLE_KEY');
+  }
   if(canonical(oldCopy)!==canonical(newCopy))throw new Error('Only the container image may change in a runtime release');
  }
  for(const [id,resource] of Object.entries(after.Resources))if(!before.Resources[id]&&resource.Type!=='AWS::CloudWatch::Alarm')throw new Error('Only additional alarms are permitted in a runtime release');
@@ -58,5 +65,5 @@ export function validateRuntimeTemplate(before,after,commit,{allowReviewedContro
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const [a,b,commit]=process.argv.slice(2);
  const parse=async p=>JSON.parse((await readFile(p,'utf8')).replace(/^\uFEFF/,''));
- console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),commit,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls'),allowPrivateStorage:process.argv.includes('--allow-reviewed-private-storage')})));
+ console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),commit,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls'),allowPrivateStorage:process.argv.includes('--allow-reviewed-private-storage'),allowImporterSecretAlias:process.argv.includes('--allow-reviewed-importer-secret-alias')})));
 }
