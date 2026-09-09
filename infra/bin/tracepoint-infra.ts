@@ -114,7 +114,9 @@ const cognito = providerMode === "aws-native" ? new CognitoFoundationStack(app, 
   ...commonProps,
   stackName: `${environmentName}-cognito`,
   environmentName: workloadEnvironment,
+  taskRole: compute.taskRole,
 }) : undefined;
+if (cognito) cognito.addStackDependency(compute);
 const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${environmentName}-ses-foundation`, {
   ...commonProps,
   stackName: `${environmentName}-ses-foundation`,

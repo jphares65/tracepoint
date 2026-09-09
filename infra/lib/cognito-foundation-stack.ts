@@ -1,7 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
-export interface CognitoFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; }
+export interface CognitoFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; taskRole?:iam.IRole; }
 export class CognitoFoundationStack extends cdk.Stack {
  readonly userPool:cognito.UserPool;
  readonly userPoolClient:cognito.UserPoolClient;
@@ -16,6 +18,10 @@ export class CognitoFoundationStack extends cdk.Stack {
    passwordPolicy:{minLength:14,requireLowercase:true,requireUppercase:true,requireDigits:true,requireSymbols:true,tempPasswordValidity:cdk.Duration.days(1)},
    deletionProtection:true,removalPolicy:cdk.RemovalPolicy.RETAIN,
   });
+  NagSuppressions.addResourceSuppressions(pool,[{
+   id:'AwsSolutions-COG8',
+   reason:'Essentials with required TOTP, short tokens, revocation and password protections is the documented portable baseline; Plus threat protection is a separately priced optional control.',
+  }]);
   const client=this.userPoolClient=pool.addClient('Application',{
    userPoolClientName:'tracepoint-'+props.environmentName+'-web',generateSecret:false,
    authFlows:{userSrp:true},preventUserExistenceErrors:true,enableTokenRevocation:true,
@@ -29,6 +35,10 @@ export class CognitoFoundationStack extends cdk.Stack {
   // Explicitly exclude the incompatible legacy refresh-token auth flow.
   (client.node.defaultChild as cognito.CfnUserPoolClient).explicitAuthFlows=['ALLOW_USER_SRP_AUTH'];
   const domain=pool.addDomain('ManagedDomain',{cognitoDomain:{domainPrefix:'tracepoint-'+props.environmentName+'-'+this.account}});
+  if(props.taskRole)new iam.Policy(this,'LifecycleAdministration',{roles:[props.taskRole],statements:[new iam.PolicyStatement({
+   actions:['cognito-idp:AdminCreateUser','cognito-idp:AdminGetUser','cognito-idp:AdminSetUserPassword','cognito-idp:AdminUpdateUserAttributes','cognito-idp:AdminResetUserPassword','cognito-idp:AdminDisableUser','cognito-idp:AdminEnableUser','cognito-idp:AdminUserGlobalSignOut','cognito-idp:AdminDeleteUser'],
+   resources:[pool.userPoolArn],
+  })]});
   new cdk.CfnOutput(this,'UserPoolId',{value:pool.userPoolId});new cdk.CfnOutput(this,'ClientId',{value:client.userPoolClientId});
   new cdk.CfnOutput(this,'ManagedDomain',{value:domain.baseUrl()});
   new cdk.CfnOutput(this,'ActivationGate',{value:'DISABLED: no application provider switch; callback, PKCE, lifecycle, revocation and RLS compatibility must pass before activation.'});

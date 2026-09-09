@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as iam from "aws-cdk-lib/aws-iam";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 export interface PrivateStorageStackProps extends cdk.StackProps { environmentName: 'staging'|'production'; taskRole:iam.IRole; }
 export class PrivateStorageStack extends cdk.Stack {
@@ -24,13 +25,19 @@ export class PrivateStorageStack extends cdk.Stack {
    serverAccessLogsBucket:logs,serverAccessLogsPrefix:'objects/',
    lifecycleRules:[{noncurrentVersionExpiration:cdk.Duration.days(props.environmentName==='staging'?30:365),abortIncompleteMultipartUploadAfter:cdk.Duration.days(1)}],
   });
-  new iam.Policy(this,'RuntimeObjectAccess',{
+  cdk.Tags.of(this.bucket).add('Backup','daily');
+  const runtimeAccess=new iam.Policy(this,'RuntimeObjectAccess',{
    roles:[props.taskRole],statements:[new iam.PolicyStatement({
     actions:['s3:GetObject','s3:PutObject','s3:DeleteObject'],
     resources:[this.bucket.arnForObjects('attachments/*'),this.bucket.arnForObjects('department-assets/*')],
     conditions:{StringEquals:{'s3:ResourceAccount':this.account}},
    })],
   });
+  NagSuppressions.addResourceSuppressions(runtimeAccess,[{
+   id:'AwsSolutions-IAM5',
+   reason:'Runtime object operations are restricted to the two reviewed bucket prefixes; an object-key suffix necessarily uses a wildcard.',
+   appliesTo:['Resource::<ObjectsA92BA4F1.Arn>/attachments/*','Resource::<ObjectsA92BA4F1.Arn>/department-assets/*'],
+  }]);
   new cdk.CfnOutput(this,'PrivateBucketName',{value:this.bucket.bucketName});
   new cdk.CfnOutput(this,'ExpectedBucketOwner',{value:this.account});
  }
