@@ -3,18 +3,20 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 export interface CognitoFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; }
 export class CognitoFoundationStack extends cdk.Stack {
+ readonly userPool:cognito.UserPool;
+ readonly userPoolClient:cognito.UserPoolClient;
  constructor(scope:Construct,id:string,props:CognitoFoundationProps){
   super(scope,id,props);
   if(this.region!=='us-east-1'||this.account==='265544358665'||(props.environmentName==='staging'?this.account!=='559054714699':this.account==='559054714699'))throw Error('Cognito account/environment boundary');
   const site=props.environmentName==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com';
-  const pool=new cognito.UserPool(this,'Users',{
+  const pool=this.userPool=new cognito.UserPool(this,'Users',{
    userPoolName:'tracepoint-'+props.environmentName,featurePlan:cognito.FeaturePlan.ESSENTIALS,
    selfSignUpEnabled:false,signInAliases:{email:true},signInCaseSensitive:false,autoVerify:{email:true},
    accountRecovery:cognito.AccountRecovery.EMAIL_ONLY,mfa:cognito.Mfa.REQUIRED,mfaSecondFactor:{otp:true,sms:false},
    passwordPolicy:{minLength:14,requireLowercase:true,requireUppercase:true,requireDigits:true,requireSymbols:true,tempPasswordValidity:cdk.Duration.days(1)},
    deletionProtection:true,removalPolicy:cdk.RemovalPolicy.RETAIN,
   });
-  const client=pool.addClient('Application',{
+  const client=this.userPoolClient=pool.addClient('Application',{
    userPoolClientName:'tracepoint-'+props.environmentName+'-web',generateSecret:false,
    authFlows:{userSrp:true},preventUserExistenceErrors:true,enableTokenRevocation:true,
    accessTokenValidity:cdk.Duration.minutes(5),idTokenValidity:cdk.Duration.minutes(5),refreshTokenValidity:cdk.Duration.days(1),

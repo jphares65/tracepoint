@@ -234,6 +234,11 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
   const serialized = JSON.stringify(Template.fromStack(runtime).toJSON());
   for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_EMAIL_PROVIDER", "ses", "TRACEPOINT_STORAGE_PROVIDER", "TRACEPOINT_DATABASE_SECRET_JSON"]) assert.match(serialized, new RegExp(value));
   assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|SUPABASE_SERVICE_ROLE|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
+  Template.fromStack(runtime).hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
+    IpProtocol: "tcp", FromPort: 5432, ToPort: 5432,
+    GroupId: Match.anyValue(), SourceSecurityGroupId: Match.anyValue(),
+  });
+  assert.doesNotMatch(serialized, /Application subnet PostgreSQL/);
 });
 
 test("production template retains resources, scales two to four tasks, and separates providers", () => {

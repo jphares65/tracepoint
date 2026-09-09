@@ -9,6 +9,9 @@ import { directStagingSynthesizer } from "../lib/staging-synthesizer";
 
 import { PrivateStorageStack } from "../lib/private-storage-stack";
 import { StagingDatabaseStack } from "../lib/staging-database-stack";
+import { CognitoFoundationStack } from "../lib/cognito-foundation-stack";
+import { SesFoundationStack } from "../lib/ses-foundation-stack";
+import { AlertDeliveryStack } from "../lib/alert-delivery-stack";
 
 const app = new cdk.App();
 
@@ -19,6 +22,7 @@ const account = productionPreview ? "111111111111" : app.node.tryGetContext("acc
 const region = app.node.tryGetContext("region");
 const workloadEnvironment = productionPreview ? "production" : "staging";
 const directDeployment=app.node.tryGetContext('directDeployment')==='true';
+const providerMode = app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge";
 if(productionPreview&&directDeployment)throw Error('Direct GitHub deployment is staging-only');
 if (app.node.tryGetContext("account") === "265544358665") throw new Error("Management account is forbidden");
 if (region !== "us-east-1") throw new Error("Region must equal us-east-1");
@@ -82,7 +86,7 @@ const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
   environmentName: workloadEnvironment,
   repository: compute.repository,
   appSecrets: compute.appSecrets,
-  providerMode: app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge",
+  providerMode,
 });
 imageBuild.addStackDependency(compute);
 
@@ -106,6 +110,25 @@ if (database) {
   database.addStackDependency(network);
   database.addStackDependency(security);
 }
+const cognito = providerMode === "aws-native" ? new CognitoFoundationStack(app, `${environmentName}-cognito`, {
+  ...commonProps,
+  stackName: `${environmentName}-cognito`,
+  environmentName: workloadEnvironment,
+}) : undefined;
+const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${environmentName}-ses-foundation`, {
+  ...commonProps,
+  stackName: `${environmentName}-ses-foundation`,
+  environmentName: workloadEnvironment,
+  mailFromSubdomain: "bounce",
+  taskRole: compute.taskRole,
+}) : undefined;
+if (ses) ses.addStackDependency(compute);
+const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {
+  ...commonProps,
+  stackName: `${environmentName}-alert-delivery`,
+  environment: workloadEnvironment,
+  expectedAccount: account,
+});
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {
   const certificateArn = app.node.tryGetContext("certificateArn");
@@ -136,20 +159,23 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
-    storageBucketName: storageProvider === "s3" ? `tracepoint-${workloadEnvironment}-private-${account}` : undefined,
-    providerMode: app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge",
+    storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
+    providerMode,
     databaseSecret: database?.runtimeSecret,
     databaseSecurityGroup: network.databaseSecurityGroup,
-    cognitoUserPoolId: app.node.tryGetContext("cognitoUserPoolId"),
-    cognitoClientId: app.node.tryGetContext("cognitoClientId"),
-    sesConfigurationSet: app.node.tryGetContext("sesConfigurationSet"),
-    emailFromAddress: app.node.tryGetContext("emailFromAddress"),
+    cognitoUserPoolId: cognito?.userPool.userPoolId,
+    cognitoClientId: cognito?.userPoolClient.userPoolClientId,
+    sesConfigurationSet: ses?.configurationSetName,
+    emailFromAddress: ses?.fromAddress ?? app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,
     deletionProtection: productionPreview,
   });
   if(storage && storageProvider === "s3") runtime.addStackDependency(storage);
   if(database) runtime.addStackDependency(database);
+  if(cognito) runtime.addStackDependency(cognito);
+  if(ses) runtime.addStackDependency(ses);
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);
+  alertDelivery.addStackDependency(runtime);
 }

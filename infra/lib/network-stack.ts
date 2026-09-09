@@ -40,12 +40,9 @@ export class NetworkStack extends cdk.Stack {
     });
     this.databaseSecurityGroup = new ec2.SecurityGroup(this, "DatabaseSecurity", {
       vpc: this.vpc,
-      description: "TracePoint PostgreSQL accepts TLS clients only from the two application subnets",
+      description: "TracePoint PostgreSQL accepts TLS clients only from the application task security group",
       allowAllOutbound: false,
     });
-    for (const subnet of this.vpc.publicSubnets) {
-      this.databaseSecurityGroup.addIngressRule(ec2.Peer.ipv4(subnet.ipv4CidrBlock), ec2.Port.tcp(5432), "Application subnet PostgreSQL");
-    }
     for (const subnet of [...this.vpc.publicSubnets, ...this.vpc.isolatedSubnets]) {
       cdk.Annotations.of(subnet.node.defaultChild!).acknowledgeWarning(
         "CloudFormation-Validate::W3010",

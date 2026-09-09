@@ -48,10 +48,12 @@ export class RuntimeStack extends cdk.Stack {
     const awsNative = providerMode === "aws-native";
     const emailFromAddress = props.emailFromAddress ?? (props.environmentName === "staging" ? "contact@tracepointhq.com" : undefined);
     if (emailFromAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromAddress)) throw new Error("Invalid email sender address");
+    const validTarget = (value:string|undefined, pattern:RegExp) => Boolean(value) &&
+      (cdk.Token.isUnresolved(value) || pattern.test(value!));
     if (awsNative && (!props.storageBucketName || !props.databaseSecret || !props.databaseSecurityGroup || !emailFromAddress ||
-      !/^us-east-1_[A-Za-z0-9]+$/.test(props.cognitoUserPoolId ?? "") ||
-      !/^[A-Za-z0-9]{1,128}$/.test(props.cognitoClientId ?? "") ||
-      !/^[A-Za-z0-9_-]{1,64}$/.test(props.sesConfigurationSet ?? ""))) {
+      !validTarget(props.cognitoUserPoolId, /^us-east-1_[A-Za-z0-9]+$/) ||
+      !validTarget(props.cognitoClientId, /^[A-Za-z0-9]{1,128}$/) ||
+      !validTarget(props.sesConfigurationSet, /^[A-Za-z0-9_-]{1,64}$/))) {
       throw new Error("Full-AWS runtime requires explicit PostgreSQL, Cognito, S3, and SES targets");
     }
     const certificate = acm.Certificate.fromCertificateArn(
@@ -71,6 +73,17 @@ export class RuntimeStack extends cdk.Stack {
     taskSecurityGroup.addEgressRule(ec2.Peer.ipv4(props.vpc.vpcCidrBlock), ec2.Port.tcp(53), "VPC DNS over TCP");
     if (awsNative) {
       taskSecurityGroup.addEgressRule(props.databaseSecurityGroup!, ec2.Port.tcp(5432), "Private PostgreSQL");
+      // Own the ingress rule in this downstream stack. This keeps the database
+      // SG in the network stack without creating a network -> runtime reference
+      // or replacing the bridge runtime's existing task security group.
+      new ec2.CfnSecurityGroupIngress(this, "DatabaseFromApplicationTasks", {
+        groupId: props.databaseSecurityGroup!.securityGroupId,
+        sourceSecurityGroupId: taskSecurityGroup.securityGroupId,
+        ipProtocol: "tcp",
+        fromPort: 5432,
+        toPort: 5432,
+        description: "TracePoint application task PostgreSQL",
+      });
     }
 
     const providerEnvironment: Record<string, string> = awsNative ? {
