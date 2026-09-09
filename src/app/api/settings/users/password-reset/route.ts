@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { beginCognitoPasswordReset } from "@/lib/authentication/cognito-password-lifecycle";
+import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type PasswordResetRequest = {
   departmentId?: string;
@@ -52,6 +54,19 @@ export async function POST(request: NextRequest) {
         { error: "Department and email are required." },
         { status: 400 },
       );
+    }
+
+    if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+      const access = await resolveServerAccess();
+      if (!access.ok) return accessFailureResponse(access);
+      if (access.context.departmentId !== departmentId) {
+        return NextResponse.json({ error: "The selected department does not match the active agency." }, { status: 403 });
+      }
+      if (!hasServerPermission(access.context, "manage_users")) {
+        return NextResponse.json({ error: "You do not have permission to manage users." }, { status: 403 });
+      }
+      const target = await beginCognitoPasswordReset({ actorUserId: access.context.userId, departmentId, targetEmail: email });
+      return NextResponse.json({ ok: true, message: `Password reset sent to ${target.email}.` });
     }
 
     const server = await createServerClient();

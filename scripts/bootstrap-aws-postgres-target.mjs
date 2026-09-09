@@ -5,6 +5,7 @@ import path from "node:path";
 import pg from "pg";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
 import { normalizeTransactionalSql, parseBootstrapConfiguration } from "./bootstrap-aws-postgres-target-core.mjs";
+import { AWS_MIGRATION_LEDGER, loadVerifiedAwsMigrations } from "./aws-migration-ledger.mjs";
 
 const configuration = parseBootstrapConfiguration(process.env);
 const ca = await readFile(configuration.caPath, "utf8");
@@ -30,7 +31,6 @@ try {
 
   const groups = [
     {kind:"source",dir:"supabase/migrations",expected:75},
-    {kind:"aws",dir:"database/aws",expected:4},
   ];
   let applied = 0;
   for (const group of groups) {
@@ -50,6 +50,16 @@ try {
       } catch(error) { await migrator.query("rollback"); throw error; }
     }
   }
+  for (const migration of await loadVerifiedAwsMigrations()) {
+    const existing=await migrator.query("select sha256 from tracepoint_migrations.applied_migrations where kind='aws' and name=$1",[migration.name]);
+    if(existing.rowCount){assert.equal(existing.rows[0].sha256,migration.sha256,`Applied migration changed: ${migration.name}`);continue;}
+    await migrator.query("begin");
+    try {
+      await migrator.query(normalizeTransactionalSql(migration.sql,migration.name));
+      await migrator.query("insert into tracepoint_migrations.applied_migrations(kind,name,sha256) values('aws',$1,$2)",[migration.name,migration.sha256]);
+      await migrator.query("commit");applied++;
+    } catch(error) { await migrator.query("rollback"); throw error; }
+  }
 
   const escaped=await migrator.query("select format('alter role tracepoint_runtime login password %L', $1) as sql",[configuration.runtime.password]);
   await migrator.query(escaped.rows[0].sql);
@@ -66,7 +76,7 @@ try {
     await runtime.query("set role authenticated");
     await runtime.query("select count(*) from public.profiles");
   } finally { await runtime.end(); }
-  console.log(JSON.stringify({status:"PASSED",sourceMigrations:75,awsMigrations:4,newlyApplied:applied,runtimeRoleVerified:true,supabaseAuthorizationReferences:0}));
+  console.log(JSON.stringify({status:"PASSED",sourceMigrations:75,awsMigrations:AWS_MIGRATION_LEDGER.length,newlyApplied:applied,runtimeRoleVerified:true,supabaseAuthorizationReferences:0}));
 } finally {
   if(locked)await migrator.query("select pg_advisory_unlock(hashtext('tracepoint:aws-schema-bootstrap'))").catch(()=>{});
   await migrator.end().catch(()=>{});

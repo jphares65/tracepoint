@@ -8,8 +8,8 @@ import {SesFoundationStack} from '../lib/ses-foundation-stack';
 for(const environmentName of ['staging','production'] as const){
  test(environmentName+' Cognito uses short sessions, rotation, TOTP and exact callback domain',()=>{
   const account=environmentName==='staging'?'559054714699':'111111111111';const app=new cdk.App();
-  const stack=new CognitoFoundationStack(app,'auth',{env:{account,region:'us-east-1'},environmentName});const template=Template.fromStack(stack);
-  template.hasResourceProperties('AWS::Cognito::UserPool',{UserPoolTier:'ESSENTIALS',DeletionProtection:'ACTIVE',MfaConfiguration:'ON',EnabledMfas:['SOFTWARE_TOKEN_MFA'],AdminCreateUserConfig:{AllowAdminCreateUserOnly:true}});
+  const stack=new CognitoFoundationStack(app,'auth',{env:{account,region:'us-east-1'},environmentName,sesFromAddress:`notifications@${environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com'}`,sesConfigurationSetName:`tracepoint-${environmentName}`});const template=Template.fromStack(stack);
+  template.hasResourceProperties('AWS::Cognito::UserPool',{UserPoolTier:'ESSENTIALS',DeletionProtection:'ACTIVE',MfaConfiguration:'ON',EnabledMfas:['SOFTWARE_TOKEN_MFA'],AdminCreateUserConfig:{AllowAdminCreateUserOnly:true},EmailConfiguration:{EmailSendingAccount:'DEVELOPER',ConfigurationSet:`tracepoint-${environmentName}`,From:`TracePoint <notifications@${environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com'}>`,SourceArn:Match.anyValue()}});
   template.hasResourceProperties('AWS::Cognito::UserPoolClient',{GenerateSecret:false,AllowedOAuthFlows:['code'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10},AccessTokenValidity:5,IdTokenValidity:5,
    CallbackURLs:[(environmentName==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback']});
   template.hasResource('AWS::Cognito::UserPool',{DeletionPolicy:'Retain'});
@@ -26,7 +26,7 @@ for(const environmentName of ['staging','production'] as const){
  });
 }
 test('provider stacks reject management and mismatched staging accounts',()=>{
- for(const account of ['265544358665','111111111111'])assert.throws(()=>new CognitoFoundationStack(new cdk.App(),'bad',{env:{account,region:'us-east-1'},environmentName:'staging'}),/boundary/);
+ for(const account of ['265544358665','111111111111'])assert.throws(()=>new CognitoFoundationStack(new cdk.App(),'bad',{env:{account,region:'us-east-1'},environmentName:'staging',sesFromAddress:'notifications@staging.tracepointhq.com',sesConfigurationSetName:'tracepoint-staging'}),/boundary/);
 });
 
 test('disabled SES foundation grants no runtime authority and changes no DNS',()=>{

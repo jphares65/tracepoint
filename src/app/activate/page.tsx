@@ -7,6 +7,7 @@ import {
   completeActivation,
   validateActivationToken,
 } from "@/lib/tracepoint/activation";
+import { COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
 
 type ActivatePageProps = {
   searchParams: Promise<{
@@ -39,10 +40,10 @@ async function activateAccount(formData: FormData) {
     redirect("/login?error=Activation link is missing.");
   }
 
-  if (password.length < 14 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+  if (!isCognitoCompliantPassword(password)) {
     redirectWithError(
       token,
-      "Password must be at least 14 characters and include uppercase, lowercase, number, and symbol characters.",
+      COGNITO_PASSWORD_REQUIREMENTS,
     );
   }
 

@@ -16,7 +16,7 @@ create table if not exists public.authentication_identity_events (
   issuer text not null check (length(issuer) between 1 and 512),
   subject text,
   provider_username text,
-  event_type text not null check (event_type in ('prepared','linked','activated','disabled','enabled','revoked','compensated')),
+  event_type text not null check (event_type in ('prepared','linked','activated','password_assigned','password_reset','disabled','enabled','revoked','compensated')),
   actor_user_id uuid references public.profiles(id) on delete set null,
   operation_id uuid,
   created_at timestamptz not null default now()
@@ -194,5 +194,98 @@ begin
 end;$$;
 revoke all on function tracepoint_auth.finish_cognito_invite(uuid,boolean,text) from public,anon,authenticated,service_role;
 grant execute on function tracepoint_auth.finish_cognito_invite(uuid,boolean,text) to tracepoint_runtime;
+
+create or replace function tracepoint_auth.prepare_cognito_password_operation(
+  p_operation_id uuid,
+  p_operation_kind text,
+  p_department_id uuid,
+  p_target_user_id uuid default null,
+  p_target_email text default null
+) returns table(user_id uuid,provider_username text,provider_subject text,issuer text,email text,identity_state text)
+language plpgsql
+security definer
+set search_path=pg_catalog,public
+as $$
+declare v_actor uuid:=tracepoint_auth.subject_id(); v_target uuid; v_matches integer; v_link public.authentication_identity_links%rowtype;
+begin
+  if session_user<>'tracepoint_runtime' or v_actor is null or p_operation_kind not in ('assign_password','reset_password') then
+    raise exception 'password operation rejected' using errcode='22023';
+  end if;
+  if not (public.has_department_permission(p_department_id,'manage_users') or public.has_department_permission(p_department_id,'administer_department')) then
+    raise exception 'password operation forbidden' using errcode='42501';
+  end if;
+  if current_setting('tracepoint.department_id',true) is distinct from p_department_id::text then
+    raise exception 'active department mismatch' using errcode='42501';
+  end if;
+  if p_target_user_id is null then
+    select count(*)::integer,(array_agg(m.user_id))[1] into v_matches,v_target
+    from public.department_memberships m join public.profiles p on p.id=m.user_id
+    where m.department_id=p_department_id and m.is_active and nullif(btrim(p_target_email),'') is not null and lower(p.email)=lower(btrim(p_target_email));
+    if v_matches<>1 then raise exception 'target account unavailable' using errcode='P0002'; end if;
+  else
+  select m.user_id into v_target
+  from public.department_memberships m
+  where m.department_id=p_department_id and m.is_active and m.user_id=p_target_user_id
+  limit 1;
+  end if;
+  if v_target is null then raise exception 'target account unavailable' using errcode='P0002'; end if;
+  if exists(select 1 from public.department_membership_roles r where r.department_id=p_department_id and r.user_id=v_target and r.role_code='administrator')
+     and not public.has_department_permission(p_department_id,'administer_department') then
+    raise exception 'administrator operation forbidden' using errcode='42501';
+  end if;
+  select l.* into v_link from public.authentication_identity_links l
+  where l.tracepoint_user_id=v_target and l.provider='cognito'
+    and ((p_operation_kind='assign_password' and l.state in ('pending','active')) or (p_operation_kind='reset_password' and l.state='active'))
+  for update;
+  if not found or nullif(v_link.provider_username,'') is null then raise exception 'cognito identity unavailable' using errcode='P0002'; end if;
+  insert into public.authentication_lifecycle_operations(id,operation_kind,tracepoint_user_id,department_id,actor_user_id,provider_username,provider_subject,state)
+    values(p_operation_id,p_operation_kind,v_target,p_department_id,v_actor,v_link.provider_username,v_link.subject,'prepared');
+  insert into public.authentication_session_revocations(tracepoint_user_id,issuer,revoked_before)
+    values(v_target,v_link.issuer,clock_timestamp())
+    on conflict on constraint authentication_session_revocations_pkey do update
+      set revoked_before=greatest(authentication_session_revocations.revoked_before,excluded.revoked_before);
+  update public.authentication_access_sessions s set revoked_at=coalesce(s.revoked_at,clock_timestamp())
+    where s.tracepoint_user_id=v_target and s.issuer=v_link.issuer;
+  update public.authentication_refresh_sessions s set state='revoked',sealed_payload=null,updated_at=clock_timestamp()
+    where s.tracepoint_user_id=v_target and s.issuer=v_link.issuer and s.state<>'revoked';
+  return query select v_target,v_link.provider_username,v_link.subject,v_link.issuer,p.email,v_link.state from public.profiles p where p.id=v_target;
+end;$$;
+revoke all on function tracepoint_auth.prepare_cognito_password_operation(uuid,text,uuid,uuid,text) from public,anon,service_role;
+grant execute on function tracepoint_auth.prepare_cognito_password_operation(uuid,text,uuid,uuid,text) to authenticated;
+
+create or replace function tracepoint_auth.finish_cognito_password_operation(
+  p_operation_id uuid,p_succeeded boolean,p_error_code text default null
+) returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_op public.authentication_lifecycle_operations%rowtype; v_email text;
+begin
+  if session_user<>'tracepoint_runtime' then raise exception 'password operation finish rejected' using errcode='42501'; end if;
+  select * into v_op from public.authentication_lifecycle_operations where id=p_operation_id and operation_kind in ('assign_password','reset_password') for update;
+  if not found then raise exception 'password operation unavailable' using errcode='P0002'; end if;
+  if not p_succeeded then
+    update public.authentication_lifecycle_operations set state='compensation_required',attempts=attempts+1,safe_error_code=left(coalesce(p_error_code,'provider_unavailable'),80),updated_at=now() where id=v_op.id;
+    return;
+  end if;
+  select email into v_email from public.profiles where id=v_op.tracepoint_user_id;
+  if v_op.operation_kind='assign_password' then
+    update public.department_memberships set activation_status='activated'
+      where department_id=v_op.department_id and user_id=v_op.tracepoint_user_id and is_active;
+    update public.authentication_identity_links set state='active',updated_at=now()
+      where provider='cognito' and tracepoint_user_id=v_op.tracepoint_user_id and provider_username=v_op.provider_username;
+    update public.user_activation_tokens set revoked_at=coalesce(revoked_at,now())
+      where department_id=v_op.department_id and user_id=v_op.tracepoint_user_id and used_at is null;
+  end if;
+  insert into public.authentication_identity_events(tracepoint_user_id,provider,issuer,subject,provider_username,event_type,actor_user_id,operation_id)
+    select v_op.tracepoint_user_id,'cognito',l.issuer,l.subject,l.provider_username,
+      case when v_op.operation_kind='assign_password' then 'password_assigned' else 'password_reset' end,v_op.actor_user_id,v_op.id
+    from public.authentication_identity_links l where l.provider='cognito' and l.tracepoint_user_id=v_op.tracepoint_user_id;
+  insert into public.audit_events(department_id,actor_user_id,action,entity_type,entity_id,summary,new_value)
+    values(v_op.department_id,v_op.actor_user_id,case when v_op.operation_kind='assign_password' then 'user_password_assigned' else 'password_reset_sent' end,
+      'department_membership',v_op.tracepoint_user_id,
+      case when v_op.operation_kind='assign_password' then 'An administrator assigned a new password.' else 'An administrator initiated a Cognito password reset.' end,
+      jsonb_build_object('target_user_id',v_op.tracepoint_user_id,'target_email',v_email,'identity_provider','cognito'));
+  update public.authentication_lifecycle_operations set state='committed',attempts=attempts+1,safe_error_code=null,updated_at=now() where id=v_op.id;
+end;$$;
+revoke all on function tracepoint_auth.finish_cognito_password_operation(uuid,boolean,text) from public,anon,authenticated,service_role;
+grant execute on function tracepoint_auth.finish_cognito_password_operation(uuid,boolean,text) to tracepoint_runtime;
 
 commit;

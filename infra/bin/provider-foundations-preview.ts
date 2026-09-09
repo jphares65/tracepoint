@@ -13,7 +13,7 @@ const account=stage==='staging'?'559054714699':'111111111111';
 if(app.node.tryGetContext('account')!==account||app.node.tryGetContext('region')!=='us-east-1')throw Error('Preview account/region mismatch');
 const common={env:{account,region:'us-east-1'},environmentName:stage,terminationProtection:true,
  tags:{Application:'TracePoint',Environment:stage,Owner:'TracePoint',ManagedBy:'AWS-CDK',PreviewOnly:'true'}};
-new CognitoFoundationStack(app,'tracepoint-'+stage+'-cognito-preview',common);
+new CognitoFoundationStack(app,'tracepoint-'+stage+'-cognito-preview',{...common,sesFromAddress:`notifications@${stage==='staging'?'staging.tracepointhq.com':'tracepointhq.com'}`,sesConfigurationSetName:`tracepoint-${stage}`});
 const email=new cdk.Stack(app,'tracepoint-'+stage+'-email-role-preview',{env:common.env});
 const role=iam.Role.fromRoleArn(email,'RuntimeRole',`arn:aws:iam::${account}:role/tracepoint-${stage}-task-preview`);
 new SesFoundationStack(app,'tracepoint-'+stage+'-ses-preview',{...common,taskRole:role,mailFromSubdomain:app.node.tryGetContext('mailFromSubdomain')});

@@ -110,13 +110,6 @@ if (database) {
   database.addStackDependency(network);
   database.addStackDependency(security);
 }
-const cognito = providerMode === "aws-native" ? new CognitoFoundationStack(app, `${environmentName}-cognito`, {
-  ...commonProps,
-  stackName: `${environmentName}-cognito`,
-  environmentName: workloadEnvironment,
-  taskRole: compute.taskRole,
-}) : undefined;
-if (cognito) cognito.addStackDependency(compute);
 const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${environmentName}-ses-foundation`, {
   ...commonProps,
   stackName: `${environmentName}-ses-foundation`,
@@ -125,6 +118,15 @@ const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${envir
   taskRole: compute.taskRole,
 }) : undefined;
 if (ses) ses.addStackDependency(compute);
+const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStack(app, `${environmentName}-cognito`, {
+  ...commonProps,
+  stackName: `${environmentName}-cognito`,
+  environmentName: workloadEnvironment,
+  taskRole: compute.taskRole,
+  sesFromAddress: ses.fromAddress,
+  sesConfigurationSetName: ses.configurationSetName,
+}) : undefined;
+if (cognito) { cognito.addStackDependency(compute); cognito.addStackDependency(ses!); }
 const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {
   ...commonProps,
   stackName: `${environmentName}-alert-delivery`,

@@ -260,6 +260,46 @@ try {
       values ('${users.platform}', 'Permission Audit Platform', true);
   `);
 
+  if (awsTargetOverlayCount) {
+    const operationId = "30000000-0000-4000-8000-000000000001";
+    const providerUsername = "40000000-0000-4000-8000-000000000001";
+    const providerSubject = "50000000-0000-4000-8000-000000000001";
+    const issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Synthetic";
+    await client.query(
+      "insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username) values('cognito',$1,$2,$3,'pending',$4)",
+      [issuer, providerSubject, users.granted, providerUsername],
+    );
+    await client.query("alter role tracepoint_runtime login password 'synthetic-runtime-test-only'");
+    const runtimeClient = new client.constructor({
+      host: "127.0.0.1", port, user: "tracepoint_runtime",
+      password: "synthetic-runtime-test-only", database: "postgres",
+    });
+    try {
+      await runtimeClient.connect();
+      await runtimeClient.query("begin");
+      await runtimeClient.query("set local role authenticated");
+      await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.administrator]);
+      await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
+      const prepared = await runtimeClient.query(
+        "select * from tracepoint_auth.prepare_cognito_password_operation($1,'assign_password',$2,$3,null)",
+        [operationId, departmentA, users.granted],
+      );
+      assert.deepEqual(prepared.rows[0], {
+        user_id: users.granted, provider_username: providerUsername,
+        provider_subject: providerSubject, issuer, email: "granted@example.test", identity_state: "pending",
+      });
+      await runtimeClient.query("commit");
+      await runtimeClient.query("select tracepoint_auth.finish_cognito_password_operation($1,true,null)", [operationId]);
+    } finally {
+      await runtimeClient.end();
+      await client.query("alter role tracepoint_runtime nologin");
+    }
+    const lifecycle = await client.query("select state from public.authentication_lifecycle_operations where id=$1", [operationId]);
+    assert.equal(lifecycle.rows[0]?.state, "committed", "Cognito password lifecycle did not commit");
+    const revocation = await client.query("select count(*)::int as count from public.authentication_session_revocations where tracepoint_user_id=$1 and issuer=$2", [users.granted, issuer]);
+    assert.equal(revocation.rows[0]?.count, 1, "Cognito password lifecycle did not revoke local sessions");
+  }
+
   async function permissionAs(userId, departmentId, permissionCode) {
     await client.query("begin");
     try {

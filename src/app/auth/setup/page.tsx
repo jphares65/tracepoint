@@ -10,9 +10,6 @@ import {
   Users,
 } from "lucide-react";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
-
 type SetupPageProps = {
   searchParams: Promise<{
     error?: string;
@@ -39,6 +36,8 @@ function setupRedirectWithError(message: string, nextPath: string) {
 async function completeAccountSetup(formData: FormData) {
   "use server";
 
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") redirect("/login");
+
   const nextPath = safeNextPath(textValue(formData, "next"));
   const password = textValue(formData, "password");
   const confirmPassword = textValue(formData, "confirmPassword");
@@ -61,6 +60,7 @@ async function completeAccountSetup(formData: FormData) {
     setupRedirectWithError("Passwords do not match.", nextPath);
   }
 
+  const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
   const {
@@ -84,6 +84,7 @@ async function completeAccountSetup(formData: FormData) {
     setupRedirectWithError(error.message, nextPath);
   }
 
+  const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
 
   const { error: activationError } = await admin
@@ -125,6 +126,8 @@ async function completeAccountSetup(formData: FormData) {
 async function createInitialDepartment(formData: FormData) {
   "use server";
 
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") redirect("/login");
+
   const nextPath = safeNextPath(textValue(formData, "next"));
   const name = textValue(formData, "departmentName");
   const shortName = textValue(formData, "shortName");
@@ -143,6 +146,7 @@ async function createInitialDepartment(formData: FormData) {
     );
   }
 
+  const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
   const {
@@ -564,9 +568,11 @@ function InitialDepartmentSetupView({
 export default async function SetupPage({
   searchParams,
 }: SetupPageProps) {
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") redirect("/login");
   const params = await searchParams;
   const nextPath = safeNextPath(params.next);
 
+  const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
   const {

@@ -5,6 +5,8 @@ import {
   hasServerPermission,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { assignCognitoPassword } from "@/lib/authentication/cognito-password-lifecycle";
+import { COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
 
 type AssignPasswordRequest = {
   departmentId?: string;
@@ -34,10 +36,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (password.length < 8) {
+    const awsNative = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native";
+    if (awsNative ? !isCognitoCompliantPassword(password) : password.length < 8) {
       return NextResponse.json(
         {
-          error: "Password must be at least 8 characters.",
+          error: awsNative
+            ? COGNITO_PASSWORD_REQUIREMENTS
+            : "Password must be at least 8 characters.",
         },
         { status: 400 },
       );
@@ -81,6 +86,18 @@ export async function POST(request: NextRequest) {
     }
 
     const actor = context.user;
+    if (awsNative) {
+      const assigned = await assignCognitoPassword({
+        actorUserId: context.userId,
+        departmentId,
+        targetUserId,
+        password,
+      });
+      return NextResponse.json({
+        ok: true,
+        message: `A new password was assigned to ${assigned.email}.`,
+      });
+    }
     const admin = context.admin;
 
     /*
