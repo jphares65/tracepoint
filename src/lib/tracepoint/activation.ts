@@ -7,7 +7,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getPostgresPool } from "@/lib/database/postgres-pool";
+import { getCognitoAdminDirectory } from "@/lib/authentication/cognito-admin";
 import {
   createEmailProvider,
   EmailProviderConfigurationError,
@@ -27,6 +28,8 @@ type ActivationRow = {
   used_at: string | null;
   revoked_at: string | null;
 };
+type AwsActivationRow=ActivationRow&{email:string;full_name:string;provider_username:string;provider_subject:string;identity_state:string;membership_active:boolean;activation_status:string};
+const awsNative=()=>process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE==="aws-native"&&process.env.TRACEPOINT_DATA_PROVIDER==="postgres"&&process.env.TRACEPOINT_AUTH_PROVIDER==="cognito";
 
 type IssueActivationInput = {
   departmentId: string;
@@ -201,6 +204,22 @@ async function sendActivationEmail(input: {
 export async function issueActivationEmail(
   input: IssueActivationInput,
 ) {
+  if(awsNative()){
+    const issuedAt=new Date(),expiresAt=new Date(issuedAt.getTime()+ACTIVATION_VALID_DAYS*86400000),tokenId=randomUUID(),secret=randomBytes(32).toString("base64url"),token=`${tokenId}.${secret}`,pool=getPostgresPool(),client=await pool.connect();
+    try{
+      await client.query("begin");
+      await client.query("update public.user_activation_tokens set revoked_at=$1 where department_id=$2 and user_id=$3 and used_at is null and revoked_at is null",[issuedAt.toISOString(),input.departmentId,input.userId]);
+      await client.query("insert into public.user_activation_tokens(id,department_id,user_id,token_hash,expires_at,created_by_user_id) values($1,$2,$3,$4,$5,$6)",[tokenId,input.departmentId,input.userId,hashTokenSecret(secret),expiresAt.toISOString(),input.actorUserId]);
+      await client.query("commit");
+    }catch(error){await client.query("rollback").catch(()=>undefined);throw error;}finally{client.release();}
+    const activationUrl=new URL("/activate",input.siteUrl.replace(/\/$/,""));activationUrl.searchParams.set("token",token);
+    try{await sendActivationEmail({departmentId:input.departmentId,email:input.email,fullName:input.fullName,activationUrl:activationUrl.toString(),expiresAt:expiresAt.toISOString()});}
+    catch(error){await pool.query("update public.user_activation_tokens set revoked_at=now() where id=$1 and used_at is null",[tokenId]).catch(()=>undefined);throw error;}
+    return{tokenId,expiresAt:expiresAt.toISOString()};
+  }
+  const {createAdminClient}=await import("@/lib/supabase/admin");
+  // Generated bridge types predate the server-only activation table.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
   const issuedAt = new Date();
   const expiresAt = new Date(
@@ -267,6 +286,17 @@ export async function issueActivationEmail(
 
 export async function validateActivationToken(token: string) {
   const { tokenId, secret } = parseToken(token);
+  if(awsNative()){
+    const result=await getPostgresPool().query("select * from tracepoint_auth.activation_context($1)",[tokenId]);
+    const row=result.rows[0] as AwsActivationRow|undefined;
+    if(!row||row.used_at||row.revoked_at||new Date(row.expires_at).getTime()<=Date.now()||!secureHashMatches(row.token_hash,secret)||!row.membership_active||!['pending_activation','activation_sent'].includes(row.activation_status)||row.identity_state!=="pending"||!row.provider_username){
+      throw new Error("This activation link is invalid, expired, or has already been used.");
+    }
+    return{row,email:row.email.trim().toLowerCase(),fullName:row.full_name.trim()||row.email,userMetadata:{full_name:row.full_name,onboarding_status:"pending_activation"},providerUsername:row.provider_username};
+  }
+  const {createAdminClient}=await import("@/lib/supabase/admin");
+  // Generated bridge types predate the server-only activation table.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
 
   const { data, error } = await admin
@@ -349,6 +379,21 @@ export async function completeActivation(
   password: string,
 ) {
   const validation = await validateActivationToken(token);
+  if(awsNative()){
+    const pool=getPostgresPool(),usedAt=new Date().toISOString();
+    const claim=await pool.query("update public.user_activation_tokens set used_at=$1 where id=$2 and used_at is null and revoked_at is null and expires_at>$1 returning id",[usedAt,validation.row.id]);
+    if(!claim.rowCount)throw new Error("This activation link has expired or has already been used.");
+    try{
+      const username=(validation as typeof validation&{providerUsername:string}).providerUsername,directory=getCognitoAdminDirectory();
+      await directory.setPermanentPassword(username,password);
+      await directory.markEmailVerified(username);
+      await pool.query("select tracepoint_auth.finalize_cognito_activation($1)",[validation.row.id]);
+    }catch(error){await pool.query("update public.user_activation_tokens set used_at=null where id=$1 and used_at=$2",[validation.row.id,usedAt]).catch(()=>undefined);throw error;}
+    return{email:validation.email,userId:validation.row.user_id};
+  }
+  const {createAdminClient}=await import("@/lib/supabase/admin");
+  // Generated bridge types predate the server-only activation table.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
   const usedAt = new Date().toISOString();
 

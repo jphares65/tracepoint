@@ -7,7 +7,6 @@ import {
   completeActivation,
   validateActivationToken,
 } from "@/lib/tracepoint/activation";
-import { createClient } from "@/lib/supabase/server";
 
 type ActivatePageProps = {
   searchParams: Promise<{
@@ -40,10 +39,10 @@ async function activateAccount(formData: FormData) {
     redirect("/login?error=Activation link is missing.");
   }
 
-  if (password.length < 8) {
+  if (password.length < 14 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
     redirectWithError(
       token,
-      "Password must be at least 8 characters.",
+      "Password must be at least 14 characters and include uppercase, lowercase, number, and symbol characters.",
     );
   }
 
@@ -64,6 +63,8 @@ async function activateAccount(formData: FormData) {
     );
   }
 
+  if(process.env.TRACEPOINT_AUTH_PROVIDER==="cognito")redirect(`/login?next=${encodeURIComponent("/")}`);
+  const {createClient}=await import("@/lib/supabase/server");
   const supabase = await createClient();
   const { error: signInError } =
     await supabase.auth.signInWithPassword({
@@ -169,7 +170,7 @@ export default async function ActivatePage({
                     name="password"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={14}
                     autoComplete="new-password"
                     className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                   />
@@ -183,7 +184,7 @@ export default async function ActivatePage({
                     name="confirmPassword"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={14}
                     autoComplete="new-password"
                     className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                   />

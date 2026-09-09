@@ -77,4 +77,58 @@ $$;
 revoke all on function tracepoint_auth.upsert_application_user_anchor(uuid,text,text) from public,anon,authenticated,service_role;
 grant execute on function tracepoint_auth.upsert_application_user_anchor(uuid,text,text) to tracepoint_runtime;
 
+create or replace function tracepoint_auth.activation_context(p_token_id uuid)
+returns table(
+  id uuid, department_id uuid, user_id uuid, token_hash text,
+  expires_at timestamptz, created_by_user_id uuid, created_at timestamptz,
+  used_at timestamptz, revoked_at timestamptz, email text, full_name text,
+  provider_username text, provider_subject text, identity_state text,
+  membership_active boolean, activation_status text
+)
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  select t.id,t.department_id,t.user_id,t.token_hash,t.expires_at,t.created_by_user_id,t.created_at,t.used_at,t.revoked_at,
+    p.email,p.full_name,l.provider_username,l.subject,l.state,m.is_active,m.activation_status
+  from public.user_activation_tokens t
+  join public.profiles p on p.id=t.user_id
+  join public.department_memberships m on m.department_id=t.department_id and m.user_id=t.user_id
+  join public.authentication_identity_links l on l.tracepoint_user_id=t.user_id and l.provider='cognito'
+  where t.id=p_token_id and session_user='tracepoint_runtime'
+  limit 1
+$$;
+revoke all on function tracepoint_auth.activation_context(uuid) from public,anon,authenticated,service_role;
+grant execute on function tracepoint_auth.activation_context(uuid) to tracepoint_runtime;
+
+create or replace function tracepoint_auth.finalize_cognito_activation(p_token_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare v_token public.user_activation_tokens%rowtype;
+begin
+  if session_user<>'tracepoint_runtime' then raise exception 'activation rejected' using errcode='42501'; end if;
+  select * into v_token from public.user_activation_tokens where id=p_token_id and used_at is not null and revoked_at is null for update;
+  if not found then raise exception 'activation token not claimed' using errcode='P0002'; end if;
+  update public.department_memberships set activation_status='activated'
+    where department_id=v_token.department_id and user_id=v_token.user_id and is_active=true
+      and activation_status in ('pending_activation','activation_sent');
+  update public.authentication_identity_links set state='active',updated_at=now()
+    where provider='cognito' and tracepoint_user_id=v_token.user_id and state='pending';
+  update public.user_activation_tokens set revoked_at=now()
+    where department_id=v_token.department_id and user_id=v_token.user_id and id<>v_token.id and used_at is null and revoked_at is null;
+  insert into public.authentication_identity_events(tracepoint_user_id,provider,issuer,subject,provider_username,event_type,actor_user_id)
+    select tracepoint_user_id,provider,issuer,subject,provider_username,'activated',v_token.user_id
+    from public.authentication_identity_links where provider='cognito' and tracepoint_user_id=v_token.user_id;
+  insert into public.audit_events(department_id,actor_user_id,action,entity_type,entity_id,summary,new_value)
+    select v_token.department_id,v_token.user_id,'account_activated','department_membership',v_token.user_id,
+      coalesce(p.email,'TracePoint user')||' activated their TracePoint account.',jsonb_build_object('activation_status','activated','activation_token_id',v_token.id)
+    from public.profiles p where p.id=v_token.user_id;
+end;
+$$;
+revoke all on function tracepoint_auth.finalize_cognito_activation(uuid) from public,anon,authenticated,service_role;
+grant execute on function tracepoint_auth.finalize_cognito_activation(uuid) to tracepoint_runtime;
+
 commit;
