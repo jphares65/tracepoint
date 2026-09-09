@@ -18,7 +18,7 @@ export function validateProductionBuildSecret(secret){
 export function validateProductionSecret(secret){
  validateProductionBuildSecret(secret);
  assert.deepEqual(Object.keys(secret).sort(),[...productionRuntimeSecretKeys].sort(),'Production runtime secret must contain exactly eight fields');
- validateTracePointRuntimeConfig({...secret,TRACEPOINT_DATA_PROVIDER:'supabase',TRACEPOINT_EMAIL_PROVIDER:'brevo',TRACEPOINT_STORAGE_PROVIDER:'supabase'});
+ validateTracePointRuntimeConfig({...secret,TRACEPOINT_DATA_PROVIDER:'supabase',TRACEPOINT_AUTH_PROVIDER:'supabase',TRACEPOINT_EMAIL_PROVIDER:'brevo',TRACEPOINT_STORAGE_PROVIDER:'supabase'});
  assert.equal(secret.CONFIGURATION_ENVIRONMENT,'production');
  assert.ok(secret.NOTIFICATION_DISPATCH_SECRET.length>=32,'Production notification secret must contain at least 32 characters');
  const key=secret.SUPABASE_SECRET_KEY;let server=false;

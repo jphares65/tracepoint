@@ -1,25 +1,143 @@
-﻿const requiredSecrets = ['SUPABASE_SECRET_KEY','BREVO_API_KEY','NOTIFICATION_DISPATCH_SECRET','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY'];
-const publicNames = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL'];
-const providers = {TRACEPOINT_DATA_PROVIDER:'supabase',TRACEPOINT_EMAIL_PROVIDER:'brevo',TRACEPOINT_STORAGE_PROVIDER:'supabase|s3'};
-const targets = {
-  staging: {site:'https://staging.tracepointhq.com',database:'https://wztqqqashilusoppddxi.supabase.co'},
-  production: {site:'https://tracepointhq.com',database:'https://izlkwggluhlhzlumtzes.supabase.co'},
+const commonRequired = [
+  "CONFIGURATION_ENVIRONMENT",
+  "NEXT_PUBLIC_SITE_URL",
+  "NOTIFICATION_DISPATCH_SECRET",
+  "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY",
+  "TRACEPOINT_DATA_PROVIDER",
+  "TRACEPOINT_AUTH_PROVIDER",
+  "TRACEPOINT_EMAIL_PROVIDER",
+  "TRACEPOINT_STORAGE_PROVIDER",
+];
+
+const bridgeRequired = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_SECRET_KEY",
+  "BREVO_API_KEY",
+];
+
+const awsNativeRequired = [
+  "AWS_REGION",
+  "TRACEPOINT_DATABASE_CA_PATH",
+  "TRACEPOINT_DATABASE_SECRET_JSON",
+  "TRACEPOINT_IMPORT_APPROVAL_SECRET",
+  "TRACEPOINT_AUTH_STATE_KEYS",
+  "TRACEPOINT_AUTH_REFRESH_KEYS",
+  "TRACEPOINT_COGNITO_USER_POOL_ID",
+  "TRACEPOINT_COGNITO_CLIENT_ID",
+  "TRACEPOINT_SES_CONFIGURATION_SET",
+  "TRACEPOINT_FROM_EMAIL",
+  "TRACEPOINT_S3_BUCKET",
+  "TRACEPOINT_S3_EXPECTED_OWNER",
+];
+
+const forbiddenAwsNativeNames = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_SECRET_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "BREVO_API_KEY",
+];
+
+const providerTuples = {
+  bridge: {
+    TRACEPOINT_DATA_PROVIDER: "supabase",
+    TRACEPOINT_AUTH_PROVIDER: "supabase",
+    TRACEPOINT_EMAIL_PROVIDER: "brevo",
+    TRACEPOINT_STORAGE_PROVIDER: new Set(["supabase", "s3"]),
+  },
+  "aws-native": {
+    TRACEPOINT_DATA_PROVIDER: "postgres",
+    TRACEPOINT_AUTH_PROVIDER: "cognito",
+    TRACEPOINT_EMAIL_PROVIDER: "ses",
+    TRACEPOINT_STORAGE_PROVIDER: new Set(["s3"]),
+  },
 };
-export function validateTracePointRuntimeConfig(environment=process.env) {
-  const missing=[...requiredSecrets,...publicNames].filter(name=>typeof environment[name]!=='string'||!environment[name].trim());
-  const invalidProviders=Object.entries(providers).filter(([name,value])=>!value.split('|').includes(environment[name]?.trim().toLowerCase())).map(([name])=>name);
-  const invalid=[];
-  if(environment.TRACEPOINT_STORAGE_PROVIDER?.trim().toLowerCase()==='s3') {
-    const account=environment.TRACEPOINT_S3_EXPECTED_OWNER, stage=environment.CONFIGURATION_ENVIRONMENT;
-    if(!account||!/^\d{12}$/.test(account)||account==='265544358665'||(stage==='staging'?account!=='559054714699':stage!=='production'||account==='559054714699'))invalid.push('TRACEPOINT_S3_EXPECTED_OWNER');
-    if(environment.AWS_REGION!=='us-east-1')invalid.push('AWS_REGION');
-    if(environment.TRACEPOINT_S3_BUCKET!=='tracepoint-'+stage+'-private-'+account)invalid.push('TRACEPOINT_S3_BUCKET');
+
+const targets = {
+  staging: {
+    site: "https://staging.tracepointhq.com",
+    supabase: "https://wztqqqashilusoppddxi.supabase.co",
+    account: "559054714699",
+  },
+  production: {
+    site: "https://tracepointhq.com",
+    supabase: "https://izlkwggluhlhzlumtzes.supabase.co",
+  },
+};
+
+function present(environment, name) {
+  return typeof environment[name] === "string" && environment[name].trim().length > 0;
+}
+
+function value(environment, name) {
+  return environment[name]?.trim().toLowerCase();
+}
+
+function validateS3(environment, target, invalid) {
+  const account = environment.TRACEPOINT_S3_EXPECTED_OWNER;
+  const stage = environment.CONFIGURATION_ENVIRONMENT;
+  if (!account || !/^\d{12}$/.test(account) || account === "265544358665") invalid.push("TRACEPOINT_S3_EXPECTED_OWNER");
+  if (stage === "staging" && account !== target?.account) invalid.push("TRACEPOINT_S3_EXPECTED_OWNER");
+  if (stage === "production" && account === targets.staging.account) invalid.push("TRACEPOINT_S3_EXPECTED_OWNER");
+  if (environment.AWS_REGION !== "us-east-1") invalid.push("AWS_REGION");
+  if (environment.TRACEPOINT_S3_BUCKET !== `tracepoint-${stage}-private-${account}`) invalid.push("TRACEPOINT_S3_BUCKET");
+}
+
+function validatePostgres(environment, invalid) {
+  if (!/^\/app\/[A-Za-z0-9._/-]+\.pem$/.test(environment.TRACEPOINT_DATABASE_CA_PATH ?? "")) invalid.push("TRACEPOINT_DATABASE_CA_PATH");
+  let secret;
+  try {
+    secret = JSON.parse(environment.TRACEPOINT_DATABASE_SECRET_JSON ?? "");
+  } catch {
+    invalid.push("TRACEPOINT_DATABASE_SECRET_JSON");
+    return;
   }
-  const target=targets[environment.CONFIGURATION_ENVIRONMENT];
-  if(!target)invalid.push('CONFIGURATION_ENVIRONMENT');
-  if(!target||environment.NEXT_PUBLIC_SITE_URL!==target.site)invalid.push('NEXT_PUBLIC_SITE_URL');
-  if(!target||environment.NEXT_PUBLIC_SUPABASE_URL!==target.database)invalid.push('NEXT_PUBLIC_SUPABASE_URL');
-  if(missing.length||invalidProviders.length||invalid.length) {
-    throw new Error(`TracePoint runtime configuration is invalid (missing required variables: ${missing.join(', ')}; unsupported provider controls: ${invalidProviders.join(', ')}; invalid safe configuration: ${invalid.join(', ')}).`);
+  const validHost = typeof secret?.host === "string" && /^[a-z0-9-]+(?:\.[a-z0-9-]+)+\.rds(?:\.[a-z0-9-]+)?\.amazonaws\.com$/.test(secret.host);
+  const validUser = typeof secret?.username === "string" && /^[a-z][a-z0-9_]{2,62}$/.test(secret.username);
+  if (!validHost || secret?.port !== 5432 || !validUser || typeof secret?.password !== "string" || secret.password.length < 20 || secret?.dbname !== "tracepoint") invalid.push("TRACEPOINT_DATABASE_SECRET_JSON");
+}
+
+export function validateTracePointRuntimeConfig(environment = process.env) {
+  const stage = environment.CONFIGURATION_ENVIRONMENT;
+  const target = targets[stage];
+  const mode = environment.TRACEPOINT_RUNTIME_PROVIDER_MODE?.trim().toLowerCase() ||
+    (value(environment, "TRACEPOINT_DATA_PROVIDER") === "postgres" ? "aws-native" : "bridge");
+  const tuple = providerTuples[mode];
+  const required = [...commonRequired, ...(mode === "aws-native" ? awsNativeRequired : bridgeRequired)];
+  const missing = required.filter((name) => !present(environment, name));
+  const invalidProviders = [];
+  const invalid = [];
+
+  if (!tuple) {
+    invalidProviders.push("TRACEPOINT_RUNTIME_PROVIDER_MODE");
+  } else {
+    for (const [name, expected] of Object.entries(tuple)) {
+      const actual = value(environment, name);
+      if (expected instanceof Set ? !expected.has(actual) : actual !== expected) invalidProviders.push(name);
+    }
+  }
+
+  if (!target) invalid.push("CONFIGURATION_ENVIRONMENT");
+  if (!target || environment.NEXT_PUBLIC_SITE_URL !== target.site) invalid.push("NEXT_PUBLIC_SITE_URL");
+
+  if (mode === "bridge" && (!target || environment.NEXT_PUBLIC_SUPABASE_URL !== target.supabase)) {
+    invalid.push("NEXT_PUBLIC_SUPABASE_URL");
+  }
+
+  if (value(environment, "TRACEPOINT_STORAGE_PROVIDER") === "s3") validateS3(environment, target, invalid);
+
+  if (mode === "aws-native") {
+    validatePostgres(environment, invalid);
+    for (const name of forbiddenAwsNativeNames) if (present(environment, name)) invalid.push(name);
+    if (!/^us-east-1_[A-Za-z0-9]+$/.test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");
+    if (!/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_CLIENT_ID");
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(environment.TRACEPOINT_SES_CONFIGURATION_SET ?? "")) invalid.push("TRACEPOINT_SES_CONFIGURATION_SET");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(environment.TRACEPOINT_FROM_EMAIL ?? "")) invalid.push("TRACEPOINT_FROM_EMAIL");
+  }
+
+  const uniqueInvalid = [...new Set(invalid)];
+  if (missing.length || invalidProviders.length || uniqueInvalid.length) {
+    throw new Error(`TracePoint runtime configuration is invalid (missing required variables: ${missing.join(", ")}; unsupported provider controls: ${invalidProviders.join(", ")}; invalid safe configuration: ${uniqueInvalid.join(", ")}).`);
   }
 }
