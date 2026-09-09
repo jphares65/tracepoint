@@ -30,6 +30,8 @@ export type ServerAccessPayload = {
   departmentName: string;
   departmentShortName: string;
   departmentPatchUrl: string;
+  accentColor: string;
+  loginTheme: string;
   badgeNumber: string;
   rankTitle: string;
   unitName: string;
@@ -65,6 +67,8 @@ type DepartmentRow = {
   name?: string | null;
   short_name?: string | null;
   patch_url?: string | null;
+  accent_color?: string | null;
+  login_theme?: string | null;
 };
 
 type ProfileRow = {
@@ -159,7 +163,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
 
       admin
         .from("departments")
-        .select("name,short_name,patch_url")
+        .select("name,short_name,patch_url,accent_color,login_theme")
         .eq("id", supportDepartmentId)
         .maybeSingle(),
 
@@ -252,6 +256,8 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
           clean(department.name) ||
           "TracePoint",
         departmentPatchUrl: clean(department.patch_url),
+        accentColor: clean(department.accent_color),
+        loginTheme: clean(department.login_theme),
         badgeNumber: "",
         rankTitle: "TracePoint Platform Administrator",
         unitName: "",
@@ -325,7 +331,7 @@ let membership: MembershipRow | undefined;
   ] = await Promise.all([
     admin
       .from("departments")
-      .select("name,short_name,patch_url")
+      .select("name,short_name,patch_url,accent_color,login_theme")
       .eq("id", departmentId)
       .maybeSingle(),
 
@@ -488,6 +494,8 @@ let membership: MembershipRow | undefined;
         clean(department?.name) ||
         "TracePoint",
       departmentPatchUrl: clean(department?.patch_url),
+      accentColor: clean(department?.accent_color),
+      loginTheme: clean(department?.login_theme),
       badgeNumber: clean(membership.badge_number),
       rankTitle: clean(membership.rank_title),
       unitName: clean(membership.unit_name),

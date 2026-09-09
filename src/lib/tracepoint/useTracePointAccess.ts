@@ -29,6 +29,8 @@ export type TracePointAccess = {
   departmentName: string;
   departmentShortName: string;
   departmentPatchUrl: string;
+  accentColor: string;
+  loginTheme: string;
   badgeNumber: string;
   rankTitle: string;
   unitName: string;
@@ -66,6 +68,8 @@ const EMPTY_ACCESS: AccessPayload = {
   departmentName: "",
   departmentShortName: "",
   departmentPatchUrl: "",
+  accentColor: "",
+  loginTheme: "",
   badgeNumber: "",
   rankTitle: "",
   unitName: "",
