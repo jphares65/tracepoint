@@ -8,6 +8,7 @@ import pg from 'pg';
 import {supabasePrerequisites} from './postgres-bootstrap-prerequisites.mjs';
 import {catalogSql,manifestSql} from './staging-management-manifest.mjs';
 let phase='target validation';
+const expectedMigrationCount=75;
 
 // This runner accepts only a new disposable database in the isolated AWS account.
 // ECS injects the RDS-managed secret; neither credentials nor SQL rows are logged.
@@ -38,7 +39,7 @@ async function main(){
   // RDS master is not a PostgreSQL superuser: explicitly authorize SET ROLE used
   // by the synthetic RLS suite, without granting any production identity access.
   await client.query('grant anon, authenticated, service_role to tprehearsal');
-  phase='migration source gate';const files=(await readdir('supabase/migrations')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(files.length,67);
+  phase='migration source gate';const files=(await readdir('supabase/migrations')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(files.length,expectedMigrationCount);
   await client.query('create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)');
   for(const file of files){
    phase='ordered migrations';

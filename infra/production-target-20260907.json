@@ -6,6 +6,8 @@
   "certificateArn": "arn:aws:acm:us-east-1:193644343389:certificate/79ea614e-54ad-4f40-9b49-9c3d1ee5ff18",
   "imageTag": "ae3d2a4ce87b2085e251b1995f51a7b07058ec4d",
   "emailFromAddress": "contact@tracepointhq.com",
+  "architectureTarget": "full-aws",
+  "deploymentPhase": "temporary-provider-bridge",
   "dataMode": "retain-production-providers",
   "desiredCount": 2,
   "maxCapacity": 4,

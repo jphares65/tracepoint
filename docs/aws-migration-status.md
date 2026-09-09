@@ -2,7 +2,15 @@
 
 **Verified:** 2026-09-09 UTC
 
-**Formal weighted readiness:** **79.00%**
+**Historical hybrid-hosting readiness:** **79.00%**
+
+**Corrected full-AWS migration readiness:** **42.00%**
+
+> Scope correction (2026-09-08): the 79% checklist measured an initial AWS
+> hosting launch while Supabase and Brevo remained runtime providers. It must
+> not be represented as completion toward the owner-approved full-AWS target.
+> See `aws-full-migration-rebaseline-20260908.json` and
+> `aws-architecture-assumption-audit-20260908.md`.
 
 **Staging target:** account `559054714699`, `us-east-1`
 

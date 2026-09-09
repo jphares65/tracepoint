@@ -70,6 +70,13 @@ export interface QualificationHistoryRepository {
   listImportedHistory(input: QualificationHistoryInput): Promise<QualificationHistoryRow[]>;
 }
 
+export type QualificationHistoryPostgresClient = {
+  query(
+    text: string,
+    values: readonly unknown[],
+  ): Promise<{ rows: QualificationHistoryRow[] }>;
+};
+
 export class QualificationHistoryRepositoryError extends Error {
   constructor(message = "Qualification history could not be loaded.") {
     super(message);
@@ -116,6 +123,44 @@ export class SupabaseQualificationHistoryRepository implements QualificationHist
     if (result.error) throw new QualificationHistoryRepositoryError();
     return result.data ?? [];
   }
+}
+
+export class PostgresQualificationHistoryRepository implements QualificationHistoryRepository {
+  private readonly client: QualificationHistoryPostgresClient;
+  private readonly authorizedDepartmentId: string;
+
+  constructor(client: QualificationHistoryPostgresClient, authorizedDepartmentId: string) {
+    if (!authorizedDepartmentId) throw new QualificationHistoryAuthorizationError();
+    this.client = client;
+    this.authorizedDepartmentId = authorizedDepartmentId;
+  }
+
+  async listImportedHistory(input: QualificationHistoryInput) {
+    if (!input.departmentId || input.departmentId !== this.authorizedDepartmentId) {
+      throw new QualificationHistoryAuthorizationError();
+    }
+
+    try {
+      const result = await this.client.query(
+        `select ${QUALIFICATION_HISTORY_FIELDS}
+         from public.qualification_results
+         where department_id = $1
+           and record_origin = $2
+         order by qualification_date desc`,
+        [input.departmentId, "historical_import"],
+      );
+      return result.rows;
+    } catch {
+      throw new QualificationHistoryRepositoryError();
+    }
+  }
+}
+
+export function createPostgresQualificationHistoryRepository(
+  client: QualificationHistoryPostgresClient,
+  authorizedDepartmentId: string,
+): QualificationHistoryRepository {
+  return new PostgresQualificationHistoryRepository(client, authorizedDepartmentId);
 }
 
 export function createQualificationHistoryRepository(

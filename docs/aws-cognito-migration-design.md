@@ -1,5 +1,10 @@
 # Cognito migration design
 
+**Binding scope correction (2026-09-08):** Cognito is the final production
+identity provider. Supabase Auth remains authoritative only during migration and
+rollback. Completion requires all supported users to have a tested Cognito
+activation/recovery path and removal of Supabase Auth from the runtime.
+
 Supabase Auth remains authoritative. Cognito is a proposed coexistence target,
 not configured or reachable.
 
