@@ -84,6 +84,7 @@ function escapeHtml(value: string) {
 }
 
 async function sendActivationEmail(input: {
+  departmentId: string;
   email: string;
   fullName: string;
   activationUrl: string;
@@ -91,7 +92,7 @@ async function sendActivationEmail(input: {
 }) {
   let provider;
   try {
-    provider = createEmailProvider();
+    provider = createEmailProvider(process.env, { departmentId: input.departmentId });
   } catch (error) {
     if (error instanceof EmailProviderConfigurationError) {
       throw new Error(
@@ -242,6 +243,7 @@ export async function issueActivationEmail(
 
   try {
     await sendActivationEmail({
+      departmentId: input.departmentId,
       email: input.email,
       fullName: input.fullName,
       activationUrl: activationUrl.toString(),

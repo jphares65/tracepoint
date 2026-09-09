@@ -197,11 +197,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let emailProvider;
+  let bridgeEmailProvider;
   try {
-    emailProvider = createEmailProvider(process.env, {
-      trimConfiguration: false,
-    });
+    if ((process.env.TRACEPOINT_EMAIL_PROVIDER?.trim().toLowerCase() || "brevo") !== "ses") {
+      bridgeEmailProvider = createEmailProvider(process.env, { trimConfiguration: false });
+    }
   } catch (error) {
     return NextResponse.json(
       {
@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
   if (!candidates?.length) {
     return NextResponse.json({
       ok: true,
-      provider: "Brevo",
+      provider: process.env.TRACEPOINT_EMAIL_PROVIDER === "ses" ? "SES" : "Brevo",
       attemptedItems: 0,
       sentMessages: 0,
       sentItems: 0,
@@ -360,6 +360,7 @@ export async function POST(request: NextRequest) {
         ? `[TracePoint] ${activeEvents[0].title}`
         : `[TracePoint] ${activeEvents.length} Inbox Items Need Attention`;
 
+    const emailProvider = bridgeEmailProvider ?? createEmailProvider(process.env, { departmentId: first.department_id });
     const outcome = await deliverOutboxMessage(emailProvider, {
       to: [{ email: first.recipient_email }],
       subject,
@@ -383,7 +384,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: failedGroups === 0,
-    provider: "Brevo",
+    provider: process.env.TRACEPOINT_EMAIL_PROVIDER === "ses" ? "SES" : "Brevo",
     attemptedItems: claimed?.length ?? 0,
     sentMessages,
     sentItems,
