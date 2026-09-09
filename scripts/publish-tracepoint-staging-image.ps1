@@ -38,7 +38,8 @@ $branch = (& git.exe -C $repositoryRoot branch --show-current).Trim()
 $commit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
 $authorizedBranches = @(
     'codex/aws-staging-readiness-20260902',
-    'codex/aws-staging-integration-20260908'
+    'codex/aws-staging-integration-20260908',
+    'codex/aws-main-integration-final-20260908'
 )
 if ($branch -notin $authorizedBranches) { throw "Refusing branch '$branch'." }
 if ($commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA.' }
