@@ -14,6 +14,7 @@ import {
 
 import {
   evaluateCanonicalQualificationReadiness,
+  type QualificationComponent,
 } from "@/lib/tracepoint/qualification-readiness";
 import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
 import { createNotificationEventWriter } from "@/lib/notifications/event-writer";
@@ -550,6 +551,14 @@ function collectQualificationReadiness(
 
   const qualificationDueSoonDays =
     Number(rules.qualification_due_soon_days) || 30;
+  const requiredComponents = Array.isArray(
+    rules.required_handgun_qualification_components,
+  )
+    ? rules.required_handgun_qualification_components.filter(
+        (component: unknown): component is QualificationComponent =>
+          component === "day" || component === "night",
+      )
+    : (["day", "night"] as QualificationComponent[]);
 
   const alerts: GeneratedAlert[] = [];
 
@@ -575,6 +584,7 @@ function collectQualificationReadiness(
       qualificationResults: storedQualificationResults,
       officerId,
       officerUserId: userId,
+      scope: { requiredComponents },
       qualificationValidDays,
       qualificationDueSoonDays,
     });

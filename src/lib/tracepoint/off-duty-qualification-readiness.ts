@@ -1,5 +1,6 @@
 ﻿import {
   evaluateQualificationReadiness,
+  requiredHandgunQualificationComponents,
   type QualificationReadinessEvent,
 } from "@/lib/tracepoint/qualification-readiness";
 
@@ -43,7 +44,7 @@ export async function getOfficerQualificationReadiness(
     context.admin
       .from("department_rules")
       .select(
-        "qualification_valid_days,qualification_due_soon_days",
+        "qualification_valid_days,qualification_due_soon_days,range_qualification_rules",
       )
       .eq("department_id", context.departmentId)
       .maybeSingle(),
@@ -190,6 +191,7 @@ export async function getOfficerQualificationReadiness(
       .filter((result: any) => result.passed === false)
       .map((result: any) => ({
         date: result.date,
+        component: result.runNumber === 2 ? "night" as const : "day" as const,
         runLabel:
           result.runNumber === 2
             ? "Night qualification"
@@ -206,6 +208,9 @@ export async function getOfficerQualificationReadiness(
     rawDueSoonDays === null || rawDueSoonDays === undefined
       ? 30
       : Number(rawDueSoonDays);
+  const requiredComponents = requiredHandgunQualificationComponents(
+    rulesResult.data?.range_qualification_rules,
+  );
 
   return evaluateQualificationReadiness({
     lastDayQualification: lastDay
@@ -225,5 +230,6 @@ export async function getOfficerQualificationReadiness(
     failedQualifications,
     qualificationValidDays,
     qualificationDueSoonDays,
+    requiredComponents,
   });
 }

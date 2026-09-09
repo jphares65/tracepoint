@@ -92,6 +92,38 @@ test("fleet vehicle list preserves rows, empty data, and provider errors", async
   );
 });
 
+test("fleet vehicle list naturally sorts numeric and mixed alphanumeric unit identifiers", async () => {
+  const vehicles = [
+    { id: "unit-10", unit_number: "10" },
+    { id: "car-10", unit_number: "Car 10" },
+    { id: "unit-2", unit_number: "2" },
+    { id: "unit-12b", unit_number: "12B" },
+    { id: "unit-1", unit_number: "1" },
+    { id: "car-2", unit_number: "Car 2" },
+    { id: "unit-12a", unit_number: "12A" },
+    { id: "unit-4", unit_number: "4" },
+    { id: "unit-13", unit_number: "13" },
+  ];
+  const repository = new TenantBoundFleetReadRepository(
+    source({ listVehicles: () => Promise.resolve(ok(vehicles)) }),
+    "dept-a",
+  );
+
+  const result = await repository.getVehicleList({
+    departmentId: "dept-a",
+    vehicleFields: "id,unit_number",
+  });
+
+  assert.deepEqual(
+    result.items.map((vehicle) => vehicle.unit_number),
+    ["1", "2", "4", "10", "12A", "12B", "13", "Car 2", "Car 10"],
+  );
+  assert.deepEqual(
+    vehicles.map((vehicle) => vehicle.unit_number),
+    ["10", "Car 10", "2", "12B", "1", "Car 2", "12A", "4", "13"],
+  );
+});
+
 test("fleet detail preserves mapping, ignored related errors, and network masking", async () => {
   const repository = new TenantBoundFleetReadRepository(
     source({
@@ -180,7 +212,7 @@ test("Supabase fleet adapter preserves exact tables, filters, fields, order, and
   await adapter.listProfiles(["user-1"]);
   assert.deepEqual(calls, [
     "from:fleet_rules", 'select:["*"]', 'eq:["department_id","dept-a"]', "maybeSingle:[]",
-    "from:fleet_vehicles", 'select:["id,unit_number"]', 'eq:["department_id","dept-a"]', 'order:["unit_number",{"ascending":true}]',
+    "from:fleet_vehicles", 'select:["id,unit_number"]', 'eq:["department_id","dept-a"]',
     "from:fleet_vehicles", 'select:["*"]', 'eq:["department_id","dept-a"]', 'eq:["id","vehicle-1"]', "maybeSingle:[]",
     "from:fleet_work_orders", 'select:["*"]', 'eq:["department_id","dept-a"]', 'eq:["vehicle_id","vehicle-1"]', 'order:["reported_at",{"ascending":false}]',
     "from:fleet_vehicle_equipment", 'select:["*"]', 'eq:["department_id","dept-a"]', 'eq:["vehicle_id","vehicle-1"]', 'order:["category"]',

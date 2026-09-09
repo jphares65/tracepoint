@@ -10,6 +10,7 @@ import {
 import { createRangeReadRepository } from "@/lib/range/read-repository";
 import {
   evaluateCanonicalQualificationReadiness,
+  type QualificationComponent,
   type QualificationStandardSummary,
 } from "@/lib/tracepoint/qualification-readiness";
 import { TRAINING_ALERTS_FEED_PERMISSIONS } from "@/lib/tracepoint/permissions";
@@ -17,6 +18,11 @@ import {
   createCurrentRulesRepository,
   mapCurrentRules,
 } from "@/lib/department-rules/current-rules-repository";
+import {
+  classifyTrendChange,
+  reachesRepeatedDeficiencyThreshold,
+  type AnalyticsDashboardConfiguration,
+} from "@/lib/tracepoint/analytics-dashboard-config";
 
 type Risk = "Low" | "Medium" | "High";
 
@@ -111,12 +117,6 @@ function numericValue(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-function getTrendFromChange(change: number): Trend {
-  if (change < -1) return "Declining";
-  if (change > 1) return "Improving";
-  return "Stable";
-}
-
 function getRiskFromQualificationStatus(status: string): Risk {
   if (
     status === "Failed" ||
@@ -142,6 +142,8 @@ function buildQualificationTrends(
   qualificationStandards: QualificationStandardSummary[],
   qualificationValidDays: number,
   qualificationDueSoonDays: number,
+  requiredComponents: readonly QualificationComponent[],
+  analyticsDashboard: AnalyticsDashboardConfiguration,
 ) {
   return Object.keys(officerLabels).map((officerId) => {
     const label = officerLabels[officerId];
@@ -151,6 +153,7 @@ function buildQualificationTrends(
       qualificationStandards,
       officerId,
       officerUserId: officerId,
+      scope: { requiredComponents },
       qualificationValidDays,
       qualificationDueSoonDays,
     });
@@ -183,7 +186,7 @@ function buildQualificationTrends(
       const previous = scored[scored.length - 2].score;
       const current = scored[scored.length - 1].score;
       const change = current - previous;
-      comparisons.push({ component, previous, current, change, trend: getTrendFromChange(change) });
+      comparisons.push({ component, previous, current, change, trend: classifyTrendChange(change, analyticsDashboard.trend_change_threshold) });
     }
 
     let trend: Trend = "Baseline";
@@ -211,13 +214,18 @@ function buildQualificationTrends(
 
     const dayScore = numericValue(latestDay?.score);
     const nightScore = numericValue(latestNight?.score);
-    const coverage = latestDay && latestNight
-      ? "Day + Night"
-      : latestDay
-          ? "Day Only"
-          : latestNight
-            ? "Night Only"
-            : "No Record";
+    const requiredCoverage = requiredComponents.filter((component) =>
+      component === "day" ? Boolean(latestDay) : Boolean(latestNight),
+    );
+    const coverage = requiredComponents.length === 0
+      ? "Not Required"
+      : requiredCoverage.length === requiredComponents.length
+        ? requiredComponents.length === 2
+          ? "Day + Night"
+          : `${requiredComponents[0] === "day" ? "Day" : "Night"} Complete`
+        : requiredCoverage.length === 0
+          ? "No Record"
+          : `${requiredCoverage[0] === "day" ? "Day" : "Night"} Only`;
     const risk = getRiskFromQualificationStatus(status);
 
     let detail = readiness.statusReason;
@@ -248,6 +256,7 @@ function buildDrillTrends(
   drillResults: DrillResultRow[],
   drills: RangeDayDrillRow[],
   rangeDays: RangeDayRow[],
+  analyticsDashboard: AnalyticsDashboardConfiguration,
 ) {
   const drillById = new Map(drills.map((drill) => [drill.id, drill]));
   const rangeDayById = new Map(rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]));
@@ -309,16 +318,18 @@ function buildDrillTrends(
       detail = `Time changed from ${previous.toFixed(2)}s to ${current.toFixed(2)}s across the two latest range days; lower is better.`;
     }
 
-    let trend: Trend = change === null ? "Baseline" : getTrendFromChange(change);
+    let trend: Trend = change === null
+      ? "Baseline"
+      : classifyTrendChange(change, analyticsDashboard.trend_change_threshold);
     const latestResult = sorted[sorted.length - 1]?.result;
     const deficiencies = sorted.filter(
       (item) => item.result.deficiency_observed === true || item.result.remedial_training_recommended === true || item.result.passed === false,
     ).length;
     if (latestResult?.passed === false || latestResult?.remedial_training_recommended === true) trend = "Action Needed";
 
-    const risk: Risk = trend === "Action Needed" || deficiencies >= 2
+    const risk: Risk = trend === "Action Needed" || reachesRepeatedDeficiencyThreshold(deficiencies, analyticsDashboard.repeated_deficiency_count)
       ? "High"
-      : trend === "Declining" || deficiencies === 1
+      : trend === "Declining" || deficiencies > 0
         ? "Medium"
         : "Low";
 
@@ -332,7 +343,11 @@ function buildDrillTrends(
       changeValue: change,
       averageChange: change === null ? "â€”" : `${change > 0 ? "+" : ""}${change.toFixed(1)}`,
       weakArea: drillName,
-      repeatedDeficiency: deficiencies >= 2 ? "Yes" : deficiencies === 1 ? "Monitor" : "No",
+      repeatedDeficiency: reachesRepeatedDeficiencyThreshold(deficiencies, analyticsDashboard.repeated_deficiency_count)
+        ? `Yes (${deficiencies} range days)`
+        : deficiencies > 0
+          ? `Monitor (${deficiencies}/${analyticsDashboard.repeated_deficiency_count})`
+          : "No",
       remedial: sorted.some((item) => item.result.remedial_training_recommended) ? "Recommended" : "None",
       risk,
       detail,
@@ -485,8 +500,8 @@ function buildAlerts(
       basis: `${row.detail} Repeated deficiency: ${row.repeatedDeficiency}.`,
       recommendedAction:
         row.risk === "High"
-          ? "Create a remediation record and require documented follow-up training."
-          : "Review this drill category during the next training block.",
+          ? "Review the underlying records and apply the agency's remediation policy."
+          : "Review the drill history and decide whether agency follow-up is appropriate.",
       createdAt: new Date()
         .toISOString()
         .slice(0, 10),
@@ -557,6 +572,8 @@ export async function GET() {
         qualificationWorkspace.qualificationStandards as QualificationStandardSummary[],
         qualificationRules.qualification_valid_days,
         qualificationRules.qualification_due_soon_days,
+        qualificationRules.required_handgun_qualification_components,
+        qualificationRules.analytics_dashboard,
       );
 
     const drillTrends = buildDrillTrends(
@@ -564,6 +581,7 @@ export async function GET() {
       drillResults,
       drills,
       rangeDays,
+      qualificationRules.analytics_dashboard,
     );
 
     const broadCategoryTrends =
@@ -700,6 +718,7 @@ export async function GET() {
       broadCategoryTrends,
       trainingAlerts: alerts,
       rangeSummary,
+      configuration: qualificationRules.analytics_dashboard,
 
       hasWorkspaceData:
         rangeDays.length > 0 ||

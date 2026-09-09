@@ -23,6 +23,7 @@ import {
 import type { FirearmMalfunction } from "@/app/lib/tracepoint/types";
 import {
   evaluateCanonicalQualificationReadiness,
+  type QualificationComponent,
   type QualificationStandardSummary,
   type QualificationReadinessStatus,
 } from "@/lib/tracepoint/qualification-readiness";
@@ -380,6 +381,7 @@ function buildOfficerHistories(
   historicalResults: HistoricalQualificationResult[],
   qualificationValidDays: number,
   qualificationDueSoonDays: number,
+  requiredComponents: readonly QualificationComponent[],
 ) {
   const rangeDayById = new Map(
     workspace.rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
@@ -590,6 +592,7 @@ function buildOfficerHistories(
       qualificationStandards: workspace.qualificationStandards,
       officerId: officer.id,
       officerUserId: officer.userId,
+      scope: { requiredComponents },
       qualificationValidDays,
       qualificationDueSoonDays,
     });
@@ -804,6 +807,10 @@ export default function QualificationsPage() {
   const [qualificationDueSoonDays, setQualificationDueSoonDays] = useState(
     DEFAULT_QUALIFICATION_DUE_SOON_DAYS,
   );
+  const [requiredComponents, setRequiredComponents] = useState<QualificationComponent[]>([
+    "day",
+    "night",
+  ]);
   const [hasStoredWorkspace, setHasStoredWorkspace] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<OfficerStatusFilter>("All");
@@ -853,6 +860,7 @@ export default function QualificationsPage() {
           rules?: {
             qualification_valid_days?: number;
             qualification_due_soon_days?: number;
+            required_handgun_qualification_components?: QualificationComponent[];
           };
         };
 
@@ -876,6 +884,14 @@ export default function QualificationsPage() {
           Number.isFinite(dueSoonDays) && dueSoonDays >= 0
             ? dueSoonDays
             : DEFAULT_QUALIFICATION_DUE_SOON_DAYS,
+        );
+        setRequiredComponents(
+          Array.isArray(payload.rules?.required_handgun_qualification_components)
+            ? payload.rules.required_handgun_qualification_components.filter(
+                (component): component is QualificationComponent =>
+                  component === "day" || component === "night",
+              )
+            : ["day", "night"],
         );
       } catch (error) {
         console.warn("Could not load qualification rules.", error);
@@ -937,12 +953,14 @@ export default function QualificationsPage() {
         historicalResults,
         qualificationValidDays,
         qualificationDueSoonDays,
+        requiredComponents,
       ),
     [
       historicalResults,
       personnel,
       qualificationDueSoonDays,
       qualificationValidDays,
+      requiredComponents,
       workspace,
     ],
   );
@@ -996,8 +1014,13 @@ export default function QualificationsPage() {
   const currentCount = officerHistories.filter((history) => history.status === "Current").length;
   const dueSoonCount = officerHistories.filter((history) => history.status === "Due Soon").length;
   const attentionCount = officerHistories.filter((history) =>
-    ["Overdue", "Missing Night", "Failed", "No Record"].includes(history.status),
+    ["Overdue", "Missing Day", "Missing Night", "Failed", "No Record"].includes(history.status),
   ).length;
+  const requiredComponentsLabel = requiredComponents.length === 2
+    ? "Day and night complete"
+    : requiredComponents.length === 1
+      ? `${requiredComponents[0] === "day" ? "Day" : "Night"} complete`
+      : "No components required";
 
   const clearFilters = () => {
     setSearchText("");
@@ -1017,7 +1040,7 @@ export default function QualificationsPage() {
               Qualification History
             </h1>
             <p className="mt-1 text-[12px] text-slate-500">
-              Current status, required day and night records, and complete qualification history by officer.
+              Current status, agency-required qualification components, and complete qualification history by officer.
             </p>
           </div>
 
@@ -1030,7 +1053,7 @@ export default function QualificationsPage() {
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <SummaryMetric label="Personnel" value={officerHistories.length} detail="Active records reviewed" />
-          <SummaryMetric label="Current" value={currentCount} detail="Day and night complete" tone="green" />
+          <SummaryMetric label="Current" value={currentCount} detail={requiredComponentsLabel} tone="green" />
           <SummaryMetric label="Due Soon" value={dueSoonCount} detail="Approaching expiration" tone="amber" />
           <SummaryMetric label="Needs Action" value={attentionCount} detail="Missing, overdue, failed" tone="red" />
         </section>
@@ -1145,8 +1168,8 @@ export default function QualificationsPage() {
                     <p className="text-[11px] text-slate-600">{qualificationValidDays}-day qualification validity</p>
                   </div>
                   <div className="grid gap-3 md:grid-cols-3">
-                    <CurrentQualificationCard label="Day Qualification" icon={<Sun size={14} className="text-amber-300" />} event={selectedHistory.lastDayQualification} emptyText="Missing" />
-                    <CurrentQualificationCard label="Night Qualification" icon={<Moon size={14} className="text-blue-300" />} event={selectedHistory.lastNightQualification} emptyText="Missing" />
+                    <CurrentQualificationCard label={`Day Qualification${requiredComponents.includes("day") ? "" : " (Optional)"}`} icon={<Sun size={14} className="text-amber-300" />} event={selectedHistory.lastDayQualification} emptyText={requiredComponents.includes("day") ? "Missing" : "Not required"} />
+                    <CurrentQualificationCard label={`Night Qualification${requiredComponents.includes("night") ? "" : " (Optional)"}`} icon={<Moon size={14} className="text-blue-300" />} event={selectedHistory.lastNightQualification} emptyText={requiredComponents.includes("night") ? "Missing" : "Not required"} />
                     <CurrentQualificationCard label="Rifle Qualification" icon={<Crosshair size={14} className="text-emerald-300" />} event={selectedHistory.lastRifleQualification} emptyText="No record" />
                   </div>
                 </section>

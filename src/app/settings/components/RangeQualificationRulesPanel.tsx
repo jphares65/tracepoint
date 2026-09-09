@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import {
+  DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
+  normalizeAnalyticsDashboardConfiguration,
+  type AnalyticsDashboardConfiguration,
+} from "@/lib/tracepoint/analytics-dashboard-config";
 
 export const FAILED_QUALIFICATION_THRESHOLD_UNIT = "qualifications";
 export const FAILED_QUALIFICATION_THRESHOLD_DESCRIPTION =
@@ -41,6 +46,8 @@ type RangeQualificationRules = {
   firearm_failure_scope: "specific_firearm";
   passing_requalification_restores_authorization: boolean;
   require_supervisor_release_after_requalification: boolean;
+
+  analytics_dashboard: AnalyticsDashboardConfiguration;
 };
 
 const DEFAULT_RULES: RangeQualificationRules = {
@@ -68,6 +75,8 @@ const DEFAULT_RULES: RangeQualificationRules = {
   firearm_failure_scope: "specific_firearm",
   passing_requalification_restores_authorization: true,
   require_supervisor_release_after_requalification: false,
+
+  analytics_dashboard: DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
 };
 
 function normalizeRules(
@@ -82,6 +91,9 @@ function normalizeRules(
       typeof input?.require_rifle_familiarization === "boolean"
         ? input.require_rifle_familiarization
         : legacyFamiliarization,
+    analytics_dashboard: normalizeAnalyticsDashboardConfiguration(
+      input?.analytics_dashboard,
+    ),
   };
 }
 
@@ -279,6 +291,9 @@ export default function RangeQualificationRulesPanel({
 
         firearm_failure_count_mode: "consecutive_since_pass",
         firearm_failure_scope: "specific_firearm",
+        analytics_dashboard: normalizeAnalyticsDashboardConfiguration(
+          rules.analytics_dashboard,
+        ),
       };
 
       const { error } = await (supabase as any)
