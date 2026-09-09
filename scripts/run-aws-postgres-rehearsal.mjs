@@ -5,6 +5,7 @@ import {promisify} from 'node:util';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import pg from 'pg';
+import {loadVerifiedAwsMigrations} from './aws-migration-ledger.mjs';
 import {supabasePrerequisites} from './postgres-bootstrap-prerequisites.mjs';
 import {catalogSql,manifestSql} from './staging-management-manifest.mjs';
 let phase='target validation';
@@ -46,8 +47,8 @@ async function main(){
    try{await client.query('begin');await client.query((await readFile('supabase/migrations/'+file,'utf8')).replace(/^\uFEFF/,''));await client.query('insert into supabase_migrations.schema_migrations values($1)',[file.split('_')[0]]);await client.query('commit');}
    catch(error){await client.query('rollback');console.log(JSON.stringify({failedMigration:file,sqlState:error.code}));throw Error('Disposable migration failed');}
   }
-  phase='AWS target overlays';const overlays=(await readdir('database/aws')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(overlays.length,6);
-  for(const file of overlays)await client.query(await readFile('database/aws/'+file,'utf8'));
+  phase='AWS target overlays';const overlays=await loadVerifiedAwsMigrations();
+  for(const migration of overlays)await client.query(migration.sql);
   phase='source tenant isolation';for(const file of ['validate-local-tenant-isolation.sql','validate-local-armory-workflows.sql'])await client.query(await readFile('scripts/'+file,'utf8'));
   const catalog=(await client.query(catalogSql)).rows[0];
   const snapshot=async connection=>{const result=await connection.query(manifestSql(catalog,files.map(f=>f.split('_')[0])));const found=result.find(r=>r.rows?.[0]?.manifest)?.rows[0].manifest;assert.ok(found);assert.ok(found.relationships.every(r=>Number(r.orphan_count)===0));return found;};

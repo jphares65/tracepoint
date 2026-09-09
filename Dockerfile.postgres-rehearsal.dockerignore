@@ -4,10 +4,14 @@
 !scripts
 !scripts/run-aws-postgres-rehearsal.mjs
 !scripts/run-aws-postgres-rehearsal.test.mjs
+!scripts/aws-migration-ledger.mjs
 !scripts/postgres-bootstrap-prerequisites.mjs
 !scripts/staging-management-manifest.mjs
 !scripts/validate-local-tenant-isolation.sql
 !scripts/validate-local-armory-workflows.sql
+!database
+!database/aws
+!database/aws/*.sql
 !supabase
 !supabase/migrations
 !supabase/migrations/*.sql
