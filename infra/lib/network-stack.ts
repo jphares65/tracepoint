@@ -8,6 +8,7 @@ export interface NetworkStackProps extends cdk.StackProps {
 
 export class NetworkStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
+  public readonly databaseSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
@@ -23,6 +24,11 @@ export class NetworkStack extends cdk.Stack {
           name: "public-ingress",
           subnetType: ec2.SubnetType.PUBLIC,
         },
+        {
+          cidrMask: 27,
+          name: "private-database",
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+        },
       ],
       restrictDefaultSecurityGroup: true,
       flowLogs: {
@@ -32,10 +38,18 @@ export class NetworkStack extends cdk.Stack {
         },
       },
     });
+    this.databaseSecurityGroup = new ec2.SecurityGroup(this, "DatabaseSecurity", {
+      vpc: this.vpc,
+      description: "TracePoint PostgreSQL accepts TLS clients only from the two application subnets",
+      allowAllOutbound: false,
+    });
     for (const subnet of this.vpc.publicSubnets) {
-      cdk.Annotations.of(subnet).acknowledgeWarning(
+      this.databaseSecurityGroup.addIngressRule(ec2.Peer.ipv4(subnet.ipv4CidrBlock), ec2.Port.tcp(5432), "Application subnet PostgreSQL");
+    }
+    for (const subnet of [...this.vpc.publicSubnets, ...this.vpc.isolatedSubnets]) {
+      cdk.Annotations.of(subnet.node.defaultChild!).acknowledgeWarning(
         "CloudFormation-Validate::W3010",
-        "The two staging AZs are intentionally pinned for deterministic offline synthesis and were verified in account 559054714699.",
+        "The staging AZs are intentionally pinned for deterministic offline synthesis and were verified in account 559054714699.",
       );
     }
 

@@ -20,6 +20,7 @@ insert into public.off_duty_firearm_requests(id,department_id,officer_user_id,ma
 select public.record_off_duty_firearm_inspection('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001',current_date,'Pass','Disposable local');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
+select set_config('tracepoint.subject_id','00000000-0000-4000-8000-000000000001',true);
 insert into public.firearms(department_id,make,model,serial_number,firearm_type,caliber,condition_status,is_active,created_by) values('00000000-0000-4000-8000-000000000011','Synthetic','Test','synthetic-probe','handgun','9mm','In Service',true,'00000000-0000-4000-8000-000000000001');
 do $$ declare f uuid;begin
  select id into f from public.firearms where serial_number='synthetic-probe';

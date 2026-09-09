@@ -90,12 +90,20 @@ try {
     }
   }
 
+  // Reapply the reconciler before provider-exit overlays. This preserves the
+  // historical idempotency check without restoring Supabase-era definitions
+  // after the final AWS schema has been composed.
+  const authorityMigration = "202609050002_granular_permission_authority.sql";
+  await client.query("begin");
+  await client.query(await readFile(path.join(migrationsDir, authorityMigration), "utf8"));
+  await client.query("commit");
+
   let awsTargetOverlayCount = 0;
-  if (process.argv.includes("--aws-target")) {
+  if (process.argv.includes("--aws-target") || process.argv.includes("--aws-native-final")) {
     const overlayFiles = (await readdir(awsTargetOverlaysDir))
       .filter((file) => /^\d+_.+\.sql$/.test(file))
       .sort();
-    if (overlayFiles.length !== 2) throw new Error(`Expected two AWS target overlays, found ${overlayFiles.length}.`);
+    if (overlayFiles.length !== 4) throw new Error(`Expected four AWS target overlays, found ${overlayFiles.length}.`);
     for (const file of overlayFiles) {
       await client.query("begin");
       try {
@@ -107,12 +115,41 @@ try {
       }
     }
     awsTargetOverlayCount = overlayFiles.length;
-  }
 
-  const authorityMigration = "202609050002_granular_permission_authority.sql";
-  await client.query("begin");
-  await client.query(await readFile(path.join(migrationsDir, authorityMigration), "utf8"));
-  await client.query("commit");
+    await client.query("alter role tracepoint_runtime login password 'synthetic-runtime-test-only'");
+    const runtimeClient = new client.constructor({
+      host: "127.0.0.1",
+      port,
+      user: "tracepoint_runtime",
+      password: "synthetic-runtime-test-only",
+      database: "postgres",
+    });
+    try {
+      await runtimeClient.connect();
+      await runtimeClient.query("select count(*) from public.authentication_access_sessions");
+      await assert.rejects(
+        runtimeClient.query("select count(*) from public.profiles"),
+        (error) => error?.code === "42501",
+        "Runtime login must not inherit authenticated application-table grants",
+      );
+      await runtimeClient.query("set role authenticated");
+      await runtimeClient.query("select count(*) from public.profiles");
+      await assert.rejects(
+        runtimeClient.query("set role service_role"),
+        (error) => error?.code === "42501",
+        "Runtime login must never assume the legacy service role",
+      );
+      await runtimeClient.query("reset role");
+      await assert.rejects(
+        runtimeClient.query("create table public.runtime_escape_test(id integer)"),
+        (error) => error?.code === "42501",
+        "Runtime login must not create schema objects",
+      );
+    } finally {
+      await runtimeClient.end();
+      await client.query("alter role tracepoint_runtime nologin");
+    }
+  }
 
   const requiredTables = [
     "profiles", "departments", "department_memberships",
@@ -228,6 +265,7 @@ try {
     try {
       await client.query("set local role authenticated");
       await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
+      await client.query("select set_config('tracepoint.subject_id', $1, true)", [userId]);
       const result = await client.query(
         "select public.has_department_permission($1, $2) as allowed",
         [departmentId, permissionCode],
@@ -284,6 +322,7 @@ try {
   await client.query("begin");
   await client.query("set local role authenticated");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.administrator]);
+  await client.query("select set_config('tracepoint.subject_id', $1, true)", [users.administrator]);
   const saved = await client.query(
     "select public.set_department_role_permissions($1, $2, $3::text[]) as permissions",
     [departmentA, "audit_denied", ["manage_training"]],
@@ -295,6 +334,7 @@ try {
   await client.query("begin");
   await client.query("set local role authenticated");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.administrator]);
+  await client.query("select set_config('tracepoint.subject_id', $1, true)", [users.administrator]);
   await client.query(
     "select public.set_department_member_roles($1, $2, $3::text[])",
     [departmentA, users.administrator, ["administrator", "chief"]],
@@ -319,6 +359,7 @@ try {
   await client.query("begin");
   await client.query("set local role authenticated");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.platform]);
+  await client.query("select set_config('tracepoint.subject_id', $1, true)", [users.platform]);
   const platformSave = await client.query(
     "select public.set_department_role_permissions($1, $2, $3::text[]) as permissions",
     [departmentA, "audit_denied", ["view_audit_log"]],

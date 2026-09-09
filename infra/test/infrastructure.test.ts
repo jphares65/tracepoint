@@ -197,6 +197,18 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
   assert.match(JSON.stringify(template.toJSON()), /TRACEPOINT_FROM_EMAIL.*contact@tracepointhq\.com/);
 });
 
+test("AWS-native image builder has no Supabase build secret or endpoint", () => {
+  const { app, compute } = foundations();
+  const imageBuild = new ImageBuildStack(app, "aws-native-image-build", {
+    env, environmentName: "staging", repository: compute.repository,
+    appSecrets: compute.appSecrets, providerMode: "aws-native",
+  });
+  const serialized = JSON.stringify(Template.fromStack(imageBuild).toJSON());
+  assert.match(serialized, /TRACEPOINT_BUILD_PROVIDER_MODE/);
+  assert.match(serialized, /aws-native/);
+  assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY|supabase\.co/);
+});
+
 test("full-AWS runtime mode contains no Supabase or Brevo provider configuration", () => {
   const { app, network, compute } = foundations();
   const runtime = new RuntimeStack(app, "aws-native-runtime", {
@@ -208,6 +220,7 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
     appLogGroup: compute.appLogGroup,
     appSecrets: compute.appSecrets,
     databaseSecret: compute.appSecrets,
+    databaseSecurityGroup: network.databaseSecurityGroup,
     executionRole: compute.executionRole,
     taskRole: compute.taskRole,
     certificateArn: "arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000",

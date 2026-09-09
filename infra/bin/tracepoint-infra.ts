@@ -8,6 +8,7 @@ import { ImageBuildStack } from "../lib/image-build-stack";
 import { directStagingSynthesizer } from "../lib/staging-synthesizer";
 
 import { PrivateStorageStack } from "../lib/private-storage-stack";
+import { StagingDatabaseStack } from "../lib/staging-database-stack";
 
 const app = new cdk.App();
 
@@ -81,6 +82,7 @@ const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
   environmentName: workloadEnvironment,
   repository: compute.repository,
   appSecrets: compute.appSecrets,
+  providerMode: app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge",
 });
 imageBuild.addStackDependency(compute);
 
@@ -90,6 +92,20 @@ const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName
 }) : undefined;
 const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
 if(!['supabase','s3'].includes(storageProvider)||storageProvider==='s3'&&!storage)throw new Error('Private storage must be explicitly provisioned before activation');
+const databaseEnabled = app.node.tryGetContext("databaseEnabled") === "true";
+const database = databaseEnabled ? new StagingDatabaseStack(app, `${environmentName}-database`, {
+  ...commonProps,
+  stackName: `${environmentName}-database`,
+  environmentName: "staging",
+  vpc: network.vpc,
+  dataKey: security.dataKey,
+  securityGroup: network.databaseSecurityGroup,
+  expiresAfterUtc: app.node.tryGetContext("databaseExpiresAfterUtc"),
+}) : undefined;
+if (database) {
+  database.addStackDependency(network);
+  database.addStackDependency(security);
+}
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {
   const certificateArn = app.node.tryGetContext("certificateArn");
@@ -121,12 +137,19 @@ if (runtimeEnabled) {
     certificateArn,
     imageTag,
     storageBucketName: storageProvider === "s3" ? `tracepoint-${workloadEnvironment}-private-${account}` : undefined,
+    providerMode: app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge",
+    databaseSecret: database?.runtimeSecret,
+    databaseSecurityGroup: network.databaseSecurityGroup,
+    cognitoUserPoolId: app.node.tryGetContext("cognitoUserPoolId"),
+    cognitoClientId: app.node.tryGetContext("cognitoClientId"),
+    sesConfigurationSet: app.node.tryGetContext("sesConfigurationSet"),
     emailFromAddress: app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,
     deletionProtection: productionPreview,
   });
   if(storage && storageProvider === "s3") runtime.addStackDependency(storage);
+  if(database) runtime.addStackDependency(database);
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);
 }

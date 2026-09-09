@@ -14,6 +14,7 @@ export interface ImageBuildStackProps extends cdk.StackProps {
   repository: ecr.IRepository;
   appSecrets: secretsmanager.ISecret;
   productionControls?: boolean;
+  providerMode?: "bridge" | "aws-native";
 }
 
 export class ImageBuildStack extends cdk.Stack {
@@ -143,6 +144,20 @@ export class ImageBuildStack extends cdk.Stack {
       value: `${props.appSecrets.secretArn}:${jsonKey}::`,
     });
 
+    const providerMode = props.providerMode ?? "bridge";
+    const environmentVariables: Record<string, codebuild.BuildEnvironmentVariable> = {
+      AWS_ACCOUNT_ID: { value: this.account },
+      CONFIGURATION_ENVIRONMENT: { value: props.environmentName },
+      ECR_REPOSITORY_URI: { value: props.repository.repositoryUri },
+      TRACEPOINT_BUILD_PROVIDER_MODE: { value: providerMode },
+      NEXT_PUBLIC_SITE_URL: secretVariable("NEXT_PUBLIC_SITE_URL"),
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: secretVariable("NEXT_SERVER_ACTIONS_ENCRYPTION_KEY"),
+    };
+    if (providerMode === "bridge") {
+      environmentVariables.NEXT_PUBLIC_SUPABASE_URL = secretVariable("NEXT_PUBLIC_SUPABASE_URL");
+      environmentVariables.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = secretVariable("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+    }
+
     this.project = new codebuild.Project(this, "ImageBuildProject", {
       projectName,
       description: `Builds immutable TracePoint ${props.environmentName} images from a clean reviewed Git archive`,
@@ -160,19 +175,7 @@ export class ImageBuildStack extends cdk.Stack {
         buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
         computeType: codebuild.ComputeType.SMALL,
         privileged: true,
-        environmentVariables: {
-          AWS_ACCOUNT_ID: { value: this.account },
-          CONFIGURATION_ENVIRONMENT: { value: props.environmentName },
-          ECR_REPOSITORY_URI: { value: props.repository.repositoryUri },
-          NEXT_PUBLIC_SUPABASE_URL: secretVariable("NEXT_PUBLIC_SUPABASE_URL"),
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: secretVariable(
-            "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-          ),
-          NEXT_PUBLIC_SITE_URL: secretVariable("NEXT_PUBLIC_SITE_URL"),
-          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: secretVariable(
-            "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY",
-          ),
-        },
+        environmentVariables,
       },
       logging: {
         cloudWatch: {

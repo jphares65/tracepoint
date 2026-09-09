@@ -46,7 +46,7 @@ async function main(){
    try{await client.query('begin');await client.query((await readFile('supabase/migrations/'+file,'utf8')).replace(/^\uFEFF/,''));await client.query('insert into supabase_migrations.schema_migrations values($1)',[file.split('_')[0]]);await client.query('commit');}
    catch(error){await client.query('rollback');console.log(JSON.stringify({failedMigration:file,sqlState:error.code}));throw Error('Disposable migration failed');}
   }
-  phase='AWS target overlays';const overlays=(await readdir('database/aws')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(overlays.length,2);
+  phase='AWS target overlays';const overlays=(await readdir('database/aws')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(overlays.length,4);
   for(const file of overlays)await client.query(await readFile('database/aws/'+file,'utf8'));
   phase='source tenant isolation';for(const file of ['validate-local-tenant-isolation.sql','validate-local-armory-workflows.sql'])await client.query(await readFile('scripts/'+file,'utf8'));
   const catalog=(await client.query(catalogSql)).rows[0];

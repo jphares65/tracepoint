@@ -32,6 +32,7 @@ export interface RuntimeStackProps extends cdk.StackProps {
   productionControls?: boolean;
   providerMode?: "bridge" | "aws-native";
   databaseSecret?: secretsmanager.ISecret;
+  databaseSecurityGroup?: ec2.ISecurityGroup;
   cognitoUserPoolId?: string;
   cognitoClientId?: string;
   sesConfigurationSet?: string;
@@ -47,7 +48,7 @@ export class RuntimeStack extends cdk.Stack {
     const awsNative = providerMode === "aws-native";
     const emailFromAddress = props.emailFromAddress ?? (props.environmentName === "staging" ? "contact@tracepointhq.com" : undefined);
     if (emailFromAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromAddress)) throw new Error("Invalid email sender address");
-    if (awsNative && (!props.storageBucketName || !props.databaseSecret || !emailFromAddress ||
+    if (awsNative && (!props.storageBucketName || !props.databaseSecret || !props.databaseSecurityGroup || !emailFromAddress ||
       !/^us-east-1_[A-Za-z0-9]+$/.test(props.cognitoUserPoolId ?? "") ||
       !/^[A-Za-z0-9]{1,128}$/.test(props.cognitoClientId ?? "") ||
       !/^[A-Za-z0-9_-]{1,64}$/.test(props.sesConfigurationSet ?? ""))) {
@@ -66,16 +67,11 @@ export class RuntimeStack extends cdk.Stack {
       allowAllOutbound: false,
     });
     taskSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS providers");
-    taskSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
-      ec2.Port.udp(53),
-      "VPC DNS over UDP",
-    );
-    taskSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
-      ec2.Port.tcp(53),
-      "VPC DNS over TCP",
-    );
+    taskSecurityGroup.addEgressRule(ec2.Peer.ipv4(props.vpc.vpcCidrBlock), ec2.Port.udp(53), "VPC DNS over UDP");
+    taskSecurityGroup.addEgressRule(ec2.Peer.ipv4(props.vpc.vpcCidrBlock), ec2.Port.tcp(53), "VPC DNS over TCP");
+    if (awsNative) {
+      taskSecurityGroup.addEgressRule(props.databaseSecurityGroup!, ec2.Port.tcp(5432), "Private PostgreSQL");
+    }
 
     const providerEnvironment: Record<string, string> = awsNative ? {
       TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native",
@@ -111,7 +107,16 @@ export class RuntimeStack extends cdk.Stack {
       SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "SUPABASE_SECRET_KEY"),
       BREVO_API_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "BREVO_API_KEY"),
     };
-    if (awsNative) props.databaseSecret!.grantRead(props.executionRole);
+    if (awsNative) {
+      // Keep the secret permission identity-based. Secret.grantRead() also mutates
+      // the customer-managed KMS key policy; because that key lives in the
+      // security stack and this role lives in the compute stack, the mutation
+      // creates a security <-> compute CloudFormation dependency cycle.
+      props.executionRole.addToPrincipalPolicy(new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+        resources: [props.databaseSecret!.secretArn],
+      }));
+    }
 
     const service = new ecsPatterns.ApplicationLoadBalancedFargateService(
       this,
