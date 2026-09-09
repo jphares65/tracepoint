@@ -1,0 +1,44 @@
+{
+  "date": "2026-09-08",
+  "baseline": {
+    "historicalHybridReadinessPercent": 79.0,
+    "correctedFullAwsReadinessPercent": 42.0,
+    "remainingPoints": 58.0
+  },
+  "classificationDefinitions": {
+    "A": "Executable without a production write, customer data, public DNS, paid service, destructive action, or new owner decision",
+    "B": "Requires one-time owner authorization",
+    "C": "Cannot close until a defined elapsed-time or predecessor observation window completes",
+    "D": "Requires a paid service or an approved increase to an existing cost ceiling"
+  },
+  "gates": [
+    {"id":1,"gate":"AWS-native image deployed to ECS staging and healthy with no Supabase/Brevo runtime configuration","weight":2.0,"category":"D","status":"blocked","dependency":"Final AWS staging database and cost authority"},
+    {"id":2,"gate":"Private managed AWS PostgreSQL staging target, schema, roles, verified TLS, secret rotation and automated backups","weight":6.0,"category":"D","status":"blocked","dependency":"Paid RDS/Aurora target exceeds current 75 USD staging ceiling"},
+    {"id":3,"gate":"All server read repositories converted from PostgREST/Supabase to parameterized PostgreSQL","weight":3.0,"category":"A","status":"in_progress","dependency":"Engineering only; qualification-history slice and pool foundation complete"},
+    {"id":4,"gate":"All server mutations and RPC workflows converted to atomic PostgreSQL transactions","weight":4.0,"category":"A","status":"not_complete","dependency":"Engineering only"},
+    {"id":5,"gate":"AWS PostgreSQL data parity, load, tenant-negative and timed backup/restore acceptance","weight":2.0,"category":"D","status":"blocked","dependency":"Gate 2 target"},
+    {"id":6,"gate":"Cognito login, callback, refresh, logout and durable session composition activated in the application","weight":3.0,"category":"A","status":"in_progress","dependency":"Engineering only; disabled protocol and persistence foundations are reusable"},
+    {"id":7,"gate":"Synthetic Cognito lifecycle, tenant/RLS and revocation parity on the AWS-native staging runtime","weight":2.0,"category":"D","status":"blocked","dependency":"Gates 1 and 2"},
+    {"id":8,"gate":"Production-user Cognito migration, password activation, MFA and communication policy executed","weight":3.0,"category":"B","status":"authorization_required","dependency":"Owner approval for user-facing production identity changes"},
+    {"id":9,"gate":"Browser data calls moved behind authenticated server APIs and auth.uid()/SECURITY DEFINER behavior replaced safely","weight":5.0,"category":"A","status":"not_complete","dependency":"Engineering only"},
+    {"id":10,"gate":"Service-role bypasses, Supabase key fallbacks and Supabase packages removed from final runtime source","weight":3.0,"category":"A","status":"in_progress","dependency":"Engineering only; dedicated importer/session/database secret composition is complete"},
+    {"id":11,"gate":"Static and runtime zero-Supabase dependency, credential and egress gate passes","weight":2.0,"category":"A","status":"in_progress","dependency":"Gates 3, 4, 6, 9 and 10; fail-closed AWS-native startup tuple is complete"},
+    {"id":12,"gate":"Synthetic S3 object, metadata/reference, checksum, signed-access, orphan and version-restore parity","weight":1.0,"category":"A","status":"in_progress","dependency":"Engineering only; private versioned S3 provider and prior synthetic copy/restore are reusable"},
+    {"id":13,"gate":"Production Supabase Storage objects copied to S3 and reconciled before authority switches","weight":2.0,"category":"B","status":"authorization_required","dependency":"Owner approval for customer object movement"},
+    {"id":14,"gate":"Production RDS/Aurora topology, credentials, networking and automated backup/PITR deployed","weight":2.0,"category":"B","status":"authorization_required","dependency":"Owner architecture, cost, RPO and production-write approval"},
+    {"id":15,"gate":"Production database rehearsal and final customer-data copy complete with manifests and reconciliation","weight":3.0,"category":"B","status":"authorization_required","dependency":"Owner approval for production data movement"},
+    {"id":16,"gate":"Production write-freeze/CDC choice, application switch, acceptance and rollback thresholds executed","weight":3.0,"category":"B","status":"authorization_required","dependency":"Owner cutover-window and production-change approval"},
+    {"id":17,"gate":"Supabase rollback observation window completes, then credentials, egress, projects and recovery dependency are removed","weight":5.0,"category":"C","status":"time_blocked","dependency":"Successful production cutover plus owner-approved observation duration"},
+    {"id":18,"gate":"SES production delivery, feedback suppression worker and a human operational alert endpoint are active","weight":2.0,"category":"C","status":"time_blocked","dependency":"No suitable existing unsuppressed operational mailbox is evidenced; owner must identify one or wait for the current suppression window before separately authorizing email changes"},
+    {"id":19,"gate":"AWS database/S3 recovery objectives, alarms and timed disaster-recovery proof satisfy approved RPO/RTO","weight":2.0,"category":"D","status":"blocked","dependency":"Paid production data services and owner-selected RPO/RTO/retention"},
+    {"id":20,"gate":"GovCloud portability configuration, partition-safe IAM/ARNs, mirrored artifacts and GovCloud-compatible synth pass","weight":2.0,"category":"A","status":"not_complete","dependency":"Engineering only for commercial-partition portability proof; live GovCloud deployment requires an account"},
+    {"id":21,"gate":"Public DNS/traffic cutover to AWS certificates and ALB completes with rollback window","weight":1.0,"category":"B","status":"authorization_required","dependency":"Owner production DNS and traffic approval"}
+  ],
+  "totals": {
+    "A": 23.0,
+    "B": 14.0,
+    "C": 7.0,
+    "D": 14.0,
+    "all": 58.0
+  }
+}

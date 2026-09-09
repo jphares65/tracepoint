@@ -13,6 +13,31 @@ The historical 79.00% is therefore **hybrid AWS-hosting readiness**. The
 corrected target-state score is **42/100** under
 `aws-full-migration-rebaseline-20260908.json`.
 
+The exact 21-gate, 58-point remainder and A/B/C/D classifications are in
+`aws-full-migration-remaining-gates-20260908.json`. Work completed after the
+rebaseline adds durable foundations but does not close a binary target-state
+gate, so the verified score remains 42/100 rather than counting partial work.
+
+## Safe checkpoint completed on 2026-09-08
+
+- The verified `bb921ca` lineage was integrated with the latest `origin/main`
+  without touching the dirty primary worktree or unrelated Fleet changes.
+- Staging runs the image built from commit
+  `9a124f90b1f329badcf166b559052931c5d5dc67`, digest
+  `sha256:0c26aefea0a36251901343580cd81a9ceaf96ff6adc87f7f2239158ff7c726f5`,
+  on ECS task revision 25; the ECR scan has zero findings.
+- Official PostgreSQL 18.6 client tools applied all 75 migrations plus the
+  provider-neutral AWS authorization overlay and completed a synthetic
+  dump/restore in 3172 ms.
+- The AWS-native composition injects PostgreSQL, Cognito, SES and S3 settings
+  with separate secrets and contains no Supabase/Brevo configuration.
+- Runtime startup now accepts only the exact bridge or AWS-native provider
+  tuple. AWS-native startup rejects every Supabase and Brevo credential name.
+- SES transport and suppression persistence are wired behind the explicit SES
+  selector; no email was sent and no provider was switched.
+- AWS staging release validation now uses `main` and no longer requires Vercel
+  Preview.
+
 ## Assumption chronology
 
 - `a836422` first awarded readiness credit to working Supabase/Brevo bridge

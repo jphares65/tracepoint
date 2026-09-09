@@ -33,7 +33,16 @@
     "stagingImageDigest": "sha256:0c26aefea0a36251901343580cd81a9ceaf96ff6adc87f7f2239158ff7c726f5",
     "stagingTaskRevision": 25,
     "imageScanFindings": 0,
-    "logicalRestoreMilliseconds": 3178,
-    "logicalRestoreMigrationCount": 75
+    "logicalRestoreMilliseconds": 3172,
+    "logicalRestoreMigrationCount": 75,
+    "awsAuthorizationOverlayCount": 1,
+    "fullAwsFoundationCommits": [
+      "6fde146",
+      "5b557e6",
+      "d11463a",
+      "d1c0a48",
+      "e14139e",
+      "5f44e15"
+    ]
   }
 }
