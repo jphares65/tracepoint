@@ -103,7 +103,7 @@ try {
     const overlayFiles = (await readdir(awsTargetOverlaysDir))
       .filter((file) => /^\d+_.+\.sql$/.test(file))
       .sort();
-    if (overlayFiles.length !== 5) throw new Error(`Expected five AWS target overlays, found ${overlayFiles.length}.`);
+    if (overlayFiles.length !== 6) throw new Error(`Expected six AWS target overlays, found ${overlayFiles.length}.`);
     for (const file of overlayFiles) {
       await client.query("begin");
       try {

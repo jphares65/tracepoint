@@ -19,8 +19,13 @@ test('PKCE challenge, nonce and hardened cookie bind the fixed staging callback'
  assert.equal(url.searchParams.get('redirect_uri'),'https://staging.tracepointhq.com/api/auth/cognito/callback');assert.equal(url.searchParams.get('code_challenge_method'),'S256');
  assert.equal(url.searchParams.get('code_challenge'),createHash('sha256').update(tx.verifier).digest('base64url'));assert.equal(url.searchParams.get('nonce'),tx.nonce);assert.equal(begin.url.includes(tx.verifier),false);
  assert.deepEqual({...begin.cookie,value:'hidden'},{name:'__Host-tracepoint-cognito-flow',value:'hidden',httpOnly:true,secure:true,sameSite:'lax',path:'/',maxAge:300});
- let verified=false;assert.deepEqual(await f.api.complete(callback,async(tokens,nonce)=>{assert.equal(nonce,tx.nonce);assert.equal(tokens.refreshToken,'synthetic-refresh');verified=true;return {userId}}),{userId});assert.equal(verified,true);
+ let verified=false;assert.deepEqual(await f.api.complete(callback,async(tokens,nonce)=>{assert.equal(nonce,tx.nonce);assert.equal(tokens.refreshToken,'synthetic-refresh');verified=true;return {userId}}),{userId,returnTo:'/'});assert.equal(verified,true);
  await assert.rejects(f.api.complete(callback,async()=>({userId})),/new sign-in/);assert.equal(f.calls(),1);
+});
+test('sealed transaction preserves only a local post-authentication path',async()=>{
+ const f=fixture();const begin=await f.api.begin('/settings?tab=users'),state=new URL(begin.url).searchParams.get('state')!;
+ assert.equal((await f.api.complete({handle:begin.cookie.value,state,code:'synthetic'},async()=>({userId}))).returnTo,'/settings?tab=users');
+ for(const value of ['https://evil.invalid','//evil.invalid','/safe\\evil','/safe\nheader'])await assert.rejects(f.api.begin(value),/path/);
 });
 test('state mismatch, expired transaction and concurrent replay cannot exchange twice',async()=>{
  for(const mode of ['mismatch','expiry','replay']){const f=fixture();const {callback}=await input(f);if(mode==='mismatch')callback.state='A'.repeat(43);if(mode==='expiry')f.advance();

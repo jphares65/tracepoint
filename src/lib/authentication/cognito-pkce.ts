@@ -3,7 +3,7 @@ import {CognitoJwtVerifier} from 'aws-jwt-verify';
 import type {JwksCache} from 'aws-jwt-verify/jwk';
 import type {AuthenticationProvider} from './provider-core';
 import type {CognitoVerificationConfig} from './cognito-verifier';
-export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string};
+export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string;returnTo:string};
 export interface AuthorizationTransactionStore {
  // Server-only encrypted storage. take must atomically delete/consume even if
  // token exchange fails; TTL cleanup alone is not replay protection.
@@ -22,9 +22,10 @@ export function createCognitoPkce(config:CognitoVerificationConfig,store:Authori
  const callback=(config.environment==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback';
  const random=()=>randomBytes(32).toString('base64url');
  return {
-  async begin(){
+  async begin(returnTo="/"){
+   if(!/^\/(?!\/)[^\\\x00-\x1f\x7f]*$/.test(returnTo)||returnTo.length>2048)throw Error('Invalid post-authentication path.');
    const handle=random(),state=random(),verifier=random(),nonce=random();
-   try{await store.put(handle,{state,verifier,nonce,expiresAt:now()+300000,clientId:config.clientId,callback});}catch{throw Error('Cognito authorization could not be started.');}
+   try{await store.put(handle,{state,verifier,nonce,expiresAt:now()+300000,clientId:config.clientId,callback,returnTo});}catch{throw Error('Cognito authorization could not be started.');}
    const url=new URL(domain+'/oauth2/authorize');url.search=new URLSearchParams({response_type:'code',client_id:config.clientId,redirect_uri:callback,scope:'openid email',state,nonce,code_challenge_method:'S256',code_challenge:createHash('sha256').update(verifier).digest('base64url')}).toString();
    // The handle must be installed only as a Secure, HttpOnly, SameSite=Lax,
    // Path=/ cookie with this __Host- name; never expose the verifier to a browser.
@@ -48,7 +49,7 @@ export function createCognitoPkce(config:CognitoVerificationConfig,store:Authori
     // and durable session policy. Tokens are never returned by this boundary.
     const identity=await verifyTokens({accessToken:value.access_token,idToken:value.id_token,refreshToken:value.refresh_token,expiresIn:value.expires_in},transaction.nonce);
     if(!identity||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.userId))throw Error();
-    return {userId:identity.userId};
+    return {userId:identity.userId,returnTo:transaction.returnTo};
    }catch{throw Error('Cognito authorization could not be completed. Start a new sign-in.');}
   }
  };
