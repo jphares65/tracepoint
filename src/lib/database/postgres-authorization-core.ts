@@ -31,9 +31,6 @@ export async function withPostgresAuthorization<T>(
     await client.query("begin");
     await client.query("set local role authenticated");
     await client.query("select set_config('tracepoint.subject_id', $1, true)", [context.subjectId]);
-    // Retain the legacy claim only while existing policies are migrated from
-    // auth.uid() to tracepoint_auth.subject_id().
-    await client.query("select set_config('request.jwt.claim.sub', $1, true)", [context.subjectId]);
     await client.query("select set_config('tracepoint.department_id', $1, true)", [context.departmentId]);
     const result = await operation(client);
     await client.query("commit");

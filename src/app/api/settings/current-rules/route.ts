@@ -17,11 +17,11 @@ export async function GET() {
     );
   }
 
-  const { admin, departmentId } = access.context;
+  const { admin, departmentId, userId } = access.context;
 
   try {
 
-    const rules = await createCurrentRulesRepository(admin, departmentId)
+    const rules = await createCurrentRulesRepository(admin, departmentId, userId)
       .getCurrentRules({ departmentId });
 
     return NextResponse.json({

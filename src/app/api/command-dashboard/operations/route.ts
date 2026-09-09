@@ -43,9 +43,9 @@ export async function GET() {
   }
 
   const [[trainingResult, fleetResult], rulesRow] = await Promise.all([
-    createOperationsReadRepository(context.admin, context.departmentId)
+    createOperationsReadRepository(context.admin, context.departmentId, context.userId)
       .getCommandDashboard(context.departmentId),
-    createCurrentRulesRepository(context.admin, context.departmentId)
+    createCurrentRulesRepository(context.admin, context.departmentId, context.userId)
       .getCurrentRules({ departmentId: context.departmentId }),
   ]);
 

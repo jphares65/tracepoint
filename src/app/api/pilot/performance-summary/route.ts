@@ -546,7 +546,7 @@ export async function GET() {
     return permissionDeniedResponse("Analytics read or agency-training management permission is required to view department performance data.");
   }
 
-  const { admin, departmentId } =
+  const { admin, departmentId, userId } =
     resolved.context;
 
   try {
@@ -554,7 +554,7 @@ export async function GET() {
     const [inputs, qualificationWorkspace, qualificationRuleRow] = await Promise.all([
       repository.getPerformanceInputs(departmentId),
       repository.getWorkspace(departmentId),
-      createCurrentRulesRepository(admin, departmentId)
+      createCurrentRulesRepository(admin, departmentId, userId)
         .getCurrentRules({ departmentId }),
     ]);
     const qualificationRules = mapCurrentRules(qualificationRuleRow);

@@ -29,7 +29,6 @@ test("sets transaction-local identity and tenant context before application SQL"
     { text: "begin", values: undefined },
     { text: "set local role authenticated", values: undefined },
     { text: "select set_config('tracepoint.subject_id', $1, true)", values: [context.subjectId] },
-    { text: "select set_config('request.jwt.claim.sub', $1, true)", values: [context.subjectId] },
     { text: "select set_config('tracepoint.department_id', $1, true)", values: [context.departmentId] },
     { text: "select synthetic", values: [context.departmentId] },
     { text: "commit", values: undefined },

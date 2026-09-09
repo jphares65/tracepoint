@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION } from "../tracepoint/analytics-dashboard-config.ts";
-import { createCurrentRulesRepository, CURRENT_RULES_FIELDS, CurrentRulesAuthorizationError, CurrentRulesRepositoryConfigurationError, CurrentRulesRepositoryError, mapCurrentRules, SupabaseCurrentRulesRepository, type CurrentRulesRow, type CurrentRulesSupabaseClient } from "./current-rules-repository-core.ts";
+import { createCurrentRulesRepositoryForProvider, CURRENT_RULES_FIELDS, CurrentRulesAuthorizationError, CurrentRulesRepositoryConfigurationError, CurrentRulesRepositoryError, mapCurrentRules, PostgresCurrentRulesRepository, SupabaseCurrentRulesRepository, type CurrentRulesRow, type CurrentRulesSupabaseClient } from "./current-rules-repository-core.ts";
 
 function client(result: { data: CurrentRulesRow | null; error: { message: string } | null }, calls: string[]): CurrentRulesSupabaseClient { return { from(table) { calls.push(`from:${table}`); return { select(fields) { calls.push(`select:${fields}`); return { eq(column, value) { calls.push(`eq:${column}:${value}`); return { maybeSingle() { calls.push("maybeSingle"); return Promise.resolve(result); } }; } }; } }; } }; }
 
@@ -52,4 +52,14 @@ test("maps agency handgun component requirements from the existing range rules c
   assert.deepEqual(mapped.required_handgun_qualification_components, ["day"]);
 });
 test("rejects missing and cross-department context before querying", async () => { const calls: string[] = []; assert.throws(() => new SupabaseCurrentRulesRepository(client({ data: null, error: null }, calls), ""), CurrentRulesAuthorizationError); const repository = new SupabaseCurrentRulesRepository(client({ data: null, error: null }, calls), "department-a"); await assert.rejects(repository.getCurrentRules({ departmentId: "department-b" }), CurrentRulesAuthorizationError); assert.deepEqual(calls, []); });
-test("maps provider failure and rejects unsupported providers", async () => { const repository = new SupabaseCurrentRulesRepository(client({ data: null, error: { message: "synthetic internal detail" } }, []), "department-a"); await assert.rejects(repository.getCurrentRules({ departmentId: "department-a" }), (error) => error instanceof CurrentRulesRepositoryError && !error.message.includes("internal")); assert.throws(() => createCurrentRulesRepository(client({ data: null, error: null }, []), "department-a", { TRACEPOINT_DATA_PROVIDER: "aurora" }), CurrentRulesRepositoryConfigurationError); });
+test("maps provider failure and rejects unsupported providers", async () => { const repository = new SupabaseCurrentRulesRepository(client({ data: null, error: { message: "synthetic internal detail" } }, []), "department-a"); await assert.rejects(repository.getCurrentRules({ departmentId: "department-a" }), (error) => error instanceof CurrentRulesRepositoryError && !error.message.includes("internal")); assert.throws(() => createCurrentRulesRepositoryForProvider(client({ data: null, error: null }, []), "department-a", { TRACEPOINT_DATA_PROVIDER: "aurora" }), CurrentRulesRepositoryConfigurationError); });
+
+test("PostgreSQL current rules uses tenant-bound parameterized authorization",async()=>{
+ const subjectId="20000000-0000-4000-8000-000000000001",departmentId="10000000-0000-4000-8000-000000000001",calls:Array<{text:string;values?:readonly unknown[]}>=[];
+ const client={async query(text:string,values?:readonly unknown[]){calls.push({text,values});return text.includes("from public.department_rules")?{rows:[{qualification_valid_days:400}]}:{rows:[]};},release(){}};
+ const repository=new PostgresCurrentRulesRepository({async connect(){return client;}},departmentId,subjectId);
+ assert.deepEqual(await repository.getCurrentRules({departmentId}),{qualification_valid_days:400});
+ assert.ok(calls.some(call=>call.text.includes("from public.department_rules")&&call.values?.[0]===departmentId));
+ assert.equal(calls.at(-1)?.text,"commit");
+ await assert.rejects(repository.getCurrentRules({departmentId:"30000000-0000-4000-8000-000000000001"}),CurrentRulesAuthorizationError);
+});

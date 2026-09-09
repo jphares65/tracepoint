@@ -1,5 +1,6 @@
 import { normalizeAnalyticsDashboardConfiguration } from "../tracepoint/analytics-dashboard-config.ts";
 import { requiredHandgunQualificationComponents } from "../tracepoint/qualification-readiness.ts";
+import { withPostgresAuthorization, type PostgresAuthorizationPool } from "../database/postgres-authorization-core.ts";
 
 export const CURRENT_RULES_FIELDS = "spring_cycle_start,spring_cycle_end,fall_cycle_start,fall_cycle_end,qualification_valid_days,qualification_due_soon_days,inspection_interval_days,battery_check_interval_days,off_duty_renewal_days,range_qualification_rules";
 
@@ -16,6 +17,16 @@ export class SupabaseCurrentRulesRepository implements CurrentRulesRepository {
   constructor(client: CurrentRulesSupabaseClient, authorizedDepartmentId: string) { if (!authorizedDepartmentId) throw new CurrentRulesAuthorizationError(); this.client = client; this.authorizedDepartmentId = authorizedDepartmentId; }
   async getCurrentRules(input: { departmentId: string }) { if (!input.departmentId || input.departmentId !== this.authorizedDepartmentId) throw new CurrentRulesAuthorizationError(); const result = await this.client.from("department_rules").select(CURRENT_RULES_FIELDS).eq("department_id", input.departmentId).maybeSingle(); if (result.error) throw new CurrentRulesRepositoryError(); return result.data; }
 }
+export class PostgresCurrentRulesRepository implements CurrentRulesRepository {
+  constructor(private readonly pool:PostgresAuthorizationPool,private readonly authorizedDepartmentId:string,private readonly subjectId:string){if(!authorizedDepartmentId||!subjectId)throw new CurrentRulesAuthorizationError();}
+  async getCurrentRules(input:{departmentId:string}){
+    if(!input.departmentId||input.departmentId!==this.authorizedDepartmentId)throw new CurrentRulesAuthorizationError();
+    try{return await withPostgresAuthorization(this.pool,{subjectId:this.subjectId,departmentId:input.departmentId},async client=>{
+      const result=await client.query(`select ${CURRENT_RULES_FIELDS} from public.department_rules where department_id=$1 limit 1`,[input.departmentId]) as {rows:CurrentRulesRow[]};
+      return result.rows[0]??null;
+    });}catch{throw new CurrentRulesRepositoryError();}
+  }
+}
 export function mapCurrentRules(row: CurrentRulesRow | null) {
   const rangeRules = row?.range_qualification_rules;
   const analyticsDashboard =
@@ -25,4 +36,12 @@ export function mapCurrentRules(row: CurrentRulesRow | null) {
 
   return { spring_cycle_start: row?.spring_cycle_start ?? "04-01", spring_cycle_end: row?.spring_cycle_end ?? "06-30", fall_cycle_start: row?.fall_cycle_start ?? "09-01", fall_cycle_end: row?.fall_cycle_end ?? "11-30", qualification_valid_days: Number(row?.qualification_valid_days) || 365, qualification_due_soon_days: row?.qualification_due_soon_days == null ? 30 : Number(row.qualification_due_soon_days), inspection_interval_days: Number(row?.inspection_interval_days) || 180, battery_check_interval_days: Number(row?.battery_check_interval_days) || 180, off_duty_renewal_days: Number(row?.off_duty_renewal_days) || 365, required_handgun_qualification_components: requiredHandgunQualificationComponents(rangeRules), analytics_dashboard: normalizeAnalyticsDashboardConfiguration(analyticsDashboard) };
 }
-export function createCurrentRulesRepository(client: CurrentRulesSupabaseClient, departmentId: string, environment?: { TRACEPOINT_DATA_PROVIDER?: string }) { const provider = (environment ? environment.TRACEPOINT_DATA_PROVIDER : process.env.TRACEPOINT_DATA_PROVIDER)?.trim().toLowerCase() || "supabase"; if (provider !== "supabase") throw new CurrentRulesRepositoryConfigurationError(provider); return new SupabaseCurrentRulesRepository(client, departmentId); }
+export function createCurrentRulesRepositoryForProvider(client:CurrentRulesSupabaseClient|null,departmentId:string,environment:{TRACEPOINT_DATA_PROVIDER?:string;subjectId?:string;postgresPool?:PostgresAuthorizationPool}={}){
+ const provider=(environment.TRACEPOINT_DATA_PROVIDER??process.env.TRACEPOINT_DATA_PROVIDER)?.trim().toLowerCase()||"supabase";
+ if(provider==="postgres"){
+  if(!environment.postgresPool||!environment.subjectId)throw new CurrentRulesRepositoryConfigurationError(provider);
+  return new PostgresCurrentRulesRepository(environment.postgresPool,departmentId,environment.subjectId);
+ }
+ if(provider!=="supabase"||!client)throw new CurrentRulesRepositoryConfigurationError(provider);
+ return new SupabaseCurrentRulesRepository(client,departmentId);
+}
