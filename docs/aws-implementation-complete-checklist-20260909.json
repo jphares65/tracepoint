@@ -1,0 +1,26 @@
+{
+  "target": "full AWS implementation complete; comprehensive staging validation and production cutover follow separately",
+  "deadline": "2026-09-11",
+  "updatedAt": "2026-09-09T15:15:00Z",
+  "items": [
+    {"component":"database target IaC","status":"implemented","evidence":["infra/lib/staging-database-stack.ts","infra/lib/network-stack.ts"]},
+    {"component":"final AWS schema bootstrap and runtime role","status":"implemented","evidence":["database/aws/003_runtime_role_and_auth_state.sql","database/aws/004_remove_supabase_authorization_runtime.sql","scripts/bootstrap-aws-postgres-target.mjs"]},
+    {"component":"RDS CA-verified TLS","status":"implemented","evidence":["Dockerfile","src/lib/database/postgres-pool.ts"]},
+    {"component":"provider-free image composition","status":"implemented","evidence":["infra/lib/image-build-stack.ts","buildspec.staging-image.yml","buildspec.production-image.yml"]},
+    {"component":"Cognito durable transport","status":"implemented","evidence":["src/lib/authentication/cognito-runtime-transport.ts","src/app/api/auth/cognito"]},
+    {"component":"provider-neutral request session and proxy","status":"implemented","evidence":["src/lib/authentication/request-session.ts","src/lib/authentication/request-proxy.ts"]},
+    {"component":"PostgreSQL access and department selection","status":"implemented","evidence":["src/lib/tracepoint/server-access-postgres.ts","src/app/api/active-department/route.ts"]},
+    {"component":"primary login refresh logout composition","status":"implemented","evidence":["src/app/login","src/app/auth/signout/route.ts","src/app/api/auth/session/refresh/route.ts"]},
+    {"component":"Cognito activation recovery user administration and MFA-ready lifecycle","status":"remaining"},
+    {"component":"PostgreSQL repositories and direct mutation/RPC conversion across all modules","status":"remaining"},
+    {"component":"browser Supabase removal through authenticated APIs","status":"remaining"},
+    {"component":"S3 provider and metadata parity","status":"partial","evidence":["src/lib/storage/object-store.ts","src/lib/storage/s3-object-store-core.ts"]},
+    {"component":"SES provider outbox and feedback parity","status":"partial","evidence":["src/lib/email/provider.ts","src/lib/email/ses-managed-provider.ts"]},
+    {"component":"full staging and production AWS assembly","status":"remaining"},
+    {"component":"database data mover and reconciler","status":"remaining"},
+    {"component":"Cognito identity migration tool","status":"remaining"},
+    {"component":"rollback manifest and executor","status":"remaining"},
+    {"component":"legacy-provider decommission eligibility and prepared steps","status":"remaining"},
+    {"component":"zero forbidden provider source/config/container assertion","status":"remaining"}
+  ]
+}

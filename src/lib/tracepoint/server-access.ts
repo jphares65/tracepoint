@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { getServerAuthenticatedUser } from "@/lib/authentication/server-provider";
+import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { resolvePostgresAccess } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
@@ -122,6 +124,18 @@ function uniqueStrings(values: unknown[]) {
 }
 
 export async function resolveServerAccess(): Promise<ServerAccessResult> {
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    try {
+      const principal = await resolveAuthenticatedPrincipal();
+      if (!principal) return { ok: false, status: 401, error: "Authentication is required." };
+      const cookieStore = await cookies();
+      const selected = clean(cookieStore.get("tracepoint_department_id")?.value);
+      const support = clean(cookieStore.get("tracepoint_support_department_id")?.value);
+      return await resolvePostgresAccess(principal, selected, support) as ServerAccessResult;
+    } catch {
+      return { ok: false, status: 500, error: "PostgreSQL access verification failed." };
+    }
+  }
   const server = await createServerClient();
   const user = await getServerAuthenticatedUser(server);
 

@@ -1,7 +1,8 @@
 ﻿import Image from "next/image";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { runtimeAuthenticationProvider } from "@/lib/authentication/request-session-core";
 
 import LoginForm from "./LoginForm";
 
@@ -26,13 +27,11 @@ export default async function LoginPage({
   const params = await searchParams;
   const nextPath = safeNextPath(params.next);
 
-  const supabase = await createClient();
-  const { data: claimsData } = await supabase.auth.getClaims();
-  const claims = claimsData?.claims;
-
-  if (claims?.sub) {
+  const principal = await resolveAuthenticatedPrincipal();
+  if (principal) {
     redirect(nextPath);
   }
+  const providerMode = runtimeAuthenticationProvider(process.env) === "cognito" ? "aws-native" : "bridge";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
@@ -113,7 +112,7 @@ export default async function LoginPage({
               </div>
             ) : null}
 
-            <LoginForm nextPath={nextPath} />
+            <LoginForm nextPath={nextPath} providerMode={providerMode} />
           </div>
 
           <p className="mt-5 text-center text-xs leading-5 text-slate-600">
