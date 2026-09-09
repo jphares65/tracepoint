@@ -1,0 +1,9 @@
+{
+  "environment": "staging",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "action": "publish-and-deploy",
+  "reviewedCommit": "5930b5325d2f62786ac3545c165d660cdadf3692",
+  "rollbackPriorTaskArn": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:18",
+  "reason": "Publish reconciled hotfix with saved range-evidence protection, explicit API recovery validation, and mandatory Brevo delivery; restore via revision 18"
+}

@@ -1,0 +1,40 @@
+{
+  "basis": "Offline synth baseline 6b0e302 vs revised source, same certificate placeholder and image tag. Not a live AWS drift/diff check.",
+  "stacks": [
+    {
+      "stack": "network",
+      "added": [],
+      "removed": [],
+      "changed": []
+    },
+    {
+      "stack": "security",
+      "added": [],
+      "removed": [],
+      "changed": []
+    },
+    {
+      "stack": "compute",
+      "added": [],
+      "removed": [],
+      "changed": []
+    },
+    {
+      "stack": "image-build",
+      "added": [],
+      "removed": [],
+      "changed": [
+        "ImageBuildProject74D885BB"
+      ]
+    },
+    {
+      "stack": "runtime",
+      "added": [
+        "Application5xxAlarmD4014E4E",
+        "MemoryAlarm2E786DB4"
+      ],
+      "removed": [],
+      "changed": []
+    }
+  ]
+}

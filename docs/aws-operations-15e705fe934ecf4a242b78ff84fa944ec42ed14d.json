@@ -1,0 +1,305 @@
+{
+  "commit": "15e705fe934ecf4a242b78ff84fa944ec42ed14d",
+  "workflowFound": true,
+  "run": 34071010058,
+  "attempt": 1,
+  "status": "completed",
+  "conclusion": "failure",
+  "url": "https://github.com/jphares65/tracepoint/actions/runs/34071010058",
+  "preview": "success",
+  "checkedAtUTC": "2026-09-07T01:01:54.763Z",
+  "jobs": [
+    {
+      "id": 101588221456,
+      "name": "evidence",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Bind evidence request to reviewed source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate operations safety contract",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Inspect production account readiness without mutation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect sanitized live runtime evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Verify Brevo delivery prerequisites without sending",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read actual budget and optional cost detail",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "execution": [
+    {
+      "job": "evidence",
+      "testCounts": [
+        2
+      ],
+      "fixtures": [],
+      "acceptanceFailures": [],
+      "recoveryFailures": [],
+      "deliveries": [],
+      "brevoPrerequisites": [
+        {
+          "status": "verified",
+          "taskRevision": 21,
+          "sender": "verified",
+          "recipient": "verified Brevo account owner"
+        }
+      ],
+      "productionAccountReadiness": {
+        "checkedFromAccount": "559054714699",
+        "checkedRegion": "us-east-1",
+        "organizationMetadataVisible": false,
+        "accountInventoryAuthorized": false,
+        "dedicatedProductionAccountExists": null,
+        "candidateCount": null,
+        "productionAccount": null,
+        "guardrailInspectionAuthorized": false,
+        "attachedScpCount": null,
+        "managementAccountUsedAsRuntime": false,
+        "mutationsPerformed": false
+      },
+      "failureMarkers": {
+        "acceptanceHarness": false,
+        "brevo": false,
+        "nodeGate": false,
+        "runtimeEvidence": false
+      },
+      "structuralGates": [],
+      "resourceDiff": [],
+      "operations": [
+        {
+          "account": "559054714699",
+          "region": "us-east-1",
+          "kind": "runtime",
+          "imageTag": "840671929044a02c7845800c1f78150687fc3f28",
+          "checkedAt": "2026-09-07T00:49:40.254Z",
+          "stackStatus": "UPDATE_COMPLETE",
+          "expectedDigest": "sha256:8fca58202d71cccbf5c9e482b0dbd77a6b535af3c2f035881c6c3d87857d016a",
+          "runningDigest": "sha256:8fca58202d71cccbf5c9e482b0dbd77a6b535af3c2f035881c6c3d87857d016a",
+          "identityVerified": true,
+          "imageMatches": true,
+          "passed": false,
+          "ecs": {
+            "desired": 1,
+            "running": 1,
+            "pending": 0,
+            "revision": 21,
+            "completed": true
+          },
+          "targets": [
+            "healthy"
+          ],
+          "alarms": [
+            {
+              "name": "tracepoint-staging-alb-5xx-rate",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-application-5xx",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-memory",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-request-flood",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-unhealthy-target",
+              "state": "OK"
+            },
+            {
+              "name": "tracepoint-staging-runtime-alert",
+              "state": "OK"
+            }
+          ],
+          "public": [
+            {
+              "route": "/api/health",
+              "status": 200,
+              "passed": true
+            },
+            {
+              "route": "/login",
+              "status": 200,
+              "passed": true
+            },
+            {
+              "route": "/auth/confirm",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/auth/callback",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/equipment",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/range-days",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/firearms",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/off-duty-firearms",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/qualifications",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/training",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/fleet-management",
+              "status": 307,
+              "passed": true
+            },
+            {
+              "route": "/notifications",
+              "status": 307,
+              "passed": true
+            }
+          ],
+          "logs": {
+            "matchingErrors": 3,
+            "filesystemPermissionErrors": 0,
+            "currentTaskOnly": true
+          },
+          "notificationQueue": {
+            "failed": 0,
+            "staleProcessing": 0
+          },
+          "scan": {
+            "status": "COMPLETE",
+            "findings": {}
+          }
+        },
+        {
+          "account": "559054714699",
+          "region": "us-east-1",
+          "kind": "log-diagnostics",
+          "revision": 21,
+          "messagesPrinted": false,
+          "classification": {
+            "categories": {
+              "unclassified": 3
+            },
+            "unknownFingerprints": [
+              "ebc339600264eb7a78c53631bce125345f31b2942bfd1cee46f24d833c481055"
+            ],
+            "unknownFeatures": [
+              {
+                "fingerprint": "ebc339600264eb7a78c53631bce125345f31b2942bfd1cee46f24d833c481055",
+                "features": []
+              },
+              {
+                "fingerprint": "ebc339600264eb7a78c53631bce125345f31b2942bfd1cee46f24d833c481055",
+                "features": []
+              },
+              {
+                "fingerprint": "ebc339600264eb7a78c53631bce125345f31b2942bfd1cee46f24d833c481055",
+                "features": []
+              }
+            ],
+            "total": 3,
+            "recent60Minutes": 3,
+            "firstAt": "2026-09-06T23:49:59.457Z",
+            "lastAt": "2026-09-06T23:49:59.539Z"
+          }
+        },
+        {
+          "account": "559054714699",
+          "region": "us-east-1",
+          "kind": "cost",
+          "queriedAtUTC": "2026-09-07T00:50:07.139Z",
+          "budgetActualUSD": 4.102,
+          "budgetLimitUSD": 75,
+          "modeledMonthlyUSD": 68.67,
+          "disposableRehearsalReserveUSD": 2,
+          "withinCeiling": true,
+          "costExplorer": {
+            "available": false
+          }
+        }
+      ]
+    }
+  ]
+}

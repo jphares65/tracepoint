@@ -1,0 +1,9 @@
+# Live staging data reconciliation
+
+Implemented scripts/staging-management-manifest.mjs as an explicit --management-cli alternative to the direct PostgreSQL connection. It gates the AWS identity and pins the isolated Supabase project wztqqqashilusoppddxi. No production target or fallback is accepted. Temporary SQL files contain no credentials or row values and are removed afterward.
+
+Two live repeatable-read, read-only snapshots reconciled exactly on September 5 UTC: 79 public tables, 224 foreign-key relationships, one sequence and all 61 migration versions. Zero orphaned relationships were found. The manifest includes per-table row counts and sorted SHA-256 row fingerprints plus fingerprints for columns, constraints, policies, functions, triggers, grants, indexes, RLS flags and sequence definitions. Sequence state is captured but PostgreSQL sequence reads are not MVCC snapshots; quiesce writers when comparing migration targets.
+
+Only hashes and structural metadata leave the database. This format is explicitly postgres-jsonb-text-sha256-v1 and must not be compared to the older JavaScript canonical-JSON format. No production data was read or exported. Raw live aggregate manifests remain local because hashes/counts can be sensitive; the repository records the verification result.
+
+Usage: node scripts/staging-management-manifest.mjs --management-cli, then repeat with --compare PATH_TO_FIRST_JSON. Use UTF-8 output redirection (Windows PowerShell 5 defaults to UTF-16). A repository-ledger mismatch, catalog drift, orphaned relationship or changed manifest fails the command. Three tests using real disposable PostgreSQL passed, including content corruption, metadata changes and ledger/catalog drift. This proves live staging reconciliation, not production migration or PITR restore.

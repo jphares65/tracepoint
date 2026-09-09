@@ -102,7 +102,7 @@ test("can preserve legacy configuration whitespace for digest parity", async (t)
   let request: RequestInit | undefined;
   globalThis.fetch = async (_input, init) => {
     request = init;
-    return Response.json({});
+    return Response.json({messageId:"synthetic-accepted"});
   };
   t.after(() => {
     globalThis.fetch = originalFetch;
@@ -130,4 +130,11 @@ test("can preserve legacy configuration whitespace for digest parity", async (t)
     JSON.parse(String(request?.body)).sender.email,
     " sender@example.test ",
   );
+});
+test('Brevo ambiguous outcomes are sanitized and never automatically retried', async (t) => {
+ const originalFetch=globalThis.fetch;t.after(()=>{globalThis.fetch=originalFetch});
+ for(const mode of ['transport','server','missing-id']){let calls=0;globalThis.fetch=async()=>{calls++;if(mode==='transport')throw Error('private');return mode==='server'?Response.json({message:'private'},{status:503}):Response.json({});};
+ const provider=createEmailProvider({BREVO_API_KEY:'synthetic',TRACEPOINT_FROM_EMAIL:'synthetic@example.invalid'});
+ await assert.rejects(provider.send({to:[{email:'synthetic@example.invalid'}],subject:'Synthetic',htmlContent:'Synthetic',textContent:'Synthetic'}),error=>error instanceof Error&&error.message.includes('unconfirmed')&&!error.message.includes('private'));assert.equal(calls,1);
+ }
 });

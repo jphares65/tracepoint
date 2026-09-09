@@ -7,7 +7,7 @@ account, certificate, or DNS record.
 
 ## Application assembly
 
-The four lowercase stacks are:
+The five lowercase stacks are:
 
 - `tracepoint-staging-network`: two public subnets across two AZs, internet
   gateway, VPC Flow Logs, restricted default security group, and the no-charge
@@ -16,13 +16,32 @@ The four lowercase stacks are:
 - `tracepoint-staging-compute`: immutable ECR repository, ECS cluster without
   Container Insights, 30-day retained logs, retained application secret, and
   separate ECS execution/task roles.
+- `tracepoint-staging-image-build`: retained KMS-encrypted, versioned clean-source
+  bucket; KMS-encrypted 30-day build logs; and a least-privilege CodeBuild project
+  that can read the staging application secret and push only to staging ECR.
 - `tracepoint-staging-runtime` (opt-in): one public-IP Fargate task behind an
   HTTPS ALB. Its security group accepts port 3000 only from the ALB security
-  group; the ALB redirects HTTP to HTTPS.
+  group; the ALB redirects HTTP to HTTPS. It also creates ALB 5xx-rate and
+  unhealthy-target alarms with explicit missing-data behavior.
+
+All stacks carry `Application`, `Environment`, `Owner`, `ManagedBy`,
+`CostCenter`, and `DataClassification` tags. The ECS execution role is limited to
+the staging repository, application log group, application secret, and data key;
+only ECR authorization-token retrieval uses an unavoidable wildcard resource.
+The application task role has no permissions.
 
 The unused attachment bucket is deferred. CloudTrail, GuardDuty, Security Hub,
 and Config are excluded: they belong to a separate, organization-aware
 platform/security baseline with independent lifecycle ownership.
+
+The separate `bin/production-infra.ts` entry point composes seven production
+stacks: these five architecture layers plus enforced regional WAF request
+controls and encrypted composite-alarm delivery. Production enables enhanced
+Container Insights, ALB/build access logging, two-to-four task scaling, CPU and
+p99 latency alarms, one-year application logs, 90-day WAF logs and termination
+protection on every stack. It retains Supabase and Brevo providers. Strict
+offline production synthesis runs `AwsSolutionsChecks`; exceptions are scoped
+to exact resources/findings with operational reasons.
 
 ## Local synthesis
 
@@ -46,36 +65,36 @@ DNS validation, and the Route 53 alias remain separate platform actions.
 
 ## Protected build secret
 
-`NEXT_PUBLIC_*` and `DEPLOYMENT_VERSION` are public build arguments. The Server
-Action key is mounted only for `next build` through Docker BuildKit:
+`NEXT_PUBLIC_*` and `DEPLOYMENT_VERSION` are public build arguments inside the
+deployed CodeBuild environment. The Server Action key is mounted only for
+`next build` through Docker BuildKit. Operators do not run Docker locally:
 
 ```powershell
-$env:NEXT_SERVER_ACTIONS_ENCRYPTION_KEY = "RETRIEVE_WITHOUT_PRINTING"
-docker build `
-  --secret id=next_server_actions_encryption_key,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY `
-  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://REPLACE_ME.supabase.co `
-  --build-arg NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=REPLACE_ME `
-  --build-arg NEXT_PUBLIC_SITE_URL=https://staging.tracepointhq.com `
-  --build-arg DEPLOYMENT_VERSION=REPLACE_WITH_COMMIT_SHA `
-  -t tracepoint-staging:REPLACE_WITH_COMMIT_SHA ..
+.\scripts\publish-tracepoint-staging-image.ps1 -ValidateArchiveOnly
+.\scripts\publish-tracepoint-staging-image.ps1
 ```
 
-The build identity reads only `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` from
-`tracepoint/staging/application`. It must not print it, store it in the
-workspace, or use a Docker `ARG`. ECS injects the same secret version at task
-startup, so rotation requires a new immutable image and task replacement.
+The build identity reads the retained staging secret because CodeBuild injects
+the three public build values and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. It must not
+print values or store the Server Action key in the workspace or a Docker `ARG`.
+ECS injects the same key at task startup, so rotation requires a new immutable
+image and task replacement.
 
 The retained JSON secret also supplies `SUPABASE_SECRET_KEY`, `BREVO_API_KEY`,
 and `NOTIFICATION_DISPATCH_SECRET`. Populate all keys atomically through an
 approved concealed-input workflow; CDK contains no real values.
 
+Image publication validates only the five build-time fields. The remaining
+three runtime-only fields stay mandatory for an ECS launch, but their absence
+does not prevent producing and scanning an otherwise deployable image.
+
 ## Least-privilege deployment design
 
 The member-account platform administrator—not this application assembly—creates:
 
-1. `tracepoint-staging-image-builder`: push only to the staging ECR repository,
-   read only the Server Action field from the staging secret, and decrypt only
-   through Secrets Manager. It cannot deploy or pass roles.
+1. The deployed CodeBuild image role: push only to the staging ECR repository,
+   read only the staging application secret, and decrypt only through Secrets
+   Manager. It cannot deploy or pass roles.
 2. `tracepoint-staging-deployer`: assume only dedicated CDK bootstrap deploy,
    asset-publishing, and lookup roles. `iam:PassRole` is limited to the bootstrap
    CloudFormation execution role with
@@ -94,7 +113,25 @@ guidance before a separate bootstrap approval.
 
 ## Gate
 
-Use existing dependencies only. Before any deployment, build/scan the immutable
-image, synthesize with the real account and certificate, and review a real
-`cdk diff`. Database, identity, Supabase/Brevo migration, CloudFront, WAF,
-multi-task capacity, production, and live-agency cutover remain deferred.
+Use existing dependencies only. Before runtime deployment, build/scan the
+immutable image in CodeBuild, synthesize with the real account and certificate,
+and review a real `cdk diff`. Database, identity, Supabase/Brevo migration,
+CloudFront, production deployment, certificate/DNS, human alert subscription,
+account security baseline and live-agency cutover remain deferred.
+
+The production deployment is phased: deploy foundations, populate and validate
+the retained application secret, publish and scan the immutable image, then
+deploy runtime/control/alert stacks. The read-only live account check is
+`node --experimental-strip-types scripts/validate-production-live-readiness.mts
+--config <reviewed-target>` from the repository root; it never retrieves a
+secret value or changes account state.
+
+Run `npm test` in `infra/` to verify lean-network, encryption, retention, ECR,
+IAM, disabled-runtime, provider-pin, task-size, TLS-listener, rollback, request
+controls, alert delivery, and production invariants. `scripts/get-tracepoint-staging-inventory.ps1` performs the matching
+metadata-only account inventory after verifying the staging identity.
+
+The manual `.github/workflows/aws-staging-foundation.yml` workflow validates and
+deploys only the three foundation stacks with runtime disabled. It requires the
+protected `aws-staging` GitHub environment and an OIDC role ARN in the
+`AWS_STAGING_DEPLOY_ROLE_ARN` repository variable.

@@ -1,0 +1,12 @@
+{
+  "project": "wztqqqashilusoppddxi",
+  "migration": "202609050010_authentication_session_state.sql",
+  "migrationCount": 66,
+  "exactLedger": true,
+  "serverOnlyTables": 3,
+  "rowLevelSecurity": true,
+  "browserGrants": false,
+  "providerActivated": false,
+  "localSessionTests": 6,
+  "localBootstrapRestoreMilliseconds": 2549
+}

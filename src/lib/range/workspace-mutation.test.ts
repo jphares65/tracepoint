@@ -89,3 +89,24 @@ test("completed and packet-finalized history cannot be rewritten", () => {
     if (!decision.ok) assert.equal(decision.status, 409);
   }
 });
+
+test("saved results and malfunction evidence cannot be removed from editable days", () => {
+  const existing = {
+    ...base(),
+    results: [{ id: "result-1", rangeDayId: "day-1", drillId: "drill-1", score: 90 }],
+    malfunctions: [{ id: "malfunction-1", rangeDayId: "day-1", drillRunResultId: "result-1" }],
+  };
+  for (const nextWorkspace of [
+    { ...existing, results: [] },
+    { ...existing, malfunctions: [] },
+  ]) {
+    const decision = authorizeRangeWorkspaceMutation({
+      existingWorkspace: existing,
+      nextWorkspace,
+      departmentId: "agency-a",
+      permissions: ["manage_range_days", "score_range_days"],
+    });
+    assert.equal(decision.ok, false);
+    if (!decision.ok) assert.equal(decision.status, 409);
+  }
+});

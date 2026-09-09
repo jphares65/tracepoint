@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "test": "ts-node test/infrastructure.test.ts && ts-node test/provider-foundations.test.ts && ts-node test/alert-delivery.test.ts && ts-node test/postgres-rehearsal.test.ts && ts-node test/request-controls.test.ts && ts-node test/github-staging.test.ts && ts-node test/production-target.test.ts && ts-node test/production-account-baseline.test.ts",
     "watch": "tsc -w",
     "cdk": "cdk",
     "synth": "cdk synth",
@@ -11,12 +12,15 @@
   },
   "dependencies": {
     "aws-cdk-lib": "^2.210.0",
+    "cdk-nag": "2.38.2",
     "constructs": "^10.4.2"
   },
   "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "3.1127.0",
     "@types/node": "^20.19.11",
+    "amazon-cognito-identity-js": "6.3.20",
     "aws-cdk": "^2.1029.2",
-    "typescript": "^5.9.2",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
   }
 }

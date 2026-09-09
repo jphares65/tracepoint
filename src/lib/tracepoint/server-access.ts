@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { getServerAuthenticatedUser } from "@/lib/authentication/server-provider";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
@@ -42,8 +43,13 @@ export type ServerAccessPayload = {
 };
 
 export type ServerAccessContext = ServerAccessPayload & {
+  // The repositories intentionally expose narrow structural client contracts.
+  // Keep this boundary dynamic until those contracts share the generated client type.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   user: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any;
   authDb: Awaited<ReturnType<typeof createServerClient>>;
 };
@@ -113,12 +119,9 @@ function uniqueStrings(values: unknown[]) {
 
 export async function resolveServerAccess(): Promise<ServerAccessResult> {
   const server = await createServerClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await server.auth.getUser();
+  const user = await getServerAuthenticatedUser(server);
 
-  if (authError || !user) {
+  if (!user) {
     return {
       ok: false,
       status: 401,
@@ -126,6 +129,8 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
     };
   }
 
+  // See ServerAccessContext: downstream repositories narrow this client.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
   const cookieStore = await cookies();
 
@@ -223,7 +228,9 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
 
     const enabledFeatures = uniqueStrings(
       (departmentFeaturesResult.data ?? [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter((row: any) => row.is_enabled !== false)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((row: any) => row.feature_code),
     );
 
@@ -359,7 +366,9 @@ let membership: MembershipRow | undefined;
       ok: false,
       status: 500,
       error: membershipRolesResult.error.message,
-    }
+    };
+  }
+
   if (platformAdminResult.error) {
     return {
       ok: false,
@@ -374,11 +383,11 @@ let membership: MembershipRow | undefined;
       status: 500,
       error: departmentFeaturesResult.error.message,
     };
-  };
   }
 
   const roleCodes = uniqueStrings(
     (membershipRolesResult.data ?? []).map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (row: any) => row.role_code,
     ),
   );
@@ -447,7 +456,9 @@ let membership: MembershipRow | undefined;
 
   const enabledFeatures = uniqueStrings(
     (departmentFeaturesResult.data ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((row: any) => row.is_enabled !== false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((row: any) => row.feature_code),
   );
   const profile = profileResult.data as ProfileRow | null;

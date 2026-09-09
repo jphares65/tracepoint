@@ -1,3 +1,4 @@
+import {internalAuthRedirect} from '@/lib/authentication/redirects';
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
@@ -19,19 +20,7 @@ type SetupPageProps = {
   }>;
 };
 
-function safeNextPath(value?: string) {
-  if (
-    !value ||
-    !value.startsWith("/") ||
-    value.startsWith("//") ||
-    value.startsWith("/auth/setup") ||
-    value.startsWith("/login")
-  ) {
-    return "/";
-  }
-
-  return value;
-}
+function safeNextPath(value?:string) {const path=internalAuthRedirect(value);return path.startsWith('/auth/setup')||path.startsWith('/login')?'/':path;}
 
 function textValue(formData: FormData, key: string) {
   const value = formData.get(key);

@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowExactManagementSsoMigrationRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::265544358665:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_TracePointMigrationStaging_15025ed1776203c8"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

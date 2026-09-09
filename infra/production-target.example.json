@@ -1,0 +1,12 @@
+{
+  "account": "111111111111",
+  "region": "us-east-1",
+  "roleArn": "arn:aws:iam::111111111111:role/TracePointMigrationProduction",
+  "hostname": "tracepointhq.com",
+  "certificateArn": "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-4000-8000-000000000000",
+  "imageTag": "432ebf0d52122df41c0d7e793c09029fbc54b40f",
+  "emailFromAddress": "contact@tracepointhq.com",
+  "dataMode": "retain-production-providers",
+  "desiredCount": 2,
+  "maxCapacity": 4
+}

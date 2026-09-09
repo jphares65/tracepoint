@@ -48,7 +48,7 @@ export async function POST(request: NextRequest, routeContext: Context) {
   const validationError = validateDrillDocumentFile(file);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
   const documentId = crypto.randomUUID();
-  const objectStore = createObjectStore(admin);
+  const objectStore = createObjectStore(admin, departmentId);
   const upload = await objectStore.uploadDrillDocument({
     departmentId, recordId: drillTemplateId, objectId: documentId,
     fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()), contentType: file.type,

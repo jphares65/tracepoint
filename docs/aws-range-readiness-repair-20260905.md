@@ -1,0 +1,13 @@
+# Range workspace readiness repair
+
+The staging bootstrap omitted pilot_range_workspaces, which existing range and Drill Library document routes require. Migration 202609050004 adds that relation with tenant read isolation, server-only writes and audit coverage. It inserts no tenant data. Existing qualification standard relations were verified present.
+
+The bulk workspace PUT previously checked feature entitlement without requiring range-management or scoring permission. The new policy denies ordinary officers, limits scoring-only roles to scoring/malfunction changes, and applies existing locked/scored drill deletion protections to bulk saves. Saved result/malfunction IDs cannot be erased through this route. A compare-and-set update rejects changes made between validation and persistence. This does not claim a complete revision-token protocol for stale browser snapshots.
+
+Local validation: 139 application tests, 11 focused range tests, TypeScript, changed-file lint, Next production build and clean 60-migration bootstrap passed. The bootstrap now exercises workspace tenant read isolation and direct non-manager write denial.
+
+After image deployment and staging migration application, run node scripts/run-disposable-staging-acceptance.mjs --execute --range-documents. Added scenarios create disposable range data through the application, verify locked/scored and bulk-save deletion denial, remove an editable drill, and exercise document upload/view/download/delete, cross-tenant denial, non-manager writes, audit creation and cleanup. Live results are pending.
+
+Live validation completed September 5 UTC: image 3db2faba39f1816dc812c14186e48d87c4ea6ef3, digest sha256:03b3203c1e00ef276b4bf8ee1b35d8713b6c711e3c9b8e89a283f36f8830268f, ECS revision 11, CloudFormation UPDATE_COMPLETE, ECS 1/1/0 completed and one healthy ALB target. Vercel branch Preview succeeded. ECR scan COMPLETE with zero findings. The structural and live CDK diff contained only the immutable image replacement. Migration 60 applied after the protected runtime was healthy, with an exact 59-version prior-ledger guard and absent-table check.
+
+Authenticated run d4008b9c-a4dc-4572-98fb-4e99fc3c3990 passed all implemented scenarios, including range creation, locked/scored drill denial, bulk history deletion denial, editable drill removal, document upload/view/download/delete, foreign tenant denial and non-manager write denial. Parent verification confirmed document audit events, custody history, and zero remaining fixture records and S3 object versions. Off-duty approvals and actual exports remain untested.

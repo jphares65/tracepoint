@@ -1,0 +1,57 @@
+// Extract only the known sanitized reports from completed workflow logs. Never
+// persist raw logs, provider secrets, queue contents or arbitrary extra fields.
+export function operationsEvidence(logs){
+ const lines=logs.split(/\r?\n/),reports=[];
+ for(let i=0;i<lines.length;i++){
+  if(lines[i].trim()!=='{')continue;
+  for(let j=i+1;j<Math.min(i+300,lines.length);j++){
+   if(lines[j].trim()!=='}')continue;
+   let value;try{value=JSON.parse(lines.slice(i,j+1).join('\n'));}catch{continue;}
+   i=j;if(value.account!=='559054714699'||value.region!=='us-east-1')break;
+   const safe={account:value.account,region:value.region};
+   if(value.ecs&&/^[0-9a-f]{40}$/.test(value.imageTag??'')){
+    safe.kind='runtime';safe.imageTag=value.imageTag;
+    for(const key of ['checkedAt','stackStatus','expectedDigest','runningDigest'])if(typeof value[key]==='string'&&/^[A-Za-z0-9:_.+-]{1,100}$/.test(value[key]))safe[key]=value[key];
+    for(const key of ['identityVerified','imageMatches','passed'])if(typeof value[key]==='boolean')safe[key]=value[key];
+    safe.ecs={};for(const key of ['desired','running','pending','revision'])if(Number.isInteger(value.ecs[key]))safe.ecs[key]=value.ecs[key];safe.ecs.completed=value.ecs.completed===true;
+    safe.targets=(value.targets??[]).filter(x=>['healthy','unhealthy','initial','draining','unused','unavailable'].includes(x));
+    safe.alarms=(value.alarms??[]).filter(x=>/^tracepoint-staging[-A-Za-z0-9]+$/.test(x.name)&&['OK','ALARM','INSUFFICIENT_DATA'].includes(x.state)).map(x=>({name:x.name,state:x.state}));
+    safe.public=(value.public??[]).filter(x=>/^\/[A-Za-z0-9/-]*$/.test(x.route)&&Number.isInteger(x.status)).map(x=>({route:x.route,status:x.status,passed:x.passed===true}));
+    safe.logs={};for(const key of ['matchingErrors','recentMatchingErrors','evaluationWindowMinutes','filesystemPermissionErrors'])if(Number.isInteger(value.logs?.[key]))safe.logs[key]=value.logs[key];safe.logs.currentTaskOnly=value.logs?.currentTaskOnly===true;
+    safe.notificationQueue={};for(const key of ['failed','staleProcessing'])if(Number.isInteger(value.notificationQueue?.[key]))safe.notificationQueue[key]=value.notificationQueue[key];
+    safe.scan={status:value.scan?.status==='COMPLETE'?'COMPLETE':'not complete',findings:{}};
+    for(const key of ['CRITICAL','HIGH','MEDIUM','LOW','INFORMATIONAL','UNDEFINED'])if(Number.isInteger(value.scan?.findings?.[key]))safe.scan.findings[key]=value.scan.findings[key];
+    reports.push(safe);
+    if(value.logClassification)reports.push(...operationsEvidence(JSON.stringify({account:value.account,region:value.region,kind:'log-diagnostics',revision:value.ecs.revision,classification:value.logClassification,messagesPrinted:false},null,2)));
+   }else if(value.kind==='log-diagnostics'&&Number.isInteger(value.revision)&&value.classification){
+    safe.kind='log-diagnostics';safe.revision=value.revision;safe.messagesPrinted=value.messagesPrinted===true;
+    safe.classification={categories:{},unknownFingerprints:[],unknownFeatures:[]};
+    for(const key of ['total','recent60Minutes'])if(Number.isInteger(value.classification[key]))safe.classification[key]=value.classification[key];
+    for(const key of ['firstAt','lastAt'])if(typeof value.classification[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.classification[key]))safe.classification[key]=value.classification[key];
+    for(const key of ['filesystem','server-action-request-rejected','aws-authorization','configuration','database-or-connection','authentication','network','memory','next-control-flow','unclassified'])if(Number.isInteger(value.classification.categories?.[key]))safe.classification.categories[key]=value.classification.categories[key];
+    safe.classification.unknownFingerprints=(value.classification.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));
+    const vocabulary=['TypeError','ReferenceError','SyntaxError','RangeError','URIError','AggregateError','JSON','parse','undefined','null','workers','payload','headers','decrypt','encryption','Unexpected','Invalid','Server Action','request','body','digest','ENOENT','ENOTFOUND','ECONNRESET','timeout','connection','closed','aborted','pipe','response','socket','premature','command','spawn','exit','EPIPE','MODULE_NOT_FOUND','exception','multipart','stream','failed'];
+    safe.classification.unknownFeatures=(value.classification.unknownFeatures??[]).filter(x=>/^[0-9a-f]{64}$/.test(x.fingerprint)).map(x=>({fingerprint:x.fingerprint,features:(x.features??[]).filter(word=>vocabulary.includes(word))}));reports.push(safe);
+   }else if(value.kind==='historical-log-correlation'&&value.application&&value.waf){
+    safe.kind='historical-log-correlation';safe.messagesPrinted=value.messagesPrinted===true;
+    for(const key of ['windowStart','windowEnd'])if(typeof value[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value[key]))safe[key]=value[key];
+    safe.application={categories:{},unknownFingerprints:[]};
+    if(Number.isInteger(value.application.total))safe.application.total=value.application.total;
+    for(const key of ['server-action-request-rejected','unclassified'])if(Number.isInteger(value.application.categories?.[key]))safe.application.categories[key]=value.application.categories[key];
+    safe.application.unknownFingerprints=(value.application.unknownFingerprints??[]).filter(x=>/^[0-9a-f]{64}$/.test(x));
+    for(const key of ['firstAt','lastAt'])if(typeof value.application[key]==='string'&&/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.application[key]))safe.application[key]=value.application[key];
+    safe.waf={authorized:value.waf.authorized===true,requestActions:{}};for(const key of ['total','requestsWithNextActionHeader'])if(Number.isInteger(value.waf[key]))safe.waf[key]=value.waf[key];
+    for(const key of ['ALLOW','BLOCK','COUNT','CAPTCHA','CHALLENGE','OTHER'])if(Number.isInteger(value.waf.requestActions?.[key]))safe.waf.requestActions[key]=value.waf.requestActions[key];
+    safe.unknownCorrelation=(value.unknownCorrelation??[]).filter(x=>/^[0-9a-f]{64}$/.test(x.fingerprint)&&(x.nearestWafRequestMilliseconds===null||Number.isInteger(x.nearestWafRequestMilliseconds))).map(x=>({fingerprint:x.fingerprint,nearestWafRequestMilliseconds:x.nearestWafRequestMilliseconds}));reports.push(safe);
+   }else if(typeof value.queriedAtUTC==='string'&&Number.isFinite(value.budgetActualUSD)){
+    safe.kind='cost';if(/^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(value.queriedAtUTC))safe.queriedAtUTC=value.queriedAtUTC;
+    for(const key of ['budgetActualUSD','budgetLimitUSD','modeledMonthlyUSD','disposableRehearsalReserveUSD'])if(Number.isFinite(value[key]))safe[key]=value[key];
+    safe.withinCeiling=value.withinCeiling===true;safe.costExplorer={available:value.costExplorer?.available===true};
+    if(safe.costExplorer.available&&Number.isFinite(value.costExplorer.unblendedCostUSD)){safe.costExplorer.unblendedCostUSD=value.costExplorer.unblendedCostUSD;safe.costExplorer.estimated=value.costExplorer.estimated===true;}
+    reports.push(safe);
+   }
+   break;
+  }
+ }
+ return reports;
+}

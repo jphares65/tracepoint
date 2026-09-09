@@ -1,0 +1,436 @@
+{
+  "mainCommit": "e33e4a4f17b662dddec9bf653ebf4051c3eb78ab",
+  "awsCommit": "0b425e0611e7a133a8de4a2fc9044a1abba69ccb",
+  "checkedAtUTC": "2026-09-06T12:03:21.369Z",
+  "sameSql": [
+    {
+      "version": "202606220001",
+      "sha256": "40182e962ffe1e34f62ffae8420145cc44e70040b348a8eeeb6870e6ea5cb07e",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202606260002",
+      "sha256": "7f03288349dbdcbca103f66e84b4ea290d53e977b3d635a804816cde2a6213ec",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202606260003",
+      "sha256": "566e790f5c527bac0d520159b2a06d95c163b3d8f40a5e7ca58e222cb665d831",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260708",
+      "sha256": "75ca84b8b4fbc95aa7ebd473e0563b481c8f7424d34d90ae07ac2227842f346e",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260719",
+      "sha256": "e5e59c747d99517375d9edf7a8386207d932fc8866adc6e5ac98be16cfef28cf",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260720",
+      "sha256": "a9ac56d35c5aac182110e6f6798db56124a054df2c45e849e5e2222222d6c534",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260721",
+      "sha256": "f3072c77d8266e407190d7b6855b5d6fe05f046f3b7fc395dab71040b75c2d62",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260803015727",
+      "sha256": "c632c02d94c5e0075fd62cefdf891a3704683167ffcd8cef25cbaaec1768ec17",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260803021204",
+      "sha256": "9e1451662d6f2bf300b8c4d01759b15dbd1b45da60905a79d2ad03d7b2ea44f1",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608060001",
+      "sha256": "0fb9d28391e59e92d982227147da4cba5579da316ead6662688dc130e7f61767",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608170001",
+      "sha256": "ffefddf000067f425c67f2270090be16c1c248a907bcbef9a9e5c607ee798a0d",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608170002",
+      "sha256": "ca37be6d3496dcad3c131e629df17ebdf6e38316a2ad353a8b2ad0629b59dfb5",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608170003",
+      "sha256": "388ac8b3bed30e916a9926db9e62662e0cc477a1c8320faa2c76d55969a06c63",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608170004",
+      "sha256": "4cb2fa57f7c217ff0ca98e8d0b2ef7d5d627cc1fc9101009a18cc75c7842ada4",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608170005",
+      "sha256": "ed0728a7d2654f3ae6f536a9cb1ff771a1a35ad446f431fcd7433765d8146035",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608170006",
+      "sha256": "b2ccd4ff60b921dd1eef50b791fa15173773ff51e4ef1264ba85ac31dd894c7c",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608180001",
+      "sha256": "bc36d20ea966d27bc96fb7a37d9825ea0428cd26c3f348caba2821b7eb92f8f3",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608180002",
+      "sha256": "df2ad200ce21064947c86cc01e0abe040d2157c84fe7c849f50eaf682748c41b",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608180003",
+      "sha256": "1534cf6efa41899b333d77425cf2399e4dbf10133c3df17f49ac396d5afa9d90",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608180004",
+      "sha256": "914ca5a87a2ba69a6e36bba07eefe9ec34bdfa15f1b6ecc7c0467a8fd561129c",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190001",
+      "sha256": "49594f32a2586279b495bb97de8600958637d1cbcc6e7dda45f967981ff64832",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190002",
+      "sha256": "f862d5495a2cc7ef9dbd85bb767159535abbb1a5311ad039c1bf5c7c77bc3318",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190003",
+      "sha256": "1bf374fe5f9016a1c77d29c5d351a2e85e9dc836c5a51d87f4b56b36201f1541",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190004",
+      "sha256": "bc051fbc1d0d444cd6f71fdc6e371945fb26713124ed5b12d5ad3dad692b2a4a",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190005",
+      "sha256": "c83c2baedd977804693503d3916175fbba3b7793fe1eab77bfd50169b596f102",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190006",
+      "sha256": "d124b298f76f6e3764ff8b0f33f3a64140931311d8209d82395cdd5ba9cbc2c9",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608190007",
+      "sha256": "d42c86884a7f3b72131a5dbd1b8af7591795e4070e1d67231f764f30104833da",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608200001",
+      "sha256": "fc1abbf18a12bf4a65c5644f2243d64d96176de7b8891f107293a1856494ec6e",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608200002",
+      "sha256": "cae79ac365676c2d1227b62ddc14f12e2955b77611bc59a408a52ae75851d35c",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608200003",
+      "sha256": "a40526e97b4d4a1ad2da01f6ac94bf84b03f7505c41e71412f7b56d5b964a4b9",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608200004",
+      "sha256": "a1684d151af5fa1dbf3691e4524e6411c3984571689c89ebc5c8f66bc569d8a6",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608210001",
+      "sha256": "433a08de034544152160393987ba6a70e2ac7219d2a6a7ea85caecd5310f25c2",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608210002",
+      "sha256": "7ca4323656a22fade62b4d84bbae76d1233e508729050b35ed01b58f1bdda6dc",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608210003",
+      "sha256": "9290d3dd59efbe16e7868e36e7d7b5c72e6448d12d3e4458edde328e507593d9",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260822180000",
+      "sha256": "e6c21300e96b2a1723d406fc8816e64f47eb3cd2d5870d5c1fb438252c09ff9b",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260822183000",
+      "sha256": "b740c5c2e2f313b21ae7b98131d585a03c423832f3d4a208a55741aded03f61e",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260822184500",
+      "sha256": "eda3ab741b958cb6776f090bde743ad5a94a2ffea4c7fd541468b64f3874c5cd",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260822202500",
+      "sha256": "3c6724d0f152855849e7a134fdad9a7f4d39bfac1d6cf539f96b9dd11799534c",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608230001",
+      "sha256": "4b779533d0ec53ee1b1304501a7fe8f8537a28ca8a1be575e74895f73aa36c4c",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608230002",
+      "sha256": "05243fe13a1311adfac74a0278df08456820cf03bdf5228028bffbe77e6acb1b",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608230004",
+      "sha256": "2a508dba52010e2e0b2e0a69651bf89a634d166a5d47ba8ad9db0ed7f1df0177",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608230005",
+      "sha256": "40862844afddcdb9a49b2ed6307d174f13996c3244dcc24113286d2e5cf2c540",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608232030",
+      "sha256": "376b44a84e9b293eed097834394e28d4acf9c87cf9013b7571b226f8bf708908",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608232100",
+      "sha256": "455f0dd2c7058b5c2a3e14d4bcc329ad2f9a7d5b9f07aecb87ed59bf2e450e21",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608242100",
+      "sha256": "1f930918bd597681705f151725f66cc36840cc6b9d9734d6682f2325be314e9c",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608260001",
+      "sha256": "830dd2fa5c9481b6ebbd29f8b396f6963cb5a1ead7f97d7af33fe26cbb68cee7",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202608260200",
+      "sha256": "9aa9f4158e8528039512edbdcb8dd1ad59dc55cfab66d489608bd595cb0fcf37",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260826160000",
+      "sha256": "e359c7cc99150ac9505273a942f75e60fb50ed1a42b044e684375468b3214bad",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260826173000",
+      "sha256": "c4cf59e20e9e813610b11c5215d232b47016e39c995a3264cd54abfdbbd27794",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260827203000",
+      "sha256": "a85a475e75ca67a72e6807dcfe9e231b01ee616510ea9e35b299583bc8723067",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260828020000",
+      "sha256": "862d46b50a824f356d06b81525a37b29c806a69ed65f7fee160355c578597cf9",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260828030000",
+      "sha256": "3d8bcec93a64c057e8427f802b4b8942dee3d95ddfdeac8d323e599a67f55c9f",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "20260828040000",
+      "sha256": "e1e2f5fdd7f2f61f45f6148b48a426c3fae4ed2ffad218abab9fc921edfc2563",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609010001",
+      "sha256": "eef67f197e7fd65761ac674bb275b871a3464f833b8f360f09f4e901a8e16965",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609020001",
+      "sha256": "be8455c5e991b073c36ccfb74c02e47a39ac49dd2a6915309ea70eba00368137",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609030001",
+      "sha256": "9d56ea6d29174109c8e4e146d93aeab38d5025f51ea98589429f047a66a31b70",
+      "productionApplied": null,
+      "stagingApplied": null
+    }
+  ],
+  "mainOnly": [],
+  "awsOnly": [
+    {
+      "version": "202609050001",
+      "path": "supabase/migrations/202609050001_server_role_table_privileges.sql",
+      "sha256": "6ac7877bc0fb32071b4e72ee4670165d23aaa76e74e09b4c973a69f25f4326c5",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050002",
+      "path": "supabase/migrations/202609050002_authenticated_policy_privileges.sql",
+      "sha256": "43d015e07fb365511480f07d9d1d800529280c05b0a5a503b3169d89bf10a0b5",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050003",
+      "path": "supabase/migrations/202609050003_feature_entitlements_and_rules.sql",
+      "sha256": "855fed12b58792e8952ff9d9138fa393ba23506c1338aa87bd4afef9fed4b773",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050004",
+      "path": "supabase/migrations/202609050004_range_workspace_bootstrap.sql",
+      "sha256": "308993c16a22ba809c4a19826252fc7c89123cf37c794373ac01fd205803d8dc",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050005",
+      "path": "supabase/migrations/202609050005_ses_feedback_persistence.sql",
+      "sha256": "522e1b222e2eb15b51399e9866b23141e2bf6a17992e221bf5ee28358a6b036a",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050006",
+      "path": "supabase/migrations/202609050006_authentication_identity_links.sql",
+      "sha256": "ab8b1c9fa5e8b6098636ae48aa945fc3c911680145c7ae487a0f4c8406cb49da",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050007",
+      "path": "supabase/migrations/202609050007_armory_runtime_columns.sql",
+      "sha256": "958f1d82707009df840d9d4ce9090d9ac53407982602838917aa5d4d97769dc3",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050008",
+      "path": "supabase/migrations/202609050008_certification_capability_bootstrap.sql",
+      "sha256": "e892e1c0c7d9a3f274bb4bd873dee76d46a73805f11321c90bc5a43d9e5009d1",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050009",
+      "path": "supabase/migrations/202609050009_inspection_checklist_access.sql",
+      "sha256": "a95b8edd6851788b982aec52537696a725697a3e3b0d166d317128c2d55e57ae",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050010",
+      "path": "supabase/migrations/202609050010_authentication_session_state.sql",
+      "sha256": "2b4b2381901997cfcb9f360decaa68c648e58910ac149045c45e0953d934a11e",
+      "productionApplied": null,
+      "stagingApplied": null
+    },
+    {
+      "version": "202609050011",
+      "path": "supabase/migrations/202609050011_authentication_refresh_state.sql",
+      "sha256": "8246140481052917737950b18d9a4d1fd265272adbce937c39f17bd30e8d5bfe",
+      "productionApplied": null,
+      "stagingApplied": null
+    }
+  ],
+  "collisions": [],
+  "ledgerContentConflicts": [],
+  "unverifiedLedgerVersions": {
+    "production": [],
+    "staging": []
+  },
+  "ledgerOnly": {
+    "production": [],
+    "staging": []
+  },
+  "ledgersAvailable": false,
+  "safeToIntegrate": false,
+  "executionAuthorized": false
+}

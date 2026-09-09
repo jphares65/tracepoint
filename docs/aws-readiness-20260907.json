@@ -1,0 +1,42 @@
+{
+  "date": "2026-09-07",
+  "sourceChecklist": "aws-readiness-20260906.json",
+  "priorWeightedReadiness": 66.5,
+  "newWeightedReadiness": 73.0,
+  "method": "The existing weighted binary checklist is unchanged. Credit is awarded only for four previously-false production capabilities with live evidence. A duplicated production-account authorization line is not credited twice. Production baseline, security, compute, image-build, and scanned-image work is real but has no separate uncredited binary line in this checklist.",
+  "creditedCapabilities": [
+    {"category":"AWS account/governance","capability":"production account authorized","weightEarned":1.5,"evidence":"Dedicated account 193644343389 is ACTIVE in Root/Workloads/Production."},
+    {"category":"AWS account/governance","capability":"organization controls validated","weightEarned":1.5,"evidence":"Production-only SCP is attached to ou-9qyd-crf8dgl2; us-east-1 positive and us-west-2 EC2 negative tests passed."},
+    {"category":"production account readiness","capability":"exact live production role gate","weightEarned":1.5,"evidence":"TracePointMigrationProduction assumed in account 193644343389 with a validated permissions boundary."},
+    {"category":"network and compute","capability":"production network deployed","weightEarned":2.0,"evidence":"tracepoint-production-network is CREATE_COMPLETE with termination protection, two-AZ subnets, S3 gateway endpoint, and VPC flow logging."}
+  ],
+  "categoryChanges": [
+    {"category":"AWS account/governance","beforePercent":50,"afterPercent":100,"weightedDelta":3.0},
+    {"category":"production account readiness","beforePercent":50,"afterPercent":75,"weightedDelta":1.5},
+    {"category":"network and compute","beforePercent":60,"afterPercent":80,"weightedDelta":2.0}
+  ],
+  "completedWithoutAdditionalCredit": [
+    "CDK bootstrap version 32 with termination protection",
+    "CloudTrail, selective AWS Config, GuardDuty, Security Hub V2, budget and cost anomaly baseline",
+    "production security, compute, and image-build foundations",
+    "KMS-backed production build-secret fields with runtime fields deliberately incomplete",
+    "immutable production image ae3d2a4ce87b2085e251b1995f51a7b07058ec4d with completed zero-finding scan",
+    "production Fargate and ALB quota validation"
+  ],
+  "duplicateNotCredited": {"capability":"dedicated production account authorized","reason":"Same underlying account-authorization outcome as the credited governance capability; repeating it would violate no-double-credit accounting."},
+  "stillFalseWeightedCapabilities": [
+    "production load/failure test",
+    "production runtime deployed",
+    "production data rehearsal",
+    "production database moved",
+    "production PITR restore timed",
+    "replacement identity provider deployed",
+    "MFA and session cutover validated",
+    "production AWS certificate verified",
+    "production DNS cutover validated",
+    "notification escalation tested",
+    "production backup restore validated",
+    "DNS rollback rehearsed",
+    "agency cutover approved"
+  ]
+}

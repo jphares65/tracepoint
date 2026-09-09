@@ -13,6 +13,11 @@ For the first staging iteration, use the lean design described below: one public
 
 ## Cost model and assumptions
 
+The model was re-run deterministically on 2026-09-02 and remains **$42.07/month**
+with **$32.93** headroom below the `$75` ceiling. No foundation resource was
+added. Two standard CloudWatch alarms are added only with the currently
+undeployed runtime and are covered by the existing `$2.90` security allowance.
+
 These are planning estimates, not quotes. Prices were checked for `us-east-1` and calculations use 730 hours/month. Minimal realistic staging usage assumes one continuously running Linux/x86 Fargate task (0.25 vCPU, 0.5 GB), one ALB across two Availability Zones, 0.1 average LCU, 5 GB of NAT traffic, 1 GB of ECR storage, one secret, low log and object volume, 2,000 Config configuration items, 1,000 Security Hub checks, and light GuardDuty management/network analysis. Internet data transfer is assumed to remain within applicable allowances. Taxes, support, CI builds, vulnerability scanning, WAF, DNS registration, and third-party Supabase/Brevo charges are excluded.
 
 Pricing references: [VPC](https://aws.amazon.com/vpc/pricing/), [Fargate](https://aws.amazon.com/ecs/pricing/), [Elastic Load Balancing](https://aws.amazon.com/elasticloadbalancing/pricing/), [public IPv4](https://aws.amazon.com/vpc/pricing/), [ECR](https://aws.amazon.com/ecr/pricing/), [KMS](https://aws.amazon.com/kms/pricing/), [Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/), [CloudWatch](https://aws.amazon.com/cloudwatch/pricing/), [S3](https://aws.amazon.com/s3/pricing/), [GuardDuty](https://aws.amazon.com/guardduty/pricing/), [Security Hub CSPM](https://aws.amazon.com/security-hub/cspm/pricing/), [Config](https://aws.amazon.com/config/pricing/), and [CloudTrail](https://aws.amazon.com/cloudtrail/pricing/).

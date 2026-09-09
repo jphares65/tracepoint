@@ -65,7 +65,7 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
 
   const attachmentId = crypto.randomUUID();
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const objectStore = createObjectStore(context.admin);
+  const objectStore = createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadFirearmAttachment({
     departmentId: context.departmentId,
     recordId: firearmId,

@@ -1,3 +1,4 @@
+import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,22 +21,6 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function getRequestOrigin(request: NextRequest) {
-  const origin = request.headers.get("origin");
-
-  if (origin) {
-    return origin.replace(/\/$/, "");
-  }
-
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
-
-  if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, "");
-  }
-
-  return request.nextUrl.origin.replace(/\/$/, "");
-}
 
 function uniqueIds(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -89,6 +74,7 @@ async function findUserByEmail(
 
 export async function POST(request: NextRequest) {
   try {
+    const siteUrl = configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL);
     const body = (await request.json()) as InviteRequest;
 
     const departmentId = cleanText(body.departmentId);
@@ -292,7 +278,7 @@ export async function POST(request: NextRequest) {
         userId: targetUser.id,
         email,
         fullName,
-        siteUrl: getRequestOrigin(request),
+        siteUrl,
         actorUserId: actor.id,
       });
 

@@ -126,7 +126,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const existingResult = await admin.from("pilot_range_workspaces")
-      .select("workspace")
+      .select("workspace,updated_at")
       .eq("department_id", departmentId)
       .maybeSingle();
     if (existingResult.error) {
@@ -146,19 +146,51 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { error } = await admin.from("pilot_range_workspaces").upsert(
-      {
-        department_id: departmentId,
-        workspace,
-        updated_by_user_id: user.id,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "department_id",
-      },
-    );
+    const updatedAt = new Date(
+      Math.max(
+        Date.now(),
+        existingResult.data
+          ? Date.parse(existingResult.data.updated_at) + 1
+          : 0,
+      ),
+    ).toISOString();
+    const payload = {
+      department_id: departmentId,
+      workspace,
+      updated_by_user_id: user.id,
+      updated_at: updatedAt,
+    };
+    const write = existingResult.data
+      ? await admin
+          .from("pilot_range_workspaces")
+          .update(payload)
+          .eq("department_id", departmentId)
+          .eq("updated_at", existingResult.data.updated_at)
+          .select("department_id")
+          .maybeSingle()
+      : await admin
+          .from("pilot_range_workspaces")
+          .insert(payload)
+          .select("department_id")
+          .maybeSingle();
 
-    if (error) {
+    if (
+      write.error?.code === "23505" ||
+      (!write.error && !write.data)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The workspace changed during validation. Reload before saving.",
+        },
+        {
+          status: 409,
+          headers: { "Cache-Control": "no-store" },
+        },
+      );
+    }
+
+    if (write.error) {
       throw new Error("The range workspace could not be saved.");
     }
 

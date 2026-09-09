@@ -1,0 +1,18 @@
+{
+  "account": "193644343389",
+  "region": "us-east-1",
+  "roleArn": "arn:aws:iam::193644343389:role/TracePointMigrationProduction",
+  "hostname": "tracepointhq.com",
+  "certificateArn": "arn:aws:acm:us-east-1:193644343389:certificate/79ea614e-54ad-4f40-9b49-9c3d1ee5ff18",
+  "imageTag": "ae3d2a4ce87b2085e251b1995f51a7b07058ec4d",
+  "emailFromAddress": "contact@tracepointhq.com",
+  "dataMode": "retain-production-providers",
+  "desiredCount": 2,
+  "maxCapacity": 4,
+  "deploymentAuthorization": {
+    "account": "193644343389",
+    "roleArn": "arn:aws:iam::193644343389:role/TracePointMigrationProduction",
+    "expiresAt": "2026-09-08T15:28:15.1442122Z",
+    "reference": "user-authorized-production-foundations-20260907"
+  }
+}

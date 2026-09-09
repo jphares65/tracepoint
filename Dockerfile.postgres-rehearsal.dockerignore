@@ -1,0 +1,13 @@
+*
+!package.json
+!package-lock.json
+!scripts
+!scripts/run-aws-postgres-rehearsal.mjs
+!scripts/run-aws-postgres-rehearsal.test.mjs
+!scripts/postgres-bootstrap-prerequisites.mjs
+!scripts/staging-management-manifest.mjs
+!scripts/validate-local-tenant-isolation.sql
+!scripts/validate-local-armory-workflows.sql
+!supabase
+!supabase/migrations
+!supabase/migrations/*.sql

@@ -38,3 +38,14 @@ member account via STS, secret-free build, immutable image digest/scan, and a
 reviewed `cdk diff`; then verify HTTPS, health, logs, session behavior, and tenant
 negatives. The helpers do not request certificates, modify DNS, install Docker,
 or copy local environment files.
+
+Start each live session with the metadata-only inventory:
+
+```powershell
+.\scripts\get-tracepoint-staging-inventory.ps1 -Profile tracepoint-member-staging
+```
+
+It reads no secret values, objects, application logs, database data, or DNS
+records. The manual GitHub Actions foundation workflow uses OIDC and the protected
+`aws-staging` environment; it synthesizes and diffs with runtime disabled before
+deploying only network, security, and compute.

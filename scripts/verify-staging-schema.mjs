@@ -1,27 +1,31 @@
+import { readdir } from "node:fs/promises";
 import pg from "pg";
 
 const expectedHost = "db.wztqqqashilusoppddxi.supabase.co";
 const connectionString = process.env.TRACEPOINT_STAGING_DB_URL;
 if (!connectionString) throw new Error("TRACEPOINT_STAGING_DB_URL is unavailable.");
-const parsed = new URL(connectionString);
+let parsed;
+try { parsed = new URL(connectionString); } catch { throw new Error('Invalid staging database URL; value suppressed.'); }
 if (parsed.hostname !== expectedHost) {
   throw new Error("Staging database host mismatch; verification refused.");
 }
 
 const client = new pg.Client({
-  // Supabase direct database endpoints currently present a self-signed chain.
-  // Pinning the exact project host above prevents accidental cross-project use;
-  // TLS remains required even though the platform certificate is not CA-valid.
+  // Use NODE_EXTRA_CA_CERTS for an explicitly trusted provider CA when needed.
   connectionString: (() => {
     parsed.searchParams.delete("sslmode");
     return parsed.toString();
   })(),
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: true },
+  connectionTimeoutMillis: 10000,
 });
 try {
   await client.connect();
+  const expectedVersions = (await readdir('supabase/migrations')).filter(file => /^\d+_.+\.sql$/.test(file)).map(file => file.split('_')[0]).sort();
+  const ledger = await client.query('select version from supabase_migrations.schema_migrations order by version');
+  if (JSON.stringify(ledger.rows.map(row => row.version)) !== JSON.stringify(expectedVersions)) throw new Error('Staging migration versions differ from repository');
   const requiredTables = [
-    "profiles", "departments", "department_memberships",
+    "profiles", "departments", "department_memberships", "feature_catalog", "department_features", "department_feature_events", "pilot_range_workspaces",
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",
@@ -45,7 +49,7 @@ try {
   const failed = Object.entries(checks)
     .filter(([key, value]) => key !== "migration_count" && value !== true)
     .map(([key]) => key);
-  if (checks.migration_count !== 75 || missingTables.length || failed.length) {
+  if (checks.migration_count !== expectedVersions.length || missingTables.length || failed.length) {
     throw new Error("Focused staging schema verification failed.");
   }
   console.log(JSON.stringify({ host: expectedHost, missingTables, ...checks }));

@@ -1,0 +1,119 @@
+{
+  "account": "559054714699",
+  "region": "us-east-1",
+  "imageTag": "5a511edbf2d1543fd384f0ed11734a548d6272e7",
+  "checkedAt": "2026-09-05T08:04:35.828Z",
+  "identityVerified": true,
+  "stackStatus": "UPDATE_COMPLETE",
+  "ecs": {
+    "desired": 1,
+    "running": 1,
+    "pending": 0,
+    "revision": 16,
+    "completed": true
+  },
+  "scan": {
+    "status": "COMPLETE",
+    "findings": {}
+  },
+  "expectedDigest": "sha256:c8e547ac34888fab9f8b73d2882f20ad7494850096971db7924a51ff99af3301",
+  "runningDigest": "sha256:c8e547ac34888fab9f8b73d2882f20ad7494850096971db7924a51ff99af3301",
+  "imageMatches": true,
+  "targets": [
+    "healthy"
+  ],
+  "alarms": [
+    {
+      "name": "tracepoint-staging-alb-5xx-rate",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-application-5xx",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-memory",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-request-flood",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-unhealthy-target",
+      "state": "OK"
+    },
+    {
+      "name": "tracepoint-staging-runtime-alert",
+      "state": "OK"
+    }
+  ],
+  "public": [
+    {
+      "route": "/api/health",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "route": "/login",
+      "status": 200,
+      "passed": true
+    },
+    {
+      "route": "/auth/confirm",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/auth/callback",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/equipment",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/range-days",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/firearms",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/off-duty-firearms",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/qualifications",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/training",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/fleet-management",
+      "status": 307,
+      "passed": true
+    },
+    {
+      "route": "/notifications",
+      "status": 307,
+      "passed": true
+    }
+  ],
+  "logs": {
+    "currentTaskOnly": true,
+    "matchingErrors": 0,
+    "filesystemPermissionErrors": 0
+  },
+  "passed": true
+}

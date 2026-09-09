@@ -47,7 +47,7 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   if (file.size > 25 * 1024 * 1024) return NextResponse.json({ error: "Training files may not exceed 25 MB." }, { status: 400 });
   const attachmentType = kind === "lesson_plan" ? "training_lesson_plan" : "training_supporting_document";
   const attachmentId = crypto.randomUUID();
-  const objectStore = createObjectStore(context.admin);
+  const objectStore = createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadTrainingFile({
     departmentId: context.departmentId,
     recordId: eventId,

@@ -198,7 +198,7 @@ test("pins department patches to the public asset bucket with upsert enabled", a
     contentType: "image/webp",
     timestamp: 1234,
   });
-  const publicUrl = store.getDepartmentPatchPublicUrl(uploaded.path);
+  const publicUrl = (await store.createDepartmentPatchDelivery(uploaded.path)).signedUrl;
   await store.removeDepartmentPatch(uploaded.path);
 
   assert.equal(uploaded.path, "department-a/patch-1234.webp");

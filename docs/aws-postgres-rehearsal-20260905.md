@@ -1,0 +1,25 @@
+# Disposable AWS PostgreSQL rehearsal
+
+This is a synthetic portability/restore rehearsal, not a production migration or a replacement for Supabase authentication. No production data or existing database is imported. The runner reuses the clean-bootstrap compatibility scaffolding and the live manifest generator rather than creating another reconciliation format.
+
+Implemented: 65 migrations, manager/officer and cross-tenant RLS probes, verified RDS TLS, managed master-secret injection through ECS, custom master identity, encrypted private single-AZ 20 GB gp3 database, a separate network with no NAT, and all-table row/hash/relationship plus schema/function/trigger/grant/policy/sequence reconciliation after dump/restore. The runner rejects pre-existing public tables or a restore database. Its image has a `-postgres-rehearsal` suffix and cannot pass the application's 40-hex runtime-image gate. Logs contain aggregate evidence and sanitized failure codes only.
+
+The disposable stack deliberately disables backups and deletion protection for newly created synthetic fixtures, and its deletion policy removes only that run's resources. It does not import the existing staging network, service or storage. The image must have a COMPLETE zero-findings ECR scan before provisioning. The exact staging identity must be checked before every mutation. No application provider is switched.
+
+Live RDS APIs confirmed PostgreSQL 18.6 and 18.4 available in us-east-1, including db.t4g.micro with gp3 minimum 20 GB. Use 18.4 for this rehearsal to match the previously validated embedded PostgreSQL major/minor and the installed CDK CloudFormation schema; no claim that 18.4 is the newest release. AWS Pricing API returned $0.016/instance-hour and $0.115/GB-month on September 5. A maximum two-hour execution plus runner/build/log/key/secret overhead is reserved at $2, increasing the existing $57.17 monthly model to a conservative $59.17 for one rehearsal. Provisioning must not proceed if that reserve or the $75 ceiling cannot be respected.
+
+Offline validation passed: exact-target rejection tests, infrastructure assertions, TypeScript and strict synthesis. The shared bootstrap still applies all 65 migrations and passes tenant isolation.
+
+First live run `f5200b57a258` created a private encrypted PostgreSQL 18.4 instance and launched the synthetic runner. The runner exited on an assertion; restore/reconciliation is not credited. The entire newly created stack was removed in the execution finally block, and RDS subsequently reported that the exact disposable instance no longer exists. Total create/run/remove duration was 846.88 seconds. The Debian runner images were rejected for scan findings; the executed client-only Alpine image had a COMPLETE zero-findings scan. Sanitized phase diagnostics were added before retrying. See `aws-postgres-rehearsal-evidence-20260905.json` for exact image, stack and task identifiers.
+
+## Restore reconciliation correction
+
+The second isolated RDS run, 8642e96d0c58, applied all 65 migrations and passed source tenant isolation. Full restore comparison rejected one constraint fingerprint; automatic stack deletion completed in 934.024 seconds. The same failure was reproduced on local PostgreSQL 18: dump/reparse removed redundant Boolean parentheses from agency_training_requirements_fixed_date_valid. No constraint or grant was changed in either database.
+
+The manifest now uses PostgreSQL canonical pretty deparse for complete constraint definitions, retaining names, types and validation state. A regression test proves round-trip equality and rejection of a genuinely changed numeric bound. The local restore validator now uses the complete shared manifest, including relationships, grants, functions, triggers, indexes, sequences, policies and RLS instead of only row hashes and policies. All 65 migrations and full restore reconciliation passed locally in 2357 ms; four manifest tests passed. This is a tooling correction, not evidence of a successful AWS restore yet.
+
+## AWS rehearsal passed and removed
+
+Run 52628d084966 completed successfully using scan-clean image 46f11f823b409d0379ee58c976a4b3f28b8cae8e-postgres-rehearsal. The private encrypted RDS PostgreSQL target applied 65 migrations, reconciled 81 tables and 229 relationships plus all nine schema/security fingerprint groups, and passed tenant-negative tests after restore. Restore/reconciliation took 2746 ms; total creation/execution/verified stack removal took 832.393 seconds. TLS certificate verification was enabled. Only synthetic migration fixtures were used. No permanent database, production data transfer, production-size RTO or production PITR claim is made. Exact identifiers and digest are in aws-postgres-rehearsal-evidence-20260905.json.
+
+The subsequent current-schema run 4fdfd1fc7dcb also passed: 66 migrations, 84 tables, 232 relationships, all nine metadata groups, verified TLS and tenant-negative tests. Restore/reconciliation took 2615 ms; verified creation/execution/removal took 991.821 seconds. The final evidence file now identifies this current run and its scan-clean 01e64db image. No disposable database remains.

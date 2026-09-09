@@ -1,0 +1,175 @@
+{
+  "run": "18fab58b-a26e-4a92-a009-e03d13d9f0a2",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "poolId": "us-east-1_Y9GiDA5Zy",
+  "clientId": "4apeul5qohqgnf7d10ta2lk5qe",
+  "applicationProviderSwitched": false,
+  "productionIdentityMapping": false,
+  "initialSrpTokenReceived": true,
+  "setupChallengeUsed": true,
+  "sdkSrpMfaEnrollment": true,
+  "srpSignedTokenVerified": true,
+  "protocolHistory": [
+    {
+      "method": "GET",
+      "path": "/oauth2/authorize",
+      "status": 302,
+      "redirect": {
+        "host": "tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com",
+        "path": "/login",
+        "queryKeys": [
+          "response_type",
+          "client_id",
+          "redirect_uri",
+          "scope",
+          "state",
+          "nonce",
+          "code_challenge_method",
+          "code_challenge"
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/login",
+      "status": 200,
+      "redirect": null
+    },
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 302,
+      "redirect": {
+        "host": "tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com",
+        "path": "/mfa",
+        "queryKeys": [
+          "response_type",
+          "client_id",
+          "redirect_uri",
+          "scope",
+          "state",
+          "nonce",
+          "code_challenge_method",
+          "code_challenge"
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/mfa",
+      "status": 200,
+      "redirect": null
+    },
+    {
+      "method": "POST",
+      "path": "/mfa",
+      "status": 302,
+      "redirect": {
+        "host": "staging.tracepointhq.com",
+        "path": "/api/auth/cognito/callback",
+        "queryKeys": [
+          "code",
+          "state"
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/oauth2/authorize",
+      "status": 302,
+      "redirect": {
+        "host": "tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com",
+        "path": "/login",
+        "queryKeys": [
+          "response_type",
+          "client_id",
+          "redirect_uri",
+          "scope",
+          "state",
+          "nonce",
+          "code_challenge_method",
+          "code_challenge"
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/login",
+      "status": 200,
+      "redirect": null
+    }
+  ],
+  "mfaEnrollment": true,
+  "pkceAndSignedTokens": true,
+  "wrongClientDenied": true,
+  "applicationRevocationPortDenied": true,
+  "refreshRotation": true,
+  "oldRefreshDeniedAfterGrace": true,
+  "refreshRevocation": true,
+  "hostedLogout": true,
+  "cleanupVerified": true,
+  "checkedAtUTC": "2026-09-05T10:58:11.363Z",
+  "limitations": [
+    "Application provider remains Supabase.",
+    "Transaction, identity mapping and session-activity ports are synthetic in-memory rehearsal state, not application persistence.",
+    "No production identities migrated; lifecycle and database/RLS integration remain activation gates."
+  ],
+  "previousAttempts": [
+    {
+      "run": "7b8a5565-1c8e-4774-b077-99ace0eb6d44",
+      "cleanupVerified": true,
+      "failedStep": "PKCE callback verification"
+    },
+    {
+      "run": "8e8501a3-b619-4cc6-baf7-79203f8e0c84",
+      "cleanupVerified": true,
+      "failedStep": "waiting for PKCE callback"
+    },
+    {
+      "run": "ea66d23a-1244-44fb-a3d0-f9645db13b48",
+      "cleanupVerified": true,
+      "failedStep": "TOTP enrollment"
+    },
+    {
+      "run": "5430e513-d577-4678-aefb-f1b39e0d153c",
+      "cleanupVerified": true,
+      "failedStep": "waiting for PKCE callback"
+    },
+    {
+      "run": "f9326e3e-93f0-4dbb-a950-a382fb120a4b",
+      "cleanupVerified": true,
+      "failedStep": "TOTP enrollment"
+    },
+    {
+      "run": "2ef7a13b-06c3-4088-9cda-73968bd6f549",
+      "cleanupVerified": true,
+      "failedStep": "TOTP enrollment"
+    },
+    {
+      "run": "3b17de97-6d51-458d-bb18-956d7f8c0978",
+      "cleanupVerified": true,
+      "failedStep": "SRP and TOTP enrollment"
+    },
+    {
+      "run": "c7ab770c-e8d3-4f0b-9c31-f7b19e2cf42e",
+      "cleanupVerified": true,
+      "failedStep": "waiting for PKCE callback"
+    },
+    {
+      "run": "b29b2802-972d-4bc2-a0b7-e8aa9a222553",
+      "cleanupVerified": true,
+      "failedStep": "waiting for PKCE callback"
+    },
+    {
+      "run": "9888966c-1ac7-4c89-ba41-e51de5b1964b",
+      "cleanupVerified": true,
+      "failedStep": "waiting for PKCE callback"
+    },
+    {
+      "run": "bad03710-e328-4aa0-af69-e4e598587f69",
+      "cleanupVerified": true,
+      "failedStep": null
+    }
+  ]
+}

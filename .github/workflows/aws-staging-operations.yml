@@ -1,0 +1,63 @@
+name: AWS staging read-only operations
+on:
+  push:
+    branches: [codex/aws-staging-readiness-20260902]
+    paths: [.github/staging-operations.json]
+permissions:
+  contents: read
+concurrency:
+  group: tracepoint-staging-release
+  cancel-in-progress: false
+jobs:
+  evidence:
+    if: github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    environment: aws-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: Bind evidence request to reviewed source
+        id: request
+        run: node scripts/validate-staging-operations-request.mjs
+      - name: Validate operations safety contract
+        run: node --test scripts/validate-staging-operations-request.test.mjs
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+        id: credentials
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '559054714699'
+          role-duration-seconds: 3600
+          role-session-name: staging-operations-${{ github.run_id }}
+          # STS session policies must use customer managed policy ARNs when
+          # referencing managed policies. Use an explicit inline read allowlist.
+          # Resource and KMS service restrictions remain in the intersected role.
+          # Keep the session compact enough for STS packed-policy limits.
+          inline-session-policy: >-
+            {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["cloudformation:DescribeStacks","ecs:DescribeServices","ecs:DescribeTasks","ecs:ListTasks","ecs:DescribeTaskDefinition","ecr:DescribeImageScanFindings","elasticloadbalancing:DescribeTargetHealth","cloudwatch:DescribeAlarms","logs:FilterLogEvents","budgets:ViewBudget","secretsmanager:GetSecretValue","kms:Decrypt"],"Resource":"*","Condition":{"StringEquals":{"aws:RequestedRegion":"us-east-1"}}},{"Effect":"Allow","Action":["organizations:DescribeOrganization","organizations:ListAccounts","organizations:ListPoliciesForTarget"],"Resource":"*"}]}
+      - name: Inspect production account readiness without mutation
+        run: node scripts/collect-production-account-readiness.mjs
+      - name: Collect sanitized live runtime evidence
+        env:
+          ACCEPTED_IMAGE: ${{ steps.request.outputs.imageCommit }}
+        run: node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE
+      - name: Correlate historical log window without message content
+        run: node scripts/investigate-staging-historical-logs.mjs
+      - name: Verify Brevo delivery prerequisites without sending
+        if: always() && steps.credentials.outcome == 'success'
+        run: node scripts/test-staging-brevo-delivery.mjs --prerequisites-only
+      - name: Read actual budget and optional cost detail
+        if: always() && steps.credentials.outcome == 'success'
+        run: node scripts/collect-staging-operations-cost.mjs

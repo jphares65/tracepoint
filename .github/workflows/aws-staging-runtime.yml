@@ -1,0 +1,100 @@
+﻿name: AWS staging runtime release
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/aws-staging-readiness-20260902]
+    paths: [.github/staging-release.json]
+permissions:
+  contents: read
+concurrency:
+  group: tracepoint-staging-release
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - run: node --test --test-concurrency=1 scripts/*.test.mjs
+      - run: node scripts/run-application-tests.mjs
+      - run: npm test --prefix infra
+      - run: npx tsc --noEmit
+  release:
+    needs: validate
+    if: github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    environment: aws-staging
+    permissions:
+      contents: read
+      id-token: write
+      statuses: read
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TRACEPOINT_DIRECT_STAGING_DEPLOYMENT: 'true'
+      CERTIFICATE_ARN: ${{ vars.STAGING_CERTIFICATE_ARN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Validate release inputs before any AWS mutation
+        shell: pwsh
+        run: |
+          foreach ($name in @('CERTIFICATE_ARN')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name" }
+          }
+      - name: Bind deliberate push request to reviewed source
+        id: request
+        if: github.event_name == 'push'
+        run: node scripts/validate-staging-release-request.mjs
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - run: npx playwright install chromium
+      - name: Windows deployment safety validation
+        shell: pwsh
+        run: |
+          ./scripts/test-deployment-safety.ps1
+          ./scripts/test-release-orchestration.ps1
+      - name: Require repaired Vercel branch Preview
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/wait-for-staging-preview.mjs
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '559054714699'
+          role-duration-seconds: 7200
+      - name: Publish tracked source and wait for scan
+        if: github.event_name != 'push' || steps.request.outputs.publish == 'true'
+        shell: pwsh
+        run: ./scripts/publish-tracepoint-staging-image.ps1 -Wait
+      - name: Guarded release with authenticated smoke and automatic recovery
+        shell: pwsh
+        env:
+          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit || github.sha }}
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:RELEASE_IMAGE -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3
+
+      - name: Controlled staging rollback and return to accepted image
+        if: steps.request.outputs.rollbackPriorTaskArn != ''
+        shell: pwsh
+        env:
+          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit }}
+          ROLLBACK_TASK: ${{ steps.request.outputs.rollbackPriorTaskArn }}
+        run: ./scripts/rehearse-staging-rollback.ps1 -CurrentImageTag $env:RELEASE_IMAGE -PriorTaskDefinitionArn $env:ROLLBACK_TASK -Execute

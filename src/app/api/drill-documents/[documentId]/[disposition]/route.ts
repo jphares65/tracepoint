@@ -18,7 +18,7 @@ export async function GET(_request: Request, routeContext: Context) {
   if (!row.data) return NextResponse.json({ error: "Drill document not found." }, { status: 404 });
   const path = attachmentPathFromMetadata(row.data.storage_path, departmentId);
   if (!path) return NextResponse.json({ error: "Drill document not found." }, { status: 404 });
-  const store = createObjectStore(admin);
+  const store = createObjectStore(admin, departmentId);
   const signed = disposition === "download"
     ? await store.createAttachmentDownload(path, row.data.original_filename)
     : await store.createAttachmentView(path);

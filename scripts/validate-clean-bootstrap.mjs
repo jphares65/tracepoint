@@ -1,3 +1,6 @@
+import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
+import { catalogSql, manifestSql } from "./staging-management-manifest.mjs";
+import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import assert from "node:assert/strict";
@@ -19,48 +22,21 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 61;
+const expectedMigrationCount = 75;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
-const port = 56000 + Math.floor(Math.random() * 4000);
+const port = await localPostgresPort();
 const postgres = new EmbeddedPostgres({
   databaseDir,
   user: "postgres",
   password: "local-bootstrap-only",
   port,
   persistent: false,
+  postgresFlags: ["-h", "127.0.0.1"],
   initdbFlags: ["--encoding=UTF8", "--locale=C"],
   onLog: () => {},
   onError: (message) => console.error(message),
 });
-
-const supabasePrerequisites = `
-  create role anon nologin;
-  create role authenticated nologin;
-  create role service_role nologin;
-  create schema auth;
-  create table auth.users (
-    id uuid primary key,
-    email text,
-    raw_user_meta_data jsonb not null default '{}'::jsonb
-  );
-  create function auth.uid() returns uuid language sql stable as
-    $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-  create schema storage;
-  create table storage.buckets (
-    id text primary key,
-    name text not null,
-    public boolean not null default false,
-    file_size_limit bigint,
-    allowed_mime_types text[]
-  );
-  create table storage.objects (
-    id uuid primary key default gen_random_uuid(),
-    bucket_id text references storage.buckets(id),
-    name text not null
-  );
-  alter table storage.objects enable row level security;
-`;
 
 let client;
 let started = false;
@@ -88,6 +64,9 @@ try {
   await client.connect();
   await client.query("set statement_timeout = '20s'");
   await client.query(supabasePrerequisites);
+  await client.query(
+    "create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)",
+  );
 
   for (const file of migrationFiles) {
     console.log(`Applying ${file}`);
@@ -96,6 +75,10 @@ try {
     try {
       await client.query("begin");
       await client.query(sql);
+      await client.query(
+        "insert into supabase_migrations.schema_migrations(version) values($1)",
+        [file.split("_", 1)[0]],
+      );
       await client.query("commit");
     } catch (error) {
       await client.query("rollback");
@@ -113,6 +96,8 @@ try {
 
   const requiredTables = [
     "profiles", "departments", "department_memberships",
+    "feature_catalog", "department_features", "department_feature_events",
+    "pilot_range_workspaces",
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",
@@ -170,6 +155,16 @@ try {
   if (failedChecks.length) {
     throw new Error(`Focused schema checks failed: ${failedChecks.join(", ")}`);
   }
+
+  await client.query(
+    await readFile("scripts/validate-local-armory-workflows.sql", "utf8"),
+  );
+  await client.query(
+    await readFile("scripts/validate-local-tenant-isolation.sql", "utf8"),
+  );
+  console.log(
+    "Local armory workflows and tenant isolation passed.",
+  );
 
   const departmentA = "10000000-0000-0000-0000-000000000001";
   const departmentB = "10000000-0000-0000-0000-000000000002";
@@ -378,6 +373,82 @@ try {
 
   const fixtureCount = await client.query("select count(*)::int as count from public.departments where slug like 'permission-audit-%'");
   if (fixtureCount.rows[0].count !== 2) throw new Error("Disposable permission fixture setup was incomplete.");
+
+  if (process.argv.includes("--rehearse-restore")) {
+    const binaryDir =
+      process.env.TRACEPOINT_PG_BIN ||
+      path.dirname(postgres.process.spawnfile);
+    const suffix = process.platform === "win32" ? ".exe" : "";
+    const dumpPath = path.join(databaseDir, "rehearsal.dump");
+    const localEnv = {
+      ...process.env,
+      PGPASSWORD: "local-bootstrap-only",
+    };
+    const connectionArgs = [
+      "-h",
+      "127.0.0.1",
+      "-p",
+      String(port),
+      "-U",
+      "postgres",
+    ];
+    await execFileAsync(
+      path.join(binaryDir, `pg_dump${suffix}`),
+      [
+        ...connectionArgs,
+        "-Fc",
+        "--no-owner",
+        "-f",
+        dumpPath,
+        "postgres",
+      ],
+      { env: localEnv, timeout: 60_000 },
+    );
+    await client.query("create database tracepoint_restore");
+    const startedAt = Date.now();
+    await execFileAsync(
+      path.join(binaryDir, `pg_restore${suffix}`),
+      [
+        ...connectionArgs,
+        "--no-owner",
+        "--exit-on-error",
+        "-d",
+        "tracepoint_restore",
+        dumpPath,
+      ],
+      { env: localEnv, timeout: 60_000 },
+    );
+    const restored = new client.constructor({
+      host: "127.0.0.1",
+      port,
+      user: "postgres",
+      password: "local-bootstrap-only",
+      database: "tracepoint_restore",
+    });
+    try {
+      await restored.connect();
+      const fingerprint = async (connection) => {
+        const catalog = (await connection.query(catalogSql)).rows[0];
+        const results = await connection.query(
+          manifestSql(catalog, versions),
+        );
+        return results.find((result) => result.rows?.[0]?.manifest)
+          ?.rows[0].manifest;
+      };
+      const before = await fingerprint(client);
+      const after = await fingerprint(restored);
+      assert.deepEqual(
+        after,
+        before,
+        "Local restore full manifest reconciliation failed",
+      );
+      console.log(
+        `Local dump/restore reconciliation passed in ${Date.now() - startedAt} ms.`,
+      );
+    } finally {
+      await restored.end();
+    }
+  }
 
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {

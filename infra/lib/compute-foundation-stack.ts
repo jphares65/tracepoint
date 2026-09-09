@@ -6,12 +6,14 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 export interface ComputeFoundationStackProps extends cdk.StackProps {
   environmentName: string;
   vpc: ec2.IVpc;
   dataKey: kms.IKey;
+  logRetention?: logs.RetentionDays;
 }
 
 export class ComputeFoundationStack extends cdk.Stack {
@@ -42,12 +44,12 @@ export class ComputeFoundationStack extends cdk.Stack {
     this.cluster = new ecs.Cluster(this, "Cluster", {
       vpc: props.vpc,
       clusterName: `tracepoint-${props.environmentName}`,
-      containerInsightsV2: ecs.ContainerInsights.DISABLED,
+      containerInsightsV2: props.environmentName === "production" ? ecs.ContainerInsights.ENHANCED : ecs.ContainerInsights.DISABLED,
     });
 
     this.appLogGroup = new logs.LogGroup(this, "AppLogGroup", {
       logGroupName: `/tracepoint/${props.environmentName}/application`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: props.logRetention ?? logs.RetentionDays.ONE_MONTH,
       encryptionKey: dataKey,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
@@ -66,13 +68,58 @@ export class ComputeFoundationStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    const ecsTasksPrincipal = new iam.ServicePrincipal("ecs-tasks.amazonaws.com", {
+      conditions: {
+        ArnLike: {
+          "aws:SourceArn": cdk.Stack.of(this).formatArn({
+            service: "ecs",
+            resource: "*",
+          }),
+        },
+        StringEquals: { "aws:SourceAccount": this.account },
+      },
+    });
+
     this.executionRole = new iam.Role(this, "TaskExecutionRole", {
       roleName: `tracepoint-${props.environmentName}-ecs-execution`,
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"),
-      ],
+      assumedBy: ecsTasksPrincipal,
+      description: `Pulls the immutable TracePoint image, writes application logs, and injects the ${props.environmentName} secret`,
     });
+    this.executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ecr:GetAuthorizationToken"],
+        resources: ["*"],
+      }),
+    );
+
+    if (props.environmentName === "production") {
+      NagSuppressions.addResourceSuppressions(this.appSecrets, [{
+        id: "AwsSolutions-SMG4",
+        reason: "This JSON secret contains Supabase and Brevo credentials whose vendor-side rotation must be coordinated and rehearsed before automatic rotation can be enabled.",
+      }]);
+      const executionPolicy = this.executionRole.node.findChild("DefaultPolicy");
+      NagSuppressions.addResourceSuppressions(executionPolicy, [{
+        id: "AwsSolutions-IAM5",
+        reason: "ECR authorization is not resource-scoped and CloudWatch Logs requires only the retained application log group's generated stream suffix.",
+        appliesTo:["Resource::*","Resource::<AppLogGroup7D8CD952.Arn>:*"]
+      }]);
+    }
+    this.executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ],
+        resources: [this.repository.repositoryArn],
+      }),
+    );
+    this.executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+        resources: [`${this.appLogGroup.logGroupArn}:*`],
+      }),
+    );
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
@@ -88,7 +135,7 @@ export class ComputeFoundationStack extends cdk.Stack {
 
     this.taskRole = new iam.Role(this, "TaskRole", {
       roleName: `tracepoint-${props.environmentName}-ecs-task`,
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      assumedBy: ecsTasksPrincipal,
       description: "Least-privilege runtime role for the TracePoint application",
     });
 

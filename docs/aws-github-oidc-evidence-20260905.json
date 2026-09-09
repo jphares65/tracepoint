@@ -1,0 +1,23 @@
+{
+  "account": "559054714699",
+  "region": "us-east-1",
+  "roleArn": "arn:aws:iam::559054714699:role/TracePointMigrationStagingGitHub",
+  "stackArn": "arn:aws:cloudformation:us-east-1:559054714699:stack/tracepoint-staging-github/e7ad4d50-a8fe-11f1-ae18-0ecd3106aae9",
+  "environment": "aws-staging",
+  "allowedBranch": "codex/aws-staging-readiness-20260902",
+  "runId": 33953844088,
+  "jobId": 101273445392,
+  "runUrl": "https://github.com/jphares65/tracepoint/actions/runs/33953844088",
+  "headSha": "d1b559abf6121d1d52372a9f9f3d49d7d55ab4bd",
+  "conclusion": "success",
+  "verified": [
+    "OIDC assumption",
+    "staging provider credential probes",
+    "immutable zero-finding image",
+    "budget",
+    "ECS/ALB/alarms/public routes/logs"
+  ],
+  "longLivedAwsKeysInstalled": false,
+  "applicationMutated": false,
+  "fullOidcReleaseExecuted": false
+}

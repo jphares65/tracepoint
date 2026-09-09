@@ -1,0 +1,247 @@
+{
+  "commit": "af8304f40bad8ccd7336b35cacd026a89be5149a",
+  "workflowFound": true,
+  "run": 33974564913,
+  "attempt": 1,
+  "status": "completed",
+  "conclusion": "success",
+  "url": "https://github.com/jphares65/tracepoint/actions/runs/33974564913",
+  "preview": "success",
+  "checkedAtUTC": "2026-09-05T16:13:24.409Z",
+  "jobs": [
+    {
+      "id": 101328887489,
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci --prefix infra",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node --test --test-concurrency=1 scripts/*.test.mjs",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node scripts/run-application-tests.mjs",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm test --prefix infra",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npx tsc --noEmit",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 101329145768,
+      "name": "release",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate release inputs before any AWS mutation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Bind deliberate push request to reviewed source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci --prefix infra",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npx playwright install chromium",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows deployment safety validation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Require repaired Vercel branch Preview",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Publish tracked source and wait for scan",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Guarded release with authenticated smoke and automatic recovery",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Controlled staging rollback and return to accepted image",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "execution": [
+    {
+      "job": "validate",
+      "testCounts": [
+        50,
+        196,
+        7,
+        6,
+        2,
+        2,
+        2,
+        4,
+        3
+      ],
+      "fixtures": [],
+      "structuralGates": [],
+      "resourceDiff": []
+    },
+    {
+      "job": "release",
+      "testCounts": [],
+      "fixtures": [
+        {
+          "run": "06c6195c-8a29-49f7-9c72-4a9d1acec691",
+          "storageCleanup": "verified zero fixture versions"
+        },
+        {
+          "run": "06c6195c-8a29-49f7-9c72-4a9d1acec691",
+          "cleanup": "verified"
+        },
+        {
+          "run": "201f618d-d1cf-4f0b-b567-e6abcac4059f",
+          "documentAudit": "verified"
+        },
+        {
+          "run": "201f618d-d1cf-4f0b-b567-e6abcac4059f",
+          "auditCreation": "verified",
+          "custodyHistory": "verified"
+        },
+        {
+          "run": "201f618d-d1cf-4f0b-b567-e6abcac4059f",
+          "storageCleanup": "verified zero fixture versions"
+        },
+        {
+          "run": "201f618d-d1cf-4f0b-b567-e6abcac4059f",
+          "cleanup": "verified"
+        }
+      ],
+      "structuralGates": [
+        {
+          "safe": true,
+          "scope": "exact staging private storage activation and immutable image"
+        }
+      ],
+      "resourceDiff": [
+        "[~] AWS::ECS::TaskDefinition Service/TaskDef ServiceTaskDef1922A00F replace"
+      ],
+      "rollback": {
+        "currentTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:18",
+        "priorTaskDefinition": "arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:17",
+        "imageTag": "af8304f40bad8ccd7336b35cacd026a89be5149a",
+        "rollbackVerified": true,
+        "rollbackSeconds": 411.9726504,
+        "returnSeconds": 421.5280032,
+        "correctedRuntimeRestored": true
+      }
+    }
+  ]
+}

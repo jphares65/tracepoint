@@ -1,0 +1,375 @@
+{
+  "date": "2026-09-05",
+  "method": "Existing weighted binary checklist. Withdraw deployed auth/email configuration credit after observed failures; restored stored keys earn no deployed-runtime credit until a corrected image runs. Actual measured month-to-date cost now verified; forecast remains unavailable. No credit for documentation or fixture scaffolding alone.",
+  "before": 47.8,
+  "after": 45.55,
+  "categories": [
+    {
+      "category": "AWS account/governance",
+      "weight": 6,
+      "checks": [
+        {
+          "capability": "isolated staging account",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "exact staging identity boundary",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "production account authorized",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "organization controls validated",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "network and compute",
+      "weight": 10,
+      "checks": [
+        {
+          "capability": "staging ECS and ALB operational checkpoint",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "staging ingress/TLS configured",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "lean network synthesized without NAT",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "production network deployed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "production load/failure test",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "runtime deployment",
+      "weight": 8,
+      "checks": [
+        {
+          "capability": "immutable staging image deployed checkpoint",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "production runtime deployed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "full authenticated staging acceptance",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "live rollback rehearsal",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "database/schema/data migration",
+      "weight": 16,
+      "checks": [
+        {
+          "capability": "isolated staging schema checkpoint",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "56 migration clean bootstrap",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "database RLS tenant-negative execution",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "synthetic export/restore reconciliation",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "live staging manifest reconciled",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "production data rehearsal",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "production database moved",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "production PITR restore timed",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "authentication",
+      "weight": 10,
+      "checks": [
+        {
+          "capability": "staging Supabase configuration checkpoint",
+          "before": true,
+          "after": false
+        },
+        {
+          "capability": "server access repository tests",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "authenticated staging browser acceptance",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "replacement identity provider deployed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "MFA and session cutover validated",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "storage",
+      "weight": 8,
+      "checks": [
+        {
+          "capability": "provider interface tested",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "checksum corruption/loss tests",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "S3 application provider deployed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "live object migration reconciled",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "email",
+      "weight": 6,
+      "checks": [
+        {
+          "capability": "provider interface tested",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "staging Brevo configuration checkpoint",
+          "before": true,
+          "after": false
+        },
+        {
+          "capability": "SES application provider deployed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "bounce/suppression delivery verified",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "DNS/TLS",
+      "weight": 8,
+      "checks": [
+        {
+          "capability": "staging hostname resolves and TLS works",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "staging login and health HTTP 200",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "production AWS certificate verified",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "production DNS cutover validated",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "CI/CD",
+      "weight": 8,
+      "checks": [
+        {
+          "capability": "commit-addressed publication checkpoint",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "OIDC release executed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "executable runtime safety tests",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "scan rejection tests",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "full build/deploy/recovery chain executed",
+          "before": false,
+          "after": false
+        }
+      ]
+    },
+    {
+      "category": "security/monitoring/backups",
+      "weight": 10,
+      "checks": [
+        {
+          "capability": "retained encrypted infrastructure",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "application log retention",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "staging alarms checkpoint",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "source dependency audit clean",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "notification escalation tested",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "production backup restore validated",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "WAF and load controls validated",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "actual cost verified below ceiling",
+          "before": false,
+          "after": true
+        }
+      ]
+    },
+    {
+      "category": "production account readiness",
+      "weight": 6,
+      "checks": [
+        {
+          "capability": "dedicated production account authorized",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "exact live production role gate",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "strict offline production preview",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "production scaling/retention/separation assertions",
+          "before": true,
+          "after": true
+        }
+      ]
+    },
+    {
+      "category": "cutover/rollback validation",
+      "weight": 4,
+      "checks": [
+        {
+          "capability": "executable cutover input rejection tests",
+          "before": true,
+          "after": true
+        },
+        {
+          "capability": "DNS rollback rehearsed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "application rollback rehearsed",
+          "before": false,
+          "after": false
+        },
+        {
+          "capability": "agency cutover approved",
+          "before": false,
+          "after": false
+        }
+      ]
+    }
+  ]
+}

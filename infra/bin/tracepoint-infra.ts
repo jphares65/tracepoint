@@ -4,28 +4,28 @@ import { NetworkStack } from "../lib/network-stack";
 import { SecurityStack } from "../lib/security-stack";
 import { ComputeFoundationStack } from "../lib/compute-foundation-stack";
 import { RuntimeStack } from "../lib/runtime-stack";
+import { ImageBuildStack } from "../lib/image-build-stack";
+import { directStagingSynthesizer } from "../lib/staging-synthesizer";
+
+import { PrivateStorageStack } from "../lib/private-storage-stack";
 
 const app = new cdk.App();
 
-const environmentName = app.node.tryGetContext("environment");
-const account = app.node.tryGetContext("account");
-const region = app.node.tryGetContext("region") ?? process.env.CDK_DEFAULT_REGION;
-const workloadEnvironment = "staging";
-
-if (environmentName !== "tracepoint-staging") {
-  throw new Error("This assembly requires -c environment=tracepoint-staging");
-}
-if (!account || !/^\d{12}$/.test(account)) {
-  throw new Error("The staging account must be supplied with -c account=559054714699");
-}
-if (account === "265544358665") {
-  throw new Error("Refusing to target AWS Organizations management account 265544358665");
-}
-if (account !== "559054714699") {
-  throw new Error("This assembly is restricted to staging account 559054714699");
-}
-if (region !== "us-east-1") {
-  throw new Error("This assembly requires -c region=us-east-1");
+// Production templates are an offline preview, never an authorized deployment target.
+const productionPreview = app.node.tryGetContext("productionPreview") === "true";
+const environmentName = productionPreview ? "tracepoint-production" : app.node.tryGetContext("environment");
+const account = productionPreview ? "111111111111" : app.node.tryGetContext("account");
+const region = app.node.tryGetContext("region");
+const workloadEnvironment = productionPreview ? "production" : "staging";
+const directDeployment=app.node.tryGetContext('directDeployment')==='true';
+if(productionPreview&&directDeployment)throw Error('Direct GitHub deployment is staging-only');
+if (app.node.tryGetContext("account") === "265544358665") throw new Error("Management account is forbidden");
+if (region !== "us-east-1") throw new Error("Region must equal us-east-1");
+if (productionPreview) {
+  if (app.node.tryGetContext("account") !== "111111111111") throw new Error("Production preview requires placeholder account 111111111111");
+  if (process.env.CDK_DEFAULT_ACCOUNT && process.env.CDK_DEFAULT_ACCOUNT !== "111111111111") throw new Error("Production preview must run offline without AWS credentials");
+} else if (environmentName !== "tracepoint-staging" || account !== "559054714699") {
+  throw new Error("Deployment assembly is restricted to tracepoint-staging account 559054714699");
 }
 
 // Keep synthesis offline and deterministic. These two AZs were verified in the
@@ -38,12 +38,15 @@ app.node.setContext(
 const env: cdk.Environment = { account, region };
 const commonProps = {
   env,
+  ...(directDeployment?{synthesizer:directStagingSynthesizer()}:{}),
   terminationProtection: true,
-  description: "TracePoint staging AWS foundation",
+  description: productionPreview ? "TracePoint production OFFLINE PREVIEW - not authorized for deployment" : "TracePoint staging AWS foundation",
   tags: {
     Application: "TracePoint",
     Environment: workloadEnvironment,
+    Owner: "TracePoint",
     ManagedBy: "AWS-CDK",
+    CostCenter: "TracePoint-Migration",
     DataClassification: "PublicSafety-Sensitive",
   },
 };
@@ -67,10 +70,26 @@ const compute = new ComputeFoundationStack(app, `${environmentName}-compute`, {
   environmentName: workloadEnvironment,
   vpc: network.vpc,
   dataKey: security.dataKey,
+  logRetention: productionPreview ? cdk.aws_logs.RetentionDays.ONE_YEAR : cdk.aws_logs.RetentionDays.ONE_MONTH,
 });
 compute.addStackDependency(network);
 compute.addStackDependency(security);
 
+const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
+  ...commonProps,
+  stackName: `${environmentName}-image-build`,
+  environmentName: workloadEnvironment,
+  repository: compute.repository,
+  appSecrets: compute.appSecrets,
+});
+imageBuild.addStackDependency(compute);
+
+const storageEnabled = app.node.tryGetContext("privateStorageEnabled") === "true";
+const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName}-storage`, {
+ ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,
+}) : undefined;
+const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
+if(!['supabase','s3'].includes(storageProvider)||storageProvider==='s3'&&!storage)throw new Error('Private storage must be explicitly provisioned before activation');
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {
   const certificateArn = app.node.tryGetContext("certificateArn");
@@ -101,7 +120,13 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
+    storageBucketName: storageProvider === "s3" ? `tracepoint-${workloadEnvironment}-private-${account}` : undefined,
+    emailFromAddress: app.node.tryGetContext("emailFromAddress"),
+    desiredCount: productionPreview ? 2 : 1,
+    maxCapacity: productionPreview ? 4 : undefined,
+    deletionProtection: productionPreview,
   });
+  if(storage && storageProvider === "s3") runtime.addStackDependency(storage);
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);
 }
