@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
+import { inviteCognitoUser } from "@/lib/authentication/cognito-invite";
+import { hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type InviteRequest = {
   departmentId?: string;
@@ -95,6 +97,17 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 },
       );
+    }
+
+    if(process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE==="aws-native"){
+      const resolved=await resolveServerAccess();
+      if(!resolved.ok)return NextResponse.json({error:resolved.error},{status:resolved.status});
+      if(resolved.context.departmentId!==departmentId)return NextResponse.json({error:"The active agency does not match this request."},{status:403});
+      const canManage=hasAnyServerPermission(resolved.context,["manage_users","administer_department"]),canAdminister=hasAnyServerPermission(resolved.context,["administer_department"]);
+      if(!canManage)return NextResponse.json({error:"You do not have permission to manage users."},{status:403});
+      if(roleCodes.includes("administrator")&&!canAdminister)return NextResponse.json({error:"Only a department Administrator may assign the Administrator role."},{status:403});
+      const result=await inviteCognitoUser({actorUserId:resolved.context.userId,departmentId,email,fullName,badgeNumber,rankTitle,unitName,employeeNumber,roleCodes,groupIds,siteUrl});
+      return NextResponse.json({ok:true,invitationSent:true,message:`Invitation sent to ${email}.`,operationId:result.operationId});
     }
 
     const server = await createServerClient();
@@ -257,6 +270,8 @@ export async function POST(request: NextRequest) {
 
     if (rolesError) throw rolesError;
 
+    // Generated bridge types predate the department-group RPC.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: groupsError } = await (server as any).rpc(
       "set_department_group_members",
       {

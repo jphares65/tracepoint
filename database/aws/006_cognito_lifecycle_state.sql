@@ -27,6 +27,7 @@ create table if not exists public.authentication_lifecycle_operations (
   operation_kind text not null check (operation_kind in ('invite','activate','assign_password','reset_password','disable','enable','delete_compensation')),
   tracepoint_user_id uuid not null references public.profiles(id) on delete cascade,
   department_id uuid references public.departments(id) on delete cascade,
+  actor_user_id uuid references public.profiles(id) on delete set null,
   provider_username text,
   provider_subject text,
   state text not null check (state in ('prepared','provider_succeeded','committed','compensation_required','failed')),
@@ -130,5 +131,68 @@ end;
 $$;
 revoke all on function tracepoint_auth.finalize_cognito_activation(uuid) from public,anon,authenticated,service_role;
 grant execute on function tracepoint_auth.finalize_cognito_activation(uuid) to tracepoint_runtime;
+
+create or replace function tracepoint_auth.prepare_cognito_invite(
+  p_user_id uuid,p_operation_id uuid,p_provider_username text,p_department_id uuid,
+  p_email text,p_full_name text,p_badge_number text,p_rank_title text,p_unit_name text,p_employee_number text,
+  p_role_codes text[],p_group_ids uuid[]
+) returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare v_actor uuid:=tracepoint_auth.subject_id();
+begin
+  if session_user<>'tracepoint_runtime' or v_actor is null or nullif(btrim(p_email),'') is null or nullif(btrim(p_full_name),'') is null or coalesce(array_length(p_role_codes,1),0)=0 then raise exception 'invite rejected' using errcode='22023'; end if;
+  if not (public.has_department_permission(p_department_id,'manage_users') or public.has_department_permission(p_department_id,'administer_department')) then raise exception 'invite forbidden' using errcode='42501'; end if;
+  if 'administrator'=any(p_role_codes) and not public.has_department_permission(p_department_id,'administer_department') then raise exception 'administrator assignment forbidden' using errcode='42501'; end if;
+  if exists(select 1 from public.profiles where lower(email)=lower(btrim(p_email))) then raise exception 'explicit existing identity selection required' using errcode='23505'; end if;
+  if (select count(*) from public.roles where code=any(p_role_codes))<>cardinality(p_role_codes) then raise exception 'invalid roles' using errcode='22023'; end if;
+  if exists(select 1 from unnest(coalesce(p_group_ids,array[]::uuid[])) g where not exists(select 1 from public.department_groups d where d.id=g and d.department_id=p_department_id and d.is_active)) then raise exception 'invalid groups' using errcode='22023'; end if;
+  insert into auth.users(id,email,raw_user_meta_data) values(p_user_id,lower(btrim(p_email)),jsonb_build_object('full_name',btrim(p_full_name),'identity_provider','cognito'));
+  insert into public.profiles(id,full_name,email) values(p_user_id,btrim(p_full_name),lower(btrim(p_email)));
+  insert into public.department_memberships(department_id,user_id,badge_number,rank_title,unit_name,employee_number,is_active,activation_status)
+    values(p_department_id,p_user_id,nullif(btrim(p_badge_number),''),nullif(btrim(p_rank_title),''),nullif(btrim(p_unit_name),''),nullif(btrim(p_employee_number),''),true,'pending_activation');
+  insert into public.department_membership_roles(department_id,user_id,role_code) select p_department_id,p_user_id,unnest(p_role_codes);
+  insert into public.department_group_members(department_id,group_id,user_id,assigned_by) select p_department_id,unnest(coalesce(p_group_ids,array[]::uuid[])),p_user_id,v_actor;
+  insert into public.authentication_lifecycle_operations(id,operation_kind,tracepoint_user_id,department_id,actor_user_id,provider_username,state)
+    values(p_operation_id,'invite',p_user_id,p_department_id,v_actor,p_provider_username,'prepared');
+end;
+$$;
+revoke all on function tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text[],uuid[]) from public,anon,service_role;
+grant execute on function tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text[],uuid[]) to authenticated;
+
+create or replace function tracepoint_auth.commit_cognito_invite(p_operation_id uuid,p_subject text,p_issuer text)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_op public.authentication_lifecycle_operations%rowtype;
+begin
+ if session_user<>'tracepoint_runtime' or nullif(btrim(p_subject),'') is null then raise exception 'invite commit rejected' using errcode='42501'; end if;
+ select * into v_op from public.authentication_lifecycle_operations where id=p_operation_id and operation_kind='invite' and state='prepared' for update;
+ if not found then raise exception 'invite operation unavailable' using errcode='P0002'; end if;
+ insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username)
+ values('cognito',p_issuer,p_subject,v_op.tracepoint_user_id,'pending',v_op.provider_username);
+ insert into public.authentication_identity_events(tracepoint_user_id,provider,issuer,subject,provider_username,event_type,actor_user_id,operation_id)
+ values(v_op.tracepoint_user_id,'cognito',p_issuer,p_subject,v_op.provider_username,'linked',v_op.actor_user_id,v_op.id);
+ update public.authentication_lifecycle_operations set provider_subject=p_subject,state='provider_succeeded',attempts=attempts+1,updated_at=now() where id=v_op.id;
+end;$$;
+revoke all on function tracepoint_auth.commit_cognito_invite(uuid,text,text) from public,anon,authenticated,service_role;
+grant execute on function tracepoint_auth.commit_cognito_invite(uuid,text,text) to tracepoint_runtime;
+
+create or replace function tracepoint_auth.finish_cognito_invite(p_operation_id uuid,p_sent boolean,p_error_code text default null)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_op public.authentication_lifecycle_operations%rowtype;
+begin
+ if session_user<>'tracepoint_runtime' then raise exception 'invite finish rejected' using errcode='42501'; end if;
+ select * into v_op from public.authentication_lifecycle_operations where id=p_operation_id and operation_kind='invite' for update;
+ if not found then raise exception 'invite operation unavailable' using errcode='P0002'; end if;
+ if p_sent then
+   update public.department_memberships set activation_status='activation_sent' where department_id=v_op.department_id and user_id=v_op.tracepoint_user_id and is_active;
+   update public.authentication_lifecycle_operations set state='committed',safe_error_code=null,updated_at=now() where id=v_op.id;
+ else
+   update public.authentication_lifecycle_operations set state='compensation_required',safe_error_code=left(coalesce(p_error_code,'email_unconfirmed'),80),updated_at=now() where id=v_op.id;
+ end if;
+end;$$;
+revoke all on function tracepoint_auth.finish_cognito_invite(uuid,boolean,text) from public,anon,authenticated,service_role;
+grant execute on function tracepoint_auth.finish_cognito_invite(uuid,boolean,text) to tracepoint_runtime;
 
 commit;
