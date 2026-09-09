@@ -185,7 +185,6 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
         Environment: Match.arrayWith([
           { Name: "TRACEPOINT_DATA_PROVIDER", Value: "supabase" },
           { Name: "TRACEPOINT_EMAIL_PROVIDER", Value: "brevo" },
-          { Name: "TRACEPOINT_FROM_EMAIL", Value: "contact@tracepointhq.com" },
           { Name: "TRACEPOINT_STORAGE_PROVIDER", Value: "supabase" },
         ]),
       }),
@@ -195,6 +194,33 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
   template.resourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 2);
   template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
   assert.match(JSON.stringify(template.toJSON()), /CONFIGURATION_ENVIRONMENT/);
+  assert.match(JSON.stringify(template.toJSON()), /TRACEPOINT_FROM_EMAIL.*contact@tracepointhq\.com/);
+});
+
+test("full-AWS runtime mode contains no Supabase or Brevo provider configuration", () => {
+  const { app, network, compute } = foundations();
+  const runtime = new RuntimeStack(app, "aws-native-runtime", {
+    env,
+    environmentName: "staging",
+    vpc: network.vpc,
+    repository: compute.repository,
+    cluster: compute.cluster,
+    appLogGroup: compute.appLogGroup,
+    appSecrets: compute.appSecrets,
+    databaseSecret: compute.appSecrets,
+    executionRole: compute.executionRole,
+    taskRole: compute.taskRole,
+    certificateArn: "arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000",
+    imageTag: "0123456789abcdef",
+    providerMode: "aws-native",
+    storageBucketName: "tracepoint-staging-private-559054714699",
+    cognitoUserPoolId: "us-east-1_Y9GiDA5Zy",
+    cognitoClientId: "syntheticclientid",
+    sesConfigurationSet: "tracepoint-staging",
+  });
+  const serialized = JSON.stringify(Template.fromStack(runtime).toJSON());
+  for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_EMAIL_PROVIDER", "ses", "TRACEPOINT_STORAGE_PROVIDER", "TRACEPOINT_DATABASE_SECRET_JSON"]) assert.match(serialized, new RegExp(value));
+  assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|SUPABASE_SERVICE_ROLE|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
 });
 
 test("production template retains resources, scales two to four tasks, and separates providers", () => {
