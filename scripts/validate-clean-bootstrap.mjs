@@ -95,7 +95,7 @@ try {
     const overlayFiles = (await readdir(awsTargetOverlaysDir))
       .filter((file) => /^\d+_.+\.sql$/.test(file))
       .sort();
-    if (overlayFiles.length !== 1) throw new Error(`Expected one AWS target overlay, found ${overlayFiles.length}.`);
+    if (overlayFiles.length !== 2) throw new Error(`Expected two AWS target overlays, found ${overlayFiles.length}.`);
     for (const file of overlayFiles) {
       await client.query("begin");
       try {

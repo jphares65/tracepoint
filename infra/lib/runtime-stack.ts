@@ -77,7 +77,8 @@ export class RuntimeStack extends cdk.Stack {
       "VPC DNS over TCP",
     );
 
-    const providerEnvironment = awsNative ? {
+    const providerEnvironment: Record<string, string> = awsNative ? {
+      TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native",
       TRACEPOINT_DATA_PROVIDER: "postgres",
       TRACEPOINT_AUTH_PROVIDER: "cognito",
       TRACEPOINT_EMAIL_PROVIDER: "ses",
@@ -87,16 +88,18 @@ export class RuntimeStack extends cdk.Stack {
       TRACEPOINT_DATABASE_CA_PATH: "/app/rds-ca.pem",
       TRACEPOINT_COGNITO_USER_POOL_ID: props.cognitoUserPoolId!,
       TRACEPOINT_COGNITO_CLIENT_ID: props.cognitoClientId!,
+      TRACEPOINT_AWS_ACCOUNT_ID: this.account,
       TRACEPOINT_SES_CONFIGURATION_SET: props.sesConfigurationSet!,
       AWS_REGION: this.region,
     } : {
+      TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge",
       TRACEPOINT_DATA_PROVIDER: "supabase",
       TRACEPOINT_AUTH_PROVIDER: "supabase",
       TRACEPOINT_EMAIL_PROVIDER: "brevo",
       TRACEPOINT_STORAGE_PROVIDER: props.storageBucketName ? "s3" : "supabase",
       ...(props.storageBucketName ? { TRACEPOINT_S3_BUCKET:props.storageBucketName, TRACEPOINT_S3_EXPECTED_OWNER:this.account, AWS_REGION:this.region } : {}),
     };
-    const providerSecrets = awsNative ? {
+    const providerSecrets: Record<string, ecs.Secret> = awsNative ? {
       TRACEPOINT_DATABASE_SECRET_JSON: ecs.Secret.fromSecretsManager(props.databaseSecret!),
       TRACEPOINT_IMPORT_APPROVAL_SECRET: ecs.Secret.fromSecretsManager(props.appSecrets, "TRACEPOINT_IMPORT_APPROVAL_SECRET"),
       TRACEPOINT_AUTH_STATE_KEYS: ecs.Secret.fromSecretsManager(props.appSecrets, "TRACEPOINT_AUTH_STATE_KEYS"),

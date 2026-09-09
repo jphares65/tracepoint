@@ -7,6 +7,7 @@ const commonRequired = [
   "TRACEPOINT_AUTH_PROVIDER",
   "TRACEPOINT_EMAIL_PROVIDER",
   "TRACEPOINT_STORAGE_PROVIDER",
+  "TRACEPOINT_RUNTIME_PROVIDER_MODE",
 ];
 
 const bridgeRequired = [
@@ -23,6 +24,7 @@ const awsNativeRequired = [
   "TRACEPOINT_IMPORT_APPROVAL_SECRET",
   "TRACEPOINT_AUTH_STATE_KEYS",
   "TRACEPOINT_AUTH_REFRESH_KEYS",
+  "TRACEPOINT_AWS_ACCOUNT_ID",
   "TRACEPOINT_COGNITO_USER_POOL_ID",
   "TRACEPOINT_COGNITO_CLIENT_ID",
   "TRACEPOINT_SES_CONFIGURATION_SET",
@@ -98,6 +100,24 @@ function validatePostgres(environment, invalid) {
   if (!validHost || secret?.port !== 5432 || !validUser || typeof secret?.password !== "string" || secret.password.length < 20 || secret?.dbname !== "tracepoint") invalid.push("TRACEPOINT_DATABASE_SECRET_JSON");
 }
 
+function validateKeyring(environment, name, invalid) {
+  let parsed;
+  try {
+    parsed = JSON.parse(environment[name] ?? "");
+  } catch {
+    invalid.push(name);
+    return;
+  }
+  const entries = parsed?.keys && typeof parsed.keys === "object" && !Array.isArray(parsed.keys)
+    ? Object.entries(parsed.keys)
+    : [];
+  if (typeof parsed?.active !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(parsed.active) ||
+      entries.length < 1 || entries.length > 3 || !entries.some(([id]) => id === parsed.active) ||
+      entries.some(([id, encoded]) => !/^[A-Za-z0-9_-]{1,32}$/.test(id) || typeof encoded !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(encoded))) {
+    invalid.push(name);
+  }
+}
+
 export function validateTracePointRuntimeConfig(environment = process.env) {
   const stage = environment.CONFIGURATION_ENVIRONMENT;
   const target = targets[stage];
@@ -129,8 +149,11 @@ export function validateTracePointRuntimeConfig(environment = process.env) {
 
   if (mode === "aws-native") {
     validatePostgres(environment, invalid);
+    validateKeyring(environment, "TRACEPOINT_AUTH_STATE_KEYS", invalid);
+    validateKeyring(environment, "TRACEPOINT_AUTH_REFRESH_KEYS", invalid);
     for (const name of forbiddenAwsNativeNames) if (present(environment, name)) invalid.push(name);
     if (!/^us-east-1_[A-Za-z0-9]+$/.test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");
+    if (!/^\d{12}$/.test(environment.TRACEPOINT_AWS_ACCOUNT_ID ?? "") || environment.TRACEPOINT_AWS_ACCOUNT_ID !== environment.TRACEPOINT_S3_EXPECTED_OWNER) invalid.push("TRACEPOINT_AWS_ACCOUNT_ID");
     if (!/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_CLIENT_ID");
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(environment.TRACEPOINT_SES_CONFIGURATION_SET ?? "")) invalid.push("TRACEPOINT_SES_CONFIGURATION_SET");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(environment.TRACEPOINT_FROM_EMAIL ?? "")) invalid.push("TRACEPOINT_FROM_EMAIL");

@@ -15,6 +15,7 @@ const valid = {
   TRACEPOINT_AUTH_PROVIDER: "supabase",
   TRACEPOINT_EMAIL_PROVIDER: "brevo",
   TRACEPOINT_STORAGE_PROVIDER: "supabase",
+  TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge",
 };
 
 test("accepts complete Supabase and Brevo staging configuration", () => {
@@ -80,8 +81,9 @@ test("accepts only the complete provider-free AWS runtime tuple", () => {
       dbname: "tracepoint",
     }),
     TRACEPOINT_IMPORT_APPROVAL_SECRET: "import-secret",
-    TRACEPOINT_AUTH_STATE_KEYS: "state-keys",
-    TRACEPOINT_AUTH_REFRESH_KEYS: "refresh-keys",
+    TRACEPOINT_AUTH_STATE_KEYS: JSON.stringify({ active: "current", keys: { current: "A".repeat(43) } }),
+    TRACEPOINT_AUTH_REFRESH_KEYS: JSON.stringify({ active: "current", keys: { current: "B".repeat(43) } }),
+    TRACEPOINT_AWS_ACCOUNT_ID: "559054714699",
     TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_AbCdEf123",
     TRACEPOINT_COGNITO_CLIENT_ID: "client123",
     TRACEPOINT_SES_CONFIGURATION_SET: "tracepoint-staging",
