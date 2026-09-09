@@ -6,7 +6,8 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 Assert-TracePointStagingIdentity | Out-Null
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $commit=(& git.exe -C $root rev-parse HEAD).Trim()
-if($commit -notmatch '^[0-9a-f]{40}$' -or (& git.exe -C $root branch --show-current).Trim() -ne 'codex/aws-staging-readiness-20260902'){throw 'Reviewed AWS branch required'}
+$branch=(& git.exe -C $root branch --show-current).Trim()
+if($commit -notmatch '^[0-9a-f]{40}$' -or $branch -notin @('main','codex/aws-main-integration-final-20260908')){throw 'Reviewed main or isolated AWS integration branch required'}
 if(@(& git.exe -C $root status --porcelain).Count){throw 'Commit reviewed work before publication'}
 $archive=Join-Path ([IO.Path]::GetTempPath()) ('tp-postgres-source-'+[guid]::NewGuid().ToString('N')+'.zip')
 try {

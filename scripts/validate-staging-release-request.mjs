@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 export function validateReleaseRequest(request,context){
- assert.equal(context.branch,'refs/heads/codex/aws-staging-readiness-20260902');assert.match(context.head,/^[0-9a-f]{40}$/);assert.match(request.reviewedCommit,/^[0-9a-f]{40}$/);assert.equal(request.reviewedCommit,context.parent);
+ assert.equal(context.branch,'refs/heads/main');assert.match(context.head,/^[0-9a-f]{40}$/);assert.match(request.reviewedCommit,/^[0-9a-f]{40}$/);assert.equal(request.reviewedCommit,context.parent);
  assert.deepEqual(context.changedFiles,['.github/staging-release.json']);assert.equal(request.environment,'staging');assert.equal(request.account,'559054714699');assert.equal(request.region,'us-east-1');assert.ok(['publish-and-deploy','deploy-existing'].includes(request.action));
  if(request.action==='deploy-existing'){assert.match(request.imageCommit,/^[0-9a-f]{40}$/);assert.equal(context.imageIsAncestor,true);assert.equal(context.runtimeSourceMatches,true);}
  if(request.rollbackPriorTaskArn!==undefined)assert.match(request.rollbackPriorTaskArn,new RegExp('^arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:[0-9]+$'));

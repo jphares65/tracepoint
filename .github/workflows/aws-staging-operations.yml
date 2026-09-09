@@ -1,7 +1,7 @@
 name: AWS staging read-only operations
 on:
   push:
-    branches: [codex/aws-staging-readiness-20260902]
+    branches: [main]
     paths: [.github/staging-operations.json]
 permissions:
   contents: read
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   evidence:
-    if: github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 15
     environment: aws-staging

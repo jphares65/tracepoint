@@ -1,7 +1,7 @@
 name: AWS staging OIDC proof
 on:
   push:
-    branches: [codex/aws-staging-readiness-20260902]
+    branches: [main]
     paths: [.github/workflows/aws-staging-oidc-proof.yml]
 permissions:
   contents: read
