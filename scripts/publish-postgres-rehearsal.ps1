@@ -10,7 +10,7 @@ if($commit -notmatch '^[0-9a-f]{40}$' -or (& git.exe -C $root branch --show-curr
 if(@(& git.exe -C $root status --porcelain).Count){throw 'Commit reviewed work before publication'}
 $archive=Join-Path ([IO.Path]::GetTempPath()) ('tp-postgres-source-'+[guid]::NewGuid().ToString('N')+'.zip')
 try {
- & git.exe -C $root archive --format=zip --output=$archive $commit -- Dockerfile.postgres-rehearsal Dockerfile.postgres-rehearsal.dockerignore buildspec.postgres-rehearsal.yml package.json package-lock.json scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql supabase/migrations
+ & git.exe -C $root archive --format=zip --output=$archive $commit -- Dockerfile.postgres-rehearsal Dockerfile.postgres-rehearsal.dockerignore buildspec.postgres-rehearsal.yml package.json package-lock.json database/aws scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql supabase/migrations
  if($LASTEXITCODE -ne 0){throw 'Source archive failed'}
  Assert-TracePointStagingIdentity | Out-Null
  $version=& aws.exe s3api put-object --bucket tracepoint-staging-build-source-559054714699 --key source/tracepoint-staging-source.zip --body $archive --region us-east-1 --query VersionId --output text

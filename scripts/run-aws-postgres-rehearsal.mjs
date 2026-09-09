@@ -46,6 +46,8 @@ async function main(){
    try{await client.query('begin');await client.query((await readFile('supabase/migrations/'+file,'utf8')).replace(/^\uFEFF/,''));await client.query('insert into supabase_migrations.schema_migrations values($1)',[file.split('_')[0]]);await client.query('commit');}
    catch(error){await client.query('rollback');console.log(JSON.stringify({failedMigration:file,sqlState:error.code}));throw Error('Disposable migration failed');}
   }
+  phase='AWS target overlays';const overlays=(await readdir('database/aws')).filter(f=>/^\d+_.+\.sql$/.test(f)).sort();assert.equal(overlays.length,1);
+  for(const file of overlays)await client.query(await readFile('database/aws/'+file,'utf8'));
   phase='source tenant isolation';for(const file of ['validate-local-tenant-isolation.sql','validate-local-armory-workflows.sql'])await client.query(await readFile('scripts/'+file,'utf8'));
   const catalog=(await client.query(catalogSql)).rows[0];
   const snapshot=async connection=>{const result=await connection.query(manifestSql(catalog,files.map(f=>f.split('_')[0])));const found=result.find(r=>r.rows?.[0]?.manifest)?.rows[0].manifest;assert.ok(found);assert.ok(found.relationships.every(r=>Number(r.orphan_count)===0));return found;};
@@ -57,7 +59,7 @@ async function main(){
   restored=new pg.Client({...config,database:'tracepoint_restore'});await restored.connect();
   phase='restore reconciliation';const after=await snapshot(restored);if(JSON.stringify(after)!==JSON.stringify(before))console.log(JSON.stringify({reconciliationDifferences:Object.keys(before).filter(key=>JSON.stringify(before[key])!==JSON.stringify(after[key])),metadataDifferences:Object.keys(before.metadata).filter(key=>before.metadata[key]!==after.metadata[key])}));assert.deepEqual(after,before);
   phase='restored tenant isolation';for(const file of ['validate-local-tenant-isolation.sql','validate-local-armory-workflows.sql'])await restored.query(await readFile('scripts/'+file,'utf8'));
-  console.log(JSON.stringify({rehearsal:'PASSED',run:process.env.REHEARSAL_RUN,migrations:files.length,tables:before.tables.length,relationships:before.relationships.length,restoreMilliseconds:Date.now()-started,tlsVerified:true,tenantNegativeTests:true,metadataReconciled:Object.keys(before.metadata),dataSource:'synthetic migration fixtures only'}));
+  console.log(JSON.stringify({rehearsal:'PASSED',run:process.env.REHEARSAL_RUN,migrations:files.length,awsTargetOverlays:overlays.length,tables:before.tables.length,relationships:before.relationships.length,restoreMilliseconds:Date.now()-started,tlsVerified:true,tenantNegativeTests:true,metadataReconciled:Object.keys(before.metadata),dataSource:'synthetic migration fixtures only'}));
  }finally{await restored?.end().catch(()=>{});await client.end().catch(()=>{});await rm(directory,{recursive:true,force:true});}
 }
 if(process.argv[1]?.endsWith('run-aws-postgres-rehearsal.mjs'))main().catch(error=>{console.error(JSON.stringify({rehearsal:'FAILED',phase,errorName:error.name,sqlState:error.code}));process.exitCode=1;});

@@ -24,6 +24,7 @@ const execFileAsync = promisify(execFile);
 
 const expectedMigrationCount = 75;
 const migrationsDir = path.resolve("supabase/migrations");
+const awsTargetOverlaysDir = path.resolve("database/aws");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = await localPostgresPort();
 const postgres = new EmbeddedPostgres({
@@ -87,6 +88,25 @@ try {
         cause: error,
       });
     }
+  }
+
+  let awsTargetOverlayCount = 0;
+  if (process.argv.includes("--aws-target")) {
+    const overlayFiles = (await readdir(awsTargetOverlaysDir))
+      .filter((file) => /^\d+_.+\.sql$/.test(file))
+      .sort();
+    if (overlayFiles.length !== 1) throw new Error(`Expected one AWS target overlay, found ${overlayFiles.length}.`);
+    for (const file of overlayFiles) {
+      await client.query("begin");
+      try {
+        await client.query(await readFile(path.join(awsTargetOverlaysDir, file), "utf8"));
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw new Error(`AWS target overlay failed in ${file}: ${error.message}`, { cause: error });
+      }
+    }
+    awsTargetOverlayCount = overlayFiles.length;
   }
 
   const authorityMigration = "202609050002_granular_permission_authority.sql";
@@ -450,7 +470,7 @@ try {
     }
   }
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission and retirement matrices passed; disposable database removed.`);
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsTargetOverlayCount} AWS target overlays; permission and retirement matrices passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {
