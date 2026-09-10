@@ -30,7 +30,7 @@ try {
       primary key(kind,name));`);
 
   const groups = [
-    {kind:"source",dir:"supabase/migrations",expected:75},
+    {kind:"source",dir:"supabase/migrations",expected:76},
   ];
   let applied = 0;
   for (const group of groups) {
@@ -76,7 +76,7 @@ try {
     await runtime.query("set role authenticated");
     await runtime.query("select count(*) from public.profiles");
   } finally { await runtime.end(); }
-  console.log(JSON.stringify({status:"PASSED",sourceMigrations:75,awsMigrations:AWS_MIGRATION_LEDGER.length,newlyApplied:applied,runtimeRoleVerified:true,supabaseAuthorizationReferences:0}));
+  console.log(JSON.stringify({status:"PASSED",sourceMigrations:76,awsMigrations:AWS_MIGRATION_LEDGER.length,newlyApplied:applied,runtimeRoleVerified:true,supabaseAuthorizationReferences:0}));
 } finally {
   if(locked)await migrator.query("select pg_advisory_unlock(hashtext('tracepoint:aws-schema-bootstrap'))").catch(()=>{});
   await migrator.end().catch(()=>{});

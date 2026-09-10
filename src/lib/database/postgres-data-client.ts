@@ -19,8 +19,10 @@ const relations: Record<string, Relation> = {
   "agency_training_certificates.departments": { alias: "departments", table: "departments", local: "department_id", foreign: "id", cardinality: "one" },
   "department_memberships.profiles": { alias: "profiles", table: "profiles", local: "user_id", foreign: "id", cardinality: "one" },
   "department_memberships.departments": { alias: "departments", table: "departments", local: "department_id", foreign: "id", cardinality: "one" },
-  "ammunition_transactions.ammunition_lots": { alias: "lot", table: "ammunition_lots", local: "ammunition_lot_id", foreign: "id", cardinality: "one" },
-  "ammunition_reconciliation_items.ammunition_lots": { alias: "lot", table: "ammunition_lots", local: "ammunition_lot_id", foreign: "id", cardinality: "one" },
+  "ammunition_transactions.ammunition_lots": { alias: "lot", table: "ammunition_lots", local: "lot_id", foreign: "id", cardinality: "one" },
+  "ammunition_reconciliation_items.ammunition_lots": { alias: "lot", table: "ammunition_lots", local: "lot_id", foreign: "id", cardinality: "one" },
+  "firearm_inspections.firearms": { alias: "firearm", table: "firearms", local: "firearm_id", foreign: "id", cardinality: "one" },
+  "firearm_inspections.firearm_inspection_items": { alias: "items", table: "firearm_inspection_items", local: "id", foreign: "inspection_id", cardinality: "many" },
 };
 
 function quote(value: string) {

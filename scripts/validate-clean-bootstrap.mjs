@@ -23,7 +23,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 75;
+const expectedMigrationCount = 76;
 const migrationsDir = path.resolve("supabase/migrations");
 const awsTargetOverlaysDir = path.resolve("database/aws");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
@@ -158,6 +158,9 @@ try {
     "equipment_types", "equipment_assets", "equipment_asset_assignments",
     "range_days", "range_day_drills", "fleet_vehicles",
     "notification_events", "training_certifications", "agency_training_events",
+    "ammunition_lots", "ammunition_transactions", "ammunition_reconciliations",
+    "ammunition_reconciliation_items", "attachments", "firearm_status_history",
+    "pilot_ammunition_workspaces", "pilot_remediation_workspaces",
   ];
   const { rows } = await client.query(
     `select tablename from pg_tables where schemaname = 'public' and tablename = any($1)`,
@@ -195,6 +198,14 @@ try {
         where schemaname = 'public' and tablename = 'certification_types'
           and policyname = 'department members can view certification types'
       ) as certification_type_policy
+      ,(select count(*) = 8 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='public' and c.relname in ('ammunition_lots','ammunition_transactions','ammunition_reconciliations','ammunition_reconciliation_items','attachments','firearm_status_history','pilot_ammunition_workspaces','pilot_remediation_workspaces') and c.relrowsecurity) as completed_module_rls
+      ,exists (select 1 from pg_constraint where conname='ammunition_transactions_lot_id_fkey') as ammunition_lot_fk
+      ,exists (select 1 from pg_constraint where conname='ammunition_reconciliation_items_reconciliation_id_fkey') as ammunition_reconciliation_fk
+      ,exists (select 1 from pg_constraint where conname='attachments_department_id_fkey') as attachments_department_fk
+      ,(select count(*) = 4 from pg_constraint where conname in ('ammunition_transactions_lot_department_fkey','ammunition_reconciliation_items_lot_department_fkey','ammunition_reconciliation_items_reconciliation_department_fkey','firearm_status_history_firearm_department_fkey')) as tenant_parent_fks
+      ,(select count(*) = 5 from pg_trigger where not tgisinternal and tgname in ('ammunition_lots_accountability_audit','ammunition_transactions_accountability_audit','ammunition_reconciliations_accountability_audit','ammunition_reconciliation_items_accountability_audit','firearm_status_history_accountability_audit')) as completed_module_audit_triggers
+      ,not exists (select 1 from pg_policies where schemaname='public' and policyname in ('firearm_status_history_select','firearm_status_history_insert','pilot_ammunition_workspaces_manage','pilot_remediation_workspaces_manage')) as legacy_module_policies_absent
       ,(select count(*) = 21 from public.permissions) as permission_catalog_complete
       ,exists (
         select 1 from pg_trigger

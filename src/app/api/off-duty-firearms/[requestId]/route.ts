@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy route. */
+
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -175,17 +177,10 @@ async function resolveCommandNotifications(
   context: any,
   requestId: string,
 ) {
-  const now = new Date().toISOString();
-
-  const { error } = await context.admin
-    .from("notification_events")
-    .update({
-      resolved_at: now,
-      updated_at: now,
-    })
-    .eq("department_id", context.departmentId)
-    .eq("notification_key", `off-duty-review-${requestId}`)
-    .is("resolved_at", null);
+  const { error } = await context.db.rpc(
+    "resolve_off_duty_review_notifications",
+    { p_department_id: context.departmentId, p_request_id: requestId },
+  );
 
   if (error) throw new Error(error.message);
 }
@@ -199,8 +194,6 @@ async function createOfficerNotification(
   notes: string | null,
   expirationDate: string | null,
 ) {
-  const now = new Date().toISOString();
-
   const title =
     action === "Approve"
       ? "Off-Duty Firearm Approved"
@@ -215,35 +208,21 @@ async function createOfficerNotification(
         }.`
       : `${firearmLabel}: ${notes ?? "Review the request for details."}`;
 
-  const { error } = await context.admin
-    .from("notification_events")
-    .upsert({
-      department_id: context.departmentId,
-      user_id: officerUserId,
-      notification_key: `off-duty-decision-${requestId}`,
-      source: "Off-Duty",
-      kind:
-        action === "Approve"
-          ? "off_duty_firearm_approved"
-          : action === "Deny"
-            ? "off_duty_firearm_denied"
-            : "off_duty_firearm_returned",
-      title,
-      detail,
-      href: "/off-duty-firearms",
-      priority: action === "Approve" ? "Normal" : "High",
-      fingerprint: JSON.stringify({
-        requestId,
-        action,
-        notes,
-        expirationDate,
-      }),
-      source_created_at: now,
-      first_seen_at: now,
-      last_seen_at: now,
-      resolved_at: null,
-      updated_at: now,
-    });
+  const { error } = await context.db.rpc("upsert_off_duty_notification", {
+    p_department_id: context.departmentId,
+    p_request_id: requestId,
+    p_target_user_id: officerUserId,
+    p_kind:
+      action === "Approve"
+        ? "off_duty_firearm_approved"
+        : action === "Deny"
+          ? "off_duty_firearm_denied"
+          : "off_duty_firearm_returned",
+    p_title: title,
+    p_detail: detail,
+    p_priority: action === "Approve" ? "Normal" : "High",
+    p_fingerprint: JSON.stringify({ requestId, action, notes, expirationDate }),
+  });
 
   if (error) throw new Error(error.message);
 }
@@ -333,11 +312,19 @@ async function createCommandNotifications(
     updated_at: now,
   }));
 
-  const { error } = await context.admin
-    .from("notification_events")
-    .upsert(rows);
-
-  if (error) throw new Error(error.message);
+  for (const row of rows) {
+    const { error } = await context.db.rpc("upsert_off_duty_notification", {
+      p_department_id: context.departmentId,
+      p_request_id: requestId,
+      p_target_user_id: row.user_id,
+      p_kind: row.kind,
+      p_title: row.title,
+      p_detail: row.detail,
+      p_priority: row.priority,
+      p_fingerprint: row.fingerprint,
+    });
+    if (error) throw new Error(error.message);
+  }
 }
 
 export async function PATCH(

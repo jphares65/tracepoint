@@ -87,6 +87,22 @@ test("inner relation filters constrain both embedded data and parent rows", asyn
   assert.deepEqual(statement?.values, [departmentId, "completed"]);
 });
 
+test("armory joins use the committed foreign keys and preserve nested aliases", async () => {
+  const ammunition = fixture();
+  await ammunition.client.from("ammunition_transactions").select("id,lot:ammunition_lots(caliber,manufacturer)");
+  const ammunitionSql = ammunition.calls.find(call => call.text.includes('from public."ammunition_transactions"'))?.text ?? "";
+  assert.match(ammunitionSql, /r\."id"=t\."lot_id"/);
+  assert.doesNotMatch(ammunitionSql, /ammunition_lot_id/);
+
+  const inspections = fixture();
+  await inspections.client.from("firearm_inspections").select("id,firearm:firearms(id,serial_number),items:firearm_inspection_items(id,status)");
+  const inspectionSql = inspections.calls.find(call => call.text.includes('from public."firearm_inspections"'))?.text ?? "";
+  assert.match(inspectionSql, /r\."id"=t\."firearm_id"/);
+  assert.match(inspectionSql, /r\."inspection_id"=t\."id"/);
+  assert.match(inspectionSql, /as "firearm"/);
+  assert.match(inspectionSql, /as "items"/);
+});
+
 test("invalid identifiers and database failures return non-sensitive errors", async () => {
   assert.throws(() => fixture().client.from("profiles;drop table profiles"), /identifier/);
   const pool = { async connect() { return { async query(text: string) { if (text === "begin") return {}; if (text === "rollback") return {}; throw Object.assign(new Error("secret SQL detail"), { code: "42501" }); }, release() {} }; } };

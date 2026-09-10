@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy route. */
+
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -391,11 +393,19 @@ async function createCommandNotifications(
     updated_at: now,
   }));
 
-  const { error } = await context.admin
-    .from("notification_events")
-    .upsert(notifications);
-
-  if (error) throw new Error(error.message);
+  for (const notification of notifications) {
+    const { error } = await context.db.rpc("upsert_off_duty_notification", {
+      p_department_id: context.departmentId,
+      p_request_id: requestId,
+      p_target_user_id: notification.user_id,
+      p_kind: notification.kind,
+      p_title: notification.title,
+      p_detail: notification.detail,
+      p_priority: notification.priority,
+      p_fingerprint: notification.fingerprint,
+    });
+    if (error) throw new Error(error.message);
+  }
 }
 
 export async function GET() {
@@ -514,8 +524,6 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-
-  const now = new Date().toISOString();
 
   try {
     const { data: createdRequestId, error: submitError } =

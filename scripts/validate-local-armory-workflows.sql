@@ -17,7 +17,12 @@ insert into public.pilot_range_workspaces(department_id) values
 
 insert into public.department_membership_roles(department_id,user_id,role_code) values('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000001','administrator');
 insert into public.off_duty_firearm_requests(id,department_id,officer_user_id,make,model,firearm_type,serial_number,caliber) values('00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000001','Synthetic','Test','Handgun','synthetic-probe','9mm');
+select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
+select set_config('tracepoint.subject_id','00000000-0000-4000-8000-000000000001',true);
+select set_config('tracepoint.department_id','00000000-0000-4000-8000-000000000011',true);
 select public.record_off_duty_firearm_inspection('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001',current_date,'Pass','Disposable local');
+select public.upsert_off_duty_notification('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000021','00000000-0000-4000-8000-000000000001','off_duty_firearm_review_required','Disposable review','Synthetic local notification','High','synthetic-review');
+select public.resolve_off_duty_review_notifications('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000021');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
 select set_config('tracepoint.subject_id','00000000-0000-4000-8000-000000000001',true);

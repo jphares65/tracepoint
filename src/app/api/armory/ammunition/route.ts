@@ -180,6 +180,7 @@ export async function POST(request: NextRequest) {
       if (lotError) throw new Error(lotError.message);
 
       if (openingQuantity > 0) {
+        const purchaseDate = cleanText(body.purchaseDate);
         const { error: transactionError } = await admin
           .from("ammunition_transactions")
           .insert({
@@ -195,7 +196,7 @@ export async function POST(request: NextRequest) {
             reference: "Initial lot creation",
             reason: null,
             notes: cleanText(body.notes),
-            transaction_date: cleanText(body.purchaseDate),
+            ...(purchaseDate ? { transaction_date: purchaseDate } : {}),
           });
 
         if (transactionError) throw new Error(transactionError.message);
@@ -284,7 +285,9 @@ export async function POST(request: NextRequest) {
           reference: cleanText(body.reference),
           reason: cleanText(body.reason),
           notes: cleanText(body.notes),
-          transaction_date: cleanText(body.transactionDate),
+          ...(cleanText(body.transactionDate)
+            ? { transaction_date: cleanText(body.transactionDate) }
+            : {}),
         });
 
       if (transactionError) throw new Error(transactionError.message);
