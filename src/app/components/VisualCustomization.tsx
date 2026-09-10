@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,9 +14,7 @@ import {
   X,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import {
-  mergeAnalyticsDashboardConfiguration,
   normalizeAnalyticsDashboardConfiguration,
   resetAnalyticsDashboardConfiguration,
   type AnalyticsDashboardConfiguration,
@@ -42,7 +40,6 @@ export function useVisualConfigurationEditor({
   editorName: "dashboard" | "analytics";
   onSaved: (configuration: AnalyticsDashboardConfiguration) => void;
 }) {
-  const supabase = useMemo(() => createClient(), []);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() =>
     normalizeAnalyticsDashboardConfiguration(configuration),
@@ -89,32 +86,14 @@ export function useVisualConfigurationEditor({
     setNotice(null);
 
     try {
-      // The generated database types do not yet expose this existing JSON column.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const table = (supabase as any).from("department_rules");
-      const { data, error: loadError } = await table
-        .select("range_qualification_rules")
-        .eq("department_id", departmentId)
-        .maybeSingle();
-
-      if (loadError) throw loadError;
-
       const normalized = normalizeAnalyticsDashboardConfiguration(draft);
-      const { error: saveError } = await (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        supabase as any
-      ).from("department_rules").upsert(
-        {
-          department_id: departmentId,
-          range_qualification_rules: mergeAnalyticsDashboardConfiguration(
-            data?.range_qualification_rules,
-            normalized,
-          ),
-        },
-        { onConflict: "department_id" },
-      );
-
-      if (saveError) throw saveError;
+      const response = await fetch("/api/settings/visual-configuration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ departmentId, configuration: normalized }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "The view could not be saved.");
 
       setDraft(normalized);
       onSaved(normalized);
@@ -129,7 +108,7 @@ export function useVisualConfigurationEditor({
     } finally {
       setSaving(false);
     }
-  }, [canAdminister, departmentId, draft, onSaved, supabase]);
+  }, [canAdminister, departmentId, draft, onSaved]);
 
   const dirty =
     JSON.stringify(draft) !==

@@ -84,7 +84,7 @@ async function recordSupportModeEvent({
       target_department_id: departmentId,
       target_department_name: departmentName,
     },
-  });
+  } as never);
 
   return error;
 }
