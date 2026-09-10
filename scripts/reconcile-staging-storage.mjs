@@ -1,8 +1,8 @@
 import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {createClient} from '@supabase/supabase-js';
 import {S3Client,GetObjectCommand,PutObjectCommand} from '@aws-sdk/client-s3';
-import {attachmentPathFromMetadata} from '../src/lib/storage/object-store-core.ts';
-import {departmentPatchPathFromMetadata} from '../src/lib/storage/s3-object-store-core.ts';
+import {attachmentPathFromMetadata,departmentPatchPathFromMetadata} from '../src/lib/storage/object-store-core.ts';
 import {reconcileStorageObjects} from './storage-reconciliation.mjs';
 const args=process.argv.slice(2);const department=args[args.indexOf('--department')+1];const copy=args.includes('--execute-copy');
 if(!args.includes('--department')||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(department))throw new Error('Explicit staging department UUID required');
@@ -22,7 +22,7 @@ try{
  }
  const target={Bucket:'tracepoint-staging-private-559054714699',ExpectedBucketOwner:'559054714699'};
  if(copy)gate();
- const report=await reconcileStorageObjects({keys,copy,source:{read:async key=>{const item=lookup.get(key);const result=await source.storage.from(item.bucket).download(item.path);if(result.error||!result.data||result.data.size>25*1024*1024)throw new Error('Source download failed');return new Uint8Array(await result.data.arrayBuffer());}},target:{read:async key=>{try{const result=await s3.send(new GetObjectCommand({...target,Key:key}));if(!result.Body||!Number.isSafeInteger(result.ContentLength)||result.ContentLength>25*1024*1024){result.Body?.destroy?.();throw new Error('Destination exceeds bounded rehearsal size');}return new Uint8Array(await result.Body.transformToByteArray());}catch(error){if(error?.$metadata?.httpStatusCode===404)return null;throw new Error('Destination read failed');}},create:async(key,bytes)=>{await s3.send(new PutObjectCommand({...target,Key:key,Body:bytes,ContentType:lookup.get(key).type,IfNoneMatch:'*',ServerSideEncryption:'AES256'}));}}});
+ const report=await reconcileStorageObjects({keys,copy,source:{read:async key=>{const item=lookup.get(key);const result=await source.storage.from(item.bucket).download(item.path);if(result.error||!result.data||result.data.size>25*1024*1024)throw new Error('Source download failed');return new Uint8Array(await result.data.arrayBuffer());}},target:{read:async key=>{try{const result=await s3.send(new GetObjectCommand({...target,Key:key}));if(!result.Body||!Number.isSafeInteger(result.ContentLength)||result.ContentLength>25*1024*1024){result.Body?.destroy?.();throw new Error('Destination exceeds bounded rehearsal size');}return new Uint8Array(await result.Body.transformToByteArray());}catch(error){if(error?.$metadata?.httpStatusCode===404)return null;throw new Error('Destination read failed');}},create:async(key,bytes)=>{await s3.send(new PutObjectCommand({...target,Key:key,Body:bytes,ContentLength:bytes.byteLength,ContentType:lookup.get(key).type,ChecksumSHA256:createHash('sha256').update(bytes).digest('base64'),IfNoneMatch:'*'}));}}});
  console.log(JSON.stringify({sourceProject:'wztqqqashilusoppddxi',destinationAccount:'559054714699',copyAuthorized:copy,...report},null,2));
  if(!report.verified)process.exitCode=2;
 }catch{console.error('Staging storage reconciliation failed; object names, contents and credentials suppressed. No conflicting object was overwritten.');process.exitCode=1;}finally{s3.destroy();}

@@ -15,6 +15,8 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 async function verifyQualificationResult(
+  // The shared access context intentionally exposes its provider-neutral query client as `any`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   departmentId: string,
   resultId: string,
@@ -121,13 +123,13 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
       { status: 400 },
     );
   }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Target photos may not exceed 15 MB." }, { status: 400 });
+  if (file.size <= 0 || file.size > MAX_BYTES) {
+    return NextResponse.json({ error: "Target photos must be non-empty and may not exceed 15 MB." }, { status: 400 });
   }
 
   const attachmentId = crypto.randomUUID();
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const objectStore = createObjectStore(context.admin, context.departmentId);
+  const objectStore = await createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadQualificationEvidence({
     departmentId: context.departmentId,
     recordId: resultId,

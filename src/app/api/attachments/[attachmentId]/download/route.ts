@@ -41,7 +41,8 @@ export async function GET(_request: Request, routeContext: RouteContext) {
   if (!storagePath) {
     return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
   }
-  const signed = await createObjectStore(admin, departmentId).createAttachmentDownload(
+  const objectStore = await createObjectStore(admin, departmentId);
+  const signed = await objectStore.createAttachmentDownload(
     storagePath,
     row.file_name,
   );
