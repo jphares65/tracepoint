@@ -29,7 +29,7 @@ try { checkpointJson = JSON.parse(await readFile(checkpointPath, 'utf8')); } cat
 }
 const completed = validateIdentityCheckpoint(checkpointJson, manifest);
 
-const [{ execFileSync }, { getPostgresPool }, { provisionExistingCognitoUser, resumeExistingCognitoUserActivation }, { getCognitoAdminDirectory }, { parseCognitoRuntimeConfiguration }] = await Promise.all([
+const [{ execFileSync }, { getPostgresPool }, { provisionExistingCognitoUser, resumeExistingCognitoUserActivation }, { getCognitoMigrationDirectory }, { parseCognitoTargetConfiguration }] = await Promise.all([
   import('node:child_process'),
   import('../src/lib/database/postgres-pool.ts'),
   import('../src/lib/authentication/cognito-existing-user-migration.ts'),
@@ -53,17 +53,24 @@ if (metadataOrigin) {
   assert.equal(identity.Account, manifest.expectedAccount, 'AWS identity does not match the manifest');
   if (manifest.environment === 'production') assert.match(identity.Arn, new RegExp(`^arn:aws:sts::${manifest.expectedAccount}:assumed-role/TracePointMigrationProduction/[^/]+$`));
 }
-const runtime = parseCognitoRuntimeConfiguration(process.env);
+const runtime = parseCognitoTargetConfiguration(process.env);
 const runtimeIssuer = `https://cognito-idp.${runtime.verification.region}.amazonaws.com/${runtime.verification.userPoolId}`;
 assert.deepEqual({ userPoolId: runtime.verification.userPoolId, clientId: runtime.verification.clientId, issuer: runtimeIssuer }, { userPoolId: manifest.userPoolId, clientId: manifest.clientId, issuer: manifest.issuer });
 
 const pool = getPostgresPool();
-const directory = getCognitoAdminDirectory();
+const directory = getCognitoMigrationDirectory();
+const stagingRecipients = new Set((process.env.TRACEPOINT_STAGING_IDENTITY_RECIPIENT_SHA256 ?? '').split(',').filter(value => /^[0-9a-f]{64}$/.test(value)));
+if (manifest.environment === 'staging') assert.ok(stagingRecipients.size > 0, 'A reviewed staging recipient allowlist is required');
 let migrated = 0;
 let alreadyLinked = 0;
 let skipped = 0;
 for (const user of manifest.users) {
   if (completed.has(user.itemSha256)) { skipped += 1; continue; }
+  const recipient = await pool.query('select lower(btrim(email)) as email from public.profiles where id=$1', [user.targetUserId]);
+  if (recipient.rowCount !== 1 || !recipient.rows[0]?.email ||
+      (manifest.environment === 'staging' && !stagingRecipients.has(createHash('sha256').update(String(recipient.rows[0].email)).digest('hex')))) {
+    throw new Error('Identity migration recipient is unavailable or not approved for staging.');
+  }
   const existing = await pool.query(
     `select l.issuer,l.subject,l.state,l.provider_username,p.email
      from public.authentication_identity_links l join public.profiles p on p.id=l.tracepoint_user_id

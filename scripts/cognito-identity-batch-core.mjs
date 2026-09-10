@@ -29,7 +29,7 @@ export function createIdentityBatchManifest(input, createdAt = new Date().toISOS
   if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(input.authorizationReference ?? '')) fail('A specific authorization reference is required');
   const region = input.environment === 'staging' ? 'us-east-1' : String(input.userPoolId ?? '').split('_')[0];
   if (!new RegExp(`^${region.replaceAll('-', '\\-')}_[A-Za-z0-9]+$`).test(input.userPoolId ?? '') || !/^[A-Za-z0-9]{1,128}$/.test(input.clientId ?? '') || input.issuer !== `https://cognito-idp.${region}.amazonaws.com/${input.userPoolId}`) fail('Cognito target is invalid');
-  if (!Array.isArray(input.users) || input.users.length < 1 || input.users.length > 10_000) fail('Identity batch must contain 1 to 10,000 users');
+  if (!Array.isArray(input.users) || input.users.length < 1 || input.users.length > 100) fail('Identity batch must contain 1 to 100 users');
   const itemHashes = new Set();
   const users = input.users.map(user => {
     exact(user, ['departmentId', 'targetUserId'], 'Identity item');
@@ -40,6 +40,7 @@ export function createIdentityBatchManifest(input, createdAt = new Date().toISOS
     itemHashes.add(itemSha256);
     return { ...normalized, itemSha256 };
   });
+  if (new Set(users.map(user => user.departmentId)).size !== 1) fail('Identity batch must be scoped to one department');
   if (!Number.isFinite(Date.parse(createdAt))) fail('Manifest timestamp is invalid');
   const created = Date.parse(createdAt), expires = Date.parse(input.expiresAt ?? '');
   if (!Number.isFinite(expires) || expires <= created || expires - created > 24 * 60 * 60 * 1000) fail('Identity batch authorization must expire within 24 hours');
@@ -47,7 +48,7 @@ export function createIdentityBatchManifest(input, createdAt = new Date().toISOS
   return { ...payload, contentSha256: sha256(canonical(payload)) };
 }
 
-export function validateIdentityBatchManifest(manifest) {
+export function validateIdentityBatchManifest(manifest, now = new Date()) {
   exact(manifest, ['actorUserId', 'authorizationReference', 'clientId', 'contentSha256', 'createdAt', 'environment', 'expectedAccount', 'expiresAt', 'format', 'issuer', 'siteUrl', 'userPoolId', 'users'], 'Identity batch manifest');
   if (manifest.format !== 1) fail('Identity batch manifest format is unsupported');
   const input = {
@@ -64,6 +65,8 @@ export function validateIdentityBatchManifest(manifest) {
   };
   const rebuilt = createIdentityBatchManifest(input, manifest.createdAt);
   if (canonical(rebuilt) !== canonical(manifest)) fail('Identity batch manifest integrity check failed');
+  const current = now.getTime(), created = Date.parse(manifest.createdAt), expires = Date.parse(manifest.expiresAt);
+  if (!Number.isFinite(current) || created > current + 5 * 60_000 || expires <= current) fail('Identity batch authorization is not currently valid');
   return manifest;
 }
 

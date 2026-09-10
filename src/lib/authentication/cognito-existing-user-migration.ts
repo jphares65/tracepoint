@@ -4,9 +4,9 @@ import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
 
-import { getCognitoAdminDirectory } from "./cognito-admin";
+import { getCognitoMigrationDirectory } from "./cognito-admin";
 import { migrateExistingUserToCognito } from "./cognito-existing-user-migration-core";
-import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core";
+import { parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core";
 
 export async function provisionExistingCognitoUser(input: {
   actorUserId: string;
@@ -19,13 +19,13 @@ export async function provisionExistingCognitoUser(input: {
   // Cognito username after any ambiguous provider/database response.
   const operationId = input.targetUserId;
   const providerUsername = input.targetUserId;
-  const config = parseCognitoRuntimeConfiguration(process.env);
+  const config = parseCognitoTargetConfiguration(process.env);
   const issuer = `https://cognito-idp.${config.verification.region}.amazonaws.com/${config.verification.userPoolId}`;
 
   return migrateExistingUserToCognito(
     { ...input, operationId, providerUsername },
     {
-      directory: getCognitoAdminDirectory(),
+      directory: getCognitoMigrationDirectory(),
       issuer,
       sendActivation: issueActivationEmail,
       store: {
@@ -62,7 +62,7 @@ export async function resumeExistingCognitoUserActivation(input: {
   siteUrl: string;
 }) {
   const pool = getPostgresPool();
-  const config = parseCognitoRuntimeConfiguration(process.env);
+  const config = parseCognitoTargetConfiguration(process.env);
   const issuer = `https://cognito-idp.${config.verification.region}.amazonaws.com/${config.verification.userPoolId}`;
   const result = await pool.query(
     `select op.id,op.state,op.provider_subject,op.provider_username,p.email,p.full_name,l.issuer,l.subject,l.state as link_state

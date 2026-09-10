@@ -11,6 +11,10 @@ export type CognitoRuntimeConfiguration = {
   refresh: CognitoEncryptionKeyring;
 };
 
+export type CognitoTargetConfiguration = {
+  verification: CognitoVerificationConfig;
+};
+
 const keyIdPattern = /^[A-Za-z0-9_-]{1,32}$/;
 
 function parseKeyring(value: string | undefined, variable: string): CognitoEncryptionKeyring {
@@ -42,9 +46,9 @@ function parseKeyring(value: string | undefined, variable: string): CognitoEncry
   return { active: candidate.active, keys };
 }
 
-export function parseCognitoRuntimeConfiguration(
+export function parseCognitoTargetConfiguration(
   environment: Record<string, string | undefined>,
-): CognitoRuntimeConfiguration {
+): CognitoTargetConfiguration {
   if (environment.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native" ||
       environment.TRACEPOINT_DATA_PROVIDER !== "postgres" ||
       environment.TRACEPOINT_AUTH_PROVIDER !== "cognito") {
@@ -63,8 +67,15 @@ export function parseCognitoRuntimeConfiguration(
   if (region !== "us-east-1" || !/^us-east-1_[A-Za-z0-9]+$/.test(userPoolId) || !/^[A-Za-z0-9]{1,128}$/.test(clientId)) {
     throw new Error("Invalid Cognito provider target.");
   }
+  return { verification: { environment: stage, account, region, userPoolId, clientId } };
+}
+
+export function parseCognitoRuntimeConfiguration(
+  environment: Record<string, string | undefined>,
+): CognitoRuntimeConfiguration {
+  const target = parseCognitoTargetConfiguration(environment);
   return {
-    verification: { environment: stage, account, region, userPoolId, clientId },
+    ...target,
     state: parseKeyring(environment.TRACEPOINT_AUTH_STATE_KEYS, "TRACEPOINT_AUTH_STATE_KEYS"),
     refresh: parseKeyring(environment.TRACEPOINT_AUTH_REFRESH_KEYS, "TRACEPOINT_AUTH_REFRESH_KEYS"),
   };

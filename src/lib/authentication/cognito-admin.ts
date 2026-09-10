@@ -5,7 +5,7 @@ import {
  AdminResetUserPasswordCommand,AdminSetUserPasswordCommand,AdminUpdateUserAttributesCommand,AdminUserGlobalSignOutCommand,
  CognitoIdentityProviderClient,ConfirmForgotPasswordCommand,type AttributeType,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core";
+import { parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core";
 import { CognitoDirectoryError,mapCognitoDirectoryError,type CognitoAdminDirectory,type CognitoDirectoryUser,type CreatePendingCognitoUser } from "./cognito-admin-core";
 
 type CognitoSender={send(command:unknown):Promise<unknown>};
@@ -47,4 +47,9 @@ export function getCognitoAdminDirectory(environment=process.env){
  if(directory)return directory;const config=parseCognitoRuntimeConfiguration(environment);
  directory=new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient({region:config.verification.region,maxAttempts:1}),config.verification.userPoolId,config.verification.clientId);
  return directory;
+}
+
+export function getCognitoMigrationDirectory(environment=process.env){
+ const config=parseCognitoTargetConfiguration(environment);
+ return new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient({region:config.verification.region,maxAttempts:1}),config.verification.userPoolId,config.verification.clientId);
 }

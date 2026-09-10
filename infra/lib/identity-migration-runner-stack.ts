@@ -11,9 +11,12 @@ import { Construct } from 'constructs';
 
 export interface IdentityMigrationRunnerStackProps extends cdk.StackProps {
   environmentName: 'staging' | 'production';
+  mode: 'prepare' | 'execute';
   runId: string;
   authorizationReference: string;
-  manifestSha256: string;
+  manifestSha256?: string;
+  actorUserId?: string;
+  departmentId?: string;
   commit: string;
   imageDigest: string;
   repositoryName: string;
@@ -22,13 +25,13 @@ export interface IdentityMigrationRunnerStackProps extends cdk.StackProps {
   publicSubnetIds: string[];
   databaseSecurityGroupId: string;
   databaseSecretArn: string;
-  applicationSecretArn: string;
   artifactBucketName: string;
   artifactKeyArn: string;
   userPoolId: string;
   clientId: string;
   fromAddress: string;
   sesConfigurationSet: string;
+  stagingRecipientSha256: string[];
 }
 
 export class IdentityMigrationRunnerStack extends cdk.Stack {
@@ -41,14 +44,19 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     if (this.region !== 'us-east-1' || !/^\d{12}$/.test(this.account) || this.account === '265544358665' || this.account !== expectedAccount) throw new Error('A matching workload account in us-east-1 is required');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(props.runId)) throw new Error('A random migration run UUID is required');
     if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(props.authorizationReference)) throw new Error('A specific identity migration authorization is required');
-    if (!/^[0-9a-f]{64}$/.test(props.manifestSha256) || !/^[0-9a-f]{40}$/.test(props.commit) || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) throw new Error('Immutable manifest, source, and image are required');
+    const manifestSha256 = props.manifestSha256 ?? '';
+    if ((props.mode === 'execute' && !/^[0-9a-f]{64}$/.test(manifestSha256)) || (props.mode === 'prepare' && manifestSha256 !== '') || !/^[0-9a-f]{40}$/.test(props.commit) || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) throw new Error('Immutable manifest, source, and image are required');
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (props.mode === 'prepare' ? !uuid.test(props.actorUserId ?? '') || !uuid.test(props.departmentId ?? '') : props.actorUserId !== undefined || props.departmentId !== undefined) throw new Error('Preparation requires one actor and department');
     if (props.publicSubnetIds.length !== 2 || new Set(props.publicSubnetIds).size !== 2 || props.publicSubnetIds.some(idValue => !/^subnet-[0-9a-f]+$/.test(idValue))) throw new Error('Exactly two reviewed public subnets are required');
     const secretPrefix = `arn:aws:secretsmanager:us-east-1:${this.account}:secret:`;
-    if (!props.databaseSecretArn.startsWith(secretPrefix) || !props.applicationSecretArn.startsWith(secretPrefix) || props.databaseSecretArn === props.applicationSecretArn) throw new Error('Distinct database and AWS-native application secrets are required');
+    if (!props.databaseSecretArn.startsWith(secretPrefix)) throw new Error('An exact database secret is required');
     if (props.artifactBucketName !== `tracepoint-${props.environmentName}-private-${this.account}` || !new RegExp(`^arn:aws:kms:us-east-1:${this.account}:key/[0-9a-f-]{36}$`).test(props.artifactKeyArn)) throw new Error('Reviewed KMS artifact storage is required');
     if (!/^us-east-1_[A-Za-z0-9]+$/.test(props.userPoolId) || !/^[A-Za-z0-9]{1,128}$/.test(props.clientId)) throw new Error('Cognito target is invalid');
     const domain = props.environmentName === 'staging' ? 'staging.tracepointhq.com' : 'tracepointhq.com';
     if (props.fromAddress !== `notifications@${domain}` || props.sesConfigurationSet !== `tracepoint-${props.environmentName}`) throw new Error('SES target is invalid');
+    if (props.repositoryName !== `tracepoint-${props.environmentName}` || props.clusterName !== `tracepoint-${props.environmentName}`) throw new Error('Identity runner foundation names are invalid');
+    if (props.environmentName === 'staging' ? props.stagingRecipientSha256.length < 1 || props.stagingRecipientSha256.length > 100 || props.stagingRecipientSha256.some(value => !/^[0-9a-f]{64}$/.test(value)) : props.stagingRecipientSha256.length !== 0) throw new Error('Staging recipient hashes are invalid');
 
     cdk.Tags.of(this).add('Purpose', 'temporary-identity-migration');
     cdk.Tags.of(this).add('MigrationRun', props.runId);
@@ -58,40 +66,35 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     const cluster = ecs.Cluster.fromClusterAttributes(this, 'Cluster', { clusterName: props.clusterName, vpc });
     const repository = ecr.Repository.fromRepositoryName(this, 'Repository', props.repositoryName);
     const databaseSecret = secretsmanager.Secret.fromSecretCompleteArn(this, 'DatabaseSecret', props.databaseSecretArn);
-    const applicationSecret = secretsmanager.Secret.fromSecretCompleteArn(this, 'ApplicationSecret', props.applicationSecretArn);
     const artifactBucket = s3.Bucket.fromBucketName(this, 'ArtifactBucket', props.artifactBucketName);
     const artifactKey = kms.Key.fromKeyArn(this, 'ArtifactKey', props.artifactKeyArn);
     const databaseSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'DatabaseSecurityGroup', props.databaseSecurityGroupId, { mutable: true });
 
-    const logKey = new kms.Key(this, 'LogKey', { enableKeyRotation: true, removalPolicy: cdk.RemovalPolicy.RETAIN, alias: `alias/tracepoint/${props.environmentName}/identity-migration-${props.runId}` });
-    logKey.addToResourcePolicy(new iam.PolicyStatement({
-      principals: [new iam.ServicePrincipal('logs.us-east-1.amazonaws.com')],
-      actions: ['kms:Encrypt', 'kms:Decrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey*', 'kms:DescribeKey'], resources: ['*'],
-      conditions: { ArnLike: { 'kms:EncryptionContext:aws:logs:arn': `arn:aws:logs:us-east-1:${this.account}:log-group:/tracepoint/${props.environmentName}/identity-migration/${props.runId}*` } },
-    }));
-    const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/${props.environmentName}/identity-migration/${props.runId}`, encryptionKey: logKey, retention: logs.RetentionDays.ONE_MONTH, removalPolicy: cdk.RemovalPolicy.RETAIN });
+    const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/${props.environmentName}/identity-migration/${props.runId}`, retention: logs.RetentionDays.ONE_MONTH, removalPolicy: cdk.RemovalPolicy.RETAIN });
     const taskRole = new iam.Role(this, 'TaskRole', { assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com') });
     const executionRole = new iam.Role(this, 'ExecutionRole', { assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com') });
     databaseSecret.grantRead(executionRole);
-    applicationSecret.grantRead(executionRole);
     artifactKey.grantDecrypt(executionRole);
     repository.grantPull(executionRole);
     const artifactPrefix = `migration/identity/${props.runId}`;
-    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`), artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`)] }));
-    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject'], resources: [artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`), artifactBucket.arnForObjects(`${artifactPrefix}/evidence.json`)] }));
+    if (props.mode === 'execute') taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`), artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`)] }));
+    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject'], resources: props.mode === 'prepare' ? [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`)] : [artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`), artifactBucket.arnForObjects(`${artifactPrefix}/evidence.json`)] }));
     taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['kms:Decrypt', 'kms:GenerateDataKey'], resources: [artifactKey.keyArn], conditions: { StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } } }));
-    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser'], resources: [`arn:aws:cognito-idp:us-east-1:${this.account}:userpool/${props.userPoolId}`] }));
-    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['ses:SendEmail'], resources: [`arn:aws:ses:us-east-1:${this.account}:identity/${domain}`], conditions: { StringEquals: { 'ses:FromAddress': props.fromAddress } } }));
+    if (props.mode === 'execute') {
+      taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser'], resources: [`arn:aws:cognito-idp:us-east-1:${this.account}:userpool/${props.userPoolId}`] }));
+      taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['ses:SendEmail'], resources: [`arn:aws:ses:us-east-1:${this.account}:identity/${domain}`], conditions: { StringEquals: { 'ses:FromAddress': props.fromAddress } } }));
+    }
 
     this.runnerSecurityGroup = new ec2.SecurityGroup(this, 'RunnerSecurityGroup', { vpc, allowAllOutbound: false, description: 'Temporary full-AWS identity migration runner; no inbound traffic' });
     this.runnerSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(5432), 'TLS PostgreSQL target');
     this.runnerSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'AWS control plane APIs');
     databaseSecurityGroup.addIngressRule(this.runnerSecurityGroup, ec2.Port.tcp(5432), 'Temporary identity migration runner');
 
-    this.taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', { family: `tracepoint-${props.environmentName}-identity-migration-${props.runId}`, cpu: 512, memoryLimitMiB: 1024, taskRole, executionRole });
+    this.taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', { family: `tracepoint-${props.environmentName}-identity-${props.mode}-${props.runId}`, cpu: 512, memoryLimitMiB: 1024, taskRole, executionRole });
     this.taskDefinition.addVolume({ name: 'migration-tmp' });
     const container = this.taskDefinition.addContainer('migration', {
       image: ecs.ContainerImage.fromRegistry(`${repository.repositoryUri}@${props.imageDigest}`),
+      command: [`--${props.mode}`],
       readonlyRootFilesystem: true,
       user: 'node',
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'runner' }),
@@ -101,14 +104,15 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
         TRACEPOINT_DATABASE_CA_PATH: '/app/rds-ca.pem', TRACEPOINT_DATABASE_POOL_MAX: '2',
         TRACEPOINT_COGNITO_USER_POOL_ID: props.userPoolId, TRACEPOINT_COGNITO_CLIENT_ID: props.clientId,
         TRACEPOINT_FROM_EMAIL: props.fromAddress, TRACEPOINT_SES_CONFIGURATION_SET: props.sesConfigurationSet,
-        TRACEPOINT_IDENTITY_MIGRATION_RUN_ID: props.runId, TRACEPOINT_IDENTITY_MIGRATION_AUTHORIZATION: `${props.authorizationReference}:${props.manifestSha256}`,
+        TRACEPOINT_SOURCE_COMMIT: props.commit,
+        TRACEPOINT_STAGING_IDENTITY_RECIPIENT_SHA256: props.stagingRecipientSha256.join(','),
+        TRACEPOINT_IDENTITY_MIGRATION_RUN_ID: props.runId, TRACEPOINT_IDENTITY_MIGRATION_AUTHORIZATION: `${props.authorizationReference}:${manifestSha256}`,
+        TRACEPOINT_IDENTITY_MIGRATION_MODE: props.mode, TRACEPOINT_IDENTITY_ACTOR_USER_ID: props.actorUserId ?? '', TRACEPOINT_IDENTITY_DEPARTMENT_ID: props.departmentId ?? '', TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE: props.authorizationReference,
         TRACEPOINT_MIGRATION_ARTIFACT_BUCKET: props.artifactBucketName, TRACEPOINT_MIGRATION_ARTIFACT_KMS_KEY_ARN: props.artifactKeyArn,
-        TRACEPOINT_IDENTITY_MANIFEST_KEY: `${artifactPrefix}/manifest.json`, TRACEPOINT_IDENTITY_CHECKPOINT_KEY: `${artifactPrefix}/checkpoint.json`, TRACEPOINT_IDENTITY_EVIDENCE_KEY: `${artifactPrefix}/evidence.json`, TRACEPOINT_IDENTITY_MANIFEST_SHA256: props.manifestSha256,
+        TRACEPOINT_IDENTITY_MANIFEST_KEY: `${artifactPrefix}/manifest.json`, TRACEPOINT_IDENTITY_CHECKPOINT_KEY: `${artifactPrefix}/checkpoint.json`, TRACEPOINT_IDENTITY_EVIDENCE_KEY: `${artifactPrefix}/evidence.json`, TRACEPOINT_IDENTITY_MANIFEST_SHA256: manifestSha256,
       },
       secrets: {
         TRACEPOINT_DATABASE_SECRET_JSON: ecs.Secret.fromSecretsManager(databaseSecret),
-        TRACEPOINT_AUTH_STATE_KEYS: ecs.Secret.fromSecretsManager(applicationSecret, 'TRACEPOINT_AUTH_STATE_KEYS'),
-        TRACEPOINT_AUTH_REFRESH_KEYS: ecs.Secret.fromSecretsManager(applicationSecret, 'TRACEPOINT_AUTH_REFRESH_KEYS'),
       },
     });
     container.addMountPoints({ containerPath: '/tmp', sourceVolume: 'migration-tmp', readOnly: false });

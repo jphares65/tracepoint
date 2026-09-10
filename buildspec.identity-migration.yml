@@ -9,6 +9,7 @@ phases:
       - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
       - test "$AWS_DEFAULT_REGION" = "us-east-1"
       - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+      - test "$(cat TRACEPOINT_SOURCE_COMMIT)" = "$SOURCE_COMMIT"
       - test "$IMAGE_TAG" = "${SOURCE_COMMIT}-identity-migration"
       - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
   build:
@@ -16,4 +17,5 @@ phases:
     commands:
       - docker build --pull -f Dockerfile.identity-migration --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=temporary-identity-migration -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/cognito-identity-batch-core.test.mjs
+      - docker run --rm --entrypoint npx "$ECR_REPOSITORY_URI:$IMAGE_TAG" tsc --noEmit
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"

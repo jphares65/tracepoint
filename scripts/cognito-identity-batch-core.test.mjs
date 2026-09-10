@@ -9,7 +9,7 @@ const input = {
 
 test('creates an immutable UUID-only identity batch and resumable checkpoint', () => {
   const manifest = createIdentityBatchManifest(input, '2026-09-10T12:00:00.000Z');
-  assert.equal(validateIdentityBatchManifest(manifest), manifest);
+  assert.equal(validateIdentityBatchManifest(manifest, new Date('2026-09-10T12:01:00.000Z')), manifest);
   const completed = new Set([manifest.users[0].itemSha256]);
   assert.deepEqual(validateIdentityCheckpoint(identityCheckpoint(manifest, completed), manifest), completed);
   assert.equal(JSON.stringify(manifest).includes('@'), false);
@@ -22,4 +22,6 @@ test('rejects mutation, duplicate users, site drift, and foreign checkpoints', (
   assert.throws(() => createIdentityBatchManifest({ ...input, siteUrl: 'https://tracepointhq.com' }), /Site URL/);
   assert.throws(() => createIdentityBatchManifest({ ...input, expiresAt: '2026-09-12T12:00:01.000Z' }, '2026-09-10T12:00:00.000Z'), /expire/);
   assert.throws(() => validateIdentityCheckpoint({ format: 1, manifestSha256: 'x', completedItemSha256: [] }, manifest), /does not match/);
+  assert.throws(() => validateIdentityBatchManifest(createIdentityBatchManifest({ ...input, expiresAt: '2099-01-01T01:00:00.000Z' }, '2099-01-01T00:00:00.000Z'), new Date('2026-09-10T12:00:00.000Z')), /currently valid/);
+  assert.throws(() => createIdentityBatchManifest({ ...input, users: Array.from({ length: 101 }, (_, index) => ({ departmentId: input.users[0].departmentId, targetUserId: `33333333-3333-4333-8333-${String(index).padStart(12, '0')}` })) }), /1 to 100/);
 });
