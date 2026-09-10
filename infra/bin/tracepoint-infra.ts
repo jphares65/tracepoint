@@ -12,6 +12,7 @@ import { StagingDatabaseStack } from "../lib/staging-database-stack";
 import { CognitoFoundationStack } from "../lib/cognito-foundation-stack";
 import { SesFoundationStack } from "../lib/ses-foundation-stack";
 import { AlertDeliveryStack } from "../lib/alert-delivery-stack";
+import { SesFeedbackWorkerStack } from "../lib/ses-feedback-worker-stack";
 
 const app = new cdk.App();
 
@@ -127,6 +128,22 @@ const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStac
   sesConfigurationSetName: ses.cognitoConfigurationSetName,
 }) : undefined;
 if (cognito) { cognito.addStackDependency(compute); cognito.addStackDependency(ses!); }
+const sesFeedbackWorker = providerMode === "aws-native" && database && ses ? new SesFeedbackWorkerStack(app, `${environmentName}-ses-feedback-worker`, {
+  ...commonProps,
+  stackName: `${environmentName}-ses-feedback-worker`,
+  environmentName: workloadEnvironment,
+  vpc: network.vpc,
+  databaseSecurityGroup: network.databaseSecurityGroup,
+  databaseSecret: database.runtimeSecret,
+  feedbackTopic: ses.feedbackTopic,
+  feedbackQueue: ses.feedbackQueue,
+  feedbackDeadLetterQueue: ses.feedbackDeadLetterQueue,
+}) : undefined;
+if (sesFeedbackWorker) {
+  sesFeedbackWorker.addStackDependency(network);
+  sesFeedbackWorker.addStackDependency(database!);
+  sesFeedbackWorker.addStackDependency(ses!);
+}
 const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {
   ...commonProps,
   stackName: `${environmentName}-alert-delivery`,

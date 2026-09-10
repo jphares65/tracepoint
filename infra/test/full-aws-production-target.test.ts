@@ -15,7 +15,7 @@ test("full-AWS production target rejects hybrid and unapproved live operation",(
 
 test("full-AWS production assembly composes native providers backup and exact task database ingress",()=>{
  const stacks=fullAwsProductionAssembly(new cdk.App(),target,true);
- const runtime=Template.fromStack(stacks.runtime),database=Template.fromStack(stacks.database),backup=Template.fromStack(stacks.backup),auth=Template.fromStack(stacks.cognito),email=Template.fromStack(stacks.ses),storage=Template.fromStack(stacks.storage);
+ const runtime=Template.fromStack(stacks.runtime),database=Template.fromStack(stacks.database),backup=Template.fromStack(stacks.backup),auth=Template.fromStack(stacks.cognito),email=Template.fromStack(stacks.ses),storage=Template.fromStack(stacks.storage),feedback=Template.fromStack(stacks.sesFeedbackWorker);
  const serialized=JSON.stringify(runtime.toJSON());
  for(const value of ["postgres","cognito","s3","ses","TRACEPOINT_DATABASE_SECRET_JSON"])assert.match(serialized,new RegExp(value));
  assert.doesNotMatch(serialized,/NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
@@ -25,6 +25,7 @@ test("full-AWS production assembly composes native providers backup and exact ta
  backup.hasResourceProperties("AWS::Backup::BackupVault",{BackupVaultName:"tracepoint-production"});
  auth.hasResourceProperties("AWS::Cognito::UserPool",{DeletionProtection:"ACTIVE"});
  email.hasResourceProperties("AWS::SES::ConfigurationSet",{Name:"tracepoint-production"});
+ feedback.hasResourceProperties("AWS::Lambda::EventSourceMapping",{FunctionResponseTypes:["ReportBatchItemFailures"]});
  storage.hasResourceProperties("AWS::S3::Bucket",{BucketName:"tracepoint-production-private-111111111111",VersioningConfiguration:{Status:"Enabled"}});
  for(const stack of Object.values(stacks))for(const role of Object.values(Template.fromStack(stack).findResources("AWS::IAM::Role")))assert.match(JSON.stringify(role.Properties.PermissionsBoundary),/TracePointProductionBoundary/);
 });

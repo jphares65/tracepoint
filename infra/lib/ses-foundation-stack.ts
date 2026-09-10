@@ -12,6 +12,8 @@ export class SesFoundationStack extends cdk.Stack {
  readonly cognitoConfigurationSetName:string;
  readonly fromAddress:string;
  readonly feedbackQueue:sqs.Queue;
+ readonly feedbackDeadLetterQueue:sqs.Queue;
+ readonly feedbackTopic:sns.Topic;
  constructor(scope:Construct,id:string,props:SesFoundationProps){
   super(scope,id,props);
   if(this.region!=='us-east-1'||this.account==='265544358665'||(props.environmentName==='staging'?this.account!=='559054714699':this.account==='559054714699'))throw Error('SES account/environment boundary');
@@ -36,8 +38,8 @@ export class SesFoundationStack extends cdk.Stack {
   const key=new kms.Key(this,'FeedbackKey',{enableKeyRotation:true,removalPolicy:cdk.RemovalPolicy.RETAIN});
   const configArn=this.formatArn({service:'ses',resource:'configuration-set',resourceName:configuration.configurationSetName});
   key.addToResourcePolicy(new iam.PolicyStatement({principals:[new iam.ServicePrincipal('ses.amazonaws.com')],actions:['kms:GenerateDataKey*','kms:Decrypt'],resources:['*'],conditions:{StringEquals:{'aws:SourceAccount':this.account,'aws:SourceArn':configArn}}}));
-  const topic=new sns.Topic(this,'Feedback',{topicName:'tracepoint-'+props.environmentName+'-ses-feedback',masterKey:key});topic.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
-  const deadLetterQueue=new sqs.Queue(this,'FeedbackDeadLetters',{encryption:sqs.QueueEncryption.SQS_MANAGED,enforceSSL:true,retentionPeriod:cdk.Duration.days(14),removalPolicy:cdk.RemovalPolicy.RETAIN});
+  const topic=this.feedbackTopic=new sns.Topic(this,'Feedback',{topicName:'tracepoint-'+props.environmentName+'-ses-feedback',masterKey:key});topic.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+  const deadLetterQueue=this.feedbackDeadLetterQueue=new sqs.Queue(this,'FeedbackDeadLetters',{encryption:sqs.QueueEncryption.SQS_MANAGED,enforceSSL:true,retentionPeriod:cdk.Duration.days(14),removalPolicy:cdk.RemovalPolicy.RETAIN});
   const queue=this.feedbackQueue=new sqs.Queue(this,'FeedbackQueue',{encryption:sqs.QueueEncryption.SQS_MANAGED,enforceSSL:true,retentionPeriod:cdk.Duration.days(14),visibilityTimeout:cdk.Duration.minutes(3),deadLetterQueue:{queue:deadLetterQueue,maxReceiveCount:5},removalPolicy:cdk.RemovalPolicy.RETAIN});
   // Preserve the signed SNS envelope; the consumer verifies it before persistence.
   topic.addSubscription(new subscriptions.SqsSubscription(queue,{rawMessageDelivery:false,deadLetterQueue}));

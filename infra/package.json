@@ -20,6 +20,7 @@
     "@types/node": "^20.19.11",
     "amazon-cognito-identity-js": "6.3.20",
     "aws-cdk": "^2.1029.2",
+    "esbuild": "^0.28.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   }

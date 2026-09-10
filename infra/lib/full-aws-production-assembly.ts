@@ -12,6 +12,7 @@ import { RuntimeStack } from "./runtime-stack";
 import { RequestControlsStack } from "./request-controls-stack";
 import { AlertDeliveryStack } from "./alert-delivery-stack";
 import { BackupRecoveryStack } from "./backup-recovery-stack";
+import { SesFeedbackWorkerStack } from "./ses-feedback-worker-stack";
 import { validateFullAwsProductionTarget, type FullAwsProductionTarget } from "./full-aws-production-target";
 
 export function fullAwsProductionAssembly(app:cdk.App,input:FullAwsProductionTarget,offline:boolean){
@@ -26,12 +27,13 @@ export function fullAwsProductionAssembly(app:cdk.App,input:FullAwsProductionTar
  const database=new ProductionDatabaseStack(app,"tracepoint-production-full-aws-database",{...common,topology:target.databaseTopology,vpc:network.vpc,dataKey:security.dataKey,securityGroup:network.databaseSecurityGroup});database.addStackDependency(network);database.addStackDependency(security);
  const ses=new SesFoundationStack(app,"tracepoint-production-full-aws-ses",{...common,mailFromSubdomain:"bounce",taskRole:compute.taskRole});ses.addStackDependency(compute);
  const cognito=new CognitoFoundationStack(app,"tracepoint-production-full-aws-cognito",{...common,taskRole:compute.taskRole,sesFromAddress:ses.fromAddress,sesConfigurationSetName:ses.cognitoConfigurationSetName});cognito.addStackDependency(compute);cognito.addStackDependency(ses);
+ const sesFeedbackWorker=new SesFeedbackWorkerStack(app,"tracepoint-production-full-aws-ses-feedback-worker",{...common,vpc:network.vpc,databaseSecurityGroup:network.databaseSecurityGroup,databaseSecret:database.runtimeSecret,feedbackTopic:ses.feedbackTopic,feedbackQueue:ses.feedbackQueue,feedbackDeadLetterQueue:ses.feedbackDeadLetterQueue});sesFeedbackWorker.addStackDependency(network);sesFeedbackWorker.addStackDependency(database);sesFeedbackWorker.addStackDependency(ses);
  const backup=new BackupRecoveryStack(app,"tracepoint-production-full-aws-backup",common);backup.addStackDependency(database);backup.addStackDependency(storage);
  const runtime=new RuntimeStack(app,"tracepoint-production-full-aws-runtime",{...common,vpc:network.vpc,repository:compute.repository,cluster:compute.cluster,appLogGroup:compute.appLogGroup,appSecrets:compute.appSecrets,executionRole:compute.executionRole,taskRole:compute.taskRole,certificateArn:target.certificateArn,imageTag:target.imageTag,emailFromAddress:ses.fromAddress,storageBucketName:storage.bucket.bucketName,providerMode:"aws-native",databaseSecret:database.runtimeSecret,databaseSecurityGroup:network.databaseSecurityGroup,cognitoUserPoolId:cognito.userPool.userPoolId,cognitoClientId:cognito.userPoolClient.userPoolClientId,sesConfigurationSet:ses.configurationSetName,desiredCount:target.desiredCount,maxCapacity:target.maxCapacity,deletionProtection:true,productionControls:true});
  for(const dependency of [network,compute,storage,database,cognito,ses])runtime.addStackDependency(dependency);
  const requestControls=new RequestControlsStack(app,"tracepoint-production-full-aws-request-controls",{...common,environment:"production",expectedAccount:target.account,loadBalancerArn:runtime.loadBalancerArn,mode:"enforce"});requestControls.addStackDependency(runtime);
  const alerts=new AlertDeliveryStack(app,"tracepoint-production-full-aws-alert-delivery",{...common,environment:"production",expectedAccount:target.account,humanEmailAddress:target.humanAlertEmail});alerts.addStackDependency(runtime);alerts.addStackDependency(requestControls);
- const stacks=[network,security,compute,imageBuild,storage,database,cognito,ses,backup,runtime,requestControls,alerts];
+ const stacks=[network,security,compute,imageBuild,storage,database,cognito,ses,sesFeedbackWorker,backup,runtime,requestControls,alerts];
  for(const stack of stacks){const boundary=iam.ManagedPolicy.fromManagedPolicyArn(stack,"ProductionPermissionsBoundary",stack.formatArn({service:"iam",region:"",resource:"policy",resourceName:"TracePointProductionBoundary"}));iam.PermissionsBoundary.of(stack).apply(boundary);}
- return {network,security,compute,imageBuild,storage,database,cognito,ses,backup,runtime,requestControls,alerts};
+ return {network,security,compute,imageBuild,storage,database,cognito,ses,sesFeedbackWorker,backup,runtime,requestControls,alerts};
 }
