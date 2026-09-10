@@ -41,7 +41,7 @@ import EquipmentRulesPanel from "@/app/settings/components/EquipmentRulesPanel";
 import NotificationPreferencesPanel from "@/app/settings/components/NotificationPreferencesPanel";
 import RangeQualificationRulesPanel from "@/app/settings/components/RangeQualificationRulesPanel";
 import AssignPasswordModal from "./AssignPasswordModal";
-import { createClient } from "@/lib/supabase/client";
+import { createSettingsBrowserClient } from "@/lib/settings/browser-data-client";
 import {
   buildAppearancePreferences,
   normalizeAccentColor,
@@ -725,7 +725,7 @@ function RoleSelector({
 }
 
 export default function AdminSettingsPage() {
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(() => createSettingsBrowserClient(), []);
   const {
     loading: accessLoading,
     userId,
@@ -885,6 +885,7 @@ export default function AdminSettingsPage() {
     if (accessLoading || availableTabs.length === 0) return;
 
     if (!availableTabs.some((tab) => tab.id === activeTab)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveTab(availableTabs[0].id);
     }
   }, [accessLoading, activeTab, availableTabs]);
@@ -1242,10 +1243,11 @@ export default function AdminSettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [canManageUsers, canViewAudit, departmentId, showNotice, supabase]);
+  }, [canViewAudit, departmentId, showNotice]);
 
   useEffect(() => {
     if (!accessLoading && departmentId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadSettings();
     }
   }, [accessLoading, departmentId, loadSettings]);
@@ -1423,9 +1425,7 @@ export default function AdminSettingsPage() {
 
     setMemberGroupIds([]);
 
-    const { data: groupMemberships, error: groupMembershipError } = await (
-      supabase as any
-    )
+    const { data: groupMembershipRows, error: groupMembershipError } = await supabase
       .from("department_group_members")
       .select("group_id")
       .eq("department_id", departmentId)
@@ -1440,8 +1440,9 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    const groupMemberships = (groupMembershipRows ?? []) as Array<{ group_id?: string }>;
     setMemberGroupIds(
-      (groupMemberships ?? [])
+      groupMemberships
         .map((row: { group_id?: string }) => row.group_id)
         .filter((groupId: string | undefined): groupId is string =>
           Boolean(groupId),
@@ -1510,6 +1511,7 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadQualificationStandards();
   }, [accessLoading, activeTab, canAdminister, departmentId]);
 
@@ -1691,21 +1693,21 @@ export default function AdminSettingsPage() {
 
     try {
       const [titlesResult, unitsResult, groupsResult] = await Promise.all([
-        (supabase as any)
+        supabase
           .from("department_titles")
           .select("id,name,sort_order,is_active")
           .eq("department_id", departmentId)
           .order("sort_order")
           .order("name"),
 
-        (supabase as any)
+        supabase
           .from("department_units")
           .select("id,name,sort_order,is_active")
           .eq("department_id", departmentId)
           .order("sort_order")
           .order("name"),
 
-        (supabase as any)
+        supabase
           .from("department_groups")
           .select("id,name,description,group_type,sort_order,is_active")
           .eq("department_id", departmentId)
@@ -1736,6 +1738,7 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     if (!accessLoading && departmentId && canAdminister) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadOrganization();
     }
 
@@ -1780,7 +1783,7 @@ export default function AdminSettingsPage() {
               is_active: true,
             };
 
-      const { error } = await (supabase as any).from(table).insert(payload);
+      const { error } = await supabase.from(table).insert(payload);
 
       if (error) throw error;
 
@@ -1822,7 +1825,7 @@ export default function AdminSettingsPage() {
     try {
       const table = organizationTable(kind);
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from(table)
         .update({ name })
         .eq("department_id", departmentId)
@@ -1856,7 +1859,7 @@ export default function AdminSettingsPage() {
     try {
       const table = organizationTable(kind);
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from(table)
         .update({
           is_active: !item.is_active,
@@ -1923,7 +1926,7 @@ export default function AdminSettingsPage() {
 
       if (roleError) throw roleError;
 
-      const { error: groupError } = await (supabase as any).rpc(
+      const { error: groupError } = await supabase.rpc(
         "set_department_group_members",
         {
           p_department_id: departmentId,
@@ -2770,7 +2773,7 @@ export default function AdminSettingsPage() {
               </h2>
 
               <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
-                Configure this agency's titles, units, and specialty
+                Configure this agency&apos;s titles, units, and specialty
                 assignments. Organization describes where people sit in the
                 agency; security roles and permissions determine what they can
                 do in TracePoint.
