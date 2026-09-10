@@ -16,7 +16,7 @@ export const AWS_MIGRATION_LEDGER = Object.freeze([
   ["010_cognito_inactive_invites.sql", "5ffece8ef922879df7ac4dfaccd1c8cef2a54bffdbd1ad94a9b53f2d0f2781e7"],
   ["011_onboarding_import_audit.sql", "53f4c04d43815680d0de243f989068d08b162aade0d14b1619f889d07f29794d"],
   ["012_onboarding_import_authority.sql", "f2e75ff6c55dfcb93fe3e8a7441671ba50cdb261a4ed4f01d589ffe058abf66e"],
-  ["013_cognito_existing_user_migration.sql", "f27d1815ed9bb5780d13c2c1c689e90d8a9dbfb1cfa91df01642df9899131edd"],
+  ["013_cognito_existing_user_migration.sql", "e62fc46e1e20fbe0b01a25dcc28accafea5859c54b0653d2849ac31a2fcf66e8"],
   ["014_platform_control_plane_access.sql", "425375ee94f7944fe46966996c640ddf629d673a0971782833562f9c24a8d20e"],
   ["015_platform_entitlements.sql", "5e9a3887b0299bed74d92424f0f632d2c22494982f6cde7da4165b76d763e574"],
   ["016_platform_support_mode.sql", "e9ab64324a139eda1cd5a46eb95346ccc241935daf41f6e584c2fd144d403bc0"],

@@ -12,8 +12,7 @@ new DatabaseMigrationRunnerStack(app, `tracepoint-${environmentName}-database-mi
   commit: context('commit'), imageDigest: context('imageDigest'), repositoryName: context('repositoryName'), clusterName: context('clusterName'),
   vpcId: context('vpcId'), publicSubnetIds: String(context('publicSubnetIds') ?? '').split(',').filter(Boolean),
   databaseSecurityGroupId: context('databaseSecurityGroupId'), sourceSecretArn: context('sourceSecretArn'), targetSecretArn: context('targetSecretArn'),
-  sourceHost: context('sourceHost'), sourceDatabase: context('sourceDatabase'), targetHost: context('targetHost'), targetDatabase: context('targetDatabase'),
+  sourceHost: context('sourceHost'), sourceProjectRef: context('sourceProjectRef'), sourceDatabase: context('sourceDatabase'), targetHost: context('targetHost'), targetDatabase: context('targetDatabase'),
   terminationProtection: true,
   description: 'Temporary guarded TracePoint PostgreSQL migration runner; never an application runtime dependency',
 });
-

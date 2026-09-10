@@ -41,13 +41,13 @@ test("migrates an existing user in fail-closed order", async () => {
 test("records provider creation failure without attempting activation", async () => {
   const fixture = dependencies("create");
   await assert.rejects(() => migrateExistingUserToCognito(input, fixture.value));
-  assert.deepEqual(fixture.calls, ["prepare", "create", "finish:false:provider_create_failed"]);
+  assert.deepEqual(fixture.calls, ["prepare", "create", "finish:false:provider_create_unconfirmed"]);
 });
 
-test("deletes only the newly-created Cognito identity when database commit fails", async () => {
+test("preserves an ambiguously committed Cognito identity for deterministic reconciliation", async () => {
   const fixture = dependencies("commit");
   await assert.rejects(() => migrateExistingUserToCognito(input, fixture.value));
-  assert.deepEqual(fixture.calls, ["prepare", "create", "commit", "delete", "finish:false:identity_commit_failed"]);
+  assert.deepEqual(fixture.calls, ["prepare", "create", "commit", "finish:false:identity_commit_unconfirmed"]);
 });
 
 test("preserves the pending identity and records an unconfirmed delivery", async () => {

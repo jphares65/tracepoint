@@ -5,6 +5,9 @@ alter table public.authentication_lifecycle_operations
 alter table public.authentication_lifecycle_operations
   add constraint authentication_lifecycle_operations_operation_kind_check
   check (operation_kind in ('invite','activate','assign_password','reset_password','disable','enable','delete_compensation','migrate_identity'));
+alter table public.authentication_lifecycle_operations
+  add column if not exists previous_activation_status text
+  check (previous_activation_status is null or previous_activation_status in ('pending_activation','activation_sent','activated'));
 
 create function tracepoint_auth.prepare_existing_cognito_migration(
   p_operation_id uuid,
@@ -21,6 +24,7 @@ declare
   v_email text;
   v_full_name text;
   v_email_matches integer;
+  v_previous_activation_status text;
 begin
   if session_user <> 'tracepoint_runtime'
      or v_actor is null
@@ -50,7 +54,7 @@ begin
   end if;
 
   select count(*)::integer into v_email_matches
-  from public.profiles where lower(btrim(email)) = v_email;
+  from public.profiles profile where lower(btrim(profile.email)) = v_email;
   if v_email_matches <> 1 then
     raise exception 'identity migration email ambiguous' using errcode = '21000';
   end if;
@@ -58,19 +62,42 @@ begin
   if exists (
     select 1 from public.authentication_identity_links
     where provider = 'cognito' and tracepoint_user_id = p_target_user_id
+  ) and not exists (
+    select 1 from public.authentication_lifecycle_operations
+    where id = p_operation_id and operation_kind = 'migrate_identity'
+      and tracepoint_user_id = p_target_user_id and provider_username = p_provider_username
+      and state = 'compensation_required'
   ) or exists (
     select 1 from public.authentication_lifecycle_operations
     where operation_kind = 'migrate_identity'
       and tracepoint_user_id = p_target_user_id
-      and state in ('prepared', 'provider_succeeded', 'compensation_required')
+      and (state in ('prepared', 'provider_succeeded') or (state = 'compensation_required' and id <> p_operation_id))
   ) then
     raise exception 'identity migration already exists' using errcode = '23505';
   end if;
 
+  select activation_status into v_previous_activation_status
+  from public.department_memberships
+  where department_id = p_department_id and user_id = p_target_user_id and is_active
+  for update;
+  update public.department_memberships set activation_status = 'pending_activation'
+  where department_id = p_department_id and user_id = p_target_user_id and is_active;
+
+  if exists (select 1 from public.authentication_lifecycle_operations where id = p_operation_id) then
+    update public.authentication_lifecycle_operations
+      set state = 'prepared', safe_error_code = null, updated_at = now()
+      where id = p_operation_id and operation_kind = 'migrate_identity'
+        and tracepoint_user_id = p_target_user_id and provider_username = p_provider_username
+        and state = 'compensation_required';
+    if not found then raise exception 'identity migration retry mismatch' using errcode = '42501'; end if;
+    return query select v_email, v_full_name;
+    return;
+  end if;
+
   insert into public.authentication_lifecycle_operations(
-    id, operation_kind, tracepoint_user_id, department_id, actor_user_id, provider_username, state
+    id, operation_kind, tracepoint_user_id, department_id, actor_user_id, provider_username, state, previous_activation_status
   ) values (
-    p_operation_id, 'migrate_identity', p_target_user_id, p_department_id, v_actor, p_provider_username, 'prepared'
+    p_operation_id, 'migrate_identity', p_target_user_id, p_department_id, v_actor, p_provider_username, 'prepared', v_previous_activation_status
   );
 
   insert into public.authentication_identity_events(
@@ -100,17 +127,23 @@ begin
     raise exception 'identity migration commit rejected' using errcode = '42501';
   end if;
   select * into v_op from public.authentication_lifecycle_operations
-    where id = p_operation_id and operation_kind = 'migrate_identity' and state = 'prepared'
+    where id = p_operation_id and operation_kind = 'migrate_identity' and state in ('prepared','compensation_required')
     for update;
   if not found then raise exception 'identity migration operation unavailable' using errcode = 'P0002'; end if;
 
-  insert into public.authentication_identity_links(provider, issuer, subject, tracepoint_user_id, state, provider_username)
-  values ('cognito', p_issuer, p_subject, v_op.tracepoint_user_id, 'pending', v_op.provider_username);
-  insert into public.authentication_identity_events(
-    tracepoint_user_id, provider, issuer, subject, provider_username, event_type, actor_user_id, operation_id
-  ) values (
-    v_op.tracepoint_user_id, 'cognito', p_issuer, p_subject, v_op.provider_username, 'linked', v_op.actor_user_id, v_op.id
-  );
+  if exists (select 1 from public.authentication_identity_links where provider = 'cognito' and issuer = p_issuer and subject = p_subject and tracepoint_user_id = v_op.tracepoint_user_id and state = 'pending' and provider_username = v_op.provider_username) then
+    null;
+  elsif exists (select 1 from public.authentication_identity_links where provider = 'cognito' and tracepoint_user_id = v_op.tracepoint_user_id) then
+    raise exception 'identity migration link mismatch' using errcode = '23505';
+  else
+    insert into public.authentication_identity_links(provider, issuer, subject, tracepoint_user_id, state, provider_username)
+    values ('cognito', p_issuer, p_subject, v_op.tracepoint_user_id, 'pending', v_op.provider_username);
+    insert into public.authentication_identity_events(
+      tracepoint_user_id, provider, issuer, subject, provider_username, event_type, actor_user_id, operation_id
+    ) values (
+      v_op.tracepoint_user_id, 'cognito', p_issuer, p_subject, v_op.provider_username, 'linked', v_op.actor_user_id, v_op.id
+    );
+  end if;
   update public.authentication_lifecycle_operations
     set provider_subject = p_subject, state = 'provider_succeeded', attempts = attempts + 1, updated_at = now()
     where id = v_op.id;
@@ -137,11 +170,23 @@ begin
   if not found then raise exception 'identity migration operation unavailable' using errcode = 'P0002'; end if;
 
   if not p_sent then
+    if not exists (select 1 from public.authentication_identity_links where provider = 'cognito' and tracepoint_user_id = v_op.tracepoint_user_id) then
+      update public.department_memberships set activation_status = coalesce(v_op.previous_activation_status, 'activated')
+      where department_id = v_op.department_id and user_id = v_op.tracepoint_user_id and is_active;
+    end if;
     update public.authentication_lifecycle_operations
       set state = 'compensation_required', attempts = attempts + 1,
           safe_error_code = left(coalesce(p_error_code, 'activation_delivery_unconfirmed'), 80), updated_at = now()
       where id = v_op.id;
     return;
+  end if;
+
+  if v_op.state <> 'provider_succeeded' or not exists (
+    select 1 from public.authentication_identity_links
+    where provider = 'cognito' and subject = v_op.provider_subject and tracepoint_user_id = v_op.tracepoint_user_id
+      and state = 'pending' and provider_username = v_op.provider_username
+  ) then
+    raise exception 'identity migration finalization mismatch' using errcode = '42501';
   end if;
 
   update public.department_memberships set activation_status = 'activation_sent'

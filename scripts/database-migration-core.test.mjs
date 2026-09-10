@@ -5,7 +5,7 @@ import { databaseMigrationPlan, pgDumpArguments, requireDatabaseMigrationExecuti
 const env = {
   TRACEPOINT_MIGRATION_RUN_ID: "10000000-0000-4000-8000-000000000001", TRACEPOINT_SOURCE_COMMIT: "a".repeat(40),
   TRACEPOINT_EXPECTED_AWS_ACCOUNT: "559054714699", TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE: "owner-approval:synthetic",
-  SOURCE_PGHOST: "db.synthetic.supabase.co", SOURCE_PGDATABASE: "postgres", SOURCE_DATABASE_CA_PATH: "/app/source-ca.pem",
+  TRACEPOINT_SOURCE_PROJECT_REF: "abcdefghijklmnopqrst", SOURCE_PGHOST: "db.abcdefghijklmnopqrst.supabase.co", SOURCE_PGDATABASE: "postgres", SOURCE_DATABASE_CA_PATH: "/app/source-ca.pem",
   TARGET_PGHOST: "tracepoint-staging.abc.us-east-1.rds.amazonaws.com", TARGET_PGDATABASE: "tracepoint", TARGET_DATABASE_CA_PATH: "/app/rds-ca.pem",
 };
 
@@ -27,4 +27,5 @@ test("requires all execution acknowledgements and a run-specific approval", () =
 
 test("rejects a non-RDS target", () => {
   assert.throws(() => databaseMigrationPlan({ ...env, TARGET_PGHOST: "db.example.test" }));
+  assert.throws(() => databaseMigrationPlan({ ...env, TRACEPOINT_SOURCE_PROJECT_REF: "wrongwrongwrongwrongwr" }));
 });

@@ -1,16 +1,23 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import pg from "pg";
-import { databaseMigrationPlan, pgDumpArguments, pgRestoreArguments, requireDatabaseMigrationExecution, TRANSIENT_TABLES } from "./database-migration-core.mjs";
+import { databaseMigrationPlan, pgDumpArguments, pgRestoreArguments, requireDatabaseMigrationExecution, SOURCE_MIGRATION_COUNT, TARGET_MIGRATION_COUNT, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
 
 const run = promisify(execFile);
 let phase = "configuration";
 const plan = databaseMigrationPlan(process.env);
 requireDatabaseMigrationExecution(process.argv.slice(2), process.env);
+const metadataOrigin = process.env.ECS_CONTAINER_METADATA_URI_V4;
+assert.match(metadataOrigin ?? "", /^http:\/\/169\.254\.170\.2\/v4\/[A-Za-z0-9_-]+$/);
+const taskMetadata = await fetch(`${metadataOrigin}/task`, { redirect: "error", signal: AbortSignal.timeout(5000) }).then(response => {
+  assert.equal(response.status, 200); return response.json();
+});
+assert.match(taskMetadata.TaskARN ?? "", new RegExp(`^arn:aws:ecs:us-east-1:${plan.expectedAwsAccount}:task/`));
 const sourceSecret = JSON.parse(process.env.SOURCE_DATABASE_SECRET_JSON || "null");
 const targetSecret = JSON.parse(process.env.TARGET_DATABASE_SECRET_JSON || "null");
 delete process.env.SOURCE_DATABASE_SECRET_JSON;
@@ -29,20 +36,32 @@ async function fingerprints(client) {
   const result = [];
   for (const table of tables) {
     assert.match(table, /^[a-z][a-z0-9_]*$/);
-    const value = (await client.query(`select count(*)::bigint as rows,coalesce(sum(('x'||substr(md5(to_jsonb(t)::text),1,16))::bit(64)::bigint)::numeric,0)::text as fingerprint from public."${table}" t`)).rows[0];
-    result.push({ table, rows: String(value.rows), fingerprint: String(value.fingerprint) });
+    const value = (await client.query(`select count(*)::bigint as rows,encode(digest(convert_to(coalesce(string_agg(row_hash,E'\\n' order by row_hash),''),'UTF8'),'sha256'),'hex') as sha256 from (select encode(digest(convert_to(to_jsonb(t)::text,'UTF8'),'sha256'),'hex') as row_hash from public."${table}" t) rows`)).rows[0];
+    result.push({ table, rows: String(value.rows), sha256: String(value.sha256) });
   }
   return result;
 }
+const manifestHash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 try {
   phase = "verified TLS connections";
   await source.connect(); await target.connect();
+  const sourceMigrationCount = Number((await source.query("select count(*)::int as count from supabase_migrations.schema_migrations")).rows[0]?.count);
+  const targetMigrationCount = Number((await target.query("select count(*)::int as count from tracepoint_migrations.applied_migrations")).rows[0]?.count);
+  assert.equal(sourceMigrationCount, SOURCE_MIGRATION_COUNT);
+  assert.equal(targetMigrationCount, TARGET_MIGRATION_COUNT);
   phase = "fresh target gate";
-  const fresh = (await target.query("select (select count(*) from public.departments)::int as departments,(select count(*) from public.profiles)::int as profiles,(select count(*) from auth.users)::int as users")).rows[0];
-  assert.deepEqual(fresh, { departments: 0, profiles: 0, users: 0 });
+  const targetTables = (await target.query("select tablename from pg_tables where schemaname='public' and tablename <> all($1::text[]) and tablename <> all($2::text[]) order by tablename", [[...TRANSIENT_TABLES], [...TARGET_SEEDED_TABLES]])).rows.map(row => row.tablename);
+  for (const table of targetTables) {
+    assert.match(table, /^[a-z][a-z0-9_]*$/);
+    assert.equal(Number((await target.query(`select count(*)::int as count from public."${table}"`)).rows[0]?.count), 0, `Target table ${table} is not empty`);
+  }
+  assert.equal(Number((await target.query("select count(*)::int as count from auth.users")).rows[0]?.count), 0);
   phase = "read-only source snapshot";
   await source.query("begin isolation level repeatable read read only");
+  const sourcePosition = (await source.query("select pg_current_wal_lsn()::text as lsn,clock_timestamp()::text as captured_at")).rows[0];
+  const pendingEmailCount = Number((await source.query("select count(*)::int as count from public.notification_email_queue where status='Pending'")).rows[0]?.count);
+  assert.equal(pendingEmailCount, 0, "Source notification queue must be drained before migration");
   const snapshot = (await source.query("select pg_export_snapshot() as id")).rows[0].id;
   const anchors = (await source.query("select id,email,full_name from public.profiles order by id")).rows;
   const before = await fingerprints(source);
@@ -67,7 +86,7 @@ try {
   const after = await fingerprints(target);
   assert.deepEqual(after, before);
   await source.query("commit");
-  console.log(JSON.stringify({ status: "PASSED", runId: plan.runId, commit: plan.commit, tables: before.length, identityAnchors: anchors.length, passwordsMigrated: false, transientTablesExcluded: TRANSIENT_TABLES.length, tlsVerified: true, reconciled: true }));
+  console.log(JSON.stringify({ status: "PASSED", runId: plan.runId, commit: plan.commit, sourceProjectRef: plan.sourceProjectRef, sourceSnapshotLsn: sourcePosition.lsn, sourceSnapshotAt: sourcePosition.captured_at, sourceMigrationCount, targetMigrationCount, sourceManifestSha256: manifestHash(before), targetManifestSha256: manifestHash(after), tables: before.length, identityAnchors: anchors.length, passwordsMigrated: false, pendingEmailCount, transientTablesExcluded: TRANSIENT_TABLES.length, tlsVerified: true, reconciled: true }));
 } catch (error) {
   await source.query("rollback").catch(() => undefined);
   await target.query("rollback").catch(() => undefined);

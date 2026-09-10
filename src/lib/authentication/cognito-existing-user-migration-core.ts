@@ -42,8 +42,16 @@ export async function migrateExistingUserToCognito(
       fullName: prepared.fullName,
     });
   } catch (error) {
-    await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "provider_create_failed" }).catch(() => undefined);
-    throw error;
+    try { created = await dependencies.directory.get(input.providerUsername); }
+    catch {
+      await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "provider_create_unconfirmed" }).catch(() => undefined);
+      throw error;
+    }
+  }
+  if (created.username !== input.providerUsername || created.email.trim().toLowerCase() !== prepared.email.trim().toLowerCase() ||
+      !created.enabled || created.status !== "FORCE_CHANGE_PASSWORD") {
+    await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "provider_identity_mismatch" }).catch(() => undefined);
+    throw new Error("Cognito identity reconciliation failed.");
   }
 
   try {
@@ -53,8 +61,7 @@ export async function migrateExistingUserToCognito(
       issuer: dependencies.issuer,
     });
   } catch (error) {
-    await dependencies.directory.deleteCompensation(input.providerUsername).catch(() => undefined);
-    await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "identity_commit_failed" }).catch(() => undefined);
+    await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "identity_commit_unconfirmed" }).catch(() => undefined);
     throw error;
   }
 

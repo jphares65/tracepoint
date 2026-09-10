@@ -21,12 +21,14 @@ function exact(value, keys, label) {
 }
 
 export function createIdentityBatchManifest(input, createdAt = new Date().toISOString()) {
-  exact(input, ['actorUserId', 'authorizationReference', 'environment', 'expectedAccount', 'siteUrl', 'users'], 'Identity batch');
+  exact(input, ['actorUserId', 'authorizationReference', 'clientId', 'environment', 'expectedAccount', 'expiresAt', 'issuer', 'siteUrl', 'userPoolId', 'users'], 'Identity batch');
   if (!['staging', 'production'].includes(input.environment)) fail('Environment must be staging or production');
   if (!ACCOUNT.test(input.expectedAccount ?? '') || FORBIDDEN_ACCOUNTS.has(input.expectedAccount)) fail('Expected account is invalid');
   if (input.siteUrl !== (input.environment === 'production' ? 'https://tracepointhq.com' : 'https://staging.tracepointhq.com')) fail('Site URL does not match the migration environment');
   if (!UUID.test(input.actorUserId ?? '')) fail('Actor user ID is invalid');
   if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(input.authorizationReference ?? '')) fail('A specific authorization reference is required');
+  const region = input.environment === 'staging' ? 'us-east-1' : String(input.userPoolId ?? '').split('_')[0];
+  if (!new RegExp(`^${region.replaceAll('-', '\\-')}_[A-Za-z0-9]+$`).test(input.userPoolId ?? '') || !/^[A-Za-z0-9]{1,128}$/.test(input.clientId ?? '') || input.issuer !== `https://cognito-idp.${region}.amazonaws.com/${input.userPoolId}`) fail('Cognito target is invalid');
   if (!Array.isArray(input.users) || input.users.length < 1 || input.users.length > 10_000) fail('Identity batch must contain 1 to 10,000 users');
   const itemHashes = new Set();
   const users = input.users.map(user => {
@@ -39,19 +41,25 @@ export function createIdentityBatchManifest(input, createdAt = new Date().toISOS
     return { ...normalized, itemSha256 };
   });
   if (!Number.isFinite(Date.parse(createdAt))) fail('Manifest timestamp is invalid');
+  const created = Date.parse(createdAt), expires = Date.parse(input.expiresAt ?? '');
+  if (!Number.isFinite(expires) || expires <= created || expires - created > 24 * 60 * 60 * 1000) fail('Identity batch authorization must expire within 24 hours');
   const payload = { format: 1, createdAt, ...input, actorUserId: input.actorUserId.toLowerCase(), users };
   return { ...payload, contentSha256: sha256(canonical(payload)) };
 }
 
 export function validateIdentityBatchManifest(manifest) {
-  exact(manifest, ['actorUserId', 'authorizationReference', 'contentSha256', 'createdAt', 'environment', 'expectedAccount', 'format', 'siteUrl', 'users'], 'Identity batch manifest');
+  exact(manifest, ['actorUserId', 'authorizationReference', 'clientId', 'contentSha256', 'createdAt', 'environment', 'expectedAccount', 'expiresAt', 'format', 'issuer', 'siteUrl', 'userPoolId', 'users'], 'Identity batch manifest');
   if (manifest.format !== 1) fail('Identity batch manifest format is unsupported');
   const input = {
     actorUserId: manifest.actorUserId,
     authorizationReference: manifest.authorizationReference,
+    clientId: manifest.clientId,
     environment: manifest.environment,
     expectedAccount: manifest.expectedAccount,
+    expiresAt: manifest.expiresAt,
+    issuer: manifest.issuer,
     siteUrl: manifest.siteUrl,
+    userPoolId: manifest.userPoolId,
     users: manifest.users.map(({ departmentId, targetUserId }) => ({ departmentId, targetUserId })),
   };
   const rebuilt = createIdentityBatchManifest(input, manifest.createdAt);
@@ -75,4 +83,3 @@ export function validateIdentityCheckpoint(checkpoint, manifest) {
 export function identityCheckpoint(manifest, completed) {
   return { format: 1, manifestSha256: manifest.contentSha256, completedItemSha256: [...completed].sort() };
 }
-

@@ -22,6 +22,7 @@ export interface DatabaseMigrationRunnerStackProps extends cdk.StackProps {
   sourceSecretArn: string;
   targetSecretArn: string;
   sourceHost: string;
+  sourceProjectRef: string;
   sourceDatabase: string;
   targetHost: string;
   targetDatabase: string;
@@ -41,7 +42,7 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
     if (props.publicSubnetIds.length !== 2 || new Set(props.publicSubnetIds).size !== 2 || props.publicSubnetIds.some(id => !/^subnet-[0-9a-f]+$/.test(id))) throw new Error('Exactly two reviewed public subnets are required');
     const secretPrefix = `arn:aws:secretsmanager:us-east-1:${this.account}:secret:`;
     if (!props.sourceSecretArn.startsWith(secretPrefix) || !props.targetSecretArn.startsWith(secretPrefix) || props.sourceSecretArn === props.targetSecretArn) throw new Error('Distinct source and target secret ARNs are required');
-    if (!/^[a-z0-9][a-z0-9.-]+$/.test(props.sourceHost) || !/^[a-z0-9-]+\.[a-z0-9.-]+\.rds\.amazonaws\.com$/.test(props.targetHost) || props.sourceHost === props.targetHost) throw new Error('Reviewed source and RDS target hosts are required');
+    if (!/^[a-z]{20}$/.test(props.sourceProjectRef) || props.sourceHost !== `db.${props.sourceProjectRef}.supabase.co` || !/^[a-z0-9-]+\.[a-z0-9.-]+\.rds\.amazonaws\.com$/.test(props.targetHost) || props.sourceHost === props.targetHost) throw new Error('Reviewed source project and RDS target hosts are required');
     for (const database of [props.sourceDatabase, props.targetDatabase]) if (!/^[A-Za-z0-9_-]{1,63}$/.test(database)) throw new Error('Database name is invalid');
 
     cdk.Tags.of(this).add('Purpose', 'temporary-database-migration');
@@ -90,7 +91,8 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
       taskRole,
       executionRole,
     });
-    this.taskDefinition.addContainer('migration', {
+    this.taskDefinition.addVolume({ name: 'migration-tmp' });
+    const container = this.taskDefinition.addContainer('migration', {
       image: ecs.ContainerImage.fromRegistry(`${repository.repositoryUri}@${props.imageDigest}`),
       command: ['--execute', '--acknowledge-source-read', '--acknowledge-target-write'],
       readonlyRootFilesystem: true,
@@ -102,9 +104,10 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
         TRACEPOINT_EXPECTED_AWS_ACCOUNT: this.account,
         TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE: props.authorizationReference,
         TRACEPOINT_DATABASE_MIGRATION_APPROVAL: props.runId,
+        TRACEPOINT_SOURCE_PROJECT_REF: props.sourceProjectRef,
         SOURCE_PGHOST: props.sourceHost,
         SOURCE_PGDATABASE: props.sourceDatabase,
-        SOURCE_DATABASE_CA_PATH: '/app/rds-ca.pem',
+        SOURCE_DATABASE_CA_PATH: '/etc/ssl/certs/ca-certificates.crt',
         TARGET_PGHOST: props.targetHost,
         TARGET_PGDATABASE: props.targetDatabase,
         TARGET_DATABASE_CA_PATH: '/app/rds-ca.pem',
@@ -114,6 +117,7 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
         TARGET_DATABASE_SECRET_JSON: ecs.Secret.fromSecretsManager(targetSecret),
       },
     });
+    container.addMountPoints({ containerPath: '/tmp', sourceVolume: 'migration-tmp', readOnly: false });
 
     new cdk.CfnOutput(this, 'ClusterName', { value: cluster.clusterName });
     new cdk.CfnOutput(this, 'TaskDefinitionArn', { value: this.taskDefinition.taskDefinitionArn });
@@ -121,4 +125,3 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'PublicSubnetIds', { value: props.publicSubnetIds.join(',') });
   }
 }
-

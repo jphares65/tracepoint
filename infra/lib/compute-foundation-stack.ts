@@ -21,6 +21,7 @@ export class ComputeFoundationStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly appLogGroup: logs.LogGroup;
   public readonly appSecrets: secretsmanager.Secret;
+  public readonly awsNativeAppSecrets: secretsmanager.Secret;
   public readonly executionRole: iam.Role;
   public readonly taskRole: iam.Role;
 
@@ -67,6 +68,17 @@ export class ComputeFoundationStack extends cdk.Stack {
       },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    this.awsNativeAppSecrets = new secretsmanager.Secret(this, "AwsNativeAppSecrets", {
+      secretName: `tracepoint/${props.environmentName}/application/aws-native`,
+      description: "TracePoint AWS-native application secrets; deliberately separate from the rollback bridge secret.",
+      encryptionKey: dataKey,
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({ initialized: false }),
+        generateStringKey: "bootstrapNonce",
+        excludePunctuation: true,
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
 
     const ecsTasksPrincipal = new iam.ServicePrincipal("ecs-tasks.amazonaws.com", {
       conditions: {
@@ -93,7 +105,7 @@ export class ComputeFoundationStack extends cdk.Stack {
     );
 
     if (props.environmentName === "production") {
-      NagSuppressions.addResourceSuppressions(this.appSecrets, [{
+      NagSuppressions.addResourceSuppressions([this.appSecrets, this.awsNativeAppSecrets], [{
         id: "AwsSolutions-SMG4",
         reason: "This provider-neutral JSON secret contains independent application encryption keyrings and non-provider secrets; rotation is performed by the versioned application-key workflow rather than one Secrets Manager database rotation schedule.",
       }]);
@@ -123,7 +135,7 @@ export class ComputeFoundationStack extends cdk.Stack {
     this.executionRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        resources: [this.appSecrets.secretArn],
+        resources: [this.appSecrets.secretArn, this.awsNativeAppSecrets.secretArn],
       }),
     );
     this.executionRole.addToPolicy(
@@ -143,6 +155,7 @@ export class ComputeFoundationStack extends cdk.Stack {
     new cdk.CfnOutput(this, "EcsClusterName", { value: this.cluster.clusterName });
     new cdk.CfnOutput(this, "ApplicationLogGroupName", { value: this.appLogGroup.logGroupName });
     new cdk.CfnOutput(this, "ApplicationSecretArn", { value: this.appSecrets.secretArn });
+    new cdk.CfnOutput(this, "AwsNativeApplicationSecretArn", { value: this.awsNativeAppSecrets.secretArn });
     new cdk.CfnOutput(this, "TaskExecutionRoleArn", { value: this.executionRole.roleArn });
     new cdk.CfnOutput(this, "TaskRoleArn", { value: this.taskRole.roleArn });
   }

@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 export const TRANSIENT_TABLES = Object.freeze([
   "authentication_flow_transactions", "authentication_access_sessions", "authentication_refresh_sessions",
   "authentication_session_revocations", "authentication_lifecycle_operations", "user_activation_tokens",
-  "notification_email_queue",
 ]);
 export const TARGET_SEEDED_TABLES = Object.freeze(["roles", "permissions", "role_permissions", "feature_catalog"]);
+export const SOURCE_MIGRATION_COUNT = 75;
+export const TARGET_MIGRATION_COUNT = 91;
 
 const host = /^[a-z0-9][a-z0-9.-]+$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,6 +17,8 @@ export function validateDatabaseMigrationPlan(plan) {
   assert.match(plan.commit, /^[0-9a-f]{40}$/);
   assert.match(plan.expectedAwsAccount, /^\d{12}$/);
   assert.match(plan.source.host, host);
+  assert.match(plan.sourceProjectRef, /^[a-z]{20}$/);
+  assert.equal(plan.source.host, `db.${plan.sourceProjectRef}.supabase.co`);
   assert.match(plan.target.host, /^[a-z0-9-]+\.[a-z0-9.-]+\.rds\.amazonaws\.com$/);
   assert.equal(plan.source.port, 5432);
   assert.equal(plan.target.port, 5432);
@@ -40,6 +43,7 @@ export function databaseMigrationPlan(environment) {
     commit: environment.TRACEPOINT_SOURCE_COMMIT,
     expectedAwsAccount: environment.TRACEPOINT_EXPECTED_AWS_ACCOUNT,
     authorizationReference: environment.TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE,
+    sourceProjectRef: environment.TRACEPOINT_SOURCE_PROJECT_REF,
     source: { host: environment.SOURCE_PGHOST, port: Number(environment.SOURCE_PGPORT || 5432), database: environment.SOURCE_PGDATABASE, readOnly: true },
     target: { host: environment.TARGET_PGHOST, port: Number(environment.TARGET_PGPORT || 5432), database: environment.TARGET_PGDATABASE, mustBeFresh: true },
     sourceCaPath: environment.SOURCE_DATABASE_CA_PATH,

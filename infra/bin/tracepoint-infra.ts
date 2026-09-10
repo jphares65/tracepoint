@@ -86,7 +86,7 @@ const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
   stackName: `${environmentName}-image-build`,
   environmentName: workloadEnvironment,
   repository: compute.repository,
-  appSecrets: compute.appSecrets,
+  appSecrets: providerMode === "aws-native" ? compute.awsNativeAppSecrets : compute.appSecrets,
   providerMode,
 });
 imageBuild.addStackDependency(compute);
@@ -176,7 +176,7 @@ if (runtimeEnabled) {
     repository: compute.repository,
     cluster: compute.cluster,
     appLogGroup: compute.appLogGroup,
-    appSecrets: compute.appSecrets,
+    appSecrets: providerMode === "aws-native" ? compute.awsNativeAppSecrets : compute.appSecrets,
     executionRole: compute.executionRole,
     taskRole: compute.taskRole,
     certificateArn,

@@ -10,6 +10,7 @@
     "storage:migration": "node scripts/storage-migration.mjs",
     "storage:migration:test": "node --test scripts/storage-migration.test.mjs",
     "identity:migration": "tsx --conditions=react-server scripts/migrate-cognito-identities.mts",
+    "identity:migration:prepare": "tsx --conditions=react-server scripts/prepare-cognito-identity-batch.mts",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
     "db:verify-staging": "node scripts/verify-staging-schema.mjs"

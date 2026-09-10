@@ -37,10 +37,10 @@ function validateEvidence(input) {
   requireExactKeys(input, [
     'account', 'authorizationReference', 'awsAcceptedWrites', 'awsImageDigest',
     'awsTaskDefinitionArn', 'bridgeImageDigest', 'bridgeTaskDefinitionArn', 'cognito',
-    'database', 'databaseSecretVersionArn', 'dnsSnapshotSha256', 'environment',
+    'database', 'databaseSecret', 'dnsSnapshotSha256', 'environment',
     'gates', 'hostname', 'phase', 'region', 'rdsRecoveryPointArn', 'service',
     'sourceManifestSha256', 'storageManifestSha256', 'targetManifestSha256',
-    'applicationSecretVersionArn', 'commit',
+    'awsApplicationSecret', 'bridgeApplicationSecret', 'commit',
   ], 'Cutover evidence');
   if (!/^\d{12}$/.test(input.account ?? '') || FORBIDDEN_ACCOUNTS.has(input.account)) fail('A reviewed dedicated production account is required');
   if (input.environment !== 'production' || input.region !== 'us-east-1') fail('Cutover evidence must target production in us-east-1');
@@ -63,12 +63,14 @@ function validateEvidence(input) {
   if (!/^[a-zA-Z0-9_-]{1,255}$/.test(input.service?.cluster ?? '') || !/^[a-zA-Z0-9_-]{1,255}$/.test(input.service?.name ?? '')) fail('ECS service coordinates are invalid');
 
   const secretPrefix = `arn:aws:secretsmanager:us-east-1:${input.account}:secret:`;
-  for (const arn of [input.applicationSecretVersionArn, input.databaseSecretVersionArn]) {
-    if (!arn?.startsWith(secretPrefix) || !arn.includes(':AWSCURRENT')) fail('Pinned AWSCURRENT secret version ARN is required');
+  for (const [label, secret] of [['AWS application', input.awsApplicationSecret], ['bridge application', input.bridgeApplicationSecret], ['database', input.databaseSecret]]) {
+    requireExactKeys(secret, ['arn', 'versionId', 'versionStage'], `${label} secret`);
+    if (!secret.arn?.startsWith(secretPrefix) || !/^[A-Za-z0-9_-]{32,64}$/.test(secret.versionId ?? '') || secret.versionStage !== 'AWSCURRENT') fail(`${label} secret version is invalid`);
   }
-  if (!input.rdsRecoveryPointArn?.startsWith(`arn:aws:rds:us-east-1:${input.account}:snapshot:`)) fail('A production RDS snapshot ARN is required');
+  const recoveryType = input.database?.topology === 'aurora' ? 'cluster-snapshot' : input.database?.topology === 'rds-multi-az' ? 'snapshot' : '';
+  if (!recoveryType || !input.rdsRecoveryPointArn?.startsWith(`arn:aws:rds:us-east-1:${input.account}:${recoveryType}:`)) fail('A recovery point matching the production database topology is required');
 
-  requireExactKeys(input.database, ['migrationLedgerSha256', 'migrationRunId', 'sourceSnapshotAt', 'sourceSnapshotLsn'], 'Database evidence');
+  requireExactKeys(input.database, ['migrationLedgerSha256', 'migrationRunId', 'sourceSnapshotAt', 'sourceSnapshotLsn', 'topology'], 'Database evidence');
   requireSha(input.database.migrationLedgerSha256, 'database migration ledger');
   if (!RUN_ID.test(input.database.migrationRunId ?? '')) fail('Database migration run ID is invalid');
   if (!/^[0-9A-F]+\/[0-9A-F]+$/.test(input.database.sourceSnapshotLsn ?? '')) fail('Source PostgreSQL LSN is invalid');
@@ -116,5 +118,6 @@ export function rollbackDecision(manifest) {
     automaticBridgeRestoreAllowed: true,
     action: 'restore-immutable-bridge-task',
     taskDefinitionArn: validated.evidence.bridgeTaskDefinitionArn,
+    bridgeApplicationSecret: validated.evidence.bridgeApplicationSecret,
   };
 }

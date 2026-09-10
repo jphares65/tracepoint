@@ -4,10 +4,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 FROM node:24-alpine
-RUN apk upgrade --no-cache && apk add --no-cache postgresql18-client
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates postgresql18-client
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY scripts/database-migration-core.mjs scripts/migrate-aws-postgres-data.mjs ./scripts/
+COPY scripts/database-migration-core.mjs scripts/database-migration-core.test.mjs scripts/migrate-aws-postgres-data.mjs ./scripts/
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN chmod 444 /app/rds-ca.pem
 USER node

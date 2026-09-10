@@ -14,13 +14,14 @@ const evidence = {
   awsImageDigest: `sha256:${hash('a')}`, awsTaskDefinitionArn: 'arn:aws:ecs:us-east-1:222222222222:task-definition/tracepoint-production:42',
   bridgeImageDigest: `sha256:${hash('b')}`, bridgeTaskDefinitionArn: 'arn:aws:ecs:us-east-1:222222222222:task-definition/tracepoint-production:41',
   cognito: { appClientId: 'a'.repeat(26), reconciliationSha256: hash('c'), userPoolId: 'us-east-1_AbCdEf123' },
-  database: { migrationLedgerSha256: hash('d'), migrationRunId: 'migration-20260911', sourceSnapshotAt: '2026-09-11T16:00:00.000Z', sourceSnapshotLsn: '16/B374D848' },
-  databaseSecretVersionArn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/database:AWSCURRENT',
+  database: { migrationLedgerSha256: hash('d'), migrationRunId: 'migration-20260911', sourceSnapshotAt: '2026-09-11T16:00:00.000Z', sourceSnapshotLsn: '16/B374D848', topology: 'rds-multi-az' },
+  databaseSecret: { arn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/database-abc123', versionId: 'd'.repeat(32), versionStage: 'AWSCURRENT' },
   dnsSnapshotSha256: hash('e'), environment: 'production', gates, hostname: 'tracepointhq.com', phase: 'prepared', region: 'us-east-1',
   rdsRecoveryPointArn: 'arn:aws:rds:us-east-1:222222222222:snapshot:tracepoint-pre-cutover',
   service: { cluster: 'tracepoint-production', name: 'tracepoint-production' }, sourceManifestSha256: hash('f'),
   storageManifestSha256: hash('1'), targetManifestSha256: hash('2'),
-  applicationSecretVersionArn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/application:AWSCURRENT',
+  awsApplicationSecret: { arn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/application/aws-native-abc123', versionId: 'a'.repeat(32), versionStage: 'AWSCURRENT' },
+  bridgeApplicationSecret: { arn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/application-abc123', versionId: 'b'.repeat(32), versionStage: 'AWSCURRENT' },
   commit: '3'.repeat(40),
 };
 
@@ -31,6 +32,7 @@ test('creates an integrity-pinned review manifest and permits only pre-write bri
     automaticBridgeRestoreAllowed: true,
     action: 'restore-immutable-bridge-task',
     taskDefinitionArn: evidence.bridgeTaskDefinitionArn,
+    bridgeApplicationSecret: evidence.bridgeApplicationSecret,
   });
 });
 
@@ -47,5 +49,6 @@ test('rejects mutation, missing gates, staging accounts, and unknown evidence', 
   assert.throws(() => createCutoverManifest({ ...evidence, account: '559054714699' }), /dedicated production/);
   assert.throws(() => createCutoverManifest({ ...evidence, gates: { ...gates, storageReconciled: false } }), /storageReconciled/);
   assert.throws(() => createCutoverManifest({ ...evidence, unexpected: true }), /reviewed schema/);
+  const aurora = { ...evidence, database: { ...evidence.database, topology: 'aurora' }, rdsRecoveryPointArn: 'arn:aws:rds:us-east-1:222222222222:cluster-snapshot:tracepoint-pre-cutover' };
+  assert.doesNotThrow(() => createCutoverManifest(aurora));
 });
-
