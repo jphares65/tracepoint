@@ -1,6 +1,8 @@
 ﻿import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-export function validateCutover(input) {
+export function validateCutover() {
+  throw new Error('The temporary hybrid cutover validator is retired. Use validate-full-aws-production-cutover.mjs with an immutable full-AWS cutover manifest.');
+  /* istanbul ignore next -- retained below only to keep historical review context unreachable.
   const fail = message => {throw new Error(message)};
   if(!/^\d{12}$/.test(input.account)||['265544358665','559054714699','111111111111'].includes(input.account)) fail('A reviewed dedicated production account is required');
   if(input.region!=='us-east-1')fail('Region must equal us-east-1');
@@ -12,7 +14,7 @@ export function validateCutover(input) {
   if(input.dataMode!=='retain-production-providers')fail('Data transfer requires a separate authorized, rehearsed procedure');
   const required=['accountIdentityVerified','certificateIssued','secretValidated','imageScanPassed','authenticatedAcceptancePassed','alarmsDelivered','backupRestoreRehearsed','rollbackRehearsed','costApproved','dnsRecordsCaptured','agencyApproval','schemaCompatibilityVerified','productionClientBuildVerified'];
   for(const gate of required)if(input.gates?.[gate]!==true)fail(`Unmet cutover gate: ${gate}`);
-  return {readyForReview:true,executionAuthorized:false,account:input.account,region:input.region,hostname:input.hostname,dataMode:input.dataMode};
+  return {readyForReview:true,executionAuthorized:false,account:input.account,region:input.region,hostname:input.hostname,dataMode:input.dataMode}; */
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  if(!process.argv[2])throw new Error('Provide a reviewed evidence JSON file; no deployment or DNS change is executed');
