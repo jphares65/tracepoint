@@ -42,9 +42,23 @@ export type CreatePlatformAgencyInput = {
   internalNotes?: string;
 };
 
+export type PlatformAgencyMember = {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  badge_number: string | null;
+  rank_title: string | null;
+  is_active: boolean;
+  activation_status: string | null;
+};
+
 export interface PlatformAdminRepository {
   listAgencies(): Promise<PlatformAgency[]>;
   createAgency(input: CreatePlatformAgencyInput): Promise<string>;
+  getAgency(departmentId: string): Promise<{ agency: PlatformAgency; members: PlatformAgencyMember[] } | null>;
+  assignAdministrator(departmentId: string, userId: string): Promise<void>;
+  listEntitlements(): Promise<{ departments: Record<string, unknown>[]; features: Record<string, unknown>[]; entitlements: Record<string, unknown>[] }>;
+  setEntitlement(input: { departmentId: string; featureCode: string; isEnabled: boolean; reason?: string }): Promise<void>;
 }
 
 export class PlatformAdminOperationError extends Error {
@@ -96,6 +110,57 @@ class PostgresPlatformAdminRepository implements PlatformAdminRepository {
       throw new PlatformAdminOperationError(databaseCode(error));
     }
   }
+
+  async getAgency(departmentId: string) {
+    const agencies = await this.listAgencies();
+    const agency = agencies.find(item => item.id === departmentId);
+    if (!agency) return null;
+    const members = await withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
+      const result = await client.query("select * from public.get_department_members($1)", [departmentId]) as { rows: Array<Record<string, unknown>> };
+      return result.rows.map(row => ({
+        user_id: String(row.user_id), full_name: row.full_name ? String(row.full_name) : null,
+        email: row.email ? String(row.email) : null, badge_number: row.badge_number ? String(row.badge_number) : null,
+        rank_title: row.rank_title ? String(row.rank_title) : null, is_active: row.is_active === true,
+        activation_status: row.activation_status ? String(row.activation_status) : null,
+      }));
+    });
+    return { agency, members };
+  }
+
+  async assignAdministrator(departmentId: string, userId: string) {
+    try {
+      await withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
+        await client.query("select public.set_department_member_roles($1,$2,$3::text[])", [departmentId, userId, ["officer", "administrator"]]);
+      });
+    } catch (error) {
+      throw new PlatformAdminOperationError(databaseCode(error));
+    }
+  }
+
+  async listEntitlements() {
+    return withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
+      const result = await client.query("select public.get_platform_entitlements() as value") as { rows: Array<{ value?: unknown }> };
+      const value = result.rows[0]?.value as { departments?: unknown; features?: unknown; entitlements?: unknown } | undefined;
+      if (!value || !Array.isArray(value.departments) || !Array.isArray(value.features) || !Array.isArray(value.entitlements)) {
+        throw new PlatformAdminOperationError();
+      }
+      return {
+        departments: value.departments as Record<string, unknown>[],
+        features: value.features as Record<string, unknown>[],
+        entitlements: value.entitlements as Record<string, unknown>[],
+      };
+    });
+  }
+
+  async setEntitlement(input: { departmentId: string; featureCode: string; isEnabled: boolean; reason?: string }) {
+    try {
+      await withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
+        await client.query("select public.set_platform_entitlement($1,$2,$3,$4)", [input.departmentId, input.featureCode, input.isEnabled, input.reason ?? null]);
+      });
+    } catch (error) {
+      throw new PlatformAdminOperationError(databaseCode(error));
+    }
+  }
 }
 
 export type PlatformAdminAccessResult =
@@ -119,8 +184,8 @@ export async function resolvePlatformAdminAccess(): Promise<PlatformAdminAccessR
     }
   }
 
-  const [{ createClient }, { createPlatformReadRepository }] = await Promise.all([
-    import("@/lib/supabase/server"), import("@/lib/platform/read-repository"),
+  const [{ createClient }, { createAdminClient }, { createPlatformReadRepository }] = await Promise.all([
+    import("@/lib/supabase/server"), import("@/lib/supabase/admin"), import("@/lib/platform/read-repository"),
   ]);
   const client = await createClient();
   const userResult = await client.auth.getUser();
@@ -129,6 +194,7 @@ export async function resolvePlatformAdminAccess(): Promise<PlatformAdminAccessR
   const admin = await client.rpc("is_platform_admin");
   if (admin.error || admin.data !== true) return { ok: false, status: 403 };
   const reads = createPlatformReadRepository(client, true);
+  const bridgeAdmin = createAdminClient();
   const repository: PlatformAdminRepository = {
     async listAgencies() {
       const { departments, accounts } = await reads.listAgencies();
@@ -147,6 +213,41 @@ export async function resolvePlatformAdminAccess(): Promise<PlatformAdminAccessR
       });
       if (result.error) throw new PlatformAdminOperationError(result.error.code);
       return String(result.data);
+    },
+    async getAgency(departmentId) {
+      const agencies = await this.listAgencies();
+      const agency = agencies.find(item => item.id === departmentId);
+      if (!agency) return null;
+      const result = await client.rpc("get_department_members", { p_department_id: departmentId });
+      if (result.error) throw new PlatformAdminOperationError(result.error.code);
+      return { agency, members: (result.data ?? []) as PlatformAgencyMember[] };
+    },
+    async assignAdministrator(departmentId, userId) {
+      const membership = await bridgeAdmin.from("department_memberships").select("user_id").eq("department_id", departmentId).eq("user_id", userId).maybeSingle();
+      if (membership.error || !membership.data) throw new PlatformAdminOperationError(membership.error?.code || "P0002");
+      const result = await client.rpc("set_department_member_roles", { p_department_id: departmentId, p_user_id: userId, p_role_codes: ["officer", "administrator"] });
+      if (result.error) throw new PlatformAdminOperationError(result.error.code);
+    },
+    async listEntitlements() {
+      return reads.listEntitlements();
+    },
+    async setEntitlement(input) {
+      const current = await bridgeAdmin.from("department_features").select("is_enabled").eq("department_id", input.departmentId).eq("feature_code", input.featureCode).maybeSingle();
+      if (current.error) throw new PlatformAdminOperationError(current.error.code);
+      const now = new Date().toISOString();
+      const updated = await bridgeAdmin.from("department_features").upsert({
+        department_id: input.departmentId, feature_code: input.featureCode, is_enabled: input.isEnabled,
+        enabled_at: input.isEnabled ? now : null, disabled_at: input.isEnabled ? null : now, updated_at: now, updated_by: user.id,
+      }, { onConflict: "department_id,feature_code" });
+      if (updated.error) throw new PlatformAdminOperationError(updated.error.code);
+      if ((current.data?.is_enabled ?? true) !== input.isEnabled) {
+        const event = await bridgeAdmin.from("department_feature_events").insert({
+          department_id: input.departmentId, feature_code: input.featureCode,
+          previous_enabled: current.data?.is_enabled ?? true, new_enabled: input.isEnabled,
+          actor_user_id: user.id, reason: input.reason ?? null,
+        });
+        if (event.error) throw new PlatformAdminOperationError(event.error.code);
+      }
     },
   };
   return { ok: true, userId: user.id, repository };

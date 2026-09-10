@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { resolvePlatformAdminAccess } from "@/lib/platform/admin-access";
 
 export const dynamic = "force-dynamic";
 
+type BridgeAdminClient = ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>;
+
 async function requirePlatformAdmin() {
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    const access = await resolvePlatformAdminAccess();
+    if (!access.ok) return { ok: false as const, status: access.status, error: access.status === 401 ? "Authentication is required." : "Platform administrator access is required." };
+    return { ok: true as const, user: { id: access.userId } };
+  }
+  const { createClient } = await import("@/lib/supabase/server");
   const server = await createClient();
 
   const {
@@ -59,7 +66,7 @@ async function recordSupportModeEvent({
   departmentName,
   action,
 }: {
-  admin: any;
+  admin: BridgeAdminClient;
   actorUserId: string;
   departmentId: string;
   departmentName: string | null;
@@ -92,6 +99,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    return NextResponse.json(
+      { error: "AWS Support Mode is disabled until scoped tenant impersonation is implemented." },
+      { status: 501 },
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
 
   const departmentId =
@@ -106,7 +120,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const admin = createAdminClient() as any;
+  const admin = (await import("@/lib/supabase/admin")).createAdminClient();
 
   const { data: department, error } = await admin
     .from("departments")
@@ -182,6 +196,10 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    return clearSupportCookies(NextResponse.json({ ok: true }));
+  }
+
   const departmentId =
     request.cookies
       .get("tracepoint_support_department_id")
@@ -190,7 +208,7 @@ export async function DELETE(request: NextRequest) {
   let auditErrorMessage: string | null = null;
 
   if (departmentId) {
-    const admin = createAdminClient() as any;
+    const admin = (await import("@/lib/supabase/admin")).createAdminClient();
 
     const { data: department, error: departmentError } = await admin
       .from("departments")
