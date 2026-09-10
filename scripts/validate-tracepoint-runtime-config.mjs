@@ -40,6 +40,8 @@ const forbiddenAwsNativeNames = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "BREVO_API_KEY",
 ];
+const forbiddenAwsNativeKey = /(^|_)(SUPABASE|VERCEL|BREVO)(_|$)/i;
+const forbiddenAwsNativeEndpoint = /(?:\.supabase\.co|\.vercel\.app|api\.brevo\.com)/i;
 
 const providerTuples = {
   bridge: {
@@ -152,6 +154,10 @@ export function validateTracePointRuntimeConfig(environment = process.env) {
     validateKeyring(environment, "TRACEPOINT_AUTH_STATE_KEYS", invalid);
     validateKeyring(environment, "TRACEPOINT_AUTH_REFRESH_KEYS", invalid);
     for (const name of forbiddenAwsNativeNames) if (present(environment, name)) invalid.push(name);
+    for (const [name, raw] of Object.entries(environment)) {
+      if (!present(environment, name)) continue;
+      if (forbiddenAwsNativeKey.test(name) || forbiddenAwsNativeEndpoint.test(String(raw))) invalid.push(name);
+    }
     if (!/^us-east-1_[A-Za-z0-9]+$/.test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");
     if (!/^\d{12}$/.test(environment.TRACEPOINT_AWS_ACCOUNT_ID ?? "") || environment.TRACEPOINT_AWS_ACCOUNT_ID !== environment.TRACEPOINT_S3_EXPECTED_OWNER) invalid.push("TRACEPOINT_AWS_ACCOUNT_ID");
     if (!/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_CLIENT_ID");

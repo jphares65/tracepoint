@@ -101,4 +101,10 @@ test("accepts only the complete provider-free AWS runtime tuple", () => {
     () => validateTracePointRuntimeConfig({ ...awsNative, TRACEPOINT_AUTH_PROVIDER: "supabase" }),
     /TRACEPOINT_AUTH_PROVIDER/,
   );
+  for (const legacy of [
+    { VERCEL_URL: "tracepoint.vercel.app" },
+    { BREVO_SMTP_PASSWORD: "must-not-be-present" },
+    { LEGACY_SUPABASE_ANON_KEY: "must-not-be-present" },
+    { UNRELATED_ENDPOINT: "https://api.brevo.com/v3" },
+  ]) assert.throws(() => validateTracePointRuntimeConfig({ ...awsNative, ...legacy }));
 });
