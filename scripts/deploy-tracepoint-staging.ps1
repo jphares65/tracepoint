@@ -5,6 +5,7 @@ param(
     [string]$CertificateArn,
     [switch]$IncludeReviewedRuntimeControls,
     [switch]$IncludeReviewedImporterSecretAlias,
+    [switch]$IncludeReviewedBridgeComposition,
     [ValidateSet('supabase','s3')][string]$StorageProvider = 'supabase'
 )
 
@@ -140,6 +141,7 @@ try {
 $structuralOptions = @()
 if ($IncludeReviewedRuntimeControls) { $structuralOptions += '--allow-reviewed-runtime-controls' }
 if ($IncludeReviewedImporterSecretAlias) { $structuralOptions += '--allow-reviewed-importer-secret-alias' }
+if ($IncludeReviewedBridgeComposition) { $structuralOptions += '--allow-reviewed-bridge-composition' }
 if ($StorageProvider -eq 's3') { $structuralOptions += '--allow-reviewed-private-storage' }
 & node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag @structuralOptions
 if ($LASTEXITCODE -ne 0) { throw 'Runtime template changes exceed the reviewed image/alarms scope.' }
