@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createIdentityBatchManifest, identityCheckpoint, validateIdentityBatchManifest, validateIdentityCheckpoint } from './cognito-identity-batch-core.mjs';
+import { createIdentityBatchCompletion, createIdentityBatchManifest, identityCheckpoint, validateIdentityBatchCompletion, validateIdentityBatchManifest, validateIdentityCheckpoint } from './cognito-identity-batch-core.mjs';
 
 const input = {
   actorUserId: '11111111-1111-4111-8111-111111111111', authorizationReference: 'STAGING-MIGRATION-2026', environment: 'staging', expectedAccount: '559054714699',
@@ -24,4 +24,23 @@ test('rejects mutation, duplicate users, site drift, and foreign checkpoints', (
   assert.throws(() => validateIdentityCheckpoint({ format: 1, manifestSha256: 'x', completedItemSha256: [] }, manifest), /does not match/);
   assert.throws(() => validateIdentityBatchManifest(createIdentityBatchManifest({ ...input, expiresAt: '2099-01-01T01:00:00.000Z' }, '2099-01-01T00:00:00.000Z'), new Date('2026-09-10T12:00:00.000Z')), /currently valid/);
   assert.throws(() => createIdentityBatchManifest({ ...input, users: Array.from({ length: 101 }, (_, index) => ({ departmentId: input.users[0].departmentId, targetUserId: `33333333-3333-4333-8333-${String(index).padStart(12, '0')}` })) }), /1 to 100/);
+});
+
+test('creates an integrity-bound empty completion after a stable pagination cursor', () => {
+  const createdAt = '2026-09-10T12:00:00.000Z';
+  const completion = createIdentityBatchCompletion({
+    actorUserId: input.actorUserId,
+    afterUserId: input.users[0].targetUserId,
+    authorizationReference: input.authorizationReference,
+    clientId: input.clientId,
+    departmentId: input.users[0].departmentId,
+    environment: input.environment,
+    expectedAccount: input.expectedAccount,
+    expiresAt: input.expiresAt,
+    issuer: input.issuer,
+    siteUrl: input.siteUrl,
+    userPoolId: input.userPoolId,
+  }, createdAt);
+  assert.equal(validateIdentityBatchCompletion(completion, new Date('2026-09-10T12:01:00.000Z')), completion);
+  assert.throws(() => validateIdentityBatchCompletion({ ...completion, afterUserId: '' }), /integrity/);
 });

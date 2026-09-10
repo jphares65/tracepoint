@@ -17,6 +17,7 @@ export interface IdentityMigrationRunnerStackProps extends cdk.StackProps {
   manifestSha256?: string;
   actorUserId?: string;
   departmentId?: string;
+  afterUserId?: string;
   commit: string;
   imageDigest: string;
   repositoryName: string;
@@ -47,7 +48,7 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     const manifestSha256 = props.manifestSha256 ?? '';
     if ((props.mode === 'execute' && !/^[0-9a-f]{64}$/.test(manifestSha256)) || (props.mode === 'prepare' && manifestSha256 !== '') || !/^[0-9a-f]{40}$/.test(props.commit) || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) throw new Error('Immutable manifest, source, and image are required');
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (props.mode === 'prepare' ? !uuid.test(props.actorUserId ?? '') || !uuid.test(props.departmentId ?? '') : props.actorUserId !== undefined || props.departmentId !== undefined) throw new Error('Preparation requires one actor and department');
+    if (props.mode === 'prepare' ? !uuid.test(props.actorUserId ?? '') || !uuid.test(props.departmentId ?? '') || (props.afterUserId !== undefined && !uuid.test(props.afterUserId)) : props.actorUserId !== undefined || props.departmentId !== undefined || props.afterUserId !== undefined) throw new Error('Preparation requires one actor and department');
     if (props.publicSubnetIds.length !== 2 || new Set(props.publicSubnetIds).size !== 2 || props.publicSubnetIds.some(idValue => !/^subnet-[0-9a-f]+$/.test(idValue))) throw new Error('Exactly two reviewed public subnets are required');
     const secretPrefix = `arn:aws:secretsmanager:us-east-1:${this.account}:secret:`;
     if (!props.databaseSecretArn.startsWith(secretPrefix)) throw new Error('An exact database secret is required');
@@ -107,7 +108,7 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
         TRACEPOINT_SOURCE_COMMIT: props.commit,
         TRACEPOINT_STAGING_IDENTITY_RECIPIENT_SHA256: props.stagingRecipientSha256.join(','),
         TRACEPOINT_IDENTITY_MIGRATION_RUN_ID: props.runId, TRACEPOINT_IDENTITY_MIGRATION_AUTHORIZATION: `${props.authorizationReference}:${manifestSha256}`,
-        TRACEPOINT_IDENTITY_MIGRATION_MODE: props.mode, TRACEPOINT_IDENTITY_ACTOR_USER_ID: props.actorUserId ?? '', TRACEPOINT_IDENTITY_DEPARTMENT_ID: props.departmentId ?? '', TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE: props.authorizationReference,
+        TRACEPOINT_IDENTITY_MIGRATION_MODE: props.mode, TRACEPOINT_IDENTITY_ACTOR_USER_ID: props.actorUserId ?? '', TRACEPOINT_IDENTITY_DEPARTMENT_ID: props.departmentId ?? '', TRACEPOINT_IDENTITY_AFTER_USER_ID: props.afterUserId ?? '', TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE: props.authorizationReference,
         TRACEPOINT_MIGRATION_ARTIFACT_BUCKET: props.artifactBucketName, TRACEPOINT_MIGRATION_ARTIFACT_KMS_KEY_ARN: props.artifactKeyArn,
         TRACEPOINT_IDENTITY_MANIFEST_KEY: `${artifactPrefix}/manifest.json`, TRACEPOINT_IDENTITY_CHECKPOINT_KEY: `${artifactPrefix}/checkpoint.json`, TRACEPOINT_IDENTITY_EVIDENCE_KEY: `${artifactPrefix}/evidence.json`, TRACEPOINT_IDENTITY_MANIFEST_SHA256: manifestSha256,
       },

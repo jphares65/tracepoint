@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
-import { validateIdentityBatchManifest } from './cognito-identity-batch-core.mjs';
+import { validateIdentityBatchCompletion, validateIdentityBatchManifest } from './cognito-identity-batch-core.mjs';
 
 const run = promisify(execFile);
 const runId = process.env.TRACEPOINT_IDENTITY_MIGRATION_RUN_ID ?? '';
@@ -52,12 +52,15 @@ try {
   const checkpointPath = path.join(directory, 'checkpoint.json');
   const encryption = { ServerSideEncryption: 'aws:kms' as const, SSEKMSKeyId: artifactKeyArn };
   if (mode === 'prepare') {
-    const result = await run(process.execPath, ['--conditions=react-server', '--import', 'tsx', 'scripts/prepare-cognito-identity-batch.mts', '--prepare', '--output', manifestPath, '--actor-user-id', process.env.TRACEPOINT_IDENTITY_ACTOR_USER_ID!, '--department-id', process.env.TRACEPOINT_IDENTITY_DEPARTMENT_ID!, '--authorization-reference', process.env.TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE!], { env: process.env, timeout: 5 * 60_000, maxBuffer: 1024 * 1024 });
+    const prepareArguments = ['--conditions=react-server', '--import', 'tsx', 'scripts/prepare-cognito-identity-batch.mts', '--prepare', '--output', manifestPath, '--actor-user-id', process.env.TRACEPOINT_IDENTITY_ACTOR_USER_ID!, '--department-id', process.env.TRACEPOINT_IDENTITY_DEPARTMENT_ID!, '--authorization-reference', process.env.TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE!];
+    if (process.env.TRACEPOINT_IDENTITY_AFTER_USER_ID) prepareArguments.push('--after-user-id', process.env.TRACEPOINT_IDENTITY_AFTER_USER_ID);
+    const result = await run(process.execPath, prepareArguments, { env: process.env, timeout: 5 * 60_000, maxBuffer: 1024 * 1024 });
     const manifestBytes = await readFile(manifestPath);
-    const manifest = validateIdentityBatchManifest(JSON.parse(manifestBytes.toString('utf8')));
+    const parsed = JSON.parse(manifestBytes.toString('utf8'));
+    const manifest = parsed.kind === 'identity-batch-complete' ? validateIdentityBatchCompletion(parsed) : validateIdentityBatchManifest(parsed);
     assert.equal(manifest.expectedAccount, process.env.TRACEPOINT_AWS_ACCOUNT_ID);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: process.env.TRACEPOINT_IDENTITY_MANIFEST_KEY, Body: manifestBytes, ContentType: 'application/json', ...encryption }));
-    console.log(JSON.stringify({ status: 'PREPARED', runId, commit, manifestSha256: manifest.contentSha256, users: manifest.users.length, expiresAt: manifest.expiresAt, emailAddressesPrinted: false, writesToCognito: false, emailsSent: false }));
+    console.log(JSON.stringify({ status: parsed.kind === 'identity-batch-complete' ? 'COMPLETE' : 'PREPARED', runId, commit, manifestSha256: manifest.contentSha256, users: 'users' in manifest ? manifest.users.length : 0, expiresAt: manifest.expiresAt, emailAddressesPrinted: false, writesToCognito: false, emailsSent: false }));
     assert.ok(result.stdout.includes(manifest.contentSha256));
   } else {
     const manifestBytes = await download(process.env.TRACEPOINT_IDENTITY_MANIFEST_KEY!, true);

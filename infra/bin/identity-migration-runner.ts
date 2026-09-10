@@ -15,6 +15,7 @@ new IdentityMigrationRunnerStack(app, `tracepoint-${environmentName}-identity-${
   manifestSha256: context('manifestSha256'),
   actorUserId: context('actorUserId') || undefined,
   departmentId: context('departmentId') || undefined,
+  afterUserId: context('afterUserId') || undefined,
   commit: context('commit'),
   imageDigest: context('imageDigest'),
   repositoryName: context('repositoryName'),

@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)][guid]$RunId,
     [Parameter(Mandatory)][guid]$ActorUserId,
     [Parameter(Mandatory)][guid]$DepartmentId,
+    [string]$AfterUserId = '',
     [Parameter(Mandatory)][string]$AuthorizationReference,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit,
     [Parameter(Mandatory)][ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ImageDigest,
@@ -35,6 +36,7 @@ if ($Environment -eq 'production' -and $identity.Arn -notmatch "^arn:aws:sts::$a
 if ($ClusterName -cne "tracepoint-$Environment" -or $PublicSubnetIds.Count -ne 2 -or ($PublicSubnetIds | Select-Object -Unique).Count -ne 2) { throw 'The exact TracePoint cluster and two reviewed public subnets are required.' }
 if ($Environment -eq 'staging' -and ($StagingRecipientSha256.Count -lt 1 -or $StagingRecipientSha256.Count -gt 100 -or @($StagingRecipientSha256 | Where-Object { $_ -notmatch '^[0-9a-f]{64}$' }).Count -ne 0)) { throw 'Reviewed staging recipient hashes are required.' }
 if ($Environment -eq 'production' -and $StagingRecipientSha256.Count -ne 0) { throw 'Staging recipient hashes cannot be supplied to production.' }
+if ($AfterUserId -and $AfterUserId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') { throw 'The identity cursor must be a UUID.' }
 $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json; $costAge = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
 if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 75) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAge -lt 0 -or $costAge -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
 $buildEvidence = Get-Content -Raw -LiteralPath $BuildEvidencePath | ConvertFrom-Json
@@ -58,6 +60,7 @@ if ($cluster.clusters.Count -ne 1 -or $cluster.clusters[0].status -cne 'ACTIVE' 
 
 $stack = "tracepoint-$Environment-identity-prepare-$RunId"; $artifactPrefix = "migration/identity/$RunId"
 $contexts = @('-c',"environment=$Environment",'-c','mode=prepare','-c',"account=$account",'-c',"region=$region",'-c',"runId=$RunId",'-c',"actorUserId=$ActorUserId",'-c',"departmentId=$DepartmentId",'-c',"authorizationReference=$AuthorizationReference",'-c','manifestSha256=','-c',"commit=$Commit",'-c',"imageDigest=$ImageDigest",'-c',"repositoryName=$repositoryName",'-c',"clusterName=$ClusterName",'-c',"vpcId=$VpcId",'-c',"publicSubnetIds=$($PublicSubnetIds -join ',')",'-c',"databaseSecurityGroupId=$DatabaseSecurityGroupId",'-c',"databaseSecretArn=$DatabaseSecretArn",'-c',"artifactBucketName=$ArtifactBucketName",'-c',"artifactKeyArn=$ArtifactKeyArn",'-c',"userPoolId=$UserPoolId",'-c',"clientId=$ClientId",'-c',"fromAddress=$FromAddress",'-c',"sesConfigurationSet=$SesConfigurationSet",'-c',"stagingRecipientSha256=$($StagingRecipientSha256 -join ',')")
+if ($AfterUserId) { $contexts += @('-c',"afterUserId=$AfterUserId") }
 Push-Location (Join-Path $PSScriptRoot '..\infra')
 try {
     & npx.cmd cdk synth $stack --app 'npx ts-node --prefer-ts-exts bin/identity-migration-runner.ts' @contexts --quiet | Out-Null
@@ -78,5 +81,11 @@ if ($container.exitCode -ne 0) { throw 'Identity preparation task failed.' }
 & aws.exe s3api get-object --region $region --bucket $ArtifactBucketName --key "$artifactPrefix/manifest.json" $ManifestOutputPath | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Prepared identity manifest could not be downloaded.' }
 $manifest = Get-Content -Raw -LiteralPath $ManifestOutputPath | ConvertFrom-Json
-if ($manifest.environment -cne $Environment -or $manifest.expectedAccount -cne $account -or $manifest.authorizationReference -cne $AuthorizationReference -or $manifest.users.Count -lt 1 -or $manifest.users.Count -gt 100 -or $manifest.contentSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Prepared identity manifest is invalid.' }
-Write-Host "Prepared a private, department-scoped identity manifest for $($manifest.users.Count) users. No Cognito user or email was changed."
+if ($manifest.environment -cne $Environment -or $manifest.expectedAccount -cne $account -or $manifest.authorizationReference -cne $AuthorizationReference -or $manifest.contentSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Prepared identity artifact is invalid.' }
+if ($manifest.PSObject.Properties.Name -contains 'kind' -and $manifest.kind -eq 'identity-batch-complete') {
+    if ($manifest.departmentId -cne $DepartmentId.ToString() -or $manifest.afterUserId -cne $AfterUserId) { throw 'Identity completion scope is invalid.' }
+    Write-Host "Verified that the department has no additional eligible Cognito identities after the reviewed cursor. No Cognito user or email was changed."
+} else {
+    if ($manifest.users.Count -lt 1 -or $manifest.users.Count -gt 100) { throw 'Prepared identity manifest is invalid.' }
+    Write-Host "Prepared a private, department-scoped identity manifest for $($manifest.users.Count) users. No Cognito user or email was changed."
+}
