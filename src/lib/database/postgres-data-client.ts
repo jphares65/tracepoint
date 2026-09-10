@@ -124,13 +124,15 @@ export class PostgresDataClient {
   readonly subjectId: string;
   readonly departmentId: string;
   private readonly systemTables: ReadonlySet<string> | null;
+  private readonly supportMode: boolean;
 
-  constructor(pool: Pool, subjectId: string, departmentId: string, systemTables: ReadonlySet<string> | null = null) {
+  constructor(pool: Pool, subjectId: string, departmentId: string, systemTables: ReadonlySet<string> | null = null, supportMode = false) {
     if (!uuid.test(subjectId) || !uuid.test(departmentId)) throw new Error("Valid PostgreSQL request identity is required.");
     this.pool = pool;
     this.subjectId = subjectId;
     this.departmentId = departmentId;
     this.systemTables = systemTables;
+    this.supportMode = supportMode;
   }
 
   static forNotificationDispatch(pool: Pool) {
@@ -144,7 +146,7 @@ export class PostgresDataClient {
 
   async execute(text: string, values: readonly unknown[]) {
     if (this.systemTables) return this.pool.query(text, [...values]) as unknown as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
-    return withPostgresAuthorization(this.pool, { subjectId: this.subjectId, departmentId: this.departmentId }, async client => client.query(text, values) as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>);
+    return withPostgresAuthorization(this.pool, { subjectId: this.subjectId, departmentId: this.departmentId, supportMode: this.supportMode }, async client => client.query(text, values) as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>);
   }
 
   async rpc(name: string, args: Record<string, unknown> = {}): Promise<Result> {

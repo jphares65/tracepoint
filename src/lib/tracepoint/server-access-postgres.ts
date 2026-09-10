@@ -38,9 +38,20 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
   const support=Boolean(supportDepartmentId)&&supportDepartmentId===selectedDepartmentId;
   if(support){
    if(!platform){await client.query("rollback");return {ok:false as const,status:403,error:"Platform administrator access is required for Support Mode."};}
-   // Support access is intentionally fail-closed until the scoped AWS support
-   // function is installed; normal tenant access remains available.
-   await client.query("rollback");return {ok:false as const,status:503,error:"AWS Support Mode is not yet available."};
+   const result=await client.query("select * from public.platform_support_context($1)",[supportDepartmentId]);
+   const department=result.rows[0];
+   if(!department){await client.query("rollback");return {ok:false as const,status:404,error:"Support Mode agency was not found."};}
+   await client.query("commit");
+   const email=principal.email,fullName=principal.fullName||email.split("@")[0]||"TracePoint Platform Administrator";
+   const dataClient=new PostgresDataClient(getPostgresPool(),principal.userId,supportDepartmentId,null,true);
+   return {ok:true as const,context:{
+    user:{id:principal.userId,email,user_metadata:{full_name:fullName}},admin:dataClient,db:dataClient,authDb:dataClient,
+    userId:principal.userId,email,fullName,departmentId:supportDepartmentId,departmentName:clean(department.name)||"TracePoint Department",
+    departmentShortName:clean(department.short_name)||clean(department.name)||"TracePoint",departmentPatchUrl:clean(department.patch_url),
+    accentColor:clean(department.accent_color),loginTheme:clean(department.login_theme),badgeNumber:"",rankTitle:"TracePoint Platform Administrator",unitName:"",
+    roleCodes:["platform_support"],roleLabels:["Platform Support"],primaryRoleLabel:"Platform Support",
+    permissions:["administer_department" as TracePointPermission],isSuperAdmin:true,isSupportMode:true,enabledFeatures:unique(department.enabled_features??[]),
+   }};
   }
   const memberships=await client.query("select department_id,badge_number,rank_title,unit_name from public.department_memberships where user_id=$1 and is_active=true order by department_id",[principal.userId]);
   if(!memberships.rowCount){await client.query("rollback");return {ok:false as const,status:403,error:"No active department membership was found."};}

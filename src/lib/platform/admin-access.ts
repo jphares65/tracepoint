@@ -59,6 +59,7 @@ export interface PlatformAdminRepository {
   assignAdministrator(departmentId: string, userId: string): Promise<void>;
   listEntitlements(): Promise<{ departments: Record<string, unknown>[]; features: Record<string, unknown>[]; entitlements: Record<string, unknown>[] }>;
   setEntitlement(input: { departmentId: string; featureCode: string; isEnabled: boolean; reason?: string }): Promise<void>;
+  recordSupportMode(departmentId: string, action: "support_mode_entered" | "support_mode_exited"): Promise<string>;
 }
 
 export class PlatformAdminOperationError extends Error {
@@ -161,6 +162,15 @@ class PostgresPlatformAdminRepository implements PlatformAdminRepository {
       throw new PlatformAdminOperationError(databaseCode(error));
     }
   }
+
+  async recordSupportMode(departmentId: string, action: "support_mode_entered" | "support_mode_exited") {
+    return withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
+      const result = await client.query("select public.record_platform_support_mode($1,$2) as department_name", [departmentId, action]) as { rows: Array<{ department_name?: unknown }> };
+      const name = String(result.rows[0]?.department_name ?? "");
+      if (!name) throw new PlatformAdminOperationError();
+      return name;
+    });
+  }
 }
 
 export type PlatformAdminAccessResult =
@@ -249,6 +259,18 @@ export async function resolvePlatformAdminAccess(): Promise<PlatformAdminAccessR
         if (event.error) throw new PlatformAdminOperationError(event.error.code);
       }
     },
+    async recordSupportMode(departmentId, action) {
+      const department = await bridgeAdmin.from("departments").select("id,name").eq("id", departmentId).maybeSingle();
+      if (department.error || !department.data) throw new PlatformAdminOperationError(department.error?.code || "P0002");
+      const event = await recordSupportModeBridge(bridgeAdmin, user.id, departmentId, String(department.data.name), action);
+      if (event) throw new PlatformAdminOperationError(event.code);
+      return String(department.data.name);
+    },
   };
   return { ok: true, userId: user.id, repository };
+}
+
+async function recordSupportModeBridge(admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>, actorUserId: string, departmentId: string, departmentName: string, action: "support_mode_entered" | "support_mode_exited") {
+  const result = await admin.from("audit_events").insert({ department_id: departmentId, actor_user_id: actorUserId, action, entity_type: "department", entity_id: departmentId, summary: action === "support_mode_entered" ? "A platform administrator entered Support Mode." : "A platform administrator exited Support Mode.", new_value: { source: "platform_support_mode", support_mode: true, target_department_id: departmentId, target_department_name: departmentName } } as never);
+  return result.error;
 }

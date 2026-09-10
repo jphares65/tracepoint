@@ -10,6 +10,7 @@ export type PostgresAuthorizationPool = {
 export type PostgresAuthorizationContext = {
   subjectId: string;
   departmentId: string;
+  supportMode?: boolean;
 };
 
 export type PostgresSubjectContext = {
@@ -36,6 +37,9 @@ export async function withPostgresAuthorization<T>(
     await client.query("set local role authenticated");
     await client.query("select set_config('tracepoint.subject_id', $1, true)", [context.subjectId]);
     await client.query("select set_config('tracepoint.department_id', $1, true)", [context.departmentId]);
+    if (context.supportMode === true) {
+      await client.query("select set_config('tracepoint.support_department_id', $1, true)", [context.departmentId]);
+    }
     const result = await operation(client);
     await client.query("commit");
     return result;

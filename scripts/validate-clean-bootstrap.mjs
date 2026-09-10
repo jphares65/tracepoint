@@ -290,6 +290,24 @@ try {
       });
       await runtimeClient.query("commit");
       await runtimeClient.query("select tracepoint_auth.finish_cognito_password_operation($1,true,null)", [operationId]);
+      await runtimeClient.query("begin");
+      await runtimeClient.query("set local role authenticated");
+      await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.platform]);
+      await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
+      assert.equal((await runtimeClient.query("select public.has_department_permission($1,'manage_equipment') as allowed", [departmentA])).rows[0].allowed, false);
+      await runtimeClient.query("select set_config('tracepoint.support_department_id',$1,true)", [departmentA]);
+      assert.equal((await runtimeClient.query("select public.has_department_permission($1,'manage_equipment') as allowed", [departmentA])).rows[0].allowed, true);
+      assert.equal((await runtimeClient.query("select count(*)::int as count from public.platform_support_context($1)", [departmentA])).rows[0].count, 1);
+      assert.equal((await runtimeClient.query("select public.has_department_permission($1,'manage_equipment') as allowed", [departmentB])).rows[0].allowed, false);
+      await runtimeClient.query("select public.record_platform_support_mode($1,'support_mode_entered')", [departmentA]);
+      await runtimeClient.query("commit");
+      await runtimeClient.query("begin");
+      await runtimeClient.query("set local role authenticated");
+      await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.granted]);
+      await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
+      await runtimeClient.query("select set_config('tracepoint.support_department_id',$1,true)", [departmentA]);
+      assert.equal((await runtimeClient.query("select tracepoint_auth.is_platform_supporting($1) as allowed", [departmentA])).rows[0].allowed, false);
+      await runtimeClient.query("rollback");
     } finally {
       await runtimeClient.end();
       await client.query("alter role tracepoint_runtime nologin");
@@ -298,6 +316,8 @@ try {
     assert.equal(lifecycle.rows[0]?.state, "committed", "Cognito password lifecycle did not commit");
     const revocation = await client.query("select count(*)::int as count from public.authentication_session_revocations where tracepoint_user_id=$1 and issuer=$2", [users.granted, issuer]);
     assert.equal(revocation.rows[0]?.count, 1, "Cognito password lifecycle did not revoke local sessions");
+    const supportAudit = await client.query("select count(*)::int as count from public.audit_events where department_id=$1 and actor_user_id=$2 and action='support_mode_entered'", [departmentA, users.platform]);
+    assert.equal(supportAudit.rows[0]?.count, 1, "Platform support entry was not audited");
   }
 
   async function permissionAs(userId, departmentId, permissionCode) {

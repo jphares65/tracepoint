@@ -36,6 +36,20 @@ test("sets transaction-local identity and tenant context before application SQL"
   assert.equal(value.released(), true);
 });
 
+test("sets the support tenant marker only for an explicitly verified support operation", async () => {
+  const value = fixture();
+  await withPostgresAuthorization(value.pool, { ...context, supportMode: true }, client => client.query("select synthetic"));
+  assert.deepEqual(value.calls.map(call => call.text), [
+    "begin",
+    "set local role authenticated",
+    "select set_config('tracepoint.subject_id', $1, true)",
+    "select set_config('tracepoint.department_id', $1, true)",
+    "select set_config('tracepoint.support_department_id', $1, true)",
+    "select synthetic",
+    "commit",
+  ]);
+});
+
 test("rolls back and releases on operation failure", async () => {
   const value = fixture(true);
   await assert.rejects(withPostgresAuthorization(value.pool, context, (client) => client.query("select synthetic")), /synthetic failure/);
