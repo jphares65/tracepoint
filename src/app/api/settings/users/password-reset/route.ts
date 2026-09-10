@@ -1,8 +1,6 @@
 import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import { beginCognitoPasswordReset } from "@/lib/authentication/cognito-password-lifecycle";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -17,7 +15,7 @@ function cleanText(value: unknown) {
 
 
 async function findUserByEmail(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
   email: string,
 ) {
   const target = email.toLowerCase();
@@ -69,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, message: `Password reset sent to ${target.email}.` });
     }
 
-    const server = await createServerClient();
+    const server = await (await import("@/lib/supabase/server")).createClient();
 
     const {
       data: { user: actor },
@@ -107,7 +105,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createAdminClient();
+    const admin = (await import("@/lib/supabase/admin")).createAdminClient();
 
     const targetUser = await findUserByEmail(admin, email);
 

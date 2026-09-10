@@ -1,6 +1,5 @@
 ﻿import { NextResponse } from "next/server";
 
-import { createClient } from "@/lib/supabase/server";
 import { configuredSiteOrigin } from "@/lib/authentication/redirects";
 import { createRuntimeCognitoTransport, isCognitoRuntimeEnabled } from "@/lib/authentication/cognito-runtime-transport";
 
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
     return createRuntimeCognitoTransport().logout(new Request(url, {method:"POST",headers:request.headers}));
   }
   const loginUrl = new URL('/login', configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL));
-  const supabase = await createClient();
+  const supabase = await (await import("@/lib/supabase/server")).createClient();
   await supabase.auth.signOut();
 
   return clearTracePointCookies(
@@ -38,7 +37,7 @@ export async function POST(request: Request) {
 export async function GET() {
   if (isCognitoRuntimeEnabled()) return NextResponse.json({error:"Sign out requires POST."},{status:405,headers:{Allow:"POST","Cache-Control":"no-store"}});
   const loginUrl = new URL('/login', configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL));
-  const supabase = await createClient();
+  const supabase = await (await import("@/lib/supabase/server")).createClient();
   await supabase.auth.signOut();
 
   return clearTracePointCookies(

@@ -1,6 +1,5 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { createClient as createSupabaseServerClient } from "@/lib/supabase/server";
 import { resolveRuntimeCognitoSession } from "./cognito-runtime-transport";
 import { COGNITO_SESSION_COOKIE } from "./cognito-transport";
 import { runtimeAuthenticationProvider, uniqueCookieValue, type AuthenticatedPrincipal } from "./request-session-core";
@@ -14,7 +13,7 @@ export async function resolveAuthenticatedPrincipal(cookieHeader?: string | null
     const session = await resolveRuntimeCognitoSession(handle, environment);
     return session ? {userId:session.userId,provider:"cognito",issuer:session.issuer,subject:session.subject,email:"",fullName:""} : null;
   }
-  const client = await createSupabaseServerClient();
+  const client = await (await import("@/lib/supabase/server")).createClient();
   const result = await client.auth.getUser();
   const user = result.error ? null : result.data.user;
   if (!user) return null;

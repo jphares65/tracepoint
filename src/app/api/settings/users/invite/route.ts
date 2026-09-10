@@ -1,8 +1,6 @@
 import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
 import { inviteCognitoUser } from "@/lib/authentication/cognito-invite";
 import { hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
@@ -50,7 +48,7 @@ function uniqueRoleCodes(value: unknown) {
 }
 
 async function findUserByEmail(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
   email: string,
 ) {
   const target = email.toLowerCase();
@@ -110,7 +108,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ok:true,invitationSent:true,message:`Invitation sent to ${email}.`,operationId:result.operationId});
     }
 
-    const server = await createServerClient();
+    const server = await (await import("@/lib/supabase/server")).createClient();
 
     const {
       data: { user: actor },
@@ -158,7 +156,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createAdminClient();
+    const admin = (await import("@/lib/supabase/admin")).createAdminClient();
 
     const { data: validRoles, error: validRolesError } = await admin
       .from("roles")
