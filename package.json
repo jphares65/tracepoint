@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "storage:migration": "node scripts/storage-migration.mjs",
+    "storage:migration:test": "node --test scripts/storage-migration.test.mjs",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
     "db:verify-staging": "node scripts/verify-staging-schema.mjs"
