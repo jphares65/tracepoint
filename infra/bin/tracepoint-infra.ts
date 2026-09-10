@@ -92,8 +92,9 @@ imageBuild.addStackDependency(compute);
 
 const storageEnabled = app.node.tryGetContext("privateStorageEnabled") === "true";
 const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName}-storage`, {
- ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,
+ ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,dataKey:security.dataKey,
 }) : undefined;
+if (storage) storage.addStackDependency(security);
 const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
 if(!['supabase','s3'].includes(storageProvider)||storageProvider==='s3'&&!storage)throw new Error('Private storage must be explicitly provisioned before activation');
 const databaseEnabled = app.node.tryGetContext("databaseEnabled") === "true";

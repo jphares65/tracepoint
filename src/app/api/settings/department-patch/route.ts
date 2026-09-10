@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const objectStore = createObjectStore(context.admin, context.departmentId);
+  const objectStore = await createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadDepartmentPatch({
     departmentId: context.departmentId,
     extension,
@@ -116,7 +116,8 @@ export async function GET(request:NextRequest) {
  const expected='/api/settings/department-patch?path='+encodeURIComponent(path);
  const current=await admin.from('departments').select('patch_url').eq('id',departmentId).maybeSingle();
  if(current.error||current.data?.patch_url!==expected)return NextResponse.json({error:'Patch not found.'},{status:404});
- const delivery=await createObjectStore(admin,departmentId).createDepartmentPatchView(path);
+ const objectStore=await createObjectStore(admin,departmentId);
+ const delivery=await objectStore.createDepartmentPatchView(path);
  if(delivery.error||!delivery.signedUrl)return NextResponse.json({error:'Patch delivery unavailable.'},{status:503});
  return new NextResponse(null,{status:307,headers:{Location:delivery.signedUrl,'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
 }

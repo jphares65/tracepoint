@@ -3,11 +3,11 @@ import test from "node:test";
 
 import {
   attachmentPathFromMetadata,
-  createObjectStore,
+  loadSelectedObjectStore,
   ObjectStoreConfigurationError,
-  SupabaseObjectStore,
-  type SupabaseStorageClient,
+  selectStorageProvider,
 } from "./object-store-core.ts";
+import { SupabaseObjectStore, type SupabaseStorageClient } from "./supabase-object-store.ts";
 
 type Call = {
   bucket: string;
@@ -47,7 +47,7 @@ const bytes = new Uint8Array([1, 2, 3]);
 
 test("pins attachment operations to the private bucket and preserves path formats", async () => {
   const calls: Call[] = [];
-  const store = new SupabaseObjectStore(createClient(calls));
+  const store = new SupabaseObjectStore(createClient(calls), "department-a");
 
   const qualification = await store.uploadQualificationEvidence({
     departmentId: "department-a",
@@ -99,7 +99,7 @@ test("pins attachment operations to the private bucket and preserves path format
 
 test("uses a 60-second attachment download and preserves the download filename", async () => {
   const calls: Call[] = [];
-  const store = new SupabaseObjectStore(createClient(calls));
+  const store = new SupabaseObjectStore(createClient(calls), "department-a");
   const result = await store.createAttachmentDownload(
     attachmentPathFromMetadata("department-a/firearm/a/object.pdf", "department-a")!,
     "Evidence.pdf",
@@ -115,7 +115,7 @@ test("uses a 60-second attachment download and preserves the download filename",
 
 test("uses a 60-second inline view without forcing a download", async () => {
   const calls: Call[] = [];
-  const store = new SupabaseObjectStore(createClient(calls));
+  const store = new SupabaseObjectStore(createClient(calls), "department-a");
   await store.createAttachmentView(
     attachmentPathFromMetadata("department-a/drill-document/drill-a/object.pdf", "department-a")!,
   );
@@ -190,9 +190,10 @@ test("rejects cross-department, malformed, traversal, and unexpected attachment 
 
 test("pins department patches to the public asset bucket with upsert enabled", async () => {
   const calls: Call[] = [];
-  const store = new SupabaseObjectStore(createClient(calls));
+  const departmentId = "10000000-0000-4000-8000-000000000001";
+  const store = new SupabaseObjectStore(createClient(calls), departmentId);
   const uploaded = await store.uploadDepartmentPatch({
-    departmentId: "department-a",
+    departmentId,
     extension: "webp",
     bytes,
     contentType: "image/webp",
@@ -201,27 +202,56 @@ test("pins department patches to the public asset bucket with upsert enabled", a
   const publicUrl = (await store.createDepartmentPatchDelivery(uploaded.path)).signedUrl;
   await store.removeDepartmentPatch(uploaded.path);
 
-  assert.equal(uploaded.path, "department-a/patch-1234.webp");
-  assert.equal(publicUrl, "https://public.invalid/department-a/patch-1234.webp");
+  assert.equal(uploaded.path, `${departmentId}/patch-1234.webp`);
+  assert.equal(publicUrl, `https://public.invalid/${departmentId}/patch-1234.webp`);
   assert.deepEqual(calls, [
     {
       bucket: "department-assets",
       operation: "upload",
-      path: "department-a/patch-1234.webp",
+      path: `${departmentId}/patch-1234.webp`,
       options: { contentType: "image/webp", upsert: true },
     },
-    { bucket: "department-assets", operation: "public-url", path: "department-a/patch-1234.webp" },
-    { bucket: "department-assets", operation: "remove", path: "department-a/patch-1234.webp" },
+    { bucket: "department-assets", operation: "public-url", path: `${departmentId}/patch-1234.webp` },
+    { bucket: "department-assets", operation: "remove", path: `${departmentId}/patch-1234.webp` },
   ]);
 });
 
-test("defaults to Supabase and rejects every unsupported provider", () => {
-  const client = createClient([]);
-  assert.ok(createObjectStore(client, {}) instanceof SupabaseObjectStore);
-  assert.throws(
-    () => createObjectStore(client, { TRACEPOINT_STORAGE_PROVIDER: "s3" }),
-    (error) =>
-      error instanceof ObjectStoreConfigurationError &&
-      error.message === "Unsupported storage provider: s3. Only supabase is implemented.",
+test("provider selection fails closed and permits Supabase only in explicit bridge mode", () => {
+  assert.equal(selectStorageProvider({ TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native", TRACEPOINT_STORAGE_PROVIDER: "s3" }), "s3");
+  assert.equal(selectStorageProvider({ TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge", TRACEPOINT_STORAGE_PROVIDER: "s3" }), "s3");
+  assert.equal(selectStorageProvider({ TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge", TRACEPOINT_STORAGE_PROVIDER: "supabase" }), "supabase");
+  for (const environment of [
+    {},
+    { TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native", TRACEPOINT_STORAGE_PROVIDER: "supabase" },
+    { TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge" },
+    { TRACEPOINT_RUNTIME_PROVIDER_MODE: "rollback", TRACEPOINT_STORAGE_PROVIDER: "supabase" },
+  ]) {
+    assert.throws(() => selectStorageProvider(environment), ObjectStoreConfigurationError);
+  }
+});
+
+test("aws-native selection cannot resolve or call Supabase Storage", async () => {
+  let supabaseResolved = false;
+  let storageAccessed = false;
+  const legacyClient = Object.defineProperty({}, "storage", {
+    get() {
+      storageAccessed = true;
+      throw new Error("Supabase Storage was accessed");
+    },
+  });
+  const s3Store = {} as never;
+  const selected = await loadSelectedObjectStore(
+    { TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native", TRACEPOINT_STORAGE_PROVIDER: "s3" },
+    {
+      s3: () => s3Store,
+      supabase: () => {
+        supabaseResolved = true;
+        void (legacyClient as SupabaseStorageClient).storage;
+        throw new Error("Supabase Storage was resolved");
+      },
+    },
   );
+  assert.equal(selected, s3Store);
+  assert.equal(supabaseResolved, false);
+  assert.equal(storageAccessed, false);
 });

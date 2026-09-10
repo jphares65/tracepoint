@@ -25,7 +25,10 @@ test("full-AWS production assembly composes native providers backup and exact ta
  backup.hasResourceProperties("AWS::Backup::BackupVault",{BackupVaultName:"tracepoint-production"});
  auth.hasResourceProperties("AWS::Cognito::UserPool",{DeletionProtection:"ACTIVE"});
  email.hasResourceProperties("AWS::SES::ConfigurationSet",{Name:"tracepoint-production"});
- storage.hasResourceProperties("AWS::S3::Bucket",{BucketName:"tracepoint-production-private-111111111111",VersioningConfiguration:{Status:"Enabled"}});
+ storage.hasResourceProperties("AWS::S3::Bucket",{BucketName:"tracepoint-production-private-111111111111",VersioningConfiguration:{Status:"Enabled"},PublicAccessBlockConfiguration:{BlockPublicAcls:true,BlockPublicPolicy:true,IgnorePublicAcls:true,RestrictPublicBuckets:true},BucketEncryption:{ServerSideEncryptionConfiguration:[{BucketKeyEnabled:true,ServerSideEncryptionByDefault:{SSEAlgorithm:"aws:kms",KMSMasterKeyID:Match.anyValue()}}]},LoggingConfiguration:Match.objectLike({LogFilePrefix:"objects/"})});
+ const storagePolicies=JSON.stringify(storage.findResources("AWS::IAM::Policy"));
+ for(const permission of ["s3:GetObject","s3:PutObject","s3:DeleteObject","kms:Decrypt","kms:GenerateDataKey","kms:ViaService"])assert.match(storagePolicies,new RegExp(permission));
+ assert.doesNotMatch(storagePolicies,/s3:\*|s3:ListBucket|s3:DeleteObjectVersion/);
  for(const stack of Object.values(stacks))for(const role of Object.values(Template.fromStack(stack).findResources("AWS::IAM::Role")))assert.match(JSON.stringify(role.Properties.PermissionsBoundary),/TracePointProductionBoundary/);
 });
 
