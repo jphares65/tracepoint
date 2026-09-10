@@ -94,3 +94,17 @@ test("invalid identifiers and database failures return non-sensitive errors", as
   assert.deepEqual(result.error, { message: "PostgreSQL data operation failed.", code: "42501" });
   assert.equal(JSON.stringify(result).includes("secret SQL detail"), false);
 });
+
+test("notification dispatcher is cross-tenant only for its two reviewed tables", async () => {
+  const calls: Array<{ text: string; values?: readonly unknown[] }> = [];
+  const dispatcher = PostgresDataClient.forNotificationDispatch({
+    query: async (text: string, values?: readonly unknown[]) => {
+      calls.push({ text, values });
+      return { rows: [{ id: "queued" }], rowCount: 1 };
+    },
+  } as never);
+  const result = await dispatcher.from("notification_email_queue").select("id").eq("status", "Pending");
+  assert.deepEqual(result.data, [{ id: "queued" }]);
+  assert.equal(calls.some(call => call.text === "set local role authenticated"), false);
+  assert.throws(() => dispatcher.from("profiles"), /table access rejected/);
+});

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createEmailProvider,
   EmailProviderConfigurationError,
@@ -151,7 +150,21 @@ function buildDigestText(events: EventRow[], siteUrl: string) {
   ].join("\n");
 }
 
-async function retryRows(admin: ReturnType<typeof createAdminClient>, rows: QueueRow[], message: string, forceTerminal = false, messageId: string | null = null) {
+// Both provider implementations expose this narrow queue-worker contract.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DispatchResult = { data: any; error: { message: string } | null };
+type DispatchQuery = PromiseLike<DispatchResult> & {
+  select(selection?: string): DispatchQuery;
+  update(values: Record<string, unknown>): DispatchQuery;
+  eq(column: string, value: unknown): DispatchQuery;
+  lte(column: string, value: unknown): DispatchQuery;
+  in(column: string, values: unknown[]): DispatchQuery;
+  order(column: string, options?: { ascending?: boolean }): DispatchQuery;
+  limit(value: number): DispatchQuery;
+};
+type DispatchClient = { from(table: string): DispatchQuery };
+
+async function retryRows(admin: DispatchClient, rows: QueueRow[], message: string, forceTerminal = false, messageId: string | null = null) {
   const now = Date.now();
 
   await Promise.all(
@@ -217,7 +230,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const admin = createAdminClient();
+  const admin = (process.env.TRACEPOINT_DATA_PROVIDER === "postgres"
+    ? (await import("@/lib/database/postgres-data-client")).PostgresDataClient.forNotificationDispatch(
+        (await import("@/lib/database/postgres-pool")).getPostgresPool(),
+      )
+    : (await import("@/lib/supabase/admin")).createAdminClient()) as DispatchClient;
   const now = new Date().toISOString();
 
   const { data: candidates, error: queueError } = await admin

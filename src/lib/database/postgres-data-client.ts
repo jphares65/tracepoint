@@ -123,22 +123,33 @@ export class PostgresDataClient {
   private readonly pool: Pool;
   readonly subjectId: string;
   readonly departmentId: string;
+  private readonly systemTables: ReadonlySet<string> | null;
 
-  constructor(pool: Pool, subjectId: string, departmentId: string) {
+  constructor(pool: Pool, subjectId: string, departmentId: string, systemTables: ReadonlySet<string> | null = null) {
     if (!uuid.test(subjectId) || !uuid.test(departmentId)) throw new Error("Valid PostgreSQL request identity is required.");
     this.pool = pool;
     this.subjectId = subjectId;
     this.departmentId = departmentId;
+    this.systemTables = systemTables;
   }
 
-  from(table: string) { return new PostgresQueryBuilder(this, table); }
+  static forNotificationDispatch(pool: Pool) {
+    return new PostgresDataClient(pool, "00000000-0000-4000-8000-000000000000", "00000000-0000-4000-8000-000000000000", new Set(["notification_email_queue", "notification_events"]));
+  }
+
+  from(table: string) {
+    if (this.systemTables && !this.systemTables.has(table)) throw new Error("Notification dispatcher table access rejected.");
+    return new PostgresQueryBuilder(this, table);
+  }
 
   async execute(text: string, values: readonly unknown[]) {
+    if (this.systemTables) return this.pool.query(text, [...values]) as unknown as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
     return withPostgresAuthorization(this.pool, { subjectId: this.subjectId, departmentId: this.departmentId }, async client => client.query(text, values) as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>);
   }
 
   async rpc(name: string, args: Record<string, unknown> = {}): Promise<Result> {
     try {
+      if (this.systemTables) throw new Error("Notification dispatcher RPC access rejected.");
       const entries = Object.entries(args);
       const call = entries.map(([key], index) => `${quote(key)} => $${index + 1}`).join(",");
       const result = await this.execute(`select * from public.${quote(name)}(${call})`, entries.map(([, value]) => value));
