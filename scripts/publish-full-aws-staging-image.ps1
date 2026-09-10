@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$ValidateArchiveOnly, [switch]$Wait)
+param([switch]$ValidateArchiveOnly, [switch]$Wait, [switch]$BuildPostgresTooling)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -11,7 +11,9 @@ $protectedUntrackedPaths = @('scripts/seed-demo-fleet-equipment.mjs', 'src/app/i
 $archiveIncludes = @(
     '.dockerignore',
     'buildspec.staging-image.yml',
+    'buildspec.postgres-migration.yml',
     'Dockerfile',
+    'Dockerfile.postgres-migration',
     'eslint.config.mjs',
     'next.config.ts',
     'package.json',
@@ -20,6 +22,16 @@ $archiveIncludes = @(
     'tsconfig.json',
     'public',
     'src',
+    'database/aws',
+    'supabase/migrations',
+    'scripts/aws-migration-ledger.mjs',
+    'scripts/bootstrap-aws-postgres-target.mjs',
+    'scripts/bootstrap-aws-postgres-target-core.mjs',
+    'scripts/bootstrap-aws-postgres-target-core.test.mjs',
+    'scripts/database-migration-core.mjs',
+    'scripts/database-migration-core.test.mjs',
+    'scripts/migrate-aws-postgres-data.mjs',
+    'scripts/postgres-bootstrap-prerequisites.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'
 )
@@ -71,7 +83,8 @@ try {
         $untrackedEntries = @($entryNames | Where-Object { $_ -notin $trackedPaths })
         if ($untrackedEntries.Count) { throw "Archive contains untracked paths for commit ${commit}: $($untrackedEntries -join ', ')" }
         $prohibitedEntries = @($entryNames | Where-Object {
-            $_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.(dump|sql)$|(^|/)[^/]*(credential|secret)[^/]*$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)'
+            ($_ -match '\.sql$' -and $_ -notmatch '^(database/aws|supabase/migrations)/') -or
+            $_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.(dump)$|(^|/)[^/]*(credential|secret)[^/]*$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)'
         })
         if ($prohibitedEntries.Count) { throw "Prohibited paths entered the archive: $($prohibitedEntries -join ', ')" }
     }
@@ -106,6 +119,28 @@ try {
         } finally { $ErrorActionPreference = $savedPreference }
         if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
         Write-Host "AWS-native build and scan completed for $commit."
+    }
+    if ($BuildPostgresTooling) {
+        Assert-TracePointStagingIdentity | Out-Null
+        $toolingTag = "$commit-postgres-migration"
+        $toolingOverrides = "name=IMAGE_TAG,value=$toolingTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
+        $toolingBuildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --buildspec-override buildspec.postgres-migration.yml --environment-variables-override $toolingOverrides.Split(' ') --region us-east-1 --query build.id --output text
+        if ($LASTEXITCODE -ne 0 -or $toolingBuildId -notmatch '^tracepoint-staging-aws-native-image-build:') { throw 'PostgreSQL tooling CodeBuild start failed.' }
+        Write-Host "Started immutable PostgreSQL tooling build $toolingBuildId."
+        if ($Wait) {
+            $deadline = [DateTime]::UtcNow.AddMinutes(45)
+            do {
+                $toolingStatus = & aws.exe codebuild batch-get-builds --ids $toolingBuildId --region us-east-1 --query 'builds[0].buildStatus' --output text
+                if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL tooling build monitoring failed.' }
+                if ($toolingStatus -eq 'SUCCEEDED') { break }
+                if ($toolingStatus -ne 'IN_PROGRESS') { throw "PostgreSQL tooling build ended with $toolingStatus." }
+                if ([DateTime]::UtcNow -gt $deadline) { throw 'PostgreSQL tooling build timed out.' }
+                Start-Sleep -Seconds 20
+            } while ($true)
+            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$toolingTag" --region us-east-1
+            if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL tooling image scan did not complete.' }
+            Write-Host "PostgreSQL tooling build and scan completed for $toolingTag."
+        }
     }
 }
 finally {

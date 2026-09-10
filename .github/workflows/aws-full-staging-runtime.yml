@@ -1,0 +1,71 @@
+name: Full AWS staging implementation release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tracepoint-full-aws-staging-release
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - run: node --test scripts/bootstrap-aws-postgres-target-core.test.mjs scripts/full-aws-staging-cost-core.test.mjs scripts/validate-tracepoint-runtime-config.test.mjs
+      - run: npm run build --prefix infra
+      - name: Strict full-AWS assembly synth
+        shell: pwsh
+        run: ./scripts/deploy-full-aws-staging.ps1 -Action ValidateImplementation -SourceCommit $env:GITHUB_SHA
+  release:
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    environment: aws-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      CERTIFICATE_ARN: ${{ vars.STAGING_CERTIFICATE_ARN }}
+      TRACEPOINT_SECRET_INITIALIZATION_AUTHORIZATION: github-full-aws-staging-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '559054714699'
+          role-duration-seconds: 7200
+      - name: Deploy isolated native foundations
+        shell: pwsh
+        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployFoundations -SourceCommit $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN -SecretInitializationAuthorizationReference $env:TRACEPOINT_SECRET_INITIALIZATION_AUTHORIZATION -Execute
+      - name: Publish runtime and PostgreSQL tooling images
+        shell: pwsh
+        run: ./scripts/publish-full-aws-staging-image.ps1 -BuildPostgresTooling -Wait
+      - name: Bootstrap all database migrations
+        shell: pwsh
+        run: ./scripts/execute-full-aws-staging-bootstrap.ps1 -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc 2026-09-13T23:59:59Z -EvidenceOutputPath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
+      - name: Deploy native runtime with retained bridge rollback
+        shell: pwsh
+        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployRuntime -SourceCommit $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN -BootstrapEvidencePath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute

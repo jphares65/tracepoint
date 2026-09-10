@@ -13,6 +13,7 @@ import { CognitoFoundationStack } from "../lib/cognito-foundation-stack";
 import { SesFoundationStack } from "../lib/ses-foundation-stack";
 import { AlertDeliveryStack } from "../lib/alert-delivery-stack";
 import { SesFeedbackWorkerStack } from "../lib/ses-feedback-worker-stack";
+import { DatabaseBootstrapRunnerStack } from "../lib/database-bootstrap-runner-stack";
 
 const app = new cdk.App();
 
@@ -146,6 +147,27 @@ if (sesFeedbackWorker) {
   sesFeedbackWorker.addStackDependency(network);
   sesFeedbackWorker.addStackDependency(database!);
   sesFeedbackWorker.addStackDependency(ses!);
+}
+const databaseBootstrapEnabled = app.node.tryGetContext("databaseBootstrapEnabled") === "true";
+if (databaseBootstrapEnabled && (!database || providerMode !== "aws-native")) {
+  throw new Error("Database bootstrap requires the AWS-native staging database target");
+}
+const databaseBootstrap = databaseBootstrapEnabled && database ? new DatabaseBootstrapRunnerStack(app, `${environmentName}-database-bootstrap`, {
+  ...commonProps,
+  stackName: `${environmentName}-database-bootstrap`,
+  environmentName: "staging",
+  vpc: network.vpc,
+  databaseSecurityGroup: network.databaseSecurityGroup,
+  repository: compute.repository,
+  logGroup: compute.appLogGroup,
+  migratorSecret: database.database.secret!,
+  runtimeSecret: database.runtimeSecret,
+  sourceCommit: app.node.tryGetContext("bootstrapSourceCommit"),
+}) : undefined;
+if (databaseBootstrap) {
+  databaseBootstrap.addStackDependency(network);
+  databaseBootstrap.addStackDependency(compute);
+  databaseBootstrap.addStackDependency(database!);
 }
 const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {
   ...commonProps,

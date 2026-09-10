@@ -16,6 +16,6 @@ phases:
     commands:
       - docker build --pull -f Dockerfile.postgres-migration --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=temporary-database-migration -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/database-migration-core.test.mjs
+      - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/bootstrap-aws-postgres-target-core.test.mjs
       - docker run --rm --entrypoint pg_dump "$ECR_REPOSITORY_URI:$IMAGE_TAG" --version | grep -E 'PostgreSQL\) 18\.'
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
-
