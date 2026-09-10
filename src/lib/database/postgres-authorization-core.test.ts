@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { withPostgresAuthorization } from "./postgres-authorization-core.ts";
+import { withPostgresAuthorization, withPostgresSubjectAuthorization } from "./postgres-authorization-core.ts";
 
 const context = { subjectId: "20000000-0000-4000-8000-000000000001", departmentId: "10000000-0000-4000-8000-000000000001" };
 
@@ -50,4 +50,17 @@ test("rejects malformed identity or tenant context before taking a connection", 
   await assert.rejects(withPostgresAuthorization(pool, { ...context, subjectId: "not-a-subject" }, async () => undefined), /Valid authorization subject/);
   await assert.rejects(withPostgresAuthorization(pool, { ...context, departmentId: "not-a-department" }, async () => undefined), /Valid authorization subject/);
   assert.equal(connected, false);
+});
+
+test("sets only subject context for platform operations", async () => {
+  const value = fixture();
+  await withPostgresSubjectAuthorization(value.pool, { subjectId: context.subjectId }, client => client.query("select synthetic"));
+  assert.deepEqual(value.calls.map(call => call.text), [
+    "begin",
+    "set local role authenticated",
+    "select set_config('tracepoint.subject_id', $1, true)",
+    "select synthetic",
+    "commit",
+  ]);
+  assert.equal(value.released(), true);
 });

@@ -17,6 +17,7 @@ export const AWS_MIGRATION_LEDGER = Object.freeze([
   ["011_onboarding_import_audit.sql", "53f4c04d43815680d0de243f989068d08b162aade0d14b1619f889d07f29794d"],
   ["012_onboarding_import_authority.sql", "f2e75ff6c55dfcb93fe3e8a7441671ba50cdb261a4ed4f01d589ffe058abf66e"],
   ["013_cognito_existing_user_migration.sql", "f27d1815ed9bb5780d13c2c1c689e90d8a9dbfb1cfa91df01642df9899131edd"],
+  ["014_platform_control_plane_access.sql", "425375ee94f7944fe46966996c640ddf629d673a0971782833562f9c24a8d20e"],
 ]);
 
 const sha256 = value => createHash("sha256").update(value).digest("hex");
