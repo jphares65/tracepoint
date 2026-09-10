@@ -9,6 +9,7 @@ import { loadWorkspace } from "@/lib/ai-importer/server/workspace-repository";
 import { buildWorkspacePlans, readyDomains, WORKSPACE_DEPENDENCIES } from "@/lib/ai-importer/workspace";
 import { IMPORT_DOMAINS, type ImportDomain, type ImportExecutionResult, type ImportReferenceData } from "@/lib/ai-importer/types";
 import { accessFailureResponse, hasServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { configuredSiteOrigin } from "@/lib/authentication/redirects";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,12 @@ export async function POST(request: Request, context: Context) {
     if (!body || typeof body !== "object" || !explicitApprovalComplete(body.approval)) return NextResponse.json({ error: "Explicit approval of the workspace plan and final import action is required." }, { status: 400 });
     const { workspaceId } = await context.params;
     const admin = access.context.admin as any;
+    const executionServices = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native"
+      ? {
+          personnel: (await import("@/lib/ai-importer/server/cognito-personnel-writer"))
+            .createCognitoPersonnelWriter(configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL)),
+        }
+      : {};
     const workspace = await loadWorkspace(admin, workspaceId, access.context.departmentId);
     if (!workspace) return NextResponse.json({ error: "Migration workspace was not found in the active agency." }, { status: 404 });
     const selected: ImportDomain[] = Array.isArray(body.domains) ? body.domains.filter((domain: unknown): domain is ImportDomain => IMPORT_DOMAINS.includes(domain as ImportDomain)) : [];
@@ -59,7 +66,7 @@ export async function POST(request: Request, context: Context) {
         mappings: sources.flatMap((source) => source.mappings.map((mapping) => ({ sourceId: source.id, sourceColumn: mapping.sourceColumn, targetField: mapping.targetField, confidence: mapping.confidence }))),
         remediations: workspace.state.remediations.filter((rule) => sources.some((source) => source.id === rule.sourceId)),
         mergeRules: workspace.state.mergeRules.filter((rule) => rule.domain === domain),
-      });
+      }, executionServices);
     }
     const completedDomains = [...new Set([...workspace.completedDomains, ...order.filter((domain) => results[domain]?.failed === 0)])];
     const remaining = new Set(workspace.state.sources.filter((source) => !source.excluded).map((source) => source.domain));

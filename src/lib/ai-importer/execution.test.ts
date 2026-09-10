@@ -70,3 +70,37 @@ test("execution processes more than one safe batch without dropping rows", async
   assert.equal(result.failed, 0);
   assert.equal(fake.calls.filter((call) => call.table === "audit_events").length, 2);
 });
+
+test("AWS personnel execution uses the injected identity writer without evaluating the legacy auth client", async () => {
+  const fake = admin();
+  const personnelPayload: ImportPayload = {
+    ...payload,
+    domain: "personnel",
+    mappings: [{ sourceColumn: "Email", targetField: "email", confidence: "High", samples: [] }],
+  };
+  const personnelRow: PreviewRow = {
+    rowNumber: 2,
+    action: "CREATE",
+    status: "valid",
+    values: { email: "synthetic@example.test", badgeNumber: "S-1", fullName: "Synthetic User", active: true },
+    issues: [],
+    changes: [],
+  };
+  const calls: Array<{ departmentId: string; actorId: string; rowNumber: number }> = [];
+  const result = await executeApprovedImport(
+    fake.client as unknown as Parameters<typeof executeApprovedImport>[0],
+    personnelPayload,
+    "dept-a",
+    "actor-a",
+    [personnelRow],
+    {},
+    {
+      personnel: async ({ departmentId, actorId, row }) => {
+        calls.push({ departmentId, actorId, rowNumber: row.rowNumber });
+      },
+    },
+  );
+  assert.deepEqual(calls, [{ departmentId: "dept-a", actorId: "actor-a", rowNumber: 2 }]);
+  assert.equal(result.created, 1);
+  assert.equal(result.failed, 0);
+});

@@ -5,6 +5,6 @@ import { AWS_MIGRATION_LEDGER, loadVerifiedAwsMigrations } from "./aws-migration
 
 test("AWS target migration ledger pins every ordered overlay", async () => {
   const migrations = await loadVerifiedAwsMigrations();
-  assert.equal(migrations.length, 9);
+  assert.equal(migrations.length, 10);
   assert.deepEqual(migrations.map(item => item.name), AWS_MIGRATION_LEDGER.map(([name]) => name));
 });
