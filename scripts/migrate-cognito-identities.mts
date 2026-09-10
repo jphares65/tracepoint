@@ -35,10 +35,23 @@ const [{ execFileSync }, { getPostgresPool }, { provisionExistingCognitoUser, re
   import('../src/lib/authentication/cognito-existing-user-migration.ts'),
   import('../src/lib/authentication/cognito-runtime-configuration-core.ts'),
 ]);
-const command = process.platform === 'win32' ? 'aws.exe' : 'aws';
-const identity = JSON.parse(execFileSync(command, ['sts', 'get-caller-identity', '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-assert.equal(identity.Account, manifest.expectedAccount, 'AWS identity does not match the manifest');
-if (manifest.environment === 'production') assert.match(identity.Arn, new RegExp(`^arn:aws:sts::${manifest.expectedAccount}:assumed-role/TracePointMigrationProduction/[^/]+$`));
+let identity: { Account: string; Arn: string };
+const metadataOrigin = process.env.ECS_CONTAINER_METADATA_URI_V4;
+if (metadataOrigin) {
+  assert.match(metadataOrigin, /^http:\/\/169\.254\.170\.2\/v4\/[A-Za-z0-9_-]+$/);
+  const metadata = await fetch(`${metadataOrigin}/task`, { redirect: 'error', signal: AbortSignal.timeout(5000) }).then(async response => {
+    assert.equal(response.status, 200);
+    return response.json() as Promise<{ TaskARN?: string; Family?: string }>;
+  });
+  assert.match(metadata.TaskARN ?? '', new RegExp(`^arn:aws:ecs:us-east-1:${manifest.expectedAccount}:task/`), 'ECS task account does not match the manifest');
+  assert.match(metadata.Family ?? '', new RegExp(`^tracepoint-${manifest.environment}-identity-migration-[0-9a-f-]{36}$`), 'ECS task family does not match the migration environment');
+  identity = { Account: manifest.expectedAccount, Arn: metadata.TaskARN! };
+} else {
+  const command = process.platform === 'win32' ? 'aws.exe' : 'aws';
+  identity = JSON.parse(execFileSync(command, ['sts', 'get-caller-identity', '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  assert.equal(identity.Account, manifest.expectedAccount, 'AWS identity does not match the manifest');
+  if (manifest.environment === 'production') assert.match(identity.Arn, new RegExp(`^arn:aws:sts::${manifest.expectedAccount}:assumed-role/TracePointMigrationProduction/[^/]+$`));
+}
 const runtime = parseCognitoRuntimeConfiguration(process.env);
 const runtimeIssuer = `https://cognito-idp.${runtime.verification.region}.amazonaws.com/${runtime.verification.userPoolId}`;
 assert.deepEqual({ userPoolId: runtime.verification.userPoolId, clientId: runtime.verification.clientId, issuer: runtimeIssuer }, { userPoolId: manifest.userPoolId, clientId: manifest.clientId, issuer: manifest.issuer });
