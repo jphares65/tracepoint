@@ -120,7 +120,7 @@ if ($StorageProvider -eq 's3') {
     $versioning = Invoke-AwsJson @('s3api','get-bucket-versioning','--bucket',$bucket,'--expected-bucket-owner',$account)
     if ($versioning.Status -ne 'Enabled') { throw 'Private storage versioning gate failed.' }
     $encryption = Invoke-AwsJson @('s3api','get-bucket-encryption','--bucket',$bucket,'--expected-bucket-owner',$account)
-    if ($encryption.ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.SSEAlgorithm -ne 'AES256') { throw 'Private storage encryption gate failed.' }
+    if ($encryption.ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.SSEAlgorithm -ne 'aws:kms') { throw 'Private storage encryption gate failed.' }
 }
 $validationRoot = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-runtime-review-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $validationRoot | Out-Null
