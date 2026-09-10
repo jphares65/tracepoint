@@ -24,6 +24,7 @@ before(async()=>{
  await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'synthetic-local-only',database:'postgres'});
  await pool.query('create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key)');
  for(const file of ['202609050006_authentication_identity_links.sql','202609050010_authentication_session_state.sql','202609050011_authentication_refresh_state.sql'])await pool.query(await readFile('supabase/migrations/'+file,'utf8'));
+ await pool.query(await readFile('database/aws/002_cognito_application_session_idle.sql','utf8'));
 });
 after(async()=>{
  await pool?.end();await server?.stop();
