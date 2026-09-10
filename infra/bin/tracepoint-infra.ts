@@ -124,7 +124,7 @@ const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStac
   environmentName: workloadEnvironment,
   taskRole: compute.taskRole,
   sesFromAddress: ses.fromAddress,
-  sesConfigurationSetName: ses.configurationSetName,
+  sesConfigurationSetName: ses.cognitoConfigurationSetName,
 }) : undefined;
 if (cognito) { cognito.addStackDependency(compute); cognito.addStackDependency(ses!); }
 const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {

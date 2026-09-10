@@ -9,6 +9,7 @@ import { Construct } from 'constructs';
 export interface SesFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; mailFromSubdomain:string; taskRole?:iam.IRole; }
 export class SesFoundationStack extends cdk.Stack {
  readonly configurationSetName:string;
+ readonly cognitoConfigurationSetName:string;
  readonly fromAddress:string;
  readonly feedbackQueue:sqs.Queue;
  constructor(scope:Construct,id:string,props:SesFoundationProps){
@@ -22,6 +23,11 @@ export class SesFoundationStack extends cdk.Stack {
    suppressionReasons:ses.SuppressionReasons.BOUNCES_AND_COMPLAINTS,tlsPolicy:ses.ConfigurationSetTlsPolicy.REQUIRE,
   });
   this.configurationSetName=configuration.configurationSetName;
+  const cognitoConfiguration=new ses.ConfigurationSet(this,'CognitoDeliveryConfiguration',{
+   configurationSetName:'tracepoint-'+props.environmentName+'-cognito',reputationMetrics:true,
+   suppressionReasons:ses.SuppressionReasons.BOUNCES_AND_COMPLAINTS,tlsPolicy:ses.ConfigurationSetTlsPolicy.REQUIRE,
+  });
+  this.cognitoConfigurationSetName=cognitoConfiguration.configurationSetName;
   const identity=new ses.EmailIdentity(this,'SenderDomain',{
    identity:ses.Identity.domain(domain),configurationSet:configuration,dkimSigning:true,
    dkimIdentity:ses.DkimIdentity.easyDkim(ses.EasyDkimSigningKeyLength.RSA_2048_BIT),
@@ -43,6 +49,7 @@ export class SesFoundationStack extends cdk.Stack {
    {type:'TXT',name:'_dmarc.'+domain,value:'v=DMARC1; p=none;'}];
   new cdk.CfnOutput(this,'DnsRecords',{value:cdk.Fn.toJsonString(records)});
   new cdk.CfnOutput(this,'ConfigurationSet',{value:configuration.configurationSetName});new cdk.CfnOutput(this,'FromAddress',{value:from});new cdk.CfnOutput(this,'FeedbackTopicArn',{value:topic.topicArn});
+  new cdk.CfnOutput(this,'CognitoConfigurationSet',{value:cognitoConfiguration.configurationSetName});
   new cdk.CfnOutput(this,'FeedbackQueueArn',{value:queue.queueArn});
   new cdk.CfnOutput(this,'ActivationGate',{value:'DISABLED: durable queue and batch consumer prepared; require explicit runtime send permission and worker deployment with trusted database connection, DNS verification, sandbox readiness, suppression import and real delivery before activation.'});
  }
