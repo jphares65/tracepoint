@@ -1,5 +1,6 @@
 import {assertCognitoConfiguration,type CognitoTokens} from './cognito-pkce';
 import type {CognitoVerificationConfig} from './cognito-verifier';
+import {cognitoManagedLoginOrigin} from './cognito-endpoints';
 
 const validToken=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=16384&&!/[\s\x00-\x1f]/.test(value);
 
@@ -8,7 +9,7 @@ const validToken=(value:unknown):value is string=>typeof value==='string'&&value
 // are derived from reviewed configuration, never request parameters.
 export function createCognitoTokenEndpoint(config:CognitoVerificationConfig,fetchImpl:typeof fetch=fetch){
  assertCognitoConfiguration(config);
- const domain=`https://tracepoint-${config.environment}-${config.account}.auth.us-east-1.amazoncognito.com`;
+ const domain=cognitoManagedLoginOrigin(config.environment,config.account,config.region);
  async function post(path:string,parameters:Record<string,string>){
   return fetchImpl(domain+path,{method:'POST',redirect:'error',credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(15000),
    headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({...parameters,client_id:config.clientId})});

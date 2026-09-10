@@ -107,4 +107,26 @@ test("accepts only the complete provider-free AWS runtime tuple", () => {
     { LEGACY_SUPABASE_ANON_KEY: "must-not-be-present" },
     { UNRELATED_ENDPOINT: "https://api.brevo.com/v3" },
   ]) assert.throws(() => validateTracePointRuntimeConfig({ ...awsNative, ...legacy }));
+
+  const govCloud = {
+    ...awsNative,
+    CONFIGURATION_ENVIRONMENT: "production",
+    NEXT_PUBLIC_SITE_URL: "https://tracepointhq.com",
+    AWS_REGION: "us-gov-west-1",
+    TRACEPOINT_AWS_ACCOUNT_ID: "222222222222",
+    TRACEPOINT_COGNITO_USER_POOL_ID: "us-gov-west-1_AbCdEf123",
+    TRACEPOINT_SES_CONFIGURATION_SET: "tracepoint-production",
+    TRACEPOINT_S3_EXPECTED_OWNER: "222222222222",
+    TRACEPOINT_S3_BUCKET: "tracepoint-production-private-222222222222",
+    TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({
+      host: "tracepoint.cluster-abc123.us-gov-west-1.rds.amazonaws.com",
+      port: 5432,
+      username: "tracepoint_app",
+      password: "synthetic-password-long-enough",
+      dbname: "tracepoint",
+    }),
+  };
+  assert.doesNotThrow(() => validateTracePointRuntimeConfig(govCloud));
+  assert.throws(() => validateTracePointRuntimeConfig({ ...govCloud, TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_AbCdEf123" }), /TRACEPOINT_COGNITO_USER_POOL_ID/);
+  assert.throws(() => validateTracePointRuntimeConfig({ ...awsNative, AWS_REGION: "us-gov-west-1", TRACEPOINT_COGNITO_USER_POOL_ID: "us-gov-west-1_AbCdEf123" }), /AWS_REGION/);
 });

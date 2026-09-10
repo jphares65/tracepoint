@@ -1,6 +1,7 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import type { JwksCache } from 'aws-jwt-verify/jwk';
 import type { AuthenticationProvider, IdentityMappingStore, TracePointIdentity } from './provider-core';
+import { cognitoIssuer, isCognitoPoolForRegion, isCognitoRegion } from './cognito-endpoints';
 export type CognitoVerificationConfig = { environment: 'staging' | 'production'; account: string; region: string; userPoolId: string; clientId: string };
 export type SessionActivityCheck = (input: { userId: string; issuer: string; subject: string; tokenId: string; issuedAt: number }) => Promise<boolean>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -9,10 +10,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Groups, email, custom user IDs and department claims never grant access.
 export function createCognitoAuthenticationProvider(config: CognitoVerificationConfig, mapping: IdentityMappingStore,
   isSessionActive: SessionActivityCheck, options: { jwksCache?: JwksCache } = {}): AuthenticationProvider {
-  if (!/^\d{12}$/.test(config.account) || config.account === '265544358665' || config.region !== 'us-east-1' ||
+  if (!/^\d{12}$/.test(config.account) || config.account === '265544358665' || !isCognitoRegion(config.region) || (config.environment === 'staging' && config.region !== 'us-east-1') ||
     (config.environment === 'staging' ? config.account !== '559054714699' : config.environment !== 'production' || ['559054714699', '111111111111'].includes(config.account)) ||
-    !/^us-east-1_[A-Za-z0-9]+$/.test(config.userPoolId) || !/^[A-Za-z0-9]{1,128}$/.test(config.clientId) || typeof isSessionActive !== 'function') throw new Error('Invalid Cognito verification boundary.');
-  const issuer = `https://cognito-idp.${config.region}.amazonaws.com/${config.userPoolId}`;
+    !isCognitoPoolForRegion(config.userPoolId, config.region) || !/^[A-Za-z0-9]{1,128}$/.test(config.clientId) || typeof isSessionActive !== 'function') throw new Error('Invalid Cognito verification boundary.');
+  const issuer = cognitoIssuer(config.region, config.userPoolId);
   const verifier = CognitoJwtVerifier.create({ userPoolId: config.userPoolId, clientId: config.clientId, tokenUse: 'access',
     includeRawJwtInErrors: false, graceSeconds: 0,
     customJwtCheck: ({ header, payload }) => {

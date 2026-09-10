@@ -7,6 +7,7 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core";
 import { CognitoDirectoryError,mapCognitoDirectoryError,type CognitoAdminDirectory,type CognitoDirectoryUser,type CreatePendingCognitoUser } from "./cognito-admin-core";
+import { cognitoSdkClientConfiguration, isCognitoPoolForRegion } from "./cognito-endpoints";
 
 type CognitoSender={send(command:unknown):Promise<unknown>};
 const usernamePattern=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -15,7 +16,8 @@ const attributes=(values:AttributeType[]|undefined)=>new Map((values??[]).map(it
 
 export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
  constructor(private readonly client:CognitoSender,private readonly userPoolId:string,private readonly clientId:string){
-  if(!/^us-east-1_[A-Za-z0-9]+$/.test(userPoolId)||!/^[A-Za-z0-9]{1,128}$/.test(clientId))throw new Error("Invalid Cognito directory target.");
+  const region=userPoolId.slice(0,userPoolId.indexOf("_"));
+  if(!isCognitoPoolForRegion(userPoolId,region)||!/^[A-Za-z0-9]{1,128}$/.test(clientId))throw new Error("Invalid Cognito directory target.");
  }
  private username(value:string){if(!usernamePattern.test(value))throw new CognitoDirectoryError("not_found");return value;}
  private async send(command:unknown){try{return await this.client.send(command);}catch(error){throw mapCognitoDirectoryError(error);}}
@@ -45,11 +47,11 @@ export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
 let directory:CognitoAdminDirectory|undefined;
 export function getCognitoAdminDirectory(environment=process.env){
  if(directory)return directory;const config=parseCognitoRuntimeConfiguration(environment);
- directory=new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient({region:config.verification.region,maxAttempts:1}),config.verification.userPoolId,config.verification.clientId);
+ directory=new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient(cognitoSdkClientConfiguration(config.verification.region)),config.verification.userPoolId,config.verification.clientId);
  return directory;
 }
 
 export function getCognitoMigrationDirectory(environment=process.env){
  const config=parseCognitoTargetConfiguration(environment);
- return new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient({region:config.verification.region,maxAttempts:1}),config.verification.userPoolId,config.verification.clientId);
+ return new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient(cognitoSdkClientConfiguration(config.verification.region)),config.verification.userPoolId,config.verification.clientId);
 }

@@ -84,7 +84,8 @@ function validateS3(environment, target, invalid) {
   if (!account || !/^\d{12}$/.test(account) || account === "265544358665") invalid.push("TRACEPOINT_S3_EXPECTED_OWNER");
   if (stage === "staging" && account !== target?.account) invalid.push("TRACEPOINT_S3_EXPECTED_OWNER");
   if (stage === "production" && account === targets.staging.account) invalid.push("TRACEPOINT_S3_EXPECTED_OWNER");
-  if (environment.AWS_REGION !== "us-east-1") invalid.push("AWS_REGION");
+  if (!["us-east-1", "us-gov-east-1", "us-gov-west-1"].includes(environment.AWS_REGION)) invalid.push("AWS_REGION");
+  if (stage === "staging" && environment.AWS_REGION !== "us-east-1") invalid.push("AWS_REGION");
   if (environment.TRACEPOINT_S3_BUCKET !== `tracepoint-${stage}-private-${account}`) invalid.push("TRACEPOINT_S3_BUCKET");
 }
 
@@ -158,7 +159,8 @@ export function validateTracePointRuntimeConfig(environment = process.env) {
       if (!present(environment, name)) continue;
       if (forbiddenAwsNativeKey.test(name) || forbiddenAwsNativeEndpoint.test(String(raw))) invalid.push(name);
     }
-    if (!/^us-east-1_[A-Za-z0-9]+$/.test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");
+    const region = environment.AWS_REGION ?? "";
+    if (!new RegExp(`^${region.replaceAll("-", "\\-")}_[A-Za-z0-9]+$`).test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");
     if (!/^\d{12}$/.test(environment.TRACEPOINT_AWS_ACCOUNT_ID ?? "") || environment.TRACEPOINT_AWS_ACCOUNT_ID !== environment.TRACEPOINT_S3_EXPECTED_OWNER) invalid.push("TRACEPOINT_AWS_ACCOUNT_ID");
     if (!/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_CLIENT_ID");
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(environment.TRACEPOINT_SES_CONFIGURATION_SET ?? "")) invalid.push("TRACEPOINT_SES_CONFIGURATION_SET");

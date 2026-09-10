@@ -1,5 +1,6 @@
 import type {CognitoVerificationConfig} from './cognito-verifier';
 import type {CognitoTokens,createCognitoPkce} from './cognito-pkce';
+import {cognitoManagedLoginOrigin,isCognitoPoolForRegion,isCognitoRegion} from './cognito-endpoints';
 
 type SessionReceipt={userId:string;handle:string;expiresAt:number};
 type Pkce=ReturnType<typeof createCognitoPkce>;
@@ -25,12 +26,12 @@ const cookie=(name:string,value:string,maxAge:number)=>`${name}=${value}; Path=/
 // Opaque session receipts are the only browser credential; provider tokens stay
 // within mandatory trusted server ports. This is not an in-memory session store.
 export function createCognitoTransport(config:CognitoVerificationConfig,ports:CognitoTransportPorts,{enabled=false,now=Date.now}={}){
- if(config.region!=='us-east-1'||!/^\d{12}$/.test(config.account)||config.account==='265544358665'||
+ if(!isCognitoRegion(config.region)||(config.environment==='staging'&&config.region!=='us-east-1')||!/^\d{12}$/.test(config.account)||config.account==='265544358665'||
    (config.environment==='staging'?config.account!=='559054714699':config.environment!=='production'||['559054714699','111111111111'].includes(config.account))||
-   !/^[A-Za-z0-9]{1,128}$/.test(config.clientId)||!/^us-east-1_[A-Za-z0-9]+$/.test(config.userPoolId))throw Error('Invalid Cognito transport target.');
+   !/^[A-Za-z0-9]{1,128}$/.test(config.clientId)||!isCognitoPoolForRegion(config.userPoolId,config.region))throw Error('Invalid Cognito transport target.');
  if(!ports?.pkce||typeof ports.establish!=='function'||typeof ports.rotate!=='function'||typeof ports.revoke!=='function')throw Error('Durable Cognito transport ports required.');
  const origin=config.environment==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com';
- const providerOrigin=`https://tracepoint-${config.environment}-${config.account}.auth.us-east-1.amazoncognito.com`;
+ const providerOrigin=cognitoManagedLoginOrigin(config.environment,config.account,config.region);
  function response(status:number,code:string,options:{location?:string;cookies?:string[]}={}){
   const headers=new Headers({'Cache-Control':'no-store, private','Pragma':'no-cache','Content-Type':'application/json','Referrer-Policy':'no-referrer'});
   if(options.location)headers.set('Location',options.location);for(const value of options.cookies??[])headers.append('Set-Cookie',value);

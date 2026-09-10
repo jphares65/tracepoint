@@ -1,4 +1,5 @@
 import type { CognitoVerificationConfig } from "./cognito-verifier";
+import { isCognitoPoolForRegion, isCognitoRegion } from "./cognito-endpoints";
 
 export type CognitoEncryptionKeyring = {
   active: string;
@@ -64,7 +65,7 @@ export function parseCognitoTargetConfiguration(
   const region = environment.AWS_REGION ?? "";
   const userPoolId = environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "";
   const clientId = environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "";
-  if (region !== "us-east-1" || !/^us-east-1_[A-Za-z0-9]+$/.test(userPoolId) || !/^[A-Za-z0-9]{1,128}$/.test(clientId)) {
+  if (!isCognitoRegion(region) || (stage === "staging" && region !== "us-east-1") || !isCognitoPoolForRegion(userPoolId, region) || !/^[A-Za-z0-9]{1,128}$/.test(clientId)) {
     throw new Error("Invalid Cognito provider target.");
   }
   return { verification: { environment: stage, account, region, userPoolId, clientId } };

@@ -1,8 +1,9 @@
 import type {Pool} from 'pg';
 import type {SessionActivityCheck} from './cognito-verifier';
+import {isCognitoIssuer} from './cognito-endpoints';
 type SessionKey=Parameters<SessionActivityCheck>[0];
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function valid(input:SessionKey){return uuid.test(input.userId)&&uuid.test(input.subject)&&uuid.test(input.tokenId)&&/^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/.test(input.issuer)&&Number.isInteger(input.issuedAt);}
+function valid(input:SessionKey){return uuid.test(input.userId)&&uuid.test(input.subject)&&uuid.test(input.tokenId)&&isCognitoIssuer(input.issuer)&&Number.isInteger(input.issuedAt);}
 // Construct only from the trusted server pool. Registration accepts claims only
 // after signature/client/nonce verification; it is not an authentication API.
 export class PostgresCognitoSessionStore {
@@ -28,7 +29,7 @@ export class PostgresCognitoSessionStore {
  }
  async revokeToken(input:SessionKey){if(!valid(input))throw Error('Invalid session key.');await this.pool.query('update public.authentication_access_sessions set revoked_at=coalesce(revoked_at,clock_timestamp()) where tracepoint_user_id=$1 and issuer=$2 and subject=$3 and token_id=$4',[input.userId,input.issuer,input.subject,input.tokenId]);}
  async revokeAll(input:{userId:string;issuer:string}){
-  if(!uuid.test(input.userId)||!/^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/.test(input.issuer))throw Error('Invalid identity key.');
+  if(!uuid.test(input.userId)||!isCognitoIssuer(input.issuer))throw Error('Invalid identity key.');
   const client=await this.pool.connect();try{await client.query('begin');const mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and tracepoint_user_id=$2 for update",[input.issuer,input.userId]);if(mapping.rowCount!==1)throw Error();
    await client.query(`insert into public.authentication_session_revocations(tracepoint_user_id,issuer,revoked_before) values($1,$2,clock_timestamp())
     on conflict(tracepoint_user_id,issuer) do update set revoked_before=greatest(authentication_session_revocations.revoked_before,excluded.revoked_before)`,[input.userId,input.issuer]);

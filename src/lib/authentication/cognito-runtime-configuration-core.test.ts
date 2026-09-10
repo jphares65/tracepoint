@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
 
-import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core.ts";
+import { parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core.ts";
 
 const key = () => randomBytes(32).toString("base64url");
 const valid = {
@@ -46,4 +46,17 @@ test("accepts a bounded rotation window and rejects more than three keys", () =>
     ...valid,
     TRACEPOINT_AUTH_STATE_KEYS: JSON.stringify({ active: "current", keys: { ...rotated, extra: key() } }),
   }));
+});
+
+test("accepts a production GovCloud target without exposing runtime keyrings", () => {
+  const gov = {
+    ...valid,
+    CONFIGURATION_ENVIRONMENT: "production",
+    TRACEPOINT_AWS_ACCOUNT_ID: "222222222222",
+    AWS_REGION: "us-gov-west-1",
+    TRACEPOINT_COGNITO_USER_POOL_ID: "us-gov-west-1_Synthetic",
+  };
+  assert.equal(parseCognitoTargetConfiguration(gov).verification.region, "us-gov-west-1");
+  assert.throws(() => parseCognitoTargetConfiguration({ ...gov, TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_Synthetic" }), /provider target/);
+  assert.throws(() => parseCognitoTargetConfiguration({ ...valid, AWS_REGION: "us-gov-west-1", TRACEPOINT_COGNITO_USER_POOL_ID: "us-gov-west-1_Synthetic" }), /provider target/);
 });

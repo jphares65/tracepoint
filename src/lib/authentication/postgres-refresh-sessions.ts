@@ -1,13 +1,13 @@
 import {createCipheriv,createDecipheriv,createHash,randomBytes,randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
+import {isCognitoIssuer} from './cognito-endpoints';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const issuerPattern=/^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/;
 const hash=(handle:string)=>{if(!/^[A-Za-z0-9_-]{43}$/.test(handle))throw Error('Invalid refresh handle.');return createHash('sha256').update(handle).digest('hex');};
 export type RefreshIdentity={userId:string;issuer:string;subject:string;clientId:string;authenticatedAt:number;expiresAt:number};
 export type ConsumedRefresh=RefreshIdentity & {familyId:string;generation:number;refreshToken:string};
 type Row={family_id:string;issuer:string;subject:string;tracepoint_user_id:string;client_id:string;handle_hash:string;generation:number;state:string;sealed_payload:string|null;authenticated_at:Date;expires_at:Date;last_seen_at:Date;idle_expires_at:Date};
-function valid(identity:RefreshIdentity){const now=Math.floor(Date.now()/1000);return uuid.test(identity.userId)&&uuid.test(identity.subject)&&issuerPattern.test(identity.issuer)&&/^[A-Za-z0-9]{1,128}$/.test(identity.clientId)&&Number.isInteger(identity.authenticatedAt)&&Number.isInteger(identity.expiresAt)&&identity.authenticatedAt<=now+30&&identity.expiresAt>now&&identity.expiresAt>identity.authenticatedAt&&identity.expiresAt-identity.authenticatedAt<=86400;}
+function valid(identity:RefreshIdentity){const now=Math.floor(Date.now()/1000);return uuid.test(identity.userId)&&uuid.test(identity.subject)&&isCognitoIssuer(identity.issuer)&&/^[A-Za-z0-9]{1,128}$/.test(identity.clientId)&&Number.isInteger(identity.authenticatedAt)&&Number.isInteger(identity.expiresAt)&&identity.authenticatedAt<=now+30&&identity.expiresAt>now&&identity.expiresAt>identity.authenticatedAt&&identity.expiresAt-identity.authenticatedAt<=86400;}
 const tokenValid=(token:string)=>typeof token==='string'&&token.length>0&&token.length<=16384&&!/[\s\x00-\x1f]/.test(token);
 function identity(row:Row):RefreshIdentity{return {userId:row.tracepoint_user_id,issuer:row.issuer,subject:row.subject,clientId:row.client_id,authenticatedAt:Math.floor(new Date(row.authenticated_at).getTime()/1000),expiresAt:Math.floor(new Date(row.expires_at).getTime()/1000)};}
 function binding(row:Row){return JSON.stringify([row.family_id,row.generation,row.handle_hash,identity(row)]);}
@@ -38,7 +38,7 @@ export class RefreshSessionSealer {
 // consumed and cannot retry, even within Cognito's token-rotation grace period.
 export class PostgresCognitoRefreshStore {
  constructor(private readonly pool:Pick<Pool,'connect'|'query'>,private readonly sealer:RefreshSessionSealer,private readonly target:{issuer:string;clientId:string}){
-  if(!issuerPattern.test(target?.issuer)||!/^[A-Za-z0-9]{1,128}$/.test(target?.clientId))throw Error('Explicit refresh provider boundary required.');
+  if(!isCognitoIssuer(target?.issuer)||!/^[A-Za-z0-9]{1,128}$/.test(target?.clientId))throw Error('Explicit refresh provider boundary required.');
  }
  private matchesTarget(value:RefreshIdentity){return value.issuer===this.target.issuer&&value.clientId===this.target.clientId;}
  private async connect(){try{return await this.pool.connect();}catch{throw Error('Refresh persistence unavailable.');}}
