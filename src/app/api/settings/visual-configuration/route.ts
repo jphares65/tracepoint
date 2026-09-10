@@ -3,6 +3,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { mergeAnalyticsDashboardConfiguration, normalizeAnalyticsDashboardConfiguration } from "@/lib/tracepoint/analytics-dashboard-config";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
+export async function GET(request: NextRequest) {
+  const access = await resolveServerAccess();
+  if (!access.ok) return accessFailureResponse(access);
+  const departmentId = request.nextUrl.searchParams.get("departmentId")?.trim() ?? "";
+  if (!departmentId || departmentId !== access.context.departmentId) {
+    return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
+  }
+  const loaded = await access.context.admin.from("department_rules")
+    .select("require_rifle_familiarization,range_qualification_rules")
+    .eq("department_id", departmentId)
+    .maybeSingle();
+  if (loaded.error) return NextResponse.json({ error: "The current rules could not be loaded." }, { status: 500 });
+  return NextResponse.json({ rules: loaded.data ?? null });
+}
+
+export async function PUT(request: NextRequest) {
+  const access = await resolveServerAccess();
+  if (!access.ok) return accessFailureResponse(access);
+  if (!hasServerPermission(access.context, "administer_department")) {
+    return NextResponse.json({ error: "Department-administration permission is required." }, { status: 403 });
+  }
+  const body = await request.json().catch(() => ({}));
+  const departmentId = typeof body.departmentId === "string" ? body.departmentId.trim() : "";
+  const rules = body.rules && typeof body.rules === "object" && !Array.isArray(body.rules) ? body.rules : null;
+  if (!departmentId || departmentId !== access.context.departmentId || !rules || JSON.stringify(rules).length > 50_000) {
+    return NextResponse.json({ error: "A valid active-agency rules document is required." }, { status: 400 });
+  }
+  const saved = await access.context.admin.from("department_rules").upsert({
+    department_id: departmentId,
+    require_rifle_familiarization: body.requireRifleFamiliarization === true,
+    range_qualification_rules: rules,
+  }, { onConflict: "department_id" });
+  if (saved.error) return NextResponse.json({ error: "The rules could not be saved." }, { status: 500 });
+  return NextResponse.json({ ok: true, rules });
+}
+
 export async function POST(request: NextRequest) {
   const access = await resolveServerAccess();
   if (!access.ok) return accessFailureResponse(access);
