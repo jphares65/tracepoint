@@ -2,13 +2,14 @@ import {test} from 'node:test';import {strict as assert} from 'node:assert';impo
 const target:ProductionTarget={account:'222222222222',region:'us-east-1',roleArn:'arn:aws:iam::222222222222:role/TracePointMigrationProduction',hostname:'tracepointhq.com',certificateArn:'arn:aws:acm:us-east-1:222222222222:certificate/00000000-0000-4000-8000-000000000000',imageTag:'a'.repeat(40),emailFromAddress:'contact@tracepointhq.com',architectureTarget:'full-aws',deploymentPhase:'temporary-provider-bridge',dataMode:'retain-production-providers',desiredCount:2,maxCapacity:4};
 function authorized(){return {...target,deploymentAuthorization:{account:target.account,roleArn:target.roleArn,expiresAt:new Date(Date.now()+3600000).toISOString(),reference:'synthetic-unit-test-approval'}};}
 test('production target rejects absent authority and forbidden targets',()=>{
- validateProductionTarget(target,{offline:true});assert.throws(()=>validateProductionTarget(target));validateProductionTarget(authorized());
- for(const change of [{account:'559054714699'},{account:'265544358665'},{account:'111111111111'},{region:'us-west-2'},{hostname:'staging.tracepointhq.com'},{architectureTarget:'hybrid'},{deploymentPhase:'permanent'},{dataMode:'copy-production'},{desiredCount:1},{maxCapacity:20},{emailFromAddress:'contact@staging.tracepointhq.com'},{certificateArn:target.certificateArn.replace(target.account,'559054714699')},{imageTag:'latest'}])assert.throws(()=>validateProductionTarget({...authorized(),...change} as ProductionTarget));
- for(const expiresAt of ['invalid',new Date(Date.now()-1000).toISOString(),new Date(Date.now()+90000000).toISOString()]){const t=authorized();t.deploymentAuthorization.expiresAt=expiresAt;assert.throws(()=>validateProductionTarget(t));}
+ validateProductionTarget(target,{offline:true});
+ assert.throws(()=>validateProductionTarget(authorized()),/hybrid.*retired.*rollback/i);
+ for(const change of [{account:'559054714699'},{account:'265544358665'},{account:'111111111111'},{region:'us-west-2'},{hostname:'staging.tracepointhq.com'},{architectureTarget:'hybrid'},{deploymentPhase:'permanent'},{dataMode:'copy-production'},{desiredCount:1},{maxCapacity:20},{emailFromAddress:'contact@staging.tracepointhq.com'},{certificateArn:target.certificateArn.replace(target.account,'559054714699')},{imageTag:'latest'}])assert.throws(()=>validateProductionTarget({...target,...change} as ProductionTarget,{offline:true}));
 });
 test('production identity rejects wrong role account and region',()=>{
- const t=authorized(),identity={Account:t.account,Arn:'arn:aws:sts::'+t.account+':assumed-role/TracePointMigrationProduction/synthetic'};verifyProductionIdentity(t,identity,'us-east-1');
- for(const bad of [{...identity,Account:'559054714699'},{...identity,Arn:identity.Arn.replace('Production/','ProductionExtra/')},{...identity,Arn:identity.Arn.replace('222222222222','265544358665')}])assert.throws(()=>verifyProductionIdentity(t,bad,'us-east-1'));assert.throws(()=>verifyProductionIdentity(t,identity,'us-west-2'));
+ const t=authorized(),identity={Account:t.account,Arn:'arn:aws:sts::'+t.account+':assumed-role/TracePointMigrationProduction/synthetic'};
+ assert.throws(()=>verifyProductionIdentity(t,identity,'us-east-1'),/hybrid.*retired.*rollback/i);
+ assert.throws(()=>productionAssembly(new cdk.App(),t,false),/hybrid.*retired.*rollback/i);
 });
 test('production assembly retains provider isolation and two-to-four capacity',()=>{
  const stacks=productionAssembly(new cdk.App(),target,true),runtime=Template.fromStack(stacks.runtime),compute=Template.fromStack(stacks.compute),requests=Template.fromStack(stacks.requestControls),alerts=Template.fromStack(stacks.alertDelivery);
