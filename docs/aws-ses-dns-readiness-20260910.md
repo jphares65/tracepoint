@@ -2,23 +2,26 @@
 
 ## Decision
 
-**Not ready for SES delivery.** AWS account `559054714699` remains in the
-Amazon SES sandbox in `us-east-1`. Its only SES identity,
-`staging.tracepointhq.com`, is disabled for sending and has failed identity
-verification, Easy DKIM, and custom MAIL FROM. The failure is not ambiguous:
-every SES authentication name expected by the current identity returns NXDOMAIN
-from both a public recursive resolver and the authoritative Wix name server.
+**Not ready for SES delivery, but identity verification and Easy DKIM are now
+repaired.** AWS account `559054714699` remains in the Amazon SES sandbox in
+`us-east-1`. Its only SES identity, `staging.tracepointhq.com`, now has
+`VerificationStatus=SUCCESS`, `VerifiedForSendingStatus=true`, and Easy DKIM
+`SUCCESS`. Custom MAIL FROM remains `FAILED` with `REJECT_MESSAGE` and was not
+changed.
 
 The SES configuration set and encrypted SNS/SQS feedback transport exist, but
 there is no queue consumer. Account- and configuration-set-level suppression
 are enabled for bounces and complaints. Production access has never been
 requested in this Region.
 
-This was a read-only review. No DNS record, SES identity, configuration set,
-suppression entry, SNS/SQS resource, email, production-access request, or other
-AWS resource was created, changed, or deleted. No secret, recipient address,
-message, production record, or customer data was read. Evidence was collected
-at `2026-09-10T20:04:21.190Z` from source commit
+The initial review was read-only. A later, explicitly authorized operation
+restarted Easy DKIM in place without deleting or recreating the identity; no
+other SES or AWS setting was changed. No DNS record, custom MAIL FROM setting,
+configuration set, suppression entry, SNS/SQS resource, email,
+production-access request, or production resource was created, changed, or
+deleted. No secret, recipient address, message, production record, or customer
+data was read. Initial evidence was collected at `2026-09-10T20:04:21.190Z` and
+the DKIM recovery was verified at `2026-09-10T21:06:44.914Z`, from source commit
 `fd21a1366eaeeaca666107a781d0f5021a523bd5` on branch
 `codex/aws-ses-staging-readiness-20260910`.
 
@@ -43,7 +46,7 @@ at `2026-09-10T20:04:21.190Z` from source commit
 | Field | Current value | Assessment |
 |---|---:|---|
 | `ProductionAccessEnabled` | `false` | Account is in the SES sandbox in `us-east-1` |
-| `SendingEnabled` | `true` | Account-level sending is enabled; identity-level sending is not |
+| `SendingEnabled` | `true` | Account-level sending is enabled |
 | `EnforcementStatus` | `HEALTHY` | No probation or shutdown condition |
 | `Max24HourSend` | `200` | Current regional daily quota |
 | `MaxSendRate` | `1/second` | Current regional rate quota |
@@ -55,8 +58,8 @@ at `2026-09-10T20:04:21.190Z` from source commit
 While sandboxed, sends can go only to: (1) an individually verified email
 identity, (2) the SES mailbox simulator, or (3) a real address at any domain
 identity already verified in this account and Region. A verified sender is
-still required. The current failed identity and `REJECT_MESSAGE` MAIL FROM
-fallback prevent even those tests until repaired.
+still required. The identity is now verified, but the unresolved
+`REJECT_MESSAGE` custom MAIL FROM still prevents sends until repaired.
 
 ## SES identity, DKIM, MAIL FROM, SPF, and DMARC
 
@@ -64,9 +67,9 @@ The account contains one identity only.
 
 | Control | Current state | Evidence and consequence |
 |---|---|---|
-| Identity | `staging.tracepointhq.com`, type `DOMAIN` | `VerificationStatus=FAILED`; `VerifiedForSendingStatus=false`; `SendingEnabled=false` |
-| Verification failure | `HOST_NOT_FOUND` | Last checked `2026-09-08T05:29:50.997-04:00`; Easy DKIM verifies ownership, and all three required DKIM hosts are absent |
-| DKIM | Easy DKIM, origin `AWS_SES`, signing enabled, `FAILED` | Three current tokens exist; signing zone is `dkim.amazonses.com`; current and next key length are RSA 2048; keys generated `2026-09-05T05:28:55.452-04:00` |
+| Identity | `staging.tracepointhq.com`, type `DOMAIN` | `VerificationStatus=SUCCESS`; `VerifiedForSendingStatus=true` |
+| Verification history | `SUCCESS` | Last success `2026-09-10T17:06:29.063-04:00`. `VerificationInfo.ErrorType=HOST_NOT_FOUND` remains as historical failure metadata, not the current status |
+| DKIM | Easy DKIM, origin `AWS_SES`, signing enabled, `SUCCESS` | The restart preserved all three tokens and signing zone `dkim.amazonses.com`; current and next key length remain RSA 2048 |
 | Custom MAIL FROM | `bounce.staging.tracepointhq.com`, `FAILED` | Required MX host is absent. `BehaviorOnMxFailure=REJECT_MESSAGE`, so SES returns `MailFromDomainNotVerified` instead of sending while unresolved |
 | MAIL FROM SPF | absent | `bounce.staging.tracepointhq.com` is NXDOMAIN; there is no SPF policy for the envelope sender |
 | DMARC for staging identity | inherited, monitor-only | `_dmarc.staging.tracepointhq.com` is NXDOMAIN, so the organizational-domain record applies: `v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com`. It is a single valid policy, but it does not enforce quarantine/reject and reports to Brevo |
@@ -74,13 +77,15 @@ The account contains one identity only.
 | Feedback forwarding | `true` | SES email forwarding is enabled, but no monitored/deliverable forwarding mailbox was proven. `staging.tracepointhq.com` is a CNAME to an ALB and has no mail exchanger |
 | Identity authorization policies | none | `Policies={}` |
 
-### Root cause
+### Historical root cause
 
 The identity was created on September 5, but its DNS outputs were never
 published at the authoritative Wix provider. SES searched for the names, could
 not find them, and moved identity verification, DKIM, and MAIL FROM to terminal
 `FAILED` states. There is no stale or incorrect SES record at the expected
-owners: the records are wholly missing.
+owners. The three DKIM records were subsequently published, verified from both
+Wix authorities and two public resolvers, and accepted by SES after the in-place
+restart. The custom MAIL FROM failure remains separate and unresolved.
 
 The existing `staging.tracepointhq.com` CNAME to the staging ALB is valid and
 must remain. It does not conflict with DKIM records below `_domainkey` or with
@@ -100,16 +105,15 @@ Cloudflare returned the same answers.
 | `tracepointhq.com TXT` | Microsoft SPF, Microsoft verification, Brevo verification | Existing unrelated records; leave unchanged |
 | `_dmarc.tracepointhq.com TXT` | one valid `p=none` record with Brevo `rua` | Valid inherited policy; not duplicated |
 | `staging.tracepointhq.com CNAME` | staging AWS ALB | Existing application routing; leave unchanged |
-| Three current DKIM CNAME owners | NXDOMAIN | Missing |
+| Three current DKIM CNAME owners | Exact token-specific `*.dkim.amazonses.com` targets, TTL 3600 | Correct on both Wix authorities, Cloudflare, and Google |
 | `bounce.staging.tracepointhq.com MX` | NXDOMAIN | Missing |
 | `bounce.staging.tracepointhq.com TXT` | NXDOMAIN | Missing |
 | `_dmarc.staging.tracepointhq.com TXT` | NXDOMAIN | No explicit subdomain policy; valid apex policy is inherited |
 
-No duplicate or conflicting record exists at any required SES owner. Public DNS
-cannot prove that no unrelated, undiscoverable record exists elsewhere in the
-zone, but it conclusively proves the exact SES owners are absent. Wix is the
-place where the user must make these changes; an AWS Route 53 change would not
-be authoritative.
+No duplicate or conflicting DKIM record exists at any current token owner. The
+MAIL FROM results in this table are from the last authoritative check before the
+DKIM restart and were not changed or rechecked by the narrowly scoped restart.
+Wix remains authoritative; an AWS Route 53 change would not be authoritative.
 
 ## Exact provider-ready DNS changes
 
@@ -118,19 +122,26 @@ Wix may display the resulting FQDN after saving; do not append
 `.tracepointhq.com` twice. Use TTL 3600 seconds, matching the current public
 zone. Targets may be accepted with or without a final dot by the provider.
 
-### Required to clear the current SES failures
+### Published and verified DKIM records — leave unchanged
 
 | Type | Host/name | Value/target | Priority | TTL | Purpose |
 |---|---|---|---:|---:|---|
 | CNAME | `3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging` | `3drryitjdubjinnkgryh3tbpzxoinewk.dkim.amazonses.com` | — | 3600 | Easy DKIM token 1 and domain ownership |
 | CNAME | `vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging` | `vzklmpevtuvf4g3sqev3y3z7eknsmsu5.dkim.amazonses.com` | — | 3600 | Easy DKIM token 2 and domain ownership |
 | CNAME | `e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging` | `e5uy6cdpk3j3wy2iezyywdqqqqhoerdu.dkim.amazonses.com` | — | 3600 | Easy DKIM token 3 and domain ownership |
+
+These three records are correct and require no update or removal.
+
+### Still required for custom MAIL FROM based on the last DNS check
+
+| Type | Host/name | Value/target | Priority | TTL | Purpose |
+|---|---|---|---:|---:|---|
 | MX | `bounce.staging` | `feedback-smtp.us-east-1.amazonses.com` | 10 | 3600 | Custom MAIL FROM bounce processing and SPF alignment |
 | TXT | `bounce.staging` | `v=spf1 include:amazonses.com -all` | — | 3600 | Authorize SES as the only sender for the dedicated MAIL FROM subdomain |
 
-All five are creates. No DNS update or removal is required now. In particular,
-do not change or remove the apex Microsoft 365 MX/SPF records, Microsoft/Brevo
-verification TXT records, apex DMARC record, or staging ALB CNAME.
+The DKIM restart did not authorize or perform these DNS changes. Do not change
+or remove the apex Microsoft 365 MX/SPF records, Microsoft/Brevo verification
+TXT records, apex DMARC record, staging ALB CNAME, or working DKIM CNAMEs.
 
 ### Optional explicit staging DMARC policy
 
@@ -194,15 +205,77 @@ and the prepared application suppression store has no live consumer. A prior
 provider suppression/opt-out import and reconciliation therefore remains a
 production blocker.
 
+## Easy DKIM in-place restart evidence — 2026-09-10
+
+The authorized target was limited to identity `staging.tracepointhq.com` in
+account `559054714699`, Region `us-east-1`. STS confirmed principal
+`arn:aws:sts::559054714699:assumed-role/AWSReservedSSO_TracePointMigrationStaging_52cda9da92884a87/jason.phares`
+before mutation.
+
+### Before restart
+
+- Identity type: `DOMAIN`
+- `VerifiedForSendingStatus=false`
+- `VerificationStatus=FAILED`, historical error `HOST_NOT_FOUND`
+- `DkimAttributes.SigningAttributesOrigin=AWS_SES`
+- `DkimAttributes.SigningEnabled=true`
+- `DkimAttributes.Status=FAILED`
+- signing zone: `dkim.amazonses.com`
+- current and next key length: `RSA_2048_BIT`
+- custom MAIL FROM: `bounce.staging.tracepointhq.com`, `FAILED`,
+  `REJECT_MESSAGE`
+- tokens:
+  1. `3drryitjdubjinnkgryh3tbpzxoinewk`
+  2. `vzklmpevtuvf4g3sqev3y3z7eknsmsu5`
+  3. `e5uy6cdpk3j3wy2iezyywdqqqqhoerdu`
+
+The first restart request supplied `SigningAttributesOrigin=AWS_SES` but omitted
+the now-required Easy DKIM `NextSigningKeyLength`. SES rejected it with
+`BadRequestException: Signing key length parameter is null or empty`. A complete
+identity reread proved that rejected request changed nothing.
+
+The corrected single restart preserved the existing setting by supplying
+`NextSigningKeyLength=RSA_2048_BIT`. SES accepted it and returned
+`DkimStatus=NOT_STARTED`, the same three tokens, and the same signing zone. The
+immediate identity read briefly retained the old `FAILED` snapshot; after 20
+seconds, SES reported success.
+
+### DNS verification after restart
+
+All three unchanged CNAMEs returned the exact expected target with TTL 3600
+from `ns10.wixdns.net`, `ns11.wixdns.net`, Cloudflare `1.1.1.1`, and Google
+`8.8.8.8`:
+
+| Owner | Exact target |
+|---|---|
+| `3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging.tracepointhq.com` | `3drryitjdubjinnkgryh3tbpzxoinewk.dkim.amazonses.com` |
+| `vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging.tracepointhq.com` | `vzklmpevtuvf4g3sqev3y3z7eknsmsu5.dkim.amazonses.com` |
+| `e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging.tracepointhq.com` | `e5uy6cdpk3j3wy2iezyywdqqqqhoerdu.dkim.amazonses.com` |
+
+### Final identity state
+
+At `2026-09-10T21:06:29.063Z` SES reached:
+
+- `VerifiedForSendingStatus=true`
+- `VerificationStatus=SUCCESS`
+- `DkimAttributes.Status=SUCCESS`
+- the same three DKIM tokens and signing zone
+- `MailFromDomainStatus=FAILED` with `REJECT_MESSAGE`, unchanged
+
+No identity deletion/recreation, DNS change, custom MAIL FROM change,
+configuration-set change, production-access request, email send, or other AWS
+mutation occurred. The DKIM and domain-verification blockers are cleared; the
+custom MAIL FROM blocker is not.
+
 ## Identity changes and DKIM token stability
 
 - **Do not delete or recreate the identity.** Recreating an Easy DKIM identity
   is a new verification operation and can issue a different token set. Existing
   DKIM CNAMEs must then be treated as stale until compared with the new API
   response.
-- Restarting Easy DKIM on this `FAILED` identity with
-  `PutEmailIdentityDkimSigningAttributes` can also change the tokens. Read the
-  returned tokens/signing zone immediately and change DNS only when they differ.
+- The authorized in-place restart preserved all three tokens. In general, a
+  future `PutEmailIdentityDkimSigningAttributes` operation can change them, so
+  it must still be gated on status and compared immediately.
 - Restarting custom MAIL FROM with the same domain and
   `REJECT_MESSAGE` behavior does not rotate DKIM tokens.
 - Leaving retired CNAMEs indefinitely is unsafe dangling DNS. If a restart does
@@ -215,17 +288,15 @@ production blocker.
    must validate SNS envelopes, persist delivery/bounce/complaint events
    idempotently, enforce suppression before send, retry safely, alarm on DLQ
    growth, and use only synthetic/authorized recipients for acceptance.
-2. **Create the five required Wix records as one reviewed batch.** Do not touch
-   the existing ALB CNAME or apex mail/authentication records.
+2. **Preserve the three verified DKIM CNAMEs and the restored Microsoft 365
+   apex MX.** Do not touch the existing ALB CNAME or apex authentication records.
 3. **Verify authoritative and recursive DNS.** All three CNAMEs must resolve to
    the exact current token targets; `bounce.staging` must have exactly the SES MX
    and exactly one SPF policy. With Wix's current 3600-second TTL/negative cache,
    allow minutes to about one hour for public visibility, although resolver
    caches can take longer.
-4. **After DNS is public, authorize an Easy DKIM restart in place.** This is
-   necessary because status is already `FAILED`; do not recreate the identity.
-   Re-read tokens immediately. If they changed, publish the replacement CNAMEs,
-   confirm them publicly, and later remove only the retired token owners.
+4. **Easy DKIM restart is complete.** Tokens were unchanged; authoritative and
+   public DNS passed; identity verification and DKIM are `SUCCESS`.
 5. **After the exact MX is public, authorize a custom MAIL FROM restart in
    place** using `bounce.staging.tracepointhq.com` and preserving
    `REJECT_MESSAGE`. A `FAILED` MAIL FROM state no longer performs DNS detection
@@ -250,30 +321,29 @@ production blocker.
    Brevo active until the SES sender, consumer, suppression reconciliation, and
    rollback path all pass.
 
-Fastest safe elapsed path is to publish DNS and build/deploy the feedback
-consumer concurrently, restart the two terminal SES checks as soon as DNS is
-public, run sandbox acceptance, then submit the already-prepared production
-request. DNS/SES detection is commonly same-day but has a documented 72-hour
-outer window; the production review normally begins with a response within 24
-hours and may extend beyond it.
+Fastest safe elapsed path is now to finish and verify the custom MAIL FROM DNS,
+build/deploy the feedback consumer concurrently, restart only the terminal MAIL
+FROM check after its DNS is public, run sandbox acceptance, then submit the
+already-prepared production request. DNS/SES detection is commonly same-day but
+has a documented 72-hour outer window; the production review normally begins
+with a response within 24 hours and may extend beyond it.
 
 ## AWS actions requiring explicit authorization
 
-None of these actions was performed:
+Easy DKIM restart was explicitly authorized and completed in place. None of the
+remaining actions below was performed:
 
-1. Restart Easy DKIM in place for `staging.tracepointhq.com`, then read and act
-   on any returned token change.
-2. Restart custom MAIL FROM in place with the existing
+1. Restart custom MAIL FROM in place with the existing
    `bounce.staging.tracepointhq.com` and `REJECT_MESSAGE` settings.
-3. Deploy and authorize the feedback worker, its database connection, alarms,
+2. Deploy and authorize the feedback worker, its database connection, alarms,
    and least-privilege queue/KMS access; reconcile existing provider
    suppression/opt-outs without exposing recipient data.
-4. Grant least-privilege `ses:SendEmail` authority pinned to
+3. Grant least-privilege `ses:SendEmail` authority pinned to
    `notifications@staging.tracepointhq.com` and the verified domain, with the
    required configuration set.
-5. Send any synthetic test email or simulator event.
-6. Submit the `us-east-1` SES production-access request.
-7. Activate Cognito developer email or the application SES provider.
+4. Send any synthetic test email or simulator event.
+5. Submit the `us-east-1` SES production-access request.
+6. Activate Cognito developer email or the application SES provider.
 
 ## Prepared production-access request
 
@@ -320,18 +390,15 @@ not pass the deprecated use-case-description API field.
 
 ## Blockers
 
-1. The five mandatory DNS records are absent at Wix.
-2. Identity verification and Easy DKIM are terminal `FAILED` and require an
-   authorized in-place restart after DNS is correct.
-3. Custom MAIL FROM is terminal `FAILED`, uses `REJECT_MESSAGE`, and requires an
+1. Custom MAIL FROM is terminal `FAILED`, uses `REJECT_MESSAGE`, and requires an
    authorized in-place restart after its MX is correct.
-4. The SES account remains sandboxed and no production-access request exists.
-5. Feedback transport has no live consumer or worker stack.
-6. Suppression/opt-out entries have not been reconciled from the active provider.
-7. No monitored fallback mailbox for feedback forwarding is proven.
-8. No authorized synthetic delivery/authentication/bounce/complaint acceptance
+2. The SES account remains sandboxed and no production-access request exists.
+3. Feedback transport has no live consumer or worker stack.
+4. Suppression/opt-out entries have not been reconciled from the active provider.
+5. No monitored fallback mailbox for feedback forwarding is proven.
+6. No authorized synthetic delivery/authentication/bounce/complaint acceptance
    has been run.
-9. `tracepoint-staging-cognito` is not a deployed configuration set, and neither
+7. `tracepoint-staging-cognito` is not a deployed configuration set, and neither
    Cognito nor application SES sending is authorized for activation.
 
 ## Read-only evidence commands
