@@ -22,7 +22,7 @@ export class ArmoryReadConfigurationError extends Error {
 }
 export function requireArmoryReadProvider(provider: string | undefined) {
   const value = provider?.trim().toLowerCase() || "supabase";
-  if (value !== "supabase") throw new ArmoryReadConfigurationError(value);
+  if (value !== "supabase" && value !== "postgres") throw new ArmoryReadConfigurationError(value);
   return value;
 }
 

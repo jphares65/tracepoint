@@ -1,6 +1,7 @@
 import "server-only";
 import type { PoolClient } from "pg";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
+import { PostgresDataClient } from "@/lib/database/postgres-data-client";
 import type { AuthenticatedPrincipal } from "@/lib/authentication/request-session-core";
 import { effectiveDepartmentPermissions } from "./permission-authority";
 import type { TracePointPermission } from "./permissions";
@@ -59,8 +60,9 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
   const labelMap=new Map(roles.rows.map(row=>[clean(row.role_code),clean(row.display_name)]));
   const primary=priority.find(code=>roleCodes.includes(code))??roleCodes[0];
   const email=clean(profile?.email)||principal.email;
+  const dataClient=new PostgresDataClient(getPostgresPool(),principal.userId,departmentId);
   return {ok:true as const,context:{
-   user:{id:principal.userId,email,user_metadata:{full_name:clean(profile?.full_name)}},admin:null,db:null,authDb:null,
+   user:{id:principal.userId,email,user_metadata:{full_name:clean(profile?.full_name)}},admin:dataClient,db:dataClient,authDb:dataClient,
    userId:principal.userId,email,fullName:clean(profile?.full_name)||principal.fullName||email.split("@")[0]||"TracePoint User",
    departmentId,departmentName:clean(department?.name)||"TracePoint Department",departmentShortName:clean(department?.short_name)||clean(department?.name)||"TracePoint",
    departmentPatchUrl:clean(department?.patch_url),accentColor:clean(department?.accent_color),loginTheme:clean(department?.login_theme),

@@ -12,7 +12,7 @@ export interface NotificationReadDataSource {
 }
 export class NotificationReadAuthorizationError extends Error { constructor() { super("Authorized department and user context is required."); this.name = "NotificationReadAuthorizationError"; } }
 export class NotificationReadRepositoryError extends Error { constructor(message: string) { super(message); this.name = "NotificationReadRepositoryError"; } }
-export function requireNotificationReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase") throw new Error(`Unsupported data provider: ${provider}. Only supabase is implemented.`); return provider; }
+export function requireNotificationReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase" && provider !== "postgres") throw new Error(`Unsupported data provider: ${provider}.`); return provider; }
 const rows = (result: NotificationReadResult) => { if (result.error) throw new NotificationReadRepositoryError(result.error.message); return Array.isArray(result.data) ? result.data as NotificationRow[] : []; };
 const record = (result: NotificationReadResult) => { if (result.error) throw new NotificationReadRepositoryError(result.error.message); return result.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as NotificationRow : null; };
 export class TenantBoundNotificationReadRepository {

@@ -10,6 +10,8 @@ export const AWS_MIGRATION_LEDGER = Object.freeze([
   ["004_remove_supabase_authorization_runtime.sql", "440a076573ae21ad1e499d5be61d345e35b6bc83477e837f8b2f1a5d3bcc73e9"],
   ["005_command_dashboard_fleet_read.sql", "24547c774c5146f3b47d78a9250199bfafd5e1a19c6f898ac54295aaaf261ea7"],
   ["006_cognito_lifecycle_state.sql", "8554fad23498e4b68dc26aaec42efe66452515b51f83259b2cbb8a23c0d1d222"],
+  ["007_ses_runtime_queue_access.sql", "44deea58c200a3891ee17b22dd1224e2933e7396574b3a072d2efd3951f0405c"],
+  ["008_training_closeout_authorization.sql", "78f774cbfbd64b4017030952236b8ee54acce2777f495fbb23499c31f8f95230"],
 ]);
 
 const sha256 = value => createHash("sha256").update(value).digest("hex");

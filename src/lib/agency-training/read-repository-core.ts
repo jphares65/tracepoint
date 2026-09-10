@@ -49,7 +49,7 @@ function record(result: AgencyTrainingResult) { if (result.error) throw new Agen
 
 export function requireAgencyTrainingReadProvider(provider: string | undefined) {
   const value = provider?.trim().toLowerCase() || "supabase";
-  if (value !== "supabase") throw new AgencyTrainingReadConfigurationError(value);
+  if (value !== "supabase" && value !== "postgres") throw new AgencyTrainingReadConfigurationError(value);
   return value;
 }
 

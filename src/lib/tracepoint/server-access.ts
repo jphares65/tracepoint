@@ -3,9 +3,6 @@ import "server-only";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
-import { getServerAuthenticatedUser } from "@/lib/authentication/server-provider";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
 import { resolvePostgresAccess } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
@@ -55,7 +52,8 @@ export type ServerAccessContext = ServerAccessPayload & {
   admin: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any;
-  authDb: Awaited<ReturnType<typeof createServerClient>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  authDb: any;
 };
 
 type MembershipRow = {
@@ -136,6 +134,9 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
       return { ok: false, status: 500, error: "PostgreSQL access verification failed." };
     }
   }
+  const [{ createClient: createServerClient }, { createAdminClient }, { getServerAuthenticatedUser }] = await Promise.all([
+    import("@/lib/supabase/server"), import("@/lib/supabase/admin"), import("@/lib/authentication/server-provider"),
+  ]);
   const server = await createServerClient();
   const user = await getServerAuthenticatedUser(server);
 

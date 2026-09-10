@@ -172,7 +172,7 @@ export function createQualificationHistoryRepository(
     ? environment.TRACEPOINT_DATA_PROVIDER
     : process.env.TRACEPOINT_DATA_PROVIDER;
   const provider = configured?.trim().toLowerCase() || "supabase";
-  if (provider !== "supabase") {
+  if (provider !== "supabase" && provider !== "postgres") {
     throw new QualificationHistoryRepositoryConfigurationError(provider);
   }
   return new SupabaseQualificationHistoryRepository(client, authorizedDepartmentId);

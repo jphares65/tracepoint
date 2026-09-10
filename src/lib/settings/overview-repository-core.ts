@@ -41,7 +41,7 @@ export class SettingsOverviewRepositoryConfigurationError extends Error {
 
 export function requireSettingsOverviewProvider(provider: string | undefined) {
   const normalized = provider?.trim().toLowerCase() || "supabase";
-  if (normalized !== "supabase") throw new SettingsOverviewRepositoryConfigurationError(normalized);
+  if (normalized !== "supabase" && normalized !== "postgres") throw new SettingsOverviewRepositoryConfigurationError(normalized);
   return normalized;
 }
 

@@ -9,7 +9,7 @@ export interface TrainingReadDataSource {
 }
 export class TrainingReadAuthorizationError extends Error { constructor() { super("Authorized department context is required."); this.name = "TrainingReadAuthorizationError"; } }
 export class TrainingReadRepositoryError extends Error { constructor(message: string) { super(message); this.name = "TrainingReadRepositoryError"; } }
-export function requireTrainingReadProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase") throw new Error(`Unsupported data provider: ${value}. Only supabase is implemented.`); return value; }
+export function requireTrainingReadProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase" && value !== "postgres") throw new Error(`Unsupported data provider: ${value}.`); return value; }
 const rows = (result: TrainingResult) => Array.isArray(result.data) ? result.data as TrainingRow[] : [];
 export class TenantBoundTrainingReadRepository {
   private readonly source: TrainingReadDataSource;

@@ -1,6 +1,7 @@
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { catalogSql, manifestSql } from "./staging-management-manifest.mjs";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
+import { loadVerifiedAwsMigrations } from "./aws-migration-ledger.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import assert from "node:assert/strict";
@@ -100,21 +101,18 @@ try {
 
   let awsTargetOverlayCount = 0;
   if (process.argv.includes("--aws-target") || process.argv.includes("--aws-native-final")) {
-    const overlayFiles = (await readdir(awsTargetOverlaysDir))
-      .filter((file) => /^\d+_.+\.sql$/.test(file))
-      .sort();
-    if (overlayFiles.length !== 6) throw new Error(`Expected six AWS target overlays, found ${overlayFiles.length}.`);
-    for (const file of overlayFiles) {
+    const overlays = await loadVerifiedAwsMigrations(awsTargetOverlaysDir);
+    for (const overlay of overlays) {
       await client.query("begin");
       try {
-        await client.query(await readFile(path.join(awsTargetOverlaysDir, file), "utf8"));
+        await client.query(overlay.sql);
         await client.query("commit");
       } catch (error) {
         await client.query("rollback");
-        throw new Error(`AWS target overlay failed in ${file}: ${error.message}`, { cause: error });
+        throw new Error(`AWS target overlay failed in ${overlay.name}: ${error.message}`, { cause: error });
       }
     }
-    awsTargetOverlayCount = overlayFiles.length;
+    awsTargetOverlayCount = overlays.length;
 
     await client.query("alter role tracepoint_runtime login password 'synthetic-runtime-test-only'");
     const runtimeClient = new client.constructor({
@@ -127,6 +125,8 @@ try {
     try {
       await runtimeClient.connect();
       await runtimeClient.query("select count(*) from public.authentication_access_sessions");
+      await runtimeClient.query("select count(*) from public.email_suppressions");
+      await runtimeClient.query("select count(*) from public.notification_email_queue");
       await assert.rejects(
         runtimeClient.query("select count(*) from public.profiles"),
         (error) => error?.code === "42501",

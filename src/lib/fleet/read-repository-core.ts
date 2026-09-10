@@ -16,7 +16,7 @@ export interface FleetReadDataSource {
 export class FleetReadAuthorizationError extends Error { constructor() { super("Authorized department context is required."); this.name = "FleetReadAuthorizationError"; } }
 export class FleetReadRepositoryError extends Error { readonly code?: string; constructor(message: string, code?: string) { super(message); this.name = "FleetReadRepositoryError"; this.code = code; } }
 export class FleetReadConfigurationError extends Error { constructor(provider: string) { super(`Unsupported data provider: ${provider}. Only supabase is implemented.`); this.name = "FleetReadConfigurationError"; } }
-export function requireFleetReadProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase") throw new FleetReadConfigurationError(value); return value; }
+export function requireFleetReadProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase" && value !== "postgres") throw new FleetReadConfigurationError(value); return value; }
 const rows = (result: FleetResult) => Array.isArray(result.data) ? result.data as FleetRow[] : [];
 const row = (result: FleetResult) => result.data && !Array.isArray(result.data) ? result.data as FleetRow : null;
 export class TenantBoundFleetReadRepository {
