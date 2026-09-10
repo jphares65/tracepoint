@@ -15,6 +15,7 @@ export interface ImageBuildStackProps extends cdk.StackProps {
   appSecrets: secretsmanager.ISecret;
   productionControls?: boolean;
   providerMode?: "bridge" | "aws-native";
+  resourceQualifier?: "aws-native";
 }
 
 export class ImageBuildStack extends cdk.Stack {
@@ -24,13 +25,18 @@ export class ImageBuildStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ImageBuildStackProps) {
     super(scope, id, props);
 
+    const resourceStem = `tracepoint-${props.environmentName}${props.resourceQualifier ? `-${props.resourceQualifier}` : ""}`;
+    const sourceObjectKey = `source/${resourceStem}-source.zip`;
+
     const buildKey = new kms.Key(this, "BuildKey", {
-      alias: `alias/tracepoint/${props.environmentName}/build`,
+      alias: props.resourceQualifier
+        ? `alias/tracepoint/${props.environmentName}/${props.resourceQualifier}/build`
+        : `alias/tracepoint/${props.environmentName}/build`,
       description: `TracePoint ${props.environmentName} build source and log encryption`,
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    const buildLogGroupName = `/tracepoint/${props.environmentName}/image-build`;
+    const buildLogGroupName = `/tracepoint/${props.environmentName}/${props.resourceQualifier ? `${props.resourceQualifier}-` : ""}image-build`;
     const buildLogGroupArn = this.formatArn({
       service: "logs",
       resource: "log-group",
@@ -55,7 +61,7 @@ export class ImageBuildStack extends cdk.Stack {
     );
 
     const accessLogBucket = props.productionControls ? new s3.Bucket(this, "BuildAccessLogs", {
-      bucketName: `tracepoint-${props.environmentName}-build-access-${this.account}`,
+      bucketName: `${resourceStem}-build-access-${this.account}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
@@ -68,7 +74,7 @@ export class ImageBuildStack extends cdk.Stack {
     }]);
 
     this.sourceBucket = new s3.Bucket(this, "SourceBucket", {
-      bucketName: `tracepoint-${props.environmentName}-build-source-${this.account}`,
+      bucketName: `${resourceStem}-build-source-${this.account}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: buildKey,
@@ -94,14 +100,14 @@ export class ImageBuildStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    const projectName = `tracepoint-${props.environmentName}-image-build`;
+    const projectName = `${resourceStem}-image-build`;
     const projectArn = this.formatArn({
       service: "codebuild",
       resource: "project",
       resourceName: projectName,
     });
     const buildRole = new iam.Role(this, "BuildRole", {
-      roleName: `tracepoint-${props.environmentName}-codebuild-image`,
+      roleName: `${resourceStem}-codebuild-image`,
       assumedBy: new iam.ServicePrincipal("codebuild.amazonaws.com", {
         conditions: {
           ArnEquals: { "aws:SourceArn": projectArn },
@@ -111,7 +117,7 @@ export class ImageBuildStack extends cdk.Stack {
       description: `Builds a reviewed TracePoint commit and pushes only to ${props.environmentName} ECR`,
     });
 
-    this.sourceBucket.grantRead(buildRole, `source/tracepoint-${props.environmentName}-source.zip`);
+    this.sourceBucket.grantRead(buildRole, sourceObjectKey);
     props.repository.grantPullPush(buildRole);
     buildRole.addToPolicy(
       new iam.PolicyStatement({
@@ -165,7 +171,7 @@ export class ImageBuildStack extends cdk.Stack {
       encryptionKey: buildKey,
       source: codebuild.Source.s3({
         bucket: this.sourceBucket,
-        path: `source/tracepoint-${props.environmentName}-source.zip`,
+        path: sourceObjectKey,
       }),
       buildSpec: codebuild.BuildSpec.fromSourceFilename(`buildspec.${props.environmentName}-image.yml`),
       grantReportGroupPermissions: false,
@@ -199,7 +205,7 @@ export class ImageBuildStack extends cdk.Stack {
       value: this.sourceBucket.bucketName,
     });
     new cdk.CfnOutput(this, "ImageBuildSourceObjectKey", {
-      value: `source/tracepoint-${props.environmentName}-source.zip`,
+      value: sourceObjectKey,
     });
   }
 }

@@ -33,15 +33,34 @@ const awsNativeRequired = [
   "TRACEPOINT_S3_EXPECTED_OWNER",
 ];
 
-const forbiddenAwsNativeNames = [
+export const LEGACY_PROVIDER_EXPLICIT_NAMES = Object.freeze([
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SECRET_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
   "BREVO_API_KEY",
-];
-const forbiddenAwsNativeKey = /(^|_)(SUPABASE|VERCEL|BREVO)(_|$)/i;
-const forbiddenAwsNativeEndpoint = /(?:\.supabase\.co|\.vercel\.app|api\.brevo\.com)/i;
+]);
+export const LEGACY_PROVIDER_KEY_PATTERN = /(^|_)(SUPABASE|VERCEL|BREVO)(_|$)/i;
+export const LEGACY_PROVIDER_ENDPOINT_PATTERN = /(?:\.supabase\.co|\.vercel\.app|api\.brevo\.com)/i;
+
+export function classifyLegacyProviderRuntimeEntry(name, rawValue) {
+  const providers = new Set();
+  const reasons = [];
+  const keyMatch = String(name).match(LEGACY_PROVIDER_KEY_PATTERN);
+  if (LEGACY_PROVIDER_EXPLICIT_NAMES.includes(name) || keyMatch) {
+    if (keyMatch?.[2]) providers.add(keyMatch[2].toLowerCase());
+    else if (name.includes("BREVO")) providers.add("brevo");
+    else if (name.includes("VERCEL")) providers.add("vercel");
+    else providers.add("supabase");
+    reasons.push("legacy-provider-name");
+  }
+  const value = String(rawValue ?? "");
+  if (/\.supabase\.co/i.test(value)) providers.add("supabase");
+  if (/\.vercel\.app/i.test(value)) providers.add("vercel");
+  if (/api\.brevo\.com/i.test(value)) providers.add("brevo");
+  if (LEGACY_PROVIDER_ENDPOINT_PATTERN.test(value)) reasons.push("legacy-provider-endpoint");
+  return { providers: [...providers].sort(), reasons: [...new Set(reasons)].sort() };
+}
 
 const providerTuples = {
   bridge: {
@@ -154,10 +173,11 @@ export function validateTracePointRuntimeConfig(environment = process.env) {
     validatePostgres(environment, invalid);
     validateKeyring(environment, "TRACEPOINT_AUTH_STATE_KEYS", invalid);
     validateKeyring(environment, "TRACEPOINT_AUTH_REFRESH_KEYS", invalid);
-    for (const name of forbiddenAwsNativeNames) if (present(environment, name)) invalid.push(name);
+    for (const name of LEGACY_PROVIDER_EXPLICIT_NAMES) if (present(environment, name)) invalid.push(name);
     for (const [name, raw] of Object.entries(environment)) {
       if (!present(environment, name)) continue;
-      if (forbiddenAwsNativeKey.test(name) || forbiddenAwsNativeEndpoint.test(String(raw))) invalid.push(name);
+      const classification = classifyLegacyProviderRuntimeEntry(name, raw);
+      if (classification.reasons.length) invalid.push(name);
     }
     const region = environment.AWS_REGION ?? "";
     if (!new RegExp(`^${region.replaceAll("-", "\\-")}_[A-Za-z0-9]+$`).test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");

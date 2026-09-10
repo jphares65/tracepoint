@@ -81,13 +81,15 @@ const compute = new ComputeFoundationStack(app, `${environmentName}-compute`, {
 compute.addStackDependency(network);
 compute.addStackDependency(security);
 
-const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
+const imageBuildQualifier = providerMode === "aws-native" ? "aws-native" : undefined;
+const imageBuild = new ImageBuildStack(app, `${environmentName}${imageBuildQualifier ? `-${imageBuildQualifier}` : ""}-image-build`, {
   ...commonProps,
-  stackName: `${environmentName}-image-build`,
+  stackName: `${environmentName}${imageBuildQualifier ? `-${imageBuildQualifier}` : ""}-image-build`,
   environmentName: workloadEnvironment,
   repository: compute.repository,
   appSecrets: providerMode === "aws-native" ? compute.awsNativeAppSecrets : compute.appSecrets,
   providerMode,
+  resourceQualifier: imageBuildQualifier,
 });
 imageBuild.addStackDependency(compute);
 

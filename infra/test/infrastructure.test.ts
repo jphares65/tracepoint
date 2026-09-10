@@ -201,11 +201,15 @@ test("AWS-native image builder has no Supabase build secret or endpoint", () => 
   const { app, compute } = foundations();
   const imageBuild = new ImageBuildStack(app, "aws-native-image-build", {
     env, environmentName: "staging", repository: compute.repository,
-    appSecrets: compute.appSecrets, providerMode: "aws-native",
+    appSecrets: compute.appSecrets, providerMode: "aws-native", resourceQualifier: "aws-native",
   });
-  const serialized = JSON.stringify(Template.fromStack(imageBuild).toJSON());
+  const template = Template.fromStack(imageBuild);
+  const serialized = JSON.stringify(template.toJSON());
   assert.match(serialized, /TRACEPOINT_BUILD_PROVIDER_MODE/);
   assert.match(serialized, /aws-native/);
+  template.hasResourceProperties("AWS::CodeBuild::Project", { Name: "tracepoint-staging-aws-native-image-build" });
+  template.hasResourceProperties("AWS::S3::Bucket", { BucketName: "tracepoint-staging-aws-native-build-source-559054714699" });
+  assert.match(serialized, /source\/tracepoint-staging-aws-native-source\.zip/);
   assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY|supabase\.co/);
 });
 

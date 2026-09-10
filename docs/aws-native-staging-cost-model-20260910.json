@@ -1,0 +1,16 @@
+{
+  "reviewDate": "2026-09-10",
+  "account": "559054714699",
+  "region": "us-east-1",
+  "ceilingCents": 7500,
+  "baselineModelCents": 6867,
+  "incrementalComponentsCents": {
+    "rds_db_t4g_micro_730_hours": 1168,
+    "rds_gp3_20_gib": 230,
+    "two_database_secret_versions": 80,
+    "native_image_builder_allowance": 100
+  },
+  "projectedTotalCents": 8445,
+  "withinApprovedCeiling": false,
+  "basis": "Planning model only. PostgreSQL compute uses the previously verified us-east-1 price of 0.016 USD/hour; storage uses 0.115 USD/GiB-month. The persistent full-AWS staging target exceeds the approved ceiling, so deployment must fail closed until costs are reduced or the owner changes the cap."
+}

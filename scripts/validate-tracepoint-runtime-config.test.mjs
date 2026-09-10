@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateTracePointRuntimeConfig } from "./validate-tracepoint-runtime-config.mjs";
+import { classifyLegacyProviderRuntimeEntry, validateTracePointRuntimeConfig } from "./validate-tracepoint-runtime-config.mjs";
 
 const valid = {
   SUPABASE_SECRET_KEY: "present",
@@ -129,4 +129,18 @@ test("accepts only the complete provider-free AWS runtime tuple", () => {
   assert.doesNotThrow(() => validateTracePointRuntimeConfig(govCloud));
   assert.throws(() => validateTracePointRuntimeConfig({ ...govCloud, TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_AbCdEf123" }), /TRACEPOINT_COGNITO_USER_POOL_ID/);
   assert.throws(() => validateTracePointRuntimeConfig({ ...awsNative, AWS_REGION: "us-gov-west-1", TRACEPOINT_COGNITO_USER_POOL_ID: "us-gov-west-1_AbCdEf123" }), /AWS_REGION/);
+});
+
+test("classifies legacy runtime names and endpoints without returning raw values", () => {
+  const sentinel = "https://secret-project.supabase.co/private";
+  assert.deepEqual(classifyLegacyProviderRuntimeEntry("UNRELATED_ENDPOINT", sentinel), {
+    providers: ["supabase"],
+    reasons: ["legacy-provider-endpoint"],
+  });
+  assert.deepEqual(classifyLegacyProviderRuntimeEntry("BREVO_SMTP_PASSWORD", "secret"), {
+    providers: ["brevo"],
+    reasons: ["legacy-provider-name"],
+  });
+  assert.deepEqual(classifyLegacyProviderRuntimeEntry("TRACEPOINT_S3_BUCKET", "tracepoint-production-private-222222222222"), { providers: [], reasons: [] });
+  assert.doesNotMatch(JSON.stringify(classifyLegacyProviderRuntimeEntry("UNRELATED_ENDPOINT", sentinel)), /secret-project|private/);
 });
