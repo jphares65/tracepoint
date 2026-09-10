@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import pg from "pg";
-import { databaseMigrationPlan, pgDumpArguments, pgRestoreArguments, requireDatabaseMigrationExecution, SOURCE_MIGRATION_COUNT, TARGET_MIGRATION_COUNT, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
+import { databaseMigrationPlan, pgDumpArguments, pgRestoreArguments, reconcileMigrationLedgers, requireDatabaseMigrationExecution, SOURCE_MIGRATION_COUNT, TARGET_MIGRATION_COUNT, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
 
 const run = promisify(execFile);
 let phase = "configuration";
@@ -50,6 +50,10 @@ try {
   const targetMigrationCount = Number((await target.query("select count(*)::int as count from tracepoint_migrations.applied_migrations")).rows[0]?.count);
   assert.equal(sourceMigrationCount, SOURCE_MIGRATION_COUNT);
   assert.equal(targetMigrationCount, TARGET_MIGRATION_COUNT);
+  const migrationLedgers = reconcileMigrationLedgers(
+    (await source.query("select version::text from supabase_migrations.schema_migrations order by version::text")).rows,
+    (await target.query("select kind,name,sha256 from tracepoint_migrations.applied_migrations order by kind desc,name")).rows,
+  );
   phase = "fresh target gate";
   const targetTables = (await target.query("select tablename from pg_tables where schemaname='public' and tablename <> all($1::text[]) and tablename <> all($2::text[]) order by tablename", [[...TRANSIENT_TABLES], [...TARGET_SEEDED_TABLES]])).rows.map(row => row.tablename);
   for (const table of targetTables) {
@@ -86,7 +90,7 @@ try {
   const after = await fingerprints(target);
   assert.deepEqual(after, before);
   await source.query("commit");
-  console.log(JSON.stringify({ status: "PASSED", runId: plan.runId, commit: plan.commit, sourceProjectRef: plan.sourceProjectRef, sourceSnapshotLsn: sourcePosition.lsn, sourceSnapshotAt: sourcePosition.captured_at, sourceMigrationCount, targetMigrationCount, sourceManifestSha256: manifestHash(before), targetManifestSha256: manifestHash(after), tables: before.length, identityAnchors: anchors.length, passwordsMigrated: false, pendingEmailCount, transientTablesExcluded: TRANSIENT_TABLES.length, tlsVerified: true, reconciled: true }));
+  console.log(JSON.stringify({ status: "PASSED", runId: plan.runId, commit: plan.commit, sourceProjectRef: plan.sourceProjectRef, sourceSnapshotLsn: sourcePosition.lsn, sourceSnapshotAt: sourcePosition.captured_at, sourceMigrationCount, targetMigrationCount, ...migrationLedgers, sourceManifestSha256: manifestHash(before), targetManifestSha256: manifestHash(after), tables: before.length, identityAnchors: anchors.length, passwordsMigrated: false, pendingEmailCount, transientTablesExcluded: TRANSIENT_TABLES.length, tlsVerified: true, reconciled: true }));
 } catch (error) {
   await source.query("rollback").catch(() => undefined);
   await target.query("rollback").catch(() => undefined);

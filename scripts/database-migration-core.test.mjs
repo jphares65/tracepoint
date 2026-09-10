@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { databaseMigrationPlan, pgDumpArguments, requireDatabaseMigrationExecution, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
+import { databaseMigrationPlan, pgDumpArguments, reconcileMigrationLedgers, requireDatabaseMigrationExecution, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
 
 const env = {
   TRACEPOINT_MIGRATION_RUN_ID: "10000000-0000-4000-8000-000000000001", TRACEPOINT_SOURCE_COMMIT: "a".repeat(40),
@@ -28,4 +28,17 @@ test("requires all execution acknowledgements and a run-specific approval", () =
 test("rejects a non-RDS target", () => {
   assert.throws(() => databaseMigrationPlan({ ...env, TARGET_PGHOST: "db.example.test" }));
   assert.throws(() => databaseMigrationPlan({ ...env, TRACEPOINT_SOURCE_PROJECT_REF: "wrongwrongwrongwrongwr" }));
+});
+
+test("binds the exact source and target migration ledgers", () => {
+  const source = Array.from({ length: 75 }, (_, index) => ({ version: `202609${String(index + 1).padStart(8, "0")}` }));
+  const target = [
+    ...source.map((row, index) => ({ kind: "source", name: `${row.version}_source_${index}.sql`, sha256: "a".repeat(64) })),
+    ...Array.from({ length: 16 }, (_, index) => ({ kind: "aws", name: `202610${String(index + 1).padStart(8, "0")}_aws_${index}.sql`, sha256: "b".repeat(64) })),
+  ].sort((left, right) => left.kind === right.kind ? left.name.localeCompare(right.name) : right.kind.localeCompare(left.kind));
+  const evidence = reconcileMigrationLedgers(source, target);
+  assert.match(evidence.sourceMigrationLedgerSha256, /^[0-9a-f]{64}$/);
+  assert.match(evidence.migrationLedgerSha256, /^[0-9a-f]{64}$/);
+  assert.throws(() => reconcileMigrationLedgers(source, target.map((row, index) => index === 0 ? { ...row, sha256: "c" } : row)));
+  assert.throws(() => reconcileMigrationLedgers(source.slice().reverse(), target));
 });

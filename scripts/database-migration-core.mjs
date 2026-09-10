@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 export const TRANSIENT_TABLES = Object.freeze([
   "authentication_flow_transactions", "authentication_access_sessions", "authentication_refresh_sessions",
@@ -10,6 +11,21 @@ export const TARGET_MIGRATION_COUNT = 91;
 
 const host = /^[a-z0-9][a-z0-9.-]+$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sha256 = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+export function reconcileMigrationLedgers(sourceRows, targetRows) {
+  const source = sourceRows.map(row => String(row.version));
+  assert.equal(source.length, SOURCE_MIGRATION_COUNT);
+  assert.equal(new Set(source).size, source.length);
+  assert.ok(source.every(version => /^\d{14}$/.test(version)));
+  const target = targetRows.map(row => ({ kind: String(row.kind), name: String(row.name), sha256: String(row.sha256) }));
+  assert.equal(target.length, TARGET_MIGRATION_COUNT);
+  assert.ok(target.every(row => ["source", "aws"].includes(row.kind) && /^\d{14}_.+\.sql$/.test(row.name) && /^[0-9a-f]{64}$/.test(row.sha256)));
+  const targetSource = target.filter(row => row.kind === "source").map(row => row.name.slice(0, 14));
+  assert.deepEqual(targetSource, source);
+  assert.equal(target.filter(row => row.kind === "aws").length, TARGET_MIGRATION_COUNT - SOURCE_MIGRATION_COUNT);
+  return { sourceMigrationLedgerSha256: sha256(source), migrationLedgerSha256: sha256(target) };
+}
 
 export function validateDatabaseMigrationPlan(plan) {
   assert.equal(plan.format, 1);
