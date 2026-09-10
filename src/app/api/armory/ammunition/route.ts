@@ -8,6 +8,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy route. */
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -23,7 +24,7 @@ function parseDecimal(value: unknown) {
 }
 
 async function loadLedger(admin: any, departmentId: string) {
-  const [lotsResult, transactionsResult, usersResult] = await Promise.all([
+  const [lotsResult, transactionsResult] = await Promise.all([
     admin
       .from("ammunition_lots")
       .select("*")
@@ -40,20 +41,22 @@ async function loadLedger(admin: any, departmentId: string) {
       .eq("department_id", departmentId)
       .order("created_at", { ascending: false })
       .limit(100),
-    admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
 
   if (lotsResult.error) throw new Error(lotsResult.error.message);
   if (transactionsResult.error)
     throw new Error(transactionsResult.error.message);
-  if (usersResult.error) throw new Error(usersResult.error.message);
+  const actorIds = [...new Set((transactionsResult.data ?? []).map((transaction: any) => transaction.actor_user_id).filter(Boolean))];
+  const profilesResult = actorIds.length
+    ? await admin.from("profiles").select("id,full_name,email").in("id", actorIds)
+    : { data: [], error: null };
+  if (profilesResult.error) throw new Error(profilesResult.error.message);
 
   const names = new Map(
-    (usersResult.data?.users ?? []).map((user: any) => [
-      user.id,
-      user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.email ||
+    (profilesResult.data ?? []).map((profile: any) => [
+      profile.id,
+      profile.full_name ||
+        profile.email ||
         "Unknown User",
     ]),
   );

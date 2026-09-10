@@ -18,6 +18,8 @@ import {
 } from "@/lib/tracepoint/qualification-readiness";
 import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
 import { createNotificationEventWriter } from "@/lib/notifications/event-writer";
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- This provider-neutral aggregation route uses structural result contracts across modules. */
 import {
   buildNotificationEventReconciliationRow,
   notificationEventShouldResolve,
@@ -660,10 +662,6 @@ function collectEquipmentReadiness(
     ? payload.rows
     : [];
 
-  const departmentScope =
-    text(payload?.scope) === "department" &&
-    context.canViewDepartmentReadiness;
-
   const alerts: GeneratedAlert[] = [];
 
   for (const row of rows) {
@@ -817,16 +815,19 @@ async function getNotificationRecipientEmail(context: any) {
     );
   }
 
-  const { data, error } =
-    await context.admin.auth.admin.getUserById(userId);
+  const { data, error } = await context.admin
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
 
   if (error) {
     throw new Error(
-      `Notification recipient lookup failed: ${error.message}`,
+      "Notification recipient lookup failed.",
     );
   }
 
-  const recipientEmail = text(data?.user?.email);
+  const recipientEmail = text(data?.email);
 
   if (!recipientEmail) {
     throw new Error(

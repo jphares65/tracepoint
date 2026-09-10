@@ -4,10 +4,11 @@ import {
   getPersonalRifleAccess,
   getPersonalRifleDisplayName,
   getPersonalRifleRequestContext,
-  type SupabaseAuthUser,
+  type PersonalRifleUserLabel,
 } from "@/lib/tracepoint/personal-rifle-server";
 import { createPersonalRifleReadRepository } from "@/lib/personal-rifles/read-repository";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy route. */
 export async function GET() {
   const context = await getPersonalRifleRequestContext();
 
@@ -21,16 +22,19 @@ export async function GET() {
   try {
     const { admin, departmentId, user } = context;
     const repository = createPersonalRifleReadRepository(admin, departmentId, user.id);
-    const [access, riflesResult, usersResult] = await Promise.all([
+    const [access, riflesResult] = await Promise.all([
       getPersonalRifleAccess(admin, departmentId, user.id),
       repository.listInbox(departmentId, user.id),
-      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
 
+    const userIds = [...new Set(riflesResult.map((rifle: any) => rifle.owner_user_id).filter(Boolean))];
+    const usersResult = userIds.length
+      ? await admin.from("profiles").select("id,full_name,email").in("id", userIds)
+      : { data: [], error: null };
     if (usersResult.error) throw new Error(usersResult.error.message);
 
-    const usersById = new Map<string, SupabaseAuthUser>(
-      ((usersResult.data?.users ?? []) as SupabaseAuthUser[]).map((item) => [
+    const usersById = new Map<string, PersonalRifleUserLabel>(
+      ((usersResult.data ?? []) as PersonalRifleUserLabel[]).map((item) => [
         item.id,
         item,
       ]),

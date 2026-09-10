@@ -1,13 +1,11 @@
 export type ArmoryRow = Record<string, unknown>;
 export type ArmoryResult = { data: ArmoryRow[] | null; error: { message: string } | null };
-export type ArmoryUsersResult = { data: { users: ArmoryRow[] } | null; error: { message: string } | null };
 
 export interface ArmoryReadDataSource {
   listActiveAssignments(departmentId: string, userId?: string): PromiseLike<ArmoryResult>;
   listFirearms(departmentId: string, input: { includeArchived: boolean; firearmIds?: string[] }): PromiseLike<ArmoryResult>;
   listActiveMembers(departmentId: string): PromiseLike<ArmoryResult>;
   listProfiles(userIds: string[]): PromiseLike<ArmoryResult>;
-  listAuthUsers(): PromiseLike<ArmoryUsersResult>;
   listInspections(departmentId: string): PromiseLike<ArmoryResult>;
 }
 
@@ -31,9 +29,6 @@ function rows(result: ArmoryResult) {
   return result.data ?? [];
 }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
-function metadata(row: ArmoryRow | undefined) {
-  return row?.user_metadata && typeof row.user_metadata === "object" ? row.user_metadata as ArmoryRow : {};
-}
 
 export class TenantBoundArmoryReadRepository {
   private readonly source: ArmoryReadDataSource;
@@ -57,13 +52,10 @@ export class TenantBoundArmoryReadRepository {
     const memberships = rows(await this.source.listActiveMembers(input.departmentId));
     const userIds = memberships.map((row) => text(row.user_id)).filter(Boolean);
     const profiles = userIds.length ? rows(await this.source.listProfiles(userIds)) : [];
-    const usersResult = await this.source.listAuthUsers();
-    if (usersResult.error) throw new ArmoryReadRepositoryError(usersResult.error.message);
     const profilesById = new Map(profiles.map((row) => [text(row.id), row]));
-    const usersById = new Map((usersResult.data?.users ?? []).map((row) => [text(row.id), row]));
     const members = memberships.map((membership) => {
-      const id = text(membership.user_id); const profile = profilesById.get(id); const user = usersById.get(id); const meta = metadata(user);
-      return { user_id: id, full_name: text(profile?.full_name) || text(meta.full_name) || text(meta.name) || text(meta.display_name) || text(profile?.email) || text(user?.email) || "Unknown User", email: text(profile?.email) || text(user?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null };
+      const id = text(membership.user_id); const profile = profilesById.get(id);
+      return { user_id: id, full_name: text(profile?.full_name) || text(profile?.email) || "Unknown User", email: text(profile?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null };
     }).sort((left, right) => left.full_name.localeCompare(right.full_name));
     const membersById = new Map(members.map((member) => [member.user_id, member]));
     const assignmentsByFirearmId = new Map(assignments.map((assignment) => [text(assignment.firearm_id), { ...assignment, assigned_to_name: membersById.get(text(assignment.assigned_to_user_id))?.full_name ?? "Unknown User" }]));

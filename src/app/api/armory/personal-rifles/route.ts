@@ -9,10 +9,11 @@ import {
   getPersonalRifleRequestContext,
   getPersonalRifleRules,
   recordPersonalRifleHistory,
-  type SupabaseAuthUser,
+  type PersonalRifleUserLabel,
 } from "@/lib/tracepoint/personal-rifle-server";
 import { createPersonalRifleReadRepository } from "@/lib/personal-rifles/read-repository";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy route. */
 function serializeError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -38,15 +39,18 @@ export async function GET() {
     const rifles = await repository.listRifles(departmentId, user.id, access.canViewAll);
 
     const rifleIds = (rifles ?? []).map((rifle: any) => rifle.id);
-    const [usersResult, history] = await Promise.all([
-      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      repository.listHistory(departmentId, user.id, rifleIds),
-    ]);
-
+    const history = await repository.listHistory(departmentId, user.id, rifleIds);
+    const userIds = [...new Set([
+      ...(rifles ?? []).map((rifle: any) => rifle.owner_user_id),
+      ...history.map((item: any) => item.actor_user_id),
+    ].filter(Boolean))];
+    const usersResult = userIds.length
+      ? await admin.from("profiles").select("id,full_name,email").in("id", userIds)
+      : { data: [], error: null };
     if (usersResult.error) throw new Error(usersResult.error.message);
 
-    const usersById = new Map<string, SupabaseAuthUser>(
-      ((usersResult.data?.users ?? []) as SupabaseAuthUser[]).map((item) => [
+    const usersById = new Map<string, PersonalRifleUserLabel>(
+      ((usersResult.data ?? []) as PersonalRifleUserLabel[]).map((item) => [
         item.id,
         item,
       ]),

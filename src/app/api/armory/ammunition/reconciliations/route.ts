@@ -7,6 +7,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy route. */
 type ReconciliationCycleRules = {
   spring_cycle_start: string;
   spring_cycle_end: string;
@@ -111,20 +112,17 @@ async function reconciliationCycleRules(
   };
 }
 
-async function userNames(admin: any) {
-  const { data, error } = await admin.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
+async function userNames(admin: any, userIds: string[]) {
+  if (!userIds.length) return new Map<string, string>();
+  const { data, error } = await admin.from("profiles").select("id,full_name,email").in("id", userIds);
 
   if (error) throw new Error(error.message);
 
   return new Map(
-    (data?.users ?? []).map((user: any) => [
-      user.id,
-      user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.email ||
+    (data ?? []).map((profile: any) => [
+      profile.id,
+      profile.full_name ||
+        profile.email ||
         "Unknown User",
     ]),
   );
@@ -169,7 +167,7 @@ async function loadReconciliation(
     itemRows = data ?? [];
   }
 
-  const names = await userNames(admin);
+  const names = await userNames(admin, [...new Set((historyRows ?? []).flatMap((row: any) => [row.created_by, row.submitted_by, row.certified_by]).filter(Boolean))] as string[]);
 
   const mapReconciliation = (row: any) => ({
     id: row.id,

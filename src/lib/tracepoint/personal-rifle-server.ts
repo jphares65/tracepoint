@@ -1,6 +1,7 @@
 import { resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Provider-neutral database clients use structural query contracts in this legacy module. */
 export type PersonalRifleRules = {
   allow_personally_owned_rifles: boolean;
   require_personal_rifle_armorer_inspection: boolean;
@@ -20,9 +21,10 @@ export type PersonalRifleAccess = {
   canConfigure: boolean;
 };
 
-export type SupabaseAuthUser = {
+export type PersonalRifleUserLabel = {
   id: string;
   email?: string | null;
+  full_name?: string | null;
   user_metadata?: {
     full_name?: string;
     name?: string;
@@ -46,10 +48,11 @@ export function cleanPersonalRifleText(value: unknown) {
 }
 
 export function getPersonalRifleDisplayName(
-  user?: SupabaseAuthUser | null,
+  user?: PersonalRifleUserLabel | null,
 ) {
   const metadata = user?.user_metadata ?? {};
   return (
+    user?.full_name ||
     metadata.full_name ||
     metadata.name ||
     metadata.display_name ||
