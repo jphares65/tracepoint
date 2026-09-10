@@ -60,7 +60,8 @@ function validateEvidence(input) {
   const ecsPrefix = `arn:aws:ecs:us-east-1:${input.account}:task-definition/`;
   if (!input.awsTaskDefinitionArn?.startsWith(ecsPrefix) || !/:\d+$/.test(input.awsTaskDefinitionArn)) fail('AWS-native task definition ARN is invalid');
   if (!input.bridgeTaskDefinitionArn?.startsWith(ecsPrefix) || !/:\d+$/.test(input.bridgeTaskDefinitionArn)) fail('Bridge task definition ARN is invalid');
-  if (!/^[a-zA-Z0-9_-]{1,255}$/.test(input.service?.cluster ?? '') || !/^[a-zA-Z0-9_-]{1,255}$/.test(input.service?.name ?? '')) fail('ECS service coordinates are invalid');
+  requireExactKeys(input.service, ['cluster', 'containerName', 'name'], 'ECS service');
+  if (!/^[a-zA-Z0-9_-]{1,255}$/.test(input.service.cluster ?? '') || !/^[a-zA-Z0-9_-]{1,255}$/.test(input.service.name ?? '') || !/^[a-zA-Z0-9_-]{1,255}$/.test(input.service.containerName ?? '')) fail('ECS service coordinates are invalid');
 
   const secretPrefix = `arn:aws:secretsmanager:us-east-1:${input.account}:secret:`;
   for (const [label, secret] of [['AWS application', input.awsApplicationSecret], ['bridge application', input.bridgeApplicationSecret], ['database', input.databaseSecret]]) {

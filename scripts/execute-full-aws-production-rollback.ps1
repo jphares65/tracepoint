@@ -25,13 +25,17 @@ $serviceBefore = & aws.exe ecs describe-services --region $manifest.evidence.reg
 if ($LASTEXITCODE -ne 0 -or $serviceBefore.services.Count -ne 1 -or $serviceBefore.failures.Count -ne 0 -or $serviceBefore.services[0].taskDefinition -cne $manifest.evidence.awsTaskDefinitionArn) { throw 'The service is not running the reviewed AWS-native task definition.' }
 $nativeTask = (& aws.exe ecs describe-task-definition --region $manifest.evidence.region --task-definition $manifest.evidence.awsTaskDefinitionArn --output json | ConvertFrom-Json).taskDefinition
 if ($LASTEXITCODE -ne 0 -or $nativeTask.status -cne 'ACTIVE' -or $nativeTask.taskDefinitionArn -cne $manifest.evidence.awsTaskDefinitionArn) { throw 'The immutable AWS-native task definition could not be verified.' }
-$nativeContainer = @($nativeTask.containerDefinitions) | Where-Object { $_.name -eq 'app' } | Select-Object -First 1
+$nativeContainers = @($nativeTask.containerDefinitions) | Where-Object { $_.name -eq $manifest.evidence.service.containerName }
+$nativeContainer = $nativeContainers | Select-Object -First 1
+if ($nativeContainers.Count -ne 1) { throw 'The AWS-native task must contain exactly one reviewed application container.' }
 if (-not $nativeContainer -or $nativeContainer.image -notmatch '^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/(?<nativeRepository>[a-z0-9._/-]+):(?<nativeTag>[a-z0-9._-]+)$') { throw 'The AWS-native task image reference is invalid.' }
 $nativeDigest = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.nativeRepository --image-ids "imageTag=$($Matches.nativeTag)" --query 'imageDetails[0].imageDigest' --output text
 if ($LASTEXITCODE -ne 0 -or $nativeDigest -cne $manifest.evidence.awsImageDigest) { throw 'The active AWS-native task image does not match the immutable manifest.' }
 $task = (& aws.exe ecs describe-task-definition --region $manifest.evidence.region --task-definition $manifest.evidence.bridgeTaskDefinitionArn --output json | ConvertFrom-Json).taskDefinition
 if ($LASTEXITCODE -ne 0 -or $task.status -cne 'ACTIVE' -or $task.taskDefinitionArn -cne $manifest.evidence.bridgeTaskDefinitionArn) { throw 'The immutable bridge task definition could not be verified.' }
-$container = @($task.containerDefinitions) | Where-Object { $_.name -eq 'app' } | Select-Object -First 1
+$containers = @($task.containerDefinitions) | Where-Object { $_.name -eq $manifest.evidence.service.containerName }
+$container = $containers | Select-Object -First 1
+if ($containers.Count -ne 1) { throw 'The bridge task must contain exactly one reviewed application container.' }
 if (-not $container -or $container.image -notmatch '^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/(?<repository>[a-z0-9._/-]+):(?<tag>[a-z0-9._-]+)$') { throw 'The bridge task image reference is invalid.' }
 $digest = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.repository --image-ids "imageTag=$($Matches.tag)" --query 'imageDetails[0].imageDigest' --output text
 if ($LASTEXITCODE -ne 0 -or $digest -cne $manifest.evidence.bridgeImageDigest) { throw 'The bridge task image does not match the immutable manifest.' }

@@ -18,7 +18,7 @@ const evidence = {
   databaseSecret: { arn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/database-abc123', versionId: 'd'.repeat(32), versionStage: 'AWSCURRENT' },
   dnsSnapshotSha256: hash('e'), environment: 'production', gates, hostname: 'tracepointhq.com', phase: 'prepared', region: 'us-east-1',
   rdsRecoveryPointArn: 'arn:aws:rds:us-east-1:222222222222:snapshot:tracepoint-pre-cutover',
-  service: { cluster: 'tracepoint-production', name: 'tracepoint-production' }, sourceManifestSha256: hash('f'),
+  service: { cluster: 'tracepoint-production', containerName: 'tracepoint', name: 'tracepoint-production' }, sourceManifestSha256: hash('f'),
   storageManifestSha256: hash('1'), targetManifestSha256: hash('2'),
   awsApplicationSecret: { arn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/application/aws-native-abc123', versionId: 'a'.repeat(32), versionStage: 'AWSCURRENT' },
   bridgeApplicationSecret: { arn: 'arn:aws:secretsmanager:us-east-1:222222222222:secret:tracepoint/application-abc123', versionId: 'b'.repeat(32), versionStage: 'AWSCURRENT' },
