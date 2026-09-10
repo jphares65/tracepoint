@@ -69,6 +69,25 @@ test("classic and AI-assisted importers remain separate, additive choices", asyn
   assert.doesNotMatch(assisted, /\/api\/settings\/onboarding/);
 });
 
+test("classic personnel import selects Cognito before loading legacy Supabase auth", async () => {
+  const source = await readFile(
+    "src/app/api/settings/onboarding/personnel/route.ts",
+    "utf8",
+  );
+  const providerBranch = source.indexOf(
+    'process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native"',
+  );
+  const legacyClient = source.indexOf(
+    "const { createClient: createServerClient }",
+  );
+
+  assert.ok(providerBranch >= 0);
+  assert.ok(legacyClient > providerBranch);
+  assert.match(source, /resolveServerAccess\(\)/);
+  assert.match(source, /writeCognitoPersonnel/);
+  assert.doesNotMatch(source, /^import .*@\/lib\/supabase\/(?:admin|server)/m);
+});
+
 test("classic and AI-assisted pages share the department-administration route gate", () => {
   assert.deepEqual(getRoutePermissionRequirement("/settings/import-export"), { anyOf: ["administer_department"] });
   assert.deepEqual(getRoutePermissionRequirement("/settings/import-export/ai-importer"), { anyOf: ["administer_department"] });
