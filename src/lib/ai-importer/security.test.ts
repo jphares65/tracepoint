@@ -143,7 +143,8 @@ test("single-file execution revalidates override-bearing payloads and audit stor
   assert.doesNotMatch(execution, /replacement_value:\s*override\.replacementValue/);
 });
 
-test("approval signing supports the preferred and legacy Supabase server key names", async () => {
+test("approval signing uses only the dedicated provider-neutral server secret", async () => {
   const fingerprint = await readFile("src/lib/ai-importer/fingerprint.ts", "utf8");
-  assert.match(fingerprint, /TRACEPOINT_IMPORT_APPROVAL_SECRET \|\| process\.env\.SUPABASE_SECRET_KEY \|\| process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(fingerprint, /process\.env\.TRACEPOINT_IMPORT_APPROVAL_SECRET/);
+  assert.doesNotMatch(fingerprint, /SUPABASE_(?:SECRET|SERVICE_ROLE)_KEY/);
 });

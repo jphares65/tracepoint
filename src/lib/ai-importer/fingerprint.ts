@@ -20,7 +20,7 @@ export function previewDigest(rows: PreviewRow[], summary: PreviewSummary) {
 }
 
 function secret() {
-  const configured = process.env.TRACEPOINT_IMPORT_APPROVAL_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const configured = process.env.TRACEPOINT_IMPORT_APPROVAL_SECRET;
   if (configured) return configured;
   if (process.env.NODE_ENV === "production") throw new Error("Import approval signing is not configured.");
   return "tracepoint-local-development-approval-key";

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createActiveDepartmentReadRepository } from "@/lib/active-department/read-repository";
 import type { ActiveDepartmentClient } from "@/lib/active-department/read-repository-supabase";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
@@ -15,6 +13,7 @@ const membershipPayload=(row:MembershipRow)=>({departmentId:String(row.departmen
 
 async function getAuthenticatedUser() {
   if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") return resolveAuthenticatedPrincipal();
+  const { createClient: createServerClient } = await import("@/lib/supabase/server");
   const server = await createServerClient();
 
   const {
@@ -45,6 +44,7 @@ export async function GET() {
       return NextResponse.json({memberships:(memberships as MembershipRow[]).map(membershipPayload)},{headers:{"Cache-Control":"no-store"}});
     } catch { return NextResponse.json({error:"Department memberships could not be loaded."},{status:500}); }
   }
+  const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const userId = "id" in user ? user.id : user.userId;
 
@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set("tracepoint_department_id",departmentId,{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",path:"/",maxAge:60*60*24*30});
     return response;
   }
+  const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
   const userId = "id" in user ? user.id : user.userId;
 
