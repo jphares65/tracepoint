@@ -1,0 +1,21 @@
+version: 0.2
+env:
+  shell: bash
+phases:
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+      - test "$IMAGE_TAG" = "${SOURCE_COMMIT}-postgres-migration"
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
+  build:
+    on-failure: ABORT
+    commands:
+      - docker build --pull -f Dockerfile.postgres-migration --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=temporary-database-migration -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
+      - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/database-migration-core.test.mjs
+      - docker run --rm --entrypoint pg_dump "$ECR_REPOSITORY_URI:$IMAGE_TAG" --version | grep -E 'PostgreSQL\) 18\.'
+      - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
+

@@ -1,0 +1,8 @@
+*
+!package.json
+!package-lock.json
+!scripts
+!scripts/database-migration-core.mjs
+!scripts/database-migration-core.test.mjs
+!scripts/migrate-aws-postgres-data.mjs
+
