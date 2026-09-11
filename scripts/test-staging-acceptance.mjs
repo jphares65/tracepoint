@@ -10,6 +10,7 @@ const results = [];
 let acceptanceStep;
 let authenticationResponse;
 let authenticationPage;
+let acceptanceDetail;
 const totpCounters=new Map();
 function currentTotp(secret) {
   const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';
@@ -59,9 +60,11 @@ async function signIn(page,email,password,totpSecret){
 }
 async function check(name, work) {
   acceptanceStep=undefined;
+  acceptanceDetail=undefined;
   try { await work(); results.push({ name, status: 'pass' }); }
-  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined, step:acceptanceStep } : { code: error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : /strict mode violation/.test(error?.message ?? '') ? 'LOCATOR_AMBIGUOUS' : 'REQUEST_OR_BROWSER_FAILURE', step: acceptanceStep } }); }
+  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined, step:acceptanceStep,detail:acceptanceDetail } : { code: error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : /strict mode violation/.test(error?.message ?? '') ? 'LOCATOR_AMBIGUOUS' : 'REQUEST_OR_BROWSER_FAILURE', step: acceptanceStep,detail:acceptanceDetail } }); }
 }
+function safeAcceptanceDetail(value){const text=typeof value==='string'?value:'';return /^(Import reference data|Migration workspace|The validated migration plan|PostgreSQL data operation|Fleet V1|The audit record|Off-duty request|This TracePoint module)/.test(text)?text.slice(0,160):undefined;}
 for (const path of ['/login', '/api/health', '/auth/confirm', '/auth/callback', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
   const r = await fetch(baseURL + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
   if (['/login','/api/health','/landing'].includes(path)) assert.equal(r.status, 200);
@@ -124,7 +127,7 @@ else try {
       const created=await page.evaluate(async({run,unit})=>{const form=new FormData();form.append('files',new File([`unit number,year,make,model,status,comments\n${unit},2026,Synthetic,Importer,Available,acceptance ${run}\n`],`aws-native-${run}.csv`,{type:'text/csv'}));const response=await fetch('/api/settings/ai-importer/workspaces',{method:'POST',body:form});return {status:response.status,body:await response.json()};},{run,unit});
       assert.equal(created.status,201);workspaceId=created.body.workspace.id;assert.match(workspaceId,/^[0-9a-f-]{36}$/i);
       acceptanceStep='importer-preview';
-      const preview=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/preview`);const plan=await preview.json();assert.equal(preview.status(),200);assert.ok(plan.readyDomains.includes('vehicles'));
+      const preview=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/preview`);const plan=await preview.json();acceptanceDetail=safeAcceptanceDetail(plan.error);assert.equal(preview.status(),200);assert.ok(plan.readyDomains.includes('vehicles'));
       acceptanceStep='importer-execute';
       const executed=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/execute`,{data:{domains:['vehicles'],approval:{domain:true,mappings:true,validation:true,finalAction:true},approvalToken:plan.approvalToken,workspaceDigest:plan.workspaceDigest}});const outcome=await executed.json();assert.equal(executed.status(),200);assert.equal(outcome.results.vehicles.created,1);
       acceptanceStep='importer-persistence';
