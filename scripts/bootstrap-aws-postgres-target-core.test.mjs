@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeTransactionalSql, parseBootstrapConfiguration } from "./bootstrap-aws-postgres-target-core.mjs";
+import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
 
 const secret = (overrides = {}) => JSON.stringify({host:"tracepoint.abc.us-east-1.rds.amazonaws.com",port:5432,username:"tracepoint_migrator",password:"m".repeat(40),dbname:"tracepoint",...overrides});
 test("bootstrap configuration binds distinct secrets to one regional RDS target",()=>{
@@ -17,4 +18,9 @@ test("migration normalization preserves SQL while enforcing one outer transactio
  assert.equal(normalizeTransactionalSql("begin;\ninsert into t values (1);\ncommit;\nselect * from t;","verify.sql"),"\ninsert into t values (1);\n\nselect * from t;");
  assert.throws(()=>normalizeTransactionalSql("begin; begin; select 1; commit; commit;","nested.sql"),/nested transaction/);
  assert.throws(()=>normalizeTransactionalSql("begin; select 1; rollback;","rollback.sql"),/nested transaction/);
+});
+test("compatibility prerequisites are safe to resume after a partial bootstrap",()=>{
+ assert.equal((supabasePrerequisites.match(/exception when duplicate_object/g)??[]).length,3);
+ assert.equal((supabasePrerequisites.match(/create table if not exists/g)??[]).length,3);
+ assert.match(supabasePrerequisites,/create or replace function auth\.uid\(\)/);
 });
