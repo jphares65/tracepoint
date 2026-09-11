@@ -33,6 +33,7 @@ test("native staging fixture reads bootstrap evidence from the application log g
   assert.match(fixture, /\$ErrorActionPreference = 'Continue'[\s\S]+\$exitCode = \$LASTEXITCODE/);
   assert.match(fixture, /'file:\/\/' \+ \$overridesPath\.Replace\('\\', '\/'\)/);
   assert.match(fixture, /Remove-Item -LiteralPath \$overridesPath -Force/);
+  assert.match(fixture, /\$evidenceDeadline = \[DateTime\]::UtcNow\.AddMinutes\(2\)/);
 });
 
 test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {
