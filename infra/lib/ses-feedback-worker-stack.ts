@@ -41,7 +41,12 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
     const endpointSecurityGroup = new ec2.SecurityGroup(this, "EndpointSecurity", {
       vpc: props.vpc, allowAllOutbound: false, description: "Private AWS API endpoints accept only the SES feedback worker",
     });
-    endpointSecurityGroup.addIngressRule(workerSecurityGroup, ec2.Port.tcp(443), "Worker HTTPS to AWS APIs");
+    new ec2.CfnSecurityGroupIngress(this, "EndpointFromFeedbackWorker", {
+      groupId: endpointSecurityGroup.securityGroupId,
+      sourceSecurityGroupId: workerSecurityGroup.securityGroupId,
+      ipProtocol: "tcp", fromPort: 443, toPort: 443,
+      description: "Worker HTTPS to AWS APIs",
+    });
     workerSecurityGroup.addEgressRule(endpointSecurityGroup, ec2.Port.tcp(443), "AWS API PrivateLink only");
     workerSecurityGroup.addEgressRule(props.databaseSecurityGroup, ec2.Port.tcp(5432), "PostgreSQL feedback persistence only");
     new ec2.CfnSecurityGroupIngress(this, "DatabaseFromFeedbackWorker", {
