@@ -3,7 +3,7 @@ param(
     [switch]$ValidateArchiveOnly,
     [switch]$Wait,
     [switch]$BuildPostgresTooling,
-    [ValidatePattern('^codex/[a-z0-9][a-z0-9._/-]{2,159}$')]
+    [ValidatePattern('^(main|codex/[a-z0-9][a-z0-9._/-]{2,159})$')]
     [string]$AuthorizedBranch = 'codex/aws-main-integration-final-20260908'
 )
 
@@ -37,6 +37,7 @@ $archiveIncludes = @(
     'scripts/database-migration-core.mjs',
     'scripts/database-migration-core.test.mjs',
     'scripts/migrate-aws-postgres-data.mjs',
+    'scripts/manage-aws-native-staging-fixture.mjs',
     'scripts/postgres-bootstrap-prerequisites.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'

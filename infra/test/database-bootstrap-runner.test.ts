@@ -24,14 +24,15 @@ test("database bootstrap runner is immutable, bounded, secret-injected and has n
   const stack = new DatabaseBootstrapRunnerStack(app, "bootstrap", {
     env, environmentName: "staging", vpc: network.vpc, databaseSecurityGroup: network.databaseSecurityGroup,
     repository: compute.repository, logGroup: compute.appLogGroup, migratorSecret: database.database.secret!,
-    runtimeSecret: database.runtimeSecret, sourceCommit: "a".repeat(40),
+    runtimeSecret: database.runtimeSecret, sourceCommit: "a".repeat(40), imageDigest: `sha256:${"b".repeat(64)}`,
   });
   const template = Template.fromStack(stack);
   template.hasResourceProperties("AWS::ECS::TaskDefinition", {
     Cpu: "512", Memory: "1024", EphemeralStorage: { SizeInGiB: 21 },
     ContainerDefinitions: Match.arrayWith([Match.objectLike({
       Name: "bootstrap", ReadonlyRootFilesystem: true, User: "node",
-      EntryPoint: ["node", "scripts/bootstrap-aws-postgres-target.mjs"],
+      EntryPoint: ["node"],
+      Command: ["scripts/bootstrap-aws-postgres-target.mjs"],
       Image: Match.anyValue(),
       Secrets: Match.arrayWith([
         Match.objectLike({ Name: "TRACEPOINT_MIGRATOR_SECRET_JSON" }),
@@ -40,7 +41,8 @@ test("database bootstrap runner is immutable, bounded, secret-injected and has n
     })]),
   });
   const serialized = JSON.stringify(template.toJSON());
-  assert.match(serialized, new RegExp(`${"a".repeat(40)}-postgres-migration`));
+  assert.match(serialized, /AppRepository/);
+  assert.match(serialized, new RegExp(`@sha256:${"b".repeat(64)}`));
   assert.doesNotMatch(serialized, /SUPABASE|BREVO|VERCEL/i);
   template.resourceCountIs("AWS::EC2::SecurityGroupIngress", 1);
   const taskPolicies = serialized.match(/TaskRole/g) ?? [];

@@ -3,10 +3,39 @@ import {exerciseRangeDocuments} from './staging-range-document-scenarios.mjs';
 import {runBoundedProbe} from './staging-resilience-core.mjs';
 ﻿import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
 const baseURL = 'https://staging.tracepointhq.com';
-const routes = ['/', '/landing', '/equipment', '/range-days', '/firearms', '/off-duty-firearms', '/qualifications', '/training', '/training/certifications', '/fleet-management', '/notifications', '/settings/import-export'];
+const routes = ['/', '/landing', '/equipment', '/range-days', '/firearms', '/off-duty-firearms', '/qualifications', '/training', '/training/certifications', '/fleet-management', '/notifications', '/settings/import-export', '/settings/import-export/ai-importer'];
 const results = [];
 let acceptanceStep;
+function currentTotp(secret) {
+  const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';
+  for(const char of secret.replace(/=+$/,'')){const value=alphabet.indexOf(char);assert.ok(value>=0);bits+=value.toString(2).padStart(5,'0');}
+  const key=Buffer.from((bits.match(/.{8}/g)??[]).map(value=>parseInt(value,2)));const counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)));
+  const digest=createHmac('sha1',key).update(counter).digest(),offset=digest[19]&15;
+  return ((digest.readUInt32BE(offset)&0x7fffffff)%1000000).toString().padStart(6,'0');
+}
+async function signIn(page,email,password,totpSecret){
+  await page.goto('/login');
+  const native=page.getByRole('button',{name:'Continue with secure sign-in',exact:true});
+  if(await native.count()){
+    assert.ok(totpSecret,'A staging-only TOTP secret is required for Cognito acceptance.');
+    await native.click();
+    await page.locator('input[name="username"]:visible').fill(email);
+    await page.locator('input[name="password"]:visible').fill(password);
+    await page.locator('input[name="password"]:visible').press('Enter');
+    const code=page.locator('input:visible[name*="code" i]');
+    await code.waitFor();
+    const remaining=30000-Date.now()%30000;if(remaining<5000)await page.waitForTimeout(remaining+500);
+    await code.fill(currentTotp(totpSecret));
+    await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  }else{
+    await page.getByLabel('Email',{exact:true}).fill(email);
+    await page.getByLabel('Password',{exact:true}).fill(password);
+    await page.locator('button[type="submit"]').click();
+  }
+  await page.waitForURL(url=>url.origin===baseURL&&url.pathname!=='/login');
+}
 async function check(name, work) {
   acceptanceStep=undefined;
   try { await work(); results.push({ name, status: 'pass' }); }
@@ -29,9 +58,13 @@ await check('browser login form renders',async()=>{
   try {
     const page=await publicBrowser.newPage();
     const response=await page.goto(baseURL+'/login');assert.equal(response.status(),200);
-    assert.equal(await page.getByLabel('Email',{exact:true}).isVisible(),true);
-    assert.equal(await page.getByLabel('Password',{exact:true}).isVisible(),true);
-    assert.equal(await page.locator('button[type="submit"]').isVisible(),true);
+    const native=page.getByRole('button',{name:'Continue with secure sign-in',exact:true});
+    if(await native.count()) assert.equal(await native.isVisible(),true);
+    else {
+      assert.equal(await page.getByLabel('Email',{exact:true}).isVisible(),true);
+      assert.equal(await page.getByLabel('Password',{exact:true}).isVisible(),true);
+      assert.equal(await page.locator('button[type="submit"]').isVisible(),true);
+    }
   }finally{await publicBrowser.close();}
 });
 const email = process.env.TRACEPOINT_ACCEPTANCE_EMAIL;
@@ -45,14 +78,10 @@ else try {
   // No screenshots, traces, cookies, passwords or response bodies are persisted.
   await context.route('**/*', route => {
     const origin = new URL(route.request().url()).origin;
-    return [baseURL, 'https://wztqqqashilusoppddxi.supabase.co'].includes(origin) ? route.continue() : route.abort();
+    return origin===baseURL||origin==='https://wztqqqashilusoppddxi.supabase.co'||origin.endsWith('.amazoncognito.com') ? route.continue() : route.abort();
   });
   const page = await context.newPage();
-  await page.goto('/login');
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(url => url.origin === baseURL && url.pathname !== '/login');
+  await signIn(page,email,password,process.env.TRACEPOINT_ACCEPTANCE_MANAGER_TOTP_SECRET);
   const access = await context.request.get('/api/access');
   assert.equal(access.status(), 200);
   assert.equal((await access.json()).access.departmentId, department);
@@ -66,6 +95,16 @@ else try {
   });
   for (const path of ['/api/equipment/assets','/api/equipment/types','/api/equipment/requirements','/api/settings/current-rules','/api/qualifications','/api/training/certification-types','/api/agency-training/courses']) await check(`JSON ${path}`, async () => {
     const r=await context.request.get(path); assert.equal(r.status(),200); assert.match(r.headers()['content-type'],/application\/json/);
+  });
+  await check('AI importer workspace preview, approved execution and persistence',async()=>{
+    const run=crypto.randomUUID(),unit=`AI-${run.slice(0,8).toUpperCase()}`;let workspaceId;
+    try {
+      const created=await page.evaluate(async({run,unit})=>{const form=new FormData();form.append('files',new File([`unit number,year,make,model,status,comments\n${unit},2026,Synthetic,Importer,Available,acceptance ${run}\n`],`aws-native-${run}.csv`,{type:'text/csv'}));const response=await fetch('/api/settings/ai-importer/workspaces',{method:'POST',body:form});return {status:response.status,body:await response.json()};},{run,unit});
+      assert.equal(created.status,201);workspaceId=created.body.workspace.id;assert.match(workspaceId,/^[0-9a-f-]{36}$/i);
+      const preview=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/preview`);const plan=await preview.json();assert.equal(preview.status(),200);assert.ok(plan.readyDomains.includes('vehicles'));
+      const executed=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/execute`,{data:{domains:['vehicles'],approval:{domain:true,mappings:true,validation:true,finalAction:true},approvalToken:plan.approvalToken,workspaceDigest:plan.workspaceDigest}});const outcome=await executed.json();assert.equal(executed.status(),200);assert.equal(outcome.results.vehicles.created,1);
+      const fleet=await context.request.get('/api/fleet/vehicles');assert.equal(fleet.status(),200);assert.ok((await fleet.json()).items.some(vehicle=>vehicle.unit_number===unit));
+    } finally {if(workspaceId){const removed=await context.request.delete(`/api/settings/ai-importer/workspaces/${workspaceId}`);assert.equal(removed.status(),200);}}
   });
   const foreign = process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID;
   if (foreign && foreign !== department) await check('foreign tenant cookie rejection', async () => {
@@ -122,10 +161,8 @@ else try {
     const unauthorized=await browser.newContext({baseURL});
     try {
       acceptanceStep='non-manager-login';
-      const officerPage=await unauthorized.newPage();await officerPage.goto('/login');
-      await officerPage.getByLabel('Email',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL);
-      await officerPage.getByLabel('Password',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD);
-      await officerPage.locator('button[type="submit"]').click();await officerPage.waitForURL(u=>u.pathname!=='/login');
+      const officerPage=await unauthorized.newPage();
+      await signIn(officerPage,process.env.TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL,process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD,process.env.TRACEPOINT_ACCEPTANCE_OFFICER_TOTP_SECRET);
       acceptanceStep='non-manager-write-denial';
       const write=await unauthorized.request.post('/api/equipment/types',{data:{name:'forbidden-'+name}});assert.equal(write.status(),403);
       const edit=await unauthorized.request.patch('/api/equipment/assets',{data:{id:assetId,assignedUserId:officerId}});assert.equal(edit.status(),403);
@@ -148,8 +185,8 @@ else try {
       const denied=await foreignContext.request.post('/api/settings/department-patch',{multipart:{file:{name:'acceptance.png',mimeType:'image/png',buffer:bytes}}});assert.equal(denied.status(),403);
     }finally{await foreignContext.close();}
   });
-  if(process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled')await exerciseRangeDocuments({context,browser,baseURL,department,check});
-  if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await exerciseExtendedWorkflows({context,browser,baseURL,check});
+  if(process.env.TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS==='enabled')await exerciseRangeDocuments({context,browser,baseURL,department,check,signIn});
+  if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await exerciseExtendedWorkflows({context,browser,baseURL,check,signIn});
   if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')await check('bounded authenticated read concurrency',async()=>{
     const probe=await runBoundedProbe({concurrency:4,requestsPerWorker:5,maxP95Milliseconds:5000,request:()=>context.request.get('/api/access',{timeout:10000}),verify:async r=>{assert.equal(r.status(),200);assert.equal((await r.json()).access.departmentId,department);}});
     console.log(JSON.stringify({authenticatedReadProbe:{...probe,allTenantChecksPassed:true,productionCapacityProof:false}}));

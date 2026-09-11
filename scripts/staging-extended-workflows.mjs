@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 async function expectStatus(response,status,step){if(response.status()!==status){const body=await response.json().catch(()=>({}));const message=String(body.error??'');const known=['permission denied','violates check constraint','violates not-null constraint','violates foreign key constraint','Could not find the function','does not exist','invalid input syntax'].find(x=>message.includes(x))??'unclassified';const object=message.match(/(?:constraint|column) "([a-z0-9_]+)"/);console.log(JSON.stringify({acceptanceStep:step,status:response.status(),failureClass:known,structuralDiagnostic:/^(Could not|cannot|permission|new row|invalid|column|record|function|null value|relation|duplicate|insert or update|operator|structure)/i.test(message)?message.replace(/"[^"]*"|'[^']*'/g,'[quoted]').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi,'[id]').replace(/https?:\/\/\S+|\S+@\S+|[A-Za-z0-9_-]{32,}/g,'[value]').slice(0,160):undefined,schemaObject:object?.[1]}));}assert.equal(response.status(),status);}
 
 // Only receives generated fixture identities; all writes use real application sessions.
-export async function exerciseExtendedWorkflows({context,browser,baseURL,check}) {
+export async function exerciseExtendedWorkflows({context,browser,baseURL,check,signIn}) {
  const officer=await browser.newContext({baseURL});const foreign=await browser.newContext({baseURL});
  try {
   for(const [session,email] of [[officer,process.env.TRACEPOINT_ACCEPTANCE_OFFICER_EMAIL],[foreign,process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL]]) {
-   const page=await session.newPage();await page.goto('/login');await page.getByLabel('Email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD);await page.locator('button[type="submit"]').click();await page.waitForURL(u=>u.pathname!=='/login');
+   const page=await session.newPage();const secret=session===officer?process.env.TRACEPOINT_ACCEPTANCE_OFFICER_TOTP_SECRET:process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_TOTP_SECRET;await signIn(page,email,process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD,secret);
   }
   const run=crypto.randomUUID();const today=new Date().toISOString().slice(0,10);
   await check('off-duty submission, inspection, command approval and Inbox delivery',async()=>{

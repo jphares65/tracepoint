@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$SourceCommit,
+    [Parameter(Mandatory)][ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ToolingImageDigest,
     [Parameter(Mandatory)][string]$ExpiresAfterUtc,
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 .@_-]{2,79}$')][string]$LeaseOwner,
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,159}$')][string]$LeaseReference,
@@ -19,7 +20,7 @@ $contexts = @(
     '-c', 'providerMode=aws-native', '-c', 'databaseEnabled=true', '-c', "databaseExpiresAfterUtc=$ExpiresAfterUtc",
     '-c', "databaseLeaseOwner=$LeaseOwner", '-c', "databaseLeaseReference=$LeaseReference",
     '-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3', '-c', 'databaseBootstrapEnabled=true',
-    '-c', "bootstrapSourceCommit=$SourceCommit", '--lookups=false'
+    '-c', "bootstrapSourceCommit=$SourceCommit", '-c', "bootstrapImageDigest=$ToolingImageDigest", '--lookups=false'
 )
 
 Push-Location $infra
@@ -54,7 +55,7 @@ $toolingTag = "$SourceCommit-postgres-migration"
 $image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$toolingTag" --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'The immutable PostgreSQL tooling image is unavailable.' }
 $image = ($image -join [Environment]::NewLine) | ConvertFrom-Json
-if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'The PostgreSQL tooling image has no complete scan.' }
+if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ToolingImageDigest -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'The PostgreSQL tooling image digest or scan is invalid.' }
 $findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
 if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'The PostgreSQL tooling image has disallowed scan findings.' }
 
@@ -87,7 +88,7 @@ if (-not $result -or $result.sourceMigrations -ne 76 -or $result.awsMigrations -
 if ($EvidenceOutputPath) {
     $parent = Split-Path -Parent $EvidenceOutputPath
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw 'Evidence output directory must already exist.' }
-    $evidence = [ordered]@{ format=1; account='559054714699'; sourceCommit=$SourceCommit; taskDefinitionArn=$taskDefinition; taskArn=$taskArn; stoppedAt=$task.tasks[0].stoppedAt; result=$result; valuesPrinted=$false }
+    $evidence = [ordered]@{ format=1; account='559054714699'; sourceCommit=$SourceCommit; toolingImageDigest=$ToolingImageDigest; taskDefinitionArn=$taskDefinition; taskArn=$taskArn; stoppedAt=$task.tasks[0].stoppedAt; result=$result; valuesPrinted=$false }
     [IO.File]::WriteAllText((Join-Path (Resolve-Path -LiteralPath $parent).Path (Split-Path -Leaf $EvidenceOutputPath)), ($evidence | ConvertTo-Json -Depth 4) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 }
 Write-Host 'AWS-native staging database bootstrap completed with 76 source and 17 AWS compatibility migrations; no credential values were printed.'

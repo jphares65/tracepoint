@@ -16,6 +16,7 @@ export interface DatabaseBootstrapRunnerStackProps extends cdk.StackProps {
   migratorSecret: secretsmanager.ISecret;
   runtimeSecret: secretsmanager.ISecret;
   sourceCommit: string;
+  imageDigest: string;
 }
 
 export class DatabaseBootstrapRunnerStack extends cdk.Stack {
@@ -25,8 +26,9 @@ export class DatabaseBootstrapRunnerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: DatabaseBootstrapRunnerStackProps) {
     super(scope, id, props);
     if (this.account !== "559054714699" || this.region !== "us-east-1" ||
-        !/^[0-9a-f]{40}$/.test(props.sourceCommit)) {
-      throw new Error("Exact staging account, region and immutable bootstrap source are required");
+        !/^[0-9a-f]{40}$/.test(props.sourceCommit) ||
+        !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) {
+      throw new Error("Exact staging account, region, source and immutable bootstrap image digest are required");
     }
 
     cdk.Tags.of(this).add("Purpose", "full-aws-database-bootstrap");
@@ -70,9 +72,9 @@ export class DatabaseBootstrapRunnerStack extends cdk.Stack {
     });
     this.taskDefinition.addVolume({ name: "tmp" });
     const container = this.taskDefinition.addContainer("bootstrap", {
-      image: ecs.ContainerImage.fromEcrRepository(props.repository, `${props.sourceCommit}-postgres-migration`),
-      entryPoint: ["node", "scripts/bootstrap-aws-postgres-target.mjs"],
-      command: [],
+      image: ecs.ContainerImage.fromRegistry(`${props.repository.repositoryUri}@${props.imageDigest}`),
+      entryPoint: ["node"],
+      command: ["scripts/bootstrap-aws-postgres-target.mjs"],
       readonlyRootFilesystem: true,
       user: "node",
       logging: ecs.LogDrivers.awsLogs({ logGroup: props.logGroup, streamPrefix: "database-bootstrap" }),

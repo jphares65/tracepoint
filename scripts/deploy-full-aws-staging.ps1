@@ -7,6 +7,7 @@ param(
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,159}$')][string]$LeaseReference = 'implementation-validation',
     [string]$CertificateArn = 'arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000',
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ImageDigest = ('sha256:' + ('0' * 64)),
+    [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ToolingImageDigest = ('sha256:' + ('0' * 64)),
     [string]$BootstrapEvidencePath,
     [string]$SecretInitializationAuthorizationReference,
     [switch]$Execute
@@ -23,7 +24,7 @@ $contexts = @(
     '-c', 'providerMode=aws-native', '-c', 'databaseEnabled=true', '-c', "databaseExpiresAfterUtc=$ExpiresAfterUtc",
     '-c', "databaseLeaseOwner=$LeaseOwner", '-c', "databaseLeaseReference=$LeaseReference",
     '-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3', '-c', 'databaseBootstrapEnabled=true',
-    '-c', "bootstrapSourceCommit=$SourceCommit", '-c', 'runtimeEnabled=true', '-c', "imageTag=$nativeImageTag",
+    '-c', "bootstrapSourceCommit=$SourceCommit", '-c', "bootstrapImageDigest=$ToolingImageDigest", '-c', 'runtimeEnabled=true', '-c', "imageTag=$nativeImageTag",
     '-c', "imageDigest=$ImageDigest",
     '-c', "certificateArn=$CertificateArn", '--lookups=false'
 )
@@ -39,7 +40,7 @@ try {
     } finally { $ErrorActionPreference = $savedPreference }
     if ($synthExitCode -ne 0) { throw 'Full-AWS staging strict synthesis failed.' }
 } finally { Pop-Location }
-& node (Join-Path $PSScriptRoot 'validate-full-aws-staging-assembly.mjs') $assembly $SourceCommit $ImageDigest
+& node (Join-Path $PSScriptRoot 'validate-full-aws-staging-assembly.mjs') $assembly $SourceCommit $ImageDigest $ToolingImageDigest
 if ($LASTEXITCODE -ne 0) { throw 'Full-AWS staging structural validation failed.' }
 if ($Action -eq 'ValidateImplementation' -or -not $Execute) {
     Write-Host 'Full-AWS staging implementation synthesized and passed provider-isolation checks. No AWS resource was changed.'
@@ -82,7 +83,7 @@ if ($Action -eq 'DeployFoundations') {
 
 if (-not (Test-Path -LiteralPath $BootstrapEvidencePath -PathType Leaf)) { throw 'A completed database bootstrap evidence file is required before runtime deployment.' }
 $bootstrap = Get-Content -Raw -LiteralPath $BootstrapEvidencePath | ConvertFrom-Json
-if ($bootstrap.account -ne '559054714699' -or $bootstrap.sourceCommit -ne $SourceCommit -or $bootstrap.result.sourceMigrations -ne 76 -or
+if ($bootstrap.account -ne '559054714699' -or $bootstrap.sourceCommit -ne $SourceCommit -or $bootstrap.toolingImageDigest -ne $ToolingImageDigest -or $bootstrap.result.sourceMigrations -ne 76 -or
     $bootstrap.result.awsMigrations -ne 17 -or $bootstrap.result.runtimeRoleVerified -ne $true -or $bootstrap.result.supabaseAuthorizationReferences -ne 0) {
     throw 'Database bootstrap evidence does not match this immutable release.'
 }

@@ -2,11 +2,19 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const [directory, sourceCommit, imageDigest] = process.argv.slice(2);
+const [directory, sourceCommit, imageDigest, toolingImageDigest] = process.argv.slice(2);
 assert.match(sourceCommit ?? "", /^[0-9a-f]{40}$/);
 assert.match(imageDigest ?? "", /^sha256:[0-9a-f]{64}$/);
+assert.match(toolingImageDigest ?? "", /^sha256:[0-9a-f]{64}$/);
 const load = async name => JSON.parse(await readFile(path.join(directory, `${name}.template.json`), "utf8"));
 const resources = (template, type) => Object.values(template.Resources ?? {}).filter(resource => resource.Type === type);
+const assertDigestImage = (task, digest) => {
+  const containers = task.Properties?.ContainerDefinitions ?? [];
+  assert.equal(containers.length, 1);
+  const rendered = JSON.stringify(containers[0].Image);
+  assert.match(rendered, /AppRepository/);
+  assert.match(rendered, new RegExp(`@${digest}`));
+};
 
 const imageBuild = await load("tracepoint-staging-aws-native-image-build");
 const database = await load("tracepoint-staging-database");
@@ -42,14 +50,14 @@ assert.match(JSON.stringify(backupSelections[0]), /"ConditionValue":"daily"/);
 
 const tasks = resources(bootstrap, "AWS::ECS::TaskDefinition");
 assert.equal(tasks.length, 1);
-assert.match(JSON.stringify(tasks[0]), new RegExp(`${sourceCommit}-postgres-migration`));
+assertDigestImage(tasks[0], toolingImageDigest);
 assert.match(JSON.stringify(tasks[0]), /bootstrap-aws-postgres-target\.mjs/);
 
 assert.equal(resources(cognito, "AWS::Cognito::UserPool").length, 1);
 assert.ok(resources(ses, "AWS::SES::ConfigurationSet").length >= 1);
 const runtimeTasks = resources(runtime, "AWS::ECS::TaskDefinition");
 assert.equal(runtimeTasks.length, 1);
+assertDigestImage(runtimeTasks[0], imageDigest);
 const runtimeText = JSON.stringify(runtimeTasks[0]);
-assert.match(runtimeText, new RegExp(`tracepoint-staging@${imageDigest}`));
 for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_STORAGE_PROVIDER", "s3", "TRACEPOINT_EMAIL_PROVIDER", "ses"]) assert.match(runtimeText, new RegExp(value));
 console.log(JSON.stringify({ valid: true, sourceCommit, providerMode: "aws-native", sourceMigrations: 76, awsMigrations: 17, forbiddenRuntimeReferences: 0 }));

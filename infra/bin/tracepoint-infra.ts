@@ -172,6 +172,7 @@ const databaseBootstrap = databaseBootstrapEnabled && database ? new DatabaseBoo
   migratorSecret: database.database.secret!,
   runtimeSecret: database.runtimeSecret,
   sourceCommit: app.node.tryGetContext("bootstrapSourceCommit"),
+  imageDigest: app.node.tryGetContext("bootstrapImageDigest"),
 }) : undefined;
 if (databaseBootstrap) {
   databaseBootstrap.addStackDependency(network);

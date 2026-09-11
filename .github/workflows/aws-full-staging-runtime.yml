@@ -69,10 +69,18 @@ jobs:
         run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployFoundations -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -CertificateArn $env:CERTIFICATE_ARN -SecretInitializationAuthorizationReference $env:TRACEPOINT_SECRET_INITIALIZATION_AUTHORIZATION -Execute
       - name: Publish runtime and PostgreSQL tooling images
         shell: pwsh
-        run: ./scripts/publish-full-aws-staging-image.ps1 -BuildPostgresTooling -Wait
+        run: ./scripts/publish-full-aws-staging-image.ps1 -BuildPostgresTooling -Wait -AuthorizedBranch main
+      - name: Resolve immutable image digests
+        shell: pwsh
+        run: |
+          $runtime = aws ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$env:GITHUB_SHA-aws-native" --query 'imageDetails[0].imageDigest' --output text
+          $tooling = aws ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$env:GITHUB_SHA-postgres-migration" --query 'imageDetails[0].imageDigest' --output text
+          if ($runtime -notmatch '^sha256:[0-9a-f]{64}$' -or $tooling -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Immutable image digests could not be resolved.' }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RUNTIME_IMAGE_DIGEST=$runtime"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "TOOLING_IMAGE_DIGEST=$tooling"
       - name: Bootstrap all database migrations
         shell: pwsh
-        run: ./scripts/execute-full-aws-staging-bootstrap.ps1 -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -EvidenceOutputPath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
+        run: ./scripts/execute-full-aws-staging-bootstrap.ps1 -SourceCommit $env:GITHUB_SHA -ToolingImageDigest $env:TOOLING_IMAGE_DIGEST -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -EvidenceOutputPath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
       - name: Deploy native runtime with retained bridge rollback
         shell: pwsh
-        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployRuntime -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -CertificateArn $env:CERTIFICATE_ARN -BootstrapEvidencePath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
+        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployRuntime -SourceCommit $env:GITHUB_SHA -ImageDigest $env:RUNTIME_IMAGE_DIGEST -ToolingImageDigest $env:TOOLING_IMAGE_DIGEST -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -CertificateArn $env:CERTIFICATE_ARN -BootstrapEvidencePath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
