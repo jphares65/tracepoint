@@ -84,7 +84,14 @@ $environment = @(
 )
 $overrides = @{containerOverrides=@(@{name='bootstrap';command=@('scripts/manage-aws-native-staging-fixture.mjs');environment=$environment})} | ConvertTo-Json -Depth 8 -Compress
 $network = "awsvpcConfiguration={subnets=[$($subnets -join ',')],securityGroups=[$securityGroup],assignPublicIp=ENABLED}"
-$task = Invoke-AwsJson @('ecs','run-task','--cluster',$clusterName,'--task-definition',$taskDefinitionArn,'--launch-type','FARGATE','--count','1','--network-configuration',$network,'--overrides',$overrides)
+$overridesPath = Join-Path ([IO.Path]::GetTempPath()) ("tracepoint-staging-fixture-" + [guid]::NewGuid().ToString('N') + '.json')
+try {
+    [IO.File]::WriteAllText($overridesPath, $overrides, [Text.UTF8Encoding]::new($false))
+    $overridesUri = 'file://' + $overridesPath.Replace('\', '/')
+    $task = Invoke-AwsJson @('ecs','run-task','--cluster',$clusterName,'--task-definition',$taskDefinitionArn,'--launch-type','FARGATE','--count','1','--network-configuration',$network,'--overrides',$overridesUri)
+} finally {
+    if (Test-Path -LiteralPath $overridesPath) { Remove-Item -LiteralPath $overridesPath -Force }
+}
 if (@($task.failures).Count -ne 0 -or @($task.tasks).Count -ne 1) { throw 'The bounded fixture task did not start.' }
 $taskArn = [string]$task.tasks[0].taskArn
 & aws.exe ecs wait tasks-stopped --cluster $clusterName --tasks $taskArn --region $region
