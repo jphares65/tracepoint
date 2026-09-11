@@ -45,6 +45,15 @@ test("upserts keep explicit conflicts and all values parameterized", async () =>
   assert.deepEqual(statement?.values, [departmentId, "fleet", true]);
 });
 
+test("JSON document columns serialize arrays without changing PostgreSQL array parameters", async () => {
+  const inspection = fixture();
+  await inspection.client.from("fleet_vehicle_inspections").insert({ department_id: departmentId, checklist: [{ id: "body", condition: "Pass" }] });
+  assert.deepEqual(inspection.calls.find(call => call.text.startsWith("insert into"))?.values, [departmentId, '[{"id":"body","condition":"Pass"}]']);
+  const rpc = fixture([{ set_department_role_permissions: ["administrator"] }]);
+  await rpc.client.rpc("set_department_role_permissions", { p_department_id: departmentId, p_role_code: "administrator", p_permission_codes: ["administer_department"] });
+  assert.deepEqual(rpc.calls.find(call => call.text.includes("public.\"set_department_role_permissions\""))?.values?.[2], ["administer_department"]);
+});
+
 test("default and ignore-duplicate upserts preserve Supabase mutation contracts", async () => {
   const defaultValue = fixture();
   const result = await defaultValue.client.from("notification_events").upsert({ department_id: departmentId, notification_key: "key" });

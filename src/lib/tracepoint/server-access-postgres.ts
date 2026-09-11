@@ -4,7 +4,7 @@ import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { PostgresDataClient } from "@/lib/database/postgres-data-client";
 import type { AuthenticatedPrincipal } from "@/lib/authentication/request-session-core";
 import { effectiveDepartmentPermissions } from "./permission-authority";
-import type { TracePointPermission } from "./permissions";
+import { TRACEPOINT_PERMISSIONS, type TracePointPermission } from "./permissions";
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const labels:Record<string,string>={administrator:"Administrator",department_admin:"Department Administrator",admin:"Administrator",chief:"Chief",command_staff:"Command Staff",supervisor:"Supervisor",range_master:"Range Master",armorer:"Armorer",instructor:"Instructor",officer:"Officer"};
@@ -65,7 +65,10 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
   const profile=(await client.query("select full_name,email from public.profiles where id=$1",[principal.userId])).rows[0];
   const roles=await client.query("select mr.role_code,r.display_name from public.department_membership_roles mr left join public.roles r on r.code=mr.role_code where mr.department_id=$1 and mr.user_id=$2",[departmentId,principal.userId]);
   const roleCodes=unique(roles.rows.map(row=>row.role_code));
-  const permissionRows=roleCodes.length?await client.query("select permission_code from public.department_role_permissions where department_id=$1 and role_code=any($2::text[])",[departmentId,roleCodes]):{rows:[]};
+  const permissionRows=roleCodes.length?await client.query(
+   "select permission_code from unnest($2::text[]) permission_code where public.has_department_permission($1,permission_code)",
+   [departmentId,[...TRACEPOINT_PERMISSIONS]],
+  ):{rows:[]};
   const features=await client.query("select feature_code from public.department_features where department_id=$1 and is_enabled is not false",[departmentId]);
   await client.query("commit");
   const labelMap=new Map(roles.rows.map(row=>[clean(row.role_code),clean(row.display_name)]));

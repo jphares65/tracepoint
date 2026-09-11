@@ -8,6 +8,12 @@ type Relation = { alias: string; table: string; local: string; foreign: string; 
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const jsonColumns = new Set([
+  "ai_migration_workspaces.state", "audit_events.details", "audit_events.new_value", "audit_events.previous_value",
+  "fleet_rules.inspection_checklist", "fleet_vehicle_inspections.checklist", "notification_preferences.source_preferences",
+  "personal_rifles.armorer_checklist", "personal_rifle_status_history.metadata", "pilot_ammunition_workspaces.workspace",
+  "pilot_range_workspaces.workspace", "pilot_remediation_workspaces.remediations", "range_days.outline",
+]);
 const relations: Record<string, Relation> = {
   "agency_training_events.agency_training_courses": { alias: "agency_training_courses", table: "agency_training_courses", local: "course_id", foreign: "id", cardinality: "one" },
   "agency_training_events.agency_training_attendees": { alias: "agency_training_attendees", table: "agency_training_attendees", local: "id", foreign: "event_id", cardinality: "many" },
@@ -119,6 +125,10 @@ function selectSql(table: string, selection: string, relatedFilters: Filter[], v
 function safeError(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : undefined;
   return { message: "PostgreSQL data operation failed.", ...(code ? { code } : {}) };
+}
+
+function databaseValue(table:string,column:string,value:unknown){
+  return jsonColumns.has(`${table}.${column}`)&&value!==null&&typeof value==="object"?JSON.stringify(value):value;
 }
 
 export class PostgresDataClient {
@@ -254,11 +264,11 @@ class PostgresQueryBuilder implements PromiseLike<Result> {
       } else if (this.operation === "update") {
         const { rows, keys } = this.payloadRows();
         if (rows.length !== 1) throw new Error("PostgreSQL update requires one value object.");
-        const assignments = keys.map(key => { values.push(rows[0][key]); return `${quote(key)}=$${values.length}`; });
+        const assignments = keys.map(key => { values.push(databaseValue(this.table,key,rows[0][key])); return `${quote(key)}=$${values.length}`; });
         sql = `update public.${quote(this.table)} t set ${assignments.join(",")}${this.where(values)}${this.selection ? ` returning ${columns(this.selection, "t")}` : ""}`;
       } else {
         const { rows, keys } = this.payloadRows();
-        const tuples = rows.map(row => `(${keys.map(key => { values.push(row[key]); return `$${values.length}`; }).join(",")})`);
+        const tuples = rows.map(row => `(${keys.map(key => { values.push(databaseValue(this.table,key,row[key])); return `$${values.length}`; }).join(",")})`);
         let conflict = "";
         if (this.operation === "upsert") {
           this.conflictColumns.forEach(quote);
