@@ -31,20 +31,20 @@ async function signIn(page,email,password,totpSecret){
     if(response.status()!==303){try{authenticationResponse.code=(await response.json()).code;}catch{}throw new Error('Cognito authorization did not start.');}
     try {
       acceptanceStep='cognito-login-form';
-      await page.locator('input[name="username"]:visible').fill(email);
-      await page.locator('input[name="password"]:visible').fill(password);
-      await page.locator('input[name="password"]:visible').press('Enter');
+      await page.locator('input[name="username"]:visible').first().fill(email);
+      await page.locator('input[name="password"]:visible').first().fill(password);
+      await page.locator('input[name="password"]:visible').first().press('Enter');
     }catch(error){
       const location=new URL(page.url());
       authenticationPage={origin:location.origin,path:location.pathname,visibleInputs:await page.locator('input:visible').evaluateAll(inputs=>inputs.slice(0,8).map(input=>({name:input.getAttribute('name'),type:input.getAttribute('type')})))};
       throw error;
     }
     acceptanceStep='cognito-mfa-challenge';
-    const code=page.locator('input:visible[name*="code" i]');
+    const code=page.locator('input:visible[name*="code" i]').first();
     await code.waitFor();
     const remaining=30000-Date.now()%30000;if(remaining<5000)await page.waitForTimeout(remaining+500);
     await code.fill(currentTotp(totpSecret));
-    await page.getByRole('button',{name:'Sign in',exact:true}).click();
+    await page.getByRole('button',{name:'Sign in',exact:true}).first().click();
   }else{
     await page.getByLabel('Email',{exact:true}).fill(email);
     await page.getByLabel('Password',{exact:true}).fill(password);
