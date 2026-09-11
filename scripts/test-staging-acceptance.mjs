@@ -9,6 +9,7 @@ const routes = ['/', '/landing', '/equipment', '/range-days', '/firearms', '/off
 const results = [];
 let acceptanceStep;
 let authenticationResponse;
+let authenticationPage;
 function currentTotp(secret) {
   const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';
   for(const char of secret.replace(/=+$/,'')){const value=alphabet.indexOf(char);assert.ok(value>=0);bits+=value.toString(2).padStart(5,'0');}
@@ -28,9 +29,16 @@ async function signIn(page,email,password,totpSecret){
     const response=await responsePromise;
     authenticationResponse={status:response.status()};
     if(response.status()!==303){try{authenticationResponse.code=(await response.json()).code;}catch{}throw new Error('Cognito authorization did not start.');}
-    await page.locator('input[name="username"]:visible').fill(email);
-    await page.locator('input[name="password"]:visible').fill(password);
-    await page.locator('input[name="password"]:visible').press('Enter');
+    try {
+      acceptanceStep='cognito-login-form';
+      await page.locator('input[name="username"]:visible').fill(email);
+      await page.locator('input[name="password"]:visible').fill(password);
+      await page.locator('input[name="password"]:visible').press('Enter');
+    }catch(error){
+      const location=new URL(page.url());
+      authenticationPage={origin:location.origin,path:location.pathname,visibleInputs:await page.locator('input:visible').evaluateAll(inputs=>inputs.slice(0,8).map(input=>({name:input.getAttribute('name'),type:input.getAttribute('type')})))};
+      throw error;
+    }
     acceptanceStep='cognito-mfa-challenge';
     const code=page.locator('input:visible[name*="code" i]');
     await code.waitFor();
@@ -205,7 +213,7 @@ else try {
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));
     assert.equal(new URL(r.headers().location,baseURL).pathname,'/login');
   });
-} catch (error) {results.push({name:'authenticated setup',status:'fail',diagnostic:{code:error?.name==='TimeoutError'?'BROWSER_TIMEOUT':error?.code??'REQUEST_OR_BROWSER_FAILURE',step:acceptanceStep,authenticationResponse},reason:'Login or tenant precondition failed; sensitive details suppressed'});}
+} catch (error) {results.push({name:'authenticated setup',status:'fail',diagnostic:{code:error?.name==='TimeoutError'?'BROWSER_TIMEOUT':error?.code??'REQUEST_OR_BROWSER_FAILURE',step:acceptanceStep,authenticationResponse,authenticationPage},reason:'Login or tenant precondition failed; sensitive details suppressed'});}
 finally {await browser?.close();}
 results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled'?'Email invitation link delivery and replacement-provider MFA/session cutover remain separate gates. Browser password recovery and fixture cleanup are verified by the parent harness.':'Run the parent harness with --range-documents --extended-workflows for drill/document, off-duty, fleet, training, exports and password-recovery coverage.'});
 console.log(JSON.stringify({target:baseURL,results},null,2));
