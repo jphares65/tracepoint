@@ -102,7 +102,9 @@ if ($LASTEXITCODE -ne 0) { throw 'AWS-native runtime image scan is unavailable.'
 $scan = ($scanText -join [Environment]::NewLine) | ConvertFrom-Json
 if ($scan.imageId.imageDigest -cne $ImageDigest -or $scan.imageScanStatus.status -ne 'COMPLETE') { throw 'AWS-native runtime image scan is invalid.' }
 $findings = $scan.imageScanFindings.findingSeverityCounts
-if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'AWS-native runtime image has disallowed scan findings.' }
+$criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [int]$findings.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'AWS-native runtime image has disallowed scan findings.' }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A retained bridge task revision is required for rollback.' }
 $previousDefinitionText = & aws.exe ecs describe-task-definition --task-definition $previous --region us-east-1 --output json 2>&1

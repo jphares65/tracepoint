@@ -61,7 +61,9 @@ if ($LASTEXITCODE -ne 0) { throw 'The PostgreSQL tooling image scan is unavailab
 $scan = ($scanText -join [Environment]::NewLine) | ConvertFrom-Json
 if ($scan.imageId.imageDigest -cne $ToolingImageDigest -or $scan.imageScanStatus.status -ne 'COMPLETE') { throw 'The PostgreSQL tooling image scan is invalid.' }
 $findings = $scan.imageScanFindings.findingSeverityCounts
-if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'The PostgreSQL tooling image has disallowed scan findings.' }
+$criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [int]$findings.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'The PostgreSQL tooling image has disallowed scan findings.' }
 
 $outputsPath = Join-Path ([IO.Path]::GetTempPath()) ("$stack-outputs-" + [guid]::NewGuid().ToString('N') + '.json')
 Push-Location $infra
