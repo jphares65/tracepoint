@@ -166,17 +166,24 @@ if ($backupResult.ResourceArn -ne $sourceDb.DBInstanceArn -or
 }
 
 $metadataResponse = Invoke-AwsJson @('backup', 'get-recovery-point-restore-metadata', '--backup-vault-name', $vaultName, '--recovery-point-arn', $recoveryPointArn)
-$restoreMetadata = @{}
-$metadataResponse.RestoreMetadata.PSObject.Properties | ForEach-Object { $restoreMetadata[$_.Name] = [string]$_.Value }
-$restoreMetadata.Remove('DBSnapshotIdentifier')
-$restoreMetadata['DBInstanceIdentifier'] = $TargetIdentifier
-$restoreMetadata['DBInstanceClass'] = 'db.t4g.micro'
-$restoreMetadata['DBSubnetGroupName'] = [string]$sourceDb.DBSubnetGroup.DBSubnetGroupName
-$restoreMetadata['VpcSecurityGroupIds'] = (@($sourceDb.VpcSecurityGroups.VpcSecurityGroupId) | ConvertTo-Json -Compress)
-$restoreMetadata['PubliclyAccessible'] = 'false'
-$restoreMetadata['MultiAZ'] = 'false'
-$restoreMetadata['DeletionProtection'] = 'false'
-$restoreMetadata['CopyTagsToSnapshot'] = 'false'
+if ([string]$metadataResponse.RestoreMetadata.Engine -ne 'postgres') {
+    throw 'The recovery point restore metadata does not describe PostgreSQL.'
+}
+# AWS Backup returns creation-time fields that are not valid restore arguments
+# (including DBSnapshotIdentifier, Port=0, ProcessorFeatures=[], and internal
+# request metadata). Pass only the reviewed RDS restore boundary instead of
+# replaying the untrusted response map wholesale.
+$restoreMetadata = [ordered]@{
+    DBInstanceIdentifier = $TargetIdentifier
+    DBInstanceClass = 'db.t4g.micro'
+    Engine = 'postgres'
+    DBSubnetGroupName = [string]$sourceDb.DBSubnetGroup.DBSubnetGroupName
+    VpcSecurityGroupIds = (@($sourceDb.VpcSecurityGroups.VpcSecurityGroupId) | ConvertTo-Json -Compress)
+    PubliclyAccessible = 'false'
+    MultiAZ = 'false'
+    DeletionProtection = 'false'
+    CopyTagsToSnapshot = 'false'
+}
 $restoreJson = $restoreMetadata | ConvertTo-Json -Compress
 $restoreStartedAt = [DateTime]::UtcNow
 $restore = Invoke-AwsJson @(
