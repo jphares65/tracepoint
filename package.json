@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/assert-aws-native-provider-reachability.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "provider:assert-native": "node scripts/assert-aws-native-provider-reachability.mjs",
     "storage:migration": "node scripts/storage-migration.mjs",
     "storage:migration:test": "node --test scripts/storage-migration.test.mjs",
     "identity:migration": "tsx --conditions=react-server scripts/migrate-cognito-identities.mts",
