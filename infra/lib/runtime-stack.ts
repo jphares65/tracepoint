@@ -24,6 +24,7 @@ export interface RuntimeStackProps extends cdk.StackProps {
   taskRole: iam.IRole;
   certificateArn: string;
   imageTag: string;
+  imageDigest?: string;
   emailFromAddress?: string;
   storageBucketName?: string;
   desiredCount?: number;
@@ -46,6 +47,9 @@ export class RuntimeStack extends cdk.Stack {
 
     const providerMode = props.providerMode ?? "bridge";
     const awsNative = providerMode === "aws-native";
+    if (awsNative && (!props.imageDigest || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest))) {
+      throw new Error("Full-AWS runtime requires an immutable ECR image digest");
+    }
     const emailFromAddress = props.emailFromAddress ?? (props.environmentName === "staging" ? "contact@tracepointhq.com" : undefined);
     if (emailFromAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromAddress)) throw new Error("Invalid email sender address");
     const validTarget = (value:string|undefined, pattern:RegExp) => Boolean(value) &&
@@ -151,7 +155,9 @@ export class RuntimeStack extends cdk.Stack {
         assignPublicIp: true,
         securityGroups: [taskSecurityGroup],
         taskImageOptions: {
-          image: ecs.ContainerImage.fromEcrRepository(props.repository, props.imageTag),
+          image: awsNative
+            ? ecs.ContainerImage.fromRegistry(`${props.repository.repositoryUri}@${props.imageDigest}`)
+            : ecs.ContainerImage.fromEcrRepository(props.repository, props.imageTag),
           containerName: "tracepoint",
           containerPort: 3000,
           executionRole: props.executionRole,

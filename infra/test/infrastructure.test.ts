@@ -233,6 +233,7 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
     taskRole: compute.awsNativeTaskRole,
     certificateArn: "arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000",
     imageTag: "0123456789abcdef",
+    imageDigest: `sha256:${"a".repeat(64)}`,
     providerMode: "aws-native",
     storageBucketName: "tracepoint-staging-private-559054714699",
     cognitoUserPoolId: "us-east-1_Y9GiDA5Zy",
@@ -240,6 +241,7 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
     sesConfigurationSet: "tracepoint-staging",
   });
   const serialized = JSON.stringify(Template.fromStack(runtime).toJSON());
+  assert.match(serialized, new RegExp(`559054714699\\.dkr\\.ecr\\.us-east-1\\.amazonaws\\.com/tracepoint-staging@sha256:${"a".repeat(64)}`));
   for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_EMAIL_PROVIDER", "ses", "TRACEPOINT_STORAGE_PROVIDER", "TRACEPOINT_DATABASE_SECRET_JSON"]) assert.match(serialized, new RegExp(value));
   assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|SUPABASE_SERVICE_ROLE|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
   Template.fromStack(runtime).hasResourceProperties("AWS::EC2::SecurityGroupIngress", {

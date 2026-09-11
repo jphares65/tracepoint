@@ -6,6 +6,7 @@ param(
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 .@_-]{2,79}$')][string]$LeaseOwner = 'tracepoint-engineering',
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,159}$')][string]$LeaseReference = 'implementation-validation',
     [string]$CertificateArn = 'arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000',
+    [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ImageDigest = ('sha256:' + ('0' * 64)),
     [string]$BootstrapEvidencePath,
     [string]$SecretInitializationAuthorizationReference,
     [switch]$Execute
@@ -23,6 +24,7 @@ $contexts = @(
     '-c', "databaseLeaseOwner=$LeaseOwner", '-c', "databaseLeaseReference=$LeaseReference",
     '-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3', '-c', 'databaseBootstrapEnabled=true',
     '-c', "bootstrapSourceCommit=$SourceCommit", '-c', 'runtimeEnabled=true', '-c', "imageTag=$nativeImageTag",
+    '-c', "imageDigest=$ImageDigest",
     '-c', "certificateArn=$CertificateArn", '--lookups=false'
 )
 
@@ -37,7 +39,7 @@ try {
     } finally { $ErrorActionPreference = $savedPreference }
     if ($synthExitCode -ne 0) { throw 'Full-AWS staging strict synthesis failed.' }
 } finally { Pop-Location }
-& node (Join-Path $PSScriptRoot 'validate-full-aws-staging-assembly.mjs') $assembly $SourceCommit
+& node (Join-Path $PSScriptRoot 'validate-full-aws-staging-assembly.mjs') $assembly $SourceCommit $ImageDigest
 if ($LASTEXITCODE -ne 0) { throw 'Full-AWS staging structural validation failed.' }
 if ($Action -eq 'ValidateImplementation' -or -not $Execute) {
     Write-Host 'Full-AWS staging implementation synthesized and passed provider-isolation checks. No AWS resource was changed.'
@@ -93,7 +95,7 @@ try {
 $image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$nativeImageTag" --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'The immutable AWS-native runtime image is unavailable.' }
 $image = ($image -join [Environment]::NewLine) | ConvertFrom-Json
-if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'AWS-native runtime image scan is incomplete.' }
+if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'AWS-native runtime image digest or scan is invalid.' }
 $findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
 if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'AWS-native runtime image has disallowed scan findings.' }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text

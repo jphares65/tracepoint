@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const [directory, sourceCommit] = process.argv.slice(2);
+const [directory, sourceCommit, imageDigest] = process.argv.slice(2);
 assert.match(sourceCommit ?? "", /^[0-9a-f]{40}$/);
+assert.match(imageDigest ?? "", /^sha256:[0-9a-f]{64}$/);
 const load = async name => JSON.parse(await readFile(path.join(directory, `${name}.template.json`), "utf8"));
 const resources = (template, type) => Object.values(template.Resources ?? {}).filter(resource => resource.Type === type);
 
@@ -49,6 +50,6 @@ assert.ok(resources(ses, "AWS::SES::ConfigurationSet").length >= 1);
 const runtimeTasks = resources(runtime, "AWS::ECS::TaskDefinition");
 assert.equal(runtimeTasks.length, 1);
 const runtimeText = JSON.stringify(runtimeTasks[0]);
-assert.match(runtimeText, new RegExp(`${sourceCommit}-aws-native`));
+assert.match(runtimeText, new RegExp(`tracepoint-staging@${imageDigest}`));
 for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_STORAGE_PROVIDER", "s3", "TRACEPOINT_EMAIL_PROVIDER", "ses"]) assert.match(runtimeText, new RegExp(value));
 console.log(JSON.stringify({ valid: true, sourceCommit, providerMode: "aws-native", sourceMigrations: 76, awsMigrations: 17, forbiddenRuntimeReferences: 0 }));

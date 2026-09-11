@@ -214,6 +214,7 @@ if (runtimeEnabled) {
     taskRole: providerMode === "aws-native" ? compute.awsNativeTaskRole : compute.taskRole,
     certificateArn,
     imageTag,
+    imageDigest: app.node.tryGetContext("imageDigest"),
     storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
     providerMode,
     databaseSecret: database?.runtimeSecret,
