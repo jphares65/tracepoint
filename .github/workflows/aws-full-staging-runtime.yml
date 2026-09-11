@@ -21,7 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm ci --prefix infra
-      - run: node --test scripts/bootstrap-aws-postgres-target-core.test.mjs scripts/full-aws-staging-cost-core.test.mjs scripts/validate-tracepoint-runtime-config.test.mjs
+      - run: node --test scripts/aws-full-staging-workflow.test.mjs scripts/bootstrap-aws-postgres-target-core.test.mjs scripts/full-aws-staging-cost-core.test.mjs scripts/validate-tracepoint-runtime-config.test.mjs
       - run: npm run build --prefix infra
       - name: Strict full-AWS assembly synth
         shell: pwsh
