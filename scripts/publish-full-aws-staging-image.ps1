@@ -97,7 +97,8 @@ try {
     $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --region us-east-1 --query VersionId --output text
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceVersion) -or $sourceVersion -eq 'None') { throw 'Versioned native source upload failed.' }
     Assert-TracePointStagingIdentity | Out-Null
-    $overrides = "name=IMAGE_TAG,value=$commit,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
+    $nativeTag = "$commit-aws-native"
+    $overrides = "name=IMAGE_TAG,value=$nativeTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
     $buildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --environment-variables-override $overrides.Split(' ') --region us-east-1 --query build.id --output text
     if ($LASTEXITCODE -ne 0 -or $buildId -notmatch '^tracepoint-staging-aws-native-image-build:') { throw 'AWS-native CodeBuild start failed.' }
     Write-Host "Started immutable AWS-native source build $buildId."
@@ -114,11 +115,11 @@ try {
         $savedPreference = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
-            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$commit" --region us-east-1
+            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$nativeTag" --region us-east-1
             $scanExitCode = $LASTEXITCODE
         } finally { $ErrorActionPreference = $savedPreference }
         if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
-        Write-Host "AWS-native build and scan completed for $commit."
+        Write-Host "AWS-native build and scan completed for $nativeTag."
     }
     if ($BuildPostgresTooling) {
         Assert-TracePointStagingIdentity | Out-Null

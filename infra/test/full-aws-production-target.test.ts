@@ -5,7 +5,7 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { fullAwsProductionAssembly } from "../lib/full-aws-production-assembly";
 import { validateFullAwsProductionTarget, type FullAwsProductionTarget } from "../lib/full-aws-production-target";
 
-const target:FullAwsProductionTarget={account:"111111111111",region:"us-east-1",roleArn:"arn:aws:iam::111111111111:role/TracePointMigrationProduction",hostname:"tracepointhq.com",certificateArn:"arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-4000-8000-000000000000",imageTag:"a".repeat(40),architectureTarget:"full-aws",deploymentPhase:"full-aws-final",dataMode:"aws-postgres-authoritative",authMode:"cognito",storageMode:"s3",emailMode:"ses",databaseTopology:"aurora-serverless-v2",desiredCount:2,maxCapacity:4};
+const target:FullAwsProductionTarget={account:"111111111111",region:"us-east-1",roleArn:"arn:aws:iam::111111111111:role/TracePointMigrationProduction",hostname:"tracepointhq.com",certificateArn:"arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-4000-8000-000000000000",imageTag:"a".repeat(40)+"-aws-native",architectureTarget:"full-aws",deploymentPhase:"full-aws-final",dataMode:"aws-postgres-authoritative",authMode:"cognito",storageMode:"s3",emailMode:"ses",databaseTopology:"aurora-serverless-v2",desiredCount:2,maxCapacity:4};
 
 test("full-AWS production target rejects hybrid and unapproved live operation",()=>{
  validateFullAwsProductionTarget(target,{offline:true});

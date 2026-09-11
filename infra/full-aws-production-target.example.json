@@ -4,7 +4,7 @@
   "roleArn": "arn:aws:iam::111111111111:role/TracePointMigrationProduction",
   "hostname": "tracepointhq.com",
   "certificateArn": "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-4000-8000-000000000000",
-  "imageTag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "imageTag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-aws-native",
   "architectureTarget": "full-aws",
   "deploymentPhase": "full-aws-final",
   "dataMode": "aws-postgres-authoritative",

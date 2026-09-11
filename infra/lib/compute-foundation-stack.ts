@@ -24,6 +24,8 @@ export class ComputeFoundationStack extends cdk.Stack {
   public readonly awsNativeAppSecrets: secretsmanager.Secret;
   public readonly executionRole: iam.Role;
   public readonly taskRole: iam.Role;
+  public readonly awsNativeExecutionRole: iam.Role;
+  public readonly awsNativeTaskRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: ComputeFoundationStackProps) {
     super(scope, id, props);
@@ -97,58 +99,54 @@ export class ComputeFoundationStack extends cdk.Stack {
       assumedBy: ecsTasksPrincipal,
       description: `Pulls the immutable TracePoint image, writes application logs, and injects the ${props.environmentName} secret`,
     });
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["ecr:GetAuthorizationToken"],
-        resources: ["*"],
-      }),
-    );
+    this.awsNativeExecutionRole = new iam.Role(this, "AwsNativeTaskExecutionRole", {
+      roleName: `tracepoint-${props.environmentName}-aws-native-ecs-execution`,
+      assumedBy: ecsTasksPrincipal,
+      description: "Pulls the immutable AWS-native image, writes logs, and injects only AWS-native secrets",
+    });
+    const configureExecutionRole = (role: iam.Role, applicationSecret: secretsmanager.ISecret) => {
+      role.addToPolicy(new iam.PolicyStatement({ actions: ["ecr:GetAuthorizationToken"], resources: ["*"] }));
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
+        resources: [this.repository.repositoryArn],
+      }));
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+        resources: [`${this.appLogGroup.logGroupArn}:*`],
+      }));
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+        resources: [applicationSecret.secretArn],
+      }));
+      role.addToPolicy(new iam.PolicyStatement({ actions: ["kms:Decrypt"], resources: [dataKey.keyArn] }));
+    };
+    configureExecutionRole(this.executionRole, this.appSecrets);
+    configureExecutionRole(this.awsNativeExecutionRole, this.awsNativeAppSecrets);
 
     if (props.environmentName === "production") {
       NagSuppressions.addResourceSuppressions([this.appSecrets, this.awsNativeAppSecrets], [{
         id: "AwsSolutions-SMG4",
         reason: "This provider-neutral JSON secret contains independent application encryption keyrings and non-provider secrets; rotation is performed by the versioned application-key workflow rather than one Secrets Manager database rotation schedule.",
       }]);
-      const executionPolicy = this.executionRole.node.findChild("DefaultPolicy");
-      NagSuppressions.addResourceSuppressions(executionPolicy, [{
-        id: "AwsSolutions-IAM5",
-        reason: "ECR authorization is not resource-scoped and CloudWatch Logs requires only the retained application log group's generated stream suffix.",
-        appliesTo:["Resource::*","Resource::<AppLogGroup7D8CD952.Arn>:*"]
-      }]);
+      for (const role of [this.executionRole, this.awsNativeExecutionRole]) {
+        const executionPolicy = role.node.findChild("DefaultPolicy");
+        NagSuppressions.addResourceSuppressions(executionPolicy, [{
+          id: "AwsSolutions-IAM5",
+          reason: "ECR authorization is not resource-scoped and CloudWatch Logs requires only the retained application log group's generated stream suffix.",
+          appliesTo:["Resource::*","Resource::<AppLogGroup7D8CD952.Arn>:*"]
+        }]);
+      }
     }
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-        ],
-        resources: [this.repository.repositoryArn],
-      }),
-    );
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
-        resources: [`${this.appLogGroup.logGroupArn}:*`],
-      }),
-    );
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        resources: [this.appSecrets.secretArn, this.awsNativeAppSecrets.secretArn],
-      }),
-    );
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["kms:Decrypt"],
-        resources: [dataKey.keyArn],
-      }),
-    );
 
     this.taskRole = new iam.Role(this, "TaskRole", {
       roleName: `tracepoint-${props.environmentName}-ecs-task`,
       assumedBy: ecsTasksPrincipal,
       description: "Least-privilege runtime role for the TracePoint application",
+    });
+    this.awsNativeTaskRole = new iam.Role(this, "AwsNativeTaskRole", {
+      roleName: `tracepoint-${props.environmentName}-aws-native-ecs-task`,
+      assumedBy: ecsTasksPrincipal,
+      description: "Least-privilege AWS-native runtime role isolated from the retained bridge task",
     });
 
     new cdk.CfnOutput(this, "EcrRepositoryUri", { value: this.repository.repositoryUri });
@@ -158,5 +156,7 @@ export class ComputeFoundationStack extends cdk.Stack {
     new cdk.CfnOutput(this, "AwsNativeApplicationSecretArn", { value: this.awsNativeAppSecrets.secretArn });
     new cdk.CfnOutput(this, "TaskExecutionRoleArn", { value: this.executionRole.roleArn });
     new cdk.CfnOutput(this, "TaskRoleArn", { value: this.taskRole.roleArn });
+    new cdk.CfnOutput(this, "AwsNativeTaskExecutionRoleArn", { value: this.awsNativeExecutionRole.roleArn });
+    new cdk.CfnOutput(this, "AwsNativeTaskRoleArn", { value: this.awsNativeTaskRole.roleArn });
   }
 }

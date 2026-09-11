@@ -725,7 +725,7 @@ function RoleSelector({
 }
 
 export default function AdminSettingsPage() {
-  const supabase = useMemo(() => createSettingsBrowserClient(), []);
+  const dataClient = useMemo(() => createSettingsBrowserClient(), []);
   const {
     loading: accessLoading,
     userId,
@@ -1269,7 +1269,7 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("departments")
         .update({
           name: department.name.trim(),
@@ -1314,7 +1314,7 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase.from("department_rules").upsert(
+      const { error } = await dataClient.from("department_rules").upsert(
         {
           department_id: departmentId,
           ...rules,
@@ -1325,7 +1325,7 @@ export default function AdminSettingsPage() {
 
       if (error) throw error;
 
-      showNotice("success", "Operational rules saved to Supabase.");
+      showNotice("success", "Operational rules saved.");
       await loadSettings();
     } catch (error) {
       showNotice(
@@ -1346,7 +1346,7 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("departments")
         .update({
           short_name: department.short_name.trim() || null,
@@ -1367,7 +1367,7 @@ export default function AdminSettingsPage() {
 
       await refreshAccess();
       window.dispatchEvent(new CustomEvent("tracepoint:department-updated"));
-      showNotice("success", "Department branding saved to Supabase.");
+      showNotice("success", "Department branding saved.");
     } catch (error) {
       showNotice(
         "error",
@@ -1385,7 +1385,7 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("department_security_settings")
         .upsert(
           {
@@ -1425,7 +1425,7 @@ export default function AdminSettingsPage() {
 
     setMemberGroupIds([]);
 
-    const { data: groupMembershipRows, error: groupMembershipError } = await supabase
+    const { data: groupMembershipRows, error: groupMembershipError } = await dataClient
       .from("department_group_members")
       .select("group_id")
       .eq("department_id", departmentId)
@@ -1457,14 +1457,14 @@ export default function AdminSettingsPage() {
 
     try {
       const [standardsResult, componentsResult] = await Promise.all([
-        supabase
+        dataClient
           .from("department_qualification_standards")
           .select(
             "id, department_id, name, firearm_type, validity_days, description, is_active",
           )
           .eq("department_id", departmentId)
           .order("name"),
-        supabase
+        dataClient
           .from("department_qualification_standard_components")
           .select(
             "id, department_id, qualification_standard_id, name, scoring_basis, maximum_score, passing_score, passing_time_seconds, minimum_hits, is_required, sort_order, is_active",
@@ -1523,7 +1523,7 @@ export default function AdminSettingsPage() {
     setSavingSection("qualification-standard-new");
 
     try {
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("department_qualification_standards")
         .insert({
           department_id: departmentId,
@@ -1560,7 +1560,7 @@ export default function AdminSettingsPage() {
     setSavingSection(`qualification-standard-${standard.id}`);
 
     try {
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("department_qualification_standards")
         .update({
           name: standard.name.trim(),
@@ -1600,7 +1600,7 @@ export default function AdminSettingsPage() {
               ...standard.components.map((component) => component.sort_order),
             ) + 1;
 
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("department_qualification_standard_components")
         .insert({
           department_id: departmentId,
@@ -1650,7 +1650,7 @@ export default function AdminSettingsPage() {
     setSavingSection(`qualification-component-${component.id}`);
 
     try {
-      const { error } = await supabase
+      const { error } = await dataClient
         .from("department_qualification_standard_components")
         .update({
           name: component.name.trim(),
@@ -1693,21 +1693,21 @@ export default function AdminSettingsPage() {
 
     try {
       const [titlesResult, unitsResult, groupsResult] = await Promise.all([
-        supabase
+        dataClient
           .from("department_titles")
           .select("id,name,sort_order,is_active")
           .eq("department_id", departmentId)
           .order("sort_order")
           .order("name"),
 
-        supabase
+        dataClient
           .from("department_units")
           .select("id,name,sort_order,is_active")
           .eq("department_id", departmentId)
           .order("sort_order")
           .order("name"),
 
-        supabase
+        dataClient
           .from("department_groups")
           .select("id,name,description,group_type,sort_order,is_active")
           .eq("department_id", departmentId)
@@ -1783,7 +1783,7 @@ export default function AdminSettingsPage() {
               is_active: true,
             };
 
-      const { error } = await supabase.from(table).insert(payload);
+      const { error } = await dataClient.from(table).insert(payload);
 
       if (error) throw error;
 
@@ -1825,7 +1825,7 @@ export default function AdminSettingsPage() {
     try {
       const table = organizationTable(kind);
 
-      const { error } = await supabase
+      const { error } = await dataClient
         .from(table)
         .update({ name })
         .eq("department_id", departmentId)
@@ -1859,7 +1859,7 @@ export default function AdminSettingsPage() {
     try {
       const table = organizationTable(kind);
 
-      const { error } = await supabase
+      const { error } = await dataClient
         .from(table)
         .update({
           is_active: !item.is_active,
@@ -1900,7 +1900,7 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
-      const { error: memberError } = await supabase.rpc(
+      const { error: memberError } = await dataClient.rpc(
         "update_department_member",
         {
           p_department_id: departmentId,
@@ -1915,7 +1915,7 @@ export default function AdminSettingsPage() {
 
       if (memberError) throw memberError;
 
-      const { error: roleError } = await supabase.rpc(
+      const { error: roleError } = await dataClient.rpc(
         "set_department_member_roles",
         {
           p_department_id: departmentId,
@@ -1926,7 +1926,7 @@ export default function AdminSettingsPage() {
 
       if (roleError) throw roleError;
 
-      const { error: groupError } = await supabase.rpc(
+      const { error: groupError } = await dataClient.rpc(
         "set_department_group_members",
         {
           p_department_id: departmentId,
@@ -4896,7 +4896,7 @@ export default function AdminSettingsPage() {
               value={editingMember.email ?? ""}
               onChange={() => undefined}
               disabled
-              hint="Authentication email changes are managed through Supabase Auth."
+              hint="Authentication email changes are managed by the configured identity service."
             />
             <SelectInput
               label="Rank / title"
