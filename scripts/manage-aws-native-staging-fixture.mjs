@@ -4,6 +4,7 @@ import pg from "pg";
 import { parseBootstrapConfiguration } from "./bootstrap-aws-postgres-target-core.mjs";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const cognitoSubject = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const commit = /^[0-9a-f]{40}$/;
 const reference = /^[A-Za-z0-9][A-Za-z0-9._:/-]{7,159}$/;
 const syntheticEmail = /^aws-native-[a-z0-9-]+@example\.invalid$/;
@@ -39,7 +40,7 @@ assert.match(input.authorizationReference ?? "", reference);
 assert.match(input.issuer ?? "", /^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/);
 for (const user of [input.manager, input.officer, input.foreign]) {
   assert.match(user.userId ?? "", uuid);
-  assert.match(user.subject ?? "", uuid);
+  assert.match(user.subject ?? "", cognitoSubject);
   assert.match(user.email ?? "", syntheticEmail);
 }
 assert.notEqual(input.manager.userId, input.foreign.userId);

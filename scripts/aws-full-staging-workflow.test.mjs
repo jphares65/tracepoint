@@ -42,6 +42,12 @@ test("PostgreSQL tooling archive includes the migration ledger's transitive SQL 
   assert.match(publisher, /'scripts\/migration-sql-core\.mjs'/);
 });
 
+test("synthetic fixture treats Cognito subjects as issuer-bound opaque identifiers", async () => {
+  const fixture = await readFile(new URL("scripts/manage-aws-native-staging-fixture.mjs", root), "utf8");
+  assert.match(fixture, /const cognitoSubject = \/\^\[0-9a-f\]/);
+  assert.match(fixture, /assert\.match\(user\.subject \?\? "", cognitoSubject\)/);
+});
+
 test("migration build images use the AWS-hosted official Node mirror", async () => {
   const files = ["Dockerfile", "Dockerfile.postgres-migration", "Dockerfile.postgres-rehearsal", "Dockerfile.identity-migration"];
   for (const file of files) {
