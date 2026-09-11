@@ -46,6 +46,10 @@ test("native staging fixture cleanup removes only verified synthetic tenants and
   assert.match(fixture, /Recovery cleanup requires the exact two fixture slugs/);
   assert.match(fixture, /Recovery cleanup requires exactly three synthetic identities/);
   assert.match(fixture, /aws-native-\$\{kind\}-\$\{input\.runId\}@example\.invalid/);
+  assert.match(fixture, /procedure\.proname=any\(\$1::text\[\]\)/);
+  assert.match(fixture, /\["write_audit_event", "write_agency_training_audit_event"\]/);
+  assert.match(fixture, /alter table \$\{trigger\.table_name\} disable trigger \$\{trigger\.trigger_name\}/);
+  assert.match(fixture, /alter table \$\{trigger\.table_name\} enable trigger \$\{trigger\.trigger_name\}/);
 });
 
 test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {

@@ -80,6 +80,30 @@ const slugs = {
   manager: `aws-native-${input.runId}-manager`,
   foreign: `aws-native-${input.runId}-foreign`,
 };
+
+const removeFixtureDepartments = async departmentIds => {
+  const auditTriggers = await client.query(`
+    select quote_ident(namespace.nspname) || '.' || quote_ident(relation.relname) as table_name,
+           quote_ident(trigger.tgname) as trigger_name
+      from pg_trigger trigger
+      join pg_class relation on relation.oid=trigger.tgrelid
+      join pg_namespace namespace on namespace.oid=relation.relnamespace
+      join pg_proc procedure on procedure.oid=trigger.tgfoid
+     where not trigger.tgisinternal
+       and namespace.nspname='public'
+       and procedure.proname=any($1::text[])
+     order by relation.relname,trigger.tgname
+  `, [["write_audit_event", "write_agency_training_audit_event"]]);
+  assert.ok(auditTriggers.rowCount > 0, "Synthetic teardown requires the expected audit triggers");
+  for (const trigger of auditTriggers.rows) {
+    await client.query(`alter table ${trigger.table_name} disable trigger ${trigger.trigger_name}`);
+  }
+  await client.query("delete from public.departments where id=any($1::uuid[])", [departmentIds]);
+  for (const trigger of auditTriggers.rows) {
+    await client.query(`alter table ${trigger.table_name} enable trigger ${trigger.trigger_name}`);
+  }
+};
+
 let stage = "connect";
 
 try {
@@ -166,7 +190,7 @@ try {
     await client.query("select set_config('tracepoint.allow_department_teardown','on',true)");
     await client.query("delete from public.platform_admins where user_id=$1", [input.manager.userId]);
     await client.query("delete from public.audit_events where department_id=any($1::uuid[])", [[departments.manager, departments.foreign]]);
-    await client.query("delete from public.departments where id=any($1::uuid[])", [[departments.manager, departments.foreign]]);
+    await removeFixtureDepartments([departments.manager, departments.foreign]);
     await client.query("delete from auth.users where id=any($1::uuid[])", [[input.manager.userId, input.officer.userId, input.foreign.userId]]);
     const remaining = await client.query("select (select count(*) from public.departments where id=any($1::uuid[]))::int as departments,(select count(*) from auth.users where id=any($2::uuid[]))::int as users", [[departments.manager, departments.foreign], [input.manager.userId, input.officer.userId, input.foreign.userId]]);
     assert.deepEqual(remaining.rows[0], { departments: 0, users: 0 });
@@ -187,7 +211,7 @@ try {
     await client.query("select set_config('tracepoint.allow_department_teardown','on',true)");
     await client.query("delete from public.platform_admins where user_id=any($1::uuid[])", [userIds]);
     await client.query("delete from public.audit_events where department_id=any($1::uuid[])", [departmentIds]);
-    await client.query("delete from public.departments where id=any($1::uuid[])", [departmentIds]);
+    await removeFixtureDepartments(departmentIds);
     await client.query("delete from auth.users where id=any($1::uuid[])", [userIds]);
     const remaining = await client.query("select (select count(*) from public.departments where slug=any($1::text[]))::int as departments,(select count(*) from auth.users where email=any($2::text[]))::int as users", [[slugs.manager, slugs.foreign], expectedEmails]);
     assert.deepEqual(remaining.rows[0], { departments: 0, users: 0 });
