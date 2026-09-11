@@ -49,6 +49,7 @@ test("synthetic fixture treats Cognito subjects as issuer-bound opaque identifie
   assert.match(fixture, /const cognitoSubject = \/\^\[0-9a-f\]/);
   assert.match(fixture, /assert\.match\(user\.subject \?\? "", cognitoSubject\)/);
   assert.match(fixture, /jsonb_build_object\('full_name',\$3::text/);
+  assert.match(fixture, /\$1::text,\$2::text,\$3::uuid,'active',\$3::uuid::text/);
 });
 
 test("migration build images use the AWS-hosted official Node mirror", async () => {

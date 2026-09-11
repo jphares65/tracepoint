@@ -103,7 +103,7 @@ try {
         [user.userId, user === input.manager ? "AWS Native Manager" : user === input.officer ? "Disposable acceptance officer" : "AWS Native Foreign User", user.email],
       );
       await client.query(
-        "insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username) values('cognito',$1,$2,$3,'active',$3::text)",
+        "insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username) values('cognito',$1::text,$2::text,$3::uuid,'active',$3::uuid::text)",
         [input.issuer, user.subject, user.userId],
       );
     }
