@@ -14,8 +14,7 @@ end
 $$;
 
 alter role tracepoint_runtime
-  nologin nocreatedb nocreaterole noreplication
-  nobypassrls noinherit connection limit 20;
+  nologin nocreatedb nocreaterole noinherit connection limit 20;
 
 do $$
 begin
