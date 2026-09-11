@@ -144,6 +144,16 @@ try {
       "insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by) values($1,$2,'officer',$3)",
       [departments.manager, input.officer.userId, input.manager.userId],
     );
+    stage = "officer-permission-fixture";
+    await client.query(
+      "insert into public.department_role_permissions(department_id,role_code,permission_code,granted_by) select $1,'officer',permission_code,$2 from public.role_permissions where role_code='officer' on conflict do nothing",
+      [departments.manager, input.manager.userId],
+    );
+    const officerPermission = await client.query(
+      "select count(*)::int as count from public.department_role_permissions where department_id=$1 and role_code='officer' and permission_code='submit_off_duty_requests'",
+      [departments.manager],
+    );
+    assert.equal(officerPermission.rows[0].count, 1, "Officer fixture requires off-duty submission authority");
     stage = "platform-admin";
     await client.query("insert into public.platform_admins(user_id,display_name,is_active,created_by) values($1,'AWS Native Acceptance',true,$1)", [input.manager.userId]);
   } else {

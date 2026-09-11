@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Fleet inspection rows cross the provider-neutral data-client boundary. */
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -213,7 +214,10 @@ export async function POST(
     .select("*")
     .single();
   if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message, code: error.code ?? "FLEET_INSPECTION_WRITE_FAILED" },
+      { status: 500 },
+    );
 
   for (const item of checklist.filter((entry: any) => entry.equipmentId)) {
     const status =
