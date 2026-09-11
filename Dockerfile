@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
-FROM node:24-trixie-slim AS dependencies
+FROM public.ecr.aws/docker/library/node:24-trixie-slim AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:24-trixie-slim AS builder
+FROM public.ecr.aws/docker/library/node:24-trixie-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SUPABASE_URL

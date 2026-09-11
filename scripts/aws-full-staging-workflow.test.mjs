@@ -37,3 +37,12 @@ test("PostgreSQL tooling archive includes the migration ledger's transitive SQL 
   assert.match(dockerfile, /scripts\/migration-sql-core\.mjs/);
   assert.match(publisher, /'scripts\/migration-sql-core\.mjs'/);
 });
+
+test("migration build images use the AWS-hosted official Node mirror", async () => {
+  const files = ["Dockerfile", "Dockerfile.postgres-migration", "Dockerfile.postgres-rehearsal", "Dockerfile.identity-migration"];
+  for (const file of files) {
+    const dockerfile = await readFile(new URL(file, root), "utf8");
+    assert.doesNotMatch(dockerfile, /^FROM node:/m);
+    assert.match(dockerfile, /^FROM public\.ecr\.aws\/docker\/library\/node:24-/m);
+  }
+});

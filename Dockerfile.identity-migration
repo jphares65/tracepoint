@@ -1,4 +1,4 @@
-FROM node:24-trixie-slim
+FROM public.ecr.aws/docker/library/node:24-trixie-slim
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
