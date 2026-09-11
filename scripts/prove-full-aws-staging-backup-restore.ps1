@@ -218,7 +218,7 @@ $restoreTags = @(
 if ($LASTEXITCODE -ne 0) { throw 'Disposable restore tagging failed.' }
 
 $evidence = [ordered]@{}
-foreach ($property in $planOnly.PSObject.Properties) { $evidence[$property.Name] = $property.Value }
+foreach ($entry in $planOnly.GetEnumerator()) { $evidence[$entry.Key] = $entry.Value }
 $evidence['backupJobId'] = $backup.BackupJobId
 $evidence['backupStatus'] = $backupResult.State
 $evidence['backupDurationSeconds'] = [math]::Round(($backupCompletedAt - $backupStartedAt).TotalSeconds)

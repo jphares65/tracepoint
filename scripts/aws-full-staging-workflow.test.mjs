@@ -74,5 +74,6 @@ test("RDS backup proof accepts only AWS Backup managed RDS recovery snapshots", 
   assert.doesNotMatch(proof, /\$metadataResponse\.RestoreMetadata\.PSObject\.Properties/);
   assert.doesNotMatch(proof, /DBSnapshotIdentifier =/);
   assert.match(proof, /VpcSecurityGroupIds = \(@\(\$sourceDb\.VpcSecurityGroups\.VpcSecurityGroupId\) \| ConvertTo-Json -Compress -AsArray\)/);
+  assert.match(proof, /foreach \(\$entry in \$planOnly\.GetEnumerator\(\)\)/);
   assert.match(proof, /--idempotency-token', "restore-\$TargetIdentifier"/);
 });
