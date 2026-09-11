@@ -47,6 +47,10 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       ipProtocol: "tcp", fromPort: 443, toPort: 443,
       description: "Worker HTTPS to AWS APIs",
     });
+    NagSuppressions.addResourceSuppressions(endpointSecurityGroup, [{
+      id: "CdkNagValidationFailure",
+      reason: "AwsSolutions-EC23 cannot resolve this generated VPC intrinsic during synthesis; the only endpoint ingress is the explicit worker security-group rule above, with no CIDR source.",
+    }]);
     workerSecurityGroup.addEgressRule(endpointSecurityGroup, ec2.Port.tcp(443), "AWS API PrivateLink only");
     workerSecurityGroup.addEgressRule(props.databaseSecurityGroup, ec2.Port.tcp(5432), "PostgreSQL feedback persistence only");
     new ec2.CfnSecurityGroupIngress(this, "DatabaseFromFeedbackWorker", {

@@ -58,6 +58,7 @@ test('SES feedback worker is private, bounded, partial-batch, and cannot send em
  assert.doesNotMatch(serialized,/AWSLambdaBasicExecutionRole|AWSLambdaVPCAccessExecutionRole/);
  assert.match(serialized,/logs:CreateLogStream/);assert.match(serialized,/logs:PutLogEvents/);
  assert.match(serialized,/ec2:CreateNetworkInterface/);assert.match(serialized,/aws:RequestedRegion/);assert.match(serialized,/us-east-1/);
+ assert.doesNotMatch(serialized,/"CidrIp":"0\.0\.0\.0\/0"/);
  assert.doesNotMatch(serialized,/ses:SendEmail|s3:GetObject|s3:PutObject/);
  assert.match(serialized,/secretsmanager:GetSecretValue/);
 });
