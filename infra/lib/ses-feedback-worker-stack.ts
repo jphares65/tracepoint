@@ -17,6 +17,7 @@ export interface SesFeedbackWorkerProps extends cdk.StackProps {
   environmentName: "staging" | "production";
   vpc: ec2.IVpc;
   databaseSecurityGroup: ec2.ISecurityGroup;
+  databaseKeyArn: string;
   databaseSecret: secretsmanager.ISecret;
   feedbackTopic: sns.ITopic;
   feedbackQueue: sqs.IQueue;
@@ -118,6 +119,11 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       bundling: { minify: true, sourceMap: true, nodeModules: ["pg"] },
     });
     props.databaseSecret.grantRead(this.worker);
+    this.worker.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["kms:Decrypt"],
+      resources: [props.databaseKeyArn],
+      conditions: { StringEquals: { "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com" } },
+    }));
     this.worker.addEventSource(new sources.SqsEventSource(props.feedbackQueue, {
       batchSize: 10, reportBatchItemFailures: true, maxConcurrency: 2,
     }));

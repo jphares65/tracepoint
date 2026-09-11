@@ -7,6 +7,7 @@ import {CognitoFoundationStack} from '../lib/cognito-foundation-stack';
 import {SesFoundationStack} from '../lib/ses-foundation-stack';
 import {SesFeedbackWorkerStack} from '../lib/ses-feedback-worker-stack';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 for(const environmentName of ['staging','production'] as const){
  test(environmentName+' Cognito uses short sessions, rotation, TOTP and exact callback domain',()=>{
@@ -45,9 +46,10 @@ test('SES feedback worker is private, bounded, partial-batch, and cannot send em
  const app=new cdk.App(),root=new cdk.Stack(app,'root',{env:{account:'559054714699',region:'us-east-1'}});
  const vpc=new ec2.Vpc(root,'Vpc',{maxAzs:2,natGateways:0,subnetConfiguration:[{name:'isolated',subnetType:ec2.SubnetType.PRIVATE_ISOLATED,cidrMask:24}]});
  const databaseSecurityGroup=new ec2.SecurityGroup(root,'DatabaseSecurity',{vpc,allowAllOutbound:false});
+ const key=new kms.Key(root,'DatabaseKey');
  const databaseSecret=new secretsmanager.Secret(root,'DatabaseSecret');
  const ses=new SesFoundationStack(app,'email-worker-source',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',mailFromSubdomain:'bounce'});
- const worker=new SesFeedbackWorkerStack(app,'email-worker',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',vpc,databaseSecurityGroup,databaseSecret,feedbackTopic:ses.feedbackTopic,feedbackQueue:ses.feedbackQueue,feedbackDeadLetterQueue:ses.feedbackDeadLetterQueue});
+ const worker=new SesFeedbackWorkerStack(app,'email-worker',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',vpc,databaseSecurityGroup,databaseKeyArn:key.keyArn,databaseSecret,feedbackTopic:ses.feedbackTopic,feedbackQueue:ses.feedbackQueue,feedbackDeadLetterQueue:ses.feedbackDeadLetterQueue});
  const template=Template.fromStack(worker),serialized=JSON.stringify(template.toJSON());
  template.hasResourceProperties('AWS::Lambda::Function',{Runtime:'nodejs24.x',Timeout:30,MemorySize:256,Environment:{Variables:Match.objectLike({TRACEPOINT_DATABASE_SECRET_ARN:Match.anyValue(),TRACEPOINT_SES_FEEDBACK_TOPIC_ARN:Match.anyValue(),TRACEPOINT_RDS_CA_PATH:'/opt/us-east-1-bundle.pem'})}});
  const functions=Object.values(template.findResources('AWS::Lambda::Function')) as Array<{Properties:Record<string,unknown>}>;
@@ -64,4 +66,5 @@ test('SES feedback worker is private, bounded, partial-batch, and cannot send em
  assert.doesNotMatch(serialized,/"CidrIp":"0\.0\.0\.0\/0"/);
  assert.doesNotMatch(serialized,/ses:SendEmail|s3:GetObject|s3:PutObject/);
  assert.match(serialized,/secretsmanager:GetSecretValue/);
+ assert.match(serialized,/kms:Decrypt/);assert.match(serialized,/kms:ViaService/);
 });

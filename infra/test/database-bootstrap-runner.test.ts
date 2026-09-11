@@ -23,7 +23,7 @@ test("database bootstrap runner is immutable, bounded, secret-injected and has n
   });
   const stack = new DatabaseBootstrapRunnerStack(app, "bootstrap", {
     env, environmentName: "staging", vpc: network.vpc, databaseSecurityGroup: network.databaseSecurityGroup,
-    repository: compute.repository, logGroup: compute.appLogGroup, migratorSecret: database.database.secret!,
+    repository: compute.repository, logGroup: compute.appLogGroup, databaseKeyArn: security.dataKey.keyArn, migratorSecret: database.database.secret!,
     runtimeSecret: database.runtimeSecret, sourceCommit: "a".repeat(40), imageDigest: `sha256:${"b".repeat(64)}`,
   });
   const template = Template.fromStack(stack);
@@ -44,6 +44,8 @@ test("database bootstrap runner is immutable, bounded, secret-injected and has n
   assert.match(serialized, /AppRepository/);
   assert.match(serialized, new RegExp(`@sha256:${"b".repeat(64)}`));
   assert.doesNotMatch(serialized, /SUPABASE|BREVO|VERCEL/i);
+  assert.match(serialized, /kms:Decrypt/);
+  assert.match(serialized, /kms:ViaService/);
   template.resourceCountIs("AWS::EC2::SecurityGroupIngress", 1);
   const taskPolicies = serialized.match(/TaskRole/g) ?? [];
   assert.ok(taskPolicies.length > 0);

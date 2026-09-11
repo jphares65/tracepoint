@@ -13,6 +13,7 @@ export interface DatabaseBootstrapRunnerStackProps extends cdk.StackProps {
   databaseSecurityGroup: ec2.ISecurityGroup;
   repository: ecr.IRepository;
   logGroup: logs.ILogGroup;
+  databaseKeyArn: string;
   migratorSecret: secretsmanager.ISecret;
   runtimeSecret: secretsmanager.ISecret;
   sourceCommit: string;
@@ -60,6 +61,11 @@ export class DatabaseBootstrapRunnerStack extends cdk.Stack {
     props.repository.grantPull(executionRole);
     props.migratorSecret.grantRead(executionRole);
     props.runtimeSecret.grantRead(executionRole);
+    executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["kms:Decrypt"],
+      resources: [props.databaseKeyArn],
+      conditions: { StringEquals: { "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com" } },
+    }));
     props.logGroup.grantWrite(executionRole);
 
     this.taskDefinition = new ecs.FargateTaskDefinition(this, "TaskDefinition", {
