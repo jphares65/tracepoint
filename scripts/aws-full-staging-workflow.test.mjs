@@ -69,4 +69,6 @@ test("RDS backup proof accepts only AWS Backup managed RDS recovery snapshots", 
   const proof = await readFile(new URL("scripts/prove-full-aws-staging-backup-restore.ps1", root), "utf8");
   assert.match(proof, /arn:aws:rds:\$region`:\$account`:snapshot:awsbackup:job-\[0-9a-f-\]\{36\}/);
   assert.doesNotMatch(proof, /arn:aws:backup:\$region`:\$account`:recovery-point/);
+  assert.match(proof, /\$restoreMetadata\.Remove\('DBSnapshotIdentifier'\)/);
+  assert.match(proof, /--idempotency-token', "restore-\$TargetIdentifier"/);
 });

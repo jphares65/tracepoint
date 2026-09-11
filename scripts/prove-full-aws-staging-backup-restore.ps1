@@ -168,6 +168,7 @@ if ($backupResult.ResourceArn -ne $sourceDb.DBInstanceArn -or
 $metadataResponse = Invoke-AwsJson @('backup', 'get-recovery-point-restore-metadata', '--backup-vault-name', $vaultName, '--recovery-point-arn', $recoveryPointArn)
 $restoreMetadata = @{}
 $metadataResponse.RestoreMetadata.PSObject.Properties | ForEach-Object { $restoreMetadata[$_.Name] = [string]$_.Value }
+$restoreMetadata.Remove('DBSnapshotIdentifier')
 $restoreMetadata['DBInstanceIdentifier'] = $TargetIdentifier
 $restoreMetadata['DBInstanceClass'] = 'db.t4g.micro'
 $restoreMetadata['DBSubnetGroupName'] = [string]$sourceDb.DBSubnetGroup.DBSubnetGroupName
@@ -182,7 +183,7 @@ $restore = Invoke-AwsJson @(
     'backup', 'start-restore-job', '--recovery-point-arn', $recoveryPointArn,
     '--metadata', $restoreJson, '--iam-role-arn', $roleArn,
     '--resource-type', 'RDS', '--no-copy-source-tags-to-restored-resource',
-    '--idempotency-token', "tracepoint-$($SourceCommit.Substring(0,12))-restore"
+    '--idempotency-token', "restore-$TargetIdentifier"
 )
 $restoreResult = Wait-RestoreJob -JobId $restore.RestoreJobId -Deadline $restoreStartedAt.AddMinutes($RestoreTimeoutMinutes)
 $restored = Invoke-AwsJson @('rds', 'describe-db-instances', '--db-instance-identifier', $TargetIdentifier)
