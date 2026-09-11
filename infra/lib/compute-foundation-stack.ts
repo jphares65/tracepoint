@@ -156,6 +156,10 @@ export class ComputeFoundationStack extends cdk.Stack {
     new cdk.CfnOutput(this, "AwsNativeApplicationSecretArn", { value: this.awsNativeAppSecrets.secretArn });
     new cdk.CfnOutput(this, "TaskExecutionRoleArn", { value: this.executionRole.roleArn });
     new cdk.CfnOutput(this, "TaskRoleArn", { value: this.taskRole.roleArn });
+    // Keep the legacy task-role cross-stack export during the staged provider
+    // transition. The already-deployed storage stack imports it until that
+    // stack is updated to the isolated AWS-native task role.
+    this.exportValue(this.taskRole.roleArn);
     new cdk.CfnOutput(this, "AwsNativeTaskExecutionRoleArn", { value: this.awsNativeExecutionRole.roleArn });
     new cdk.CfnOutput(this, "AwsNativeTaskRoleArn", { value: this.awsNativeTaskRole.roleArn });
   }
