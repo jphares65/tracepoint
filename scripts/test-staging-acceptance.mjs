@@ -51,12 +51,13 @@ async function signIn(page,email,password,totpSecret){
     await page.locator('button[type="submit"]').click();
   }
   acceptanceStep='cognito-callback';
-  await page.waitForURL(url=>url.origin===baseURL&&url.pathname!=='/login');
+  try{await page.waitForURL(url=>url.origin===baseURL&&url.pathname!=='/login');}
+  catch(error){const location=new URL(page.url());authenticationPage={origin:location.origin,path:location.pathname};throw error;}
 }
 async function check(name, work) {
   acceptanceStep=undefined;
   try { await work(); results.push({ name, status: 'pass' }); }
-  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined } : { code: error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : /strict mode violation/.test(error?.message ?? '') ? 'LOCATOR_AMBIGUOUS' : 'REQUEST_OR_BROWSER_FAILURE', step: acceptanceStep } }); }
+  catch (error) { results.push({ name, status: 'fail', diagnostic: error?.code === 'ERR_ASSERTION' ? { code: error.code, actual: typeof error.actual === 'number' ? error.actual : undefined, expected: typeof error.expected === 'number' ? error.expected : undefined, step:acceptanceStep } : { code: error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : /strict mode violation/.test(error?.message ?? '') ? 'LOCATOR_AMBIGUOUS' : 'REQUEST_OR_BROWSER_FAILURE', step: acceptanceStep } }); }
 }
 for (const path of ['/login', '/api/health', '/auth/confirm', '/auth/callback', ...routes, '/api/equipment/types']) await check(`anonymous ${path}`, async () => {
   const r = await fetch(baseURL + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
@@ -116,12 +117,16 @@ else try {
   await check('AI importer workspace preview, approved execution and persistence',async()=>{
     const run=crypto.randomUUID(),unit=`AI-${run.slice(0,8).toUpperCase()}`;let workspaceId;
     try {
+      acceptanceStep='importer-workspace-create';
       const created=await page.evaluate(async({run,unit})=>{const form=new FormData();form.append('files',new File([`unit number,year,make,model,status,comments\n${unit},2026,Synthetic,Importer,Available,acceptance ${run}\n`],`aws-native-${run}.csv`,{type:'text/csv'}));const response=await fetch('/api/settings/ai-importer/workspaces',{method:'POST',body:form});return {status:response.status,body:await response.json()};},{run,unit});
       assert.equal(created.status,201);workspaceId=created.body.workspace.id;assert.match(workspaceId,/^[0-9a-f-]{36}$/i);
+      acceptanceStep='importer-preview';
       const preview=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/preview`);const plan=await preview.json();assert.equal(preview.status(),200);assert.ok(plan.readyDomains.includes('vehicles'));
+      acceptanceStep='importer-execute';
       const executed=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/execute`,{data:{domains:['vehicles'],approval:{domain:true,mappings:true,validation:true,finalAction:true},approvalToken:plan.approvalToken,workspaceDigest:plan.workspaceDigest}});const outcome=await executed.json();assert.equal(executed.status(),200);assert.equal(outcome.results.vehicles.created,1);
+      acceptanceStep='importer-persistence';
       const fleet=await context.request.get('/api/fleet/vehicles');assert.equal(fleet.status(),200);assert.ok((await fleet.json()).items.some(vehicle=>vehicle.unit_number===unit));
-    } finally {if(workspaceId){const removed=await context.request.delete(`/api/settings/ai-importer/workspaces/${workspaceId}`);assert.equal(removed.status(),200);}}
+    } finally {if(workspaceId){acceptanceStep='importer-cleanup';const removed=await context.request.delete(`/api/settings/ai-importer/workspaces/${workspaceId}`);assert.equal(removed.status(),200);}}
   });
   const foreign = process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID;
   if (foreign && foreign !== department) await check('foreign tenant cookie rejection', async () => {
@@ -197,7 +202,7 @@ else try {
     const anonymous=await fetch(baseURL+patch,{redirect:'manual',signal:AbortSignal.timeout(15000)});if(anonymous.status!==401){assert.ok([302,303,307,308].includes(anonymous.status));assert.equal(new URL(anonymous.headers.get('location'),baseURL).pathname,'/login');}
     const foreignContext=await browser.newContext({baseURL});
     try{
-      const foreignPage=await foreignContext.newPage();await foreignPage.goto('/login');await foreignPage.getByLabel('Email',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL);await foreignPage.getByLabel('Password',{exact:true}).fill(process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD);await foreignPage.locator('button[type="submit"]').click();await foreignPage.waitForURL(u=>u.pathname!=='/login');
+      const foreignPage=await foreignContext.newPage();await signIn(foreignPage,process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL,process.env.TRACEPOINT_ACCEPTANCE_OFFICER_PASSWORD,process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_TOTP_SECRET);
       assert.equal((await foreignContext.request.get(patch,{maxRedirects:0})).status(),404);
       const denied=await foreignContext.request.post('/api/settings/department-patch',{multipart:{file:{name:'acceptance.png',mimeType:'image/png',buffer:bytes}}});assert.equal(denied.status(),403);
     }finally{await foreignContext.close();}
