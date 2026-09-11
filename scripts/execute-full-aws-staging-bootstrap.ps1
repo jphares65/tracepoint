@@ -55,8 +55,12 @@ $toolingTag = "$SourceCommit-postgres-migration"
 $image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$toolingTag" --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'The immutable PostgreSQL tooling image is unavailable.' }
 $image = ($image -join [Environment]::NewLine) | ConvertFrom-Json
-if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ToolingImageDigest -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'The PostgreSQL tooling image digest or scan is invalid.' }
-$findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
+if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ToolingImageDigest) { throw 'The PostgreSQL tooling image digest is invalid.' }
+$scanText = & aws.exe ecr describe-image-scan-findings --repository-name tracepoint-staging --image-id "imageTag=$toolingTag" --region us-east-1 --output json 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'The PostgreSQL tooling image scan is unavailable.' }
+$scan = ($scanText -join [Environment]::NewLine) | ConvertFrom-Json
+if ($scan.imageId.imageDigest -cne $ToolingImageDigest -or $scan.imageScanStatus.status -ne 'COMPLETE') { throw 'The PostgreSQL tooling image scan is invalid.' }
+$findings = $scan.imageScanFindings.findingSeverityCounts
 if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'The PostgreSQL tooling image has disallowed scan findings.' }
 
 $outputsPath = Join-Path ([IO.Path]::GetTempPath()) ("$stack-outputs-" + [guid]::NewGuid().ToString('N') + '.json')

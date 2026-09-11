@@ -96,8 +96,12 @@ try {
 $image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$nativeImageTag" --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'The immutable AWS-native runtime image is unavailable.' }
 $image = ($image -join [Environment]::NewLine) | ConvertFrom-Json
-if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'AWS-native runtime image digest or scan is invalid.' }
-$findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
+if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest) { throw 'AWS-native runtime image digest is invalid.' }
+$scanText = & aws.exe ecr describe-image-scan-findings --repository-name tracepoint-staging --image-id "imageTag=$nativeImageTag" --region us-east-1 --output json 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'AWS-native runtime image scan is unavailable.' }
+$scan = ($scanText -join [Environment]::NewLine) | ConvertFrom-Json
+if ($scan.imageId.imageDigest -cne $ImageDigest -or $scan.imageScanStatus.status -ne 'COMPLETE') { throw 'AWS-native runtime image scan is invalid.' }
+$findings = $scan.imageScanFindings.findingSeverityCounts
 if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'AWS-native runtime image has disallowed scan findings.' }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A retained bridge task revision is required for rollback.' }
