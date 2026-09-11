@@ -16,3 +16,12 @@ npm-debug.log*
 **/*secret*.json
 **/*.dump
 **/*.sql
+
+# The migration-tooling image receives a Git-scoped build archive containing
+# only these two authoritative SQL lineages. Re-include them after the broad
+# local SQL/Supabase exclusions above.
+!supabase/
+supabase/*
+!supabase/migrations/
+!supabase/migrations/*.sql
+!database/aws/*.sql
