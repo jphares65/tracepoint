@@ -40,6 +40,8 @@ test("PostgreSQL tooling archive includes the migration ledger's transitive SQL 
   const publisher = await readFile(new URL("scripts/publish-full-aws-staging-image.ps1", root), "utf8");
   assert.match(dockerfile, /scripts\/migration-sql-core\.mjs/);
   assert.match(publisher, /'scripts\/migration-sql-core\.mjs'/);
+  assert.match(publisher, /\$OnlyPostgresTooling -and -not \$BuildPostgresTooling/);
+  assert.match(publisher, /if \(-not \$OnlyPostgresTooling\)/);
 });
 
 test("synthetic fixture treats Cognito subjects as issuer-bound opaque identifiers", async () => {

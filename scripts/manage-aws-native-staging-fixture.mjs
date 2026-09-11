@@ -78,21 +78,26 @@ const slugs = {
   manager: `aws-native-${input.runId}-manager`,
   foreign: `aws-native-${input.runId}-foreign`,
 };
+let stage = "connect";
 
 try {
   await client.connect();
+  stage = "lineage";
   const lineage = await client.query("select kind,count(*)::int as count from tracepoint_migrations.applied_migrations group by kind order by kind");
   assert.deepEqual(lineage.rows, [{ kind: "aws", count: 17 }, { kind: "source", count: 76 }]);
   await client.query("begin");
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [`tracepoint:aws-native-fixture:${input.runId}`]);
   if (input.operation === "setup") {
+    stage = "existing-fixture-check";
     const existing = await client.query("select count(*)::int as count from public.departments where slug=any($1::text[])", [[slugs.manager, slugs.foreign]]);
     assert.equal(existing.rows[0].count, 0, "Acceptance fixture already exists");
     for (const user of [input.manager, input.officer, input.foreign]) {
+      stage = "application-user";
       await client.query(
         "insert into auth.users(id,email,raw_user_meta_data) values($1,$2,jsonb_build_object('full_name',$3,'identity_provider','cognito'))",
         [user.userId, user.email, user === input.manager ? "AWS Native Manager" : user === input.officer ? "Disposable acceptance officer" : "AWS Native Foreign User"],
       );
+      stage = "identity-link";
       await client.query(
         "insert into public.profiles(id,full_name,email) values($1,$2,$3) on conflict(id) do update set full_name=excluded.full_name,email=excluded.email",
         [user.userId, user === input.manager ? "AWS Native Manager" : user === input.officer ? "Disposable acceptance officer" : "AWS Native Foreign User", user.email],
@@ -103,37 +108,46 @@ try {
       );
     }
     for (const [kind, user] of [["manager", input.manager], ["foreign", input.foreign]]) {
+      stage = "department";
       await client.query(
         "insert into public.departments(id,name,short_name,slug,created_by) values($1,$2,$3,$4,$5)",
         [departments[kind], kind === "manager" ? "AWS Native Acceptance" : "AWS Native Foreign", "AWS", slugs[kind], user.userId],
       );
+      stage = "department-membership";
       await client.query(
         "insert into public.department_memberships(department_id,user_id,is_active,activation_status) values($1,$2,true,'activated')",
         [departments[kind], user.userId],
       );
+      stage = "department-role";
       await client.query(
         "insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by) values($1,$2,$3,$2)",
         [departments[kind], user.userId, kind === "manager" ? "administrator" : "officer"],
       );
+      stage = "department-features";
       await client.query(
         "insert into public.department_features(department_id,feature_code,is_enabled,enabled_at,updated_by) select $1,code,true,clock_timestamp(),$2 from public.feature_catalog where is_active=true on conflict(department_id,feature_code) do update set is_enabled=true,enabled_at=excluded.enabled_at,updated_by=excluded.updated_by",
         [departments[kind], user.userId],
       );
+      stage = "platform-agency-account";
       await client.query(
         "insert into public.platform_agency_accounts(department_id,account_status,plan_type,onboarding_status,created_by) values($1,'active','internal','activated',$2)",
         [departments[kind], user.userId],
       );
     }
+    stage = "officer-membership";
     await client.query(
       "insert into public.department_memberships(department_id,user_id,is_active,activation_status) values($1,$2,true,'activated')",
       [departments.manager, input.officer.userId],
     );
+    stage = "officer-role";
     await client.query(
       "insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by) values($1,$2,'officer',$3)",
       [departments.manager, input.officer.userId, input.manager.userId],
     );
+    stage = "platform-admin";
     await client.query("insert into public.platform_admins(user_id,display_name,is_active,created_by) values($1,'AWS Native Acceptance',true,$1)", [input.manager.userId]);
   } else {
+    stage = "cleanup-boundary";
     const exact = await client.query("select id,slug from public.departments where id=any($1::uuid[]) order by id", [[departments.manager, departments.foreign]]);
     assert.equal(exact.rowCount, 2, "Cleanup requires the exact two fixture departments");
     assert.ok(exact.rows.every(row => [slugs.manager, slugs.foreign].includes(row.slug)));
@@ -159,7 +173,7 @@ try {
   }));
 } catch (error) {
   await client.query("rollback").catch(() => undefined);
-  console.error(JSON.stringify({ status: "FAILED", operation: input.operation, errorName: error?.name ?? "Error", sensitiveDetailsPrinted: false }));
+  console.error(JSON.stringify({ status: "FAILED", operation: input.operation, stage, errorName: error?.name ?? "Error", errorCode: error?.code, table: error?.table, constraint: error?.constraint, sensitiveDetailsPrinted: false }));
   process.exitCode = 1;
 } finally {
   await client.end().catch(() => undefined);

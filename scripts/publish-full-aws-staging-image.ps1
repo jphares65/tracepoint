@@ -3,6 +3,7 @@ param(
     [switch]$ValidateArchiveOnly,
     [switch]$Wait,
     [switch]$BuildPostgresTooling,
+    [switch]$OnlyPostgresTooling,
     [ValidatePattern('^(main|codex/[a-z0-9][a-z0-9._/-]{2,159})$')]
     [string]$AuthorizedBranch = 'codex/aws-main-integration-final-20260908'
 )
@@ -54,6 +55,7 @@ $archiveExcludes = @(
 $sourceBucket = 'tracepoint-staging-aws-native-build-source-559054714699'
 $sourceKey = 'source/tracepoint-staging-aws-native-source.zip'
 $projectName = 'tracepoint-staging-aws-native-image-build'
+if ($OnlyPostgresTooling -and -not $BuildPostgresTooling) { throw '-OnlyPostgresTooling requires -BuildPostgresTooling.' }
 
 $branch = (& git.exe -C $repositoryRoot branch --show-current).Trim()
 $commit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
@@ -105,13 +107,14 @@ try {
     Assert-TracePointStagingIdentity | Out-Null
     $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --region us-east-1 --query VersionId --output text
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceVersion) -or $sourceVersion -eq 'None') { throw 'Versioned native source upload failed.' }
-    Assert-TracePointStagingIdentity | Out-Null
-    $nativeTag = "$commit-aws-native"
-    $overrides = "name=IMAGE_TAG,value=$nativeTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
-    $buildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --environment-variables-override $overrides.Split(' ') --region us-east-1 --query build.id --output text
-    if ($LASTEXITCODE -ne 0 -or $buildId -notmatch '^tracepoint-staging-aws-native-image-build:') { throw 'AWS-native CodeBuild start failed.' }
-    Write-Host "Started immutable AWS-native source build $buildId."
-    if ($Wait) {
+    if (-not $OnlyPostgresTooling) {
+        Assert-TracePointStagingIdentity | Out-Null
+        $nativeTag = "$commit-aws-native"
+        $overrides = "name=IMAGE_TAG,value=$nativeTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
+        $buildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --environment-variables-override $overrides.Split(' ') --region us-east-1 --query build.id --output text
+        if ($LASTEXITCODE -ne 0 -or $buildId -notmatch '^tracepoint-staging-aws-native-image-build:') { throw 'AWS-native CodeBuild start failed.' }
+        Write-Host "Started immutable AWS-native source build $buildId."
+        if ($Wait) {
         $deadline = [DateTime]::UtcNow.AddMinutes(45)
         do {
             $buildStatus = & aws.exe codebuild batch-get-builds --ids $buildId --region us-east-1 --query 'builds[0].buildStatus' --output text
@@ -128,7 +131,8 @@ try {
             $scanExitCode = $LASTEXITCODE
         } finally { $ErrorActionPreference = $savedPreference }
         if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
-        Write-Host "AWS-native build and scan completed for $nativeTag."
+            Write-Host "AWS-native build and scan completed for $nativeTag."
+        }
     }
     if ($BuildPostgresTooling) {
         Assert-TracePointStagingIdentity | Out-Null
