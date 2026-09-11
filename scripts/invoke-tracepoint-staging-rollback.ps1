@@ -19,11 +19,13 @@ if ($target.family -ne $current.family -or $target.revision -ge $current.revisio
 $containers = @($target.containerDefinitions)
 if ($containers.Count -ne 1 -or $containers[0].name -ne 'tracepoint') { throw 'Unexpected rollback container definition.' }
 $image = [string]$containers[0].image
-if ($image -notmatch '^559054714699\.dkr\.ecr\.us-east-1\.amazonaws\.com/tracepoint-staging:(?<tag>[0-9a-f]{40})$') { throw 'Rollback image must be an immutable staging commit tag.' }
-$tag = $Matches.tag
-$scan = Read-Aws @('ecr','describe-image-scan-findings','--repository-name','tracepoint-staging','--image-id',"imageTag=$tag")
-    Assert-TracePointImageScan -Scan $scan
-Write-Host "Validated rollback revision $($target.revision), commit $tag."
+$tagMatch = [regex]::Match($image, '^559054714699\.dkr\.ecr\.us-east-1\.amazonaws\.com/tracepoint-staging:(?<tag>[0-9a-f]{40}(?:-aws-native)?)$')
+$digestMatch = [regex]::Match($image, '^559054714699\.dkr\.ecr\.us-east-1\.amazonaws\.com/tracepoint-staging@(?<digest>sha256:[0-9a-f]{64})$')
+if (-not $tagMatch.Success -and -not $digestMatch.Success) { throw 'Rollback image must be an immutable staging commit tag or digest.' }
+$imageId = if ($digestMatch.Success) { "imageDigest=$($digestMatch.Groups['digest'].Value)" } else { "imageTag=$($tagMatch.Groups['tag'].Value)" }
+$scan = Read-Aws @('ecr','describe-image-scan-findings','--repository-name','tracepoint-staging','--image-id',$imageId)
+Assert-TracePointImageScan -Scan $scan
+Write-Host "Validated rollback revision $($target.revision), immutable image $imageId."
 if (-not $Execute) { return }
 Assert-TracePointStagingIdentity | Out-Null
 $null = Read-Aws @('ecs','update-service','--cluster','tracepoint-staging','--service','tracepoint-staging','--task-definition',$TaskDefinitionArn)

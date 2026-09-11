@@ -7,7 +7,8 @@ function global:aws.exe {
  $global:LASTEXITCODE=0;$command=$args -join ' '
  if($command -like 'sts get-caller-identity*'){return '{"Account":"559054714699","Arn":"arn:aws:sts::559054714699:assumed-role/TracePointMigrationStaging/test"}'}
  if($command -like 'ecs describe-services*'){return '{"services":[{"taskDefinition":"arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:2"}]}'}
- if($command -like 'ecs describe-task-definition*'){return ('{"taskDefinition":{"status":"ACTIVE","containerDefinitions":[{"image":"559054714699.dkr.ecr.us-east-1.amazonaws.com/tracepoint-staging:'+('a'*40)+'"}]}}')}
+ if($command -like 'ecs describe-task-definition*'){return ('{"taskDefinition":{"status":"ACTIVE","containerDefinitions":[{"image":"559054714699.dkr.ecr.us-east-1.amazonaws.com/tracepoint-staging@sha256:'+('a'*64)+'"}]}}')}
+ if($command -like 'ecr describe-image-scan-findings*'){return '{"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{}}}'}
  if($command -like 'ecs update-service*'){
   if($command -notmatch 'synthetic:2'){throw 'Incorrect restoration ARN'}
   $global:RehearsalRestored=$true
@@ -17,7 +18,6 @@ function global:aws.exe {
  if($command -like 'ecs wait services-stable*'){return}
  throw 'Unexpected AWS operation; real network disabled.'
 }
-function global:node {$global:LASTEXITCODE=0;if($global:RehearsalScenario -eq 'baseline'){$global:LASTEXITCODE=1}}
 try {
  @'
 param($TaskDefinitionArn,[switch]$Execute)
@@ -25,17 +25,17 @@ if(!$Execute){return}
 $global:RehearsalChanged=$true
 if($global:RehearsalScenario -eq 'rollback-failure'){throw 'Synthetic rollback health failure'}
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')
- 'param($WaitSeconds)' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'test-tracepoint-staging-runtime.ps1')
+ 'param($WaitSeconds);if($global:RehearsalScenario -eq ''baseline''){throw ''Synthetic baseline failure''}' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'test-tracepoint-staging-runtime.ps1')
  foreach($scenario in @('success','baseline','rollback-failure','restore-failure')) {
   $global:RehearsalScenario=$scenario;$global:RehearsalChanged=$false;$global:RehearsalRestored=$false;$failed=$false
-  try {& (Join-Path $temporaryRoot 'rehearse-staging-rollback.ps1') -CurrentImageTag ('a'*40) -PriorTaskDefinitionArn 'arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:1' -Execute | Out-Null} catch {$failed=$true}
+  try {& (Join-Path $temporaryRoot 'rehearse-staging-rollback.ps1') -CurrentImageReference ('sha256:'+('a'*64)) -PriorTaskDefinitionArn 'arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:1' -Execute | Out-Null} catch {$failed=$true}
   if($scenario -eq 'success'){if($failed -or !$global:RehearsalChanged -or !$global:RehearsalRestored){throw 'Successful rehearsal did not return current revision'}}
   elseif($scenario -eq 'baseline'){if(!$failed -or $global:RehearsalChanged -or $global:RehearsalRestored){throw 'Failed baseline mutated runtime'}}
   elseif(!$failed -or !$global:RehearsalRestored){throw 'Failure did not attempt restoration or was hidden'}
  }
  Write-Host 'Passed four rollback rehearsal scenarios; zero network calls.'
 } finally {
- Remove-Item Function:/aws.exe,Function:/node
+ Remove-Item Function:/aws.exe
  $resolved=[IO.Path]::GetFullPath($temporaryRoot)
  if([IO.Path]::GetDirectoryName($resolved).TrimEnd('\') -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or [IO.Path]::GetFileName($resolved) -notlike 'tracepoint-rehearsal-test-*'){throw 'Temporary cleanup boundary failed'}
  Remove-Item -LiteralPath $resolved -Recurse -Force
