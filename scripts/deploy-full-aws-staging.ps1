@@ -14,11 +14,12 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $infra = Join-Path $root 'infra'
 $assembly = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-full-aws-staging-' + [guid]::NewGuid().ToString('N'))
+$nativeImageTag = "$SourceCommit-aws-native"
 $contexts = @(
     '-c', 'account=559054714699', '-c', 'region=us-east-1', '-c', 'environment=tracepoint-staging',
     '-c', 'providerMode=aws-native', '-c', 'databaseEnabled=true', '-c', "databaseExpiresAfterUtc=$ExpiresAfterUtc",
     '-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3', '-c', 'databaseBootstrapEnabled=true',
-    '-c', "bootstrapSourceCommit=$SourceCommit", '-c', 'runtimeEnabled=true', '-c', "imageTag=$SourceCommit",
+    '-c', "bootstrapSourceCommit=$SourceCommit", '-c', 'runtimeEnabled=true', '-c', "imageTag=$nativeImageTag",
     '-c', "certificateArn=$CertificateArn", '--lookups=false'
 )
 
@@ -86,7 +87,7 @@ try {
     $secretText | & node (Join-Path $PSScriptRoot 'validate-aws-native-application-secret.mjs') staging
     if ($LASTEXITCODE -ne 0) { throw 'AWS-native staging secret validation failed.' }
 } finally { $secretText = $null }
-$image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$SourceCommit" --region us-east-1 --output json 2>&1
+$image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$nativeImageTag" --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'The immutable AWS-native runtime image is unavailable.' }
 $image = ($image -join [Environment]::NewLine) | ConvertFrom-Json
 if (@($image.imageDetails).Count -ne 1 -or $image.imageDetails[0].imageScanStatus.status -ne 'COMPLETE') { throw 'AWS-native runtime image scan is incomplete.' }
@@ -94,6 +95,12 @@ $findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCount
 if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'AWS-native runtime image has disallowed scan findings.' }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A retained bridge task revision is required for rollback.' }
+$previousDefinitionText = & aws.exe ecs describe-task-definition --task-definition $previous --region us-east-1 --output json 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'The retained bridge task definition cannot be inspected.' }
+try {
+    $previousDefinitionText | & node (Join-Path $PSScriptRoot 'validate-staging-bridge-rollback-target.mjs')
+    if ($LASTEXITCODE -ne 0) { throw 'The retained task is not an isolated bridge rollback target.' }
+} finally { $previousDefinitionText = $null }
 try {
     Push-Location $infra
     try {
@@ -108,7 +115,12 @@ try {
     $failure = $_
     $current = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
     if ($LASTEXITCODE -ne 0) { throw 'Native release failed and the current task cannot be inspected; manual staging recovery is required.' }
-    if ($current -ne $previous) { & (Join-Path $PSScriptRoot 'invoke-tracepoint-staging-rollback.ps1') -TaskDefinitionArn $previous -Execute }
+    if ($current -ne $previous) {
+        & (Join-Path $PSScriptRoot 'invoke-tracepoint-staging-rollback.ps1') -TaskDefinitionArn $previous -Execute
+        & aws.exe ecs wait services-stable --cluster tracepoint-staging --services tracepoint-staging --region us-east-1
+        if ($LASTEXITCODE -ne 0) { throw 'Bridge rollback did not stabilize; manual recovery is required.' }
+        & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 900
+    }
     throw $failure
 }
-Write-Host "AWS-native staging runtime deployed from immutable commit $SourceCommit; retained bridge task $previous remains the rollback source."
+Write-Host "AWS-native staging runtime deployed from immutable image $nativeImageTag; retained bridge task $previous remains the rollback source."

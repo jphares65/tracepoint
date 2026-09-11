@@ -67,8 +67,12 @@ test("execution IAM is resource-scoped and task IAM has no permissions", () => {
   const serialized = JSON.stringify(policies);
   assert.match(serialized, /BatchGetImage/);
   assert.doesNotMatch(serialized, /AmazonECSTaskExecutionRolePolicy/);
-  assert.equal((serialized.match(/GetAuthorizationToken/g) ?? []).length, 1);
-  assert.equal(Object.keys(policies).length, 1);
+  assert.equal((serialized.match(/GetAuthorizationToken/g) ?? []).length, 2);
+  assert.equal(Object.keys(policies).length, 2);
+  const policyTexts = Object.values(policies).map(policy => JSON.stringify(policy));
+  assert.equal(policyTexts.filter(policy => /AwsNativeAppSecrets/.test(policy)).length, 1);
+  assert.equal(policyTexts.filter(policy => /\"Ref\":\"AppSecrets/.test(policy)).length, 1);
+  assert.equal(policyTexts.some(policy => /AwsNativeAppSecrets/.test(policy) && /\"Ref\":\"AppSecrets/.test(policy)), false);
   assert.match(serialized, /AppRepository/);
   assert.match(serialized, /AppLogGroup/);
   assert.match(serialized, /AppSecrets/);
@@ -225,8 +229,8 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
     appSecrets: compute.appSecrets,
     databaseSecret: compute.appSecrets,
     databaseSecurityGroup: network.databaseSecurityGroup,
-    executionRole: compute.executionRole,
-    taskRole: compute.taskRole,
+    executionRole: compute.awsNativeExecutionRole,
+    taskRole: compute.awsNativeTaskRole,
     certificateArn: "arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000",
     imageTag: "0123456789abcdef",
     providerMode: "aws-native",

@@ -40,5 +40,6 @@ assert.ok(resources(ses, "AWS::SES::ConfigurationSet").length >= 1);
 const runtimeTasks = resources(runtime, "AWS::ECS::TaskDefinition");
 assert.equal(runtimeTasks.length, 1);
 const runtimeText = JSON.stringify(runtimeTasks[0]);
+assert.match(runtimeText, new RegExp(`${sourceCommit}-aws-native`));
 for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_STORAGE_PROVIDER", "s3", "TRACEPOINT_EMAIL_PROVIDER", "ses"]) assert.match(runtimeText, new RegExp(value));
 console.log(JSON.stringify({ valid: true, sourceCommit, providerMode: "aws-native", sourceMigrations: 76, awsMigrations: 17, forbiddenRuntimeReferences: 0 }));

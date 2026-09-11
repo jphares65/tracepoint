@@ -6,7 +6,7 @@ import { validateFullAwsStagingCostModel } from "./full-aws-staging-cost-core.mj
 test("full-AWS staging model is internally exact and currently blocks deployment", async () => {
   const model = JSON.parse(await readFile(new URL("../docs/aws-native-staging-cost-model-20260910.json", import.meta.url)));
   assert.deepEqual(validateFullAwsStagingCostModel(model), {
-    projectedCents: 8445,
+    projectedCents: 11365,
     ceilingCents: 7500,
     withinApprovedCeiling: false,
   });

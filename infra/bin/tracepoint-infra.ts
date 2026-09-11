@@ -96,7 +96,7 @@ imageBuild.addStackDependency(compute);
 
 const storageEnabled = app.node.tryGetContext("privateStorageEnabled") === "true";
 const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName}-storage`, {
- ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,dataKey:security.dataKey,
+ ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:providerMode === "aws-native" ? compute.awsNativeTaskRole : compute.taskRole,dataKey:security.dataKey,
 }) : undefined;
 if (storage) storage.addStackDependency(security);
 const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
@@ -120,14 +120,14 @@ const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${envir
   stackName: `${environmentName}-ses-foundation`,
   environmentName: workloadEnvironment,
   mailFromSubdomain: "bounce",
-  taskRole: compute.taskRole,
+  taskRole: compute.awsNativeTaskRole,
 }) : undefined;
 if (ses) ses.addStackDependency(compute);
 const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStack(app, `${environmentName}-cognito`, {
   ...commonProps,
   stackName: `${environmentName}-cognito`,
   environmentName: workloadEnvironment,
-  taskRole: compute.taskRole,
+  taskRole: compute.awsNativeTaskRole,
   sesFromAddress: ses.fromAddress,
   sesConfigurationSetName: ses.cognitoConfigurationSetName,
 }) : undefined;
@@ -201,8 +201,8 @@ if (runtimeEnabled) {
     cluster: compute.cluster,
     appLogGroup: compute.appLogGroup,
     appSecrets: providerMode === "aws-native" ? compute.awsNativeAppSecrets : compute.appSecrets,
-    executionRole: compute.executionRole,
-    taskRole: compute.taskRole,
+    executionRole: providerMode === "aws-native" ? compute.awsNativeExecutionRole : compute.executionRole,
+    taskRole: providerMode === "aws-native" ? compute.awsNativeTaskRole : compute.taskRole,
     certificateArn,
     imageTag,
     storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
