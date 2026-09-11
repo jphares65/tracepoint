@@ -15,7 +15,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^aws-native-[a-z0-9-]+@example\.invalid$')][string]$ForeignEmail,
     [Parameter(Mandatory)][ValidatePattern('^https://cognito-idp\.us-east-1\.amazonaws\.com/us-east-1_[A-Za-z0-9]+$')][string]$CognitoIssuer,
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:/-]{7,159}$')][string]$AuthorizationReference,
-    [switch]$Execute
+    [switch]$Execute,
+    [switch]$NonInteractive
 )
 
 Set-StrictMode -Version Latest
@@ -57,6 +58,7 @@ if (-not $Execute) { $plan | ConvertTo-Json -Compress; return }
 if ($Operation -eq 'cleanup' -and $env:TRACEPOINT_STAGING_FIXTURE_CLEANUP_AUTHORIZATION -cne $AuthorizationReference) {
     throw 'Run-bound cleanup authorization is required.'
 }
+if ($NonInteractive) { $ConfirmPreference = 'None' }
 if (-not $PSCmdlet.ShouldProcess("AWS-native staging fixture $RunId", "$Operation the exact synthetic fixture")) { return }
 
 $environment = @(

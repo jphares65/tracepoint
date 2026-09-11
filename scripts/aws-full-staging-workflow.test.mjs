@@ -29,6 +29,7 @@ test("bootstrap and runtime deployment gates require digest-shaped tooling evide
 test("native staging fixture reads bootstrap evidence from the application log group", async () => {
   const fixture = await readFile(new URL("scripts/execute-aws-native-staging-fixture.ps1", root), "utf8");
   assert.match(fixture, /'--log-group-name','\/tracepoint\/staging\/application'/);
+  assert.match(fixture, /if \(\$NonInteractive\) \{ \$ConfirmPreference = 'None' \}/);
 });
 
 test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {

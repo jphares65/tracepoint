@@ -124,7 +124,7 @@ function fixture(operation: "setup"|"cleanup", poolId: string) {
     "-ManagerId",manager.id,"-ManagerSubject",manager.subject!,"-ManagerEmail",manager.email,
     "-OfficerId",officer.id,"-OfficerSubject",officer.subject!,"-OfficerEmail",officer.email,
     "-ForeignUserId",foreign.id,"-ForeignSubject",foreign.subject!,"-ForeignEmail",foreign.email,
-    "-CognitoIssuer",`https://cognito-idp.${region}.amazonaws.com/${poolId}`,"-AuthorizationReference",authorizationReference,"-Execute","-Confirm:$false"];
+    "-CognitoIssuer",`https://cognito-idp.${region}.amazonaws.com/${poolId}`,"-AuthorizationReference",authorizationReference,"-Execute","-NonInteractive"];
   const env = {...process.env};
   if (operation === "cleanup") env.TRACEPOINT_STAGING_FIXTURE_CLEANUP_AUTHORIZATION = authorizationReference;
   const result = spawnSync("powershell.exe", args, {cwd: repositoryRoot, env, encoding:"utf8", stdio:["ignore","pipe","pipe"]});
