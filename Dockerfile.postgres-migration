@@ -8,7 +8,7 @@ RUN apk upgrade --no-cache && apk add --no-cache ca-certificates postgresql18-cl
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY scripts/database-migration-core.mjs scripts/database-migration-core.test.mjs scripts/migrate-aws-postgres-data.mjs ./scripts/
-COPY scripts/bootstrap-aws-postgres-target.mjs scripts/bootstrap-aws-postgres-target-core.mjs scripts/bootstrap-aws-postgres-target-core.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/aws-migration-ledger.mjs ./scripts/
+COPY scripts/bootstrap-aws-postgres-target.mjs scripts/bootstrap-aws-postgres-target-core.mjs scripts/bootstrap-aws-postgres-target-core.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/aws-migration-ledger.mjs scripts/migration-sql-core.mjs ./scripts/
 COPY scripts/manage-aws-native-staging-fixture.mjs ./scripts/
 COPY supabase/migrations ./supabase/migrations
 COPY database/aws ./database/aws

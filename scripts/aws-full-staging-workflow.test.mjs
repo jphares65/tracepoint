@@ -24,3 +24,10 @@ test("bootstrap and runtime deployment gates require digest-shaped tooling evide
   assert.match(bootstrap, /cdk deploy \$stack @contexts --exclusively/);
   assert.match(deploy, /bootstrap\.toolingImageDigest -ne \$ToolingImageDigest/);
 });
+
+test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {
+  const dockerfile = await readFile(new URL("Dockerfile.postgres-migration", root), "utf8");
+  const publisher = await readFile(new URL("scripts/publish-full-aws-staging-image.ps1", root), "utf8");
+  assert.match(dockerfile, /scripts\/migration-sql-core\.mjs/);
+  assert.match(publisher, /'scripts\/migration-sql-core\.mjs'/);
+});

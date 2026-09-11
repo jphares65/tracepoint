@@ -39,6 +39,7 @@ $archiveIncludes = @(
     'scripts/database-migration-core.test.mjs',
     'scripts/migrate-aws-postgres-data.mjs',
     'scripts/manage-aws-native-staging-fixture.mjs',
+    'scripts/migration-sql-core.mjs',
     'scripts/postgres-bootstrap-prerequisites.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'
