@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { normalizeMigrationSql } from "./migration-sql-core.mjs";
 
 export const AWS_MIGRATION_LEDGER = Object.freeze([
   ["001_provider_neutral_authorization_context.sql", "e0c2a264ce64bd18469578b5186c9765490b108e47b5e903df2422a828949515"],
@@ -30,7 +31,7 @@ export async function loadVerifiedAwsMigrations(directory = "database/aws") {
   assert.deepEqual(actual, AWS_MIGRATION_LEDGER.map(([name]) => name), "AWS migration filenames must match the committed ledger");
   const migrations = [];
   for (const [name, expected] of AWS_MIGRATION_LEDGER) {
-    const sql = await readFile(path.join(directory, name), "utf8");
+    const sql = normalizeMigrationSql(await readFile(path.join(directory, name), "utf8"));
     assert.equal(sha256(sql), expected, `AWS migration checksum changed: ${name}`);
     migrations.push({ name, sql, sha256: expected });
   }

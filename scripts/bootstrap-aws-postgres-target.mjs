@@ -6,6 +6,7 @@ import pg from "pg";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
 import { normalizeTransactionalSql, parseBootstrapConfiguration } from "./bootstrap-aws-postgres-target-core.mjs";
 import { AWS_MIGRATION_LEDGER, loadVerifiedAwsMigrations } from "./aws-migration-ledger.mjs";
+import { normalizeMigrationSql } from "./migration-sql-core.mjs";
 
 const configuration = parseBootstrapConfiguration(process.env);
 const ca = await readFile(configuration.caPath, "utf8");
@@ -37,7 +38,7 @@ try {
     const files=(await readdir(group.dir)).filter(file=>/^\d+_.+\.sql$/.test(file)).sort();
     assert.equal(files.length,group.expected,`Expected ${group.expected} ${group.kind} migrations`);
     for (const file of files) {
-      const raw=await readFile(path.join(group.dir,file),"utf8");
+      const raw=normalizeMigrationSql(await readFile(path.join(group.dir,file),"utf8"));
       const digest=checksum(raw);
       const existing=await migrator.query("select sha256 from tracepoint_migrations.applied_migrations where kind=$1 and name=$2",[group.kind,file]);
       if(existing.rowCount){assert.equal(existing.rows[0].sha256,digest,`Applied migration changed: ${file}`);continue;}
