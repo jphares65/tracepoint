@@ -94,7 +94,7 @@ try {
     for (const user of [input.manager, input.officer, input.foreign]) {
       stage = "application-user";
       await client.query(
-        "insert into auth.users(id,email,raw_user_meta_data) values($1,$2,jsonb_build_object('full_name',$3,'identity_provider','cognito'))",
+        "insert into auth.users(id,email,raw_user_meta_data) values($1,$2,jsonb_build_object('full_name',$3::text,'identity_provider','cognito'))",
         [user.userId, user.email, user === input.manager ? "AWS Native Manager" : user === input.officer ? "Disposable acceptance officer" : "AWS Native Foreign User"],
       );
       stage = "identity-link";

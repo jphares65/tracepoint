@@ -48,6 +48,7 @@ test("synthetic fixture treats Cognito subjects as issuer-bound opaque identifie
   const fixture = await readFile(new URL("scripts/manage-aws-native-staging-fixture.mjs", root), "utf8");
   assert.match(fixture, /const cognitoSubject = \/\^\[0-9a-f\]/);
   assert.match(fixture, /assert\.match\(user\.subject \?\? "", cognitoSubject\)/);
+  assert.match(fixture, /jsonb_build_object\('full_name',\$3::text/);
 });
 
 test("migration build images use the AWS-hosted official Node mirror", async () => {
