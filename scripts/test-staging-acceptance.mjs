@@ -10,6 +10,7 @@ const results = [];
 let acceptanceStep;
 let authenticationResponse;
 let authenticationPage;
+const totpCounters=new Map();
 function currentTotp(secret) {
   const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';
   for(const char of secret.replace(/=+$/,'')){const value=alphabet.indexOf(char);assert.ok(value>=0);bits+=value.toString(2).padStart(5,'0');}
@@ -33,7 +34,7 @@ async function signIn(page,email,password,totpSecret){
       acceptanceStep='cognito-login-form';
       await page.locator('input[name="username"]:visible').first().fill(email);
       await page.locator('input[name="password"]:visible').first().fill(password);
-      await page.locator('input[name="password"]:visible').first().press('Enter');
+    await page.locator('input[name="password"]:visible').first().press('Enter');
     }catch(error){
       const location=new URL(page.url());
       authenticationPage={origin:location.origin,path:location.pathname,visibleInputs:await page.locator('input:visible').evaluateAll(inputs=>inputs.slice(0,8).map(input=>({name:input.getAttribute('name'),type:input.getAttribute('type')})))};
@@ -42,7 +43,9 @@ async function signIn(page,email,password,totpSecret){
     acceptanceStep='cognito-mfa-challenge';
     const code=page.locator('input:visible[name*="code" i]').first();
     await code.waitFor();
-    const remaining=30000-Date.now()%30000;if(remaining<5000)await page.waitForTimeout(remaining+500);
+    let counter=Math.floor(Date.now()/30000),remaining=30000-Date.now()%30000;
+    if(remaining<5000||totpCounters.get(email)===counter){await page.waitForTimeout(remaining+500);counter=Math.floor(Date.now()/30000);}
+    totpCounters.set(email,counter);
     await code.fill(currentTotp(totpSecret));
     await page.getByRole('button',{name:'Sign in',exact:true}).first().click();
   }else{
@@ -126,7 +129,7 @@ else try {
       const executed=await context.request.post(`/api/settings/ai-importer/workspaces/${workspaceId}/execute`,{data:{domains:['vehicles'],approval:{domain:true,mappings:true,validation:true,finalAction:true},approvalToken:plan.approvalToken,workspaceDigest:plan.workspaceDigest}});const outcome=await executed.json();assert.equal(executed.status(),200);assert.equal(outcome.results.vehicles.created,1);
       acceptanceStep='importer-persistence';
       const fleet=await context.request.get('/api/fleet/vehicles');assert.equal(fleet.status(),200);assert.ok((await fleet.json()).items.some(vehicle=>vehicle.unit_number===unit));
-    } finally {if(workspaceId){acceptanceStep='importer-cleanup';const removed=await context.request.delete(`/api/settings/ai-importer/workspaces/${workspaceId}`);assert.equal(removed.status(),200);}}
+    } finally {if(workspaceId){const removed=await context.request.delete(`/api/settings/ai-importer/workspaces/${workspaceId}`);if(removed.status()!==200){acceptanceStep='importer-cleanup';assert.equal(removed.status(),200);}}}
   });
   const foreign = process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID;
   if (foreign && foreign !== department) await check('foreign tenant cookie rejection', async () => {
@@ -214,7 +217,7 @@ else try {
     console.log(JSON.stringify({authenticatedReadProbe:{...probe,allTenantChecksPassed:true,productionCapacityProof:false}}));
   });
   await check('logout',async()=>{
-    const logout=await context.request.post('/auth/signout',{maxRedirects:0});assert.equal(logout.status(),303);assert.equal(new URL(logout.headers().location,baseURL).origin,baseURL);
+    const logout=await context.request.post('/api/auth/cognito/logout',{headers:{Origin:baseURL,'Sec-Fetch-Site':'same-origin'},maxRedirects:0});assert.equal(logout.status(),303);assert.equal(new URL(logout.headers().location,baseURL).origin,'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com');
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));
     assert.equal(new URL(r.headers().location,baseURL).pathname,'/login');
   });

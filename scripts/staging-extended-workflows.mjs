@@ -10,7 +10,7 @@ export async function exerciseExtendedWorkflows({context,browser,baseURL,check,s
   }
   const run=crypto.randomUUID();const today=new Date().toISOString().slice(0,10);
   await check('off-duty submission, inspection, command approval and Inbox delivery',async()=>{
-   const created=await officer.request.post('/api/off-duty-firearms',{data:{make:'Synthetic',model:'Acceptance',firearmType:'Handgun',serial:'test-'+run,caliber:'9mm',policyAcknowledged:true,proofOwnership:true}});assert.equal(created.status(),201);
+   const created=await officer.request.post('/api/off-duty-firearms',{data:{make:'Synthetic',model:'Acceptance',firearmType:'Handgun',serial:'test-'+run,caliber:'9mm',policyAcknowledged:true,proofOwnership:true}});await expectStatus(created,201,'off-duty submission');
    const id=(await created.json()).requestId;assert.ok(id);const endpoint='/api/off-duty-firearms/'+id;
    const approval={action:'Approve',effectiveDate:today,expirationDate:new Date(Date.now()+30*86400000).toISOString().slice(0,10)};
    assert.equal((await officer.request.patch(endpoint,{data:approval})).status(),403);
@@ -23,7 +23,7 @@ export async function exerciseExtendedWorkflows({context,browser,baseURL,check,s
   await check('fleet creation, inspection, report and permission isolation',async()=>{
    const data={unitNumber:'test-'+run,make:'Synthetic',model:'Acceptance',currentMileage:100,assignmentType:'Pool'};
    assert.equal((await officer.request.post('/api/fleet/vehicles',{data})).status(),403);
-   const created=await context.request.post('/api/fleet/vehicles',{data});assert.equal(created.status(),201);const id=(await created.json()).item.id;
+   const created=await context.request.post('/api/fleet/vehicles',{data});await expectStatus(created,201,'fleet vehicle creation');const id=(await created.json()).item.id;
    assert.equal((await foreign.request.get('/api/fleet/vehicles/'+id)).status(),404);
    const inspected=await context.request.post('/api/fleet/vehicles/'+id+'/inspections',{data:{mileage:101,checklist:['body','tires','lights','controls','fluids','interior'].map(id=>({id,condition:'Pass'}))}});assert.equal(inspected.status(),201);
    const report=await context.request.get('/api/fleet/report');assert.equal(report.status(),200);const payload=await report.json();assert.ok(payload.vehicles.some(x=>x.id===id));assert.ok(payload.inspections.length>=1);
