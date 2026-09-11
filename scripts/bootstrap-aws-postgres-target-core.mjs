@@ -35,7 +35,8 @@ export function parseBootstrapConfiguration(environment) {
 export function normalizeTransactionalSql(raw, filename) {
   let sql = raw.replace(/^\uFEFF/, "");
   sql = sql.replace(/^(\s*(?:--[^\r\n]*(?:\r?\n|$)\s*)*)begin\s*;/i, "$1");
-  sql = sql.replace(/commit\s*;\s*$/i, "");
+  const commits = [...sql.matchAll(/\bcommit\s*;/gi)];
+  if (commits.length === 1) sql = sql.replace(/\bcommit\s*;/i, "");
   if (/\b(?:begin|commit|rollback)\s*;/i.test(sql)) throw new Error(`${filename} contains unsupported nested transaction control.`);
   return sql;
 }
