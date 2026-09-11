@@ -49,7 +49,9 @@ test('SES feedback worker is private, bounded, partial-batch, and cannot send em
  const ses=new SesFoundationStack(app,'email-worker-source',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',mailFromSubdomain:'bounce'});
  const worker=new SesFeedbackWorkerStack(app,'email-worker',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',vpc,databaseSecurityGroup,databaseSecret,feedbackTopic:ses.feedbackTopic,feedbackQueue:ses.feedbackQueue,feedbackDeadLetterQueue:ses.feedbackDeadLetterQueue});
  const template=Template.fromStack(worker),serialized=JSON.stringify(template.toJSON());
- template.hasResourceProperties('AWS::Lambda::Function',{Runtime:'nodejs24.x',ReservedConcurrentExecutions:2,Timeout:30,MemorySize:256,Environment:{Variables:Match.objectLike({TRACEPOINT_DATABASE_SECRET_ARN:Match.anyValue(),TRACEPOINT_SES_FEEDBACK_TOPIC_ARN:Match.anyValue(),TRACEPOINT_RDS_CA_PATH:'/opt/us-east-1-bundle.pem'})}});
+ template.hasResourceProperties('AWS::Lambda::Function',{Runtime:'nodejs24.x',Timeout:30,MemorySize:256,Environment:{Variables:Match.objectLike({TRACEPOINT_DATABASE_SECRET_ARN:Match.anyValue(),TRACEPOINT_SES_FEEDBACK_TOPIC_ARN:Match.anyValue(),TRACEPOINT_RDS_CA_PATH:'/opt/us-east-1-bundle.pem'})}});
+ const functions=Object.values(template.findResources('AWS::Lambda::Function')) as Array<{Properties:Record<string,unknown>}>;
+ assert.equal(Object.hasOwn(functions[0].Properties,'ReservedConcurrentExecutions'),false);
  template.hasResourceProperties('AWS::Lambda::EventSourceMapping',{BatchSize:10,FunctionResponseTypes:['ReportBatchItemFailures'],ScalingConfig:{MaximumConcurrency:2}});
  template.resourceCountIs('AWS::EC2::VPCEndpoint',1);template.resourceCountIs('AWS::CloudWatch::Alarm',4);
  assert.doesNotMatch(serialized,/com\.amazonaws\.us-east-1\.sns/);
