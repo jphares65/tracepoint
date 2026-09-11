@@ -106,13 +106,33 @@ $criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [
 $highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
 if ($criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'AWS-native runtime image has disallowed scan findings.' }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
-if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A retained bridge task revision is required for rollback.' }
+if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A healthy current task revision is required for automatic rollback.' }
 $previousDefinitionText = & aws.exe ecs describe-task-definition --task-definition $previous --region us-east-1 --output json 2>&1
-if ($LASTEXITCODE -ne 0) { throw 'The retained bridge task definition cannot be inspected.' }
+if ($LASTEXITCODE -ne 0) { throw 'The current staging task definition cannot be inspected.' }
 try {
-    $previousDefinitionText | & node (Join-Path $PSScriptRoot 'validate-staging-bridge-rollback-target.mjs')
-    if ($LASTEXITCODE -ne 0) { throw 'The retained task is not an isolated bridge rollback target.' }
+    $previousDefinition = ($previousDefinitionText -join [Environment]::NewLine) | ConvertFrom-Json
+    $family = $previousDefinition.taskDefinition.family
+    if ($family -notmatch '^(?:tracepoint-staging|tracepointstagingruntimeServiceTaskDef[A-F0-9]{8})$') { throw 'The current staging task family is invalid.' }
 } finally { $previousDefinitionText = $null }
+$candidateArns = @(& aws.exe ecs list-task-definitions --family-prefix $family --status ACTIVE --sort DESC --region us-east-1 --query 'taskDefinitionArns' --output text) -split '\s+'
+if ($LASTEXITCODE -ne 0) { throw 'Retained staging task revisions cannot be enumerated.' }
+$bridgeRollback = $null
+foreach ($candidateArn in $candidateArns) {
+    if ($candidateArn -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { continue }
+    $candidateText = & aws.exe ecs describe-task-definition --task-definition $candidateArn --region us-east-1 --output json 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'A retained staging task definition cannot be inspected.' }
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $candidateText | & node (Join-Path $PSScriptRoot 'validate-staging-bridge-rollback-target.mjs') 2>$null | Out-Null
+        $candidateValid = $LASTEXITCODE -eq 0
+    } finally {
+        $ErrorActionPreference = $savedPreference
+        $candidateText = $null
+    }
+    if ($candidateValid) { $bridgeRollback = $candidateArn; break }
+}
+if (-not $bridgeRollback) { throw 'A validated isolated bridge task revision must remain available as the emergency rollback source.' }
 try {
     Push-Location $infra
     try {
@@ -135,4 +155,4 @@ try {
     }
     throw $failure
 }
-Write-Host "AWS-native staging runtime deployed from immutable image $nativeImageTag; retained bridge task $previous remains the rollback source."
+Write-Host "AWS-native staging runtime deployed from immutable image $nativeImageTag; previous healthy task $previous is the automatic rollback target and retained bridge task $bridgeRollback remains the emergency rollback source."

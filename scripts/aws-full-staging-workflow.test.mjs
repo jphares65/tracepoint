@@ -23,6 +23,9 @@ test("bootstrap and runtime deployment gates require digest-shaped tooling evide
   assert.match(bootstrap, /imageDetails\[0\]\.imageDigest -cne \$ToolingImageDigest/);
   assert.match(bootstrap, /cdk deploy \$stack @contexts --exclusively/);
   assert.match(deploy, /bootstrap\.toolingImageDigest -ne \$ToolingImageDigest/);
+  assert.match(deploy, /list-task-definitions --family-prefix \$family --status ACTIVE --sort DESC/);
+  assert.match(deploy, /if \(-not \$bridgeRollback\) \{ throw 'A validated isolated bridge task revision/);
+  assert.match(deploy, /automatic rollback target and retained bridge task \$bridgeRollback/);
   assert.match(bootstrap, /--log-group-name \/tracepoint\/staging\/application/);
 });
 
