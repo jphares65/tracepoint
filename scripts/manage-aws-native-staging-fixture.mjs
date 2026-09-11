@@ -33,20 +33,22 @@ const input = {
   },
 };
 
-assert.ok(["setup", "cleanup"].includes(input.operation));
+assert.ok(["setup", "cleanup", "recovery-cleanup"].includes(input.operation));
 assert.match(input.runId ?? "", uuid);
 assert.match(input.sourceCommit ?? "", commit);
 assert.match(input.authorizationReference ?? "", reference);
-assert.match(input.issuer ?? "", /^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/);
-for (const user of [input.manager, input.officer, input.foreign]) {
-  assert.match(user.userId ?? "", uuid);
-  assert.match(user.subject ?? "", cognitoSubject);
-  assert.match(user.email ?? "", syntheticEmail);
+if (input.operation !== "recovery-cleanup") {
+  assert.match(input.issuer ?? "", /^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/);
+  for (const user of [input.manager, input.officer, input.foreign]) {
+    assert.match(user.userId ?? "", uuid);
+    assert.match(user.subject ?? "", cognitoSubject);
+    assert.match(user.email ?? "", syntheticEmail);
+  }
+  assert.notEqual(input.manager.userId, input.foreign.userId);
+  assert.notEqual(input.manager.subject, input.foreign.subject);
+  assert.equal(new Set([input.manager.userId, input.officer.userId, input.foreign.userId]).size, 3);
+  assert.equal(new Set([input.manager.subject, input.officer.subject, input.foreign.subject]).size, 3);
 }
-assert.notEqual(input.manager.userId, input.foreign.userId);
-assert.notEqual(input.manager.subject, input.foreign.subject);
-assert.equal(new Set([input.manager.userId, input.officer.userId, input.foreign.userId]).size, 3);
-assert.equal(new Set([input.manager.subject, input.officer.subject, input.foreign.subject]).size, 3);
 
 const metadataOrigin = process.env.ECS_CONTAINER_METADATA_URI_V4;
 assert.match(metadataOrigin ?? "", /^http:\/\/169\.254\.170\.2\/v4\/[A-Za-z0-9_-]+$/);
@@ -84,7 +86,7 @@ try {
   await client.connect();
   stage = "lineage";
   const lineage = await client.query("select kind,count(*)::int as count from tracepoint_migrations.applied_migrations group by kind order by kind");
-  assert.deepEqual(lineage.rows, [{ kind: "aws", count: 17 }, { kind: "source", count: 76 }]);
+  assert.deepEqual(lineage.rows, [{ kind: "aws", count: 18 }, { kind: "source", count: 76 }]);
   await client.query("begin");
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [`tracepoint:aws-native-fixture:${input.runId}`]);
   if (input.operation === "setup") {
@@ -156,16 +158,38 @@ try {
     assert.equal(officerPermission.rows[0].count, 1, "Officer fixture requires off-duty submission authority");
     stage = "platform-admin";
     await client.query("insert into public.platform_admins(user_id,display_name,is_active,created_by) values($1,'AWS Native Acceptance',true,$1)", [input.manager.userId]);
-  } else {
+  } else if (input.operation === "cleanup") {
     stage = "cleanup-boundary";
     const exact = await client.query("select id,slug from public.departments where id=any($1::uuid[]) order by id", [[departments.manager, departments.foreign]]);
     assert.equal(exact.rowCount, 2, "Cleanup requires the exact two fixture departments");
     assert.ok(exact.rows.every(row => [slugs.manager, slugs.foreign].includes(row.slug)));
     await client.query("select set_config('tracepoint.allow_department_teardown','on',true)");
     await client.query("delete from public.platform_admins where user_id=$1", [input.manager.userId]);
+    await client.query("delete from public.audit_events where department_id=any($1::uuid[])", [[departments.manager, departments.foreign]]);
     await client.query("delete from public.departments where id=any($1::uuid[])", [[departments.manager, departments.foreign]]);
     await client.query("delete from auth.users where id=any($1::uuid[])", [[input.manager.userId, input.officer.userId, input.foreign.userId]]);
     const remaining = await client.query("select (select count(*) from public.departments where id=any($1::uuid[]))::int as departments,(select count(*) from auth.users where id=any($2::uuid[]))::int as users", [[departments.manager, departments.foreign], [input.manager.userId, input.officer.userId, input.foreign.userId]]);
+    assert.deepEqual(remaining.rows[0], { departments: 0, users: 0 });
+  } else {
+    stage = "recovery-cleanup-boundary";
+    const exact = await client.query("select id,slug from public.departments where slug=any($1::text[]) order by slug", [[slugs.manager, slugs.foreign]]);
+    assert.equal(exact.rowCount, 2, "Recovery cleanup requires the exact two fixture slugs");
+    assert.deepEqual(exact.rows.map(row => row.slug), [slugs.foreign, slugs.manager]);
+    const departmentIds = exact.rows.map(row => row.id);
+    const identities = await client.query(
+      "select distinct users.id,users.email from auth.users users join public.department_memberships membership on membership.user_id=users.id where membership.department_id=any($1::uuid[]) order by users.email",
+      [departmentIds],
+    );
+    const expectedEmails = ["foreign", "manager", "officer"].map(kind => `aws-native-${kind}-${input.runId}@example.invalid`).sort();
+    assert.equal(identities.rowCount, 3, "Recovery cleanup requires exactly three synthetic identities");
+    assert.deepEqual(identities.rows.map(row => row.email).sort(), expectedEmails);
+    const userIds = identities.rows.map(row => row.id);
+    await client.query("select set_config('tracepoint.allow_department_teardown','on',true)");
+    await client.query("delete from public.platform_admins where user_id=any($1::uuid[])", [userIds]);
+    await client.query("delete from public.audit_events where department_id=any($1::uuid[])", [departmentIds]);
+    await client.query("delete from public.departments where id=any($1::uuid[])", [departmentIds]);
+    await client.query("delete from auth.users where id=any($1::uuid[])", [userIds]);
+    const remaining = await client.query("select (select count(*) from public.departments where slug=any($1::text[]))::int as departments,(select count(*) from auth.users where email=any($2::text[]))::int as users", [[slugs.manager, slugs.foreign], expectedEmails]);
     assert.deepEqual(remaining.rows[0], { departments: 0, users: 0 });
   }
   await client.query("commit");
@@ -175,7 +199,7 @@ try {
     runId: input.runId,
     sourceCommit: input.sourceCommit,
     sourceMigrations: 76,
-    awsMigrations: 17,
+    awsMigrations: 18,
     departments: 2,
     users: 3,
     syntheticOnly: true,

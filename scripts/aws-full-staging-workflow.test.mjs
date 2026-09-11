@@ -39,6 +39,15 @@ test("native staging fixture reads bootstrap evidence from the application log g
   assert.match(fixture, /\$evidenceDeadline = \[DateTime\]::UtcNow\.AddMinutes\(2\)/);
 });
 
+test("native staging fixture cleanup removes only verified synthetic tenants and their audit rows", async () => {
+  const fixture = await readFile(new URL("scripts/manage-aws-native-staging-fixture.mjs", root), "utf8");
+  assert.match(fixture, /\["setup", "cleanup", "recovery-cleanup"\]/);
+  assert.match(fixture, /delete from public\.audit_events where department_id=any/);
+  assert.match(fixture, /Recovery cleanup requires the exact two fixture slugs/);
+  assert.match(fixture, /Recovery cleanup requires exactly three synthetic identities/);
+  assert.match(fixture, /aws-native-\$\{kind\}-\$\{input\.runId\}@example\.invalid/);
+});
+
 test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {
   const dockerfile = await readFile(new URL("Dockerfile.postgres-migration", root), "utf8");
   const publisher = await readFile(new URL("scripts/publish-full-aws-staging-image.ps1", root), "utf8");
