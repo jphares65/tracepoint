@@ -8,8 +8,9 @@ import pg from 'pg';
 import {loadVerifiedAwsMigrations} from './aws-migration-ledger.mjs';
 import {supabasePrerequisites} from './postgres-bootstrap-prerequisites.mjs';
 import {catalogSql,manifestSql} from './staging-management-manifest.mjs';
+import {normalizeMigrationSql} from './migration-sql-core.mjs';
 let phase='target validation';
-const expectedMigrationCount=75;
+export const expectedMigrationCount=76;
 
 // This runner accepts only a new disposable database in the isolated AWS account.
 // ECS injects the RDS-managed secret; neither credentials nor SQL rows are logged.
@@ -44,7 +45,7 @@ async function main(){
   await client.query('create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)');
   for(const file of files){
    phase='ordered migrations';
-   try{await client.query('begin');await client.query((await readFile('supabase/migrations/'+file,'utf8')).replace(/^\uFEFF/,''));await client.query('insert into supabase_migrations.schema_migrations values($1)',[file.split('_')[0]]);await client.query('commit');}
+   try{await client.query('begin');await client.query(normalizeMigrationSql(await readFile('supabase/migrations/'+file,'utf8')));await client.query('insert into supabase_migrations.schema_migrations values($1)',[file.split('_')[0]]);await client.query('commit');}
    catch(error){await client.query('rollback');console.log(JSON.stringify({failedMigration:file,sqlState:error.code}));throw Error('Disposable migration failed');}
   }
   phase='AWS target overlays';const overlays=await loadVerifiedAwsMigrations();
