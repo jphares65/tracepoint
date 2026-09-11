@@ -37,9 +37,14 @@ export function createCognitoTransport(config:CognitoVerificationConfig,ports:Co
   if(options.location)headers.set('Location',options.location);for(const value of options.cookies??[])headers.append('Set-Cookie',value);
   return new Response(JSON.stringify({code}),{status,headers});
  }
+ function isExpectedPublicRequest(request:Request,url:URL){
+  if(url.origin===origin)return true;
+  const expected=new URL(origin);
+  return request.headers.get('host')===expected.host&&request.headers.get('x-forwarded-proto')===expected.protocol.slice(0,-1);
+ }
  function guard(request:Request,path:string,method:string,csrf=true){
   if(!enabled)return response(503,'provider_disabled');const url=new URL(request.url);
-  if(url.origin!==origin||url.pathname!==path)return response(400,'invalid_request');
+  if(!isExpectedPublicRequest(request,url)||url.pathname!==path)return response(400,'invalid_request');
   if(request.method!==method)return response(405,'method_not_allowed');
   if(csrf&&(request.headers.get('origin')!==origin||!['same-origin','none',null].includes(request.headers.get('sec-fetch-site'))||url.search))return response(403,'origin_rejected');
   return null;

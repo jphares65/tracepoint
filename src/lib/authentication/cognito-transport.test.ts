@@ -10,11 +10,18 @@ function fixture(enabled=true){
  return {api:createCognitoTransport(config,ports,{enabled}),ports,calls};
 }
 function post(path:string,headers:Record<string,string>={},body?:string){return new Request(origin+'/api/auth/cognito/'+path,{method:'POST',headers:{origin,'sec-fetch-site':'same-origin',...headers},body});}
+function proxiedPost(path:string,headers:Record<string,string>={},body?:string){return new Request('http://172.31.0.10:3000/api/auth/cognito/'+path,{method:'POST',headers:{origin,'sec-fetch-site':'same-origin',host:'staging.tracepointhq.com','x-forwarded-proto':'https',...headers},body});}
 test('disabled provider rejects before any port call',async()=>{const f=fixture(false);for(const [name,path] of [['begin','login'],['refresh','refresh'],['logout','logout']] as const)assert.equal((await f.api[name](post(path))).status,503);assert.deepEqual(f.calls,{establish:0,rotate:0,revoke:0,exchange:0});});
 test('login requires same-origin POST and returns only hardened PKCE cookie',async()=>{
  const f=fixture();assert.equal((await f.api.begin(new Request(origin+'/api/auth/cognito/login'))).status,405);for(const foreign of ['https://evil.invalid','null',''])assert.equal((await f.api.begin(post('login',{origin:foreign}))).status,403);
  assert.equal((await f.api.begin(post('login',{'sec-fetch-site':'cross-site'}))).status,403);
  const response=await f.api.begin(post('login'));assert.equal(response.status,303);assert.equal(new URL(response.headers.get('location')!).origin,'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com');const cookie=response.headers.get('set-cookie')!;for(const required of ['__Host-tracepoint-cognito-flow=','HttpOnly','Secure','SameSite=Lax','Path=/','Max-Age=300'])assert.ok(cookie.includes(required));assert.equal(cookie.includes('Domain='),false);assert.ok(response.headers.get('cache-control')?.includes('no-store'));
+});
+test('login accepts the exact trusted TLS proxy boundary without trusting spoofed forwarding headers',async()=>{
+ const f=fixture();assert.equal((await f.api.begin(proxiedPost('login'))).status,303);
+ const rejectedHeaders:Array<Record<string,string>>=[{host:'evil.invalid'},{'x-forwarded-proto':'http'},{host:'staging.tracepointhq.com, evil.invalid'},{'x-forwarded-proto':'https, http'}];
+ for(const headers of rejectedHeaders)assert.equal((await f.api.begin(proxiedPost('login',headers))).status,400);
+ assert.equal((await f.api.begin(proxiedPost('login',{origin:'https://evil.invalid'}))).status,403);
 });
 test('callback consumes PKCE and returns opaque session without provider tokens or redirect injection',async()=>{
  const f=fixture(),begin=await f.api.begin(post('login',{},'next=%2Fsettings%3Ftab%3Dusers')),url=new URL(begin.headers.get('location')!);const flow=begin.headers.get('set-cookie')!.split(';')[0];
