@@ -104,6 +104,7 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       entry: path.resolve(__dirname, "../../src/lib/email/ses-feedback-handler.ts").replaceAll("\\", "/"),
       handler: "handler", runtime: lambda.Runtime.NODEJS_24_X, role: workerRole,
       depsLockFilePath: path.join(__dirname, "../../package-lock.json"),
+      projectRoot: path.resolve(__dirname, "../.."),
       // The SQS mapping is the workload concurrency boundary. Do not reserve
       // account concurrency: small staging accounts must retain Lambda's
       // service-required unreserved pool.
