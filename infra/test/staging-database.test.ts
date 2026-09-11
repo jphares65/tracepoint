@@ -4,7 +4,8 @@ import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { NetworkStack } from "../lib/network-stack";
 import { SecurityStack } from "../lib/security-stack";
-import { StagingDatabaseStack } from "../lib/staging-database-stack";
+import { StagingDatabaseStack, validateStagingDatabaseLease } from "../lib/staging-database-stack";
+import { BackupRecoveryStack } from "../lib/backup-recovery-stack";
 
 test("staging PostgreSQL is private, encrypted, TLS-only, backup-protected and bounded", () => {
   const app = new cdk.App();
@@ -15,7 +16,9 @@ test("staging PostgreSQL is private, encrypted, TLS-only, backup-protected and b
   const stack = new StagingDatabaseStack(app, "database", {
     env, environmentName: "staging", vpc: network.vpc, dataKey: security.dataKey,
     securityGroup: network.databaseSecurityGroup,
-    expiresAfterUtc: "2026-09-12T14:00:00Z",
+    expiresAfterUtc: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    leaseOwner: "synthetic-test-owner",
+    leaseReference: "unit-test-authorization",
   });
   const template = Template.fromStack(stack);
   template.hasResourceProperties("AWS::RDS::DBInstance", {
@@ -33,4 +36,38 @@ test("staging PostgreSQL is private, encrypted, TLS-only, backup-protected and b
     GenerateSecretString: Match.objectLike({ GenerateStringKey: "password", PasswordLength: 40 }),
   });
   assert.equal(template.findResources("AWS::EC2::NatGateway") && Object.keys(template.findResources("AWS::EC2::NatGateway")).length, 0);
+  template.hasResourceProperties("AWS::RDS::DBInstance", {
+    Tags: Match.arrayWith([
+      { Key: "Backup", Value: "daily" },
+      { Key: "LeaseOwner", Value: "synthetic-test-owner" },
+      { Key: "LeaseReference", Value: "unit-test-authorization" },
+    ]),
+  });
+});
+
+test("staging database lease has deterministic lower and upper bounds", () => {
+  const now = Date.parse("2026-09-11T12:00:00Z");
+  const lease = (expiresAfterUtc: string, leaseOwner = "owner@example.com", leaseReference = "github:123") =>
+    validateStagingDatabaseLease({ expiresAfterUtc, leaseOwner, leaseReference }, now);
+  assert.equal(lease("2026-09-11T12:30:01Z"), "2026-09-11T12:30:01.000Z");
+  assert.equal(lease("2026-09-18T12:00:00Z"), "2026-09-18T12:00:00.000Z");
+  assert.throws(() => lease("2026-09-11T12:30:00Z"), /30 minutes and 7 days/);
+  assert.throws(() => lease("2026-09-18T12:00:01Z"), /30 minutes and 7 days/);
+  assert.throws(() => lease("invalid"), /30 minutes and 7 days/);
+  assert.throws(() => lease("2026-09-12T12:00:00Z", "", "github:123"), /owner and authorization reference/);
+});
+
+test("staging backup retains an encrypted vault and selects daily-tagged resources", () => {
+  const stack = new BackupRecoveryStack(new cdk.App(), "backup", {
+    env: { account: "559054714699", region: "us-east-1" }, environmentName: "staging",
+  });
+  const template = Template.fromStack(stack);
+  template.hasResourceProperties("AWS::Backup::BackupVault", { BackupVaultName: "tracepoint-staging", EncryptionKeyArn: Match.anyValue() });
+  template.hasResourceProperties("AWS::Backup::BackupPlan", { BackupPlan: Match.objectLike({ BackupPlanName: "tracepoint-staging" }) });
+  template.hasResourceProperties("AWS::Backup::BackupSelection", {
+    BackupSelection: Match.objectLike({ ListOfTags: Match.arrayWith([Match.objectLike({ ConditionKey: "Backup", ConditionType: "STRINGEQUALS", ConditionValue: "daily" })]) }),
+  });
+  assert.throws(() => new BackupRecoveryStack(new cdk.App(), "wrong-account", {
+    env: { account: "111111111111", region: "us-east-1" }, environmentName: "staging",
+  }), /Backup target rejected/);
 });

@@ -12,7 +12,11 @@ export class BackupRecoveryStack extends cdk.Stack {
   readonly vault: backup.BackupVault;
   constructor(scope: Construct, id: string, props: BackupRecoveryStackProps) {
     super(scope, id, props);
-    if (this.region !== "us-east-1" || this.account === "265544358665") throw new Error("Backup target rejected");
+    if (this.region !== "us-east-1" || this.account === "265544358665" ||
+        (props.environmentName === "staging" && this.account !== "559054714699") ||
+        (props.environmentName === "production" && this.account === "559054714699")) {
+      throw new Error("Backup target rejected");
+    }
     const key = new kms.Key(this, "BackupKey", {
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,

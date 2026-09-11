@@ -25,7 +25,9 @@ jobs:
       - run: npm run build --prefix infra
       - name: Strict full-AWS assembly synth
         shell: pwsh
-        run: ./scripts/deploy-full-aws-staging.ps1 -Action ValidateImplementation -SourceCommit $env:GITHUB_SHA
+        run: |
+          $expires = (Get-Date).ToUniversalTime().AddDays(2).ToString('yyyy-MM-ddTHH:mm:ssZ')
+          ./scripts/deploy-full-aws-staging.ps1 -Action ValidateImplementation -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $expires -LeaseOwner "github-$env:GITHUB_ACTOR" -LeaseReference "github:$env:GITHUB_RUN_ID:$env:GITHUB_RUN_ATTEMPT"
   release:
     needs: validate
     if: github.ref == 'refs/heads/main'
@@ -40,6 +42,8 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
       CERTIFICATE_ARN: ${{ vars.STAGING_CERTIFICATE_ARN }}
       TRACEPOINT_SECRET_INITIALIZATION_AUTHORIZATION: github-full-aws-staging-${{ github.run_id }}-${{ github.run_attempt }}
+      DATABASE_LEASE_OWNER: github-${{ github.actor }}
+      DATABASE_LEASE_REFERENCE: github:${{ github.run_id }}:${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -57,15 +61,18 @@ jobs:
           aws-region: us-east-1
           allowed-account-ids: '559054714699'
           role-duration-seconds: 7200
+      - name: Set bounded database lease
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "DATABASE_EXPIRES_AFTER_UTC=$((Get-Date).ToUniversalTime().AddDays(2).ToString('yyyy-MM-ddTHH:mm:ssZ'))"
       - name: Deploy isolated native foundations
         shell: pwsh
-        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployFoundations -SourceCommit $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN -SecretInitializationAuthorizationReference $env:TRACEPOINT_SECRET_INITIALIZATION_AUTHORIZATION -Execute
+        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployFoundations -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -CertificateArn $env:CERTIFICATE_ARN -SecretInitializationAuthorizationReference $env:TRACEPOINT_SECRET_INITIALIZATION_AUTHORIZATION -Execute
       - name: Publish runtime and PostgreSQL tooling images
         shell: pwsh
         run: ./scripts/publish-full-aws-staging-image.ps1 -BuildPostgresTooling -Wait
       - name: Bootstrap all database migrations
         shell: pwsh
-        run: ./scripts/execute-full-aws-staging-bootstrap.ps1 -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc 2026-09-13T23:59:59Z -EvidenceOutputPath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
+        run: ./scripts/execute-full-aws-staging-bootstrap.ps1 -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -EvidenceOutputPath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
       - name: Deploy native runtime with retained bridge rollback
         shell: pwsh
-        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployRuntime -SourceCommit $env:GITHUB_SHA -CertificateArn $env:CERTIFICATE_ARN -BootstrapEvidencePath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute
+        run: ./scripts/deploy-full-aws-staging.ps1 -Action DeployRuntime -SourceCommit $env:GITHUB_SHA -ExpiresAfterUtc $env:DATABASE_EXPIRES_AFTER_UTC -LeaseOwner $env:DATABASE_LEASE_OWNER -LeaseReference $env:DATABASE_LEASE_REFERENCE -CertificateArn $env:CERTIFICATE_ARN -BootstrapEvidencePath (Join-Path $env:RUNNER_TEMP 'database-bootstrap.json') -Execute

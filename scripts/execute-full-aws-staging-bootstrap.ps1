@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$SourceCommit,
-    [Parameter(Mandatory)][ValidatePattern('^2026-09-1[0-3]T\d{2}:\d{2}:\d{2}Z$')][string]$ExpiresAfterUtc,
+    [Parameter(Mandatory)][string]$ExpiresAfterUtc,
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 .@_-]{2,79}$')][string]$LeaseOwner,
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,159}$')][string]$LeaseReference,
     [string]$EvidenceOutputPath,
     [switch]$Execute
 )
@@ -15,6 +17,7 @@ $assembly = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-db-bootstrap-' + [
 $contexts = @(
     '-c', 'account=559054714699', '-c', 'region=us-east-1', '-c', 'environment=tracepoint-staging',
     '-c', 'providerMode=aws-native', '-c', 'databaseEnabled=true', '-c', "databaseExpiresAfterUtc=$ExpiresAfterUtc",
+    '-c', "databaseLeaseOwner=$LeaseOwner", '-c', "databaseLeaseReference=$LeaseReference",
     '-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3', '-c', 'databaseBootstrapEnabled=true',
     '-c', "bootstrapSourceCommit=$SourceCommit", '--lookups=false'
 )

@@ -14,6 +14,7 @@ import { SesFoundationStack } from "../lib/ses-foundation-stack";
 import { AlertDeliveryStack } from "../lib/alert-delivery-stack";
 import { SesFeedbackWorkerStack } from "../lib/ses-feedback-worker-stack";
 import { DatabaseBootstrapRunnerStack } from "../lib/database-bootstrap-runner-stack";
+import { BackupRecoveryStack } from "../lib/backup-recovery-stack";
 
 const app = new cdk.App();
 
@@ -110,11 +111,19 @@ const database = databaseEnabled ? new StagingDatabaseStack(app, `${environmentN
   dataKey: security.dataKey,
   securityGroup: network.databaseSecurityGroup,
   expiresAfterUtc: app.node.tryGetContext("databaseExpiresAfterUtc"),
+  leaseOwner: app.node.tryGetContext("databaseLeaseOwner"),
+  leaseReference: app.node.tryGetContext("databaseLeaseReference"),
 }) : undefined;
 if (database) {
   database.addStackDependency(network);
   database.addStackDependency(security);
 }
+const backup = providerMode === "aws-native" && database ? new BackupRecoveryStack(app, `${environmentName}-backup`, {
+  ...commonProps,
+  stackName: `${environmentName}-backup`,
+  environmentName: "staging",
+}) : undefined;
+if (backup) backup.addStackDependency(database!);
 const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${environmentName}-ses-foundation`, {
   ...commonProps,
   stackName: `${environmentName}-ses-foundation`,

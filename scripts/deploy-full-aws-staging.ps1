@@ -2,7 +2,9 @@
 param(
     [ValidateSet('ValidateImplementation','DeployFoundations','DeployRuntime')][string]$Action = 'ValidateImplementation',
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$SourceCommit,
-    [ValidatePattern('^2026-09-1[0-3]T\d{2}:\d{2}:\d{2}Z$')][string]$ExpiresAfterUtc = '2026-09-13T23:59:59Z',
+    [string]$ExpiresAfterUtc = (Get-Date).ToUniversalTime().AddDays(2).ToString('yyyy-MM-ddTHH:mm:ssZ'),
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 .@_-]{2,79}$')][string]$LeaseOwner = 'tracepoint-engineering',
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:/-]{2,159}$')][string]$LeaseReference = 'implementation-validation',
     [string]$CertificateArn = 'arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000',
     [string]$BootstrapEvidencePath,
     [string]$SecretInitializationAuthorizationReference,
@@ -18,6 +20,7 @@ $nativeImageTag = "$SourceCommit-aws-native"
 $contexts = @(
     '-c', 'account=559054714699', '-c', 'region=us-east-1', '-c', 'environment=tracepoint-staging',
     '-c', 'providerMode=aws-native', '-c', 'databaseEnabled=true', '-c', "databaseExpiresAfterUtc=$ExpiresAfterUtc",
+    '-c', "databaseLeaseOwner=$LeaseOwner", '-c', "databaseLeaseReference=$LeaseReference",
     '-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3', '-c', 'databaseBootstrapEnabled=true',
     '-c', "bootstrapSourceCommit=$SourceCommit", '-c', 'runtimeEnabled=true', '-c', "imageTag=$nativeImageTag",
     '-c', "certificateArn=$CertificateArn", '--lookups=false'
@@ -60,7 +63,7 @@ if ($Action -eq 'DeployFoundations') {
     }
     $foundationStacks = @(
         'tracepoint-staging-network', 'tracepoint-staging-security', 'tracepoint-staging-compute',
-        'tracepoint-staging-aws-native-image-build', 'tracepoint-staging-storage', 'tracepoint-staging-database',
+        'tracepoint-staging-aws-native-image-build', 'tracepoint-staging-storage', 'tracepoint-staging-database', 'tracepoint-staging-backup',
         'tracepoint-staging-ses-foundation', 'tracepoint-staging-cognito', 'tracepoint-staging-ses-feedback-worker'
     )
     Push-Location $infra

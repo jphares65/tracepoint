@@ -11,6 +11,24 @@ export interface StagingDatabaseStackProps extends cdk.StackProps {
   dataKey: kms.IKey;
   securityGroup: ec2.ISecurityGroup;
   expiresAfterUtc: string;
+  leaseOwner: string;
+  leaseReference: string;
+}
+
+export function validateStagingDatabaseLease(
+  props: Pick<StagingDatabaseStackProps, "expiresAfterUtc" | "leaseOwner" | "leaseReference">,
+  now = Date.now(),
+) {
+  const expires = Date.parse(props.expiresAfterUtc);
+  if (!Number.isFinite(expires) || expires <= now + cdk.Duration.minutes(30).toMilliseconds() ||
+      expires > now + cdk.Duration.days(7).toMilliseconds()) {
+    throw new Error("Staging database lease must expire between 30 minutes and 7 days from synthesis");
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9 .@_-]{2,79}$/.test(props.leaseOwner) ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,159}$/.test(props.leaseReference)) {
+    throw new Error("Explicit staging database lease owner and authorization reference required");
+  }
+  return new Date(expires).toISOString();
 }
 
 export class StagingDatabaseStack extends cdk.Stack {
@@ -20,14 +38,16 @@ export class StagingDatabaseStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props: StagingDatabaseStackProps) {
     super(scope, id, props);
-    if (this.account !== "559054714699" || this.region !== "us-east-1" ||
-        !/^2026-09-1[0-3]T\d{2}:\d{2}:\d{2}Z$/.test(props.expiresAfterUtc)) {
+    if (this.account !== "559054714699" || this.region !== "us-east-1") {
       throw new Error("Explicit bounded staging database target required");
     }
+    const expiresAfterUtc = validateStagingDatabaseLease(props);
 
     cdk.Tags.of(this).add("Purpose", "full-aws-synthetic-parity");
     cdk.Tags.of(this).add("DataClassification", "Synthetic-Non-PII");
-    cdk.Tags.of(this).add("ExpiresAfterUTC", props.expiresAfterUtc);
+    cdk.Tags.of(this).add("ExpiresAfterUTC", expiresAfterUtc);
+    cdk.Tags.of(this).add("LeaseOwner", props.leaseOwner);
+    cdk.Tags.of(this).add("LeaseReference", props.leaseReference);
 
     this.securityGroup = props.securityGroup;
     // Use an imported view inside this consumer stack so grants created by RDS,
@@ -79,6 +99,7 @@ export class StagingDatabaseStack extends cdk.Stack {
       enablePerformanceInsights: false,
       removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
     });
+    cdk.Tags.of(this.database).add("Backup", "daily");
     this.runtimeSecret = new secretsmanager.Secret(this, "RuntimeCredential", {
       secretName: "tracepoint/staging/database/runtime",
       description: "Non-owner PostgreSQL login for the isolated full-AWS staging runtime",
@@ -102,6 +123,6 @@ export class StagingDatabaseStack extends cdk.Stack {
     new cdk.CfnOutput(this, "MigratorSecretArn", { value: this.database.secret!.secretArn });
     new cdk.CfnOutput(this, "RuntimeSecretArn", { value: this.runtimeSecret.secretArn });
     new cdk.CfnOutput(this, "DatabaseSecurityGroupId", { value: this.securityGroup.securityGroupId });
-    new cdk.CfnOutput(this, "ExpiresAfterUTC", { value: props.expiresAfterUtc });
+    new cdk.CfnOutput(this, "ExpiresAfterUTC", { value: expiresAfterUtc });
   }
 }

@@ -9,6 +9,7 @@ const resources = (template, type) => Object.values(template.Resources ?? {}).fi
 
 const imageBuild = await load("tracepoint-staging-aws-native-image-build");
 const database = await load("tracepoint-staging-database");
+const backup = await load("tracepoint-staging-backup");
 const bootstrap = await load("tracepoint-staging-database-bootstrap");
 const cognito = await load("tracepoint-staging-cognito");
 const ses = await load("tracepoint-staging-ses-foundation");
@@ -29,6 +30,14 @@ assert.equal(databases[0].Properties.PubliclyAccessible, false);
 assert.equal(databases[0].Properties.StorageEncrypted, true);
 assert.equal(databases[0].Properties.DeletionProtection, true);
 assert.equal(databases[0].Properties.BackupRetentionPeriod, 1);
+assert.match(JSON.stringify(databases[0].Properties.Tags ?? []), /"Key":"Backup","Value":"daily"/);
+
+assert.equal(resources(backup, "AWS::Backup::BackupVault").length, 1);
+assert.equal(resources(backup, "AWS::Backup::BackupPlan").length, 1);
+const backupSelections = resources(backup, "AWS::Backup::BackupSelection");
+assert.equal(backupSelections.length, 1);
+assert.match(JSON.stringify(backupSelections[0]), /"ConditionKey":"Backup"/);
+assert.match(JSON.stringify(backupSelections[0]), /"ConditionValue":"daily"/);
 
 const tasks = resources(bootstrap, "AWS::ECS::TaskDefinition");
 assert.equal(tasks.length, 1);

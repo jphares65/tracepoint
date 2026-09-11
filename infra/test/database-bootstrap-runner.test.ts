@@ -17,7 +17,9 @@ test("database bootstrap runner is immutable, bounded, secret-injected and has n
   const compute = new ComputeFoundationStack(app, "compute", { env, environmentName: "staging", vpc: network.vpc, dataKey: security.dataKey });
   const database = new StagingDatabaseStack(app, "database", {
     env, environmentName: "staging", vpc: network.vpc, dataKey: security.dataKey,
-    securityGroup: network.databaseSecurityGroup, expiresAfterUtc: "2026-09-12T14:00:00Z",
+    securityGroup: network.databaseSecurityGroup,
+    expiresAfterUtc: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    leaseOwner: "synthetic-test-owner", leaseReference: "unit-test-authorization",
   });
   const stack = new DatabaseBootstrapRunnerStack(app, "bootstrap", {
     env, environmentName: "staging", vpc: network.vpc, databaseSecurityGroup: network.databaseSecurityGroup,
