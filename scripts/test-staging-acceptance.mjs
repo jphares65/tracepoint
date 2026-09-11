@@ -8,6 +8,7 @@ const baseURL = 'https://staging.tracepointhq.com';
 const routes = ['/', '/landing', '/equipment', '/range-days', '/firearms', '/off-duty-firearms', '/qualifications', '/training', '/training/certifications', '/fleet-management', '/notifications', '/settings/import-export', '/settings/import-export/ai-importer'];
 const results = [];
 let acceptanceStep;
+let authenticationResponse;
 function currentTotp(secret) {
   const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';
   for(const char of secret.replace(/=+$/,'')){const value=alphabet.indexOf(char);assert.ok(value>=0);bits+=value.toString(2).padStart(5,'0');}
@@ -22,7 +23,11 @@ async function signIn(page,email,password,totpSecret){
   if(await native.count()){
     acceptanceStep='cognito-redirect';
     assert.ok(totpSecret,'A staging-only TOTP secret is required for Cognito acceptance.');
+    const responsePromise=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/auth/cognito/login'&&response.request().method()==='POST');
     await native.click();
+    const response=await responsePromise;
+    authenticationResponse={status:response.status()};
+    if(response.status()!==303){try{authenticationResponse.code=(await response.json()).code;}catch{}throw new Error('Cognito authorization did not start.');}
     await page.locator('input[name="username"]:visible').fill(email);
     await page.locator('input[name="password"]:visible').fill(password);
     await page.locator('input[name="password"]:visible').press('Enter');
@@ -200,7 +205,7 @@ else try {
     const r=await context.request.get('/equipment',{maxRedirects:0});assert.ok([302,303,307,308].includes(r.status()));
     assert.equal(new URL(r.headers().location,baseURL).pathname,'/login');
   });
-} catch (error) {results.push({name:'authenticated setup',status:'fail',diagnostic:{code:error?.name==='TimeoutError'?'BROWSER_TIMEOUT':error?.code??'REQUEST_OR_BROWSER_FAILURE',step:acceptanceStep},reason:'Login or tenant precondition failed; sensitive details suppressed'});}
+} catch (error) {results.push({name:'authenticated setup',status:'fail',diagnostic:{code:error?.name==='TimeoutError'?'BROWSER_TIMEOUT':error?.code??'REQUEST_OR_BROWSER_FAILURE',step:acceptanceStep,authenticationResponse},reason:'Login or tenant precondition failed; sensitive details suppressed'});}
 finally {await browser?.close();}
 results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled'?'Email invitation link delivery and replacement-provider MFA/session cutover remain separate gates. Browser password recovery and fixture cleanup are verified by the parent harness.':'Run the parent harness with --range-documents --extended-workflows for drill/document, off-duty, fleet, training, exports and password-recovery coverage.'});
 console.log(JSON.stringify({target:baseURL,results},null,2));
