@@ -29,8 +29,13 @@ $clusterName = 'tracepoint-staging'
 
 function Invoke-AwsJson {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    $output = & aws.exe @Arguments --region $region --output json 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "AWS fixture request failed: $($Arguments[0..1] -join ' ')." }
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & aws.exe @Arguments --region $region --output json 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $savedPreference }
+    if ($exitCode -ne 0) { throw "AWS fixture request failed: $($Arguments[0..1] -join ' ')." }
     return (($output -join [Environment]::NewLine) | ConvertFrom-Json)
 }
 

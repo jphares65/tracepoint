@@ -30,6 +30,7 @@ test("native staging fixture reads bootstrap evidence from the application log g
   const fixture = await readFile(new URL("scripts/execute-aws-native-staging-fixture.ps1", root), "utf8");
   assert.match(fixture, /'--log-group-name','\/tracepoint\/staging\/application'/);
   assert.match(fixture, /if \(\$NonInteractive\) \{ \$ConfirmPreference = 'None' \}/);
+  assert.match(fixture, /\$ErrorActionPreference = 'Continue'[\s\S]+\$exitCode = \$LASTEXITCODE/);
 });
 
 test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {

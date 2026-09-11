@@ -132,7 +132,7 @@ function fixture(operation: "setup"|"cleanup", poolId: string) {
     diagnostic = String(result.stderr || result.stdout || "fixture process failed")
       .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, "<synthetic-id>")
       .replace(/aws-native-[^\s"']+@example\.invalid/gi, "<synthetic-email>")
-      .split(/\r?\n/).filter(Boolean).slice(-4).join(" ").slice(0, 800);
+      .split(/\r?\n/).filter(Boolean).slice(0, 10).join(" ").slice(0, 1200);
     throw new Error(`Staging fixture ${operation} failed; sensitive values suppressed.`);
   }
 }
