@@ -73,6 +73,7 @@ let fixtureCreated = false;
 let acceptancePassed = false;
 let poolId = "";
 let stage = "preflight";
+let diagnostic = "";
 const client = new CognitoIdentityProviderClient({region, maxAttempts: 2});
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -127,7 +128,13 @@ function fixture(operation: "setup"|"cleanup", poolId: string) {
   const env = {...process.env};
   if (operation === "cleanup") env.TRACEPOINT_STAGING_FIXTURE_CLEANUP_AUTHORIZATION = authorizationReference;
   const result = spawnSync("powershell.exe", args, {cwd: repositoryRoot, env, encoding:"utf8", stdio:["ignore","pipe","pipe"]});
-  if (result.status !== 0) throw new Error(`Staging fixture ${operation} failed; sensitive output suppressed.`);
+  if (result.status !== 0) {
+    diagnostic = String(result.stderr || result.stdout || "fixture process failed")
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, "<synthetic-id>")
+      .replace(/aws-native-[^\s"']+@example\.invalid/gi, "<synthetic-email>")
+      .split(/\r?\n/).filter(Boolean).slice(-4).join(" ").slice(0, 800);
+    throw new Error(`Staging fixture ${operation} failed; sensitive values suppressed.`);
+  }
 }
 
 try {
@@ -164,7 +171,7 @@ try {
   const result=spawnSync(process.execPath,[resolve(repositoryRoot,"scripts","test-staging-acceptance.mjs")],{cwd:repositoryRoot,env:environment,stdio:"inherit"});
   assert.equal(result.status,0,"AWS-native application acceptance failed.");acceptancePassed=true;
 } catch (error) {
-  console.error(JSON.stringify({status:"FAILED",run,stage,errorName:(error as Error).name,sensitiveDetailsPrinted:false}));process.exitCode=1;
+  console.error(JSON.stringify({status:"FAILED",run,stage,errorName:(error as Error).name,diagnostic:diagnostic||undefined,sensitiveDetailsPrinted:false}));process.exitCode=1;
 } finally {
   let cleanup=true;
   if(fixtureCreated){try{fixture("cleanup",poolId);}catch{cleanup=false;process.exitCode=1;}}
