@@ -72,6 +72,7 @@ const users: FixtureUser[] = (["manager", "officer", "foreign"] as const).map(ki
 let fixtureCreated = false;
 let acceptancePassed = false;
 let poolId = "";
+let stage = "preflight";
 const client = new CognitoIdentityProviderClient({region, maxAttempts: 2});
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -130,9 +131,11 @@ function fixture(operation: "setup"|"cleanup", poolId: string) {
 }
 
 try {
+  stage = "identity-and-budget";
   gate();
   const budget = aws(["budgets","describe-budget","--account-id",account,"--budget-name","tracepoint-staging-monthly-125"]).Budget;
   assert.equal(Number(budget.BudgetLimit.Amount), 125); assert.equal(budget.BudgetLimit.Unit, "USD");
+  stage = "cognito-and-runtime-attestation";
   const cognito = outputs("tracepoint-staging-cognito");
   poolId = cognito.UserPoolId;
   const service=aws(["ecs","describe-services","--cluster","tracepoint-staging","--services","tracepoint-staging"]).services[0];
@@ -146,7 +149,8 @@ try {
   const pool = (await client.send(new DescribeUserPoolCommand({UserPoolId:cognito.UserPoolId}))).UserPool!;
   const appClient = (await client.send(new DescribeUserPoolClientCommand({UserPoolId:cognito.UserPoolId,ClientId:cognito.ClientId}))).UserPoolClient!;
   assert.equal(pool.MfaConfiguration,"ON");assert.deepEqual(appClient.CallbackURLs,[`${applicationOrigin}/api/auth/cognito/callback`]);
-  for (const user of users) await createAndEnroll(user,cognito.UserPoolId,cognito.ClientId);
+  for (const user of users) { stage = `cognito-${user.kind}`; await createAndEnroll(user,cognito.UserPoolId,cognito.ClientId); }
+  stage = "database-fixture-setup";
   fixture("setup",cognito.UserPoolId); fixtureCreated=true;
   const [manager,officer,foreign]=users;
   const environment={...process.env,
@@ -156,10 +160,11 @@ try {
     TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:foreign.id,TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:foreign.email,TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID:foreign.id,TRACEPOINT_ACCEPTANCE_FOREIGN_TOTP_SECRET:foreign.totp!,
     TRACEPOINT_ACCEPTANCE_WRITES:"disposable-staging",TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:"s3",TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:"enabled",TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS:"enabled",
   };
+  stage = "application-acceptance";
   const result=spawnSync(process.execPath,[resolve(repositoryRoot,"scripts","test-staging-acceptance.mjs")],{cwd:repositoryRoot,env:environment,stdio:"inherit"});
   assert.equal(result.status,0,"AWS-native application acceptance failed.");acceptancePassed=true;
 } catch (error) {
-  console.error(JSON.stringify({status:"FAILED",run,errorName:(error as Error).name,sensitiveDetailsPrinted:false}));process.exitCode=1;
+  console.error(JSON.stringify({status:"FAILED",run,stage,errorName:(error as Error).name,sensitiveDetailsPrinted:false}));process.exitCode=1;
 } finally {
   let cleanup=true;
   if(fixtureCreated){try{fixture("cleanup",poolId);}catch{cleanup=false;process.exitCode=1;}}
