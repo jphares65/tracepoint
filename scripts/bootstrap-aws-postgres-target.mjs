@@ -62,7 +62,7 @@ try {
     } catch(error) { await migrator.query("rollback"); throw error; }
   }
 
-  const escaped=await migrator.query("select format('alter role tracepoint_runtime login password %L', $1) as sql",[configuration.runtime.password]);
+  const escaped=await migrator.query("select format('alter role tracepoint_runtime login password %L', $1::text) as sql",[configuration.runtime.password]);
   await migrator.query(escaped.rows[0].sql);
   const forbidden=await migrator.query(`select
     (select count(*)::int from pg_policies where schemaname='public' and (coalesce(qual,'') like '%auth.uid()%' or coalesce(with_check,'') like '%auth.uid()%')) as policies,

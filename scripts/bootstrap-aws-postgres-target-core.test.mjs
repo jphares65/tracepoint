@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { normalizeTransactionalSql, parseBootstrapConfiguration } from "./bootstrap-aws-postgres-target-core.mjs";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
@@ -25,4 +26,8 @@ test("compatibility prerequisites are safe to resume after a partial bootstrap",
  assert.equal((supabasePrerequisites.match(/exception when duplicate_object/g)??[]).length,3);
  assert.equal((supabasePrerequisites.match(/create table if not exists/g)??[]).length,3);
  assert.match(supabasePrerequisites,/create or replace function auth\.uid\(\)/);
+});
+test("runtime password handoff gives PostgreSQL an explicit parameter type",()=>{
+ const source=readFileSync(new URL("./bootstrap-aws-postgres-target.mjs",import.meta.url),"utf8");
+ assert.match(source,/password %L', \$1::text/);
 });
