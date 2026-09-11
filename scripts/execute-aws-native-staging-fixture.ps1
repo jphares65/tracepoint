@@ -86,7 +86,7 @@ $stopped = Invoke-AwsJson @('ecs','describe-tasks','--cluster',$clusterName,'--t
 $resultContainer = @($stopped.tasks[0].containers | Where-Object name -eq 'bootstrap')
 if ($resultContainer.Count -ne 1 -or $resultContainer[0].exitCode -ne 0) { throw 'The AWS-native staging fixture task failed; inspect only its sanitized log stream.' }
 $taskId = ($taskArn -split '/')[-1]
-$messages = Invoke-AwsJson @('logs','get-log-events','--log-group-name','/tracepoint/staging/app','--log-stream-name',"database-bootstrap/bootstrap/$taskId",'--query','events[].message')
+$messages = Invoke-AwsJson @('logs','get-log-events','--log-group-name','/tracepoint/staging/application','--log-stream-name',"database-bootstrap/bootstrap/$taskId",'--query','events[].message')
 $result = @($messages | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_.status -eq 'PASSED' -and $_.operation -eq $Operation -and $_.runId -eq $RunId })
 if ($result.Count -ne 1 -or $result[0].sourceCommit -ne $SourceCommit -or $result[0].sourceMigrations -ne 76 -or $result[0].awsMigrations -ne 17 -or $result[0].users -ne 3 -or $result[0].departments -ne 2 -or $result[0].syntheticOnly -ne $true) {
     throw 'The fixture task did not emit exact sanitized evidence.'

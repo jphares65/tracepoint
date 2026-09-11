@@ -23,6 +23,12 @@ test("bootstrap and runtime deployment gates require digest-shaped tooling evide
   assert.match(bootstrap, /imageDetails\[0\]\.imageDigest -cne \$ToolingImageDigest/);
   assert.match(bootstrap, /cdk deploy \$stack @contexts --exclusively/);
   assert.match(deploy, /bootstrap\.toolingImageDigest -ne \$ToolingImageDigest/);
+  assert.match(bootstrap, /--log-group-name \/tracepoint\/staging\/application/);
+});
+
+test("native staging fixture reads bootstrap evidence from the application log group", async () => {
+  const fixture = await readFile(new URL("scripts/execute-aws-native-staging-fixture.ps1", root), "utf8");
+  assert.match(fixture, /'--log-group-name','\/tracepoint\/staging\/application'/);
 });
 
 test("PostgreSQL tooling archive includes the migration ledger's transitive SQL normalizer", async () => {

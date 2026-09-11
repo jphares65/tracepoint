@@ -91,7 +91,7 @@ $container = @($task.tasks[0].containers | Where-Object name -eq 'bootstrap')
 if ($container.Count -ne 1 -or $container[0].exitCode -ne 0) { throw 'Database bootstrap failed; inspect the sanitized staging log stream.' }
 $taskId = ($taskArn -split '/')[-1]
 $stream = "database-bootstrap/bootstrap/$taskId"
-$messages = & aws.exe logs get-log-events --log-group-name /tracepoint/staging/app --log-stream-name $stream --region us-east-1 --query 'events[].message' --output json | ConvertFrom-Json
+$messages = & aws.exe logs get-log-events --log-group-name /tracepoint/staging/application --log-stream-name $stream --region us-east-1 --query 'events[].message' --output json | ConvertFrom-Json
 $result = $messages | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object status -eq 'PASSED' | Select-Object -Last 1
 if (-not $result -or $result.sourceMigrations -ne 76 -or $result.awsMigrations -ne 17 -or $result.runtimeRoleVerified -ne $true -or $result.supabaseAuthorizationReferences -ne 0) { throw 'Exact database bootstrap evidence was not produced.' }
 if ($EvidenceOutputPath) {
