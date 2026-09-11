@@ -96,7 +96,6 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       entry: path.resolve(__dirname, "../../src/lib/email/ses-feedback-handler.ts").replaceAll("\\", "/"),
       handler: "handler", runtime: lambda.Runtime.NODEJS_24_X, role: workerRole,
       depsLockFilePath: path.join(__dirname, "../../package-lock.json"),
-      projectRoot: path.resolve(__dirname, "../.."),
       timeout: cdk.Duration.seconds(30), memorySize: 256, reservedConcurrentExecutions: 2,
       vpc: props.vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED }, securityGroups: [workerSecurityGroup],
       layers: [caLayer], logGroup,
