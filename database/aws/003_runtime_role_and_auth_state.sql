@@ -7,15 +7,28 @@ do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'tracepoint_runtime') then
     create role tracepoint_runtime
-      nologin nosuperuser nocreatedb nocreaterole noreplication
+      nologin nocreatedb nocreaterole noreplication
       nobypassrls noinherit connection limit 20;
   end if;
 end
 $$;
 
 alter role tracepoint_runtime
-  nologin nosuperuser nocreatedb nocreaterole noreplication
+  nologin nocreatedb nocreaterole noreplication
   nobypassrls noinherit connection limit 20;
+
+do $$
+begin
+  if exists (
+    select 1 from pg_roles
+    where rolname = 'tracepoint_runtime'
+      and (rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls
+        or rolinherit or rolcanlogin or rolconnlimit <> 20)
+  ) then
+    raise exception 'tracepoint_runtime role boundary is invalid' using errcode = '42501';
+  end if;
+end
+$$;
 
 grant authenticated to tracepoint_runtime;
 grant usage on schema public, tracepoint_auth to tracepoint_runtime;

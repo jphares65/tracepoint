@@ -7,7 +7,7 @@ import { normalizeMigrationSql } from "./migration-sql-core.mjs";
 export const AWS_MIGRATION_LEDGER = Object.freeze([
   ["001_provider_neutral_authorization_context.sql", "e0c2a264ce64bd18469578b5186c9765490b108e47b5e903df2422a828949515"],
   ["002_cognito_application_session_idle.sql", "6f19b069025c568736b7bb1a937465d038b5f8db60cc37878c2c660c5f56de21"],
-  ["003_runtime_role_and_auth_state.sql", "95b7791d86fa1ed955351f3a33607ccb79c2e42ef1aeb9115cef540fc672c77a"],
+  ["003_runtime_role_and_auth_state.sql", "0b2e912dcde46bc2aec519dbabe533f4c0296092c39926b3e3cb9a42635616ea"],
   ["004_remove_supabase_authorization_runtime.sql", "440a076573ae21ad1e499d5be61d345e35b6bc83477e837f8b2f1a5d3bcc73e9"],
   ["005_command_dashboard_fleet_read.sql", "24547c774c5146f3b47d78a9250199bfafd5e1a19c6f898ac54295aaaf261ea7"],
   ["006_cognito_lifecycle_state.sql", "8554fad23498e4b68dc26aaec42efe66452515b51f83259b2cbb8a23c0d1d222"],
