@@ -4,16 +4,16 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 export const AWS_MIGRATION_LEDGER = Object.freeze([
-  ["001_provider_neutral_authorization_context.sql", "e0c2a264ce64bd18469578b5186c9765490b108e47b5e903df2422a828949515"],
-  ["002_cognito_application_session_idle.sql", "6f19b069025c568736b7bb1a937465d038b5f8db60cc37878c2c660c5f56de21"],
-  ["003_runtime_role_and_auth_state.sql", "95b7791d86fa1ed955351f3a33607ccb79c2e42ef1aeb9115cef540fc672c77a"],
-  ["004_remove_supabase_authorization_runtime.sql", "440a076573ae21ad1e499d5be61d345e35b6bc83477e837f8b2f1a5d3bcc73e9"],
-  ["005_command_dashboard_fleet_read.sql", "24547c774c5146f3b47d78a9250199bfafd5e1a19c6f898ac54295aaaf261ea7"],
-  ["006_cognito_lifecycle_state.sql", "8554fad23498e4b68dc26aaec42efe66452515b51f83259b2cbb8a23c0d1d222"],
-  ["007_ses_runtime_queue_access.sql", "44deea58c200a3891ee17b22dd1224e2933e7396574b3a072d2efd3951f0405c"],
-  ["008_training_closeout_authorization.sql", "78f774cbfbd64b4017030952236b8ee54acce2777f495fbb23499c31f8f95230"],
-  ["009_cognito_membership_lifecycle.sql", "fa1bad83c12b714c3c2e310ed5156da4f0291fd7e7d2980fa77b8b8ab46be0f0"],
-  ["010_cognito_inactive_invites.sql", "5ffece8ef922879df7ac4dfaccd1c8cef2a54bffdbd1ad94a9b53f2d0f2781e7"],
+  ["001_provider_neutral_authorization_context.sql", "39411fb46db2c4d09e48d0e3a1862c885430714e2e520f63d437220ff94e5b8c"],
+  ["002_cognito_application_session_idle.sql", "66361c5bfab16f8164c6a3b2f1aa0ef0fb6bae43363ba73788e6ba23b7779779"],
+  ["003_runtime_role_and_auth_state.sql", "0b13949614a0eac556d27435fedff1e9576eb5e39793a04e3db802418bf225ee"],
+  ["004_remove_supabase_authorization_runtime.sql", "51c9063dca0ac6a5947a2fe5f12a4f50b4875ec1e18fa9ff990453e32111e148"],
+  ["005_command_dashboard_fleet_read.sql", "751a9252cf492d0326ea5f906e0f6ca0c3c3a2cb34f919d0b8641b25161ea76b"],
+  ["006_cognito_lifecycle_state.sql", "da79c9c5adfec5ed58caaef6cb6cbca528a780e2e1dbb75342e91750fd7e603f"],
+  ["007_ses_runtime_queue_access.sql", "6f1c3be1b1d4511eb928eff6bada77e376a10a86aa35cab057854d6b9c708193"],
+  ["008_training_closeout_authorization.sql", "24f2d1ef877764a90471d55a0280b9de6e0b156fbe1b1d7d82f580defea3489f"],
+  ["009_cognito_membership_lifecycle.sql", "0c9bf2afca5729fb43de6e2541db26c2b481c7cdbc72b3b1dde89452679cc92c"],
+  ["010_cognito_inactive_invites.sql", "e3a245570ce503172f03d66735a0407ca5140b864772ff10043d9ed4afcc738e"],
 ]);
 
 const sha256 = value => createHash("sha256").update(value).digest("hex");

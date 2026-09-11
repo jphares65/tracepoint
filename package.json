@@ -11,7 +11,10 @@
     "storage:migration:test": "node --test scripts/storage-migration.test.mjs",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
-    "db:verify-staging": "node scripts/verify-staging-schema.mjs"
+    "db:verify-staging": "node scripts/verify-staging-schema.mjs",
+    "provider:assert-native": "node scripts/assert-aws-native-provider-reachability.mjs",
+    "migration:synthetic:test": "node --test scripts/synthetic-table-migration.test.mjs scripts/synthetic-cognito-migration.test.mjs",
+    "secrets:native:test": "node --test scripts/native-secret-material.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "3.1127.0",

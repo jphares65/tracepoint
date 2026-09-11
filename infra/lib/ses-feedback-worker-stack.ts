@@ -4,11 +4,13 @@ import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as sources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 export interface SesFeedbackWorkerProps extends cdk.StackProps {
@@ -63,16 +65,25 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
     const caLayer = new lambda.LayerVersion(this, "RdsCaLayer", {
       code: lambda.Code.fromAsset(path.join(__dirname, "../assets/rds-ca")),
       description: "Official AWS RDS us-east-1 trust roots",
-      compatibleRuntimes: [lambda.Runtime.NODEJS_22_X],
+      compatibleRuntimes: [lambda.Runtime.NODEJS_24_X],
     });
     const logGroup = new logs.LogGroup(this, "WorkerLogs", {
       retention: props.environmentName === "production" ? logs.RetentionDays.ONE_YEAR : logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    const workerRole = new iam.Role(this, "WorkerRole", { assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"), description: "Least-privilege SES feedback worker execution role" });
+    workerRole.addToPolicy(new iam.PolicyStatement({ actions: ["logs:CreateLogStream", "logs:PutLogEvents"], resources: [`${logGroup.logGroupArn}:*`] }));
+    workerRole.addToPolicy(new iam.PolicyStatement({ actions: ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], resources: ["*"], conditions: { StringEquals: { "aws:RequestedRegion": this.region } } }));
+    NagSuppressions.addResourceSuppressions(workerRole, [{
+      id: "AwsSolutions-IAM5",
+      reason: "CloudWatch Logs requires a stream suffix below this worker's dedicated retained log group, and Lambda VPC ENI lifecycle APIs do not support resource-level ARNs. The latter statement is limited to the five required ENI actions and the stack region.",
+      appliesTo: [`Resource::<${this.getLogicalId(logGroup.node.defaultChild as cdk.CfnResource)}.Arn>:*`, "Resource::*"],
+    }], true);
     this.worker = new lambdaNode.NodejsFunction(this, "Worker", {
       entry: path.resolve(__dirname, "../../src/lib/email/ses-feedback-handler.ts").replaceAll("\\", "/"),
-      handler: "handler", runtime: lambda.Runtime.NODEJS_22_X,
+      handler: "handler", runtime: lambda.Runtime.NODEJS_24_X, role: workerRole,
       depsLockFilePath: path.join(__dirname, "../../package-lock.json"),
+      projectRoot: path.resolve(__dirname, "../.."),
       timeout: cdk.Duration.seconds(30), memorySize: 256, reservedConcurrentExecutions: 2,
       vpc: props.vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED }, securityGroups: [workerSecurityGroup],
       layers: [caLayer], logGroup,

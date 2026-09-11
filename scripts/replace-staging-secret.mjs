@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { validateStagingProviderConfig } from './validate-staging-provider-config.mjs';
+import { validateNativeSecretMaterial } from './native-secret-material.mjs';
 // JSON arrives over stdin. Node serializes Windows argv correctly, avoiding
 // PowerShell 5 native-argument quote loss. AWS errors never echo secret args.
 const env = { ...process.env, AWS_REGION: 'us-east-1', AWS_DEFAULT_REGION: 'us-east-1' };
@@ -16,8 +17,9 @@ try {
   let secret; try { secret = JSON.parse(input); } catch { throw new Error('Invalid staging secret JSON'); }
   gate();
   await validateStagingProviderConfig(secret);
-  const keys = ['SUPABASE_SECRET_KEY', 'BREVO_API_KEY', 'NOTIFICATION_DISPATCH_SECRET', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SITE_URL', 'CONFIGURATION_ENVIRONMENT'];
-  if (Object.keys(secret).length !== keys.length || keys.some(key => typeof secret[key] !== 'string' || !secret[key].trim())) throw new Error('Exactly eight nonempty staging fields are required');
+  validateNativeSecretMaterial(secret);
+  const keys = ['SUPABASE_SECRET_KEY', 'BREVO_API_KEY', 'NOTIFICATION_DISPATCH_SECRET', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SITE_URL', 'CONFIGURATION_ENVIRONMENT', 'TRACEPOINT_IMPORT_APPROVAL_SECRET', 'TRACEPOINT_AUTH_STATE_KEYS', 'TRACEPOINT_AUTH_REFRESH_KEYS'];
+  if (Object.keys(secret).length !== keys.length || keys.some(key => typeof secret[key] !== 'string' || !secret[key].trim())) throw new Error('Exactly eleven nonempty staging fields are required');
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(secret.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY) || ![16,24,32].includes(Buffer.from(secret.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY, 'base64').length)) throw new Error('Invalid Server Actions AES key');
   if (secret.NOTIFICATION_DISPATCH_SECRET.length < 32) throw new Error('Notification secret must contain at least 32 characters');
   gate();

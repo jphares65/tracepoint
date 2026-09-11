@@ -96,7 +96,7 @@ test("dashboard and analytics expose permission-gated visual builders with secon
       readFile("src/app/command-dashboard/page.tsx", "utf8"),
       readFile("src/app/analytics/page.tsx", "utf8"),
       readFile("src/app/components/TracePointShell.tsx", "utf8"),
-      readFile("src/app/settings/page.tsx", "utf8"),
+      readFile("src/app/settings/legacy-page.tsx", "utf8"),
       readFile("src/app/settings/command-dashboard-analytics/page.tsx", "utf8"),
       readFile(
         "src/app/settings/command-dashboard-analytics/layout.tsx",

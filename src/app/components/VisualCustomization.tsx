@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,7 +14,6 @@ import {
   X,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import {
   mergeAnalyticsDashboardConfiguration,
   normalizeAnalyticsDashboardConfiguration,
@@ -42,7 +41,6 @@ export function useVisualConfigurationEditor({
   editorName: "dashboard" | "analytics";
   onSaved: (configuration: AnalyticsDashboardConfiguration) => void;
 }) {
-  const supabase = useMemo(() => createClient(), []);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() =>
     normalizeAnalyticsDashboardConfiguration(configuration),
@@ -89,6 +87,8 @@ export function useVisualConfigurationEditor({
     setNotice(null);
 
     try {
+      if (process.env.NEXT_PUBLIC_TRACEPOINT_PROVIDER_MODE === "aws-native") throw new Error("View customization is isolated until its PostgreSQL write endpoint is enabled.");
+      const supabase = (await import("@/lib/supabase/client")).createClient();
       // The generated database types do not yet expose this existing JSON column.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const table = (supabase as any).from("department_rules");
@@ -129,7 +129,7 @@ export function useVisualConfigurationEditor({
     } finally {
       setSaving(false);
     }
-  }, [canAdminister, departmentId, draft, onSaved, supabase]);
+  }, [canAdminister, departmentId, draft, onSaved]);
 
   const dirty =
     JSON.stringify(draft) !==

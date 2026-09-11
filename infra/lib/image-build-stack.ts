@@ -150,6 +150,7 @@ export class ImageBuildStack extends cdk.Stack {
       CONFIGURATION_ENVIRONMENT: { value: props.environmentName },
       ECR_REPOSITORY_URI: { value: props.repository.repositoryUri },
       TRACEPOINT_BUILD_PROVIDER_MODE: { value: providerMode },
+      NEXT_PUBLIC_TRACEPOINT_PROVIDER_MODE: { value: providerMode },
       NEXT_PUBLIC_SITE_URL: secretVariable("NEXT_PUBLIC_SITE_URL"),
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: secretVariable("NEXT_SERVER_ACTIONS_ENCRYPTION_KEY"),
     };

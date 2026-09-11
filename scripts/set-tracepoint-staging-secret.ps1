@@ -7,7 +7,10 @@ param(
     [Security.SecureString]$NextPublicSupabaseUrl,
     [Security.SecureString]$NextPublicSupabasePublishableKey,
     [Security.SecureString]$NextPublicSiteUrl,
-    [Security.SecureString]$ConfigurationEnvironment
+    [Security.SecureString]$ConfigurationEnvironment,
+    [Security.SecureString]$TracePointImportApprovalSecret,
+    [Security.SecureString]$TracePointAuthStateKeys,
+    [Security.SecureString]$TracePointAuthRefreshKeys
 )
 
 Set-StrictMode -Version Latest
@@ -23,7 +26,10 @@ $parameters = @(
     'NextPublicSupabaseUrl',
     'NextPublicSupabasePublishableKey',
     'NextPublicSiteUrl',
-    'ConfigurationEnvironment'
+    'ConfigurationEnvironment',
+    'TracePointImportApprovalSecret',
+    'TracePointAuthStateKeys',
+    'TracePointAuthRefreshKeys'
 )
 foreach ($name in $parameters) {
     if ($null -eq (Get-Variable -Name $name -ValueOnly)) {
@@ -60,6 +66,9 @@ try {
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = $plain.NextPublicSupabasePublishableKey
         NEXT_PUBLIC_SITE_URL = $plain.NextPublicSiteUrl
         CONFIGURATION_ENVIRONMENT = $plain.ConfigurationEnvironment
+        TRACEPOINT_IMPORT_APPROVAL_SECRET = $plain.TracePointImportApprovalSecret
+        TRACEPOINT_AUTH_STATE_KEYS = $plain.TracePointAuthStateKeys
+        TRACEPOINT_AUTH_REFRESH_KEYS = $plain.TracePointAuthRefreshKeys
     } | ConvertTo-Json -Compress
 
     $payload | & node (Join-Path $PSScriptRoot 'validate-staging-provider-config.mjs')

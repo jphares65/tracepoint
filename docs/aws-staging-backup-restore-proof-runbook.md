@@ -1,0 +1,7 @@
+# Staging AWS Backup and timed restore proof
+
+The full-native staging assembly creates the retained, KMS-encrypted `tracepoint-staging` vault and a daily plan with seven-day recovery-point retention. Selection is tag-bounded to `Backup=daily`; the staging RDS instance receives that tag. Restore permissions use AWS Backup's service role and must be reviewed before deployment. This composition adds backup storage and request charges when deployed.
+
+No restore was run during this offline repair. After an authorized backup completes, first run `scripts/prove-staging-backup-restore.ps1` without `-Execute`; its default is a read-only plan. Live proof requires the exact staging role, account, region, recovery-point ARN, synthetic-only target identifier, authorization reference, `-Execute`, and PowerShell confirmation. The tool forces a non-public, Single-AZ restored instance, times the AWS Backup job, and refuses success unless AWS reports completion and the restored RDS instance remains private.
+
+After restore completion, connect only from the approved private runner and run the normal schema/ledger manifest reconciliation plus tenant-negative checks against the restored synthetic database. Record recovery-point ARN, restore job ID, elapsed time, source/destination manifest hashes, all 75 migration versions, 10 overlay hashes, permission/retirement results, and the cleanup authorization. Deleting the restored database or recovery point is a separate destructive action and is intentionally absent from this tool.
