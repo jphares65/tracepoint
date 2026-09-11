@@ -33,10 +33,20 @@ export function parseBootstrapConfiguration(environment) {
 }
 
 export function normalizeTransactionalSql(raw, filename) {
-  let sql = raw.replace(/^\uFEFF/, "");
-  sql = sql.replace(/^(\s*(?:--[^\r\n]*(?:\r?\n|$)\s*)*)begin\s*;/i, "$1");
-  const commits = [...sql.matchAll(/\bcommit\s*;/gi)];
-  if (commits.length === 1) sql = sql.replace(/\bcommit\s*;/i, "");
-  if (/\b(?:begin|commit|rollback)\s*;/i.test(sql)) throw new Error(`${filename} contains unsupported nested transaction control.`);
-  return sql;
+  const sql = raw.replace(/^\uFEFF/, "");
+  const controls = [...sql.matchAll(/\b(begin|commit|rollback)\s*;/gi)];
+  let depth = 0;
+  for (const control of controls) {
+    const keyword = control[1].toLowerCase();
+    if (keyword === "rollback") throw new Error(`${filename} contains unsupported rollback transaction control.`);
+    if (keyword === "begin") {
+      if (depth !== 0) throw new Error(`${filename} contains unsupported nested transaction control.`);
+      depth = 1;
+    } else {
+      if (depth !== 1) throw new Error(`${filename} contains unmatched transaction control.`);
+      depth = 0;
+    }
+  }
+  if (depth !== 0) throw new Error(`${filename} contains unmatched transaction control.`);
+  return sql.replace(/\b(?:begin|commit)\s*;/gi, "");
 }
