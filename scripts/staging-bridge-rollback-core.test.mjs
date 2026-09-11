@@ -18,7 +18,10 @@ const definition = () => ({
 
 test("accepts only the exact retained staging bridge boundary", () => {
   assert.equal(validateStagingBridgeRollbackTarget(definition()).imageTag, "a".repeat(40));
+  const generated = definition(); generated.family = "tracepointstagingruntimeServiceTaskDefC2B9B4C5";
+  assert.equal(validateStagingBridgeRollbackTarget(generated).imageTag, "a".repeat(40));
   for (const mutate of [
+    value => { value.family = "tracepoint-production"; },
     value => { value.taskRoleArn = value.taskRoleArn.replace("ecs-task", "aws-native-ecs-task"); },
     value => { value.containerDefinitions[0].environment[0].value = "aws-native"; },
     value => { value.containerDefinitions[0].image += "-aws-native"; },

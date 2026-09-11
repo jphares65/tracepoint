@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 const arn = (value, suffix) => new RegExp(`^arn:aws:iam::559054714699:role/${suffix}$`).test(value ?? "");
 export function validateStagingBridgeRollbackTarget(taskDefinition) {
   assert.equal(taskDefinition?.status, "ACTIVE");
-  assert.equal(taskDefinition?.family, "tracepoint-staging");
+  assert.match(taskDefinition?.family ?? "", /^(?:tracepoint-staging|tracepointstagingruntimeServiceTaskDef[A-F0-9]{8})$/);
   assert.ok(arn(taskDefinition.taskRoleArn, "tracepoint-staging-ecs-task"));
   assert.ok(arn(taskDefinition.executionRoleArn, "tracepoint-staging-ecs-execution"));
   assert.equal(taskDefinition.containerDefinitions?.length, 1);
