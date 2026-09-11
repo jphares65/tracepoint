@@ -21,5 +21,6 @@ test("bootstrap and runtime deployment gates require digest-shaped tooling evide
     assert.match(source, /\^sha256:\[0-9a-f\]\{64\}\$/);
   }
   assert.match(bootstrap, /imageDetails\[0\]\.imageDigest -cne \$ToolingImageDigest/);
+  assert.match(bootstrap, /cdk deploy \$stack @contexts --exclusively/);
   assert.match(deploy, /bootstrap\.toolingImageDigest -ne \$ToolingImageDigest/);
 });

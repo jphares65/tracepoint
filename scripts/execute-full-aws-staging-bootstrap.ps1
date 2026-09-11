@@ -69,7 +69,10 @@ $outputsPath = Join-Path ([IO.Path]::GetTempPath()) ("$stack-outputs-" + [guid]:
 Push-Location $infra
 try {
     Assert-TracePointStagingIdentity | Out-Null
-    & npx.cmd cdk deploy $stack @contexts --require-approval never --outputs-file $outputsPath
+    # Foundations are already deployed from the full runtime context. Updating
+    # dependency stacks from this narrower runner-only context can withdraw
+    # exports still consumed by the retained bridge runtime.
+    & npx.cmd cdk deploy $stack @contexts --exclusively --require-approval never --outputs-file $outputsPath
     if ($LASTEXITCODE -ne 0) { throw 'Database bootstrap runner deployment failed.' }
 } finally { Pop-Location }
 $outputs = Get-Content -Raw -LiteralPath $outputsPath | ConvertFrom-Json
