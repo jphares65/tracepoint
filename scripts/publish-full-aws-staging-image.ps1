@@ -1,5 +1,11 @@
 [CmdletBinding()]
-param([switch]$ValidateArchiveOnly, [switch]$Wait, [switch]$BuildPostgresTooling)
+param(
+    [switch]$ValidateArchiveOnly,
+    [switch]$Wait,
+    [switch]$BuildPostgresTooling,
+    [ValidatePattern('^codex/[a-z0-9][a-z0-9._/-]{2,159}$')]
+    [string]$AuthorizedBranch = 'codex/aws-main-integration-final-20260908'
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -48,7 +54,7 @@ $projectName = 'tracepoint-staging-aws-native-image-build'
 
 $branch = (& git.exe -C $repositoryRoot branch --show-current).Trim()
 $commit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
-if ($branch -ne 'codex/aws-main-integration-final-20260908') { throw "Refusing branch '$branch'." }
+if ($branch -cne $AuthorizedBranch) { throw "Refusing branch '$branch'; expected the explicitly authorized '$AuthorizedBranch'." }
 if ($commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA.' }
 
 $status = @(& git.exe -C $repositoryRoot status --short --untracked-files=all)

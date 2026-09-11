@@ -2,7 +2,7 @@
   "reviewDate": "2026-09-05",
   "account": "559054714699",
   "region": "us-east-1",
-  "ceilingCents": 7500,
+  "ceilingCents": 12500,
   "basis": "730 hours, one 0.25 vCPU/0.5 GiB task, two ALB IPv4s, one task IPv4, 0.1 average LCU; low-usage allowances, not a measured bill",
   "componentsCents": {
     "ALB_IPv4_LCU": 2431,

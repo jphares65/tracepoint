@@ -7,7 +7,7 @@ Assert-TracePointStagingIdentity | Out-Null
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $model=Get-Content (Join-Path $root 'docs/aws-staging-cost-model-20260904.json') -Raw | ConvertFrom-Json
 $total=($model.componentsCents.PSObject.Properties.Value | Measure-Object -Sum).Sum
-if($total+200 -gt 7500){throw 'SES foundation plus bounded rehearsal reserve exceeds staging ceiling'}
+if($total+200 -gt 12500){throw 'SES foundation plus bounded rehearsal reserve exceeds the authorized 125 USD staging ceiling'}
 $infra=Join-Path $root 'infra'
 $assembly=Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-ses-review-'+[guid]::NewGuid().ToString('N'))
 $arguments=@('tracepoint-staging-ses-foundation','--app','npx ts-node bin/staging-ses-foundation.ts','-c','account=559054714699','-c','region=us-east-1','-c','providerActivation=disabled','--lookups=false','--output',$assembly)

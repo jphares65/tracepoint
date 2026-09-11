@@ -16,7 +16,7 @@ param(
     [Parameter(Mandatory)][string]$TargetHost,
     [Parameter(Mandatory)][string]$CostEvidencePath,
     [Parameter(Mandatory)][string]$EvidenceOutputPath,
-    [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 75,
+    [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 125,
     [switch]$Execute
 )
 Set-StrictMode -Version Latest
@@ -29,7 +29,7 @@ if ($Environment -eq 'production' -and $identity.Arn -notmatch "^arn:aws:sts::$a
 if ($PublicSubnetIds.Count -ne 2 -or ($PublicSubnetIds | Select-Object -Unique).Count -ne 2) { throw 'Exactly two reviewed public subnets are required.' }
 $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json
 $costAgeHours = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
-if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 75) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
+if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 125) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
 $image = & aws.exe ecr describe-images --region $region --repository-name $RepositoryName --image-ids "imageTag=$Commit-postgres-migration" --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -cne 'COMPLETE') { throw 'Immutable migration image or scan evidence is invalid.' }
 $findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts

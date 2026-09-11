@@ -45,16 +45,16 @@ if ($Action -eq 'ValidateImplementation' -or -not $Execute) {
 }
 
 $model = Get-Content -Raw -LiteralPath (Join-Path $root 'docs/aws-native-staging-cost-model-20260910.json') | ConvertFrom-Json
-$incremental = ($model.incrementalComponentsCents.PSObject.Properties.Value | Measure-Object -Sum).Sum
-$projected = [int]$model.baselineModelCents + [int]$incremental
-if ($projected -ne [int]$model.projectedTotalCents -or $model.withinApprovedCeiling -ne $true -or $projected -gt 7500) {
-    throw "Projected full-AWS staging cost is $([math]::Round($projected / 100, 2)) USD/month, above the authorized 75 USD ceiling. No AWS mutation was attempted."
+$projected = ($model.componentsCents.PSObject.Properties.Value | Measure-Object -Sum).Sum
+if ($projected -ne [int]$model.projectedTotalCents -or [int]$model.ceilingCents -ne 12500 -or
+    [int]$model.headroomCents -ne (12500 - $projected) -or $model.withinApprovedCeiling -ne $true -or $projected -gt 12500) {
+    throw "Projected full-AWS staging cost is $([math]::Round($projected / 100, 2)) USD/month and does not satisfy the authorized 125 USD ceiling. No AWS mutation was attempted."
 }
 Assert-TracePointStagingIdentity | Out-Null
-$budget = & aws.exe budgets describe-budget --account-id 559054714699 --budget-name tracepoint-staging-monthly-75 --region us-east-1 --output json 2>&1
+$budget = & aws.exe budgets describe-budget --account-id 559054714699 --budget-name tracepoint-staging-monthly-125 --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'The staging budget cannot be verified.' }
 $budget = ($budget -join [Environment]::NewLine) | ConvertFrom-Json
-if ([decimal]$budget.Budget.BudgetLimit.Amount -ne 75 -or $budget.Budget.BudgetLimit.Unit -ne 'USD') { throw 'The exact 75 USD staging budget is required.' }
+if ([decimal]$budget.Budget.BudgetLimit.Amount -ne 125 -or $budget.Budget.BudgetLimit.Unit -ne 'USD') { throw 'The exact 125 USD staging budget is required.' }
 
 if ($Action -eq 'DeployFoundations') {
     if ([string]::IsNullOrWhiteSpace($SecretInitializationAuthorizationReference) -or

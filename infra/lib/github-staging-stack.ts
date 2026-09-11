@@ -20,7 +20,7 @@ export class GitHubStagingStack extends cdk.Stack {
   allow(['kms:GenerateDataKey','kms:Decrypt'],[arn('kms','key/e1fa82f6-045b-41a8-bfff-d3f57b17e710')],{StringEquals:{'kms:ViaService':'s3.us-east-1.amazonaws.com'},ArnEquals:{'kms:EncryptionContext:aws:s3:arn':[`arn:aws:s3:::tracepoint-staging-build-source-${account}`,`arn:aws:s3:::tracepoint-staging-build-source-${account}/source/tracepoint-staging-source.zip`]}});
   allow(['codebuild:StartBuild'],[arn('codebuild','project/tracepoint-staging-image-build')]);
   allow(['codebuild:BatchGetBuilds'],[arn('codebuild','project/tracepoint-staging-image-build')]);
-  allow(['budgets:ViewBudget'],[`arn:aws:budgets::${account}:budget/tracepoint-staging-monthly-75`]);
+  allow(['budgets:ViewBudget'],[`arn:aws:budgets::${account}:budget/tracepoint-staging-monthly-125`]);
   allow(['ecr:DescribeImages','ecr:DescribeImageScanFindings','ecr:BatchGetImage','ecr:DescribeRepositories'],[arn('ecr','repository/tracepoint-staging')]);
   allow(['ecs:DescribeServices','ecs:UpdateService'],[arn('ecs','service/tracepoint-staging/tracepoint-staging')]);
   allow(['ecs:DescribeTasks'],[arn('ecs','task/tracepoint-staging/*')]);

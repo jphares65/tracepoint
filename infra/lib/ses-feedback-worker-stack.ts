@@ -60,16 +60,14 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       description: "SES feedback persistence",
     });
 
-    for (const [name, service] of [
-      ["SecretsEndpoint", ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER],
-      ["SnsEndpoint", ec2.InterfaceVpcEndpointAwsService.SNS],
-    ] as const) {
-      new ec2.InterfaceVpcEndpoint(this, name, {
-        vpc: props.vpc, service, privateDnsEnabled: true,
-        securityGroups: [endpointSecurityGroup],
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      });
-    }
+    // The Lambda event-source mapping polls SQS on the worker's behalf. The
+    // worker itself calls only Secrets Manager and PostgreSQL; it verifies the
+    // SNS envelope locally and never invokes the SNS API.
+    new ec2.InterfaceVpcEndpoint(this, "SecretsEndpoint", {
+      vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER, privateDnsEnabled: true,
+      securityGroups: [endpointSecurityGroup],
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
 
     const caLayer = new lambda.LayerVersion(this, "RdsCaLayer", {
       code: lambda.Code.fromAsset(path.join(__dirname, "../assets/rds-ca")),

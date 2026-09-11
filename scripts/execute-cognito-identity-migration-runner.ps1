@@ -22,7 +22,7 @@ param(
     [Parameter(Mandatory)][string]$BuildEvidencePath,
     [Parameter(Mandatory)][string]$CostEvidencePath,
     [Parameter(Mandatory)][string]$EvidenceOutputPath,
-    [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 75,
+    [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 125,
     [switch]$Execute
 )
 Set-StrictMode -Version Latest
@@ -63,7 +63,7 @@ $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
 if ($manifest.environment -cne $Environment -or $manifest.expectedAccount -cne $account -or $manifest.authorizationReference -cne $AuthorizationReference -or $manifest.userPoolId -cne $UserPoolId -or $manifest.clientId -cne $ClientId -or $manifest.contentSha256 -notmatch '^[0-9a-f]{64}$' -or [datetime]$manifest.expiresAt -le (Get-Date).ToUniversalTime()) { throw 'Identity manifest does not match this execution or has expired.' }
 $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json
 $costAgeHours = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
-if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 75) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
+if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 125) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
 $image = & aws.exe ecr describe-images --region $region --repository-name $RepositoryName --image-ids "imageTag=$Commit-identity-migration" --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -cne 'COMPLETE') { throw 'Immutable identity migration image or scan evidence is invalid.' }
 $findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts

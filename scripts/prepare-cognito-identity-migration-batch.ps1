@@ -23,7 +23,7 @@ param(
     [Parameter(Mandatory)][string]$CostEvidencePath,
     [Parameter(Mandatory)][string]$ManifestOutputPath,
     [string[]]$StagingRecipientSha256 = @(),
-    [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 75,
+    [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 125,
     [switch]$Execute
 )
 Set-StrictMode -Version Latest
@@ -38,7 +38,7 @@ if ($Environment -eq 'staging' -and ($StagingRecipientSha256.Count -lt 1 -or $St
 if ($Environment -eq 'production' -and $StagingRecipientSha256.Count -ne 0) { throw 'Staging recipient hashes cannot be supplied to production.' }
 if ($AfterUserId -and $AfterUserId -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') { throw 'The identity cursor must be a UUID.' }
 $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json; $costAge = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
-if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 75) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAge -lt 0 -or $costAge -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
+if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 125) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAge -lt 0 -or $costAge -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
 $buildEvidence = Get-Content -Raw -LiteralPath $BuildEvidencePath | ConvertFrom-Json
 if ($buildEvidence.account -cne $account -or $buildEvidence.commit -cne $Commit -or $buildEvidence.imageDigest -cne $ImageDigest -or $buildEvidence.buildStatus -cne 'SUCCEEDED' -or $buildEvidence.scanStatus -cne 'COMPLETE' -or $buildEvidence.sourceArchiveSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Identity image build provenance evidence is invalid.' }
 $build = & aws.exe codebuild batch-get-builds --region $region --ids $buildEvidence.buildId --output json | ConvertFrom-Json

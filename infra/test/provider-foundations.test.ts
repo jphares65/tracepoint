@@ -51,7 +51,8 @@ test('SES feedback worker is private, bounded, partial-batch, and cannot send em
  const template=Template.fromStack(worker),serialized=JSON.stringify(template.toJSON());
  template.hasResourceProperties('AWS::Lambda::Function',{Runtime:'nodejs24.x',ReservedConcurrentExecutions:2,Timeout:30,MemorySize:256,Environment:{Variables:Match.objectLike({TRACEPOINT_DATABASE_SECRET_ARN:Match.anyValue(),TRACEPOINT_SES_FEEDBACK_TOPIC_ARN:Match.anyValue(),TRACEPOINT_RDS_CA_PATH:'/opt/us-east-1-bundle.pem'})}});
  template.hasResourceProperties('AWS::Lambda::EventSourceMapping',{BatchSize:10,FunctionResponseTypes:['ReportBatchItemFailures'],ScalingConfig:{MaximumConcurrency:2}});
- template.resourceCountIs('AWS::EC2::VPCEndpoint',2);template.resourceCountIs('AWS::CloudWatch::Alarm',4);
+ template.resourceCountIs('AWS::EC2::VPCEndpoint',1);template.resourceCountIs('AWS::CloudWatch::Alarm',4);
+ assert.doesNotMatch(serialized,/com\.amazonaws\.us-east-1\.sns/);
  template.resourceCountIs('AWS::IAM::Role',1);
  const roles=Object.values(template.findResources('AWS::IAM::Role')) as Array<{Properties:Record<string,unknown>}>;
  assert.equal(Object.hasOwn(roles[0].Properties,'ManagedPolicyArns'),false);

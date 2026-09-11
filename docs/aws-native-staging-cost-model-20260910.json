@@ -1,17 +1,43 @@
 {
-  "reviewDate": "2026-09-10",
+  "reviewDate": "2026-09-11",
   "account": "559054714699",
   "region": "us-east-1",
-  "ceilingCents": 7500,
-  "baselineModelCents": 6867,
-  "incrementalComponentsCents": {
+  "ceilingCents": 12500,
+  "componentsCents": {
+    "alb_two_public_ipv4_and_point_one_lcu": 2431,
+    "fargate_quarter_vcpu_half_gib_and_public_ipv4": 1266,
+    "regional_waf_low_volume_allowance": 1000,
     "rds_db_t4g_micro_730_hours": 1168,
     "rds_gp3_20_gib": 230,
-    "two_database_secret_versions": 80,
-    "native_image_builder_allowance": 100,
-    "ses_feedback_private_endpoints_two_services_two_azs": 2920
+    "rds_cpu_credit_allowance": 100,
+    "four_secrets_manager_secrets": 160,
+    "three_customer_managed_kms_keys": 300,
+    "secrets_manager_interface_endpoint_two_azs_and_data": 1461,
+    "aws_backup_20_gib_warm_storage": 190,
+    "bounded_disposable_restore_rehearsal": 25,
+    "codebuild_600_minutes_allowance": 300,
+    "cloudwatch_logs_and_eight_alarms_allowance": 400,
+    "s3_and_ecr_low_volume_allowance": 60,
+    "ses_sns_sqs_lambda_low_volume_allowance": 100,
+    "cognito_synthetic_mau_allowance": 40,
+    "account_governance_allowance": 290,
+    "data_transfer_allowance": 500,
+    "route53_hosted_zone_and_queries_allowance": 60
   },
-  "projectedTotalCents": 11365,
-  "withinApprovedCeiling": false,
-  "basis": "Planning model only. PostgreSQL compute uses the previously verified us-east-1 price of 0.016 USD/hour; storage uses 0.115 USD/GiB-month. The SES feedback worker uses Secrets Manager and SNS interface endpoints in two AZs at a 0.01 USD/endpoint-AZ-hour planning rate, before data processing. The persistent full-AWS staging target exceeds the approved ceiling, so deployment must fail closed until costs are reduced or the owner changes the cap."
+  "projectedTotalCents": 10081,
+  "withinApprovedCeiling": true,
+  "headroomCents": 2419,
+  "basis": "Conservative persistent-month planning model using 730 hours and current public us-east-1 rates checked 2026-09-11. It includes the retained bridge rollback secret, full AWS-native runtime, private PostgreSQL, S3, Cognito, SES feedback persistence, AWS Backup, WAF, monitoring, governance, DNS, data-transfer and a bounded disposable restore rehearsal. The isolated feedback worker retains the required two-AZ Secrets Manager interface endpoint; the unused SNS endpoint is removed because Lambda receives feedback through its SQS event source and makes no SNS API call. Free-tier assumptions are not required to pass the ceiling.",
+  "sources": [
+    "https://aws.amazon.com/rds/postgresql/pricing/",
+    "https://aws.amazon.com/fargate/pricing/",
+    "https://aws.amazon.com/elasticloadbalancing/pricing/",
+    "https://aws.amazon.com/vpc/pricing/",
+    "https://aws.amazon.com/privatelink/pricing/",
+    "https://aws.amazon.com/secrets-manager/pricing/",
+    "https://aws.amazon.com/kms/pricing/",
+    "https://aws.amazon.com/backup/pricing/",
+    "https://aws.amazon.com/cloudwatch/pricing/",
+    "https://aws.amazon.com/cognito/pricing/"
+  ]
 }

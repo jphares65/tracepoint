@@ -70,7 +70,7 @@ Invoke-InventoryQuery 'Issued staging certificates' @(
 )
 Invoke-InventoryQuery 'Staging budget' @(
     'budgets', 'describe-budgets', '--account-id', '559054714699',
-    '--query', "Budgets[?BudgetName=='tracepoint-staging-monthly-75'].[BudgetName,BudgetLimit.Amount,BudgetLimit.Unit]"
+    '--query', "Budgets[?BudgetName=='tracepoint-staging-monthly-125'].[BudgetName,BudgetLimit.Amount,BudgetLimit.Unit]"
 )
 
 & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
