@@ -30,6 +30,7 @@ $archiveIncludes = @(
     'src',
     'database/aws',
     'supabase/migrations',
+    'scripts/assert-aws-native-provider-reachability.mjs',
     'scripts/aws-migration-ledger.mjs',
     'scripts/bootstrap-aws-postgres-target.mjs',
     'scripts/bootstrap-aws-postgres-target-core.mjs',
