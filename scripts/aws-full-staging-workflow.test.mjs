@@ -64,3 +64,9 @@ test("migration build images use the AWS-hosted official Node mirror", async () 
     assert.match(dockerfile, /^FROM public\.ecr\.aws\/docker\/library\/node:24-/m);
   }
 });
+
+test("RDS backup proof accepts only AWS Backup managed RDS recovery snapshots", async () => {
+  const proof = await readFile(new URL("scripts/prove-full-aws-staging-backup-restore.ps1", root), "utf8");
+  assert.match(proof, /arn:aws:rds:\$region`:\$account`:snapshot:awsbackup:job-\[0-9a-f-\]\{36\}/);
+  assert.doesNotMatch(proof, /arn:aws:backup:\$region`:\$account`:recovery-point/);
+});

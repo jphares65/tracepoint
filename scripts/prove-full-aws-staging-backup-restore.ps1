@@ -160,7 +160,8 @@ $backup = Invoke-AwsJson @(
 $backupResult = Wait-BackupJob -JobId $backup.BackupJobId -Deadline $backupStartedAt.AddMinutes($BackupTimeoutMinutes)
 $backupCompletedAt = [DateTime]::UtcNow
 $recoveryPointArn = [string]$backupResult.RecoveryPointArn
-if ($backupResult.ResourceArn -ne $sourceDb.DBInstanceArn -or $recoveryPointArn -notmatch "^arn:aws:backup:$region`:$account`:recovery-point:") {
+if ($backupResult.ResourceArn -ne $sourceDb.DBInstanceArn -or
+    $recoveryPointArn -notmatch "^arn:aws:rds:$region`:$account`:snapshot:awsbackup:job-[0-9a-f-]{36}$") {
     throw 'The completed backup job did not produce the expected bounded recovery point.'
 }
 
