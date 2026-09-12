@@ -14,6 +14,7 @@ export interface ComputeFoundationStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   dataKey: kms.IKey;
   logRetention?: logs.RetentionDays;
+  containerInsights?: ecs.ContainerInsights;
 }
 
 export class ComputeFoundationStack extends cdk.Stack {
@@ -47,8 +48,14 @@ export class ComputeFoundationStack extends cdk.Stack {
     this.cluster = new ecs.Cluster(this, "Cluster", {
       vpc: props.vpc,
       clusterName: `tracepoint-${props.environmentName}`,
-      containerInsightsV2: props.environmentName === "production" ? ecs.ContainerInsights.ENHANCED : ecs.ContainerInsights.DISABLED,
+      containerInsightsV2: props.containerInsights ?? (props.environmentName === "production" ? ecs.ContainerInsights.ENHANCED : ecs.ContainerInsights.DISABLED),
     });
+    if (props.environmentName === "production" && props.containerInsights === ecs.ContainerInsights.DISABLED) {
+      NagSuppressions.addResourceSuppressions(this.cluster, [{
+        id: "AwsSolutions-ECS4",
+        reason: "The explicitly selected initial-production tier retains ECS service CPU/memory metrics, ALB metrics, alarms and encrypted logs; paid per-container Enhanced Container Insights returns at the documented growth trigger.",
+      }]);
+    }
 
     this.appLogGroup = new logs.LogGroup(this, "AppLogGroup", {
       logGroupName: `/tracepoint/${props.environmentName}/application`,

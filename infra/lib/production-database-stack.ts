@@ -7,7 +7,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
-export type ProductionPostgresTopology = "aurora-serverless-v2" | "rds-multi-az";
+export type ProductionPostgresTopology = "aurora-serverless-v2" | "rds-multi-az" | "rds-single-az";
 
 export interface ProductionDatabaseStackProps extends cdk.StackProps {
   topology: ProductionPostgresTopology;
@@ -87,6 +87,7 @@ export class ProductionDatabaseStack extends cdk.Stack {
         evaluationPeriods: 3, datapointsToAlarm: 3,
       });
     } else {
+      const initialSingleAz = props.topology === "rds-single-az";
       const parameters = new rds.ParameterGroup(this, "DatabaseParameters", {
         engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_17_9 }),
         parameters: { "rds.force_ssl": "1", log_statement: "none", log_min_error_statement: "panic" },
@@ -100,13 +101,17 @@ export class ProductionDatabaseStack extends cdk.Stack {
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
         securityGroups: [props.securityGroup],
         publiclyAccessible: false,
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MEDIUM),
-        allocatedStorage: 100,
-        maxAllocatedStorage: 500,
+        availabilityZone: initialSingleAz ? props.vpc.isolatedSubnets[0].availabilityZone : undefined,
+        instanceType: ec2.InstanceType.of(
+          ec2.InstanceClass.T4G,
+          initialSingleAz ? ec2.InstanceSize.SMALL : ec2.InstanceSize.MEDIUM,
+        ),
+        allocatedStorage: initialSingleAz ? 20 : 100,
+        maxAllocatedStorage: initialSingleAz ? 100 : 500,
         storageType: rds.StorageType.GP3,
         storageEncrypted: true,
         storageEncryptionKey: key,
-        multiAz: true,
+        multiAz: !initialSingleAz,
         backupRetention: cdk.Duration.days(35),
         deleteAutomatedBackups: false,
         deletionProtection: true,
@@ -124,7 +129,10 @@ export class ProductionDatabaseStack extends cdk.Stack {
       NagSuppressions.addResourceSuppressions(instance,[{
         id:"AwsSolutions-RDS11",
         reason:"The database is isolated in private subnets and accepts 5432 only from exact workload security groups; changing PostgreSQL's standard port would not add a meaningful authorization boundary and would break the reviewed migration tooling contract.",
-      }]);
+      }, ...(initialSingleAz ? [{
+        id:"AwsSolutions-RDS3",
+        reason:"The explicitly selected initial-production tier uses Single-AZ RDS with 35-day PITR, AWS Backup, deletion protection, and rehearsed restore; Multi-AZ is the documented growth upgrade and requires no database-engine migration.",
+      }] : [])]);
       this.endpointAddress = instance.dbInstanceEndpointAddress;
       new cloudwatch.Alarm(this, "DatabaseCpuAlarm", {
         alarmName: "tracepoint-production-database-cpu",
@@ -138,7 +146,7 @@ export class ProductionDatabaseStack extends cdk.Stack {
       });
       new cloudwatch.Alarm(this, "DatabaseStorageAlarm", {
         alarmName: "tracepoint-production-database-free-storage",
-        metric: instance.metricFreeStorageSpace(), threshold: 10 * 1024 * 1024 * 1024,
+        metric: instance.metricFreeStorageSpace(), threshold: (initialSingleAz ? 5 : 10) * 1024 * 1024 * 1024,
         comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
         evaluationPeriods: 3, datapointsToAlarm: 3,
       });
