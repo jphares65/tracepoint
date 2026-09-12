@@ -63,7 +63,7 @@ function otp(secret: string) {
   return ((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).toString().padStart(6, "0");
 }
 
-type FixtureUser = {kind: "manager"|"officer"|"foreign"; id: string; email: string; subject?: string; totp?: string};
+type FixtureUser = {kind: "manager"|"officer"|"foreign"; id: string; email: string; username?: string; subject?: string; totp?: string};
 const run = randomUUID();
 const password = `${randomBytes(40).toString("base64url")}Aa1!`;
 const users: FixtureUser[] = (["manager", "officer", "foreign"] as const).map(kind => ({
@@ -99,6 +99,8 @@ async function createAndEnroll(user: FixtureUser, poolId: string, clientId: stri
   }));
   await client.send(new AdminSetUserPasswordCommand({UserPoolId: poolId, Username: user.email, Password: password, Permanent: true}));
   const record = await client.send(new AdminGetUserCommand({UserPoolId: poolId, Username: user.email}));
+  user.username = record.Username;
+  assert.ok(user.username);
   user.subject = record.UserAttributes?.find(attribute => attribute.Name === "sub")?.Value;
   assert.match(user.subject ?? "", /^[0-9a-f-]{36}$/);
   const memory = new Map<string,string>();
@@ -189,7 +191,7 @@ try {
 } finally {
   let cleanup=true;const cleanupFailures:string[]=[];
   if(fixtureCreated){try{fixture("cleanup",poolId);}catch(error){cleanup=false;cleanupFailures.push(`fixture:${(error as Error).name}`);process.exitCode=1;}}
-  if(poolId)for(const user of users){try{await deleteFixtureUser(poolId,user.subject!);}catch(error){cleanup=false;cleanupFailures.push(`cognito:${(error as Error).name}`);process.exitCode=1;}}
+  if(poolId)for(const user of users){try{await deleteFixtureUser(poolId,user.username!);}catch(error){cleanup=false;cleanupFailures.push(`cognito:${(error as Error).name}`);process.exitCode=1;}}
   client.destroy();
   console.log(JSON.stringify({status:acceptancePassed&&cleanup?"PASSED":"FAILED",run,users:3,departments:2,syntheticOnly:true,awsNativeRuntime:true,fixtureCleanupVerified:cleanup,cleanupFailures,credentialsPrinted:false}));
 }

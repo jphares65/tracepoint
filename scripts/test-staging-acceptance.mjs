@@ -226,7 +226,8 @@ else try {
   });
 } catch (error) {results.push({name:'authenticated setup',status:'fail',diagnostic:{code:error?.name==='TimeoutError'?'BROWSER_TIMEOUT':error?.code??'REQUEST_OR_BROWSER_FAILURE',step:acceptanceStep,authenticationResponse,authenticationPage},reason:'Login or tenant precondition failed; sensitive details suppressed'});}
 finally {await browser?.close();}
-results.push({name:'remaining scenarios',status:'blocked',reason:process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled'?'Email invitation link delivery and replacement-provider MFA/session cutover remain separate gates. Browser password recovery and fixture cleanup are verified by the parent harness.':'Run the parent harness with --range-documents --extended-workflows for drill/document, off-duty, fleet, training, exports and password-recovery coverage.'});
+if(process.env.TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS==='enabled')results.push({name:'separately governed scenario',status:'not-run',reason:'Email invitation-link delivery remains a separate SES delivery gate. Cognito MFA/session behavior and fixture cleanup are verified by the parent harness.'});
+else results.push({name:'remaining scenarios',status:'blocked',reason:'Run the parent harness with --range-documents --extended-workflows for drill/document, off-duty, fleet, training and export coverage.'});
 console.log(JSON.stringify({target:baseURL,results},null,2));
 const smoke = process.argv.includes('--smoke');
 process.exitCode=results.some(r=>r.status==='fail')?1:smoke && email && password && department?0:results.some(r=>r.status==='blocked')?2:0;
