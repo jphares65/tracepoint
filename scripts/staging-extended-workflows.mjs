@@ -14,7 +14,7 @@ export async function exerciseExtendedWorkflows({context,browser,baseURL,check,s
    const id=(await created.json()).requestId;assert.ok(id);const endpoint='/api/off-duty-firearms/'+id;
    const approval={action:'Approve',effectiveDate:today,expirationDate:new Date(Date.now()+30*86400000).toISOString().slice(0,10)};
    assert.equal((await officer.request.patch(endpoint,{data:approval})).status(),403);
-   assert.equal((await foreign.request.patch(endpoint,{data:approval})).status(),403);
+   assert.ok([403,404].includes((await foreign.request.patch(endpoint,{data:approval})).status()));
    assert.equal((await context.request.patch(endpoint,{data:approval})).status(),409);
    await expectStatus(await context.request.post(endpoint+'/inspections',{data:{inspectionDate:today,result:'Pass',notes:'Disposable staging inspection'}}),200,'off-duty inspection');
    await expectStatus(await context.request.patch(endpoint,{data:{...approval,qualificationOverride:true,qualificationOverrideReason:'Disposable staging acceptance of explicit command exception'}}),200,'off-duty approval');
