@@ -1,8 +1,11 @@
 # Production SES readiness checkpoint — 2026-09-12
 
-This checkpoint is preparation only. It does not authorize creating an SES
-identity, submitting the production-access request, changing DNS, creating a
-subscription, or sending email.
+The owner authorized the SES identity foundation and production-access request
+on 2026-09-12. Live preflight then proved two independent blockers, so neither
+operation was attempted: the production Organizations policy explicitly denies
+all required SES mutations, and no live human email subscription proves that the
+configured role mailbox is currently monitored. DNS changes, subscriptions, and
+email sending remain unauthorized.
 
 ## Read-only live state
 
@@ -15,6 +18,16 @@ subscription, or sending email.
   yet and cannot truthfully be placed in DNS now.
 - Account suppression is already enabled for both `BOUNCE` and `COMPLAINT`.
 - Current SES plan: Essentials.
+- The SES identity list and configuration-set list are both empty, and the
+  `tracepoint-production-full-aws-ses` CloudFormation stack does not exist.
+- IAM simulation returned `explicitDeny` with
+  `AllowedByOrganizations=false` for identity, configuration-set, MAIL FROM,
+  suppression, and production-access operations. Permissions boundary v7 also
+  omits SES mutations. A partial deployment was deliberately not started.
+- The two live operational topics have two confirmed SQS subscriptions and zero
+  email subscriptions. Repository configuration yields one role-mailbox
+  candidate, but does not prove that a human currently monitors it; the access
+  request therefore remains unsubmitted.
 - Authoritative DNS is Wix (`ns10.wixdns.net`, `ns11.wixdns.net`). The custom
   MAIL FROM name has no MX or TXT record. The root domain's Microsoft 365 SPF
   record remains separate. Current DMARC sends aggregate reports to Brevo and
@@ -88,7 +101,8 @@ The complete request payload is in
 production configuration. The owner must confirm that this mailbox is monitored
 before submission; this checkpoint does not claim delivery to it.
 
-Prepared command — **do not execute without explicit authorization**:
+Prepared command — authorized, but **do not execute until both the policy and
+monitored-mailbox gates pass**:
 
 ```powershell
 aws sesv2 put-account-details `

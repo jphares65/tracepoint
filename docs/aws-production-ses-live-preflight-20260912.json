@@ -1,0 +1,60 @@
+{
+  "evidenceType": "production-ses-live-preflight",
+  "observedAt": "2026-09-12T09:44:25-04:00",
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "assumedRole": "TracePointMigrationProduction"
+  },
+  "sesAccount": {
+    "productionAccessEnabled": false,
+    "sendingEnabled": true,
+    "max24HourSend": 200.0,
+    "maxSendRate": 1.0,
+    "sentLast24Hours": 0.0,
+    "suppressedReasons": [
+      "BOUNCE",
+      "COMPLAINT"
+    ],
+    "pricingPlan": "ESSENTIALS",
+    "emailIdentityCount": 0,
+    "configurationSetCount": 0
+  },
+  "foundation": {
+    "stackName": "tracepoint-production-full-aws-ses",
+    "stackExists": false,
+    "deploymentAttempted": false,
+    "resourcesCreated": 0,
+    "costCreatedUsdPerMonth": 0
+  },
+  "authorizationPreflight": {
+    "iamSimulationResult": "explicitDeny",
+    "organizationsAllowsSesMutation": false,
+    "permissionsBoundaryVersion": "v7",
+    "permissionsBoundaryAllowsSesMutation": false,
+    "deniedActions": [
+      "ses:CreateEmailIdentity",
+      "ses:CreateConfigurationSet",
+      "ses:CreateConfigurationSetEventDestination",
+      "ses:PutEmailIdentityMailFromAttributes",
+      "ses:PutAccountSuppressionAttributes",
+      "ses:PutAccountDetails"
+    ],
+    "safeDisposition": "Do not start a partial CloudFormation deployment while SES resources are denied."
+  },
+  "humanContactGate": {
+    "liveSnsTopicCount": 2,
+    "liveEmailSubscriptionCount": 0,
+    "liveSqsSubscriptionCount": 2,
+    "monitoredMailboxVerified": false,
+    "accessRequestSubmitted": false,
+    "reason": "The repository contains one candidate role mailbox, but live AWS alert delivery has no confirmed human email subscription. Repository configuration alone does not prove that the mailbox is currently monitored."
+  },
+  "prohibitedActionsConfirmed": {
+    "dnsChanged": false,
+    "emailSent": false,
+    "applicationInfrastructureDeployed": false,
+    "customerDataTouched": false,
+    "productionIdentityCreated": false
+  }
+}
