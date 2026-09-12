@@ -1,0 +1,18 @@
+{
+  "account": "111111111111",
+  "region": "us-east-1",
+  "roleArn": "arn:aws:iam::111111111111:role/TracePointMigrationProduction",
+  "hostname": "tracepointhq.com",
+  "certificateArn": "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-4000-8000-000000000000",
+  "imageTag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-aws-native",
+  "imageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "architectureTarget": "full-aws",
+  "deploymentPhase": "full-aws-final",
+  "dataMode": "aws-postgres-authoritative",
+  "authMode": "cognito",
+  "storageMode": "s3",
+  "emailMode": "ses",
+  "databaseTopology": "rds-single-az",
+  "desiredCount": 1,
+  "maxCapacity": 2
+}

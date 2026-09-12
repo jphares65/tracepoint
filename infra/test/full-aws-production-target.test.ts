@@ -45,3 +45,18 @@ test("production database assembly also supports the documented Multi-AZ RDS cho
  database.hasResourceProperties("AWS::RDS::DBInstance",{Engine:"postgres",MultiAZ:true,PubliclyAccessible:false,StorageEncrypted:true,DeletionProtection:true,BackupRetentionPeriod:35});
  database.resourceCountIs("AWS::RDS::DBCluster",0);
 });
+
+test("initial-production proposal is single-AZ and right-sized without removing recovery or security controls",()=>{
+ const initial={...target,databaseTopology:"rds-single-az" as const,desiredCount:1 as const,maxCapacity:2 as const};
+ const stacks=fullAwsProductionAssembly(new cdk.App(),initial,true);
+ const database=Template.fromStack(stacks.database),runtime=Template.fromStack(stacks.runtime),compute=Template.fromStack(stacks.compute),feedback=Template.fromStack(stacks.sesFeedbackWorker),backup=Template.fromStack(stacks.backup);
+ database.hasResourceProperties("AWS::RDS::DBInstance",{DBInstanceClass:"db.t4g.small",AllocatedStorage:"20",MaxAllocatedStorage:100,MultiAZ:false,PubliclyAccessible:false,StorageEncrypted:true,DeletionProtection:true,BackupRetentionPeriod:35,DeleteAutomatedBackups:false});
+ runtime.hasResourceProperties("AWS::ECS::Service",{DesiredCount:1,DeploymentConfiguration:Match.objectLike({MaximumPercent:200,MinimumHealthyPercent:100})});
+ const services=Object.values(runtime.findResources("AWS::ECS::Service")) as Array<{Properties:{NetworkConfiguration:{AwsvpcConfiguration:{Subnets:unknown[]}}}}>;
+ assert.equal(services[0].Properties.NetworkConfiguration.AwsvpcConfiguration.Subnets.length,1);
+ compute.hasResourceProperties("AWS::ECS::Cluster",{ClusterSettings:[{Name:"containerInsights",Value:"disabled"}]});
+ compute.hasResourceProperties("AWS::Logs::LogGroup",{RetentionInDays:90});
+ for(const endpoint of Object.values(feedback.findResources("AWS::EC2::VPCEndpoint")) as Array<{Properties:{SubnetIds:unknown[]}}>)assert.equal(endpoint.Properties.SubnetIds.length,1);
+ backup.hasResourceProperties("AWS::Backup::BackupPlan",Match.anyValue());
+ assert.throws(()=>validateFullAwsProductionTarget({...initial,desiredCount:2,maxCapacity:4},{offline:true}));
+});

@@ -37,6 +37,7 @@ export interface RuntimeStackProps extends cdk.StackProps {
   cognitoUserPoolId?: string;
   cognitoClientId?: string;
   sesConfigurationSet?: string;
+  singleAzRuntime?: boolean;
 }
 
 export class RuntimeStack extends cdk.Stack {
@@ -151,7 +152,9 @@ export class RuntimeStack extends cdk.Stack {
         minHealthyPercent: 100,
         healthCheckGracePeriod: cdk.Duration.seconds(60),
         circuitBreaker: { rollback: true },
-        taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+        taskSubnets: props.singleAzRuntime
+          ? { subnets: [props.vpc.publicSubnets[0]] }
+          : { subnetType: ec2.SubnetType.PUBLIC },
         assignPublicIp: true,
         securityGroups: [taskSecurityGroup],
         taskImageOptions: {

@@ -23,6 +23,7 @@ export interface SesFeedbackWorkerProps extends cdk.StackProps {
   feedbackQueue: sqs.IQueue;
   feedbackDeadLetterQueue: sqs.IQueue;
   cognitoConfigurationSetName: string;
+  singleAzEndpoints?: boolean;
 }
 
 export class SesFeedbackWorkerStack extends cdk.Stack {
@@ -65,15 +66,18 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
     // The Lambda event-source mapping polls SQS on the worker's behalf. The
     // worker downloads the SNS signing certificate over PrivateLink before it
     // verifies the signed envelope locally.
+    const endpointSubnets: ec2.SubnetSelection = props.singleAzEndpoints
+      ? { subnets: [props.vpc.isolatedSubnets[0]] }
+      : { subnetType: ec2.SubnetType.PRIVATE_ISOLATED };
     new ec2.InterfaceVpcEndpoint(this, "SecretsEndpoint", {
       vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER, privateDnsEnabled: true,
       securityGroups: [endpointSecurityGroup],
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      subnets: endpointSubnets,
     });
     new ec2.InterfaceVpcEndpoint(this, "SnsEndpoint", {
       vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SNS, privateDnsEnabled: true,
       securityGroups: [endpointSecurityGroup],
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      subnets: endpointSubnets,
     });
 
     const caLayer = new lambda.LayerVersion(this, "RdsCaLayer", {
@@ -115,7 +119,7 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       // account concurrency: small staging accounts must retain Lambda's
       // service-required unreserved pool.
       timeout: cdk.Duration.seconds(30), memorySize: 256,
-      vpc: props.vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED }, securityGroups: [workerSecurityGroup],
+      vpc: props.vpc, vpcSubnets: endpointSubnets, securityGroups: [workerSecurityGroup],
       layers: [caLayer], logGroup,
       environment: {
         TRACEPOINT_AWS_ACCOUNT: this.account,
