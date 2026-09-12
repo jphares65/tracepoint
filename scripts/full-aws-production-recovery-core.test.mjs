@@ -4,7 +4,7 @@ import * as cdk from "../infra/node_modules/aws-cdk-lib/index.js";
 import { fullAwsProductionAssembly } from "../infra/lib/full-aws-production-assembly.ts";
 import { FULL_AWS_PRODUCTION_STACKS, validateFullAwsProductionRecoveryAssembly } from "./full-aws-production-recovery-core.mjs";
 
-const target = { account: "193644343389", region: "us-east-1", roleArn: "arn:aws:iam::193644343389:role/TracePointMigrationProduction", hostname: "tracepointhq.com", certificateArn: "arn:aws:acm:us-east-1:193644343389:certificate/11111111-1111-4111-8111-111111111111", imageTag: `${"a".repeat(40)}-aws-native`, imageDigest: `sha256:${"b".repeat(64)}`, architectureTarget: "full-aws", deploymentPhase: "full-aws-final", dataMode: "aws-postgres-authoritative", authMode: "cognito", storageMode: "s3", emailMode: "ses", databaseTopology: "rds-multi-az", desiredCount: 2, maxCapacity: 4 };
+const target = { account: "193644343389", region: "us-east-1", roleArn: "arn:aws:iam::193644343389:role/TracePointMigrationProduction", hostname: "tracepointhq.com", certificateArn: "arn:aws:acm:us-east-1:193644343389:certificate/11111111-1111-4111-8111-111111111111", imageTag: `${"a".repeat(40)}-aws-native`, imageDigest: `sha256:${"b".repeat(64)}`, architectureTarget: "full-aws", deploymentPhase: "full-aws-final", dataMode: "aws-postgres-authoritative", authMode: "cognito", storageMode: "s3", emailMode: "ses", databaseTopology: "rds-multi-az", desiredCount: 2, maxCapacity: 4, humanAlertEmail: "contact@tracepointhq.com" };
 
 function synthesized() {
   const app = new cdk.App();

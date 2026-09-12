@@ -7,6 +7,7 @@ import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as sources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as kms from "aws-cdk-lib/aws-kms";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -18,6 +19,7 @@ export interface SesFeedbackWorkerProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   databaseSecurityGroup: ec2.ISecurityGroup;
   databaseKeyArn: string;
+  logEncryptionKey?: kms.IKey;
   databaseSecret: secretsmanager.ISecret;
   feedbackTopic: sns.ITopic;
   feedbackQueue: sqs.IQueue;
@@ -86,7 +88,9 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
       compatibleRuntimes: [lambda.Runtime.NODEJS_24_X],
     });
     const logGroup = new logs.LogGroup(this, "WorkerLogs", {
-      retention: props.environmentName === "production" ? logs.RetentionDays.ONE_YEAR : logs.RetentionDays.ONE_MONTH,
+      logGroupName: props.environmentName === "production" ? "/tracepoint/production/ses-feedback-worker" : undefined,
+      encryptionKey: props.logEncryptionKey,
+      retention: props.environmentName === "production" ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
     const workerRole = new iam.Role(this, "WorkerRole", {
@@ -141,10 +145,10 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
     }));
 
     this.alarms = [
-      new cloudwatch.Alarm(this, "QueueAgeAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-queue-age`, metric: props.feedbackQueue.metricApproximateAgeOfOldestMessage(), threshold: 300, evaluationPeriods: 2 }),
-      new cloudwatch.Alarm(this, "DeadLetterAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-dead-letter`, metric: props.feedbackDeadLetterQueue.metricApproximateNumberOfMessagesVisible(), threshold: 1, evaluationPeriods: 1 }),
-      new cloudwatch.Alarm(this, "WorkerErrorsAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-errors`, metric: this.worker.metricErrors(), threshold: 1, evaluationPeriods: 1 }),
-      new cloudwatch.Alarm(this, "WorkerThrottlesAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-throttles`, metric: this.worker.metricThrottles(), threshold: 1, evaluationPeriods: 1 }),
+      new cloudwatch.Alarm(this, "QueueAgeAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-queue-age`, alarmDescription: "Feedback remains queued for five minutes; idle queues legitimately emit no samples.", metric: props.feedbackQueue.metricApproximateAgeOfOldestMessage(), threshold: 300, evaluationPeriods: 3, datapointsToAlarm: 2, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+      new cloudwatch.Alarm(this, "DeadLetterAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-dead-letter`, alarmDescription: "At least one feedback event exhausted retries; an empty DLQ legitimately emits no samples.", metric: props.feedbackDeadLetterQueue.metricApproximateNumberOfMessagesVisible(), threshold: 1, evaluationPeriods: 1, datapointsToAlarm: 1, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+      new cloudwatch.Alarm(this, "WorkerErrorsAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-errors`, alarmDescription: "The feedback worker reported an execution error; idle Lambda periods legitimately emit no samples.", metric: this.worker.metricErrors(), threshold: 1, evaluationPeriods: 2, datapointsToAlarm: 1, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+      new cloudwatch.Alarm(this, "WorkerThrottlesAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-throttles`, alarmDescription: "The feedback worker was throttled; idle Lambda periods legitimately emit no samples.", metric: this.worker.metricThrottles(), threshold: 1, evaluationPeriods: 2, datapointsToAlarm: 1, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
     ];
   }
 }

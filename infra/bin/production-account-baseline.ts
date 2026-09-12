@@ -35,5 +35,5 @@ const common: cdk.StackProps = {
   },
 };
 new ProductionAccountBaselineStack(app, 'tracepoint-production-account-baseline', {...common, accountId: account});
-new ProductionCostControlsStack(app, 'tracepoint-production-cost-controls', {...common, accountId: account, monthlyBudgetUsd: 150});
+new ProductionCostControlsStack(app, 'tracepoint-production-cost-controls', {...common, accountId: account, monthlyBudgetUsd: 175});
 cdk.Aspects.of(app).add(new AwsSolutionsChecks({verbose: true}));

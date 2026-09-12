@@ -75,6 +75,7 @@ test('production identity runner is pinned to the production account and constra
     stagingRecipientSha256: [],
   };
   const template = Template.fromStack(new IdentityMigrationRunnerStack(new cdk.App(), 'production-runner', production));
+  template.hasResourceProperties('AWS::Logs::LogGroup', {LogGroupName: `/tracepoint/production/identity-migration/${production.runId}`, KmsKeyId: production.artifactKeyArn, RetentionInDays: 30});
   const roles = Object.values(template.findResources('AWS::IAM::Role'));
   assert.equal(roles.length, 2);
   for (const role of roles) {

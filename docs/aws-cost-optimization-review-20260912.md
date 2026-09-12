@@ -4,15 +4,15 @@
 
 **Pricing region:** `us-east-1`
 
-**Scope:** offline/read-only analysis and a non-deployed CDK proposal
+**Scope:** offline analysis plus implemented, non-deployed Tier 1 CDK/security controls
 
-**Recommendation:** adopt the Tier 1 proposal only after owner authorization and completion of the listed pre-cutover security corrections.
+**Recommendation:** deploy the implemented Tier 1 target only after the consolidated owner authorization and listed live preflight checks.
 
 ## Executive result
 
-The supplied `$265.44/month` production model is internally consistent but not complete. It counts six rather than eight permanent customer-managed KMS keys, thirteen rather than fifteen billed alarm metrics, `$10` rather than the synthesized `$13.40` Enhanced Container Insights estimate, and only `$10` for account security services. The corrected comparison baseline is **$276.04/month**. This is a target-architecture estimate, not current incurred spend: no production RDS instance exists yet and the complete application stack has not been deployed.
+The supplied `$265.44/month` production model was not complete. After correcting its omissions and adding the required managed WAF groups, security-event metrics/alarms, and narrowly scoped CloudTrail S3 data events, the hardened comparison baseline is **$280.34/month**. This is a target-architecture estimate, not current incurred spend: no production RDS instance exists yet and the complete application stack has not been deployed.
 
-The recommended initial-production configuration is **$127.42/month steady state**, **$140.08 during a normal two-task rolling deployment**, and **$149.28 if the database has grown from 20 to its 100 GiB autoscaling maximum during that deployment**. It keeps the AWS-native architecture, ALB, WAF, Cognito, RLS/RBAC, private encrypted RDS, S3, SES, secrets, CloudTrail, security services, durable feedback queues, backup/PITR, restore and rollback mechanisms. It does not depend on AWS free-tier eligibility.
+The implemented initial-production configuration is **$131.72/month steady state**, **$144.38 during a normal two-task rolling deployment**, and **$153.58 if the database has grown from 20 to its 100 GiB autoscaling maximum during that deployment**. The `$4.30` increase over the approved optimization proposal is entirely attributable to required pre-deployment controls: three AWS-managed WAF groups (`+$3.00`), three CloudTrail-derived security metrics plus alarms (`+$1.20`), and a 100,000-event S3 object-audit allowance (`+$0.10`). It keeps the AWS-native architecture, ALB, WAF, Cognito, RLS/RBAC, private encrypted RDS, S3, SES, secrets, CloudTrail, security services, durable feedback queues, backup/PITR, restore and rollback mechanisms. It does not depend on AWS free-tier eligibility.
 
 The primary availability trade is explicit: Tier 1 has one steady application task and one Single-AZ database. It therefore loses continuous service through a task-host/AZ failure and RDS automatic standby failover. Recovery, encryption, isolation and audit controls remain. Tier 2 restores Multi-AZ database and worker endpoint redundancy without changing application code or database technology.
 
@@ -35,8 +35,9 @@ All values are monthly USD and use 730 hours. “Current” means the presently 
 | PrivateLink | Secrets Manager + SNS endpoints in two AZs | $29.20 | Both endpoints and feedback worker in one isolated AZ | $14.60 | $14.60 | Private API access and signed-envelope verification unchanged | Feedback remains durably buffered by SQS, but worker processing pauses if that AZ fails | Tier 2, multi-AZ SLA, or feedback RTO <1 hour |
 | KMS | Eight permanent CMKs | $8.00 | Retain all eight | $8.00 | $0.00 | No blast-radius consolidation | Rotation sensitivity shown below | Revisit only after policies and rotation billing are measured |
 | Secrets Manager | Four secrets plus API allowance | $1.65 | Retain | $1.65 | $0.00 | No change | No change | Growth in secret count/API calls |
-| WAF | Regional ACL, one rate rule, low requests | $6.06 | Retain; add managed common protection before enforcement if approved | $6.06 | $0.00 | Existing control unchanged; a managed group adds about $1 plus requests | No change | Threat review or materially higher request volume |
-| CloudWatch alarms | 15 billed metrics + one composite | $2.00 | Retain | $2.00 | $0.00 | No alert removed | Missing-data semantics need correction before cutover | Add alarms when a new actionable failure mode exists |
+| WAF | Regional ACL, rate rule plus three AWS-managed groups, low requests | $9.06 | Retain the same hardened protections | $9.06 | $0.00 | Common, known-bad-input and IP-reputation protections enforced; no exclusions configured without evidence | Monitor labels/blocked requests and switch only an offending managed group to count under rollback authority | Threat review or materially higher request volume |
+| CloudWatch alarms/security metrics | 18 billed alarm metrics, one composite and three CloudTrail custom metrics | $3.20 | Retain | $3.20 | $0.00 | Root, privileged IAM and security-control changes now enter the existing encrypted human/durable alert path | Missing-data semantics are explicit for every metric alarm | Add alarms only for a new actionable failure mode |
+| CloudTrail S3 data events | Exact private object bucket, 100,000-event allowance | $0.10 | Retain | $0.10 | $0.00 | Identity-aware read/write object audit evidence | Variable with object request volume | Review at 75,000 monthly data events |
 | CloudWatch logs | 20-GiB allowance | $10.00 | 2.5-GiB allowance; 90-day hot application/operational retention, 365-day audit trail | $1.25 | Audit trail retained; current flow/worker/RDS log encryption gaps must be fixed | Less immediately queryable history; archive policy owns older evidence | Actual ingestion >2 GiB/month or retention obligation >90 days |
 | Enhanced Container Insights | Enabled | $13.40 | Disable in Tier 1 | $0.00 | No security control removed; basic ECS/ALB metrics, alarms and logs remain | Loses per-container/task telemetry detail | Multiple services/tasks, repeated task incidents, or formal SLO debugging |
 | S3 | 5 GiB + requests + access logs | $0.87 | Retain encryption, bucket key, versioning, access logs and lifecycle | $0.87 | None | No change | Storage/request growth |
@@ -49,7 +50,7 @@ All values are monthly USD and use 730 hours. “Current” means the presently 
 | Route 53 | Zone + one million queries | $0.90 | Retain | $0.90 | None | No change | Query growth |
 | Internet transfer | 10-GiB allowance | $10.00 | 5-GiB allowance | $5.00 | None | Variable estimate only | Forecast or observed transfer >4 GiB/month |
 | Account security services | GuardDuty, Security Hub, Config and audit allowance | $15.00 | Retain `$15` allowance | $15.00 | No control removed | Exact GuardDuty/Security Hub/Config usage remains a forecast uncertainty | Forecast >$15 or enabled-plan change |
-| **Total** |  | **$276.04** |  | **$127.42** | **$148.62** |  |  |  |
+| **Total** |  | **$280.34** |  | **$131.72** | **$148.62** |  |  |  |
 
 The optimized estimate deliberately retains a conservative `$15` security-services reserve. A synthesized target-only Security Hub Essentials lower bound is about `$7.52/month` before all live IAM/resources and threat/security-data processing; the older `$10` combined reserve did not have defensible headroom.
 
@@ -71,25 +72,25 @@ A one-AZ endpoint option would reduce staging by another `$14.60/month` but weak
 
 | Measure | Monthly cost |
 |---|---:|
-| Corrected current production steady state | **$276.04** |
-| Optimized production steady state | **$127.42** |
-| Optimized production rolling peak | **$140.08** |
-| Optimized rolling peak with RDS at 100 GiB | **$149.28** |
+| Corrected current production steady state | **$280.34** |
+| Optimized production steady state | **$131.72** |
+| Optimized production rolling peak | **$144.38** |
+| Optimized rolling peak with RDS at 100 GiB | **$153.58** |
 | Corrected current staging | **$118.42** |
 | Optimized staging | **$104.19** |
-| Combined current baseline | **$394.46** |
-| Combined optimized baseline | **$231.61** |
+| Combined current baseline | **$398.76** |
+| Combined optimized baseline | **$235.91** |
 | Combined monthly savings | **$162.85** |
 
-Recommended production AWS Budget: **$175/month**, with actual-spend alerts at 70%, 85% and 100%, forecast at 90% and 100%, and the existing immediate `$10` cost-anomaly threshold. A Budget is an alert, not an enforcement cap. The live production budget is currently `$150`, actual spend was `$11.13` at read time, and it was healthy. The repository’s older model says `$350`; the account-baseline CDK and live Budget say `$150`. That governance inconsistency must be resolved before deployment. No Budget change was made.
+Recommended production AWS Budget: **$175/month**, with actual-spend alerts at 70%, 85% and 100%, forecast at 90% and 100%, and the existing immediate `$10` cost-anomaly threshold. A Budget is an alert, not an enforcement cap. CDK now expresses the approved `$175` target. The live production budget was `$150` with `$11.13` actual spend at the last read-only check; changing it remains a separately authorized deployment action.
 
-KMS automatic rotation is a sensitivity: the first paid rotation of eight keys makes steady state **$135.42**, and the second makes it **$143.42**. After the second paid rotation, a normal rolling deployment reaches `$156.08`; with database storage at 100 GiB it reaches `$165.28`. These remain below the recommended budget, but actual security-service usage must also fit the remaining headroom.
+KMS automatic rotation is a sensitivity: the first paid rotation of eight keys makes steady state **$139.72**, and the second makes it **$147.72**. After the second paid rotation, a normal rolling deployment reaches `$160.38`; with database storage at 100 GiB it reaches `$169.58`. These remain below the recommended budget, but actual security-service usage must also fit the remaining headroom.
 
 ## Tier plan
 
 | Tier | Configuration | Planning estimate | Entry / exit criteria |
 |---|---|---:|---|
-| **1 — Initial production** | Single-AZ `db.t4g.small`, 20–100 GiB gp3; one 0.25-vCPU/0.5-GiB task, max two; ALB/WAF; one-AZ feedback endpoints; essential metrics/logs; all security and recovery controls | **$127.42 steady** | Current 3 departments / 96 identities / very low concurrency. Exit on an uptime commitment requiring AZ failover, five active agencies, 50 concurrent users, sustained task CPU >50%, memory >65%, DB CPU >50%, free memory <512 MiB, material CPU-credit charges, or 40-GiB storage forecast |
+| **1 — Initial production** | Single-AZ `db.t4g.small`, 20–100 GiB gp3; one 0.25-vCPU/0.5-GiB task, max two; ALB/WAF; one-AZ feedback endpoints; essential metrics/logs; all security and recovery controls | **$131.72 steady** | Current 3 departments / 96 identities / very low concurrency. Exit on an uptime commitment requiring AZ failover, five active agencies, 50 concurrent users, sustained task CPU >50%, memory >65%, DB CPU >50%, free memory <512 MiB, material CPU-credit charges, or 40-GiB storage forecast |
 | **2 — Growth** | Multi-AZ `db.t4g.small`, 20 GiB gp3; two steady tasks/max four; two-AZ endpoints; Enhanced Container Insights; managed WAF rules after count-mode review | **about $211.92 steady** | Use when the first HA/SLA trigger is met. Resize to `t4g.medium` only from measured DB pressure. Add scheduled load tests and tighter on-call SLOs |
 | **3 — Mature / HA** | Multi-AZ `db.t4g.medium`, 100 GiB gp3; four steady tasks; two-AZ worker/endpoints; stronger monitoring/security reserve; cross-account/region backup based on approved RTO/RPO | **about $317.36 steady**, before higher traffic/storage | 20+ agencies, 200+ concurrent users, sustained database/resource pressure, 99.95%+ contractual SLA, second active region/account, or retirement of the sealed rollback source |
 
@@ -119,16 +120,16 @@ The lost availability in Tier 1 is automatic standby failover and continuous ser
 
 ## Logging, backup and security review
 
-Required before cutover, independent of the cost decision:
+Implemented offline; live deployment evidence remains required before cutover:
 
-- Encrypt the VPC Flow Log, SES feedback-worker and RDS PostgreSQL export log groups with an existing appropriate CMK. Reduce hot Flow Log retention from the synthesized 731 days only after adding an owned archive/lifecycle policy; keep `ALL` traffic during migration validation.
-- Set explicit missing-data behavior for all RDS and SES feedback alarms. Seven of fourteen alarm resources currently inherit `missing`; sparse SES metrics should be `NOT_BREACHING`, and the RDS choice must be intentional. Derive the connection threshold from the bounded pools instead of the current unrelated value 150.
-- Expand AWS Config’s 26-type custom recorder to cover the current RDS, Lambda, Cognito, Backup, SES, EventBridge, WAF, S3/IAM/Logs policy resources. Guard changes to recorder scope.
-- Remove unconditional EventBridge-to-SNS/KMS allows synthesized by the alert-delivery stack; retain only the reviewed SourceArn/SourceAccount boundary.
-- Add reviewed AWS-managed common WAF protections in count mode, validate false positives, then enforce or record explicit owner risk acceptance. The current rule is rate limiting, not general SQLi/XSS input protection.
-- Add scoped CloudTrail S3 object data events and alert on root use, high-risk IAM actions, KMS disable/deletion, CloudTrail/Config/security-service changes. Keep the multi-region management-event trail and file validation.
-- Confirm a monitored human alert subscription. Durable SQS receipt alone is not a human notification path.
-- Add governance-mode Backup Vault Lock or obtain explicit risk acceptance. Compliance mode is irreversible and is not proposed without owner authorization.
+- VPC Flow Log, SES feedback-worker, RDS PostgreSQL export, application, build, WAF, audit and migration logs are KMS-encrypted. Tier 1 uses 90-day hot operational retention and keeps `ALL` VPC traffic.
+- Every metric alarm declares missing-data behavior. RDS telemetry gaps are actionable (`BREACHING`); sparse event/error metrics are `NOT_BREACHING`; connection thresholds are 50 for Tier 1 and 100 for HA layouts.
+- AWS Config’s selective continuous recorder covers 41 reviewed resource types. Exact-list validation detects drift and the SCP change set confines recorder/channel replacement to the production migration or CDK execution role.
+- The unconditional EventBridge-to-SNS/KMS grants are removed; CloudWatch and EventBridge publish only from the exact alarm/rule ARN in the exact account.
+- Production enforces the Common, Known Bad Inputs and Amazon IP Reputation AWS-managed WAF groups with no unevidenced exclusions, plus the existing rate limit. Pre-traffic monitoring owns false-positive detection and scoped rollback.
+- CloudTrail captures all object reads/writes only for the private application bucket. Root, privileged IAM and security-control changes feed three event-driven alarms into the existing composite.
+- The production target requires `contact@tracepointhq.com`; confirming the generated SNS subscription and proving controlled delivery remain live no-go gates.
+- Production uses reversible governance-mode Vault Lock at 35–365 days. Compliance mode remains deferred until the dated evidence trigger in `aws-tier1-deployment-readiness-20260912.md`.
 
 Controls classified as useful but deferrable at current scale are Enhanced Container Insights, RDS Enhanced Monitoring, Database Insights Advanced, CloudTrail Insights, continuous Inspector rescanning, cross-region Security Hub aggregation and cross-account/region backup copy. Each becomes required at the Tier 2/3 triggers above or when the sealed rollback source is retired. CloudTrail management events, GuardDuty foundational coverage, Security Hub/Config coverage, immutable ECR scanning, WAF, RDS logs/metrics, backups and recovery testing are retained.
 
@@ -140,9 +141,9 @@ The deterministic model is `docs/aws-cost-optimization-model-20260912.json`. RDS
 
 Excluded: taxes, AWS Support plan, third-party costs, one-time cutover transfer/compute, T4g unlimited credit overage, workload growth beyond stated allowances, and KMS rotations beyond the separately shown sensitivity. Security service usage is a conservative allowance because actual GuardDuty/Security Hub/Config dimensions can change with resource inventory and event volume. The model must be refreshed after the first full production month.
 
-## Proposed CDK diff and validation boundary
+## Implemented CDK diff and validation boundary
 
-The non-deployed proposal adds `rds-single-az` as a fail-closed target combination requiring exactly one desired task and maximum two. It changes only that explicit target to:
+The non-deployed implementation adds `rds-single-az` as a fail-closed target combination requiring exactly one desired task and maximum two. It changes only that explicit target to:
 
 - `db.t4g.small`, 20 GiB gp3, maximum 100 GiB, Single-AZ, while retaining 35-day PITR, AWS Backup, encryption, deletion protection and snapshot retention;
 - one desired Fargate task/max two, aligned to the initial database AZ;
@@ -156,6 +157,11 @@ Offline validation completed:
 - deterministic production/staging cost-model tests: 4 passed;
 - infrastructure TypeScript build: passed;
 - complete infrastructure regression suite: 49 passed, 0 failed;
-- focused initial-production tests: 4 passed, including fail-closed target combinations, RDS recovery/security properties, one-task/two-task rolling capacity, one-AZ endpoint placement, log retention and retained AWS Backup;
+- focused Tier 1 and shared provider tests: 12 passed, including fail-closed target combinations, RDS recovery/security properties, one-task/two-task rolling capacity, one-AZ endpoint placement, encrypted log retention, explicit alarm semantics, Vault Lock and staging compatibility;
+- production cost, security, IAM, Config, publication, reconciliation, recovery and cutover validators: 44 passed, 0 failed (42 Node tests plus two TypeScript-aware recovery-assembly tests);
 - 13-stack Tier 1 CDK synthesis with `cdk-nag`: succeeded with no error findings;
+- two-stack production account-baseline/cost-controls synthesis with `cdk-nag`: succeeded with no error findings;
+- synthesized-template audit: 15 templates, seven encrypted log groups, 17 alarms with explicit missing-data handling, three managed WAF groups, one exact-bucket data selector and one governance-locked vault;
+- AWS-native provider reachability: 154 entry points / 322 reachable modules, zero static or unapproved dynamic legacy-provider edges and zero unapproved legacy endpoints;
+- root and infrastructure TypeScript checks: passed;
 - `git diff --check`: passed. CDK emitted only the repository's acknowledged deterministic offline-AZ warnings.

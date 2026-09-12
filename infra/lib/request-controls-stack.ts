@@ -23,8 +23,16 @@ export class RequestControlsStack extends cdk.Stack {
   const visibility=(metricName:string)=>({cloudWatchMetricsEnabled:true,metricName,sampledRequestsEnabled:false});
   const action=props.mode==='enforce'?{block:{customResponse:{responseCode:429,responseHeaders:[{name:'Retry-After',value:'60'}]}}}:{count:{}};
   const rule=(ruleName:string,priority:number,limit:number,window:number,scopeDownStatement?:waf.CfnWebACL.StatementProperty):waf.CfnWebACL.RuleProperty=>({name:ruleName,priority,action,statement:{rateBasedStatement:{aggregateKeyType:'IP',limit,evaluationWindowSec:window,scopeDownStatement}},visibilityConfig:visibility(ruleName)});
+  const managedRule=(ruleName:string,priority:number,managedName:string):waf.CfnWebACL.RuleProperty=>({
+    name:ruleName,
+    priority,
+    overrideAction:props.mode==='enforce'?{none:{}}:{count:{}},
+    statement:{managedRuleGroupStatement:{vendorName:'AWS',name:managedName}},
+    visibilityConfig:visibility(ruleName),
+  });
   const probe:waf.CfnWebACL.StatementProperty={andStatement:{statements:[{byteMatchStatement:{fieldToMatch:{uriPath:{}},positionalConstraint:'EXACTLY',searchString:'/api/health',textTransformations:[{priority:0,type:'LOWERCASE'}]}},{byteMatchStatement:{fieldToMatch:{singleQueryArgument:{Name:'tracepoint_rate_probe'}},positionalConstraint:'EXACTLY',searchString:'rehearsal',textTransformations:[{priority:0,type:'NONE'}]}}]}};
-  const acl=new waf.CfnWebACL(this,'RequestAcl',{name,scope:'REGIONAL',defaultAction:{allow:{}},visibilityConfig:visibility(name),rules:props.mode==='logging'?[]:[rule('RequestFlood',0,1000,300),...(props.environment==='staging'?[rule('SyntheticRateProbe',1,10,60,probe)]:[])]});acl.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+  const productionManagedRules=props.environment==='production'?[managedRule('AwsCommonProtection',10,'AWSManagedRulesCommonRuleSet'),managedRule('AwsKnownBadInputs',20,'AWSManagedRulesKnownBadInputsRuleSet'),managedRule('AwsIpReputation',30,'AWSManagedRulesAmazonIpReputationList')]:[];
+  const acl=new waf.CfnWebACL(this,'RequestAcl',{name,scope:'REGIONAL',defaultAction:{allow:{}},visibilityConfig:visibility(name),rules:props.mode==='logging'?[]:[rule('RequestFlood',0,1000,300),...(props.environment==='staging'?[rule('SyntheticRateProbe',1,10,60,probe)]:[]),...productionManagedRules]});acl.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
   const configuration=new waf.CfnLoggingConfiguration(this,'RequestLogging',{resourceArn:acl.attrArn,logDestinationConfigs:[group.logGroupArn.replace(/:\*$/,'')],redactedFields:[{singleHeader:{Name:'authorization'}},{singleHeader:{Name:'cookie'}},{singleHeader:{Name:'referer'}},{singleHeader:{Name:'x-api-key'}},{queryString:{}},{uriPath:{}}]});configuration.node.addDependency(policy);
   const association=new waf.CfnWebACLAssociation(this,'AlbProtection',{resourceArn:props.loadBalancerArn,webAclArn:acl.attrArn});association.node.addDependency(configuration);
   new cloudwatch.Alarm(this,'FloodAlarm',{alarmName:'tracepoint-'+props.environment+'-request-flood',alarmDescription:'Sustained WAF rate-limit blocks; inspect redacted logs and verify application health.',metric:new cloudwatch.Metric({namespace:'AWS/WAFV2',metricName:'BlockedRequests',dimensionsMap:{WebACL:name,Rule:'RequestFlood',Region:this.region},statistic:'Sum',period:cdk.Duration.minutes(1)}),threshold:100,evaluationPeriods:2,treatMissingData:cloudwatch.TreatMissingData.NOT_BREACHING});

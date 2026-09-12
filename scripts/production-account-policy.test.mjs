@@ -38,6 +38,12 @@ test('production migration role trusts only the exact management SSO role', () =
 test('production SCP confines regions and protects explicit owner-controlled gates', () => {
   const text = JSON.stringify(guardrails);
   for (const action of ['organizations:LeaveOrganization', 'account:CloseAccount', 'route53:ChangeResourceRecordSets', 'cloudtrail:StopLogging', 'guardduty:DeleteDetector', 'securityhub:DisableSecurityHub', 'securityhub:DisableSecurityHubV2']) assert.ok(text.includes(action));
+  const configScope = guardrails.Statement.find(statement => statement.Sid === 'DenyUnauthorizedConfigScopeChanges');
+  assert.deepEqual(configScope.Action, ['config:PutConfigurationRecorder', 'config:PutDeliveryChannel']);
+  assert.deepEqual(configScope.Condition.ArnNotLike['aws:PrincipalArn'], [
+    'arn:aws:iam::193644343389:role/TracePointMigrationProduction',
+    'arn:aws:iam::193644343389:role/cdk-*-cfn-exec-role-193644343389-us-east-1',
+  ]);
   const region = guardrails.Statement.find(statement => statement.Sid === 'DenyOutsideUsEast1');
   assert.equal(region.Condition.StringNotEquals['aws:RequestedRegion'], 'us-east-1');
   assert.ok(region.NotAction.includes('iam:*'));

@@ -23,7 +23,7 @@ function valid() {
     securityHubEnabled:true,
     effectiveGuardrailsAuthorized:true,
     attachedScpCount:2,
-    budgets:[{BudgetName:'tracepoint-production-monthly', BudgetType:'COST', BudgetLimit:{Amount:'150', Unit:'USD'}}],
+    budgets:[{BudgetName:'tracepoint-production-monthly', BudgetType:'COST', BudgetLimit:{Amount:'175', Unit:'USD'}}],
   };
 }
 

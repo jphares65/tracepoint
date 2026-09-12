@@ -10,6 +10,8 @@ test('production Config definition is exact, selective and continuously recordin
   assert.equal(desired.recorder.recordingMode.recordingFrequency, 'CONTINUOUS');
   assert.equal(desired.recorder.recordingGroup.recordingStrategy.useOnly, 'INCLUSION_BY_RESOURCE_TYPES');
   assert.ok(productionConfigResourceTypes.includes('AWS::ECS::Service'));
+  for (const type of ['AWS::Backup::BackupVault','AWS::CloudWatch::Alarm','AWS::Cognito::UserPool','AWS::Events::Rule','AWS::IAM::Policy','AWS::Lambda::Function','AWS::RDS::DBInstance','AWS::S3::BucketPolicy','AWS::SES::ConfigurationSet']) assert.ok(productionConfigResourceTypes.includes(type), `${type} must be recorded`);
+  assert.equal(new Set(productionConfigResourceTypes).size, productionConfigResourceTypes.length);
   assert.throws(() => productionConfigDefinition('265544358665'));
 });
 

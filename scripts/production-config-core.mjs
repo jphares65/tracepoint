@@ -1,14 +1,20 @@
 import assert from 'node:assert/strict';
 
 export const productionConfigResourceTypes = Object.freeze([
+  'AWS::Backup::BackupPlan', 'AWS::Backup::BackupSelection', 'AWS::Backup::BackupVault',
+  'AWS::CloudWatch::Alarm',
   'AWS::CloudFormation::Stack', 'AWS::CloudTrail::Trail', 'AWS::CodeBuild::Project',
+  'AWS::Cognito::UserPool', 'AWS::Cognito::UserPoolClient', 'AWS::Cognito::UserPoolDomain',
   'AWS::EC2::EIP', 'AWS::EC2::InternetGateway', 'AWS::EC2::NetworkAcl',
   'AWS::EC2::RouteTable', 'AWS::EC2::SecurityGroup', 'AWS::EC2::Subnet', 'AWS::EC2::VPC',
   'AWS::EC2::VPCEndpoint', 'AWS::ECR::Repository', 'AWS::ECS::Cluster', 'AWS::ECS::Service',
   'AWS::ECS::TaskDefinition', 'AWS::ElasticLoadBalancingV2::Listener',
   'AWS::ElasticLoadBalancingV2::LoadBalancer', 'AWS::ElasticLoadBalancingV2::TargetGroup',
-  'AWS::IAM::Role', 'AWS::KMS::Key', 'AWS::Logs::LogGroup', 'AWS::S3::Bucket',
-  'AWS::SecretsManager::Secret', 'AWS::SNS::Topic', 'AWS::SQS::Queue', 'AWS::WAFv2::WebACL',
+  'AWS::Events::Rule', 'AWS::IAM::Policy', 'AWS::IAM::Role', 'AWS::KMS::Key',
+  'AWS::Lambda::Function', 'AWS::Logs::LogGroup',
+  'AWS::RDS::DBCluster', 'AWS::RDS::DBInstance', 'AWS::RDS::DBSubnetGroup',
+  'AWS::S3::Bucket', 'AWS::S3::BucketPolicy', 'AWS::SecretsManager::Secret',
+  'AWS::SES::ConfigurationSet', 'AWS::SNS::Topic', 'AWS::SQS::Queue', 'AWS::WAFv2::WebACL',
 ]);
 
 export function productionConfigDefinition(account) {
