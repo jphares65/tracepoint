@@ -79,14 +79,20 @@ const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 async function deleteFixtureUser(poolId: string, username: string) {
   for (let attempt = 1; attempt <= 5; attempt++) {
+    const cleanupClient = new CognitoIdentityProviderClient({region, maxAttempts: 2});
     try {
-      await client.send(new AdminDeleteUserCommand({UserPoolId: poolId, Username: username}));
+      await cleanupClient.send(new AdminDeleteUserCommand({UserPoolId: poolId, Username: username}));
       return;
     } catch (error) {
       const name = (error as Error).name;
       if (name === "UserNotFoundException") return;
-      if (!["TooManyRequestsException", "LimitExceededException"].includes(name) || attempt === 5) throw error;
+      const metadata = (error as {$metadata?: {httpStatusCode?: number}}).$metadata;
+      const retryable = ["TooManyRequestsException", "LimitExceededException", "TimeoutError"].includes(name)
+        || (name === "Error" && metadata?.httpStatusCode === undefined);
+      if (!retryable || attempt === 5) throw error;
       await new Promise(resolvePromise => setTimeout(resolvePromise, 500 * 2 ** (attempt - 1)));
+    } finally {
+      cleanupClient.destroy();
     }
   }
 }
@@ -190,8 +196,8 @@ try {
   console.error(JSON.stringify({status:"FAILED",run,stage,errorName:(error as Error).name,diagnostic:diagnostic||undefined,sensitiveDetailsPrinted:false}));process.exitCode=1;
 } finally {
   let cleanup=true;const cleanupFailures:string[]=[];
-  if(fixtureCreated){try{fixture("cleanup",poolId);}catch(error){cleanup=false;cleanupFailures.push(`fixture:${(error as Error).name}`);process.exitCode=1;}}
   if(poolId)for(const user of users){try{await deleteFixtureUser(poolId,user.username!);}catch(error){cleanup=false;cleanupFailures.push(`cognito:${(error as Error).name}`);process.exitCode=1;}}
+  if(fixtureCreated){try{fixture("cleanup",poolId);}catch(error){cleanup=false;cleanupFailures.push(`fixture:${(error as Error).name}`);process.exitCode=1;}}
   client.destroy();
   console.log(JSON.stringify({status:acceptancePassed&&cleanup?"PASSED":"FAILED",run,users:3,departments:2,syntheticOnly:true,awsNativeRuntime:true,fixtureCleanupVerified:cleanup,cleanupFailures,credentialsPrinted:false}));
 }
