@@ -80,7 +80,6 @@ const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 async function deleteFixtureUser(poolId: string, username: string) {
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      gate();
       await client.send(new AdminDeleteUserCommand({UserPoolId: poolId, Username: username}));
       return;
     } catch (error) {
@@ -188,9 +187,9 @@ try {
 } catch (error) {
   console.error(JSON.stringify({status:"FAILED",run,stage,errorName:(error as Error).name,diagnostic:diagnostic||undefined,sensitiveDetailsPrinted:false}));process.exitCode=1;
 } finally {
-  let cleanup=true;
-  if(fixtureCreated){try{fixture("cleanup",poolId);}catch{cleanup=false;process.exitCode=1;}}
-  if(poolId)for(const user of users){try{await deleteFixtureUser(poolId,user.email);}catch{cleanup=false;process.exitCode=1;}}
+  let cleanup=true;const cleanupFailures:string[]=[];
+  if(fixtureCreated){try{fixture("cleanup",poolId);}catch(error){cleanup=false;cleanupFailures.push(`fixture:${(error as Error).name}`);process.exitCode=1;}}
+  if(poolId)for(const user of users){try{await deleteFixtureUser(poolId,user.subject!);}catch(error){cleanup=false;cleanupFailures.push(`cognito:${(error as Error).name}`);process.exitCode=1;}}
   client.destroy();
-  console.log(JSON.stringify({status:acceptancePassed&&cleanup?"PASSED":"FAILED",run,users:3,departments:2,syntheticOnly:true,awsNativeRuntime:true,fixtureCleanupVerified:cleanup,credentialsPrinted:false}));
+  console.log(JSON.stringify({status:acceptancePassed&&cleanup?"PASSED":"FAILED",run,users:3,departments:2,syntheticOnly:true,awsNativeRuntime:true,fixtureCleanupVerified:cleanup,cleanupFailures,credentialsPrinted:false}));
 }
