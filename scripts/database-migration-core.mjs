@@ -7,7 +7,7 @@ export const TRANSIENT_TABLES = Object.freeze([
 ]);
 export const TARGET_SEEDED_TABLES = Object.freeze(["roles", "permissions", "role_permissions", "feature_catalog"]);
 export const SOURCE_MIGRATION_COUNT = 76;
-export const TARGET_MIGRATION_COUNT = 94;
+export const TARGET_MIGRATION_COUNT = 95;
 
 const host = /^[a-z0-9][a-z0-9.-]+$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

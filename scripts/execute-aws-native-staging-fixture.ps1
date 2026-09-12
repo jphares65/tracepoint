@@ -108,7 +108,7 @@ do {
     if ([DateTime]::UtcNow -ge $evidenceDeadline) { break }
     Start-Sleep -Seconds 2
 } while ($true)
-if ($result.Count -ne 1 -or $result[0].sourceCommit -ne $SourceCommit -or $result[0].sourceMigrations -ne 76 -or $result[0].awsMigrations -ne 18 -or $result[0].users -ne 3 -or $result[0].departments -ne 2 -or $result[0].syntheticOnly -ne $true) {
+if ($result.Count -ne 1 -or $result[0].sourceCommit -ne $SourceCommit -or $result[0].sourceMigrations -ne 76 -or $result[0].awsMigrations -ne 19 -or $result[0].users -ne 3 -or $result[0].departments -ne 2 -or $result[0].syntheticOnly -ne $true) {
     throw 'The fixture task did not emit exact sanitized evidence.'
 }
 $plan['taskArn']=$taskArn

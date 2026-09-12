@@ -60,4 +60,4 @@ assert.equal(runtimeTasks.length, 1);
 assertDigestImage(runtimeTasks[0], imageDigest);
 const runtimeText = JSON.stringify(runtimeTasks[0]);
 for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_STORAGE_PROVIDER", "s3", "TRACEPOINT_EMAIL_PROVIDER", "ses"]) assert.match(runtimeText, new RegExp(value));
-console.log(JSON.stringify({ valid: true, sourceCommit, providerMode: "aws-native", sourceMigrations: 76, awsMigrations: 18, forbiddenRuntimeReferences: 0 }));
+console.log(JSON.stringify({ valid: true, sourceCommit, providerMode: "aws-native", sourceMigrations: 76, awsMigrations: 19, forbiddenRuntimeReferences: 0 }));

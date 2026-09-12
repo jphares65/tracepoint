@@ -23,6 +23,7 @@ export const AWS_MIGRATION_LEDGER = Object.freeze([
   ["016_platform_support_mode.sql", "e9ab64324a139eda1cd5a46eb95346ccc241935daf41f6e584c2fd144d403bc0"],
   ["017_bound_armory_rpc_authorization.sql", "2342fe563fe5cc97e95db2afe17808782f3893cd352deb1af9d240395d48a887"],
   ["018_fleet_and_off_duty_rls.sql", "63948dd92442e566e0d57f53b04d8bb82222d0ce32cf4c37e644ca6300d6abac"],
+  ["019_authenticated_fleet_off_duty_privileges.sql", "a7ba9bb8c50ee68855dd876b1dc8e829742f52c94945051d3b38cba1f0d310d2"],
 ]);
 
 const sha256 = value => createHash("sha256").update(value).digest("hex");

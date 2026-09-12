@@ -6,7 +6,7 @@ import { normalizeMigrationSql } from "./migration-sql-core.mjs";
 
 test("AWS target migration ledger pins every ordered overlay", async () => {
   const migrations = await loadVerifiedAwsMigrations();
-  assert.equal(migrations.length, 18);
+  assert.equal(migrations.length, 19);
   assert.deepEqual(migrations.map(item => item.name), AWS_MIGRATION_LEDGER.map(([name]) => name));
 });
 
@@ -27,4 +27,15 @@ test("AWS-native Fleet and off-duty policies remain permission and tenant bound"
   assert.match(sql, /has_department_permission\(department_id, 'administer_department'\)/);
   assert.match(sql, /request\.officer_user_id = tracepoint_auth\.subject_id\(\)/);
   assert.doesNotMatch(sql, /(?:using|with check)\s*\(\s*true\s*\)/);
+});
+
+test("AWS-native Fleet and off-duty privileges remain authenticated and RLS-scoped", async () => {
+  const migrations = await loadVerifiedAwsMigrations();
+  const sql = migrations.find(item => item.name === "019_authenticated_fleet_off_duty_privileges.sql")?.sql ?? "";
+  for (const table of ["fleet_rules", "fleet_vehicles", "fleet_work_orders", "fleet_vehicle_equipment", "fleet_vehicle_documents", "fleet_vehicle_inspections", "off_duty_firearm_requests", "off_duty_firearm_history"]) {
+    assert.match(sql, new RegExp(`public\\.${table}`));
+  }
+  assert.match(sql, /to authenticated/);
+  assert.doesNotMatch(sql, /to (?:anon|service_role|tracepoint_runtime)/);
+  assert.doesNotMatch(sql, /grant all/);
 });

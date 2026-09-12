@@ -110,7 +110,7 @@ try {
   await client.connect();
   stage = "lineage";
   const lineage = await client.query("select kind,count(*)::int as count from tracepoint_migrations.applied_migrations group by kind order by kind");
-  assert.deepEqual(lineage.rows, [{ kind: "aws", count: 18 }, { kind: "source", count: 76 }]);
+  assert.deepEqual(lineage.rows, [{ kind: "aws", count: 19 }, { kind: "source", count: 76 }]);
   await client.query("begin");
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [`tracepoint:aws-native-fixture:${input.runId}`]);
   if (input.operation === "setup") {
@@ -223,7 +223,7 @@ try {
     runId: input.runId,
     sourceCommit: input.sourceCommit,
     sourceMigrations: 76,
-    awsMigrations: 18,
+    awsMigrations: 19,
     departments: 2,
     users: 3,
     syntheticOnly: true,
