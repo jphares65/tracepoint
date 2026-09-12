@@ -47,6 +47,17 @@ test('disabled SES foundation grants no runtime authority and changes no DNS',()
  t.hasOutput('ActivationGate',{Value:Match.stringLikeRegexp('^DISABLED:')});
 });
 
+test('authorized production SES foundation is isolated from application infrastructure',()=>{
+ const stack=new SesFoundationStack(new cdk.App(),'tracepoint-production-full-aws-ses',{env:{account:'193644343389',region:'us-east-1'},environmentName:'production',mailFromSubdomain:'bounce',terminationProtection:true});
+ const template=Template.fromStack(stack);
+ template.resourceCountIs('AWS::SES::EmailIdentity',1);
+ template.resourceCountIs('AWS::SES::ConfigurationSet',2);
+ template.resourceCountIs('AWS::SES::ConfigurationSetEventDestination',2);
+ template.resourceCountIs('AWS::SNS::Topic',1);
+ template.resourceCountIs('AWS::SQS::Queue',2);
+ for(const type of ['AWS::ECS::Service','AWS::RDS::DBInstance','AWS::RDS::DBCluster','AWS::Cognito::UserPool','AWS::Lambda::Function'])template.resourceCountIs(type,0);
+});
+
 test('SES feedback worker is private, bounded, partial-batch, and cannot send email',()=>{
  const app=new cdk.App(),root=new cdk.Stack(app,'root',{env:{account:'559054714699',region:'us-east-1'}});
  const vpc=new ec2.Vpc(root,'Vpc',{maxAzs:2,natGateways:0,subnetConfiguration:[{name:'isolated',subnetType:ec2.SubnetType.PRIVATE_ISOLATED,cidrMask:24}]});
