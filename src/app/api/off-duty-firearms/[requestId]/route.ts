@@ -13,6 +13,7 @@ import {
 import {
   getOfficerQualificationReadiness,
 } from "@/lib/tracepoint/off-duty-qualification-readiness";
+import { normalizeCalendarDate } from "@/lib/tracepoint/calendar-date";
 
 type RouteContext = {
   params: Promise<{ requestId: string }>;
@@ -130,9 +131,12 @@ const inspection = inspectionResult.data;
       ? 30
       : Number(rawDueSoonDays);
 
-  const inspectionDate = new Date(
-    `${inspection.inspection_date}T00:00:00`,
+  const normalizedInspectionDate = normalizeCalendarDate(
+    inspection.inspection_date,
   );
+  const inspectionDate = normalizedInspectionDate
+    ? new Date(`${normalizedInspectionDate}T00:00:00`)
+    : new Date(Number.NaN);
 
   if (Number.isNaN(inspectionDate.getTime())) {
     return {

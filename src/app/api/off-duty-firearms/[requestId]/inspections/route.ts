@@ -6,6 +6,7 @@ import {
   permissionDeniedResponse,
   requireServerFeature,
   resolveServerAccess,
+  type ServerAccessContext,
 } from "@/lib/tracepoint/server-access";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,24 @@ import {
   evaluateCertificationCapability,
 } from "@/lib/tracepoint/certification-capability";
 import { createOffDutyReadRepository } from "@/lib/off-duty-firearms/read-repository";
+import { normalizeCalendarDate } from "@/lib/tracepoint/calendar-date";
 
 type RouteContext = {
   params: Promise<{ requestId: string }>;
+};
+
+type ProfileNameRow = {
+  id: unknown;
+  full_name?: unknown;
+};
+
+type OffDutyInspectionRow = {
+  id: unknown;
+  inspection_date: unknown;
+  result: unknown;
+  notes?: unknown;
+  inspected_by_user_id: unknown;
+  created_at: unknown;
 };
 
 function cleanText(value: unknown) {
@@ -37,17 +53,20 @@ async function loadProfileNames(
     return new Map<string, string>();
   }
 
-  const data = await repository.listProfiles(departmentId, uniqueIds);
+  const data: ProfileNameRow[] = await repository.listProfiles(
+    departmentId,
+    uniqueIds,
+  );
 
   return new Map(
-    data.map((row: any) => [
+    data.map((row) => [
       String(row.id),
       cleanText(row.full_name) ?? "Unknown User",
     ]),
   );
 }
 
-function isInspectionManager(context: any) {
+function isInspectionManager(context: ServerAccessContext) {
   return hasAnyServerPermission(context, [
     "manage_inspections",
     "manage_firearms",
@@ -56,7 +75,10 @@ function isInspectionManager(context: any) {
   ]);
 }
 
-async function loadOffDutyRequest(context: any, requestId: string) {
+async function loadOffDutyRequest(
+  context: ServerAccessContext,
+  requestId: string,
+) {
   const { data, error } = await context.admin
     .from("off_duty_firearm_requests")
     .select("id,department_id,officer_user_id,make,model,serial_number")
@@ -114,21 +136,35 @@ export async function GET(
     );
   }
 
-  let data;
-  try { data = await repository.listRequestInspections(context.departmentId, requestId); }
-  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Inspections could not be loaded." }, { status: 500 }); }
+  let data: OffDutyInspectionRow[];
+  try {
+    data = await repository.listRequestInspections(
+      context.departmentId,
+      requestId,
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Inspections could not be loaded.",
+      },
+      { status: 500 },
+    );
+  }
 
-    const inspectorNames = await loadProfileNames(
+  const inspectorNames = await loadProfileNames(
     repository,
     context.departmentId,
-    (data ?? []).map((row: any) =>
+    data.map((row) =>
       String(row.inspected_by_user_id ?? ""),
     ),
   );
 
-  const inspections = (data ?? []).map((row: any) => ({
+  const inspections = data.map((row) => ({
     id: String(row.id),
-    inspectionDate: row.inspection_date,
+    inspectionDate: normalizeCalendarDate(row.inspection_date),
     result: row.result,
     notes: row.notes ?? undefined,
     inspectedBy:
