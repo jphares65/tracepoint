@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdir, open, readFile, rename } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
+import { runSyntheticRehearsal } from "./production-shaped-rehearsal-core.mjs";
+
+const run = promisify(execFile);
+const args = process.argv.slice(2);
+assert.deepEqual(args.slice(0, 1), ["--inventory"]); assert.equal(args[2], "--output"); assert.equal(args.length, 4, "Usage: node scripts/run-production-shaped-rehearsal.mjs --inventory FILE --output FILE");
+const inventory = JSON.parse(await readFile(path.resolve(args[1]), "utf8"));
+const startedAt = Date.now();
+const sqlStart = Date.now();
+const sql = await run(process.execPath, ["scripts/validate-clean-bootstrap.mjs", "--aws-native-final", "--rehearse-restore"], { env: { ...process.env, TRACEPOINT_PG_BIN: process.env.TRACEPOINT_PG_BIN ?? path.join(tmpdir(), "tracepoint-pg-tools") }, timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 });
+const sqlMs = Date.now() - sqlStart;
+assert.match(sql.stdout, /Clean bootstrap passed: 76 ordered migrations and 20 AWS target overlays/);
+const restoreMs = Number(/Local dump\/restore reconciliation passed in (\d+) ms/.exec(sql.stdout)?.[1]);
+assert.ok(Number.isInteger(restoreMs) && restoreMs > 0);
+const modelStart = Date.now();
+const model = await runSyntheticRehearsal(inventory);
+const modelMs = Date.now() - modelStart;
+const evidence = { format: "tracepoint-production-shaped-rehearsal/v1", generatedAt: new Date().toISOString(), sourceInventorySha256: inventory.contentSha256, sourceScale: model.scale, lineage: { productionSource: 60, authoritativeSource: 76, sourceDeltasAfterCopy: 16, awsOverlaysAfterCopy: 20, targetTotal: 96 }, database: { ...model.database, cleanBootstrap: true, dumpRestoreReconciled: true, dumpRestoreMs: restoreMs, bootstrapAndRestoreWallMs: sqlMs, retryContract: "single-transaction restore; exact anchor-only or full-content resume; partial/conflicting data fails closed" }, identity: model.identity, storage: model.storage, rollback: { preWriteBridgeRestore: "allowed", postWriteBridgeRestore: "freeze-and-reconcile" }, timings: { syntheticContractMs: modelMs, totalMs: Date.now() - startedAt }, privacy: { syntheticOnly: true, emailsEmitted: false, userIdsEmitted: false, objectKeysEmitted: false, recordContentsEmitted: false } };
+const output = path.resolve(args[3]); await mkdir(path.dirname(output), { recursive: true }); const temporary = `${output}.${process.pid}.tmp`; const handle = await open(temporary, "wx", 0o600); try { await handle.writeFile(`${JSON.stringify(evidence, null, 2)}\n`); await handle.sync(); } finally { await handle.close(); } await rename(temporary, output);
+console.log(JSON.stringify({ status: "PASSED", sourceRows: model.scale.exposedRows, physicalRows: model.scale.physicalRows, identities: model.identity.users, memberships: model.identity.memberships, objects: model.storage.objects, sourceMigrations: 76, awsOverlays: 20, restoreMs, totalMs: evidence.timings.totalMs, sensitiveValuesEmitted: false }));

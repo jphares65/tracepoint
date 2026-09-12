@@ -12,7 +12,7 @@
   "authMode": "cognito",
   "storageMode": "s3",
   "emailMode": "ses",
-  "databaseTopology": "aurora-serverless-v2",
+  "databaseTopology": "rds-multi-az",
   "desiredCount": 2,
   "maxCapacity": 4
 }

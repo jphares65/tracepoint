@@ -43,7 +43,7 @@ async function initialize() {
   return createSesFeedbackBatchHandler({
     account: required("TRACEPOINT_AWS_ACCOUNT"),
     topicArn: required("TRACEPOINT_SES_FEEDBACK_TOPIC_ARN"),
-    store: new PostgresSesFeedbackStore(pool),
+    store: new PostgresSesFeedbackStore(pool, required("TRACEPOINT_COGNITO_SES_CONFIGURATION_SET")),
   });
 }
 

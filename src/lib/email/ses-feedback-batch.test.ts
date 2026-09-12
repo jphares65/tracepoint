@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createSesFeedbackBatchHandler} from './ses-feedback-batch';
 const account='559054714699',topicArn=`arn:aws:sns:us-east-1:${account}:feedback`;
-const body=JSON.stringify({eventType:'Delivery',mail:{sendingAccountId:account,messageId:'accepted-1'},delivery:{recipients:['synthetic@example.invalid']}});
+const body=JSON.stringify({eventType:'Delivery',mail:{sendingAccountId:account,messageId:'accepted-1',tags:{'ses:configuration-set':['tracepoint-staging']}},delivery:{recipients:['synthetic@example.invalid']}});
 const verify=async(message:string,topic:string)=>({notificationId:'sns-1',topicArn:topic,message});
 test('committed and duplicate feedback acknowledge; persistence failure retries only failed record',async()=>{
  let calls=0;const handler=createSesFeedbackBatchHandler({account,topicArn,verify,store:{apply:async()=>{calls++;if(calls===2)throw Error('Uncorrelated acceptance');return calls===1?'applied':'duplicate';}}});

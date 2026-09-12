@@ -28,9 +28,12 @@ if ($LASTEXITCODE -ne 0 -or $nativeTask.status -cne 'ACTIVE' -or $nativeTask.tas
 $nativeContainers = @($nativeTask.containerDefinitions) | Where-Object { $_.name -eq $manifest.evidence.service.containerName }
 $nativeContainer = $nativeContainers | Select-Object -First 1
 if ($nativeContainers.Count -ne 1) { throw 'The AWS-native task must contain exactly one reviewed application container.' }
-if (-not $nativeContainer -or $nativeContainer.image -notmatch '^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/(?<nativeRepository>[a-z0-9._/-]+):(?<nativeTag>[a-z0-9._-]+)$') { throw 'The AWS-native task image reference is invalid.' }
-$nativeDigest = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.nativeRepository --image-ids "imageTag=$($Matches.nativeTag)" --query 'imageDetails[0].imageDigest' --output text
+if (-not $nativeContainer -or $nativeContainer.image -notmatch '^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/(?<nativeRepository>[a-z0-9._/-]+)@(?<nativeDigest>sha256:[0-9a-f]{64})$') { throw 'The AWS-native task must use the reviewed digest-pinned image reference.' }
+$nativeDigest = $Matches.nativeDigest
 if ($LASTEXITCODE -ne 0 -or $nativeDigest -cne $manifest.evidence.awsImageDigest) { throw 'The active AWS-native task image does not match the immutable manifest.' }
+$nativeScan = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.nativeRepository --image-ids "imageDigest=$nativeDigest" --output json | ConvertFrom-Json
+$nativeSeverity = $nativeScan.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
+if ($LASTEXITCODE -ne 0 -or $nativeScan.imageDetails[0].imageScanStatus.status -cne 'COMPLETE' -or ($nativeSeverity.CRITICAL ?? 0) -ne 0 -or ($nativeSeverity.HIGH ?? 0) -ne 0) { throw 'The AWS-native image scan is incomplete or has disallowed findings.' }
 $task = (& aws.exe ecs describe-task-definition --region $manifest.evidence.region --task-definition $manifest.evidence.bridgeTaskDefinitionArn --output json | ConvertFrom-Json).taskDefinition
 if ($LASTEXITCODE -ne 0 -or $task.status -cne 'ACTIVE' -or $task.taskDefinitionArn -cne $manifest.evidence.bridgeTaskDefinitionArn) { throw 'The immutable bridge task definition could not be verified.' }
 $containers = @($task.containerDefinitions) | Where-Object { $_.name -eq $manifest.evidence.service.containerName }

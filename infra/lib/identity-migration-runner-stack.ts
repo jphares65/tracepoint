@@ -41,7 +41,7 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props: IdentityMigrationRunnerStackProps) {
     super(scope, id, props);
-    const expectedAccount = props.environmentName === 'staging' ? '559054714699' : this.account;
+    const expectedAccount = props.environmentName === 'staging' ? '559054714699' : '193644343389';
     if (this.region !== 'us-east-1' || !/^\d{12}$/.test(this.account) || this.account === '265544358665' || this.account !== expectedAccount) throw new Error('A matching workload account in us-east-1 is required');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(props.runId)) throw new Error('A random migration run UUID is required');
     if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(props.authorizationReference)) throw new Error('A specific identity migration authorization is required');
@@ -62,6 +62,14 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     cdk.Tags.of(this).add('Purpose', 'temporary-identity-migration');
     cdk.Tags.of(this).add('MigrationRun', props.runId);
     cdk.Tags.of(this).add('ArchitectureTarget', 'full-aws');
+    if (props.environmentName === 'production') {
+      const boundary = iam.ManagedPolicy.fromManagedPolicyArn(
+        this,
+        'ProductionPermissionsBoundary',
+        this.formatArn({ service: 'iam', region: '', resource: 'policy', resourceName: 'TracePointProductionBoundary' }),
+      );
+      iam.PermissionsBoundary.of(this).apply(boundary);
+    }
 
     const vpc = ec2.Vpc.fromVpcAttributes(this, 'Vpc', { vpcId: props.vpcId, availabilityZones: ['us-east-1a', 'us-east-1b'], publicSubnetIds: props.publicSubnetIds });
     const cluster = ecs.Cluster.fromClusterAttributes(this, 'Cluster', { clusterName: props.clusterName, vpc });
@@ -72,8 +80,14 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     const databaseSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'DatabaseSecurityGroup', props.databaseSecurityGroupId, { mutable: true });
 
     const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/${props.environmentName}/identity-migration/${props.runId}`, retention: logs.RetentionDays.ONE_MONTH, removalPolicy: cdk.RemovalPolicy.RETAIN });
-    const taskRole = new iam.Role(this, 'TaskRole', { assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com') });
-    const executionRole = new iam.Role(this, 'ExecutionRole', { assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com') });
+    const ecsTasksPrincipal = new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
+      conditions: {
+        StringEquals: { 'aws:SourceAccount': this.account },
+        ArnLike: { 'aws:SourceArn': `arn:${this.partition}:ecs:us-east-1:${this.account}:*` },
+      },
+    });
+    const taskRole = new iam.Role(this, 'TaskRole', { assumedBy: ecsTasksPrincipal });
+    const executionRole = new iam.Role(this, 'ExecutionRole', { assumedBy: ecsTasksPrincipal });
     databaseSecret.grantRead(executionRole);
     artifactKey.grantDecrypt(executionRole);
     repository.grantPull(executionRole);

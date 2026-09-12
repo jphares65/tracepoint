@@ -26,6 +26,8 @@ export interface DatabaseMigrationRunnerStackProps extends cdk.StackProps {
   sourceDatabase: string;
   targetHost: string;
   targetDatabase: string;
+  expectedSourceMigrationCount: number;
+  expectedSourceMigrationLedgerSha256: string;
 }
 
 export class DatabaseMigrationRunnerStack extends cdk.Stack {
@@ -35,7 +37,8 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: DatabaseMigrationRunnerStackProps) {
     super(scope, id, props);
     if (this.region !== 'us-east-1' || !/^\d{12}$/.test(this.account) || this.account === '265544358665') throw new Error('A workload account in us-east-1 is required');
-    if (props.environmentName === 'staging' && this.account !== '559054714699') throw new Error('Staging migration runner account mismatch');
+    const expectedAccount = props.environmentName === 'staging' ? '559054714699' : '193644343389';
+    if (this.account !== expectedAccount) throw new Error(`${props.environmentName} migration runner account mismatch`);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(props.runId)) throw new Error('A random migration run UUID is required');
     if (!/^[0-9a-f]{40}$/.test(props.commit) || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) throw new Error('Immutable migration source and image are required');
     if (!/^[A-Za-z0-9._:/-]{8,200}$/.test(props.authorizationReference)) throw new Error('A migration authorization reference is required');
@@ -44,10 +47,19 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
     if (!props.sourceSecretArn.startsWith(secretPrefix) || !props.targetSecretArn.startsWith(secretPrefix) || props.sourceSecretArn === props.targetSecretArn) throw new Error('Distinct source and target secret ARNs are required');
     if (!/^[a-z]{20}$/.test(props.sourceProjectRef) || props.sourceHost !== `db.${props.sourceProjectRef}.supabase.co` || !/^[a-z0-9-]+\.[a-z0-9.-]+\.rds\.amazonaws\.com$/.test(props.targetHost) || props.sourceHost === props.targetHost) throw new Error('Reviewed source project and RDS target hosts are required');
     for (const database of [props.sourceDatabase, props.targetDatabase]) if (!/^[A-Za-z0-9_-]{1,63}$/.test(database)) throw new Error('Database name is invalid');
+    if (!Number.isInteger(props.expectedSourceMigrationCount) || props.expectedSourceMigrationCount < 1 || props.expectedSourceMigrationCount > 76 || !/^[0-9a-f]{64}$/.test(props.expectedSourceMigrationLedgerSha256)) throw new Error('Exact source migration lineage evidence is required');
 
     cdk.Tags.of(this).add('Purpose', 'temporary-database-migration');
     cdk.Tags.of(this).add('MigrationRun', props.runId);
     cdk.Tags.of(this).add('ArchitectureTarget', 'full-aws');
+    if (props.environmentName === 'production') {
+      const boundary = iam.ManagedPolicy.fromManagedPolicyArn(
+        this,
+        'ProductionPermissionsBoundary',
+        this.formatArn({ service: 'iam', region: '', resource: 'policy', resourceName: 'TracePointProductionBoundary' }),
+      );
+      iam.PermissionsBoundary.of(this).apply(boundary);
+    }
 
     const vpc = ec2.Vpc.fromVpcAttributes(this, 'Vpc', {
       vpcId: props.vpcId,
@@ -72,8 +84,14 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    const taskRole = new iam.Role(this, 'TaskRole', { assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com') });
-    const executionRole = new iam.Role(this, 'ExecutionRole', { assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com') });
+    const ecsTasksPrincipal = new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
+      conditions: {
+        StringEquals: { 'aws:SourceAccount': this.account },
+        ArnLike: { 'aws:SourceArn': `arn:${this.partition}:ecs:us-east-1:${this.account}:*` },
+      },
+    });
+    const taskRole = new iam.Role(this, 'TaskRole', { assumedBy: ecsTasksPrincipal });
+    const executionRole = new iam.Role(this, 'ExecutionRole', { assumedBy: ecsTasksPrincipal });
     sourceSecret.grantRead(executionRole);
     targetSecret.grantRead(executionRole);
     repository.grantPull(executionRole);
@@ -105,6 +123,8 @@ export class DatabaseMigrationRunnerStack extends cdk.Stack {
         TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE: props.authorizationReference,
         TRACEPOINT_DATABASE_MIGRATION_APPROVAL: props.runId,
         TRACEPOINT_SOURCE_PROJECT_REF: props.sourceProjectRef,
+        TRACEPOINT_EXPECTED_SOURCE_MIGRATION_COUNT: String(props.expectedSourceMigrationCount),
+        TRACEPOINT_EXPECTED_SOURCE_MIGRATION_LEDGER_SHA256: props.expectedSourceMigrationLedgerSha256,
         SOURCE_PGHOST: props.sourceHost,
         SOURCE_PGDATABASE: props.sourceDatabase,
         SOURCE_DATABASE_CA_PATH: '/etc/ssl/certs/ca-certificates.crt',

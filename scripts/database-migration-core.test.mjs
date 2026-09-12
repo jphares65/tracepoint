@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { databaseMigrationPlan, pgDumpArguments, reconcileMigrationLedgers, requireDatabaseMigrationExecution, SOURCE_MIGRATION_COUNT, TARGET_MIGRATION_COUNT, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
+import { databaseMigrationPlan, pgDumpArguments, pgRestoreArguments, reconcileMigrationLedgers, requireDatabaseMigrationExecution, SOURCE_MIGRATION_COUNT, TARGET_MIGRATION_COUNT, TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
 
 const env = {
   TRACEPOINT_MIGRATION_RUN_ID: "10000000-0000-4000-8000-000000000001", TRACEPOINT_SOURCE_COMMIT: "a".repeat(40),
   TRACEPOINT_EXPECTED_AWS_ACCOUNT: "559054714699", TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE: "owner-approval:synthetic",
   TRACEPOINT_SOURCE_PROJECT_REF: "abcdefghijklmnopqrst", SOURCE_PGHOST: "db.abcdefghijklmnopqrst.supabase.co", SOURCE_PGDATABASE: "postgres", SOURCE_DATABASE_CA_PATH: "/app/source-ca.pem",
   TARGET_PGHOST: "tracepoint-staging.abc.us-east-1.rds.amazonaws.com", TARGET_PGDATABASE: "tracepoint", TARGET_DATABASE_CA_PATH: "/app/rds-ca.pem",
+  TRACEPOINT_EXPECTED_SOURCE_MIGRATION_COUNT: "60", TRACEPOINT_EXPECTED_SOURCE_MIGRATION_LEDGER_SHA256: "a".repeat(64),
 };
 
 test("pins a passwordless read-only-to-fresh-target migration plan", () => {
@@ -17,6 +18,7 @@ test("pins a passwordless read-only-to-fresh-target migration plan", () => {
   assert.ok(args.includes("--data-only"));
   assert.ok(TRANSIENT_TABLES.every(table => args.includes(`--exclude-table=public.${table}`)));
   assert.ok(TARGET_SEEDED_TABLES.every(table => args.includes(`--exclude-table=public.${table}`)));
+  assert.ok(pgRestoreArguments(plan, "/tmp/data.dump").includes("--single-transaction"));
 });
 
 test("requires all execution acknowledgements and a run-specific approval", () => {
@@ -41,4 +43,10 @@ test("binds the exact source and target migration ledgers", () => {
   assert.match(evidence.migrationLedgerSha256, /^[0-9a-f]{64}$/);
   assert.throws(() => reconcileMigrationLedgers(source, target.map((row, index) => index === 0 ? { ...row, sha256: "c" } : row)));
   assert.throws(() => reconcileMigrationLedgers(source.slice().reverse(), target));
+  const subset = source.filter((_, index) => index < 60 || index === 70);
+  const subsetEvidence = reconcileMigrationLedgers(subset, target, { sourceMigrationCount: subset.length });
+  assert.equal(subsetEvidence.sourceMigrationCount, 61);
+  assert.equal(subsetEvidence.authoritativeSourceMigrationCount, 76);
+  assert.throws(() => reconcileMigrationLedgers(subset, target, { sourceMigrationCount: 60 }));
+  assert.throws(() => reconcileMigrationLedgers([{ version: "202601010001" }], target));
 });

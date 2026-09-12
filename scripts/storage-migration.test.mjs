@@ -27,8 +27,8 @@ function manifest(objects = [
   return createDepartmentManifest({
     departmentId,
     environment: "production",
-    sourceProjectRef: "expectedproject",
-    destination: { bucket: "tracepoint-production-private", region: "us-east-1", expectedOwner: "123456789012" },
+    sourceProjectRef: "izlkwggluhlhzlumtzes",
+    destination: { bucket: "tracepoint-production-private-193644343389", region: "us-east-1", expectedOwner: "193644343389" },
     objects,
     createdAt: "2026-09-09T00:00:00.000Z",
   });
@@ -152,15 +152,16 @@ test("reconciliation separates all finding categories by tenant", () => {
 test("environment, project, owner, and execution approvals are explicit", () => {
   const env = {
     TRACEPOINT_MIGRATION_ENVIRONMENT: "production",
-    TRACEPOINT_MIGRATION_SUPABASE_URL: "https://expectedproject.supabase.co/",
+    TRACEPOINT_MIGRATION_SUPABASE_URL: "https://izlkwggluhlhzlumtzes.supabase.co/",
     TRACEPOINT_MIGRATION_SUPABASE_SERVICE_ROLE_KEY: "test-only",
     TRACEPOINT_STORAGE_MIGRATION_APPROVAL: "manifest-id",
   };
-  const base = { environment: "production", sourceProjectRef: "expectedproject", destinationOwner: "123456789012", env };
+  const base = { environment: "production", sourceProjectRef: "izlkwggluhlhzlumtzes", destinationOwner: "193644343389", destinationBucket: "tracepoint-production-private-193644343389", destinationRegion: "us-east-1", env };
   assert.doesNotThrow(() => assertEnvironmentSafeguards(base));
   assert.throws(() => assertEnvironmentSafeguards({ ...base, environment: "staging" }), /environment/);
   assert.throws(() => assertEnvironmentSafeguards({ ...base, sourceProjectRef: "wrong" }), /source project/);
   assert.throws(() => assertEnvironmentSafeguards({ ...base, destinationOwner: "123" }), /12-digit/);
+  assert.throws(() => assertEnvironmentSafeguards({ ...base, destinationBucket: "other" }), /environment boundary/);
   assert.throws(() => assertEnvironmentSafeguards({ ...base, execute: true, manifestId: "manifest-id" }), /acknowledgements/);
   assert.doesNotThrow(() => assertEnvironmentSafeguards({ ...base, execute: true, manifestId: "manifest-id", flags: new Set(["--acknowledge-source-read", "--acknowledge-s3-write"]) }));
 });

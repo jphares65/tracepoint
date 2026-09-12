@@ -76,10 +76,16 @@ function projectRefFromUrl(value) {
   return match[1];
 }
 
-export function assertEnvironmentSafeguards({ environment, sourceProjectRef, destinationOwner, execute = false, flags = new Set(), env = process.env, manifestId }) {
+export function assertEnvironmentSafeguards({ environment, sourceProjectRef, destinationOwner, destinationBucket, destinationRegion, execute = false, flags = new Set(), env = process.env, manifestId }) {
   if (!environment || env.TRACEPOINT_MIGRATION_ENVIRONMENT !== environment) throw new Error("TRACEPOINT_MIGRATION_ENVIRONMENT must exactly match the requested environment");
   if (!sourceProjectRef || projectRefFromUrl(env.TRACEPOINT_MIGRATION_SUPABASE_URL ?? "") !== sourceProjectRef) throw new Error("Supabase project URL does not match the expected source project ref");
   if (!/^\d{12}$/.test(destinationOwner ?? "")) throw new Error("An explicit 12-digit destination owner is required");
+  const target = environment === "production"
+    ? { source: "izlkwggluhlhzlumtzes", owner: "193644343389", bucket: "tracepoint-production-private-193644343389" }
+    : environment === "staging"
+      ? { source: "wztqqqashilusoppddxi", owner: "559054714699", bucket: "tracepoint-staging-private-559054714699" }
+      : null;
+  if (!target || sourceProjectRef !== target.source || destinationOwner !== target.owner || destinationBucket !== target.bucket || destinationRegion !== "us-east-1") throw new Error("Storage migration source and AWS destination must match the reviewed environment boundary");
   if (!env.TRACEPOINT_MIGRATION_SUPABASE_SERVICE_ROLE_KEY) throw new Error("TRACEPOINT_MIGRATION_SUPABASE_SERVICE_ROLE_KEY is required");
   if (execute) {
     if (!flags.has("--acknowledge-source-read") || !flags.has("--acknowledge-s3-write")) throw new Error("Copy execution requires both source-read and S3-write acknowledgements");
@@ -225,7 +231,7 @@ async function inventoryCommand(parsed, env) {
     region: required(parsed.values, "--destination-region"),
     expectedOwner: required(parsed.values, "--destination-owner"),
   };
-  assertEnvironmentSafeguards({ environment, sourceProjectRef, destinationOwner: destination.expectedOwner, flags: parsed.flags, env });
+  assertEnvironmentSafeguards({ environment, sourceProjectRef, destinationOwner: destination.expectedOwner, destinationBucket: destination.bucket, destinationRegion: destination.region, flags: parsed.flags, env });
   const client = sourceClient(env);
   let objects = [
     ...(await listSupabaseBucket(client, "tracepoint-attachments", departmentId)),
@@ -243,6 +249,8 @@ async function loadGuardedManifest(parsed, env) {
     environment: manifest.environment,
     sourceProjectRef: manifest.source.projectRef,
     destinationOwner: manifest.destination.expectedOwner,
+    destinationBucket: manifest.destination.bucket,
+    destinationRegion: manifest.destination.region,
     execute: parsed.flags.has("--execute"),
     flags: parsed.flags,
     env,

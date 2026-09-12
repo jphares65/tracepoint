@@ -45,7 +45,7 @@ if (metadataOrigin) {
     return response.json() as Promise<{ TaskARN?: string; Family?: string }>;
   });
   assert.match(metadata.TaskARN ?? '', new RegExp(`^arn:aws:ecs:us-east-1:${manifest.expectedAccount}:task/`), 'ECS task account does not match the manifest');
-  assert.match(metadata.Family ?? '', new RegExp(`^tracepoint-${manifest.environment}-identity-migration-[0-9a-f-]{36}$`), 'ECS task family does not match the migration environment');
+  assert.match(metadata.Family ?? '', new RegExp(`^tracepoint-${manifest.environment}-identity-execute-[0-9a-f-]{36}$`), 'ECS task family does not match the migration environment');
   identity = { Account: manifest.expectedAccount, Arn: metadata.TaskARN! };
 } else {
   const command = process.platform === 'win32' ? 'aws.exe' : 'aws';

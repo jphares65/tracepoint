@@ -14,6 +14,8 @@ param(
     [Parameter(Mandatory)][string]$TargetSecretArn,
     [Parameter(Mandatory)][ValidatePattern('^[a-z]{20}$')][string]$SourceProjectRef,
     [Parameter(Mandatory)][string]$TargetHost,
+    [Parameter(Mandatory)][ValidateRange(1,76)][int]$ExpectedSourceMigrationCount,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedSourceMigrationLedgerSha256,
     [Parameter(Mandatory)][string]$CostEvidencePath,
     [Parameter(Mandatory)][string]$EvidenceOutputPath,
     [ValidateRange(1,100000)][decimal]$ApprovedBudgetLimitUSD = 125,
@@ -43,7 +45,8 @@ $contexts = @(
     '-c', "publicSubnetIds=$($PublicSubnetIds -join ',')", '-c', "databaseSecurityGroupId=$DatabaseSecurityGroupId",
     '-c', "sourceSecretArn=$SourceSecretArn", '-c', "targetSecretArn=$TargetSecretArn",
     '-c', "sourceHost=db.$SourceProjectRef.supabase.co", '-c', "sourceProjectRef=$SourceProjectRef", '-c', 'sourceDatabase=postgres',
-    '-c', "targetHost=$TargetHost", '-c', 'targetDatabase=tracepoint'
+    '-c', "targetHost=$TargetHost", '-c', 'targetDatabase=tracepoint',
+    '-c', "expectedSourceMigrationCount=$ExpectedSourceMigrationCount", '-c', "expectedSourceMigrationLedgerSha256=$ExpectedSourceMigrationLedgerSha256"
 )
 Push-Location (Join-Path $PSScriptRoot '..\infra')
 try {

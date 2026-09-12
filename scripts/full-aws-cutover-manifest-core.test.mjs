@@ -41,6 +41,7 @@ test('hard-stops automatic rollback after AWS-native writes', () => {
   const decision = rollbackDecision(manifest);
   assert.equal(decision.automaticBridgeRestoreAllowed, false);
   assert.equal(decision.action, 'freeze-and-reconcile');
+  assert.throws(() => createCutoverManifest({ ...evidence, phase: 'traffic-switched', awsAcceptedWrites: false }), /must assume AWS-native writes/);
 });
 
 test('rejects mutation, missing gates, staging accounts, and unknown evidence', () => {

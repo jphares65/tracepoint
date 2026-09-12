@@ -59,3 +59,32 @@ test('identity task rejects account, mutable-image, artifact, and authorization 
     { stagingRecipientSha256: [] },
   ]) assert.throws(() => new IdentityMigrationRunnerStack(new cdk.App(), `invalid-${Math.random()}`, { ...props, ...change }));
 });
+
+test('production identity runner is pinned to the production account and constrained by the boundary', () => {
+  const production = {
+    ...props,
+    env: { account: '193644343389', region: 'us-east-1' },
+    environmentName: 'production' as const,
+    databaseSecretArn: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/runtime-abc123',
+    artifactBucketName: 'tracepoint-production-private-193644343389',
+    artifactKeyArn: 'arn:aws:kms:us-east-1:193644343389:key/11111111-1111-4111-8111-111111111111',
+    repositoryName: 'tracepoint-production',
+    clusterName: 'tracepoint-production',
+    fromAddress: 'notifications@tracepointhq.com',
+    sesConfigurationSet: 'tracepoint-production',
+    stagingRecipientSha256: [],
+  };
+  const template = Template.fromStack(new IdentityMigrationRunnerStack(new cdk.App(), 'production-runner', production));
+  const roles = Object.values(template.findResources('AWS::IAM::Role'));
+  assert.equal(roles.length, 2);
+  for (const role of roles) {
+    assert.match(JSON.stringify(role.Properties.PermissionsBoundary), /TracePointProductionBoundary/);
+    const trust = JSON.stringify(role.Properties.AssumeRolePolicyDocument);
+    assert.match(trust, /aws:SourceAccount.*193644343389/);
+    assert.match(trust, /aws:SourceArn.*ecs.*us-east-1.*193644343389/);
+  }
+  assert.throws(() => new IdentityMigrationRunnerStack(new cdk.App(), 'wrong-production', {
+    ...production,
+    env: { account: '222222222222', region: 'us-east-1' },
+  }));
+});

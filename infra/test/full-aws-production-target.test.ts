@@ -15,6 +15,13 @@ test("full-AWS production target rejects hybrid and unapproved live operation",(
 
 test("full-AWS production assembly composes native providers backup and exact task database ingress",()=>{
  const stacks=fullAwsProductionAssembly(new cdk.App(),target,true);
+ assert.equal(stacks.network.stackName,"tracepoint-production-network");
+ assert.equal(stacks.security.stackName,"tracepoint-production-security");
+ assert.equal(stacks.compute.stackName,"tracepoint-production-compute");
+ assert.equal(stacks.imageBuild.stackName,"tracepoint-production-image-build");
+ assert.equal(stacks.runtime.stackName,"tracepoint-production-runtime");
+ assert.equal(stacks.requestControls.stackName,"tracepoint-production-request-controls");
+ assert.equal(stacks.alerts.stackName,"tracepoint-production-alert-delivery");
  const runtime=Template.fromStack(stacks.runtime),database=Template.fromStack(stacks.database),backup=Template.fromStack(stacks.backup),auth=Template.fromStack(stacks.cognito),email=Template.fromStack(stacks.ses),storage=Template.fromStack(stacks.storage),feedback=Template.fromStack(stacks.sesFeedbackWorker);
  const serialized=JSON.stringify(runtime.toJSON());
  for(const value of ["postgres","cognito","s3","ses","TRACEPOINT_DATABASE_SECRET_JSON"])assert.match(serialized,new RegExp(value));

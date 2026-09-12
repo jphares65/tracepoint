@@ -34,3 +34,17 @@ test("rejects static and unreviewed dynamic legacy-provider edges", () => {
     rmSync(dynamicRoot, { recursive: true, force: true });
   }
 });
+
+test("traverses nonlegacy dynamic imports and rejects hidden legacy edges", () => {
+  const root = fixture('export async function load(){ return import("@/lib/dependency"); }', 'import "@/lib/supabase/server"; export const ok = true;');
+  try {
+    assert.throws(() => scanAwsNativeProviderReachability({ root, approvedDynamicLegacyImports: {} }), /statically reach legacy providers/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("rejects unreviewed hardcoded legacy endpoints", () => {
+  const root = fixture('export const endpoint = "https://api.brevo.com/v3/smtp/email";');
+  try {
+    assert.throws(() => scanAwsNativeProviderReachability({ root, approvedDynamicLegacyImports: {}, approvedLegacyEndpointLiterals: {} }), /unreviewed legacy-provider endpoints/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

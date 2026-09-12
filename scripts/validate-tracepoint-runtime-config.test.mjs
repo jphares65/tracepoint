@@ -141,6 +141,10 @@ test("classifies legacy runtime names and endpoints without returning raw values
     providers: ["brevo"],
     reasons: ["legacy-provider-name"],
   });
+  assert.deepEqual(classifyLegacyProviderRuntimeEntry("UNRELATED_ENDPOINT", "smtp-relay.brevo.com:587"), {
+    providers: ["brevo"],
+    reasons: ["legacy-provider-endpoint"],
+  });
   assert.deepEqual(classifyLegacyProviderRuntimeEntry("TRACEPOINT_S3_BUCKET", "tracepoint-production-private-222222222222"), { providers: [], reasons: [] });
   assert.doesNotMatch(JSON.stringify(classifyLegacyProviderRuntimeEntry("UNRELATED_ENDPOINT", sentinel)), /secret-project|private/);
 });

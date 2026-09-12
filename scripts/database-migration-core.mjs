@@ -13,18 +13,26 @@ const host = /^[a-z0-9][a-z0-9.-]+$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const sha256 = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-export function reconcileMigrationLedgers(sourceRows, targetRows) {
+export function reconcileMigrationLedgers(sourceRows, targetRows, expected = {}) {
   const source = sourceRows.map(row => String(row.version));
-  assert.equal(source.length, SOURCE_MIGRATION_COUNT);
+  assert.ok(source.length > 0 && source.length <= SOURCE_MIGRATION_COUNT);
   assert.equal(new Set(source).size, source.length);
-  assert.ok(source.every(version => /^\d{14}$/.test(version)));
+  assert.ok(source.every(version => /^\d{8,14}$/.test(version)));
   const target = targetRows.map(row => ({ kind: String(row.kind), name: String(row.name), sha256: String(row.sha256) }));
   assert.equal(target.length, TARGET_MIGRATION_COUNT);
   assert.ok(target.every(row => ["source", "aws"].includes(row.kind) && /^\d{14}_.+\.sql$/.test(row.name) && /^[0-9a-f]{64}$/.test(row.sha256)));
-  const targetSource = target.filter(row => row.kind === "source").map(row => row.name.slice(0, 14));
-  assert.deepEqual(targetSource, source);
+  const targetSource = target.filter(row => row.kind === "source").map(row => row.name.split("_")[0]);
+  assert.equal(targetSource.length, SOURCE_MIGRATION_COUNT);
+  assert.ok(source.every(version => targetSource.includes(version)), "Source contains a migration absent from the authoritative target lineage");
+  const firstTargetIndex = new Map();
+  targetSource.forEach((version, index) => { if (!firstTargetIndex.has(version)) firstTargetIndex.set(version, index); });
+  const sourceIndexes = source.map(version => firstTargetIndex.get(version));
+  assert.ok(sourceIndexes.every((index, position) => position === 0 || index > sourceIndexes[position - 1]), "Source migration order differs from the authoritative target lineage");
   assert.equal(target.filter(row => row.kind === "aws").length, TARGET_MIGRATION_COUNT - SOURCE_MIGRATION_COUNT);
-  return { sourceMigrationLedgerSha256: sha256(source), migrationLedgerSha256: sha256(target) };
+  const sourceMigrationLedgerSha256 = sha256(source);
+  if (expected.sourceMigrationCount !== undefined) assert.equal(source.length, expected.sourceMigrationCount);
+  if (expected.sourceMigrationLedgerSha256 !== undefined) assert.equal(sourceMigrationLedgerSha256, expected.sourceMigrationLedgerSha256);
+  return { sourceMigrationCount: source.length, authoritativeSourceMigrationCount: SOURCE_MIGRATION_COUNT, sourceMigrationLedgerSha256, migrationLedgerSha256: sha256(target) };
 }
 
 export function validateDatabaseMigrationPlan(plan) {
@@ -44,6 +52,8 @@ export function validateDatabaseMigrationPlan(plan) {
   assert.match(plan.source.database, /^[a-zA-Z0-9_-]{1,63}$/);
   assert.match(plan.target.database, /^[a-zA-Z0-9_-]{1,63}$/);
   assert.equal(plan.passwordsMigrated, false);
+  assert.ok(Number.isInteger(plan.expectedSourceMigrationCount) && plan.expectedSourceMigrationCount > 0 && plan.expectedSourceMigrationCount <= SOURCE_MIGRATION_COUNT);
+  assert.match(plan.expectedSourceMigrationLedgerSha256, /^[0-9a-f]{64}$/);
   assert.deepEqual(plan.excludedTables, [...TRANSIENT_TABLES]);
   assert.deepEqual(plan.targetSeededTables, [...TARGET_SEEDED_TABLES]);
   assert.equal(plan.sourceCaPath.startsWith("/"), true);
@@ -65,6 +75,8 @@ export function databaseMigrationPlan(environment) {
     sourceCaPath: environment.SOURCE_DATABASE_CA_PATH,
     targetCaPath: environment.TARGET_DATABASE_CA_PATH,
     passwordsMigrated: false,
+    expectedSourceMigrationCount: Number(environment.TRACEPOINT_EXPECTED_SOURCE_MIGRATION_COUNT),
+    expectedSourceMigrationLedgerSha256: environment.TRACEPOINT_EXPECTED_SOURCE_MIGRATION_LEDGER_SHA256,
     excludedTables: [...TRANSIENT_TABLES],
     targetSeededTables: [...TARGET_SEEDED_TABLES],
   };
@@ -82,5 +94,5 @@ export function pgDumpArguments(plan, dumpPath, snapshot) {
 }
 
 export function pgRestoreArguments(plan, dumpPath) {
-  return ["--data-only", "--no-owner", "--exit-on-error", "--dbname", plan.target.database, dumpPath];
+  return ["--data-only", "--no-owner", "--exit-on-error", "--single-transaction", "--dbname", plan.target.database, dumpPath];
 }

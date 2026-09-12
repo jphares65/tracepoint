@@ -28,9 +28,9 @@ after(async()=>{await pool?.end();await postgres?.stop();if(directory){
  const resolved=path.resolve(directory);assert.ok(resolved.startsWith(path.resolve(tmpdir())+path.sep));assert.ok(path.basename(resolved).startsWith('tracepoint-ses-test-'));
  await rm(resolved,{recursive:true,force:true,maxRetries:10,retryDelay:100});await assert.rejects(access(resolved));
 }});
-function feedback(kind='Bounce',recipient=email,messageId='accepted-1') {
+function feedback(kind='Bounce',recipient=email,messageId='accepted-1',configurationSet?:string) {
  return parseSesFeedback({notificationId:'sns-1',topicArn:'arn:aws:sns:us-east-1:559054714699:feedback',message:JSON.stringify({eventType:kind,
- mail:{sendingAccountId:'559054714699',messageId,tags:{department:[b]}},
+ mail:{sendingAccountId:'559054714699',messageId,tags:{department:[b],...(configurationSet?{'ses:configuration-set':[configurationSet]}:{})}},
  bounce:{bouncedRecipients:[{emailAddress:recipient}]},complaint:{complainedRecipients:[{emailAddress:recipient}]},delivery:{recipients:[recipient]}})},'559054714699');
 }
 test('persistent bounce suppresses and duplicate is idempotent across store instances',async()=>{
@@ -39,9 +39,19 @@ test('persistent bounce suppresses and duplicate is idempotent across store inst
  assert.equal(await store.apply(feedback()),'duplicate');
  const result=await pool.query('select department_id from email_provider_events');assert.equal(result.rows[0].department_id,a);
 });
+
+test('signed Cognito configuration-set feedback applies global suppression without an application acceptance',async()=>{
+ const cognitoStore=new PostgresSesFeedbackStore(pool,'tracepoint-staging-cognito');
+ const recipient='cognito-only@example.invalid';
+ const event=feedback('Bounce',recipient,'cognito-message','tracepoint-staging-cognito');
+ assert.equal(await cognitoStore.apply(event),'applied');
+ assert.equal(await cognitoStore.apply(event),'duplicate');
+ assert.equal(await cognitoStore.isSuppressed(recipient),true);
+ await assert.rejects(cognitoStore.apply(feedback('Bounce','other@example.invalid','foreign-config','tracepoint-staging')),/persistence failed/);
+});
 test('complaint remains suppressed after delivery and tenant deletion',async()=>{
  assert.equal(await store.apply(feedback('Complaint')),'applied');assert.equal(await store.apply(feedback('Delivery')),'applied');
- assert.equal((await pool.query('select reason from email_suppressions')).rows[0].reason,'Complaint');
+ assert.equal((await pool.query('select reason from email_suppressions where recipient_hash=$1',[recipientHash(email)])).rows[0].reason,'Complaint');
  await pool.query('delete from departments where id=$1',[a]);assert.equal(await store.isSuppressed(email),true);
 });
 test('unknown messages and unrelated recipient hashes cannot mutate suppression',async()=>{

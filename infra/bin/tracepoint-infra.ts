@@ -152,6 +152,7 @@ const sesFeedbackWorker = providerMode === "aws-native" && database && ses ? new
   feedbackTopic: ses.feedbackTopic,
   feedbackQueue: ses.feedbackQueue,
   feedbackDeadLetterQueue: ses.feedbackDeadLetterQueue,
+  cognitoConfigurationSetName: ses.cognitoConfigurationSetName,
 }) : undefined;
 if (sesFeedbackWorker) {
   sesFeedbackWorker.addStackDependency(network);

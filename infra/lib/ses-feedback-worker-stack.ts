@@ -22,6 +22,7 @@ export interface SesFeedbackWorkerProps extends cdk.StackProps {
   feedbackTopic: sns.ITopic;
   feedbackQueue: sqs.IQueue;
   feedbackDeadLetterQueue: sqs.IQueue;
+  cognitoConfigurationSetName: string;
 }
 
 export class SesFeedbackWorkerStack extends cdk.Stack {
@@ -62,10 +63,15 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
     });
 
     // The Lambda event-source mapping polls SQS on the worker's behalf. The
-    // worker itself calls only Secrets Manager and PostgreSQL; it verifies the
-    // SNS envelope locally and never invokes the SNS API.
+    // worker downloads the SNS signing certificate over PrivateLink before it
+    // verifies the signed envelope locally.
     new ec2.InterfaceVpcEndpoint(this, "SecretsEndpoint", {
       vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER, privateDnsEnabled: true,
+      securityGroups: [endpointSecurityGroup],
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
+    new ec2.InterfaceVpcEndpoint(this, "SnsEndpoint", {
+      vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SNS, privateDnsEnabled: true,
       securityGroups: [endpointSecurityGroup],
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     });
@@ -116,6 +122,7 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
         TRACEPOINT_DATABASE_SECRET_ARN: props.databaseSecret.secretArn,
         TRACEPOINT_RDS_CA_PATH: "/opt/us-east-1-bundle.pem",
         TRACEPOINT_SES_FEEDBACK_TOPIC_ARN: props.feedbackTopic.topicArn,
+        TRACEPOINT_COGNITO_SES_CONFIGURATION_SET: props.cognitoConfigurationSetName,
       },
       bundling: { minify: true, sourceMap: true, nodeModules: ["pg"] },
     });
@@ -130,10 +137,10 @@ export class SesFeedbackWorkerStack extends cdk.Stack {
     }));
 
     this.alarms = [
-      new cloudwatch.Alarm(this, "QueueAgeAlarm", { metric: props.feedbackQueue.metricApproximateAgeOfOldestMessage(), threshold: 300, evaluationPeriods: 2 }),
-      new cloudwatch.Alarm(this, "DeadLetterAlarm", { metric: props.feedbackDeadLetterQueue.metricApproximateNumberOfMessagesVisible(), threshold: 1, evaluationPeriods: 1 }),
-      new cloudwatch.Alarm(this, "WorkerErrorsAlarm", { metric: this.worker.metricErrors(), threshold: 1, evaluationPeriods: 1 }),
-      new cloudwatch.Alarm(this, "WorkerThrottlesAlarm", { metric: this.worker.metricThrottles(), threshold: 1, evaluationPeriods: 1 }),
+      new cloudwatch.Alarm(this, "QueueAgeAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-queue-age`, metric: props.feedbackQueue.metricApproximateAgeOfOldestMessage(), threshold: 300, evaluationPeriods: 2 }),
+      new cloudwatch.Alarm(this, "DeadLetterAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-dead-letter`, metric: props.feedbackDeadLetterQueue.metricApproximateNumberOfMessagesVisible(), threshold: 1, evaluationPeriods: 1 }),
+      new cloudwatch.Alarm(this, "WorkerErrorsAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-errors`, metric: this.worker.metricErrors(), threshold: 1, evaluationPeriods: 1 }),
+      new cloudwatch.Alarm(this, "WorkerThrottlesAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-throttles`, metric: this.worker.metricThrottles(), threshold: 1, evaluationPeriods: 1 }),
     ];
   }
 }

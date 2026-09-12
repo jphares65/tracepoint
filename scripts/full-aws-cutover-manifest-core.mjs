@@ -51,6 +51,7 @@ function validateEvidence(input) {
   if (!PHASES.has(input.phase)) fail('Unknown cutover phase');
   if (typeof input.awsAcceptedWrites !== 'boolean') fail('AWS write state must be explicit');
   if (input.phase === 'prepared' && input.awsAcceptedWrites) fail('A prepared cutover cannot already contain AWS-native writes');
+  if (input.phase === 'traffic-switched' && !input.awsAcceptedWrites) fail('Traffic-switched evidence must assume AWS-native writes exist');
   if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(input.authorizationReference ?? '')) fail('A specific owner authorization reference is required');
   for (const [name, value] of [
     ['source manifest', input.sourceManifestSha256], ['target manifest', input.targetManifestSha256],

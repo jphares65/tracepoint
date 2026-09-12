@@ -41,7 +41,7 @@ export const LEGACY_PROVIDER_EXPLICIT_NAMES = Object.freeze([
   "BREVO_API_KEY",
 ]);
 export const LEGACY_PROVIDER_KEY_PATTERN = /(^|_)(SUPABASE|VERCEL|BREVO)(_|$)/i;
-export const LEGACY_PROVIDER_ENDPOINT_PATTERN = /(?:\.supabase\.co|\.vercel\.app|api\.brevo\.com)/i;
+export const LEGACY_PROVIDER_ENDPOINT_PATTERN = /(?:\.supabase\.(?:co|net)|\.vercel\.app|(?:^|\.)[^\s/:]*brevo\.com|(?:^|\.)[^\s/:]*sendinblue\.com)/i;
 
 export function classifyLegacyProviderRuntimeEntry(name, rawValue) {
   const providers = new Set();
@@ -55,9 +55,9 @@ export function classifyLegacyProviderRuntimeEntry(name, rawValue) {
     reasons.push("legacy-provider-name");
   }
   const value = String(rawValue ?? "");
-  if (/\.supabase\.co/i.test(value)) providers.add("supabase");
+  if (/\.supabase\.(?:co|net)/i.test(value)) providers.add("supabase");
   if (/\.vercel\.app/i.test(value)) providers.add("vercel");
-  if (/api\.brevo\.com/i.test(value)) providers.add("brevo");
+  if (/(?:^|\.)[^\s/:]*(?:brevo|sendinblue)\.com/i.test(value)) providers.add("brevo");
   if (LEGACY_PROVIDER_ENDPOINT_PATTERN.test(value)) reasons.push("legacy-provider-endpoint");
   return { providers: [...providers].sort(), reasons: [...new Set(reasons)].sort() };
 }

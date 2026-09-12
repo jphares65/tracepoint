@@ -11,6 +11,7 @@ const props: DatabaseMigrationRunnerStackProps = {
   databaseSecurityGroupId: 'sg-11111111', sourceSecretArn: 'arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/migration/source-abc123',
   targetSecretArn: 'arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/database/migrator-abc123', sourceHost: 'db.abcdefghijklmnopqrst.supabase.co', sourceProjectRef: 'abcdefghijklmnopqrst',
   sourceDatabase: 'postgres', targetHost: 'tracepoint-staging.abc.us-east-1.rds.amazonaws.com', targetDatabase: 'tracepoint',
+  expectedSourceMigrationCount: 60, expectedSourceMigrationLedgerSha256: 'c'.repeat(64),
 };
 
 test('migration task is isolated from runtime and receives only two exact secrets', () => {
@@ -40,5 +41,29 @@ test('migration task refuses management, cross-account staging, mutable images, 
   for (const change of [
     { env: { account: '265544358665', region: 'us-east-1' } }, { env: { account: '222222222222', region: 'us-east-1' } },
     { imageDigest: 'latest' }, { targetSecretArn: props.sourceSecretArn }, { publicSubnetIds: ['subnet-11111111'] },
+    { expectedSourceMigrationCount: 77 }, { expectedSourceMigrationLedgerSha256: 'wrong' },
   ]) assert.throws(() => new DatabaseMigrationRunnerStack(new cdk.App(), `invalid-${Math.random()}`, { ...props, ...change }));
+});
+
+test('production runner is pinned to the production account and applies the boundary and constrained trust', () => {
+  const production = {
+    ...props,
+    env: { account: '193644343389', region: 'us-east-1' },
+    environmentName: 'production' as const,
+    sourceSecretArn: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-abc123',
+    targetSecretArn: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-abc123',
+  };
+  const template = Template.fromStack(new DatabaseMigrationRunnerStack(new cdk.App(), 'production-runner', production));
+  const roles = Object.values(template.findResources('AWS::IAM::Role'));
+  assert.equal(roles.length, 2);
+  for (const role of roles) {
+    assert.match(JSON.stringify(role.Properties.PermissionsBoundary), /TracePointProductionBoundary/);
+    const trust = JSON.stringify(role.Properties.AssumeRolePolicyDocument);
+    assert.match(trust, /aws:SourceAccount.*193644343389/);
+    assert.match(trust, /aws:SourceArn.*ecs.*us-east-1.*193644343389/);
+  }
+  assert.throws(() => new DatabaseMigrationRunnerStack(new cdk.App(), 'wrong-production', {
+    ...production,
+    env: { account: '222222222222', region: 'us-east-1' },
+  }));
 });

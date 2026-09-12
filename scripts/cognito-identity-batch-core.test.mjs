@@ -16,10 +16,11 @@ test('creates an immutable UUID-only identity batch and resumable checkpoint', (
 });
 
 test('rejects mutation, duplicate users, site drift, and foreign checkpoints', () => {
-  const manifest = createIdentityBatchManifest(input);
+  const manifest = createIdentityBatchManifest(input, '2026-09-10T12:00:00.000Z');
   assert.throws(() => validateIdentityBatchManifest({ ...manifest, actorUserId: '44444444-4444-4444-8444-444444444444' }), /integrity/);
   assert.throws(() => createIdentityBatchManifest({ ...input, users: [...input.users, ...input.users] }), /Duplicate/);
   assert.throws(() => createIdentityBatchManifest({ ...input, siteUrl: 'https://tracepointhq.com' }), /Site URL/);
+  assert.throws(() => createIdentityBatchManifest({ ...input, environment: 'production', siteUrl: 'https://tracepointhq.com' }), /account/);
   assert.throws(() => createIdentityBatchManifest({ ...input, expiresAt: '2026-09-12T12:00:01.000Z' }, '2026-09-10T12:00:00.000Z'), /expire/);
   assert.throws(() => validateIdentityCheckpoint({ format: 1, manifestSha256: 'x', completedItemSha256: [] }, manifest), /does not match/);
   assert.throws(() => validateIdentityBatchManifest(createIdentityBatchManifest({ ...input, expiresAt: '2099-01-01T01:00:00.000Z' }, '2099-01-01T00:00:00.000Z'), new Date('2026-09-10T12:00:00.000Z')), /currently valid/);

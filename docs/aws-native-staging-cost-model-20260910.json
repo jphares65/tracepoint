@@ -13,6 +13,7 @@
     "four_secrets_manager_secrets": 160,
     "three_customer_managed_kms_keys": 300,
     "secrets_manager_interface_endpoint_two_azs_and_data": 1461,
+    "sns_interface_endpoint_two_azs_and_data": 1461,
     "aws_backup_20_gib_warm_storage": 190,
     "bounded_disposable_restore_rehearsal": 25,
     "codebuild_600_minutes_allowance": 300,
@@ -24,10 +25,10 @@
     "data_transfer_allowance": 500,
     "route53_hosted_zone_and_queries_allowance": 60
   },
-  "projectedTotalCents": 10081,
+  "projectedTotalCents": 11542,
   "withinApprovedCeiling": true,
-  "headroomCents": 2419,
-  "basis": "Conservative persistent-month planning model using 730 hours and current public us-east-1 rates checked 2026-09-11. It includes the retained bridge rollback secret, full AWS-native runtime, private PostgreSQL, S3, Cognito, SES feedback persistence, AWS Backup, WAF, monitoring, governance, DNS, data-transfer and a bounded disposable restore rehearsal. The isolated feedback worker retains the required two-AZ Secrets Manager interface endpoint; the unused SNS endpoint is removed because Lambda receives feedback through its SQS event source and makes no SNS API call. Free-tier assumptions are not required to pass the ceiling.",
+  "headroomCents": 958,
+  "basis": "Conservative persistent-month planning model using 730 hours and current public us-east-1 rates checked 2026-09-11. It includes the retained bridge rollback secret, full AWS-native runtime, private PostgreSQL, S3, Cognito, SES feedback persistence, AWS Backup, WAF, monitoring, governance, DNS, data-transfer and a bounded disposable restore rehearsal. The isolated feedback worker retains two-AZ Secrets Manager and SNS interface endpoints: SNS PrivateLink is required to retrieve and validate the signed-notification certificate without internet egress. Free-tier assumptions are not required to pass the ceiling.",
   "sources": [
     "https://aws.amazon.com/rds/postgresql/pricing/",
     "https://aws.amazon.com/fargate/pricing/",

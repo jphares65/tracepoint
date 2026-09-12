@@ -31,7 +31,18 @@ export class ProductionDatabaseStack extends cdk.Stack {
       throw new Error("Dedicated production PostgreSQL account and us-east-1 are required");
     }
     const key = kms.Key.fromKeyArn(this, "ImportedDataKey", props.dataKey.keyArn);
-    let migratorSecret: secretsmanager.ISecret;
+    const migratorSecret = new secretsmanager.Secret(this, "MigratorCredential", {
+      secretName: "tracepoint/production/database/migrator",
+      description: "Owner credential used only by the controlled production database migration task",
+      encryptionKey: key,
+      generateSecretString: {
+        secretStringTemplate: this.toJsonString({ username: "tracepoint_migrator" }),
+        generateStringKey: "password",
+        passwordLength: 40,
+        excludePunctuation: true,
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
 
     if (props.topology === "aurora-serverless-v2") {
       const cluster = new rds.DatabaseCluster(this, "Database", {
@@ -39,10 +50,7 @@ export class ProductionDatabaseStack extends cdk.Stack {
         engine: rds.DatabaseClusterEngine.auroraPostgres({
           version: rds.AuroraPostgresEngineVersion.VER_17_9,
         }),
-        credentials: rds.Credentials.fromGeneratedSecret("tracepoint_migrator", {
-          encryptionKey: key,
-          secretName: "tracepoint/production/database/migrator",
-        }),
+        credentials: rds.Credentials.fromSecret(migratorSecret, "tracepoint_migrator"),
         defaultDatabaseName: "tracepoint",
         writer: rds.ClusterInstance.serverlessV2("writer"),
         readers: [rds.ClusterInstance.serverlessV2("reader", { scaleWithWriter: true })],
@@ -61,10 +69,12 @@ export class ProductionDatabaseStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       });
       this.endpointAddress = cluster.clusterEndpoint.hostname;
-      migratorSecret = cluster.secret!;
       NagSuppressions.addResourceSuppressions(cluster,[{
-        id:"AwsSolutions-RDS6",
-        reason:"TracePoint uses separate least-privilege PostgreSQL roles with Secrets Manager rotation semantics; IAM database tokens are not yet used by the pooled pg transport.",
+       id:"AwsSolutions-RDS6",
+       reason:"TracePoint uses separate least-privilege PostgreSQL roles with Secrets Manager rotation semantics; IAM database tokens are not yet used by the pooled pg transport.",
+      },{
+       id:"AwsSolutions-RDS11",
+       reason:"The database is isolated in private subnets and accepts 5432 only from exact workload security groups; changing PostgreSQL's standard port would not add a meaningful authorization boundary and would break the reviewed migration tooling contract.",
       }]);
       new cloudwatch.Alarm(this, "DatabaseCpuAlarm", {
         alarmName: "tracepoint-production-database-cpu",
@@ -84,10 +94,7 @@ export class ProductionDatabaseStack extends cdk.Stack {
       const instance = new rds.DatabaseInstance(this, "Database", {
         instanceIdentifier: "tracepoint-production",
         engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_17_9 }),
-        credentials: rds.Credentials.fromGeneratedSecret("tracepoint_migrator", {
-          encryptionKey: key,
-          secretName: "tracepoint/production/database/migrator",
-        }),
+        credentials: rds.Credentials.fromSecret(migratorSecret, "tracepoint_migrator"),
         databaseName: "tracepoint",
         vpc: props.vpc,
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -114,8 +121,11 @@ export class ProductionDatabaseStack extends cdk.Stack {
         performanceInsightRetention: rds.PerformanceInsightRetention.DEFAULT,
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       });
+      NagSuppressions.addResourceSuppressions(instance,[{
+        id:"AwsSolutions-RDS11",
+        reason:"The database is isolated in private subnets and accepts 5432 only from exact workload security groups; changing PostgreSQL's standard port would not add a meaningful authorization boundary and would break the reviewed migration tooling contract.",
+      }]);
       this.endpointAddress = instance.dbInstanceEndpointAddress;
-      migratorSecret = instance.secret!;
       new cloudwatch.Alarm(this, "DatabaseCpuAlarm", {
         alarmName: "tracepoint-production-database-cpu",
         metric: instance.metricCPUUtilization(), threshold: 80,

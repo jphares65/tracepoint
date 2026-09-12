@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACCOUNT = /^\d{12}$/;
 const FORBIDDEN_ACCOUNTS = new Set(['111111111111', '265544358665']);
+const STAGING_ACCOUNT = '559054714699';
+const PRODUCTION_ACCOUNT = '193644343389';
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -24,6 +26,7 @@ export function createIdentityBatchManifest(input, createdAt = new Date().toISOS
   exact(input, ['actorUserId', 'authorizationReference', 'clientId', 'environment', 'expectedAccount', 'expiresAt', 'issuer', 'siteUrl', 'userPoolId', 'users'], 'Identity batch');
   if (!['staging', 'production'].includes(input.environment)) fail('Environment must be staging or production');
   if (!ACCOUNT.test(input.expectedAccount ?? '') || FORBIDDEN_ACCOUNTS.has(input.expectedAccount)) fail('Expected account is invalid');
+  if (input.expectedAccount !== (input.environment === 'staging' ? STAGING_ACCOUNT : PRODUCTION_ACCOUNT)) fail('Expected account does not match the migration environment');
   if (input.siteUrl !== (input.environment === 'production' ? 'https://tracepointhq.com' : 'https://staging.tracepointhq.com')) fail('Site URL does not match the migration environment');
   if (!UUID.test(input.actorUserId ?? '')) fail('Actor user ID is invalid');
   if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(input.authorizationReference ?? '')) fail('A specific authorization reference is required');
@@ -74,6 +77,7 @@ export function createIdentityBatchCompletion(input, createdAt = new Date().toIS
   exact(input, ['actorUserId', 'afterUserId', 'authorizationReference', 'clientId', 'departmentId', 'environment', 'expectedAccount', 'expiresAt', 'issuer', 'siteUrl', 'userPoolId'], 'Identity batch completion');
   if (!['staging', 'production'].includes(input.environment)) fail('Environment must be staging or production');
   if (!ACCOUNT.test(input.expectedAccount ?? '') || FORBIDDEN_ACCOUNTS.has(input.expectedAccount)) fail('Expected account is invalid');
+  if (input.expectedAccount !== (input.environment === 'staging' ? STAGING_ACCOUNT : PRODUCTION_ACCOUNT)) fail('Expected account does not match the migration environment');
   if (input.siteUrl !== (input.environment === 'production' ? 'https://tracepointhq.com' : 'https://staging.tracepointhq.com')) fail('Site URL does not match the migration environment');
   if (!UUID.test(input.actorUserId ?? '') || !UUID.test(input.departmentId ?? '') || (input.afterUserId !== '' && !UUID.test(input.afterUserId ?? ''))) fail('Identity completion scope is invalid');
   if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(input.authorizationReference ?? '')) fail('A specific authorization reference is required');
