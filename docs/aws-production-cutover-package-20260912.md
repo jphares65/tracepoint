@@ -70,18 +70,21 @@ decisions.
 
 ## Production cost gate
 
-The defensible steady-state projection is **$265.44/month**. A rolling ECS
-deployment raises the monthly-equivalent peak to **$290.76**. The recommended
-hard AWS Budget is **$350/month**, leaving $59.24 (20.4%) over the modeled peak.
-The current live budget is $150 and is not sufficient for this topology.
+The implemented Tier 1 steady-state projection is **$131.72/month**. A rolling
+ECS deployment raises the monthly-equivalent peak to **$144.38**; the rolling
+case with RDS grown to its 100-GiB maximum is **$153.58**. The approved hard AWS
+Budget target is **$175/month**, leaving $21.42 over that conservative peak. The
+last read-only evidence showed a live $150 budget; changing it is still a
+separately authorized production action.
 
-The model includes Multi-AZ `db.t4g.medium` RDS with 100 GiB gp3, two Fargate
-tasks, one ALB, public IPv4 charges, two-AZ Secrets Manager and SNS interface
-endpoints, six customer-managed KMS keys, WAF, alarms/logs, enhanced container
-insights, S3/ECR/Backup/CodeBuild, Cognito, SES, DNS, data transfer, and security
+The model includes Single-AZ `db.t4g.small` RDS with 20 GiB gp3 and a 100-GiB
+maximum, one Fargate task/max two, one ALB, public IPv4 charges, one-AZ Secrets
+Manager and SNS feedback endpoints, eight customer-managed KMS keys, the rate
+rule and three managed WAF groups, alarms/logs, S3/ECR/Backup/CodeBuild,
+Cognito, SES, DNS, data transfer, scoped CloudTrail object events, and security
 service allowances. Exact component cents and assumptions are in
-`aws-production-cost-model-20260912.json`. Deployment is no-go until the owner
-authorizes the $350 ceiling and the budget exists at that amount.
+`aws-cost-optimization-model-20260912.json`. Deployment is no-go until the
+budget exists at the approved $175 amount.
 
 ## SES early checkpoint
 
@@ -101,9 +104,9 @@ The three DKIM CNAMEs cannot exist yet: SES has no production identity, so it
 has not generated the tokens. Create the domain identity first, read the three
 tokens and `SigningHostedZone`, and publish each exact
 `<token>._domainkey.tracepointhq.com CNAME <token>.<SigningHostedZone>` record.
-The Microsoft 365 root SPF record remains unchanged. The owner must confirm
-that `contact@tracepointhq.com` is monitored or provide another monitored
-non-Brevo address before the prepared access request is submitted.
+The Microsoft 365 root SPF record remains unchanged. The owner has identified
+`contact@tracepointhq.com` as the monitored endpoint. After deployment, its SNS
+subscription must be confirmed before cutover.
 
 SES is no-go until production access, sending, DKIM, domain identity, and MAIL
 FROM statuses all succeed; daily quota is at least 1,000 and send rate at least
@@ -182,7 +185,7 @@ change window; the extra 45 minutes is contingency, not planned downtime.
 
 | Minute | Operator action and gate |
 |---:|---|
-| T-1440 to T-120 | Complete SES identity/DNS/access and production-policy approvals; set DNS TTL 300; create $350 budget; deploy approved AWS foundations; publish and scan all images; validate backups, alarms, human alert path and target health. Any incomplete prerequisite is no-go. |
+| T-1440 to T-120 | Complete SES identity/DNS/access and production-policy approvals; set DNS TTL 300; update the budget to the approved $175 target; deploy approved AWS foundations; publish and scan all images; validate backups, alarms, human alert path and target health. Any incomplete prerequisite is no-go. |
 | T-60 to T-15 | Confirm exact account/role/region, clean commit, image digests, 60-source hash, 76+20 local hash, latest source counts, zero provider violations, empty target, successful RDS snapshot, SES status, Cognito pool, S3 versioning/Backup, two healthy bridge tasks, and rollback manifest. |
 | T-15 to T0 | Announce maintenance through an owner-approved channel, stop asynchronous dispatch/import jobs, drain queues, verify no in-flight mutation, record source LSN/time and final immutable manifests. |
 | 0–3 | Owner authorizes write freeze; application enters maintenance/read-only mode. Confirm zero writes for two consecutive checks. |
@@ -273,7 +276,7 @@ and no false committed membership.
 One authorization package should explicitly approve or reject each independent
 gate:
 
-1. **Spend:** raise the production AWS Budget from $150 to a hard $350/month.
+1. **Spend:** update the production AWS Budget from $150 to the approved $175/month target.
 2. **Security controls:** apply the reviewed SCP and permissions-boundary change
    set needed for resource-scoped Cognito and SES management/sending.
 3. **Infrastructure:** deploy the synthesized 13-stack full-AWS production
@@ -304,7 +307,7 @@ gate:
 - SES identity creation, Wix DNS, production-access submission/approval, and a
   verified monitored mailbox are external owner actions. DNS/SES verification
   may take up to 72 hours and is the critical calendar-time risk.
-- The $150 live production budget must be raised to $350 before deployment.
+- The last-observed $150 live production budget must be updated to $175 before deployment.
 - The SCP/boundary changes above require owner authorization and an organization
   administrator.
 - The inactive identity and membership-less platform-administrator transition

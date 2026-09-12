@@ -16,8 +16,9 @@
       "private_link_endpoints": 2920,
       "kms_keys": 800,
       "secrets_manager": 165,
-      "waf": 606,
-      "cloudwatch_alarms": 200,
+      "waf": 906,
+      "cloudwatch_alarms_and_security_metrics": 320,
+      "cloudtrail_s3_data_events": 10,
       "cloudwatch_logs": 1000,
       "enhanced_container_insights": 1340,
       "s3": 87,
@@ -43,8 +44,9 @@
       "private_link_endpoints": 1460,
       "kms_keys": 800,
       "secrets_manager": 165,
-      "waf": 606,
-      "cloudwatch_alarms": 200,
+      "waf": 906,
+      "cloudwatch_alarms_and_security_metrics": 320,
+      "cloudtrail_s3_data_events": 10,
       "cloudwatch_logs": 125,
       "enhanced_container_insights": 0,
       "s3": 87,
@@ -58,14 +60,14 @@
       "internet_data_transfer": 500,
       "account_security_services": 1500
     },
-    "currentSteadyCents": 27604,
-    "optimizedSteadyCents": 12742,
+    "currentSteadyCents": 28034,
+    "optimizedSteadyCents": 13172,
     "rollingExtraTaskCents": 1266,
-    "optimizedRollingPeakCents": 14008,
-    "optimizedRollingAndMaxStoragePeakCents": 14928,
+    "optimizedRollingPeakCents": 14438,
+    "optimizedRollingAndMaxStoragePeakCents": 15358,
     "recommendedBudgetCents": 17500,
-    "firstRotationSteadyCents": 13542,
-    "secondRotationSteadyCents": 14342
+    "firstRotationSteadyCents": 13972,
+    "secondRotationSteadyCents": 14772
   },
   "staging": {
     "currentCents": 11842,
@@ -75,8 +77,8 @@
     "optimization": "Keep production-equivalent controls but schedule ECS desired count zero and stop RDS outside a 60-hour weekly demo/rehearsal window, with 40 contingency hours per month."
   },
   "combined": {
-    "currentCents": 39446,
-    "optimizedCents": 23161,
+    "currentCents": 39876,
+    "optimizedCents": 23591,
     "savingsCents": 16285
   },
   "rateAssumptions": {
@@ -99,7 +101,9 @@
     "Enhanced Container Insights is disabled in Tier 1; native ECS service metrics, ALB metrics, CloudWatch logs, alarms, CloudTrail and WAF logs remain.",
     "The logs allowance is 2.5 GiB per month, over twelve times the current observed combined monthly run rate; 90-day hot retention is used for application and operational logs while the audit trail remains 365 days.",
     "CodeBuild assumes 60 paid build minutes and internet data transfer assumes 5 GiB. Budget/anomaly alerts catch departures from these assumptions.",
-    "All eight permanent customer-managed KMS keys and a conservative 15 USD account-security-services allowance are retained."
+    "All eight permanent customer-managed KMS keys and a conservative 15 USD account-security-services allowance are retained.",
+    "Production WAF includes the Common, Known Bad Inputs, and Amazon IP Reputation managed rule groups in addition to the rate rule.",
+    "Three CloudTrail metric filters and alarms cover root, privileged IAM, and security-control changes; 100,000 monthly data events are reserved for the exact private object bucket."
   ],
   "exclusions": [
     "Taxes, support-plan fees and third-party services",

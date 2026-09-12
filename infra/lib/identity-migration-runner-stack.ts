@@ -79,7 +79,7 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     const artifactKey = kms.Key.fromKeyArn(this, 'ArtifactKey', props.artifactKeyArn);
     const databaseSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'DatabaseSecurityGroup', props.databaseSecurityGroupId, { mutable: true });
 
-    const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/${props.environmentName}/identity-migration/${props.runId}`, retention: logs.RetentionDays.ONE_MONTH, removalPolicy: cdk.RemovalPolicy.RETAIN });
+    const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/${props.environmentName}/identity-migration/${props.runId}`, encryptionKey: artifactKey, retention: logs.RetentionDays.ONE_MONTH, removalPolicy: cdk.RemovalPolicy.RETAIN });
     const ecsTasksPrincipal = new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
       conditions: {
         StringEquals: { 'aws:SourceAccount': this.account },

@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as ce from 'aws-cdk-lib/aws-ce';
 import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as guardduty from 'aws-cdk-lib/aws-guardduty';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
@@ -106,6 +107,37 @@ export class ProductionAccountBaselineStack extends cdk.Stack {
       managementEvents: cloudtrail.ReadWriteType.ALL,
       sendToCloudWatchLogs: true,
     });
+    const privateObjectBucket = s3.Bucket.fromBucketName(
+      this,
+      'ProductionPrivateObjectBucket',
+      `tracepoint-production-private-${props.accountId}`,
+    );
+    trail.addS3EventSelector([{bucket: privateObjectBucket}], {
+      readWriteType: cloudtrail.ReadWriteType.ALL,
+      includeManagementEvents: false,
+    });
+
+    const securityMetric = (id: string, metricName: string, filterPattern: string) => {
+      new logs.MetricFilter(this, `${id}MetricFilter`, {
+        logGroup: trailLogs,
+        metricNamespace: 'TracePoint/Security',
+        metricName,
+        metricValue: '1',
+        filterPattern: logs.FilterPattern.literal(filterPattern),
+      });
+      new cloudwatch.Alarm(this, `${id}Alarm`, {
+        alarmName: `tracepoint-production-account-${metricName}`,
+        alarmDescription: `CloudTrail detected ${metricName.replaceAll('-', ' ')}; absence of matching audit events is expected and is not a telemetry failure.`,
+        metric: new cloudwatch.Metric({namespace: 'TracePoint/Security', metricName, statistic: 'Sum', period: cdk.Duration.minutes(1)}),
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+    };
+    securityMetric('RootActivity', 'root-activity', '{ $.userIdentity.type = "Root" }');
+    securityMetric('PrivilegedIamChange', 'privileged-iam-change', '{ ($.eventSource = "iam.amazonaws.com") && (($.eventName = "CreatePolicyVersion") || ($.eventName = "SetDefaultPolicyVersion") || ($.eventName = "AttachRolePolicy") || ($.eventName = "PutRolePolicy") || ($.eventName = "UpdateAssumeRolePolicy")) }');
+    securityMetric('SecurityControlChange', 'security-control-change', '{ (($.eventSource = "cloudtrail.amazonaws.com") || ($.eventSource = "config.amazonaws.com") || ($.eventSource = "kms.amazonaws.com") || ($.eventSource = "guardduty.amazonaws.com") || ($.eventSource = "securityhub.amazonaws.com")) && (($.eventName = "StopLogging") || ($.eventName = "DeleteTrail") || ($.eventName = "PutEventSelectors") || ($.eventName = "PutConfigurationRecorder") || ($.eventName = "StopConfigurationRecorder") || ($.eventName = "DeleteConfigurationRecorder") || ($.eventName = "DisableKey") || ($.eventName = "ScheduleKeyDeletion") || ($.eventName = "DeleteDetector") || ($.eventName = "DisableSecurityHub") || ($.eventName = "DisableSecurityHubV2")) }');
 
     const configRole = new iam.Role(this, 'ConfigRole', {
       roleName: 'TracePoint-Production-Config',
@@ -158,7 +190,7 @@ export interface ProductionCostControlsStackProps extends cdk.StackProps {
 export class ProductionCostControlsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ProductionCostControlsStackProps) {
     super(scope, id, props);
-    if (props.accountId === '265544358665' || props.monthlyBudgetUsd !== 150) {
+    if (props.accountId === '265544358665' || props.monthlyBudgetUsd !== 175) {
       throw new Error('Reviewed production account and monthly budget are required');
     }
 
@@ -214,7 +246,19 @@ export class ProductionCostControlsStack extends cdk.Stack {
       },
       notificationsWithSubscribers: [
         {
-          notification: {comparisonOperator: 'GREATER_THAN', notificationType: 'ACTUAL', threshold: 80, thresholdType: 'PERCENTAGE'},
+          notification: {comparisonOperator: 'GREATER_THAN', notificationType: 'ACTUAL', threshold: 70, thresholdType: 'PERCENTAGE'},
+          subscribers: [{address: topic.topicArn, subscriptionType: 'SNS'}],
+        },
+        {
+          notification: {comparisonOperator: 'GREATER_THAN', notificationType: 'ACTUAL', threshold: 85, thresholdType: 'PERCENTAGE'},
+          subscribers: [{address: topic.topicArn, subscriptionType: 'SNS'}],
+        },
+        {
+          notification: {comparisonOperator: 'GREATER_THAN', notificationType: 'ACTUAL', threshold: 100, thresholdType: 'PERCENTAGE'},
+          subscribers: [{address: topic.topicArn, subscriptionType: 'SNS'}],
+        },
+        {
+          notification: {comparisonOperator: 'GREATER_THAN', notificationType: 'FORECASTED', threshold: 90, thresholdType: 'PERCENTAGE'},
           subscribers: [{address: topic.topicArn, subscriptionType: 'SNS'}],
         },
         {

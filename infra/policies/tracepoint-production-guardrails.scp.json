@@ -65,6 +65,23 @@
       "Resource": "*"
     },
     {
+      "Sid": "DenyUnauthorizedConfigScopeChanges",
+      "Effect": "Deny",
+      "Action": [
+        "config:PutConfigurationRecorder",
+        "config:PutDeliveryChannel"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::193644343389:role/TracePointMigrationProduction",
+            "arn:aws:iam::193644343389:role/cdk-*-cfn-exec-role-193644343389-us-east-1"
+          ]
+        }
+      }
+    },
+    {
       "Sid": "DenyOutsideUsEast1",
       "Effect": "Deny",
       "NotAction": [

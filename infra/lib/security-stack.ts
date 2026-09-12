@@ -20,12 +20,20 @@ export class SecurityStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    const applicationLogGroupArn = cdk.Stack.of(this).formatArn({
+    const logGroupArn = (name: string) => cdk.Stack.of(this).formatArn({
       service: "logs",
       resource: "log-group",
-      resourceName: `/tracepoint/${props.environmentName}/application`,
+      resourceName: name,
       arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
     });
+    const encryptedLogGroupArns = [
+      logGroupArn(`/tracepoint/${props.environmentName}/application`),
+      logGroupArn(`/tracepoint/${props.environmentName}/network/vpc-flow`),
+      logGroupArn(`/tracepoint/${props.environmentName}/ses-feedback-worker`),
+      logGroupArn(`/tracepoint/${props.environmentName}/identity-migration/*`),
+      logGroupArn(`/aws/rds/instance/tracepoint-${props.environmentName}/postgresql`),
+      logGroupArn(`/aws/rds/cluster/tracepoint-${props.environmentName}/postgresql`),
+    ];
     this.dataKey.addToResourcePolicy(
       new iam.PolicyStatement({
         principals: [new iam.ServicePrincipal(`logs.${this.region}.amazonaws.com`)],
@@ -38,8 +46,8 @@ export class SecurityStack extends cdk.Stack {
         ],
         resources: ["*"],
         conditions: {
-          ArnEquals: {
-            "kms:EncryptionContext:aws:logs:arn": applicationLogGroupArn,
+          ArnLike: {
+            "kms:EncryptionContext:aws:logs:arn": encryptedLogGroupArns,
           },
         },
       }),

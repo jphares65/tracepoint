@@ -17,7 +17,7 @@ export interface FullAwsProductionTarget {
   databaseTopology:ProductionPostgresTopology;
   desiredCount:1|2;
   maxCapacity:2|4;
-  humanAlertEmail?:string;
+  humanAlertEmail:"contact@tracepointhq.com";
   deploymentAuthorization?:{account:string;roleArn:string;expiresAt:string;reference:string};
 }
 
@@ -29,8 +29,8 @@ export function validateFullAwsProductionTarget(value:FullAwsProductionTarget,{o
  const haTier=["aurora-serverless-v2","rds-multi-az"].includes(value.databaseTopology)&&value.desiredCount===2&&value.maxCapacity===4;
  if(value.hostname!=="tracepointhq.com"||value.architectureTarget!=="full-aws"||value.deploymentPhase!=="full-aws-final"||value.dataMode!=="aws-postgres-authoritative"||value.authMode!=="cognito"||value.storageMode!=="s3"||value.emailMode!=="ses"||(!initialTier&&!haTier))throw Error("Complete full-AWS provider declaration required");
  if(!new RegExp(`^arn:aws:acm:us-east-1:${value.account}:certificate/[0-9a-f-]{36}$`).test(value.certificateArn)||!/^[0-9a-f]{40}-aws-native$/.test(value.imageTag)||!/^sha256:[0-9a-f]{64}$/.test(value.imageDigest))throw Error("Production certificate and provider-qualified immutable image digest required");
- if(value.humanAlertEmail&&!/^[-a-zA-Z0-9._+]+@tracepointhq\.com$/.test(value.humanAlertEmail))throw Error("Reviewed TracePoint alert mailbox required");
- if(!offline){if(!value.humanAlertEmail)throw Error("A reviewed production human alert mailbox is required");const a=value.deploymentAuthorization;if(!a||a.account!==value.account||a.roleArn!==value.roleArn||!a.reference||a.reference.length>160||!Number.isFinite(Date.parse(a.expiresAt))||Date.parse(a.expiresAt)<=now||Date.parse(a.expiresAt)>now+86400000)throw Error("Explicit unexpired production authorization required");}
+ if(value.humanAlertEmail!=="contact@tracepointhq.com")throw Error("Exact reviewed TracePoint alert mailbox required");
+ if(!offline){const a=value.deploymentAuthorization;if(!a||a.account!==value.account||a.roleArn!==value.roleArn||!a.reference||a.reference.length>160||!Number.isFinite(Date.parse(a.expiresAt))||Date.parse(a.expiresAt)<=now||Date.parse(a.expiresAt)>now+86400000)throw Error("Explicit unexpired production authorization required");}
  return value;
 }
 

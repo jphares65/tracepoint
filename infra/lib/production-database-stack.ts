@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { NagSuppressions } from "cdk-nag";
@@ -31,6 +32,12 @@ export class ProductionDatabaseStack extends cdk.Stack {
       throw new Error("Dedicated production PostgreSQL account and us-east-1 are required");
     }
     const key = kms.Key.fromKeyArn(this, "ImportedDataKey", props.dataKey.keyArn);
+    const databaseLogGroup = new logs.LogGroup(this, "DatabaseLogs", {
+      logGroupName: `/aws/rds/${props.topology === "aurora-serverless-v2" ? "cluster" : "instance"}/tracepoint-production/postgresql`,
+      encryptionKey: key,
+      retention: logs.RetentionDays.THREE_MONTHS,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
     const migratorSecret = new secretsmanager.Secret(this, "MigratorCredential", {
       secretName: "tracepoint/production/database/migrator",
       description: "Owner credential used only by the controlled production database migration task",
@@ -65,9 +72,9 @@ export class ProductionDatabaseStack extends cdk.Stack {
         deletionProtection: true,
         copyTagsToSnapshot: true,
         cloudwatchLogsExports: ["postgresql"],
-        cloudwatchLogsRetention: cdk.aws_logs.RetentionDays.ONE_MONTH,
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       });
+      cluster.node.addDependency(databaseLogGroup);
       this.endpointAddress = cluster.clusterEndpoint.hostname;
       NagSuppressions.addResourceSuppressions(cluster,[{
        id:"AwsSolutions-RDS6",
@@ -78,13 +85,17 @@ export class ProductionDatabaseStack extends cdk.Stack {
       }]);
       new cloudwatch.Alarm(this, "DatabaseCpuAlarm", {
         alarmName: "tracepoint-production-database-cpu",
-        metric: cluster.metricCPUUtilization(), threshold: 80,
+        alarmDescription: "Database CPU is above 80% for three minutes; missing continuous RDS telemetry is treated as a monitoring failure.",
+        metric: cluster.metricCPUUtilization({period: cdk.Duration.minutes(1)}), threshold: 80,
         evaluationPeriods: 3, datapointsToAlarm: 3,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       });
       new cloudwatch.Alarm(this, "DatabaseConnectionsAlarm", {
         alarmName: "tracepoint-production-database-connections",
-        metric: cluster.metricDatabaseConnections(), threshold: 150,
+        alarmDescription: "Connections exceed the bounded four-task plus worker pool allowance; missing continuous RDS telemetry is treated as a monitoring failure.",
+        metric: cluster.metricDatabaseConnections({period: cdk.Duration.minutes(1)}), threshold: 100,
         evaluationPeriods: 3, datapointsToAlarm: 3,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       });
     } else {
       const initialSingleAz = props.topology === "rds-single-az";
@@ -120,12 +131,12 @@ export class ProductionDatabaseStack extends cdk.Stack {
         allowMajorVersionUpgrade: false,
         parameterGroup: parameters,
         cloudwatchLogsExports: ["postgresql"],
-        cloudwatchLogsRetention: cdk.aws_logs.RetentionDays.ONE_MONTH,
         enablePerformanceInsights: true,
         performanceInsightEncryptionKey: key,
         performanceInsightRetention: rds.PerformanceInsightRetention.DEFAULT,
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       });
+      instance.node.addDependency(databaseLogGroup);
       NagSuppressions.addResourceSuppressions(instance,[{
         id:"AwsSolutions-RDS11",
         reason:"The database is isolated in private subnets and accepts 5432 only from exact workload security groups; changing PostgreSQL's standard port would not add a meaningful authorization boundary and would break the reviewed migration tooling contract.",
@@ -136,19 +147,25 @@ export class ProductionDatabaseStack extends cdk.Stack {
       this.endpointAddress = instance.dbInstanceEndpointAddress;
       new cloudwatch.Alarm(this, "DatabaseCpuAlarm", {
         alarmName: "tracepoint-production-database-cpu",
-        metric: instance.metricCPUUtilization(), threshold: 80,
+        alarmDescription: "Database CPU is above 80% for three minutes; missing continuous RDS telemetry is treated as a monitoring failure.",
+        metric: instance.metricCPUUtilization({period: cdk.Duration.minutes(1)}), threshold: 80,
         evaluationPeriods: 3, datapointsToAlarm: 3,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       });
       new cloudwatch.Alarm(this, "DatabaseConnectionsAlarm", {
         alarmName: "tracepoint-production-database-connections",
-        metric: instance.metricDatabaseConnections(), threshold: 150,
+        alarmDescription: "Connections exceed the bounded runtime plus worker pool allowance; missing continuous RDS telemetry is treated as a monitoring failure.",
+        metric: instance.metricDatabaseConnections({period: cdk.Duration.minutes(1)}), threshold: initialSingleAz ? 50 : 100,
         evaluationPeriods: 3, datapointsToAlarm: 3,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       });
       new cloudwatch.Alarm(this, "DatabaseStorageAlarm", {
         alarmName: "tracepoint-production-database-free-storage",
-        metric: instance.metricFreeStorageSpace(), threshold: (initialSingleAz ? 5 : 10) * 1024 * 1024 * 1024,
+        alarmDescription: "Free database storage is below the reviewed reserve; missing continuous RDS telemetry is treated as a monitoring failure.",
+        metric: instance.metricFreeStorageSpace({period: cdk.Duration.minutes(1)}), threshold: (initialSingleAz ? 5 : 10) * 1024 * 1024 * 1024,
         comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
         evaluationPeriods: 3, datapointsToAlarm: 3,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       });
     }
 
@@ -175,8 +192,6 @@ export class ProductionDatabaseStack extends cdk.Stack {
     }]);
     NagSuppressions.addStackSuppressions(this,[
       {id:"AwsSolutions-SMG4",reason:"Database roles do not exist until bootstrap; the committed bootstrap/rotation workflow changes the database login and Secrets Manager value atomically before activation."},
-      {id:"AwsSolutions-IAM4",reason:"The CDK RDS log-retention provider uses its standard Lambda execution policy only to configure the exact generated RDS log group."},
-      {id:"AwsSolutions-IAM5",reason:"The CDK RDS log-retention provider requires log-service discovery and retention calls whose service API does not support a narrower resource during creation."},
     ]);
     cdk.Tags.of(this).add("Backup", "daily");
     cdk.Tags.of(this).add("ArchitectureTarget", "full-aws");

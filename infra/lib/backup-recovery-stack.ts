@@ -24,6 +24,13 @@ export class BackupRecoveryStack extends cdk.Stack {
     this.vault = new backup.BackupVault(this, "Vault", {
       backupVaultName: `tracepoint-${props.environmentName}`,
       encryptionKey: key,
+      // Omitting changeableFor selects governance mode: retention is enforced
+      // but an authorized operator can still alter/remove the lock. Compliance
+      // mode is intentionally deferred until production restore evidence exists.
+      lockConfiguration: props.environmentName === "production" ? {
+        minRetention: cdk.Duration.days(35),
+        maxRetention: cdk.Duration.days(365),
+      } : undefined,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
     const plan = new backup.BackupPlan(this, "Plan", {

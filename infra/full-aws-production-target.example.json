@@ -14,5 +14,6 @@
   "emailMode": "ses",
   "databaseTopology": "rds-multi-az",
   "desiredCount": 2,
-  "maxCapacity": 4
+  "maxCapacity": 4,
+  "humanAlertEmail": "contact@tracepointhq.com"
 }

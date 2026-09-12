@@ -3,7 +3,6 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
@@ -22,7 +21,8 @@ export class AlertDeliveryStack extends cdk.Stack {
   super(scope,id,props);
   if(!/^\d{12}$/.test(props.expectedAccount)||this.account!==props.expectedAccount||this.account==='265544358665'||this.region!=='us-east-1')throw Error('Alert delivery account/region mismatch');
   if((props.environment==='staging')!==(this.account==='559054714699'))throw Error('Alert delivery environment/account mismatch');
-  if(props.humanEmailAddress&&(!/^[-a-zA-Z0-9._+]+@tracepointhq\.com$/.test(props.humanEmailAddress)||props.environment!=='production'))throw Error('Alert delivery human recipient mismatch');
+  if(props.humanEmailAddress&&(props.humanEmailAddress!=='contact@tracepointhq.com'||props.environment!=='production'))throw Error('Alert delivery human recipient mismatch');
+  if(props.environment==='production'&&props.humanEmailAddress!=='contact@tracepointhq.com')throw Error('Production requires the reviewed monitored alert recipient');
   const prefix=`tracepoint-${props.environment}`;
   const alarmName=`${prefix}-runtime-alert`;
   const alarmArn=this.formatArn({service:'cloudwatch',resource:'alarm',resourceName:alarmName,arnFormat:cdk.ArnFormat.COLON_RESOURCE_NAME});
@@ -47,7 +47,11 @@ export class AlertDeliveryStack extends cdk.Stack {
   const alarm=new cloudwatch.CompositeAlarm(this,'RuntimeAlert',{compositeAlarmName:alarmName,alarmDescription:`TracePoint ${props.environment} runtime incident; human subscription confirmation remains a cutover gate.`,alarmRule:cloudwatch.AlarmRule.anyOf(...alarmNames.map((name,index)=>cloudwatch.AlarmRule.fromAlarm(cloudwatch.Alarm.fromAlarmName(this,'Observed'+index,name),cloudwatch.AlarmState.ALARM)))});
   alarm.addAlarmAction(new actions.SnsAction(topic));alarm.addOkAction(new actions.SnsAction(topic));
   const backupFailures=new events.Rule(this,'BackupFailures',{ruleName:backupRuleName,eventPattern:{source:['aws.backup'],detailType:['Backup Job State Change'],detail:{state:['FAILED','ABORTED','EXPIRED']}}});
-  backupFailures.addTarget(new targets.SnsTopic(topic));
+  // EventBridge can publish directly to SNS when the topic resource policy
+  // grants the exact rule ARN. Avoid the CDK SNS target helper here because it
+  // also synthesizes an unconditional service-principal allow.
+  const scopedTopicTarget:events.IRuleTarget={bind:()=>({arn:topic.topicArn})};
+  backupFailures.addTarget(scopedTopicTarget);
   new cdk.CfnOutput(this,'AlertTopicArn',{value:topic.topicArn});
   new cdk.CfnOutput(this,'ReceiptQueueUrl',{value:receipts.queueUrl});
   new cdk.CfnOutput(this,'CompositeAlarmName',{value:alarmName});
