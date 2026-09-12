@@ -32,39 +32,18 @@
       "Resource": "*"
     },
     {
-      "Sid": "KeepCognitoDisabled",
+      "Sid": "KeepCognitoAndSesDisabled",
       "Effect": "Deny",
       "Action": [
         "cognito-idp:Create*",
         "cognito-idp:Update*",
-        "cognito-idp:Delete*"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "KeepSesDisabledOutsideAuthorizedFoundationRoles",
-      "Effect": "Deny",
-      "Action": [
+        "cognito-idp:Delete*",
         "ses:Create*",
         "ses:Put*",
         "ses:Send*",
         "ses:Update*",
         "ses:Delete*"
       ],
-      "Resource": "*",
-      "Condition": {
-        "ArnNotEquals": {
-          "aws:PrincipalArn": [
-            "arn:aws:iam::193644343389:role/TracePointMigrationProduction",
-            "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
-          ]
-        }
-      }
-    },
-    {
-      "Sid": "DenySesSendingUntilSeparateAuthorization",
-      "Effect": "Deny",
-      "Action": "ses:Send*",
       "Resource": "*"
     },
     {

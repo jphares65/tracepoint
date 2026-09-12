@@ -45,68 +45,6 @@
       "Resource": "*"
     },
     {
-      "Sid": "AllowReviewedSesFoundationCreationViaCloudFormation",
-      "Effect": "Allow",
-      "Action": [
-        "ses:CreateConfigurationSet",
-        "ses:CreateEmailIdentity"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ArnEquals": {
-          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
-        }
-      }
-    },
-    {
-      "Sid": "AllowReviewedSesFoundationResources",
-      "Effect": "Allow",
-      "Action": [
-        "ses:DeleteConfigurationSet",
-        "ses:CreateConfigurationSetEventDestination",
-        "ses:DeleteConfigurationSetEventDestination",
-        "ses:UpdateConfigurationSetEventDestination",
-        "ses:PutConfigurationSetDeliveryOptions",
-        "ses:PutConfigurationSetReputationOptions",
-        "ses:PutConfigurationSetSuppressionOptions",
-        "ses:DeleteEmailIdentity",
-        "ses:PutEmailIdentityConfigurationSetAttributes",
-        "ses:PutEmailIdentityDkimAttributes",
-        "ses:PutEmailIdentityDkimSigningAttributes",
-        "ses:PutEmailIdentityFeedbackAttributes",
-        "ses:PutEmailIdentityMailFromAttributes",
-        "ses:TagResource",
-        "ses:UntagResource"
-      ],
-      "Resource": [
-        "arn:aws:ses:us-east-1:193644343389:identity/tracepointhq.com",
-        "arn:aws:ses:us-east-1:193644343389:configuration-set/tracepoint-production",
-        "arn:aws:ses:us-east-1:193644343389:configuration-set/tracepoint-production-cognito"
-      ],
-      "Condition": {
-        "ArnEquals": {
-          "aws:PrincipalArn": [
-            "arn:aws:iam::193644343389:role/TracePointMigrationProduction",
-            "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
-          ]
-        }
-      }
-    },
-    {
-      "Sid": "AllowReviewedSesAccountControls",
-      "Effect": "Allow",
-      "Action": [
-        "ses:PutAccountDetails",
-        "ses:PutAccountSuppressionAttributes"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ArnEquals": {
-          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/TracePointMigrationProduction"
-        }
-      }
-    },
-    {
       "Sid": "AllowPassOnlyTracePointAndCdkRoles",
       "Effect": "Allow",
       "Action": "iam:PassRole",
