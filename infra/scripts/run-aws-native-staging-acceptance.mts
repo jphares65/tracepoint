@@ -77,6 +77,21 @@ let diagnostic = "";
 const client = new CognitoIdentityProviderClient({region, maxAttempts: 2});
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
+async function deleteFixtureUser(poolId: string, username: string) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      gate();
+      await client.send(new AdminDeleteUserCommand({UserPoolId: poolId, Username: username}));
+      return;
+    } catch (error) {
+      const name = (error as Error).name;
+      if (name === "UserNotFoundException") return;
+      if (!["TooManyRequestsException", "LimitExceededException"].includes(name) || attempt === 5) throw error;
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 500 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
 async function createAndEnroll(user: FixtureUser, poolId: string, clientId: string) {
   gate();
   await client.send(new AdminCreateUserCommand({
@@ -175,7 +190,7 @@ try {
 } finally {
   let cleanup=true;
   if(fixtureCreated){try{fixture("cleanup",poolId);}catch{cleanup=false;process.exitCode=1;}}
-  if(poolId)for(const user of users){try{gate();await client.send(new AdminDeleteUserCommand({UserPoolId:poolId,Username:user.email}));}catch(error){if((error as Error).name!=="UserNotFoundException"){cleanup=false;process.exitCode=1;}}}
+  if(poolId)for(const user of users){try{await deleteFixtureUser(poolId,user.email);}catch{cleanup=false;process.exitCode=1;}}
   client.destroy();
   console.log(JSON.stringify({status:acceptancePassed&&cleanup?"PASSED":"FAILED",run,users:3,departments:2,syntheticOnly:true,awsNativeRuntime:true,fixtureCleanupVerified:cleanup,credentialsPrinted:false}));
 }
