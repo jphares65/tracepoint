@@ -1,20 +1,36 @@
 # Production SES readiness checkpoint — 2026-09-12
 
-This checkpoint is preparation only. It does not authorize creating an SES
-identity, submitting the production-access request, changing DNS, creating a
-subscription, or sending email.
+The owner authorized the SES identity foundation, narrowly scoped governance
+changes, and one production-access request on 2026-09-12, and confirmed
+`contact@tracepointhq.com` as monitored. The foundation was deployed from exact
+commit `3a08022aae6c0493bcbbcc399aa82cd5ef6ed82f`. AWS assigned production-access
+case `178924156800066` and returned status `DENIED`; the SES API exposed no
+denial reason, and the account lacks the Premium Support entitlement needed to
+read case correspondence through the Support API. DNS changes, request
+resubmission, and email sending remain unauthorized.
 
 ## Read-only live state
 
 - AWS account: `193644343389`; region: `us-east-1`; role:
   `TracePointMigrationProduction`.
-- SES production access: disabled. Sending is enabled only under the sandbox
+- SES production access: disabled after the submitted request was denied.
+  Sending is available only under the sandbox
   limits of 200 messages per 24 hours and one message per second. Zero messages
   were sent in the preceding 24 hours when checked.
-- SES identities: none. Consequently, production Easy DKIM tokens do not exist
-  yet and cannot truthfully be placed in DNS now.
+- The `tracepointhq.com` identity exists. Easy DKIM and custom MAIL FROM are
+  `PENDING` until the Wix records below are published.
 - Account suppression is already enabled for both `BOUNCE` and `COMPLAINT`.
 - Current SES plan: Essentials.
+- The isolated `tracepoint-production-full-aws-ses` stack is `CREATE_COMPLETE`
+  with termination protection. Its 14 resources are limited to SES, KMS, SNS,
+  SQS, policies/subscription, and CDK metadata; there are no ECS, RDS, Cognito,
+  Lambda, DNS, or application-runtime resources.
+- Boundary `v8` and SCP `p-rvx1u7q7` allow only the reviewed foundation and
+  account-control operations through the exact migration and CloudFormation
+  roles. SES sending remains an Organizations explicit deny; Cognito and DNS
+  mutation remain explicitly denied.
+- Both configuration sets require TLS, suppress bounce and complaint, and send
+  delivery/bounce/complaint events to the encrypted retained SNS/SQS/DLQ path.
 - Authoritative DNS is Wix (`ns10.wixdns.net`, `ns11.wixdns.net`). The custom
   MAIL FROM name has no MX or TXT record. The root domain's Microsoft 365 SPF
   record remains separate. Current DMARC sends aggregate reports to Brevo and
@@ -55,9 +71,9 @@ have been copied from the same production account and region.
 | `bounce.tracepointhq.com.` | MX | 300 | `10 feedback-smtp.us-east-1.amazonses.com` | Exact and ready |
 | `bounce.tracepointhq.com.` | TXT | 300 | `v=spf1 include:amazonses.com ~all` | Exact and ready |
 | `_dmarc.tracepointhq.com.` | TXT | 300 | `v=DMARC1; p=none;` | Exact replacement for the Brevo-reporting record; owner DNS approval required |
-| `<token-1>._domainkey.tracepointhq.com.` | CNAME | 300 | `<token-1>.<SigningHostedZone>` | Token unavailable until identity creation |
-| `<token-2>._domainkey.tracepointhq.com.` | CNAME | 300 | `<token-2>.<SigningHostedZone>` | Token unavailable until identity creation |
-| `<token-3>._domainkey.tracepointhq.com.` | CNAME | 300 | `<token-3>.<SigningHostedZone>` | Token unavailable until identity creation |
+| `t3pxf5n23dcf5ahxn4xzhcxfxnvushzh._domainkey.tracepointhq.com.` | CNAME | 300 | `t3pxf5n23dcf5ahxn4xzhcxfxnvushzh.dkim.amazonses.com` | Ready for Wix |
+| `yiaen5uag5n6evooqpo2rt3earh3zwcq._domainkey.tracepointhq.com.` | CNAME | 300 | `yiaen5uag5n6evooqpo2rt3earh3zwcq.dkim.amazonses.com` | Ready for Wix |
+| `yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com.` | CNAME | 300 | `yabannzf7xcqdnbgbxoee5k2c77xktci.dkim.amazonses.com` | Ready for Wix |
 
 The existing root SPF record
 `v=spf1 include:spf.protection.outlook.com -all` remains unchanged. SES aligns
@@ -82,13 +98,14 @@ returned `SigningHostedZone` must be used; it must not be hardcoded.
 
 ## Prepared production-access request
 
-The complete request payload is in
-`aws-production-ses-access-request-20260912.json`. Its additional contact is
-`contact@tracepointhq.com`, because that address already appears in the reviewed
-production configuration. The owner must confirm that this mailbox is monitored
-before submission; this checkpoint does not claim delivery to it.
+The complete submitted request payload is in
+`aws-production-ses-access-request-20260912.json`. Its only additional contact
+is the owner-confirmed monitored mailbox `contact@tracepointhq.com`.
 
-Prepared command — **do not execute without explicit authorization**:
+The command below was executed once under the owner's authorization. AWS
+returned case `178924156800066` with status `DENIED`. Do not resubmit without a
+new explicit authorization after the DNS records validate and the denial can be
+remediated.
 
 ```powershell
 aws sesv2 put-account-details `

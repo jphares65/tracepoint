@@ -1,0 +1,138 @@
+{
+  "evidenceType": "production-ses-foundation-live-deployment",
+  "observedAt": "2026-09-12T15:38:12-04:00",
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction"
+  },
+  "source": {
+    "deployedCommit": "3a08022aae6c0493bcbbcc399aa82cd5ef6ed82f",
+    "templateCanonicalSha256": "3a820a836e2be0ab9174d1497c1dca1ac131a2e06d4ece5b71774bcbf4633d77",
+    "deployedTemplateMatchesSynth": true
+  },
+  "governance": {
+    "scp": {
+      "policyId": "p-rvx1u7q7",
+      "beforeCanonicalSha256": "33a65fe45a4cd1a94a3ff83db92de198e4c5d2626c454a3e9ff26352dce35fb1",
+      "afterCanonicalSha256": "1beecd19d24912f1cac8a9225644125254a0ae818c5a72965046eef60551e5b2"
+    },
+    "permissionsBoundary": {
+      "arn": "arn:aws:iam::193644343389:policy/TracePointProductionBoundary",
+      "beforeDefaultVersion": "v7",
+      "beforeCanonicalSha256": "466ca79aae5213840a3f697f89ead5c552508ce6232651fad784d82c42133359",
+      "afterDefaultVersion": "v8",
+      "afterCanonicalSha256": "c289fbfcba6f6cd7036ce59e7ee3ba64992c7ca6a7409f43fdb258c055eca3ed",
+      "rollbackVersionPreserved": "v7",
+      "retiredNondefaultVersion": {
+        "version": "v3",
+        "canonicalSha256": "81f266facf5c2f72730893080c7068a552d3c824654fd51850f28af732f8162d",
+        "reason": "IAM managed policies permit at most five saved versions; v3 was the oldest nondefault slot."
+      },
+      "otherPreservedVersions": [
+        { "version": "v4", "canonicalSha256": "ad7ed5c73ff7008b90f5b81a8bef2d81516b973ec04778566338b1b7491f57f3" },
+        { "version": "v5", "canonicalSha256": "2e902c91a80601fb6ac1901f3ee8f7ae4cb839e1d5ba51dc9a8430f3d86032a3" },
+        { "version": "v6", "canonicalSha256": "e569383b62086512e7a1e6d04dd08a5284a0fa82f37d74786a2e8f7fd62f7828" }
+      ]
+    },
+    "effectivePolicyValidation": {
+      "foundationCreateViaCloudFormation": "allowed",
+      "accountSuppressionAndAccessRequestViaMigrationRole": "allowed",
+      "directFoundationCreateViaMigrationRole": "implicitDeny",
+      "sesSending": "explicitDenyByOrganizations",
+      "unrelatedSesMutations": "implicitDenyByBoundary",
+      "cognitoMutation": "explicitDenyByOrganizations",
+      "dnsMutation": "explicitDenyByOrganizations",
+      "accessAnalyzerFindings": 0
+    }
+  },
+  "stack": {
+    "name": "tracepoint-production-full-aws-ses",
+    "id": "arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-full-aws-ses/4161ecc0-aee0-11f1-b120-0eeb755f5435",
+    "createdAt": "2026-09-12T19:29:22.015Z",
+    "status": "CREATE_COMPLETE",
+    "terminationProtection": true,
+    "resourceCount": 14,
+    "resourceTypes": [
+      "AWS::CDK::Metadata",
+      "AWS::KMS::Key",
+      "AWS::SES::ConfigurationSet",
+      "AWS::SES::ConfigurationSetEventDestination",
+      "AWS::SES::EmailIdentity",
+      "AWS::SNS::Subscription",
+      "AWS::SNS::Topic",
+      "AWS::SNS::TopicPolicy",
+      "AWS::SQS::Queue",
+      "AWS::SQS::QueuePolicy"
+    ],
+    "forbiddenApplicationResourceCount": 0,
+    "forbiddenApplicationResourceFamilies": ["ECS", "RDS", "Cognito", "Lambda", "EC2", "ElasticLoadBalancing", "Route53", "S3"]
+  },
+  "ses": {
+    "identity": "tracepointhq.com",
+    "identityVerified": false,
+    "dkim": {
+      "status": "PENDING",
+      "keyLength": "RSA_2048_BIT",
+      "signingHostedZone": "dkim.amazonses.com"
+    },
+    "mailFrom": {
+      "domain": "bounce.tracepointhq.com",
+      "status": "PENDING",
+      "mxFailureBehavior": "REJECT_MESSAGE"
+    },
+    "feedbackForwardingEnabled": false,
+    "configurationSets": ["tracepoint-production", "tracepoint-production-cognito"],
+    "tlsPolicy": "REQUIRE",
+    "configurationSetSuppression": ["BOUNCE", "COMPLAINT"],
+    "accountSuppression": ["BOUNCE", "COMPLAINT"],
+    "eventTypes": ["DELIVERY", "BOUNCE", "COMPLAINT"],
+    "feedbackPath": {
+      "snsCustomerManagedKms": true,
+      "kmsRotationEnabled": true,
+      "snsSourceAccountAndConfigurationSetArnScoped": true,
+      "sqsEncryption": "SQS_MANAGED",
+      "sqsTlsEnforced": true,
+      "queueRetentionDays": 14,
+      "deadLetterQueue": true
+    },
+    "sentLast24Hours": 0,
+    "productionAccess": {
+      "enabled": false,
+      "requestStatus": "DENIED",
+      "caseId": "178924156800066",
+      "monitoredContact": "contact@tracepointhq.com",
+      "denialReasonAvailableFromSesApi": false,
+      "supportCaseBodyAccessible": false,
+      "supportCaseAccessBlocker": "AWS Premium Support subscription required"
+    }
+  },
+  "dnsRecords": [
+    { "name": "t3pxf5n23dcf5ahxn4xzhcxfxnvushzh._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "value": "t3pxf5n23dcf5ahxn4xzhcxfxnvushzh.dkim.amazonses.com" },
+    { "name": "yiaen5uag5n6evooqpo2rt3earh3zwcq._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "value": "yiaen5uag5n6evooqpo2rt3earh3zwcq.dkim.amazonses.com" },
+    { "name": "yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "value": "yabannzf7xcqdnbgbxoee5k2c77xktci.dkim.amazonses.com" },
+    { "name": "bounce.tracepointhq.com", "type": "MX", "ttl": 300, "value": "10 feedback-smtp.us-east-1.amazonses.com" },
+    { "name": "bounce.tracepointhq.com", "type": "TXT", "ttl": 300, "value": "v=spf1 include:amazonses.com ~all" },
+    { "name": "_dmarc.tracepointhq.com", "type": "TXT", "ttl": 300, "value": "v=DMARC1; p=none;" }
+  ],
+  "cost": {
+    "budgetName": "tracepoint-production-monthly",
+    "budgetUsdPerMonth": 150,
+    "budgetChanged": false,
+    "observedMonthToDateSpendUsd": 11.13,
+    "incrementalFixedUsdPerMonth": 1.00,
+    "incrementalFixedBasis": "one customer-managed KMS key; prorated hourly",
+    "sesAtZeroSendUsdPerMonth": 0,
+    "snsSqsAtIdleUsdPerMonth": 0,
+    "usageBasedCosts": "SES Essentials outbound messages and data, plus SNS/SQS/KMS requests when sending is later authorized"
+  },
+  "prohibitionsObserved": {
+    "dnsChanged": false,
+    "emailSent": false,
+    "applicationInfrastructureDeployed": false,
+    "customerDataTouched": false,
+    "productionIdentityCreated": false,
+    "productionBudgetChanged": false,
+    "mainModified": false
+  }
+}
