@@ -1,0 +1,1329 @@
+{
+  "format": "tracepoint-production-reconciliation-contract/v1",
+  "generatedAt": "2026-09-12T05:18:31.427Z",
+  "sourceInventorySha256": "01fd0efb02c2dbd3ca9faadc2bf42a921bf1c714c061202931e4aa747cde5a3d",
+  "database": {
+    "productionSourceMigrations": 60,
+    "authoritativeSourceMigrations": 76,
+    "awsOverlays": 20,
+    "finalTargetLedgerEntries": 96,
+    "exposedRows": 4358,
+    "physicalRows": 4105,
+    "copiedRows": 4007,
+    "relations": [
+      {
+        "relation": "agency_training_attendees",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_certificates",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_course_aliases",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_courses",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_event_instructors",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_events",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_requirement_members",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "agency_training_requirements",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "ai_migration_workspaces",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "alerts",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "ammunition_lots",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "ammunition_reconciliation_items",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "ammunition_reconciliations",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "ammunition_transactions",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "attachments",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "audit_events",
+        "kind": "table",
+        "observedSourceRows": 2362,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "audit_log",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "certification_types",
+        "kind": "table",
+        "observedSourceRows": 6,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_certification_capabilities",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_certification_requirements",
+        "kind": "table",
+        "observedSourceRows": 2,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_equipment_requirements",
+        "kind": "table",
+        "observedSourceRows": 2,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_feature_events",
+        "kind": "table",
+        "observedSourceRows": 4,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_features",
+        "kind": "table",
+        "observedSourceRows": 27,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_group_members",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_groups",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_membership_roles",
+        "kind": "table",
+        "observedSourceRows": 86,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_memberships",
+        "kind": "table",
+        "observedSourceRows": 95,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_qualification_standard_components",
+        "kind": "table",
+        "observedSourceRows": 6,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_qualification_standards",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_role_permissions",
+        "kind": "table",
+        "observedSourceRows": 165,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_rules",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_security_settings",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_titles",
+        "kind": "table",
+        "observedSourceRows": 25,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "department_units",
+        "kind": "table",
+        "observedSourceRows": 13,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "departments",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "drill_documents",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "drill_run_results",
+        "kind": "table",
+        "observedSourceRows": 27,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "drill_templates",
+        "kind": "table",
+        "observedSourceRows": 5,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "equipment_asset_assignments",
+        "kind": "table",
+        "observedSourceRows": 26,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "equipment_assets",
+        "kind": "table",
+        "observedSourceRows": 32,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "equipment_types",
+        "kind": "table",
+        "observedSourceRows": 9,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "feature_catalog",
+        "kind": "table",
+        "observedSourceRows": 9,
+        "copyMode": "exclude-target-seeded",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "firearm_assignments",
+        "kind": "table",
+        "observedSourceRows": 155,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "firearm_inspection_items",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "firearm_inspections",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "firearm_malfunctions",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "firearm_status_history",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "firearms",
+        "kind": "table",
+        "observedSourceRows": 211,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "fleet_rules",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "fleet_vehicle_documents",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "fleet_vehicle_equipment",
+        "kind": "table",
+        "observedSourceRows": 12,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "fleet_vehicle_inspections",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "fleet_vehicles",
+        "kind": "table",
+        "observedSourceRows": 28,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "fleet_work_orders",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "inbox_items",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "instructor_observations",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "notification_email_queue",
+        "kind": "table",
+        "observedSourceRows": 48,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "notification_events",
+        "kind": "table",
+        "observedSourceRows": 295,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "notification_preferences",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "off_duty_firearm_history",
+        "kind": "table",
+        "observedSourceRows": 14,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "off_duty_firearm_inspections",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "off_duty_firearm_requests",
+        "kind": "table",
+        "observedSourceRows": 6,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "off_duty_request_actions",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "permissions",
+        "kind": "table",
+        "observedSourceRows": 21,
+        "copyMode": "exclude-target-seeded",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "personal_rifle_status_history",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "personal_rifles",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "pilot_ammunition_workspaces",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "pilot_range_workspaces",
+        "kind": "table",
+        "observedSourceRows": 3,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "pilot_remediation_workspaces",
+        "kind": "table",
+        "observedSourceRows": 2,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "platform_admins",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "platform_agency_accounts",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "profiles",
+        "kind": "table",
+        "observedSourceRows": 96,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "qualification_course_versions",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "qualification_courses",
+        "kind": "table",
+        "observedSourceRows": 1,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "qualification_results",
+        "kind": "table",
+        "observedSourceRows": 104,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "range_day_drills",
+        "kind": "table",
+        "observedSourceRows": 7,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "range_day_instructors",
+        "kind": "table",
+        "observedSourceRows": 2,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "range_day_roster",
+        "kind": "table",
+        "observedSourceRows": 4,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "range_day_roster_firearms",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "range_days",
+        "kind": "table",
+        "observedSourceRows": 5,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "range_packets",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "remedial_training_recommendations",
+        "kind": "table",
+        "observedSourceRows": 0,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "retired_permission_assignment_audit",
+        "kind": "table",
+        "observedSourceRows": 81,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "role_permissions",
+        "kind": "table",
+        "observedSourceRows": 52,
+        "copyMode": "exclude-target-seeded",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "roles",
+        "kind": "table",
+        "observedSourceRows": 10,
+        "copyMode": "exclude-target-seeded",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "training_certifications",
+        "kind": "table",
+        "observedSourceRows": 12,
+        "copyMode": "copy-source-row",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "user_activation_tokens",
+        "kind": "table",
+        "observedSourceRows": 6,
+        "copyMode": "exclude-transient",
+        "failClosedChecks": [
+          "exact-count",
+          "primary-key-set-where-defined",
+          "source-column-row-hash",
+          "foreign-key-validation",
+          "tenant-owner-validity",
+          "timestamp-preservation"
+        ]
+      },
+      {
+        "relation": "v_active_firearm_assignments",
+        "kind": "view",
+        "observedSourceRows": 155,
+        "copyMode": "recompute-view",
+        "failClosedChecks": [
+          "derived-count",
+          "definition-from-authoritative-lineage",
+          "zero-security-barrier-drift"
+        ]
+      },
+      {
+        "relation": "v_latest_qualification_results",
+        "kind": "view",
+        "observedSourceRows": 93,
+        "copyMode": "recompute-view",
+        "failClosedChecks": [
+          "derived-count",
+          "definition-from-authoritative-lineage",
+          "zero-security-barrier-drift"
+        ]
+      },
+      {
+        "relation": "v_range_day_summary",
+        "kind": "view",
+        "observedSourceRows": 5,
+        "copyMode": "recompute-view",
+        "failClosedChecks": [
+          "derived-count",
+          "definition-from-authoritative-lineage",
+          "zero-security-barrier-drift"
+        ]
+      }
+    ],
+    "globalFailClosedChecks": [
+      "source-snapshot-lsn",
+      "source-ledger-count-and-sha256",
+      "target-ledger-count-and-sha256",
+      "all-foreign-keys-validated",
+      "zero-unexplained-relation-drift",
+      "repeatable-read-source-snapshot"
+    ]
+  },
+  "identity": {
+    "users": 96,
+    "userSetSha256": "f6458335fc375dcc57f3a8485f00e1aca36f824aedabf0dfbbc03b84aa2f7872",
+    "memberships": 95,
+    "membershipSetSha256": "cc74297617ee08fc4121f4687c245d7545d07f00c15d12222aba2c770c3551a5",
+    "activeMembershipUsers": 94,
+    "inactiveOnlyUsers": 1,
+    "noMembershipUsers": 1,
+    "platformAdministratorsWithNoMembership": 1,
+    "duplicateEmailGroups": 0,
+    "failClosedChecks": [
+      "tracepoint-user-id-preservation",
+      "membership-and-role-preservation",
+      "duplicate-normalized-email-zero",
+      "cognito-subject-one-to-one",
+      "activation-operation-terminal-state",
+      "checkpoint-manifest-integrity"
+    ]
+  },
+  "storage": {
+    "objects": 2,
+    "bytes": 522978,
+    "buckets": [
+      {
+        "name": "department-assets",
+        "observedObjects": 2,
+        "observedBytes": 522978,
+        "publicAtSource": true
+      },
+      {
+        "name": "tracepoint-attachments",
+        "observedObjects": 0,
+        "observedBytes": 0,
+        "publicAtSource": false
+      }
+    ],
+    "failClosedChecks": [
+      "source-key-manifest-hash",
+      "destination-key-manifest-hash",
+      "per-object-byte-count",
+      "per-object-sha256",
+      "destination-owner",
+      "tenant-prefix",
+      "create-only-copy"
+    ]
+  },
+  "privacy": {
+    "emails": false,
+    "userIds": false,
+    "objectKeys": false,
+    "rowContents": false,
+    "credentials": false
+  },
+  "contentSha256": "07793c7f62658d3c2ae091e406160d92389194d1237a1abcc4187e8e17632888"
+}

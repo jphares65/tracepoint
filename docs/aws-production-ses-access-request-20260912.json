@@ -1,0 +1,10 @@
+{
+  "ProductionAccessEnabled": true,
+  "MailType": "TRANSACTIONAL",
+  "WebsiteURL": "https://tracepointhq.com",
+  "AdditionalContactEmailAddresses": [
+    "contact@tracepointhq.com"
+  ],
+  "ContactLanguage": "EN",
+  "UseCaseDescription": "TracePoint will send only transactional, one-to-one messages to authorized personnel at existing public-safety department customers: account activation, password recovery, security/session notices, invitations, and operational workflow notifications. We will not send marketing, cold outreach, purchased lists, or third-party lists. Recipients are provisioned by their department administrator under an existing customer relationship, and each message is triggered by an account or application action. Initial scope is 96 identities and expected volume is below 10,000 messages per month. Before sending, tracepointhq.com will be verified with 2048-bit Easy DKIM and a custom MAIL FROM domain. Application and Cognito mail will use TLS-required configuration sets with BOUNCE and COMPLAINT suppression. Both configuration sets will publish delivery, bounce, and complaint events to encrypted SNS/SQS. An idempotent worker will persist suppression in PostgreSQL and prevent future delivery to suppressed recipients. Queue age, dead letters, worker failures, SES reputation, and runtime health will alert a monitored on-call path. Optional notifications will honor recipient preferences."
+}
