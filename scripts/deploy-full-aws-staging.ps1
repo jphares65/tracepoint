@@ -84,7 +84,7 @@ if ($Action -eq 'DeployFoundations') {
 if (-not (Test-Path -LiteralPath $BootstrapEvidencePath -PathType Leaf)) { throw 'A completed database bootstrap evidence file is required before runtime deployment.' }
 $bootstrap = Get-Content -Raw -LiteralPath $BootstrapEvidencePath | ConvertFrom-Json
 if ($bootstrap.account -ne '559054714699' -or $bootstrap.sourceCommit -ne $SourceCommit -or $bootstrap.toolingImageDigest -ne $ToolingImageDigest -or $bootstrap.result.sourceMigrations -ne 76 -or
-    $bootstrap.result.awsMigrations -ne 19 -or $bootstrap.result.runtimeRoleVerified -ne $true -or $bootstrap.result.supabaseAuthorizationReferences -ne 0) {
+    $bootstrap.result.awsMigrations -ne 20 -or $bootstrap.result.runtimeRoleVerified -ne $true -or $bootstrap.result.supabaseAuthorizationReferences -ne 0) {
     throw 'Database bootstrap evidence does not match this immutable release.'
 }
 $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application/aws-native --query SecretString --output text --region us-east-1 2>&1

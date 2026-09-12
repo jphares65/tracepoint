@@ -291,6 +291,28 @@ try {
       await runtimeClient.query("set local role authenticated");
       await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.administrator]);
       await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
+      const offDuty = await runtimeClient.query(`
+        select public.submit_off_duty_firearm_request(
+          p_department_id => $1,
+          p_officer_user_id => $2,
+          p_actor_name => 'AWS target validator',
+          p_actor_role => 'Administrator',
+          p_make => 'Synthetic',
+          p_model => 'Validator',
+          p_firearm_type => 'Handgun',
+          p_serial_number => 'aws-target-validator',
+          p_caliber => '9mm',
+          p_policy_acknowledged => true
+        ) as request_id
+      `, [departmentA, users.administrator]);
+      assert.match(offDuty.rows[0]?.request_id ?? "", /^[0-9a-f-]{36}$/);
+      assert.equal((await runtimeClient.query("select count(*)::int as count from public.off_duty_firearm_history where request_id=$1", [offDuty.rows[0].request_id])).rows[0].count, 1);
+      assert.equal((await runtimeClient.query("select count(*)::int as count from public.off_duty_firearm_inspections where request_id=$1", [offDuty.rows[0].request_id])).rows[0].count, 0);
+      await runtimeClient.query("rollback");
+      await runtimeClient.query("begin");
+      await runtimeClient.query("set local role authenticated");
+      await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.administrator]);
+      await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
       const prepared = await runtimeClient.query(
         "select * from tracepoint_auth.prepare_cognito_password_operation($1,'assign_password',$2,$3,null)",
         [operationId, departmentA, users.granted],

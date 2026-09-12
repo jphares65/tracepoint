@@ -93,11 +93,11 @@ $taskId = ($taskArn -split '/')[-1]
 $stream = "database-bootstrap/bootstrap/$taskId"
 $messages = & aws.exe logs get-log-events --log-group-name /tracepoint/staging/application --log-stream-name $stream --region us-east-1 --query 'events[].message' --output json | ConvertFrom-Json
 $result = $messages | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object status -eq 'PASSED' | Select-Object -Last 1
-if (-not $result -or $result.sourceMigrations -ne 76 -or $result.awsMigrations -ne 19 -or $result.runtimeRoleVerified -ne $true -or $result.supabaseAuthorizationReferences -ne 0) { throw 'Exact database bootstrap evidence was not produced.' }
+if (-not $result -or $result.sourceMigrations -ne 76 -or $result.awsMigrations -ne 20 -or $result.runtimeRoleVerified -ne $true -or $result.supabaseAuthorizationReferences -ne 0) { throw 'Exact database bootstrap evidence was not produced.' }
 if ($EvidenceOutputPath) {
     $parent = Split-Path -Parent $EvidenceOutputPath
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw 'Evidence output directory must already exist.' }
     $evidence = [ordered]@{ format=1; account='559054714699'; sourceCommit=$SourceCommit; toolingImageDigest=$ToolingImageDigest; taskDefinitionArn=$taskDefinition; taskArn=$taskArn; stoppedAt=$task.tasks[0].stoppedAt; result=$result; valuesPrinted=$false }
     [IO.File]::WriteAllText((Join-Path (Resolve-Path -LiteralPath $parent).Path (Split-Path -Leaf $EvidenceOutputPath)), ($evidence | ConvertTo-Json -Depth 4) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 }
-Write-Host 'AWS-native staging database bootstrap completed with 76 source and 19 AWS compatibility migrations; no credential values were printed.'
+Write-Host 'AWS-native staging database bootstrap completed with 76 source and 20 AWS compatibility migrations; no credential values were printed.'
