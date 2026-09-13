@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Sid":"DenyAccountDepartureOrClosure","Effect":"Deny","Action":["organizations:LeaveOrganization","account:CloseAccount"],"Resource":"*"},
+    {"Sid":"DenyProductionRegistrarMutations","Effect":"Deny","Action":["route53domains:AssociateDelegationSignerToDomain","route53domains:DeleteDomain","route53domains:DisableDomainAutoRenew","route53domains:DisableDomainTransferLock","route53domains:DisassociateDelegationSignerFromDomain","route53domains:EnableDomainAutoRenew","route53domains:EnableDomainTransferLock","route53domains:RegisterDomain","route53domains:RenewDomain","route53domains:TransferDomain","route53domains:UpdateDomainContact","route53domains:UpdateDomainContactPrivacy","route53domains:UpdateDomainNameservers"],"Resource":"*"},
+    {"Sid":"DenyDnsRecordChangesOutsideReviewedZone","Effect":"Deny","Action":"route53:ChangeResourceRecordSets","NotResource":"arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8"},
+    {"Sid":"DenyReviewedZoneChangesOutsideCloudFormation","Effect":"Deny","Action":"route53:ChangeResourceRecordSets","Resource":"arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8","Condition":{"ArnNotEquals":{"aws:PrincipalArn":"arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"}}},
+    {"Sid":"KeepCognitoDisabled","Effect":"Deny","Action":["cognito-idp:Create*","cognito-idp:Update*","cognito-idp:Delete*"],"Resource":"*"},
+    {"Sid":"KeepSesDisabledOutsideAuthorizedFoundationRoles","Effect":"Deny","Action":["ses:Create*","ses:Put*","ses:Send*","ses:Update*","ses:Delete*"],"Resource":"*","Condition":{"ArnNotEquals":{"aws:PrincipalArn":["arn:aws:iam::193644343389:role/TracePointMigrationProduction","arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"]}}},
+    {"Sid":"DenySesSendingUntilSeparateAuthorization","Effect":"Deny","Action":"ses:Send*","Resource":"*"},
+    {"Sid":"ProtectSecurityAuditServices","Effect":"Deny","Action":["cloudtrail:DeleteTrail","cloudtrail:StopLogging","config:DeleteConfigurationRecorder","config:DeleteDeliveryChannel","config:StopConfigurationRecorder","guardduty:DeleteDetector","guardduty:DisassociateFromAdministratorAccount","guardduty:DisableOrganizationAdminAccount","securityhub:DisableSecurityHub","securityhub:DisableSecurityHubV2","securityhub:DisassociateFromAdministratorAccount"],"Resource":"*"},
+    {"Sid":"DenyOutsideUsEast1","Effect":"Deny","NotAction":["account:*","artifact:*","aws-marketplace:*","budgets:*","ce:*","cloudfront:*","cur:*","globalaccelerator:*","health:*","iam:*","networkmanager:*","organizations:*","pricing:*","route53:*","route53domains:*","s3:GetAccountPublicAccessBlock","s3:ListAllMyBuckets","s3:ListMultiRegionAccessPoints","savingsplans:*","shield:*","sts:*","support:*","tag:GetResources","trustedadvisor:*"],"Resource":"*","Condition":{"StringNotEquals":{"aws:RequestedRegion":"us-east-1"}}}
+  ]
+}

@@ -55,5 +55,6 @@ supabase/.temp/
 
 # Local recovery worktrees, credentials, and transport bundles
 /.worktrees/
+/.artifacts/
 /API KEYS.txt
 /*.bundle
