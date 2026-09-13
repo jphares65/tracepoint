@@ -1,0 +1,51 @@
+{
+  "format": "tracepoint-production-ses-live-status/v1",
+  "observedAtUtc": "2026-09-13T15:11:18.3277244Z",
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction",
+    "principalArn": "arn:aws:sts::193644343389:assumed-role/TracePointMigrationProduction/tracepoint-production"
+  },
+  "identity": {
+    "domain": "tracepointhq.com",
+    "identityType": "DOMAIN",
+    "verificationStatus": "SUCCESS",
+    "verifiedForSending": true,
+    "configurationSet": "tracepoint-production"
+  },
+  "dkim": {
+    "status": "SUCCESS",
+    "signingEnabled": true,
+    "signingAttributesOrigin": "AWS_SES",
+    "currentSigningKeyLength": "RSA_2048_BIT",
+    "tokenCount": 3,
+    "preservedWithoutMutation": true
+  },
+  "customMailFrom": {
+    "domain": "bounce.tracepointhq.com",
+    "status": "PENDING",
+    "behaviorOnMxFailure": "REJECT_MESSAGE",
+    "preparedNonAuthoritativeRoute53Mx": "10 feedback-smtp.us-east-1.amazonses.com",
+    "wixMutationThisRun": false
+  },
+  "account": {
+    "productionAccessEnabled": false,
+    "reviewStatus": "DENIED",
+    "caseId": "178924156800066",
+    "sendingEnabled": true,
+    "enforcementStatus": "HEALTHY",
+    "max24HourSend": 200,
+    "maxSendRate": 1,
+    "sentLast24Hours": 0,
+    "suppressedReasons": ["BOUNCE", "COMPLAINT"]
+  },
+  "actions": {
+    "awsMutationThisRun": false,
+    "dnsMutationThisRun": false,
+    "emailSentThisRun": false,
+    "productionAccessResubmitted": false,
+    "readinessCreditAdded": 0
+  },
+  "gateConclusion": "Easy DKIM is complete. Full SES domain setup remains incomplete until custom MAIL FROM is SUCCESS. Production sending remains separately blocked until ProductionAccessEnabled is true and a later smoke-email authorization is granted."
+}

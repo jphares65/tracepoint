@@ -22,9 +22,16 @@ nameserver changes, runtime replacement, or traffic cutover.
   runtime image and its secret schema still names Supabase and Brevo. Public DNS
   remains on Vercel, not this ALB. Replacing or scaling this service is a
   production change and was not performed.
-- The SES foundation exists. DKIM and custom MAIL FROM remain `PENDING`, SES
-  production access remains disabled, and request/case `178924156800066` is
-  `DENIED`. No email was sent.
+- The SES foundation exists. A read-only refresh at
+  `2026-09-13T15:11:18.3277244Z` confirmed the `tracepointhq.com` domain
+  identity and Easy DKIM are `SUCCESS`; the three existing Easy DKIM records
+  were preserved without recreation or rotation. Custom MAIL FROM remains
+  `PENDING` with `REJECT_MESSAGE`, as expected while Wix remains authoritative
+  and the prepared Route 53 MAIL FROM MX is not public. SES production access
+  remains disabled, and request/case `178924156800066` is `DENIED`. No email
+  was sent and the production-access request was not resubmitted. This status
+  transition adds no readiness-ledger credit because the end-to-end SES gate
+  remains incomplete.
 
 ## Desired-versus-live infrastructure disposition
 
@@ -98,8 +105,9 @@ registrar mutation was performed.
    retain Wix records and the inverse nameserver plan until this passes.
 6. Verify apex/www HTTP, Microsoft 365 MX/SPF/Autodiscover/SRV and all SES DNS
    records. Any mail or web regression triggers nameserver rollback.
-7. Wait for SES DKIM and MAIL FROM to become `SUCCESS` and domain sending status
-   to verify; do not send.
+7. Preserve the verified Easy DKIM identity and records. After Route 53 becomes
+   authoritative, wait only for custom MAIL FROM to become `SUCCESS`; do not
+   recreate or rotate DKIM and do not send.
 8. With separate authorization, resubmit the SES production-access request and
    wait for approval.
 9. Reconfirm account, role, region, branch, immutable source SHA, $150 Budget,
