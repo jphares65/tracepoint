@@ -1,11 +1,24 @@
 import assert from 'node:assert/strict';
 import {validateTracePointRuntimeConfig} from './validate-tracepoint-runtime-config.mjs';
 export const productionArchivePaths=['.dockerignore','buildspec.production-image.yml','Dockerfile','eslint.config.mjs','next.config.ts','package.json','package-lock.json','postcss.config.mjs','tsconfig.json','public','src','scripts/start-tracepoint-container.mjs','scripts/validate-tracepoint-runtime-config.mjs'];
+export const productionMigrationArchivePaths=['.dockerignore','buildspec.postgres-migration.yml','Dockerfile.postgres-migration','package.json','package-lock.json','tsconfig.json','database/aws','supabase/migrations','scripts/aws-migration-ledger.mjs','scripts/bootstrap-aws-postgres-target.mjs','scripts/bootstrap-aws-postgres-target-core.mjs','scripts/bootstrap-aws-postgres-target-core.test.mjs','scripts/database-migration-core.mjs','scripts/database-migration-core.test.mjs','scripts/migrate-aws-postgres-data.mjs','scripts/migration-sql-core.mjs','scripts/postgres-bootstrap-prerequisites.mjs'];
 export const productionBuildSecretKeys=['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY'];
 export const productionRuntimeSecretKeys=['SUPABASE_SECRET_KEY','BREVO_API_KEY','NOTIFICATION_DISPATCH_SECRET','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL','CONFIGURATION_ENVIRONMENT'];
 export function validateProductionArchive(entries,tracked){
  assert.ok(entries.length>0);for(const entry of entries){assert.ok(tracked.has(entry),'Untracked archive path');assert.ok(!/(^|\/)\.env($|\.)|(^|\/)\.aws\/|(^|\/)\.git\/|(^|\/)\.github\/|(^|\/)node_modules\/|(^|\/)\.next\/|(^|\/)cdk\.out|\.tsbuildinfo$|\.(dump|sql)$|(^|\/)[^/]*(credential|secret)[^/]*$|API KEYS|integration-demo|seed-demo-fleet-equipment|\.(backup|encoding-backup)-|\.before-|\.bak($|-)/i.test(entry),'Prohibited archive path');}
  assert.ok(entries.includes('buildspec.production-image.yml'));assert.ok(!entries.includes('buildspec.staging-image.yml'));return entries.length;
+}
+export function validateProductionMigrationArchive(entries,tracked){
+ assert.ok(entries.length>0);for(const entry of entries){
+  assert.ok(tracked.has(entry),'Untracked migration archive path');
+  assert.ok(!/(^|\/)\.env($|\.)|(^|\/)\.aws\/|(^|\/)\.git\/|(^|\/)\.github\/|(^|\/)node_modules\/|(^|\/)\.next\/|(^|\/)cdk\.out|\.tsbuildinfo$|(^|\/)(coverage|build|out)\/|\.(dump)$|(^|\/)[^/]*(credential|secret)[^/]*$|API KEYS|integration-demo|seed-demo-fleet-equipment|\.(backup|encoding-backup)-|\.before-|\.bak($|-)/i.test(entry),'Prohibited migration archive path');
+  if(entry.endsWith('.sql'))assert.match(entry,/^(database\/aws|supabase\/migrations)\/[A-Za-z0-9_.-]+\.sql$/,'SQL outside the immutable migration lineages');
+ }
+ assert.ok(entries.includes('buildspec.postgres-migration.yml'));
+ assert.ok(entries.includes('Dockerfile.postgres-migration'));
+ assert.equal(entries.filter(entry=>/^supabase\/migrations\/[^/]+\.sql$/.test(entry)).length,76);
+ assert.equal(entries.filter(entry=>/^database\/aws\/[^/]+\.sql$/.test(entry)).length,20);
+ return entries.length;
 }
 export function validateProductionBuildSecret(secret){
  for(const key of productionBuildSecretKeys)assert.ok(typeof secret?.[key]==='string'&&secret[key].trim(),`Missing production build secret field: ${key}`);

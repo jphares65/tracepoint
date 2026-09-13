@@ -8,7 +8,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 
 export interface DatabaseBootstrapRunnerStackProps extends cdk.StackProps {
-  environmentName: "staging";
+  environmentName: "staging" | "production";
   vpc: ec2.IVpc;
   databaseSecurityGroup: ec2.ISecurityGroup;
   repository: ecr.IRepository;
@@ -26,14 +26,23 @@ export class DatabaseBootstrapRunnerStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props: DatabaseBootstrapRunnerStackProps) {
     super(scope, id, props);
-    if (this.account !== "559054714699" || this.region !== "us-east-1" ||
+    const expectedAccount = props.environmentName === "staging" ? "559054714699" : "193644343389";
+    if (this.account !== expectedAccount || this.region !== "us-east-1" ||
         !/^[0-9a-f]{40}$/.test(props.sourceCommit) ||
         !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) {
-      throw new Error("Exact staging account, region, source and immutable bootstrap image digest are required");
+      throw new Error("Exact environment account, region, source and immutable bootstrap image digest are required");
     }
 
     cdk.Tags.of(this).add("Purpose", "full-aws-database-bootstrap");
-    cdk.Tags.of(this).add("DataClassification", "Synthetic-Non-PII");
+    cdk.Tags.of(this).add("DataClassification", props.environmentName === "staging" ? "Synthetic-Non-PII" : "Schema-Only-No-Customer-Data");
+    if (props.environmentName === "production") {
+      const boundary = iam.ManagedPolicy.fromManagedPolicyArn(
+        this,
+        "ProductionPermissionsBoundary",
+        this.formatArn({ service: "iam", region: "", resource: "policy", resourceName: "TracePointProductionBoundary" }),
+      );
+      iam.PermissionsBoundary.of(this).apply(boundary);
+    }
     const databaseSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
       this,
       "ImportedDatabaseSecurityGroup",
@@ -50,12 +59,18 @@ export class DatabaseBootstrapRunnerStack extends cdk.Stack {
     this.runnerSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "AWS control-plane access");
     databaseSecurityGroup.addIngressRule(this.runnerSecurityGroup, ec2.Port.tcp(5432), "Bounded schema bootstrap runner");
 
+    const ecsTasksPrincipal = new iam.ServicePrincipal("ecs-tasks.amazonaws.com", {
+      conditions: {
+        StringEquals: { "aws:SourceAccount": this.account },
+        ArnLike: { "aws:SourceArn": `arn:${this.partition}:ecs:${this.region}:${this.account}:*` },
+      },
+    });
     const executionRole = new iam.Role(this, "ExecutionRole", {
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      assumedBy: ecsTasksPrincipal,
       description: "Pulls the immutable bootstrap image and injects only both database credentials",
     });
     const taskRole = new iam.Role(this, "TaskRole", {
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      assumedBy: ecsTasksPrincipal,
       description: "Bootstrap process has no AWS API permissions",
     });
     props.repository.grantPull(executionRole);
@@ -69,7 +84,7 @@ export class DatabaseBootstrapRunnerStack extends cdk.Stack {
     props.logGroup.grantWrite(executionRole);
 
     this.taskDefinition = new ecs.FargateTaskDefinition(this, "TaskDefinition", {
-      family: "tracepoint-staging-database-bootstrap",
+      family: `tracepoint-${props.environmentName}-database-bootstrap`,
       cpu: 512,
       memoryLimitMiB: 1024,
       ephemeralStorageGiB: 21,

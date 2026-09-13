@@ -50,3 +50,44 @@ test("database bootstrap runner is immutable, bounded, secret-injected and has n
   const taskPolicies = serialized.match(/TaskRole/g) ?? [];
   assert.ok(taskPolicies.length > 0);
 });
+
+test("production schema bootstrap runner is account-bound and applies the production permissions boundary", () => {
+  const app = new cdk.App();
+  const env = { account: "193644343389", region: "us-east-1" };
+  const imports = new cdk.Stack(app, "imports", { env });
+  const vpc = cdk.aws_ec2.Vpc.fromVpcAttributes(imports, "Vpc", {
+    vpcId: "vpc-12345678",
+    availabilityZones: ["us-east-1a", "us-east-1b"],
+    publicSubnetIds: ["subnet-11111111", "subnet-22222222"],
+  });
+  const stack = new DatabaseBootstrapRunnerStack(app, "production-bootstrap", {
+    env,
+    environmentName: "production",
+    vpc,
+    databaseSecurityGroup: cdk.aws_ec2.SecurityGroup.fromSecurityGroupId(imports, "DatabaseSecurityGroup", "sg-12345678", { mutable: true }),
+    repository: cdk.aws_ecr.Repository.fromRepositoryName(imports, "Repository", "tracepoint-production"),
+    logGroup: cdk.aws_logs.LogGroup.fromLogGroupName(imports, "Logs", "/tracepoint/production/application"),
+    databaseKeyArn: `arn:aws:kms:us-east-1:${env.account}:key/11111111-1111-4111-8111-111111111111`,
+    migratorSecret: cdk.aws_secretsmanager.Secret.fromSecretCompleteArn(imports, "MigratorSecret", `arn:aws:secretsmanager:us-east-1:${env.account}:secret:tracepoint/production/database/migrator-aaaaaa`),
+    runtimeSecret: cdk.aws_secretsmanager.Secret.fromSecretCompleteArn(imports, "RuntimeSecret", `arn:aws:secretsmanager:us-east-1:${env.account}:secret:tracepoint/production/database/runtime-bbbbbb`),
+    sourceCommit: "a".repeat(40),
+    imageDigest: `sha256:${"b".repeat(64)}`,
+  });
+  const template = Template.fromStack(stack);
+  template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+    Family: "tracepoint-production-database-bootstrap",
+  });
+  template.allResourcesProperties("AWS::IAM::Role", Match.objectLike({
+    PermissionsBoundary: Match.anyValue(),
+    AssumeRolePolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([Match.objectLike({
+        Condition: Match.objectLike({
+          StringEquals: { "aws:SourceAccount": env.account },
+        }),
+      })]),
+    }),
+  }));
+  const serialized = JSON.stringify(template.toJSON());
+  assert.match(serialized, /TracePointProductionBoundary/);
+  assert.doesNotMatch(serialized, /SUPABASE|BREVO|VERCEL/i);
+});
