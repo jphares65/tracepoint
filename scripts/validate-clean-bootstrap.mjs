@@ -287,6 +287,11 @@ try {
     });
     try {
       await runtimeClient.connect();
+      await assert.rejects(
+        runtimeClient.query("select * from tracepoint_auth.list_exceptional_cognito_identities()"),
+        (error) => error?.code === "42501",
+        "Runtime login must not invoke exceptional identity functions without authenticated role",
+      );
       await runtimeClient.query("begin");
       await runtimeClient.query("set local role authenticated");
       await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.administrator]);
@@ -342,6 +347,31 @@ try {
       await runtimeClient.query("set local role authenticated");
       await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.platform]);
       await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
+      const exceptional = await runtimeClient.query("select * from tracepoint_auth.list_exceptional_cognito_identities()");
+      assert.deepEqual(exceptional.rows, [
+        { target_user_id: users.inactive, disposition: "inactive-disabled" },
+        { target_user_id: users.platform, disposition: "platform-administrator" },
+      ]);
+      assert.deepEqual((await runtimeClient.query(
+        "select * from tracepoint_auth.prepare_exceptional_cognito_migration($1,'inactive-disabled')",
+        [users.inactive],
+      )).rows[0], { email: "inactive@example.test", full_name: "inactive" });
+      await runtimeClient.query(
+        "select tracepoint_auth.commit_exceptional_cognito_migration($1::uuid,'inactive-disabled',$2,$3,$1::uuid::text)",
+        [users.inactive, issuer, "70000000-0000-4000-8000-000000000001"],
+      );
+      await runtimeClient.query(
+        "select tracepoint_auth.commit_exceptional_cognito_migration($1::uuid,'platform-administrator',$2,$3,$1::uuid::text)",
+        [users.platform, issuer, "70000000-0000-4000-8000-000000000002"],
+      );
+      assert.deepEqual((await runtimeClient.query(
+        "select issuer,state,provider_username from tracepoint_auth.read_exceptional_cognito_migration($1,'inactive-disabled')",
+        [users.inactive],
+      )).rows[0], { issuer, state: "revoked", provider_username: users.inactive });
+      assert.deepEqual((await runtimeClient.query(
+        "select issuer,state,provider_username from tracepoint_auth.read_exceptional_cognito_migration($1,'platform-administrator')",
+        [users.platform],
+      )).rows[0], { issuer, state: "pending", provider_username: users.platform });
       assert.equal((await runtimeClient.query("select public.has_department_permission($1,'manage_equipment') as allowed", [departmentA])).rows[0].allowed, false);
       await runtimeClient.query("select set_config('tracepoint.support_department_id',$1,true)", [departmentA]);
       assert.equal((await runtimeClient.query("select public.has_department_permission($1,'manage_equipment') as allowed", [departmentA])).rows[0].allowed, true);
@@ -349,6 +379,15 @@ try {
       assert.equal((await runtimeClient.query("select public.has_department_permission($1,'manage_equipment') as allowed", [departmentB])).rows[0].allowed, false);
       await runtimeClient.query("select public.record_platform_support_mode($1,'support_mode_entered')", [departmentA]);
       await runtimeClient.query("commit");
+      await runtimeClient.query("begin");
+      await runtimeClient.query("set local role authenticated");
+      await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.granted]);
+      await assert.rejects(
+        runtimeClient.query("select * from tracepoint_auth.list_exceptional_cognito_identities()"),
+        (error) => error?.code === "42501",
+        "Non-platform users must not discover exceptional identities",
+      );
+      await runtimeClient.query("rollback");
       await runtimeClient.query("begin");
       await runtimeClient.query("set local role authenticated");
       await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.granted]);

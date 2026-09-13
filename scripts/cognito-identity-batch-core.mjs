@@ -5,6 +5,7 @@ const ACCOUNT = /^\d{12}$/;
 const FORBIDDEN_ACCOUNTS = new Set(['111111111111', '265544358665']);
 const STAGING_ACCOUNT = '559054714699';
 const PRODUCTION_ACCOUNT = '193644343389';
+const EXCEPTIONAL_DISPOSITIONS = new Set(['inactive-disabled', 'platform-administrator']);
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -49,6 +50,50 @@ export function createIdentityBatchManifest(input, createdAt = new Date().toISOS
   if (!Number.isFinite(expires) || expires <= created || expires - created > 24 * 60 * 60 * 1000) fail('Identity batch authorization must expire within 24 hours');
   const payload = { format: 1, createdAt, ...input, actorUserId: input.actorUserId.toLowerCase(), users };
   return { ...payload, contentSha256: sha256(canonical(payload)) };
+}
+
+export function createExceptionalIdentityBatchManifest(input, createdAt = new Date().toISOString()) {
+  exact(input, ['actorUserId', 'authorizationReference', 'clientId', 'environment', 'expectedAccount', 'expiresAt', 'issuer', 'userPoolId', 'users'], 'Exceptional identity batch');
+  if (!['staging', 'production'].includes(input.environment)) fail('Environment must be staging or production');
+  if (!ACCOUNT.test(input.expectedAccount ?? '') || FORBIDDEN_ACCOUNTS.has(input.expectedAccount)) fail('Expected account is invalid');
+  if (input.expectedAccount !== (input.environment === 'staging' ? STAGING_ACCOUNT : PRODUCTION_ACCOUNT)) fail('Expected account does not match the migration environment');
+  if (!UUID.test(input.actorUserId ?? '')) fail('Actor user ID is invalid');
+  if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(input.authorizationReference ?? '')) fail('A specific authorization reference is required');
+  const region = input.environment === 'staging' ? 'us-east-1' : String(input.userPoolId ?? '').split('_')[0];
+  if (!new RegExp(`^${region.replaceAll('-', '\\-')}_[A-Za-z0-9]+$`).test(input.userPoolId ?? '') || !/^[A-Za-z0-9]{1,128}$/.test(input.clientId ?? '') || input.issuer !== `https://cognito-idp.${region}.amazonaws.com/${input.userPoolId}`) fail('Cognito target is invalid');
+  if (!Array.isArray(input.users) || input.users.length < 1 || input.users.length > 100) fail('Exceptional identity batch must contain 1 to 100 users');
+  const itemHashes = new Set();
+  const targetUserIds = new Set();
+  const users = input.users.map(user => {
+    exact(user, ['disposition', 'targetUserId'], 'Exceptional identity item');
+    if (!UUID.test(user.targetUserId ?? '') || !EXCEPTIONAL_DISPOSITIONS.has(user.disposition)) fail('Exceptional identity item is invalid');
+    const normalized = { disposition: user.disposition, targetUserId: user.targetUserId.toLowerCase() };
+    if (targetUserIds.has(normalized.targetUserId)) fail('Duplicate exceptional identity target user');
+    targetUserIds.add(normalized.targetUserId);
+    const itemSha256 = sha256(canonical(normalized));
+    if (itemHashes.has(itemSha256)) fail('Duplicate exceptional identity batch item');
+    itemHashes.add(itemSha256);
+    return { ...normalized, itemSha256 };
+  });
+  if (!Number.isFinite(Date.parse(createdAt))) fail('Manifest timestamp is invalid');
+  const created = Date.parse(createdAt), expires = Date.parse(input.expiresAt ?? '');
+  if (!Number.isFinite(expires) || expires <= created || expires - created > 24 * 60 * 60 * 1000) fail('Exceptional identity batch authorization must expire within 24 hours');
+  const payload = { format: 1, kind: 'exceptional-identity-batch', createdAt, ...input, actorUserId: input.actorUserId.toLowerCase(), users };
+  return { ...payload, contentSha256: sha256(canonical(payload)) };
+}
+
+export function validateExceptionalIdentityBatchManifest(manifest, now = new Date()) {
+  exact(manifest, ['actorUserId', 'authorizationReference', 'clientId', 'contentSha256', 'createdAt', 'environment', 'expectedAccount', 'expiresAt', 'format', 'issuer', 'kind', 'userPoolId', 'users'], 'Exceptional identity batch manifest');
+  if (manifest.format !== 1 || manifest.kind !== 'exceptional-identity-batch') fail('Exceptional identity batch manifest format is unsupported');
+  const input = {
+    ...Object.fromEntries(Object.entries(manifest).filter(([key]) => !['contentSha256', 'createdAt', 'format', 'kind', 'users'].includes(key))),
+    users: manifest.users.map(({ disposition, targetUserId }) => ({ disposition, targetUserId })),
+  };
+  const rebuilt = createExceptionalIdentityBatchManifest(input, manifest.createdAt);
+  if (canonical(rebuilt) !== canonical(manifest)) fail('Exceptional identity batch manifest integrity check failed');
+  const current = now.getTime(), created = Date.parse(manifest.createdAt), expires = Date.parse(manifest.expiresAt);
+  if (!Number.isFinite(current) || created > current + 5 * 60_000 || expires <= current) fail('Exceptional identity batch authorization is not currently valid');
+  return manifest;
 }
 
 export function validateIdentityBatchManifest(manifest, now = new Date()) {

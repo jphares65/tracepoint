@@ -43,8 +43,8 @@ export function createProductionReconciliationContract(inventory, generatedAt = 
     database: {
       productionSourceMigrations: 60,
       authoritativeSourceMigrations: 76,
-      awsOverlays: 20,
-      finalTargetLedgerEntries: 96,
+      awsOverlays: 21,
+      finalTargetLedgerEntries: 97,
       exposedRows: inventory.database.totalRows,
       physicalRows,
       copiedRows,

@@ -10,6 +10,7 @@ new IdentityMigrationRunnerStack(app, `tracepoint-${environmentName}-identity-${
   env: { account: context('account'), region: context('region') },
   environmentName,
   mode,
+  identityKind: context('identityKind'),
   runId: context('runId'),
   authorizationReference: context('authorizationReference'),
   manifestSha256: context('manifestSha256'),

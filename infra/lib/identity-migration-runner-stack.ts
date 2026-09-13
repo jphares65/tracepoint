@@ -11,7 +11,8 @@ import { Construct } from 'constructs';
 
 export interface IdentityMigrationRunnerStackProps extends cdk.StackProps {
   environmentName: 'staging' | 'production';
-  mode: 'prepare' | 'execute';
+  mode: 'prepare' | 'prepare-exceptional' | 'execute';
+  identityKind: 'standard' | 'exceptional';
   runId: string;
   authorizationReference: string;
   manifestSha256?: string;
@@ -46,9 +47,15 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(props.runId)) throw new Error('A random migration run UUID is required');
     if (!/^[A-Z0-9][A-Z0-9._:/-]{7,127}$/.test(props.authorizationReference)) throw new Error('A specific identity migration authorization is required');
     const manifestSha256 = props.manifestSha256 ?? '';
-    if ((props.mode === 'execute' && !/^[0-9a-f]{64}$/.test(manifestSha256)) || (props.mode === 'prepare' && manifestSha256 !== '') || !/^[0-9a-f]{40}$/.test(props.commit) || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) throw new Error('Immutable manifest, source, and image are required');
+    if ((props.mode === 'execute' && !/^[0-9a-f]{64}$/.test(manifestSha256)) || (props.mode !== 'execute' && manifestSha256 !== '') || !/^[0-9a-f]{40}$/.test(props.commit) || !/^sha256:[0-9a-f]{64}$/.test(props.imageDigest)) throw new Error('Immutable manifest, source, and image are required');
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (props.mode === 'prepare' ? !uuid.test(props.actorUserId ?? '') || !uuid.test(props.departmentId ?? '') || (props.afterUserId !== undefined && !uuid.test(props.afterUserId)) : props.actorUserId !== undefined || props.departmentId !== undefined || props.afterUserId !== undefined) throw new Error('Preparation requires one actor and department');
+    const invalidPreparationScope = props.mode === 'prepare'
+      ? !uuid.test(props.actorUserId ?? '') || !uuid.test(props.departmentId ?? '') || (props.afterUserId !== undefined && !uuid.test(props.afterUserId))
+      : props.mode === 'prepare-exceptional'
+        ? !uuid.test(props.actorUserId ?? '') || props.departmentId !== undefined || props.afterUserId !== undefined
+        : props.actorUserId !== undefined || props.departmentId !== undefined || props.afterUserId !== undefined;
+    if (invalidPreparationScope) throw new Error('Identity preparation scope is invalid');
+    if ((props.mode === 'prepare' && props.identityKind !== 'standard') || (props.mode === 'prepare-exceptional' && props.identityKind !== 'exceptional')) throw new Error('Identity kind does not match the preparation mode');
     if (props.publicSubnetIds.length !== 2 || new Set(props.publicSubnetIds).size !== 2 || props.publicSubnetIds.some(idValue => !/^subnet-[0-9a-f]+$/.test(idValue))) throw new Error('Exactly two reviewed public subnets are required');
     const secretPrefix = `arn:aws:secretsmanager:us-east-1:${this.account}:secret:`;
     if (!props.databaseSecretArn.startsWith(secretPrefix)) throw new Error('An exact database secret is required');
@@ -93,11 +100,11 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     repository.grantPull(executionRole);
     const artifactPrefix = `migration/identity/${props.runId}`;
     if (props.mode === 'execute') taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`), artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`)] }));
-    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject'], resources: props.mode === 'prepare' ? [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`)] : [artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`), artifactBucket.arnForObjects(`${artifactPrefix}/evidence.json`)] }));
+    taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject'], resources: props.mode !== 'execute' ? [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`)] : [artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`), artifactBucket.arnForObjects(`${artifactPrefix}/evidence.json`)] }));
     taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['kms:Decrypt', 'kms:GenerateDataKey'], resources: [artifactKey.keyArn], conditions: { StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } } }));
     if (props.mode === 'execute') {
-      taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminDisableUser'], resources: [`arn:aws:cognito-idp:us-east-1:${this.account}:userpool/${props.userPoolId}`] }));
-      taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['ses:SendEmail'], resources: [`arn:aws:ses:us-east-1:${this.account}:identity/${domain}`], conditions: { StringEquals: { 'ses:FromAddress': props.fromAddress } } }));
+      taskRole.addToPolicy(new iam.PolicyStatement({ actions: props.identityKind === 'exceptional' ? ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminDisableUser', 'cognito-idp:AdminUpdateUserAttributes'] : ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser'], resources: [`arn:aws:cognito-idp:us-east-1:${this.account}:userpool/${props.userPoolId}`] }));
+      if (props.identityKind === 'standard') taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['ses:SendEmail'], resources: [`arn:aws:ses:us-east-1:${this.account}:identity/${domain}`], conditions: { StringEquals: { 'ses:FromAddress': props.fromAddress } } }));
     }
 
     this.runnerSecurityGroup = new ec2.SecurityGroup(this, 'RunnerSecurityGroup', { vpc, allowAllOutbound: false, description: 'Temporary full-AWS identity migration runner; no inbound traffic' });
@@ -122,7 +129,7 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
         TRACEPOINT_SOURCE_COMMIT: props.commit,
         TRACEPOINT_STAGING_IDENTITY_RECIPIENT_SHA256: props.stagingRecipientSha256.join(','),
         TRACEPOINT_IDENTITY_MIGRATION_RUN_ID: props.runId, TRACEPOINT_IDENTITY_MIGRATION_AUTHORIZATION: `${props.authorizationReference}:${manifestSha256}`,
-        TRACEPOINT_IDENTITY_MIGRATION_MODE: props.mode, TRACEPOINT_IDENTITY_ACTOR_USER_ID: props.actorUserId ?? '', TRACEPOINT_IDENTITY_DEPARTMENT_ID: props.departmentId ?? '', TRACEPOINT_IDENTITY_AFTER_USER_ID: props.afterUserId ?? '', TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE: props.authorizationReference,
+        TRACEPOINT_IDENTITY_MIGRATION_MODE: props.mode, TRACEPOINT_IDENTITY_MIGRATION_KIND: props.identityKind, TRACEPOINT_IDENTITY_ACTOR_USER_ID: props.actorUserId ?? '', TRACEPOINT_IDENTITY_DEPARTMENT_ID: props.departmentId ?? '', TRACEPOINT_IDENTITY_AFTER_USER_ID: props.afterUserId ?? '', TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE: props.authorizationReference,
         TRACEPOINT_MIGRATION_ARTIFACT_BUCKET: props.artifactBucketName, TRACEPOINT_MIGRATION_ARTIFACT_KMS_KEY_ARN: props.artifactKeyArn,
         TRACEPOINT_IDENTITY_MANIFEST_KEY: `${artifactPrefix}/manifest.json`, TRACEPOINT_IDENTITY_CHECKPOINT_KEY: `${artifactPrefix}/checkpoint.json`, TRACEPOINT_IDENTITY_EVIDENCE_KEY: `${artifactPrefix}/evidence.json`, TRACEPOINT_IDENTITY_MANIFEST_SHA256: manifestSha256,
       },

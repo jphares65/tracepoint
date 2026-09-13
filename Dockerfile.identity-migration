@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --ignore-scripts
 COPY src ./src
-COPY scripts/cognito-identity-batch-core.mjs scripts/cognito-identity-batch-core.test.mjs scripts/migrate-cognito-identities.mts scripts/prepare-cognito-identity-batch.mts scripts/run-cognito-identity-migration-task.mts ./scripts/
+COPY scripts/cognito-identity-batch-core.mjs scripts/cognito-identity-batch-core.test.mjs scripts/migrate-cognito-identities.mts scripts/migrate-cognito-exceptional-identities.mts scripts/prepare-cognito-identity-batch.mts scripts/prepare-cognito-exceptional-identity-batch.mts scripts/run-cognito-identity-migration-task.mts ./scripts/
 RUN node -e "fetch('https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem').then(r=>{if(!r.ok)throw new Error(String(r.status));return r.arrayBuffer()}).then(b=>require('fs').writeFileSync('/app/rds-ca.pem',Buffer.from(b)))" && \
     echo "e5bb2084ccf45087bda1c9bffdea0eb15ee67f0b91646106e466714f9de3c7e3  /app/rds-ca.pem" | sha256sum -c - && \
     chmod 444 /app/rds-ca.pem && mkdir -p /tmp/tracepoint && chown -R node:node /tmp/tracepoint

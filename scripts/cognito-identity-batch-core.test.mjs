@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createIdentityBatchCompletion, createIdentityBatchManifest, identityCheckpoint, validateIdentityBatchCompletion, validateIdentityBatchManifest, validateIdentityCheckpoint } from './cognito-identity-batch-core.mjs';
+import { createExceptionalIdentityBatchManifest, createIdentityBatchCompletion, createIdentityBatchManifest, identityCheckpoint, validateExceptionalIdentityBatchManifest, validateIdentityBatchCompletion, validateIdentityBatchManifest, validateIdentityCheckpoint } from './cognito-identity-batch-core.mjs';
 
 const input = {
   actorUserId: '11111111-1111-4111-8111-111111111111', authorizationReference: 'STAGING-MIGRATION-2026', environment: 'staging', expectedAccount: '559054714699',
@@ -44,4 +44,38 @@ test('creates an integrity-bound empty completion after a stable pagination curs
   }, createdAt);
   assert.equal(validateIdentityBatchCompletion(completion, new Date('2026-09-10T12:01:00.000Z')), completion);
   assert.throws(() => validateIdentityBatchCompletion({ ...completion, afterUserId: '' }), /integrity/);
+});
+
+test('creates a UUID-only exceptional identity batch with explicit dispositions', () => {
+  const createdAt = '2026-09-10T12:00:00.000Z';
+  const manifest = createExceptionalIdentityBatchManifest({
+    actorUserId: input.actorUserId,
+    authorizationReference: input.authorizationReference,
+    clientId: input.clientId,
+    environment: input.environment,
+    expectedAccount: input.expectedAccount,
+    expiresAt: input.expiresAt,
+    issuer: input.issuer,
+    userPoolId: input.userPoolId,
+    users: [
+      { targetUserId: '33333333-3333-4333-8333-333333333333', disposition: 'inactive-disabled' },
+      { targetUserId: '44444444-4444-4444-8444-444444444444', disposition: 'platform-administrator' },
+    ],
+  }, createdAt);
+  assert.equal(validateExceptionalIdentityBatchManifest(manifest, new Date('2026-09-10T12:01:00.000Z')), manifest);
+  assert.equal(JSON.stringify(manifest).includes('@'), false);
+  assert.throws(() => validateExceptionalIdentityBatchManifest({ ...manifest, users: manifest.users.slice(0, 1) }, new Date('2026-09-10T12:01:00.000Z')), /integrity/);
+  assert.throws(() => createExceptionalIdentityBatchManifest({
+    actorUserId: input.actorUserId, authorizationReference: input.authorizationReference, clientId: input.clientId, environment: input.environment,
+    expectedAccount: input.expectedAccount, expiresAt: input.expiresAt, issuer: input.issuer, userPoolId: input.userPoolId,
+    users: [{ targetUserId: manifest.users[0].targetUserId, disposition: 'active' }],
+  }, createdAt), /invalid/);
+  assert.throws(() => createExceptionalIdentityBatchManifest({
+    actorUserId: input.actorUserId, authorizationReference: input.authorizationReference, clientId: input.clientId, environment: input.environment,
+    expectedAccount: input.expectedAccount, expiresAt: input.expiresAt, issuer: input.issuer, userPoolId: input.userPoolId,
+    users: [
+      { targetUserId: manifest.users[0].targetUserId, disposition: 'inactive-disabled' },
+      { targetUserId: manifest.users[0].targetUserId, disposition: 'platform-administrator' },
+    ],
+  }, createdAt), /Duplicate exceptional identity target user/);
 });

@@ -36,6 +36,11 @@ if ($PublicSubnetIds.Count -ne 2 -or ($PublicSubnetIds | Select-Object -Unique).
 if ($RepositoryName -cne "tracepoint-$Environment" -or $ClusterName -cne "tracepoint-$Environment") { throw 'Identity runner foundation names are invalid.' }
 if ($Environment -eq 'staging' -and ($StagingRecipientSha256.Count -lt 1 -or $StagingRecipientSha256.Count -gt 100 -or @($StagingRecipientSha256 | Where-Object { $_ -notmatch '^[0-9a-f]{64}$' }).Count -ne 0)) { throw 'Reviewed staging recipient hashes are required.' }
 if ($Environment -eq 'production' -and $StagingRecipientSha256.Count -ne 0) { throw 'Staging recipient hashes cannot be supplied to production.' }
+$manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+if ($manifest.environment -cne $Environment -or $manifest.expectedAccount -cne $account -or $manifest.authorizationReference -cne $AuthorizationReference -or $manifest.userPoolId -cne $UserPoolId -or $manifest.clientId -cne $ClientId -or $manifest.contentSha256 -notmatch '^[0-9a-f]{64}$' -or [datetime]$manifest.expiresAt -le (Get-Date).ToUniversalTime()) { throw 'Identity manifest does not match this execution or has expired.' }
+$hasManifestKind = $manifest.PSObject.Properties.Name -contains 'kind'
+if ($hasManifestKind -and $manifest.kind -cne 'exceptional-identity-batch') { throw 'Only standard or exceptional executable identity manifests are accepted.' }
+$identityKind = if ($hasManifestKind) { 'exceptional' } else { 'standard' }
 $cluster = & aws.exe ecs describe-clusters --region $region --clusters $ClusterName --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $cluster.clusters.Count -ne 1 -or $cluster.failures.Count -ne 0 -or $cluster.clusters[0].status -cne 'ACTIVE' -or $cluster.clusters[0].clusterArn -cne "arn:aws:ecs:$region`:$account`:cluster/$ClusterName") { throw 'The exact TracePoint ECS cluster is required.' }
 $repository = & aws.exe ecr describe-repositories --region $region --repository-names $RepositoryName --output json | ConvertFrom-Json
@@ -56,11 +61,12 @@ $encryptionRule = $bucketEncryption.ServerSideEncryptionConfiguration.Rules[0].A
 if ($ArtifactBucketName -cne "tracepoint-$Environment-private-$account" -or $encryptionRule.SSEAlgorithm -cne 'aws:kms' -or $encryptionRule.KMSMasterKeyID -cne $ArtifactKeyArn -or $bucketVersioning.Status -cne 'Enabled' -or @($bucketPublicAccess.PublicAccessBlockConfiguration.PSObject.Properties.Value | Where-Object { $_ -ne $true }).Count -ne 0) { throw 'The exact encrypted, versioned, private migration artifact bucket is required.' }
 $pool = & aws.exe cognito-idp describe-user-pool --region $region --user-pool-id $UserPoolId --output json | ConvertFrom-Json
 $poolClient = & aws.exe cognito-idp describe-user-pool-client --region $region --user-pool-id $UserPoolId --client-id $ClientId --output json | ConvertFrom-Json
-$emailIdentity = & aws.exe sesv2 get-email-identity --region $region --email-identity ($FromAddress -split '@')[1] --output json | ConvertFrom-Json
-& aws.exe sesv2 get-configuration-set --region $region --configuration-set-name $SesConfigurationSet --output json | Out-Null
-if ($LASTEXITCODE -ne 0 -or $pool.UserPool.Name -cne "tracepoint-$Environment" -or $poolClient.UserPoolClient.UserPoolId -cne $UserPoolId -or $poolClient.UserPoolClient.ClientId -cne $ClientId -or $emailIdentity.VerificationStatus -cne 'SUCCESS') { throw 'The exact Cognito pool/client and verified SES identity are required.' }
-$manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
-if ($manifest.environment -cne $Environment -or $manifest.expectedAccount -cne $account -or $manifest.authorizationReference -cne $AuthorizationReference -or $manifest.userPoolId -cne $UserPoolId -or $manifest.clientId -cne $ClientId -or $manifest.contentSha256 -notmatch '^[0-9a-f]{64}$' -or [datetime]$manifest.expiresAt -le (Get-Date).ToUniversalTime()) { throw 'Identity manifest does not match this execution or has expired.' }
+if ($LASTEXITCODE -ne 0 -or $pool.UserPool.Name -cne "tracepoint-$Environment" -or $poolClient.UserPoolClient.UserPoolId -cne $UserPoolId -or $poolClient.UserPoolClient.ClientId -cne $ClientId) { throw 'The exact Cognito pool and client are required.' }
+if ($identityKind -eq 'standard') {
+    $emailIdentity = & aws.exe sesv2 get-email-identity --region $region --email-identity ($FromAddress -split '@')[1] --output json | ConvertFrom-Json
+    & aws.exe sesv2 get-configuration-set --region $region --configuration-set-name $SesConfigurationSet --output json | Out-Null
+    if ($LASTEXITCODE -ne 0 -or $emailIdentity.VerificationStatus -cne 'SUCCESS') { throw 'The exact verified SES identity and configuration set are required for standard activation.' }
+}
 $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json
 $costAgeHours = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
 if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 125) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
@@ -78,7 +84,7 @@ $stack = "tracepoint-$Environment-identity-execute-$RunId"
 $artifactPrefix = "migration/identity/$RunId"
 $contexts = @(
     '-c', "environment=$Environment", '-c', 'mode=execute', '-c', "account=$account", '-c', "region=$region", '-c', "runId=$RunId",
-    '-c', "authorizationReference=$AuthorizationReference", '-c', "manifestSha256=$($manifest.contentSha256)", '-c', "commit=$Commit", '-c', "imageDigest=$ImageDigest",
+    '-c', "authorizationReference=$AuthorizationReference", '-c', "identityKind=$identityKind", '-c', "manifestSha256=$($manifest.contentSha256)", '-c', "commit=$Commit", '-c', "imageDigest=$ImageDigest",
     '-c', "repositoryName=$RepositoryName", '-c', "clusterName=$ClusterName", '-c', "vpcId=$VpcId", '-c', "publicSubnetIds=$($PublicSubnetIds -join ',')",
     '-c', "databaseSecurityGroupId=$DatabaseSecurityGroupId", '-c', "databaseSecretArn=$DatabaseSecretArn",
     '-c', "artifactBucketName=$ArtifactBucketName", '-c', "artifactKeyArn=$ArtifactKeyArn", '-c', "userPoolId=$UserPoolId", '-c', "clientId=$ClientId",

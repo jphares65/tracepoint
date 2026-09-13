@@ -24,7 +24,7 @@ export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
  private map(value:{Username?:string;UserAttributes?:AttributeType[];Enabled?:boolean;UserStatus?:string}):CognitoDirectoryUser{
   const attrs=attributes(value.UserAttributes),username=clean(value.Username),subject=clean(attrs.get("sub")),email=clean(attrs.get("email")).toLowerCase();
   if(!usernamePattern.test(username)||!subject||!email)throw new CognitoDirectoryError("unavailable");
-  return{username,subject,email,enabled:value.Enabled!==false,status:clean(value.UserStatus)};
+  return{username,subject,email,emailVerified:attrs.get("email_verified")==="true",enabled:value.Enabled!==false,status:clean(value.UserStatus)};
  }
  async createPending(input:CreatePendingCognitoUser){
   const username=this.username(input.username),email=clean(input.email).toLowerCase(),fullName=clean(input.fullName);

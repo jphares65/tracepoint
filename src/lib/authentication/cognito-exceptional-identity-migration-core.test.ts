@@ -9,10 +9,12 @@ import {
 function fixture(disposition: ExceptionalIdentityDisposition, options: { existing?: boolean; mismatch?: boolean } = {}) {
   const calls: string[] = [];
   let enabled = true;
+  let emailVerified = false;
   const provider = () => ({
     username: "11111111-1111-4111-8111-111111111111",
     subject: "provider-subject",
     email: options.mismatch ? "wrong@example.test" : "synthetic@example.test",
+    emailVerified,
     enabled,
     status: "FORCE_CHANGE_PASSWORD",
   });
@@ -24,7 +26,7 @@ function fixture(disposition: ExceptionalIdentityDisposition, options: { existin
         async createPending() { calls.push("create"); if (options.existing) throw new Error("exists"); return provider(); },
         async get() { calls.push("get"); return provider(); },
         async disable() { calls.push("disable"); enabled = false; },
-        async enable() {}, async setPermanentPassword() {}, async markEmailVerified() {}, async beginPasswordReset() {}, async completePasswordReset() {}, async globalSignOut() {}, async deleteCompensation() {},
+        async enable() {}, async setPermanentPassword() {}, async markEmailVerified() { calls.push("verify-email"); emailVerified = true; }, async beginPasswordReset() {}, async completePasswordReset() {}, async globalSignOut() {}, async deleteCompensation() {},
       },
       store: {
         async prepare() { calls.push("prepare"); return { email: "synthetic@example.test", fullName: "Synthetic User" }; },
@@ -39,14 +41,14 @@ test("inactive-only identity is disabled, linked revoked, and sends no email", a
   const value = fixture("inactive-disabled");
   const result = await migrateExceptionalUserToCognito(value.input, value.dependencies);
   assert.deepEqual(value.calls, ["prepare", "create", "disable", "get", "commit:inactive-disabled"]);
-  assert.deepEqual(result, { userId: value.input.targetUserId, disposition: "inactive-disabled", applicationLinkState: "revoked", providerEnabled: false, activationEmailSent: false });
+  assert.deepEqual(result, { userId: value.input.targetUserId, disposition: "inactive-disabled", applicationLinkState: "revoked", providerEnabled: false, recoveryReady: false, activationEmailSent: false });
 });
 
 test("membership-less platform administrator remains enabled with a pending link", async () => {
   const value = fixture("platform-administrator", { existing: true });
   const result = await migrateExceptionalUserToCognito(value.input, value.dependencies);
-  assert.deepEqual(value.calls, ["prepare", "create", "get", "commit:platform-administrator"]);
-  assert.deepEqual(result, { userId: value.input.targetUserId, disposition: "platform-administrator", applicationLinkState: "pending", providerEnabled: true, activationEmailSent: false });
+  assert.deepEqual(value.calls, ["prepare", "create", "get", "verify-email", "get", "commit:platform-administrator"]);
+  assert.deepEqual(result, { userId: value.input.targetUserId, disposition: "platform-administrator", applicationLinkState: "pending", providerEnabled: true, recoveryReady: true, activationEmailSent: false });
 });
 
 test("provider mismatch fails before application mapping is committed", async () => {

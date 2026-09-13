@@ -6,8 +6,21 @@ import { normalizeMigrationSql } from "./migration-sql-core.mjs";
 
 test("AWS target migration ledger pins every ordered overlay", async () => {
   const migrations = await loadVerifiedAwsMigrations();
-  assert.equal(migrations.length, 20);
+  assert.equal(migrations.length, 21);
   assert.deepEqual(migrations.map(item => item.name), AWS_MIGRATION_LEDGER.map(([name]) => name));
+});
+
+test("exceptional Cognito migration overlay is platform-admin bound and denies runtime bypass", async () => {
+  const migrations = await loadVerifiedAwsMigrations();
+  const sql = migrations.find(item => item.name === "021_cognito_exceptional_identity_migration.sql")?.sql ?? "";
+  for (const operation of ["list_exceptional_cognito_identities", "prepare_exceptional_cognito_migration", "commit_exceptional_cognito_migration", "read_exceptional_cognito_migration"]) {
+    assert.match(sql, new RegExp(`create function tracepoint_auth\\.${operation}\\b`));
+    assert.match(sql, new RegExp(`grant execute on function tracepoint_auth\\.${operation}\\([^;]*to authenticated`));
+  }
+  assert.match(sql, /session_user <> 'tracepoint_runtime'/);
+  assert.match(sql, /not public\.is_platform_admin\(\)/);
+  assert.match(sql, /revoke all on function tracepoint_auth\.[^(]+\([^;]*from public, anon, service_role, tracepoint_runtime/);
+  assert.doesNotMatch(sql, /grant execute[^;]*to (?:public|anon|service_role|tracepoint_runtime)/);
 });
 
 test("migration SQL normalization is stable across checkout line endings", () => {

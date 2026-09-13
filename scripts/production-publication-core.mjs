@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {validateTracePointRuntimeConfig} from './validate-tracepoint-runtime-config.mjs';
 export const productionArchivePaths=['.dockerignore','buildspec.production-image.yml','Dockerfile','eslint.config.mjs','next.config.ts','package.json','package-lock.json','postcss.config.mjs','tsconfig.json','public','src','scripts/start-tracepoint-container.mjs','scripts/validate-tracepoint-runtime-config.mjs'];
 export const productionMigrationArchivePaths=['.dockerignore','buildspec.postgres-migration.yml','Dockerfile.postgres-migration','package.json','package-lock.json','tsconfig.json','database/aws','supabase/migrations','scripts/aws-migration-ledger.mjs','scripts/bootstrap-aws-postgres-target.mjs','scripts/bootstrap-aws-postgres-target-core.mjs','scripts/bootstrap-aws-postgres-target-core.test.mjs','scripts/database-migration-core.mjs','scripts/database-migration-core.test.mjs','scripts/migrate-aws-postgres-data.mjs','scripts/migration-sql-core.mjs','scripts/postgres-bootstrap-prerequisites.mjs'];
+export const productionIdentityMigrationArchivePaths=['buildspec.identity-migration.yml','Dockerfile.identity-migration','package.json','package-lock.json','tsconfig.json','src','scripts/cognito-identity-batch-core.mjs','scripts/cognito-identity-batch-core.test.mjs','scripts/migrate-cognito-identities.mts','scripts/migrate-cognito-exceptional-identities.mts','scripts/prepare-cognito-identity-batch.mts','scripts/prepare-cognito-exceptional-identity-batch.mts','scripts/run-cognito-identity-migration-task.mts'];
 export const productionBuildSecretKeys=['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY'];
 export const productionRuntimeSecretKeys=['SUPABASE_SECRET_KEY','BREVO_API_KEY','NOTIFICATION_DISPATCH_SECRET','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL','CONFIGURATION_ENVIRONMENT'];
 export function validateProductionArchive(entries,tracked){
@@ -17,7 +18,16 @@ export function validateProductionMigrationArchive(entries,tracked){
  assert.ok(entries.includes('buildspec.postgres-migration.yml'));
  assert.ok(entries.includes('Dockerfile.postgres-migration'));
  assert.equal(entries.filter(entry=>/^supabase\/migrations\/[^/]+\.sql$/.test(entry)).length,76);
- assert.equal(entries.filter(entry=>/^database\/aws\/[^/]+\.sql$/.test(entry)).length,20);
+ assert.equal(entries.filter(entry=>/^database\/aws\/[^/]+\.sql$/.test(entry)).length,21);
+ return entries.length;
+}
+export function validateProductionIdentityMigrationArchive(entries,tracked){
+ assert.ok(entries.length>0);for(const entry of entries){
+  if(entry==='TRACEPOINT_SOURCE_COMMIT')continue;
+  assert.ok(tracked.has(entry),'Untracked identity migration archive path');
+  assert.ok(!/(^|\/)\.env($|\.)|(^|\/)\.aws\/|(^|\/)\.git\/|(^|\/)\.github\/|(^|\/)node_modules\/|(^|\/)\.next\/|(^|\/)cdk\.out|\.tsbuildinfo$|(^|\/)(coverage|build|out)\/|\.(dump|sql)$|(^|\/)[^/]*(credential|secret)[^/]*$|API KEYS|integration-demo|seed-demo-fleet-equipment|\.(backup|encoding-backup)-|\.before-|\.bak($|-)/i.test(entry),'Prohibited identity migration archive path');
+ }
+ for(const required of ['TRACEPOINT_SOURCE_COMMIT','buildspec.identity-migration.yml','Dockerfile.identity-migration','scripts/migrate-cognito-identities.mts','scripts/migrate-cognito-exceptional-identities.mts','scripts/prepare-cognito-identity-batch.mts','scripts/prepare-cognito-exceptional-identity-batch.mts','scripts/run-cognito-identity-migration-task.mts'])assert.ok(entries.includes(required),`Missing identity migration archive path: ${required}`);
  return entries.length;
 }
 export function validateProductionBuildSecret(secret){

@@ -25,7 +25,7 @@ try{
  const entries=command("tar.exe",["-tf",archive]).split(/\r?\n/).filter(entry=>!entry.endsWith("/"));
  const tracked=new Set(command("git.exe",["ls-tree","-r","--name-only",commit]).split(/\r?\n/));
  const count=validateProductionMigrationArchive(entries,tracked);
- console.log(JSON.stringify({archiveValidated:true,sourceCommit:commit,imageTag:tag,trackedFiles:count,sourceMigrations:76,awsOverlays:20,productionMutation:false}));
+ console.log(JSON.stringify({archiveValidated:true,sourceCommit:commit,imageTag:tag,trackedFiles:count,sourceMigrations:76,awsOverlays:21,productionMutation:false}));
  if(!offline){
   const existing=aws(["ecr","batch-get-image","--repository-name","tracepoint-production","--image-ids",`imageTag=${tag}`]);
   if(existing.images?.length===1){
@@ -41,7 +41,7 @@ try{
    const deadline=Date.now()+2_700_000;for(;;){const status=aws(["codebuild","batch-get-builds","--ids",build.id]).builds[0].buildStatus;if(status==="SUCCEEDED")break;assert.equal(status,"IN_PROGRESS","Production migration image build failed");assert.ok(Date.now()<deadline,"Production migration image build timed out");await new Promise(resolveWait=>setTimeout(resolveWait,20_000));}
    command("aws.exe",["ecr","wait","image-scan-complete","--repository-name","tracepoint-production","--image-id",`imageTag=${tag}`,"--region","us-east-1"]);
    const scan=aws(["ecr","describe-image-scan-findings","--repository-name","tracepoint-production","--image-id",`imageTag=${tag}`]);validateCleanProductionScan(scan);assert.match(scan.imageId.imageDigest,/^sha256:[0-9a-f]{64}$/);
-   console.log(JSON.stringify({productionMigrationImagePublished:true,sourceCommit:commit,imageTag:tag,imageDigest:scan.imageId.imageDigest,sourceMigrations:76,awsOverlays:20,cleanScan:true,runtimeDeployed:false,databaseChanged:false}));
+   console.log(JSON.stringify({productionMigrationImagePublished:true,sourceCommit:commit,imageTag:tag,imageDigest:scan.imageId.imageDigest,sourceMigrations:76,awsOverlays:21,cleanScan:true,runtimeDeployed:false,databaseChanged:false}));
   }
  }
 }finally{rmSync(directory,{recursive:true,force:true});}

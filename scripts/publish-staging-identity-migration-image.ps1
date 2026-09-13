@@ -11,7 +11,7 @@ if ($commit -notmatch '^[0-9a-f]{40}$' -or $branch -ne 'codex/aws-main-integrati
 if (@(& git.exe -C $root status --porcelain).Count) { throw 'Commit all identity migration source before publication.' }
 $archive = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-identity-source-' + [guid]::NewGuid().ToString('N') + '.zip')
 try {
-    & git.exe -C $root archive --format=zip --output=$archive "--add-virtual-file=TRACEPOINT_SOURCE_COMMIT:$commit" $commit -- Dockerfile.identity-migration buildspec.identity-migration.yml package.json package-lock.json tsconfig.json src scripts/cognito-identity-batch-core.mjs scripts/cognito-identity-batch-core.test.mjs scripts/migrate-cognito-identities.mts scripts/prepare-cognito-identity-batch.mts scripts/run-cognito-identity-migration-task.mts
+    & git.exe -C $root archive --format=zip --output=$archive "--add-virtual-file=TRACEPOINT_SOURCE_COMMIT:$commit" $commit -- Dockerfile.identity-migration buildspec.identity-migration.yml package.json package-lock.json tsconfig.json src scripts/cognito-identity-batch-core.mjs scripts/cognito-identity-batch-core.test.mjs scripts/migrate-cognito-identities.mts scripts/migrate-cognito-exceptional-identities.mts scripts/prepare-cognito-identity-batch.mts scripts/prepare-cognito-exceptional-identity-batch.mts scripts/run-cognito-identity-migration-task.mts
     if ($LASTEXITCODE -ne 0) { throw 'Identity migration source archive failed.' }
     $archiveSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-TracePointStagingIdentity | Out-Null

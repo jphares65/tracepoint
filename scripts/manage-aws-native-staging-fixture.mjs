@@ -223,7 +223,7 @@ try {
     runId: input.runId,
     sourceCommit: input.sourceCommit,
     sourceMigrations: 76,
-    awsMigrations: 20,
+    awsMigrations: 21,
     departments: 2,
     users: 3,
     syntheticOnly: true,

@@ -40,8 +40,13 @@ export async function migrateExceptionalUserToCognito(
     if (provider.enabled || provider.status !== "FORCE_CHANGE_PASSWORD" || provider.subject === "") {
       throw new Error("Inactive Cognito identity could not be proven disabled.");
     }
-  } else if (!provider.enabled) {
-    throw new Error("Platform administrator Cognito identity is disabled.");
+  } else {
+    if (!provider.enabled) throw new Error("Platform administrator Cognito identity is disabled.");
+    await dependencies.directory.markEmailVerified(input.providerUsername);
+    provider = await dependencies.directory.get(input.providerUsername);
+    if (!provider.enabled || provider.status !== "FORCE_CHANGE_PASSWORD" || provider.emailVerified !== true) {
+      throw new Error("Platform administrator Cognito recovery state could not be established.");
+    }
   }
   await dependencies.store.commit({ ...input, issuer: dependencies.issuer, subject: provider.subject });
   return {
@@ -49,6 +54,7 @@ export async function migrateExceptionalUserToCognito(
     disposition: input.disposition,
     applicationLinkState: input.disposition === "inactive-disabled" ? "revoked" : "pending",
     providerEnabled: provider.enabled,
+    recoveryReady: input.disposition === "platform-administrator",
     activationEmailSent: false,
   } as const;
 }

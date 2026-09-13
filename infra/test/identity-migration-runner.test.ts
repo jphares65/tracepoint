@@ -5,7 +5,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { IdentityMigrationRunnerStack, type IdentityMigrationRunnerStackProps } from '../lib/identity-migration-runner-stack';
 
 const props: IdentityMigrationRunnerStackProps = {
-  env: { account: '559054714699', region: 'us-east-1' }, environmentName: 'staging', mode: 'execute', runId: '11111111-1111-4111-8111-111111111111',
+  env: { account: '559054714699', region: 'us-east-1' }, environmentName: 'staging', mode: 'execute', identityKind: 'standard', runId: '11111111-1111-4111-8111-111111111111',
   authorizationReference: 'STAGING-IDENTITY-2026', manifestSha256: 'c'.repeat(64), commit: 'a'.repeat(40), imageDigest: `sha256:${'b'.repeat(64)}`,
   repositoryName: 'tracepoint-staging', clusterName: 'tracepoint-staging', vpcId: 'vpc-12345678', publicSubnetIds: ['subnet-11111111', 'subnet-22222222'], databaseSecurityGroupId: 'sg-11111111',
   databaseSecretArn: 'arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/database/runtime-abc123',
@@ -35,9 +35,8 @@ test('identity task is one-shot, immutable, least-privilege, and AWS-native only
   const serialized = JSON.stringify(template.toJSON());
   assert.match(serialized, /sha256:[0-9a-f]{64}/);
   assert.match(serialized, /cognito-idp:AdminCreateUser/);
-  assert.match(serialized, /cognito-idp:AdminDisableUser/);
   assert.match(serialized, /ses:SendEmail/);
-  assert.doesNotMatch(serialized, /SUPABASE|VERCEL|BREVO|AdminDeleteUser|TRACEPOINT_AUTH_STATE_KEYS|TRACEPOINT_AUTH_REFRESH_KEYS/);
+  assert.doesNotMatch(serialized, /SUPABASE|VERCEL|BREVO|AdminDeleteUser|AdminDisableUser|TRACEPOINT_AUTH_STATE_KEYS|TRACEPOINT_AUTH_REFRESH_KEYS/);
 });
 
 test('private preparation can read one department without Cognito or SES mutation authority', () => {
@@ -49,6 +48,20 @@ test('private preparation can read one department without Cognito or SES mutatio
   assert.match(serialized, /manifest\.json/);
 });
 
+test('exceptional identity preparation is read-only and execution cannot send email', () => {
+  const prepared = { ...props, mode: 'prepare-exceptional' as const, identityKind: 'exceptional' as const, manifestSha256: '', actorUserId: '22222222-2222-4222-8222-222222222222' };
+  const prepareTemplate = Template.fromStack(new IdentityMigrationRunnerStack(new cdk.App(), 'prepare-exceptional', prepared));
+  prepareTemplate.hasResourceProperties('AWS::ECS::TaskDefinition', { ContainerDefinitions: [Match.objectLike({ Command: ['--prepare-exceptional'] })] });
+  assert.doesNotMatch(JSON.stringify(prepareTemplate.toJSON()), /cognito-idp:AdminCreateUser|cognito-idp:AdminGetUser|ses:SendEmail/);
+
+  const executeTemplate = Template.fromStack(new IdentityMigrationRunnerStack(new cdk.App(), 'execute-exceptional', { ...props, identityKind: 'exceptional' }));
+  const serialized = JSON.stringify(executeTemplate.toJSON());
+  assert.match(serialized, /cognito-idp:AdminCreateUser/);
+  assert.match(serialized, /cognito-idp:AdminDisableUser/);
+  assert.match(serialized, /cognito-idp:AdminUpdateUserAttributes/);
+  assert.doesNotMatch(serialized, /ses:SendEmail/);
+});
+
 test('identity task rejects account, mutable-image, artifact, and authorization drift', () => {
   for (const change of [
     { env: { account: '265544358665', region: 'us-east-1' } },
@@ -58,6 +71,7 @@ test('identity task rejects account, mutable-image, artifact, and authorization 
     { manifestSha256: 'short' },
     { publicSubnetIds: ['subnet-11111111'] },
     { stagingRecipientSha256: [] },
+    { mode: 'prepare-exceptional' as const, identityKind: 'standard' as const, manifestSha256: '' },
   ]) assert.throws(() => new IdentityMigrationRunnerStack(new cdk.App(), `invalid-${Math.random()}`, { ...props, ...change }));
 });
 

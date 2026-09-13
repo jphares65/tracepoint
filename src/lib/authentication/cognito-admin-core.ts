@@ -1,4 +1,4 @@
-export type CognitoDirectoryUser={username:string;subject:string;email:string;enabled:boolean;status:string};
+export type CognitoDirectoryUser={username:string;subject:string;email:string;emailVerified?:boolean;enabled:boolean;status:string};
 export type CreatePendingCognitoUser={username:string;email:string;fullName:string};
 export class CognitoDirectoryError extends Error{
  constructor(readonly code:"conflict"|"not_found"|"invalid_password"|"invalid_code"|"expired_code"|"throttled"|"unavailable"){super("The AWS identity operation could not be completed.");this.name="CognitoDirectoryError";}

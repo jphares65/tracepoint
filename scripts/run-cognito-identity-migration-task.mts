@@ -6,17 +6,20 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
-import { validateIdentityBatchCompletion, validateIdentityBatchManifest } from './cognito-identity-batch-core.mjs';
+import { validateExceptionalIdentityBatchManifest, validateIdentityBatchCompletion, validateIdentityBatchManifest } from './cognito-identity-batch-core.mjs';
 
 const run = promisify(execFile);
 const runId = process.env.TRACEPOINT_IDENTITY_MIGRATION_RUN_ID ?? '';
 const commit = process.env.TRACEPOINT_SOURCE_COMMIT ?? '';
 const mode = process.env.TRACEPOINT_IDENTITY_MIGRATION_MODE ?? '';
+const identityKind = process.env.TRACEPOINT_IDENTITY_MIGRATION_KIND ?? '';
 const bucket = process.env.TRACEPOINT_MIGRATION_ARTIFACT_BUCKET ?? '';
 const prefix = `migration/identity/${runId}`;
 assert.match(runId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 assert.match(commit, /^[0-9a-f]{40}$/);
-assert.ok(['prepare', 'execute'].includes(mode));
+assert.ok(['prepare', 'prepare-exceptional', 'execute'].includes(mode));
+assert.ok(['standard', 'exceptional'].includes(identityKind));
+assert.equal(mode === 'prepare-exceptional', identityKind === 'exceptional' && mode !== 'execute');
 assert.equal(process.env.TRACEPOINT_IDENTITY_MANIFEST_KEY, `${prefix}/manifest.json`);
 if (mode === 'execute') {
   assert.equal(process.env.TRACEPOINT_IDENTITY_CHECKPOINT_KEY, `${prefix}/checkpoint.json`);
@@ -51,33 +54,45 @@ try {
   const manifestPath = path.join(directory, 'manifest.json');
   const checkpointPath = path.join(directory, 'checkpoint.json');
   const encryption = { ServerSideEncryption: 'aws:kms' as const, SSEKMSKeyId: artifactKeyArn };
-  if (mode === 'prepare') {
-    const prepareArguments = ['--conditions=react-server', '--import', 'tsx', 'scripts/prepare-cognito-identity-batch.mts', '--prepare', '--output', manifestPath, '--actor-user-id', process.env.TRACEPOINT_IDENTITY_ACTOR_USER_ID!, '--department-id', process.env.TRACEPOINT_IDENTITY_DEPARTMENT_ID!, '--authorization-reference', process.env.TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE!];
-    if (process.env.TRACEPOINT_IDENTITY_AFTER_USER_ID) prepareArguments.push('--after-user-id', process.env.TRACEPOINT_IDENTITY_AFTER_USER_ID);
+  if (mode === 'prepare' || mode === 'prepare-exceptional') {
+    const exceptional = mode === 'prepare-exceptional';
+    const prepareArguments = exceptional
+      ? ['--conditions=react-server', '--import', 'tsx', 'scripts/prepare-cognito-exceptional-identity-batch.mts', '--prepare-exceptional', '--output', manifestPath, '--actor-user-id', process.env.TRACEPOINT_IDENTITY_ACTOR_USER_ID!, '--authorization-reference', process.env.TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE!]
+      : ['--conditions=react-server', '--import', 'tsx', 'scripts/prepare-cognito-identity-batch.mts', '--prepare', '--output', manifestPath, '--actor-user-id', process.env.TRACEPOINT_IDENTITY_ACTOR_USER_ID!, '--department-id', process.env.TRACEPOINT_IDENTITY_DEPARTMENT_ID!, '--authorization-reference', process.env.TRACEPOINT_IDENTITY_AUTHORIZATION_REFERENCE!];
+    if (!exceptional && process.env.TRACEPOINT_IDENTITY_AFTER_USER_ID) prepareArguments.push('--after-user-id', process.env.TRACEPOINT_IDENTITY_AFTER_USER_ID);
     const result = await run(process.execPath, prepareArguments, { env: process.env, timeout: 5 * 60_000, maxBuffer: 1024 * 1024 });
     const manifestBytes = await readFile(manifestPath);
     const parsed = JSON.parse(manifestBytes.toString('utf8'));
-    const manifest = parsed.kind === 'identity-batch-complete' ? validateIdentityBatchCompletion(parsed) : validateIdentityBatchManifest(parsed);
+    const manifest = parsed.kind === 'identity-batch-complete'
+      ? validateIdentityBatchCompletion(parsed)
+      : parsed.kind === 'exceptional-identity-batch'
+        ? validateExceptionalIdentityBatchManifest(parsed)
+        : validateIdentityBatchManifest(parsed);
     assert.equal(manifest.expectedAccount, process.env.TRACEPOINT_AWS_ACCOUNT_ID);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: process.env.TRACEPOINT_IDENTITY_MANIFEST_KEY, Body: manifestBytes, ContentType: 'application/json', ...encryption }));
-    console.log(JSON.stringify({ status: parsed.kind === 'identity-batch-complete' ? 'COMPLETE' : 'PREPARED', runId, commit, manifestSha256: manifest.contentSha256, users: 'users' in manifest ? manifest.users.length : 0, expiresAt: manifest.expiresAt, emailAddressesPrinted: false, writesToCognito: false, emailsSent: false }));
+    console.log(JSON.stringify({ status: parsed.kind === 'identity-batch-complete' ? 'COMPLETE' : 'PREPARED', kind: parsed.kind ?? 'department-identity-batch', runId, commit, manifestSha256: manifest.contentSha256, users: 'users' in manifest ? manifest.users.length : 0, expiresAt: manifest.expiresAt, emailAddressesPrinted: false, userIdsPrinted: false, writesToCognito: false, emailsSent: false }));
     assert.ok(result.stdout.includes(manifest.contentSha256));
   } else {
     const manifestBytes = await download(process.env.TRACEPOINT_IDENTITY_MANIFEST_KEY!, true);
-    const manifest = validateIdentityBatchManifest(JSON.parse(manifestBytes!.toString('utf8')));
+    const parsed = JSON.parse(manifestBytes!.toString('utf8'));
+    const exceptional = parsed.kind === 'exceptional-identity-batch';
+    assert.equal(identityKind, exceptional ? 'exceptional' : 'standard', 'Runner identity kind does not match the manifest');
+    const manifest = exceptional ? validateExceptionalIdentityBatchManifest(parsed) : validateIdentityBatchManifest(parsed);
     assert.equal(manifest.expectedAccount, process.env.TRACEPOINT_AWS_ACCOUNT_ID);
     assert.equal(manifest.contentSha256, process.env.TRACEPOINT_IDENTITY_MANIFEST_SHA256);
     assert.equal(process.env.TRACEPOINT_IDENTITY_MIGRATION_AUTHORIZATION, `${manifest.authorizationReference}:${manifest.contentSha256}`);
     await writeFile(manifestPath, manifestBytes!, { flag: 'wx', mode: 0o600 });
     const checkpoint = await download(process.env.TRACEPOINT_IDENTITY_CHECKPOINT_KEY!, false);
     if (checkpoint) await writeFile(checkpointPath, checkpoint, { flag: 'wx', mode: 0o600 });
-    const result = await run(process.execPath, ['--conditions=react-server', '--import', 'tsx', 'scripts/migrate-cognito-identities.mts', '--manifest', manifestPath, '--checkpoint', checkpointPath, '--execute', '--acknowledge-cognito-writes', '--acknowledge-email-send'], { env: process.env, timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+    const executionArguments = ['--conditions=react-server', '--import', 'tsx', exceptional ? 'scripts/migrate-cognito-exceptional-identities.mts' : 'scripts/migrate-cognito-identities.mts', '--manifest', manifestPath, '--checkpoint', checkpointPath, '--execute', '--acknowledge-cognito-writes'];
+    if (!exceptional) executionArguments.push('--acknowledge-email-send');
+    const result = await run(process.execPath, executionArguments, { env: process.env, timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
     const evidence = JSON.parse(result.stdout.trim());
     assert.equal(evidence.manifestSha256, manifest.contentSha256);
     assert.match(evidence.reconciliationSha256 ?? '', /^[0-9a-f]{64}$/);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: process.env.TRACEPOINT_IDENTITY_CHECKPOINT_KEY, Body: await readFile(checkpointPath), ContentType: 'application/json', ...encryption }));
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: process.env.TRACEPOINT_IDENTITY_EVIDENCE_KEY, Body: `${JSON.stringify(evidence)}\n`, ContentType: 'application/json', ...encryption }));
-    console.log(JSON.stringify({ status: 'PASSED', runId, commit, manifestSha256: evidence.manifestSha256, reconciliationSha256: evidence.reconciliationSha256, users: evidence.total, emailAddressesPrinted: false }));
+    console.log(JSON.stringify({ status: 'PASSED', kind: exceptional ? 'exceptional-identity-batch' : 'department-identity-batch', runId, commit, manifestSha256: evidence.manifestSha256, reconciliationSha256: evidence.reconciliationSha256, users: evidence.total, emailAddressesPrinted: false, userIdsPrinted: false }));
   }
 } catch (error) {
   console.error(JSON.stringify({ status: 'FAILED', runId, errorName: error instanceof Error ? error.name : 'Error' }));
