@@ -1,75 +1,99 @@
 # TracePoint production pre-cutover live execution — 2026-09-13
 
 The authorized non-traffic foundations are substantially live. Production customer data,
-identities, email, DNS, traffic and Supabase were not changed. The full-AWS ledger gains
-exactly the two points for gate 14, moving from 77% to **79% live-verified**; no credit is
-claimed for repeated validation, published-but-unexecuted images, or disabled paths.
+identities, email, DNS, traffic, Wix and Supabase were not changed. Live-verified readiness
+remains **79%**: this checkpoint closes meaningful sub-work, but neither the database-rehearsal
+gate nor the timed-restore gate is complete, so no fractional or evidence-only credit is claimed.
 
 ## Completed live work
 
-- Updated security, network, compute and image-build foundations without replacing retained
-  data or customer-facing resources.
-- Created private versioned KMS-encrypted S3 storage, private encrypted PostgreSQL 17.9,
-  a deletion-protected Cognito pool with zero users, the encrypted SES feedback worker, and
-  a locked AWS Backup vault with daily/monthly plans.
-- Preserved the verified SES identity and three Easy DKIM records. Custom MAIL FROM remains
-  `PENDING`, production access remains `DENIED` under case `178924156800066`, and no email
-  was sent or resubmitted.
-- Published immutable PostgreSQL-migration and identity-migration images from commit
-  `8169c388f044cdca092cce87f844be1671230f5c`; both ECR scans completed with zero findings.
-- Updated the temporary database-bootstrap task definition to the clean migration digest,
-  but did not start it after the environment safety reviewer required a direct authorization
-  reaffirmation.
+- Published the AWS-native runtime image from clean pushed commit
+  `63828c03a091a75a232d6a70297bd7d40c8d0b3c` through CodeBuild run
+  `tracepoint-production-aws-native-image-build:391cfd0d-d305-4f92-88c3-9f756574f60e`.
+  The immutable digest is
+  `sha256:5f4b8fe59eaf8befd29bf7ca455ec1d4eb2b18836e66818bf2cc8cae55a90c0b`;
+  the basic ECR scan completed with zero findings. The image is not deployed.
+- Enabled CloudFormation termination protection on the storage, database, Cognito, SES
+  feedback-worker, Backup and database-bootstrap stacks. Rollback is an explicit
+  `update-termination-protection --no-enable-termination-protection` on the exact stack;
+  it was not exercised.
+- Applied the reviewed production WAF update. The live order is `RequestFlood` priority 0,
+  AWS Common Rule Set priority 10, Known Bad Inputs priority 20 and Amazon IP Reputation
+  priority 30. All managed groups use their vendor action, have no exclusions, remain attached
+  to the existing ALB, and retain redacted logging.
+- Deployed only the account-baseline stack, not the cost-controls stack. CloudTrail now records
+  all management events plus read/write S3 object data events scoped exactly to
+  `tracepoint-production-private-193644343389/`. The three reviewed security metric filters
+  and alarms are live and `OK`.
+- Expanded AWS Config to the exact reviewed 41-resource inclusion list. The recorder and
+  delivery channel match, continuous recording is active, and the latest status is `SUCCESS`.
+- Applied backup-failure alerting after first allowing a dependency-safe rollback when its
+  three account-baseline alarms were not yet live. The final EventBridge rule is enabled for
+  `FAILED`, `ABORTED` and `EXPIRED` Backup jobs and publishes through the encrypted SNS topic
+  to the encrypted durable SQS receipt path. No human/email subscription was created.
+- Created AWS Backup job `aea72c7a-bbf2-44a1-be9f-88f4a274f6f7` from the empty, non-customer
+  RDS target. It completed at `2026-09-13T17:57:54.887Z` and produced retained recovery point
+  `arn:aws:rds:us-east-1:193644343389:snapshot:awsbackup:job-aea72c7a-bbf2-44a1-be9f-88f4a274f6f7`.
 
-## Live gaps that remain fail-closed
+## Actions still blocked or intentionally deferred
 
-- The private RDS instance is healthy and protected, but no bootstrap task has run, so the
-  76 source migrations plus 21 AWS overlays are not yet live-verified.
-- The AWS-native runtime image was not published and the legacy bridge service remains at
-  two healthy tasks. Its ALB recorded 17,653 requests in seven days, so the owner condition
-  requiring proof of no traffic was not satisfied and the service was not scaled to zero.
-- Six new/imported stacks still need CloudFormation termination protection enabled.
-- The live WAF has only `RequestFlood`; the inspected pending change set adds the three
-  reviewed AWS managed rule groups. The alert change set adds Backup failure delivery.
-- AWS Config continuously records 26 resource types but has no live rules. CloudTrail is
-  healthy, multi-region and validated, but the scoped private-object S3 data selector and
-  three security metric filters/alarms remain pending.
-- The Backup vault is locked and the RDS resource is selected by `Backup=daily`, but no AWS
-  Backup recovery point or timed non-customer restore proof exists yet.
-- The durable SNS/SQS alert paths are live, but no monitored email subscription is active.
+- The environment safety reviewer blocked the expressly authorized ECS schema-bootstrap task
+  because it treated the production RDS write as outside trusted inline authority. No bypass was
+  attempted. Consequently the 76 source migrations plus 21 AWS overlays remain offline-verified
+  but not live-verified on production RDS.
+- The reviewer also blocked creation of the private disposable RDS restore target. The recovery
+  point is complete, but no timed restore or recovery-integrity proof is claimed.
+- The live AWS-native runtime remains undeployed. The existing bridge service remains at two
+  healthy tasks on task definition
+  `arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:2`;
+  its image remains `tracepoint-production:ae3d2a4ce87b2085e251b1995f51a7b07058ec4d` as the
+  recorded rollback reference. No customer traffic was switched.
+- SES production access remains disabled/denied under case `178924156800066`; custom MAIL FROM
+  remains `PENDING` while Wix is authoritative. Domain identity and Easy DKIM remain verified and
+  unchanged, and no email was sent or resubmitted.
+- Google Public DNS, Cloudflare DNS and the authoritative `.com` server returned no DS record.
+  DNSSEC removal has propagated at all checked sources. Route 53 Domains reports the domain is
+  not in this AWS account, so the registrar transfer has not started. No registrar or DNS action
+  was taken.
 
 ## Cost and safety
 
-The live Budget remains exactly **$150/month**. Billing-lagged actual spend is **$13.964**
-with no AWS forecast. The final Tier 1 target is **$131.72/month** with one task. Because the
-legacy service still runs two tasks, the current monthly-equivalent projection is **$144.38**.
-The **$153.58** rolling case after RDS reaches 100 GiB remains prohibited.
+The live Budget remains healthy and exactly **$150/month**. Billing-lagged actual spend remains
+**$13.964**. The deterministic Tier 1 model already includes the now-live WAF groups, security
+alarms, scoped CloudTrail events, CodeBuild allowance and 20-GiB Backup allowance: **$131.72/month**
+at one-task steady state and **$144.38/month** for the current/normal rolling shape. The
+**$153.58** 100-GiB rolling scenario remains prohibited. No budget change was made.
 
-## Governance rollback
+## Governance and rollback
 
-The live SCP hash is
-`d6d4e47027b9d015d860a01320d1a1c004e43942311b838588dd710c5e3c28a3`; its exact prior
-document is retained in `infra/policies/tracepoint-production-guardrails-pre-cognito-20260913.scp.json`
+The live SCP remains `p-rvx1u7q7`, hash
+`d6d4e47027b9d015d860a01320d1a1c004e43942311b838588dd710c5e3c28a3`; its exact prior document
+is retained in `infra/policies/tracepoint-production-guardrails-pre-cognito-20260913.scp.json`
 with hash `63ec8775d3b2b883bf64e7642660a30e04c3cfa7bdee6267b0e5a0ad048afba6`.
-The permissions boundary is v15 with hash
-`39acb70e0f81ae0f430de60eddf52ce37afea56b588451f552fdd313d005eacc`;
-the exact prior v11 remains available with hash
-`7ce425791fa0900396457d7570fbd2b2d433eae4021ede5d31a2dd101ec194d3`.
-Rollback is to restore the retained SCP document and set boundary v11 as default. Neither
-rollback was executed.
+The permissions boundary remains default version v15, hash
+`39acb70e0f81ae0f430de60eddf52ce37afea56b588451f552fdd313d005eacc`; retained rollback version
+v11 has hash `7ce425791fa0900396457d7570fbd2b2d433eae4021ede5d31a2dd101ec194d3`.
+No governance rollback was executed.
 
 ## Validation
 
-- Next.js production build and TypeScript passed.
-- All 61 infrastructure tests passed.
-- All 172 migration/tooling tests passed; the two TypeScript-assembly tests used their
-  required TS-aware runner.
-- Provider reachability covered 154 entry points and 322 reachable modules with zero static
-  legacy edges, zero unapproved dynamic legacy edges and zero unapproved endpoint literals.
-- Touched-file lint and `git diff --check` passed. Repository-wide lint remains a pre-existing
-  unrelated product-debt gate (228 errors and 59 warnings); no rules were weakened.
-- Access Analyzer and GuardDuty each reported zero active findings. Inspector remains
-  disabled; the two published ECR images have complete zero-finding scans.
+- Next.js production build, root TypeScript and the provider-isolation prebuild passed.
+- All 61 infrastructure tests and all 172 migration/tooling tests passed.
+- A clean disposable PostgreSQL bootstrap applied exactly 76 source migrations plus 21 immutable
+  AWS overlays; permission matrices, retirement matrices, tenant negatives and armory checks passed.
+  Lineage upgrade tests passed for clean, production-upgrade, staging-upgrade and structural parity.
+- The optional local logical dump/restore could not run because no official `pg_dump.exe` is
+  installed on this host; the script failed closed after bootstrap and removed its disposable DB.
+- Full production synthesis completed for all 13 stacks with cdk-nag and no blocking finding.
+  Live diff shows 11 description-only changes, one intentionally undeployed runtime provider/image
+  change, and no remaining alert-delivery difference.
+- Provider reachability covered 154 entry points and 322 reachable modules with zero static legacy
+  edges, zero unapproved dynamic legacy edges and zero unapproved endpoint literals.
+- PowerShell parsing passed for 31/31 scripts; `git diff --check` passed.
+- Access Analyzer and GuardDuty report zero active findings; Security Hub V2 is present; CloudTrail
+  is logging to both S3 and CloudWatch. The runtime image scan is `COMPLETE` with zero findings.
+- RDS is `available`, private, encrypted, deletion-protected, TLS-enforced through its parameter
+  group, 20 GiB with 100-GiB maximum, and retains 35 days of automated backups/PITR.
 
 The structured, sanitized evidence and exact remaining blockers are in
 `docs/aws-precutover-live-execution-20260913.json`.

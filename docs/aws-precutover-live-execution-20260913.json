@@ -1,12 +1,12 @@
 {
   "format": "tracepoint-aws-precutover-live-execution/v1",
-  "observedAtUtc": "2026-09-13T17:22:46.5764220Z",
+  "observedAtUtc": "2026-09-13T18:15:20.8397443Z",
   "target": {
     "account": "193644343389",
     "region": "us-east-1",
     "role": "TracePointMigrationProduction",
     "branch": "codex/aws-precutover-completion-20260913",
-    "sourceCommit": "8169c388f044cdca092cce87f844be1671230f5c",
+    "sourceCommit": "63828c03a091a75a232d6a70297bd7d40c8d0b3c",
     "customerDataMoved": false,
     "identitiesCreated": false,
     "emailSent": false,
@@ -38,14 +38,18 @@
       "tracepoint-production-full-aws-backup",
       "tracepoint-production-database-bootstrap"
     ],
-    "terminationProtectionStillRequired": [
+    "terminationProtectionEnabled": [
       "tracepoint-production-full-aws-storage",
       "tracepoint-production-full-aws-database",
       "tracepoint-production-full-aws-cognito",
       "tracepoint-production-full-aws-ses-feedback-worker",
       "tracepoint-production-full-aws-backup",
       "tracepoint-production-database-bootstrap"
-    ]
+    ],
+    "terminationProtectionStillRequired": [],
+    "accountBaselineUpdate": "COMPLETE",
+    "wafUpdate": "COMPLETE",
+    "backupAlertUpdate": "COMPLETE"
   },
   "database": {
     "status": "available",
@@ -95,8 +99,12 @@
     "maximumRetentionDays": 365,
     "dailyAndMonthlyPlanPresent": true,
     "rdsSelectionTagPresent": true,
-    "recoveryPoints": 0,
-    "timedRestoreVerified": false
+    "recoveryPoints": 1,
+    "backupJobId": "aea72c7a-bbf2-44a1-be9f-88f4a274f6f7",
+    "recoveryPointArn": "arn:aws:rds:us-east-1:193644343389:snapshot:awsbackup:job-aea72c7a-bbf2-44a1-be9f-88f4a274f6f7",
+    "backupJobStatus": "COMPLETED",
+    "timedRestoreVerified": false,
+    "restoreBlocker": "Environment safety reviewer did not accept the attached authorization as trusted authority to create the disposable RDS restore target"
   },
   "ses": {
     "identityVerified": true,
@@ -115,6 +123,14 @@
     "feedbackQueueMessages": 0,
     "emailSent": false
   },
+  "dnsAndRegistrar": {
+    "publicDsRecordPresent": false,
+    "checkedSources": ["Google Public DNS", "Cloudflare DNS", "a.gtld-servers.net authoritative .com server"],
+    "dnssecRemovalPropagatedAtCheckedSources": true,
+    "route53DomainsStatus": "DOMAIN_NOT_IN_ACCOUNT",
+    "registrarTransferInitiated": false,
+    "dnsChanged": false
+  },
   "security": {
     "accessAnalyzerType": "ACCOUNT_UNUSED_ACCESS",
     "accessAnalyzerStatus": "ACTIVE",
@@ -124,17 +140,19 @@
     "inspectorStatus": "DISABLED",
     "securityHubV2CloudFormationStatus": "CREATE_COMPLETE",
     "configRecording": true,
-    "configRecordedResourceTypes": 26,
+    "configRecordedResourceTypes": 41,
     "configRules": 0,
     "cloudTrailLogging": true,
     "cloudTrailMultiRegion": true,
     "cloudTrailLogValidation": true,
-    "cloudTrailS3ObjectDataEvents": false,
-    "wafLiveRules": ["RequestFlood"],
-    "wafPendingManagedRuleGroups": 3,
-    "metricAlarmsOk": 14,
+    "cloudTrailS3ObjectDataEvents": true,
+    "cloudTrailS3ObjectDataEventScope": "arn:aws:s3:::tracepoint-production-private-193644343389/",
+    "wafLiveRules": ["RequestFlood", "AWSManagedRulesCommonRuleSet", "AWSManagedRulesKnownBadInputsRuleSet", "AWSManagedRulesAmazonIpReputationList"],
+    "wafPendingManagedRuleGroups": 0,
+    "metricAlarmsOk": 17,
     "compositeRuntimeAlarmOk": true,
     "compositeAlarmHasEncryptedSnsAction": true,
+    "backupFailureEventRuleEnabled": true,
     "humanEmailSubscriptionPresent": false
   },
   "runtime": {
@@ -145,8 +163,10 @@
     "publicDnsPointsToAlb": false,
     "albSevenDayRequestCount": 17653,
     "scaleToZeroConditionSatisfied": false,
-    "awsNativeImagePublished": false,
-    "awsNativeRuntimeDeployed": false
+    "awsNativeImagePublished": true,
+    "awsNativeRuntimeDeployed": false,
+    "rollbackTaskDefinition": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:2",
+    "rollbackImage": "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production:ae3d2a4ce87b2085e251b1995f51a7b07058ec4d"
   },
   "immutableImages": {
     "postgresMigration": {
@@ -163,8 +183,13 @@
       "scan": "COMPLETE_ZERO_FINDINGS"
     },
     "runtime": {
-      "tag": "8169c388f044cdca092cce87f844be1671230f5c-aws-native",
-      "status": "NOT_PUBLISHED_TOOL_AUTHORIZATION_CONFLICT"
+      "sourceCommit": "63828c03a091a75a232d6a70297bd7d40c8d0b3c",
+      "tag": "63828c03a091a75a232d6a70297bd7d40c8d0b3c-aws-native",
+      "buildId": "tracepoint-production-aws-native-image-build:391cfd0d-d305-4f92-88c3-9f756574f60e",
+      "sourceVersion": "EMNYqYfSN2638ilURhytZtffxB4cveF7",
+      "digest": "sha256:5f4b8fe59eaf8befd29bf7ca455ec1d4eb2b18836e66818bf2cc8cae55a90c0b",
+      "scan": "COMPLETE_ZERO_FINDINGS",
+      "deployed": false
     }
   },
   "governance": {
@@ -179,7 +204,8 @@
     "boundaryCurrentSha256": "39acb70e0f81ae0f430de60eddf52ce37afea56b588451f552fdd313d005eacc",
     "directMigrationRoleCreateUserPool": "explicitDeny",
     "directMigrationRoleAdminCreateUser": "implicitDeny",
-    "directMigrationRoleCreateIamUser": "implicitDeny"
+    "directMigrationRoleCreateIamUser": "implicitDeny",
+    "cloudFormationCreateUserPool": "allowed"
   },
   "validation": {
     "applicationBuild": "PASSED",
@@ -188,6 +214,12 @@
     "migrationAndToolingTests": {"passed": 172, "failed": 0, "typescriptAwareSplitRunner": true},
     "providerReachability": {"entrypoints": 154, "reachableModules": 322, "staticLegacyEdges": 0, "unapprovedDynamicLegacyEdges": 0, "unapprovedLegacyEndpointLiterals": 0},
     "archiveValidation": {"runtimeFiles": 501, "migrationFiles": 113, "identityFiles": 495},
+    "cleanAwsNativeBootstrap": {"sourceMigrations": 76, "awsOverlays": 21, "status": "PASSED", "liveProductionExecution": false},
+    "lineageUpgradeTests": {"cleanBootstrap": "PASSED", "productionUpgrade": "PASSED", "stagingUpgrade": "PASSED", "structuralParity": "PASSED"},
+    "logicalDumpRestore": {"status": "BLOCKED", "reason": "Official pg_dump.exe is not installed on this host"},
+    "productionSynth": {"stacks": 13, "cdkNagBlockingFindings": 0, "status": "PASSED"},
+    "liveCdkDiff": {"descriptionOnlyStacks": 11, "undeployedRuntimeFunctionalDiff": true, "alertDeliveryDifferences": 0},
+    "powerShellParsing": {"passed": 31, "failed": 0},
     "touchedFileLint": "PASSED",
     "repositoryWideLint": {"status": "FAILED_BASELINE", "errors": 228, "warnings": 59, "scope": "unrelated product debt plus local generated artifacts"},
     "gitDiffCheck": "PASSED"
@@ -195,23 +227,18 @@
   "readiness": {
     "implementationPreparedPercent": 100,
     "liveVerifiedPercent": 79,
-    "netNewLivePointsThisExecution": 2,
-    "creditedGate": 14,
+    "netNewLivePointsThisExecution": 0,
+    "creditedGate": null,
     "remainingGateIds": [8, 13, 15, 16, 17, 18, 19, 21]
   },
   "blockedAuthorizedActions": [
-    "Publish the AWS-native runtime image: the environment safety reviewer requires a direct reaffirmation after the earlier SES-only authorization.",
-    "Run the schema-only ECS bootstrap task: the environment safety reviewer requires a direct reaffirmation after the earlier SES-only authorization.",
-    "Enable termination protection on six newly created/imported stacks.",
-    "Execute the pending WAF managed-rule and backup-alert change sets.",
-    "Deploy the account-baseline Config, CloudTrail data-event, security-metric and unchanged-budget threshold update.",
-    "Create an AWS Backup recovery point and perform the non-customer timed restore rehearsal.",
-    "Deploy and exercise the AWS-native runtime without public DNS traffic."
+    "Run the schema-only ECS bootstrap task: the environment safety reviewer did not accept the attached reaffirmation as trusted authority for a production RDS write.",
+    "Create the disposable private RDS restore target: the environment safety reviewer did not accept the attached reaffirmation as trusted authority for production-account RDS provisioning."
   ],
   "externalCutoverBlockers": [
-    "tracepointhq.com is not yet present in Route 53 Domains in the production account and Wix remains authoritative.",
+    "Public DS removal is propagated at Google, Cloudflare and the authoritative .com server, but tracepointhq.com is not yet present in Route 53 Domains in the production account and Wix remains authoritative.",
     "Custom MAIL FROM cannot become SUCCESS until the prepared Route 53 zone is authoritative.",
     "SES production access remains DENIED under case 178924156800066 and resubmission is not authorized.",
-    "Customer database/object movement, Cognito user transition, email, DNS, traffic cutover and Supabase changes remain prohibited."
+    "AWS-native runtime deployment is not part of this reaffirmation; customer database/object movement, Cognito user transition, email, DNS, traffic cutover and Supabase changes remain prohibited."
   ]
 }
