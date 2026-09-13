@@ -5,8 +5,8 @@
   "database": {
     "productionSourceMigrations": 60,
     "authoritativeSourceMigrations": 76,
-    "awsOverlays": 20,
-    "finalTargetLedgerEntries": 96,
+    "awsOverlays": 21,
+    "finalTargetLedgerEntries": 97,
     "exposedRows": 4358,
     "physicalRows": 4105,
     "copiedRows": 4007,
@@ -1325,5 +1325,5 @@
     "rowContents": false,
     "credentials": false
   },
-  "contentSha256": "07793c7f62658d3c2ae091e406160d92389194d1237a1abcc4187e8e17632888"
+  "contentSha256": "3cad9079f4eb6c96a4a60277a6a05f96db14e52901de6295c6a9d12a771efa2a"
 }

@@ -1,6 +1,6 @@
 {
   "format": "tracepoint-aws-precutover-readiness/v1",
-  "observedAtUtc": "2026-09-13T04:50:19.9282739Z",
+  "observedAtUtc": "2026-09-13T14:20:02.6200506Z",
   "target": {
     "account": "193644343389",
     "region": "us-east-1",
@@ -12,7 +12,7 @@
   "cost": {
     "budgetName": "tracepoint-production-monthly",
     "budgetUsd": 150,
-    "billingLaggedActualUsd": 12.297,
+    "billingLaggedActualUsd": 13.964,
     "forecastAvailable": false,
     "projectedTier1SteadyUsd": 131.72,
     "projectedNormalRollingUsd": 144.38,
@@ -41,7 +41,7 @@
       "publicDnsPointsToRuntime": false,
       "remaining": "Owner-authorized image publication, full-AWS data-plane deployment, secret finalization, and runtime replacement"
     },
-    "database": { "instances": 0, "remaining": "Deploy private encrypted RDS and bootstrap 76+20" },
+    "database": { "instances": 0, "remaining": "Deploy private encrypted RDS and bootstrap 76+21" },
     "cognito": { "userPools": 0, "remaining": "Deploy pool and execute the separately authorized identity transition" },
     "storage": { "privateApplicationBucketPresent": false, "productionObjectsCopied": false },
     "backup": { "vaults": 0, "productionRestoreProven": false },
@@ -99,10 +99,10 @@
   },
   "offlineValidation": {
     "sourceMigrations": 76,
-    "awsOverlays": 20,
-    "targetLedgerEntries": 96,
+    "awsOverlays": 21,
+    "targetLedgerEntries": 97,
     "cleanBootstrap": "PASSED",
-    "dumpRestoreReconciliationMs": 2833,
+    "dumpRestoreReconciliationMs": 2877,
     "productionShaped": {
       "status": "PASSED",
       "exposedRows": 4358,
@@ -110,11 +110,11 @@
       "identities": 96,
       "memberships": 95,
       "objects": 2,
-      "totalMs": 11439,
+      "totalMs": 11516,
       "sensitiveValuesEmitted": false
     },
     "applicationTests": { "passed": 405, "failed": 0 },
-    "migrationScriptTests": { "passed": 168, "failed": 0, "splitRunnerRequiredForTypescriptAssemblyTest": true },
+    "migrationScriptTests": { "passed": 172, "failed": 0, "splitRunnerRequiredForTypescriptAssemblyTest": false },
     "infrastructureTests": { "passed": 61, "failed": 0 },
     "typescript": "PASSED",
     "productionBuild": "PASSED",
@@ -129,7 +129,7 @@
   },
   "readiness": {
     "liveVerifiedPercent": 77,
-    "implementationPreparedPercent": 95,
+    "implementationPreparedPercent": 98,
     "categoryPercentagesAreDiagnosticNotLedgerCredit": true,
     "categories": {
       "dns": 70,

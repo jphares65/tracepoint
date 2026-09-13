@@ -10,7 +10,7 @@ nameserver changes, runtime replacement, or traffic cutover.
 - The production identity is account `193644343389`, role
   `TracePointMigrationProduction`, region `us-east-1`.
 - The live monthly Budget is unchanged at **$150**; billing-lagged actual spend
-  is **$12.297** and AWS supplied no forecast. No AWS resource was created or
+  is **$13.964** and AWS supplied no forecast. No AWS resource was created or
   changed in this run.
 - Tier 1 remains **$131.72 steady** and **$144.38 during a normal rolling
   deployment**. A rolling deployment after RDS reaches its approved 100-GiB
@@ -33,8 +33,8 @@ nameserver changes, runtime replacement, or traffic cutover.
 | Network | VPC, two public subnets, two private subnets, flow logs and S3 gateway endpoint live | Add least-privilege application/database groups and one-AZ Secrets Manager/SNS endpoints | Read-only inventory and 13-stack synth | Authorize reviewed stack updates | CloudFormation rollback; endpoints are included in the $131.72 model |
 | KMS/secrets | Core keys and legacy-shaped application secret live | Eight retained CMKs and exact AWS-native secret schema | Policy/schema tests passed | Authorize stack deployment and secret finalization | Retain old secret version; new steady cost already modeled |
 | Storage | Audit/build/ALB buckets live; no private application bucket | Versioned, blocked-public, KMS-encrypted private bucket with create-only migration | Policy, checksum, retry and restore tests passed | Authorize bucket deployment, then separate two-object copy | Retain source objects and S3 versions; modeled cost $0.87 |
-| Database | No RDS instance | Private TLS-only PostgreSQL 17.9, `db.t4g.small`, 20–100 GiB, 35-day PITR | 76+20 bootstrap and production-shaped dump/restore passed | Authorize deployment/bootstrap; do not permit a max-storage rolling state above budget | Snapshot/retained backups; modeled compute/storage $25.66 initial |
-| Cognito | No production pool | Cognito pool/client/domain and AWS-native sessions | Lifecycle and synthetic cohort tests passed | Owner disposition for one inactive-only and one membership-less platform-admin identity, then deployment/execution authorization | Preserve Supabase auth sealed until observation ends; Cognito low-volume model $0 |
+| Database | No RDS instance | Private TLS-only PostgreSQL 17.9, `db.t4g.small`, 20–100 GiB, 35-day PITR | 76+21 bootstrap and production-shaped dump/restore passed | Authorize deployment/bootstrap; do not permit a max-storage rolling state above budget | Snapshot/retained backups; modeled compute/storage $25.66 initial |
+| Cognito | No production pool | Cognito pool/client/domain and AWS-native sessions | Standard and exceptional cohort runners, activation/recovery paths, and synthetic tests passed | Authorize immutable publication and execution; later authorize activation communication | Preserve Supabase auth sealed until observation ends; Cognito low-volume model $0 |
 | SES | Foundation, two configuration sets, encrypted SNS/SQS/DLQ live | Verified identity/MAIL FROM, worker, production access and monitored alert path | Status and suppression verified read-only | Registrar/delegation, SES approval, worker deployment and one smoke-email authorization | Disable sending/configuration use; fixed foundation KMS cost about $1 |
 | Backup | No production vault/plan | KMS vault, plan/selection, RDS PITR and S3 recovery | Offline recovery assembly and staging/local restore proof passed | Authorize production deployment and timed non-customer restore exercise | Retained snapshot/version recovery; modeled $1.90 |
 | Compute | ECR/cluster/public ALB/two legacy-configured tasks live | Digest-pinned AWS-native task, desired one/max two | Production application build passed | Authorize CodeBuild/ECR publication and scan; then authorize runtime replacement | Retain prior task definition and immutable bridge export; rolling peak $144.38 |
@@ -44,8 +44,7 @@ nameserver changes, runtime replacement, or traffic cutover.
 ## Completed validation and rehearsal
 
 - 405 application tests passed.
-- 168 migration/tooling tests passed. The TypeScript assembly test was run in
-  its required `tsx` process; the Windows embedded-PostgreSQL harness now exits
+- 172 migration/tooling tests passed in one `tsx`-enabled run; the Windows embedded-PostgreSQL harness now exits
   cleanly and removes its disposable process tree.
 - 61 infrastructure tests passed.
 - TypeScript, the Next.js production build, infrastructure build, PowerShell
@@ -54,7 +53,7 @@ nameserver changes, runtime replacement, or traffic cutover.
 - Strict offline CDK synthesis produced the full 13-stack assembly with cdk-nag
   enabled. The remaining warnings are the reviewed `us-east-1a` validation
   warnings; no cdk-nag failure occurred.
-- The authoritative lineage remains **76 source migrations + 20 AWS overlays**.
+- The authoritative lineage is **76 source migrations + 21 AWS overlays**. Overlay 021 adds the fail-closed platform-admin boundary for the two exceptional Cognito cohorts without rewriting prior migrations.
   Clean bootstrap, RLS/RBAC and tenant-negative checks passed. PostgreSQL 18.6
   `pg_dump`/`pg_restore` completed a clean logical restore and exact metadata/data
   reconciliation.
@@ -110,21 +109,23 @@ registrar mutation was performed.
     simulate allowed and denied actions and retain the inverse versions.
 11. Deploy storage, database, Cognito, SES worker and Backup foundations with
     termination/deletion protection; do not expose traffic.
-12. Bootstrap exactly 76 source migrations and 20 overlays. Require ledger,
+12. Bootstrap exactly 76 source migrations and 21 overlays. Require ledger,
     schema, RLS, grants, functions, triggers and extensions to reconcile.
 13. Publish runtime and migration images from one clean commit, require immutable
     digests and a completed vulnerability scan with no accepted unknowns.
 14. Validate alarms, queues/DLQs, Config, CloudTrail data events, GuardDuty,
     target health, RDS automated backups and an isolated restore.
-15. Resolve the inactive-only and membership-less administrator decisions and
-    create the immutable 96-user identity manifest without emitting identities.
+15. Create the immutable department-scoped and exceptional identity manifests
+    for the 96-user cohort without emitting identities; retain the inactive-only
+    identity disabled and route the membership-less platform administrator to
+    the separately authorized recovery communication.
 16. Create the immutable two-object manifest and verify source hashes read-only.
 17. At the owner-approved window, announce maintenance and stop asynchronous
     import/notification dispatch.
 18. Freeze source writes and require two consecutive zero-write checks.
 19. Capture the final Supabase snapshot/LSN, migration ledger, row manifests,
     identity manifest and object manifest; seal the rollback export.
-20. Restore PostgreSQL, apply the 16 source deltas followed by 20 AWS overlays,
+20. Restore PostgreSQL, apply the 16 source deltas followed by 21 AWS overlays,
     and fail closed on any count/key/hash/FK/tenant/timestamp discrepancy.
 21. Execute the resumable Cognito cohort; reconcile all 96 users, 95 memberships,
     roles, inactive state and the membership-less platform administrator before
@@ -158,9 +159,9 @@ the current gates without rewriting prior evidence.
    preserving the $150 Budget and prohibiting the 100-GiB rolling sensitivity.
 2. **Immutable artifacts:** run production CodeBuild, publish runtime/migration
    images to ECR and perform the production scan; no deployment or traffic.
-3. **Identity decisions:** migrate the inactive-only identity disabled without
-   email (or specify another disposition), and authorize a global platform-admin
-   migration path that does not invent a department membership.
+3. **Identity transition:** authorize the immutable 96-user department and
+   exceptional cohort executions, followed by the separately controlled
+   activation/recovery communication; no department membership is invented.
 4. **Current legacy runtime disposition:** either scale the unreferenced
    legacy-configured ECS service to zero until cutover or explicitly retain it;
    its public ALB is live even though TracePoint DNS does not point to it.

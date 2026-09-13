@@ -19,8 +19,8 @@ credit. The exact gate accounting is in
   Manager, AWS Backup, CloudWatch, WAF, KMS, SNS, and SQS.
 - Permanent runtime legacy providers: none. Supabase is retained only as a
   sealed rollback source; Vercel and Brevo have no target role.
-- Authoritative target lineage: 76 source migrations followed by 20 immutable
-  AWS overlays, 96 ledger entries total.
+- Authoritative target lineage: 76 source migrations followed by 21 immutable
+  AWS overlays, 97 ledger entries total.
 - Read-only source lineage: 60 source migrations. The exact 16 unapplied source
   deltas are in `aws-production-source-lineage-20260912.json`; there are no
   unexpected production migrations.
@@ -34,7 +34,7 @@ views account for 253 derived rows, leaving 4,105 physical rows. The migration
 copies approximately 4,007 physical rows: 92 target-seeded catalog rows and six
 legacy activation-token rows are intentionally not copied. It creates 96
 passwordless Auth anchors, then applies the missing 16 source migrations in
-their authoritative order and all 20 AWS overlays against the copied data.
+their authoritative order and all 21 AWS overlays against the copied data.
 
 Identity scope is 96 Auth users, 95 memberships, 86 membership-role links, and
 three departments. Ninety-four users have an active membership, one has only an
@@ -49,10 +49,10 @@ contents are absent from committed evidence.
 ## Rehearsal result and limits
 
 The production-shaped synthetic rehearsal passed at the observed scale. It
-combined a real clean PostgreSQL 76+20 bootstrap and logical dump/restore with
+combined a real clean PostgreSQL 76+21 bootstrap and logical dump/restore with
 synthetic table, identity, object, interruption, and repeat-run contracts:
 
-- clean bootstrap and complete 76+20 ledger: passed;
+- clean bootstrap and complete 76+21 ledger: passed;
 - dump/restore reconciliation: 2.951 seconds;
 - bootstrap plus restore wall time: 12.364 seconds;
 - table contracts: 87 physical relations / 4,105 modeled rows, passed;
@@ -63,7 +63,7 @@ synthetic table, identity, object, interruption, and repeat-run contracts:
 - total local rehearsal: 12.475 seconds.
 
 This is not a claim that production data was moved or that the production
-60-to-96 runner was exercised against live RDS. The maintenance estimate below
+60-to-97 runner was exercised against live RDS. The maintenance estimate below
 therefore reserves much more time for managed-service startup, a final source
 snapshot, network transfer, Cognito/SES throttles, operator checks, and rollback
 decisions.
@@ -186,12 +186,12 @@ change window; the extra 45 minutes is contingency, not planned downtime.
 | Minute | Operator action and gate |
 |---:|---|
 | T-1440 to T-120 | Complete SES identity/DNS/access and production-policy approvals; set DNS TTL 300; verify the unchanged $150 budget; deploy approved AWS foundations; publish and scan all images; validate backups, alarms, human alert path and target health. Any incomplete prerequisite is no-go. |
-| T-60 to T-15 | Confirm exact account/role/region, clean commit, image digests, 60-source hash, 76+20 local hash, latest source counts, zero provider violations, empty target, successful RDS snapshot, SES status, Cognito pool, S3 versioning/Backup, two healthy bridge tasks, and rollback manifest. |
+| T-60 to T-15 | Confirm exact account/role/region, clean commit, image digests, 60-source hash, 76+21 local hash, latest source counts, zero provider violations, empty target, successful RDS snapshot, SES status, Cognito pool, S3 versioning/Backup, two healthy bridge tasks, and rollback manifest. |
 | T-15 to T0 | Announce maintenance through an owner-approved channel, stop asynchronous dispatch/import jobs, drain queues, verify no in-flight mutation, record source LSN/time and final immutable manifests. |
 | 0–3 | Owner authorizes write freeze; application enters maintenance/read-only mode. Confirm zero writes for two consecutive checks. |
 | 3–8 | Take final Supabase snapshot/export under repeatable-read. Capture 60-version count/hash and source reconciliation manifests. |
 | 8–20 | Create source-parity PostgreSQL schema, restore copied rows and Auth anchors in one transaction. Retry only from a provably empty/anchor-only target or an exact full-content match. |
-| 20–30 | Apply the 16 missing source deltas in authoritative order, then AWS overlays 001–020. Validate 96-entry ledger and every foreign key. |
+| 20–30 | Apply the 16 missing source deltas in authoritative order, then AWS overlays 001–021. Validate the 97-entry ledger and every foreign key. |
 | 30–37 | Run table counts, PK sets, projected row hashes, tenant/timestamp/orphan checks. Any unexplained difference is no-go and rollback-before-write. |
 | 37–42 | Copy the two manifest-bound objects create-only to S3; validate owner, tenant prefix, byte count and SHA-256. |
 | 42–52 | Create the authorized Cognito cohorts with original TracePoint UUIDs, persist one-to-one subject links, and reconcile 96 users / 95 memberships / 86 role links. Activation email is sent only after the SES gate. |
@@ -204,7 +204,7 @@ change window; the extra 45 minutes is contingency, not planned downtime.
 
 Cutover fails closed on any unexplained database/object/identity discrepancy;
 any cross-tenant access; migration task nonzero exit; unvalidated foreign key;
-target ledger other than 76+20; undigested image; critical/high image finding;
+target ledger other than 76+21; undigested image; critical/high image finding;
 any forbidden provider configuration or reachable unreviewed provider edge;
 fewer than two healthy ECS targets; TLS/certificate failure; SES not production
 ready; missing human alert; or a failed critical smoke test.
@@ -257,13 +257,14 @@ The sanitized exact cohort is:
   platform-administrator cohort and never assigned a fabricated department;
 - zero duplicate-email and zero multi-department exceptions.
 
-Current department-scoped tooling can safely prepare/execute the 94 active
-members. It intentionally excludes the inactive and membership-less identities.
-Before production execution, owner authorization and a focused implementation
-must define the non-email disabled import for the inactive identity and the
-platform-administrator import for the membership-less administrator. Production
-cannot truthfully claim a complete 96-user transition until both are implemented
-and tested; fabricating memberships is prohibited.
+Department-scoped tooling prepares/executes the 94 active members. The explicit
+exceptional-cohort runner now imports the inactive identity in a disabled,
+revoked state without email and imports the membership-less administrator with
+a pending provider link, verified recovery address, and no fabricated
+department. Both paths are UUID-only, manifest-bound, resumable, and gated by
+the authenticated platform-administrator database boundary. Production cannot
+claim a complete 96-user transition until the owner-authorized live execution
+and reconciliation pass.
 
 All Cognito identities preserve the existing TracePoint UUID as the application
 identity, while Cognito `sub` is stored only in the one-to-one provider link.
@@ -282,7 +283,7 @@ gate:
 3. **Infrastructure:** deploy the synthesized 13-stack full-AWS production
    target and publish/scan exact-commit runtime and migration images.
 4. **Database:** create/write RDS, read the Supabase source snapshot, move the
-   approximately 4,007 copied public rows plus 96 Auth anchors, and apply 16+20
+   approximately 4,007 copied public rows plus 96 Auth anchors, and apply 16+21
    migrations.
 5. **Objects:** read the two source objects and create the two manifest-bound S3
    targets; no source deletion or overwrite.
@@ -304,14 +305,17 @@ gate:
 
 ## Remaining external blockers
 
-- SES identity creation, Wix DNS, production-access submission/approval, and a
-  verified monitored mailbox are external owner actions. DNS/SES verification
-  may take up to 72 hours and is the critical calendar-time risk.
+- The SES identity and two configuration sets exist, all three DKIM records and
+  the MAIL FROM SPF resolve, but the MAIL FROM MX is absent, identity/MAIL FROM
+  remain pending, and SES production access request `178924156800066` is denied.
+  Publishing the reviewed MX and an authorized request response/resubmission are
+  external actions and remain the critical calendar-time risk.
 - The live and synthesized production budget must remain exactly $150; any projected operating state above it requires cost reduction or separate owner authorization.
 - The SCP/boundary changes above require owner authorization and an organization
   administrator.
-- The inactive identity and membership-less platform-administrator transition
-  need the explicit disposition and focused implementation described above.
-- Production image publication/scanning, target deployment, live 60-to-96
+- The inactive and membership-less platform-administrator implementations are
+  complete offline; immutable publication, live execution, recovery
+  communication, and reconciliation still require explicit authorization.
+- Production image publication/scanning, target deployment, live 60-to-97
   migration rehearsal, customer data movement, identity creation, email, and
   DNS remain intentionally unexecuted.

@@ -1,6 +1,6 @@
 {
   "format": "tracepoint-production-shaped-rehearsal/v1",
-  "generatedAt": "2026-09-13T04:45:31.360Z",
+  "generatedAt": "2026-09-13T14:21:56.617Z",
   "sourceInventorySha256": "01fd0efb02c2dbd3ca9faadc2bf42a921bf1c714c061202931e4aa747cde5a3d",
   "sourceScale": {
     "exposedRows": 4358,
@@ -14,8 +14,8 @@
     "productionSource": 60,
     "authoritativeSource": 76,
     "sourceDeltasAfterCopy": 16,
-    "awsOverlaysAfterCopy": 20,
-    "targetTotal": 96
+    "awsOverlaysAfterCopy": 21,
+    "targetTotal": 97
   },
   "database": {
     "tables": 87,
@@ -24,8 +24,8 @@
     "clean": true,
     "cleanBootstrap": true,
     "dumpRestoreReconciled": true,
-    "dumpRestoreMs": 2833,
-    "bootstrapAndRestoreWallMs": 11335,
+    "dumpRestoreMs": 2877,
+    "bootstrapAndRestoreWallMs": 11414,
     "retryContract": "single-transaction restore; exact anchor-only or full-content resume; partial/conflicting data fails closed"
   },
   "identity": {
@@ -57,8 +57,8 @@
     "postWriteBridgeRestore": "freeze-and-reconcile"
   },
   "timings": {
-    "syntheticContractMs": 104,
-    "totalMs": 11439
+    "syntheticContractMs": 101,
+    "totalMs": 11516
   },
   "privacy": {
     "syntheticOnly": true,
