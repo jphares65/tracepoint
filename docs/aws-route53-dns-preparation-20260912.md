@@ -1,6 +1,9 @@
 # TracePoint Route 53 authoritative DNS migration preparation
 
-Prepared 2026-09-12. This checkpoint is read-only with respect to AWS DNS,
+Prepared 2026-09-12. This preparation snapshot was followed by the separately
+authorized live pre-cutover deployment recorded in
+`docs/aws-route53-live-deployment-20260912.md`. The text below preserves the
+pre-deployment decision record. At the time of this snapshot it was read-only with respect to AWS DNS,
 Wix, the registrar, application traffic, Microsoft 365, and SES delivery. No
 hosted zone, record, delegation, DS key, certificate, email, or budget was
 created, changed, or deleted.

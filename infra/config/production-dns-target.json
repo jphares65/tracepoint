@@ -3,6 +3,7 @@
   "expectedAccount": "193644343389",
   "expectedRegion": "us-east-1",
   "cutoverReady": false,
+  "preCutoverDeploymentReady": true,
   "cutoverBlockers": [
     "The Wix-registered domain cannot change authoritative name servers without first moving registration to a registrar that permits custom name servers.",
     "The parent .com zone currently contains a DNSSEC DS record for the Wix signing key; it must be removed and allowed to expire before delegation changes.",

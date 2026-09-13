@@ -4,16 +4,14 @@
     {
       "Sid": "DenyAccountDepartureOrClosure",
       "Effect": "Deny",
-      "Action": [
-        "organizations:LeaveOrganization",
-        "account:CloseAccount"
-      ],
+      "Action": ["organizations:LeaveOrganization", "account:CloseAccount"],
       "Resource": "*"
     },
     {
-      "Sid": "DenyProductionRegistrarMutations",
+      "Sid": "DenyProductionDnsChanges",
       "Effect": "Deny",
       "Action": [
+        "route53:ChangeResourceRecordSets",
         "route53domains:AssociateDelegationSignerToDomain",
         "route53domains:DeleteDomain",
         "route53domains:DisableDomainAutoRenew",
@@ -31,42 +29,15 @@
       "Resource": "*"
     },
     {
-      "Sid": "DenyDnsRecordChangesOutsideReviewedZone",
-      "Effect": "Deny",
-      "Action": "route53:ChangeResourceRecordSets",
-      "NotResource": "arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8"
-    },
-    {
-      "Sid": "DenyReviewedZoneChangesOutsideCloudFormation",
-      "Effect": "Deny",
-      "Action": "route53:ChangeResourceRecordSets",
-      "Resource": "arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8",
-      "Condition": {
-        "ArnNotEquals": {
-          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
-        }
-      }
-    },
-    {
       "Sid": "KeepCognitoDisabled",
       "Effect": "Deny",
-      "Action": [
-        "cognito-idp:Create*",
-        "cognito-idp:Update*",
-        "cognito-idp:Delete*"
-      ],
+      "Action": ["cognito-idp:Create*", "cognito-idp:Update*", "cognito-idp:Delete*"],
       "Resource": "*"
     },
     {
       "Sid": "KeepSesDisabledOutsideAuthorizedFoundationRoles",
       "Effect": "Deny",
-      "Action": [
-        "ses:Create*",
-        "ses:Put*",
-        "ses:Send*",
-        "ses:Update*",
-        "ses:Delete*"
-      ],
+      "Action": ["ses:Create*", "ses:Put*", "ses:Send*", "ses:Update*", "ses:Delete*"],
       "Resource": "*",
       "Condition": {
         "ArnNotEquals": {
@@ -77,12 +48,7 @@
         }
       }
     },
-    {
-      "Sid": "DenySesSendingUntilSeparateAuthorization",
-      "Effect": "Deny",
-      "Action": "ses:Send*",
-      "Resource": "*"
-    },
+    {"Sid": "DenySesSendingUntilSeparateAuthorization", "Effect": "Deny", "Action": "ses:Send*", "Resource": "*"},
     {
       "Sid": "ProtectSecurityAuditServices",
       "Effect": "Deny",
@@ -105,37 +71,14 @@
       "Sid": "DenyOutsideUsEast1",
       "Effect": "Deny",
       "NotAction": [
-        "account:*",
-        "artifact:*",
-        "aws-marketplace:*",
-        "budgets:*",
-        "ce:*",
-        "cloudfront:*",
-        "cur:*",
-        "globalaccelerator:*",
-        "health:*",
-        "iam:*",
-        "networkmanager:*",
-        "organizations:*",
-        "pricing:*",
-        "route53:*",
-        "route53domains:*",
-        "s3:GetAccountPublicAccessBlock",
-        "s3:ListAllMyBuckets",
-        "s3:ListMultiRegionAccessPoints",
-        "savingsplans:*",
-        "shield:*",
-        "sts:*",
-        "support:*",
-        "tag:GetResources",
+        "account:*", "artifact:*", "aws-marketplace:*", "budgets:*", "ce:*", "cloudfront:*", "cur:*",
+        "globalaccelerator:*", "health:*", "iam:*", "networkmanager:*", "organizations:*", "pricing:*",
+        "route53:*", "route53domains:*", "s3:GetAccountPublicAccessBlock", "s3:ListAllMyBuckets",
+        "s3:ListMultiRegionAccessPoints", "savingsplans:*", "shield:*", "sts:*", "support:*", "tag:GetResources",
         "trustedadvisor:*"
       ],
       "Resource": "*",
-      "Condition": {
-        "StringNotEquals": {
-          "aws:RequestedRegion": "us-east-1"
-        }
-      }
+      "Condition": {"StringNotEquals": {"aws:RequestedRegion": "us-east-1"}}
     }
   ]
 }

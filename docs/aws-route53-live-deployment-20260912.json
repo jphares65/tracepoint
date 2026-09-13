@@ -1,0 +1,92 @@
+{
+  "evidenceType": "route53-authoritative-dns-precutover-live-deployment",
+  "completedAt": "2026-09-13T02:13:00Z",
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction",
+    "budgetName": "tracepoint-production-monthly",
+    "budgetLimitUsd": 150,
+    "budgetActualUsdBillingLagged": 12.297,
+    "budgetChanged": false
+  },
+  "governance": {
+    "canonicalHashAlgorithm": "SHA-256 of UTF-8 JSON with recursively sorted object keys and preserved array order",
+    "boundary": {
+      "arn": "arn:aws:iam::193644343389:policy/TracePointProductionBoundary",
+      "beforeVersion": "v8",
+      "beforeSha256": "2dd0df09281f23a040f18a5722989c5cd7fe9b64c31a448cd848d3f713007128",
+      "temporaryZoneCreationVersion": "v9",
+      "temporaryZoneCreationSha256": "7b368a481a66c91a46b4f2255e1d170660dba95926fe39552cf0712e9346deb2",
+      "finalVersion": "v10",
+      "finalSha256": "0d64a6c3f3130f316e1bef8247537d9cb17f0347e8e3c32fb2fc476ff5243d8d",
+      "rollbackVersionPreserved": true
+    },
+    "scp": {
+      "id": "p-rvx1u7q7",
+      "beforeSha256": "47b11e76fd3caf0a2897045f2318abdaa429ba7bd2bf5cab4b9fa897c0eaab09",
+      "afterSha256": "f388995b2d63f445a8ded1dc94c41f5749132f170c0081674f7e18bc43bdcb62",
+      "rollbackDocument": "infra/policies/tracepoint-production-guardrails.pre-route53-20260912.scp.json"
+    },
+    "effectivePermissionProof": {
+      "cloudFormationExactZoneRecordChange": "allowed",
+      "cloudFormationUnrelatedZoneRecordChange": "explicitDeny",
+      "migrationRoleCreateHostedZoneAfterCreation": "implicitDeny",
+      "migrationRoleRecordChange": "explicitDeny",
+      "route53domainsUpdateDomainNameservers": "explicitDeny",
+      "accessAnalyzerFindings": 0
+    }
+  },
+  "hostedZone": {
+    "id": "Z06725946QWMQBKB1JT8",
+    "public": true,
+    "retained": true,
+    "terminationProtection": true,
+    "creationChangeId": "/change/C08569111XPQCXPIW3RG5",
+    "creationChangeStatus": "INSYNC",
+    "nameServers": [
+      "ns-1725.awsdns-23.co.uk",
+      "ns-1133.awsdns-13.org",
+      "ns-746.awsdns-29.net",
+      "ns-401.awsdns-50.com"
+    ],
+    "soa": "ns-1725.awsdns-23.co.uk. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400",
+    "managedRecordSets": 23,
+    "providerRecordSets": 2,
+    "totalRecordSets": 25,
+    "recordManifest": "infra/config/production-dns-target.json",
+    "recordManifestFileSha256": "269f8e5fb814335b86b14ac8c9f3753e1e14263cd85fa062695ac7578d554e2b"
+  },
+  "validation": {
+    "directAuthoritativeChecks": 92,
+    "directAuthoritativeExpected": 92,
+    "directAuthoritativeMismatches": 0,
+    "wixVsTarget": {"match": 21, "intentionalAddition": 1, "intentionalCleanup": 1, "reviewRequired": 0},
+    "publicAuthorityStillWix": true,
+    "publicNameServers": ["ns10.wixdns.net", "ns11.wixdns.net"],
+    "parentDsStillPresent": "35882 8 2 BE5370254126A888C374E7133B0AE38CEE0582679AA6E2969773F05A84B0F0DC",
+    "route53DnssecEnabled": false,
+    "websiteApexStatus": 200,
+    "websiteWwwStatus": 307,
+    "websiteServer": "Vercel",
+    "microsoft365Preserved": true,
+    "sesSixRecordsPresentInRoute53": true,
+    "dmarcTargetRecordCount": 1,
+    "cloudFormationStacks": ["tracepoint-production-authoritative-dns-zone", "tracepoint-production-authoritative-dns-records"]
+  },
+  "isolation": {
+    "resourceTypes": {"AWS::Route53::HostedZone": 1, "AWS::Route53::RecordSet": 23, "AWS::CDK::Metadata": 2},
+    "forbiddenResourceCount": 0,
+    "registrarOrDelegationMutation": false,
+    "trafficMutation": false,
+    "dnssecMutation": false,
+    "emailSent": false
+  },
+  "cost": {
+    "currentFixedMonthlyUsd": 0.5,
+    "standardQueriesUsdPerMillion": 0.4,
+    "futureDnssecKmsFixedMonthlyUsd": 1.0,
+    "futureFixedMonthlyTotalUsd": 1.5,
+    "budgetCeilingUsd": 150
+  }
+}

@@ -107,6 +107,48 @@
       }
     },
     {
+      "Sid": "AllowReviewedRoute53RecordChangesViaCloudFormation",
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
+        },
+        "ForAllValues:StringEquals": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": [
+            "tracepointhq.com",
+            "www.tracepointhq.com",
+            "staging.tracepointhq.com",
+            "autodiscover.tracepointhq.com",
+            "sip.tracepointhq.com",
+            "lyncdiscover.tracepointhq.com",
+            "enterpriseregistration.tracepointhq.com",
+            "enterpriseenrollment.tracepointhq.com",
+            "_sip._tls.tracepointhq.com",
+            "_sipfederationtls._tcp.tracepointhq.com",
+            "send.tracepointhq.com",
+            "r.send.tracepointhq.com",
+            "img.send.tracepointhq.com",
+            "brevo1._domainkey.tracepointhq.com",
+            "brevo2._domainkey.tracepointhq.com",
+            "t3pxf5n23dcf5ahxn4xzhcxfxnvushzh._domainkey.tracepointhq.com",
+            "yiaen5uag5n6evooqpo2rt3earh3zwcq._domainkey.tracepointhq.com",
+            "yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com",
+            "bounce.tracepointhq.com",
+            "_dmarc.tracepointhq.com"
+          ],
+          "route53:ChangeResourceRecordSetsRecordTypes": ["A", "CNAME", "MX", "SRV", "TXT"],
+          "route53:ChangeResourceRecordSetsActions": ["CREATE", "UPSERT", "DELETE"]
+        },
+        "Null": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "false",
+          "route53:ChangeResourceRecordSetsRecordTypes": "false",
+          "route53:ChangeResourceRecordSetsActions": "false"
+        }
+      }
+    },
+    {
       "Sid": "AllowPassOnlyTracePointAndCdkRoles",
       "Effect": "Allow",
       "Action": "iam:PassRole",

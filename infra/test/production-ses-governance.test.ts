@@ -9,6 +9,7 @@ type Statement = {
   Action?: string | string[];
   NotAction?: string | string[];
   Resource?: string | string[];
+  NotResource?: string | string[];
   Condition?: Record<string, Record<string, string | string[]>>;
 };
 
@@ -36,7 +37,8 @@ test('production SCP permits only the reviewed SES principals and still denies s
   ]);
   assert.deepEqual(actions(bySid(statements, 'DenySesSendingUntilSeparateAuthorization')), ['ses:Send*']);
   assert.ok(actions(bySid(statements, 'KeepCognitoDisabled')).every((action) => action.startsWith('cognito-idp:')));
-  assert.ok(actions(bySid(statements, 'DenyProductionDnsChanges')).includes('route53:ChangeResourceRecordSets'));
+  assert.ok(actions(bySid(statements, 'DenyProductionRegistrarMutations')).includes('route53domains:UpdateDomainNameservers'));
+  assert.equal(bySid(statements, 'DenyDnsRecordChangesOutsideReviewedZone').NotResource, 'arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8');
 });
 
 test('production boundary grants only reviewed SES foundation and account-control writes', () => {

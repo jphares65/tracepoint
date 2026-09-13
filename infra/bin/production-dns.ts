@@ -3,13 +3,14 @@ import { AwsSolutionsChecks } from "cdk-nag";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ProductionDnsRecordSet, ProductionDnsStack } from "../lib/production-dns-stack";
+import { ProductionDnsRecordSet, ProductionDnsRecordsStack, ProductionDnsZoneStack } from "../lib/production-dns-stack";
 
 interface ProductionDnsConfig {
   zoneName: "tracepointhq.com";
   expectedAccount: "193644343389";
   expectedRegion: "us-east-1";
   cutoverReady: boolean;
+  preCutoverDeploymentReady: boolean;
   cutoverBlockers: string[];
   recordSets: ProductionDnsRecordSet[];
 }
@@ -29,8 +30,8 @@ if (
 }
 
 if (operation === "authorized") {
-  if (!config.cutoverReady || config.cutoverBlockers.length !== 0) {
-    throw new Error("Production DNS cutover blockers must be resolved before an authorized deployment");
+  if (!config.preCutoverDeploymentReady) {
+    throw new Error("Production DNS pre-cutover deployment is not approved");
   }
   if (process.env.TRACEPOINT_PRODUCTION_ROUTE53_AUTHORIZATION !== authorizationReference) {
     throw new Error("Matching production Route 53 authorization is required");
@@ -56,14 +57,23 @@ if (operation === "authorized") {
   }
 }
 
-new ProductionDnsStack(app, "tracepoint-production-authoritative-dns", {
+const common = {
   env: { account: config.expectedAccount, region: config.expectedRegion },
   expectedAccount: config.expectedAccount,
   expectedRegion: config.expectedRegion,
   zoneName: config.zoneName,
-  recordSets: config.recordSets,
   terminationProtection: true,
-  description: "Prepared TracePoint Route 53 authoritative zone; no registrar or traffic mutation",
+};
+
+const zone = new ProductionDnsZoneStack(app, "tracepoint-production-authoritative-dns-zone", {
+  ...common,
+  description: "TracePoint retained Route 53 authoritative zone; no registrar or traffic mutation",
+});
+new ProductionDnsRecordsStack(app, "tracepoint-production-authoritative-dns-records", {
+  ...common,
+  hostedZone: zone.hostedZone,
+  recordSets: config.recordSets,
+  description: "TracePoint reviewed DNS records in the undelegated retained Route 53 zone",
 });
 
 cdk.Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
