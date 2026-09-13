@@ -43,7 +43,7 @@ export function evaluateProductionLiveReadiness(input, now = Date.now()) {
   const productionBudgetVerified = (input.budgets ?? []).some(budget =>
     budget.BudgetName === 'tracepoint-production-monthly'
     && budget.BudgetType === 'COST'
-    && Number(budget.BudgetLimit?.Amount) === 175
+    && Number(budget.BudgetLimit?.Amount) === 150
     && budget.BudgetLimit?.Unit === 'USD');
 
   const gates = {

@@ -35,9 +35,9 @@ test('production account baseline owns protected audit and security services', (
 });
 
 test('production cost controls use encrypted durable notifications', () => {
-  const stack = new ProductionCostControlsStack(new cdk.App(), 'Costs', {env, accountId: env.account, monthlyBudgetUsd: 175, terminationProtection: true});
+  const stack = new ProductionCostControlsStack(new cdk.App(), 'Costs', {env, accountId: env.account, monthlyBudgetUsd: 150, terminationProtection: true});
   const template = Template.fromStack(stack);
-  template.hasResourceProperties('AWS::Budgets::Budget', {Budget: {BudgetName: 'tracepoint-production-monthly', BudgetLimit: {Amount: 175, Unit: 'USD'}, BudgetType: 'COST', TimeUnit: 'MONTHLY'}, NotificationsWithSubscribers: Match.arrayWith([Match.objectLike({Notification: Match.objectLike({NotificationType: 'ACTUAL', Threshold: 70})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'ACTUAL', Threshold: 85})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'ACTUAL', Threshold: 100})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'FORECASTED', Threshold: 90})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'FORECASTED', Threshold: 100})})])});
+  template.hasResourceProperties('AWS::Budgets::Budget', {Budget: {BudgetName: 'tracepoint-production-monthly', BudgetLimit: {Amount: 150, Unit: 'USD'}, BudgetType: 'COST', TimeUnit: 'MONTHLY'}, NotificationsWithSubscribers: Match.arrayWith([Match.objectLike({Notification: Match.objectLike({NotificationType: 'ACTUAL', Threshold: 70})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'ACTUAL', Threshold: 85})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'ACTUAL', Threshold: 100})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'FORECASTED', Threshold: 90})}), Match.objectLike({Notification: Match.objectLike({NotificationType: 'FORECASTED', Threshold: 100})})])});
   template.hasResourceProperties('AWS::CE::AnomalyMonitor', {MonitorDimension: 'SERVICE', MonitorType: 'DIMENSIONAL'});
   template.hasResourceProperties('AWS::CE::AnomalySubscription', {Frequency: 'IMMEDIATE', Subscribers: Match.arrayWith([Match.objectLike({Type: 'SNS'})])});
   template.hasResourceProperties('AWS::SNS::Topic', {KmsMasterKeyId: Match.anyValue()});

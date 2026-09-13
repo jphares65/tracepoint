@@ -65,7 +65,7 @@
     "rollingExtraTaskCents": 1266,
     "optimizedRollingPeakCents": 14438,
     "optimizedRollingAndMaxStoragePeakCents": 15358,
-    "recommendedBudgetCents": 17500,
+    "recommendedBudgetCents": 15000,
     "firstRotationSteadyCents": 13972,
     "secondRotationSteadyCents": 14772
   },

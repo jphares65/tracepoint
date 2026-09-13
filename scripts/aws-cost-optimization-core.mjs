@@ -14,7 +14,10 @@ export function validateAwsCostOptimizationModel(model) {
   assert.equal(model.production.optimizedSteadyCents + model.production.rollingExtraTaskCents, model.production.optimizedRollingPeakCents);
   assert.equal(model.production.optimizedRollingPeakCents + 80 * 11.5, model.production.optimizedRollingAndMaxStoragePeakCents);
   assert.ok(model.production.optimizedSteadyCents >= 12500 && model.production.optimizedSteadyCents <= 15000);
-  assert.ok(model.production.optimizedRollingAndMaxStoragePeakCents <= 17500);
+  assert.equal(model.production.recommendedBudgetCents, 15000);
+  assert.ok(model.production.optimizedSteadyCents <= model.production.recommendedBudgetCents);
+  assert.ok(model.production.optimizedRollingPeakCents <= model.production.recommendedBudgetCents);
+  assert.ok(model.production.optimizedRollingAndMaxStoragePeakCents > model.production.recommendedBudgetCents);
   assert.equal(model.staging.currentCents, 11842);
   assert.ok(model.staging.optimizedCents <= model.staging.authorizedCeilingCents);
   assert.equal(model.combined.currentCents, model.production.currentSteadyCents + model.staging.currentCents);

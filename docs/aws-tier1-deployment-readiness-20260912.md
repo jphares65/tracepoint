@@ -47,10 +47,11 @@ The required security corrections raise the approved proposal by **$4.30/month**
 - scoped S3 object data-event allowance: **+$0.10**.
 
 The resulting deterministic projection is **$131.72/month steady**, **$144.38
-rolling**, and **$153.58 rolling at 100 GiB RDS storage**. All are below the
-approved **$175/month** Budget target. First and second paid KMS rotation steady
-states are $139.72 and $147.72; the second-rotation plus rolling plus 100-GiB
-case is $169.58.
+rolling**, and **$153.58 rolling at 100 GiB RDS storage**. The first two fit the
+unchanged approved **$150/month** Budget; the max-storage rolling sensitivity
+exceeds it by $3.58 and is a no-go without cost reduction or separate owner
+authorization. First and second paid KMS rotation steady states are $139.72 and
+$147.72; rolling cases after the second paid rotation exceed the budget.
 
 ## Live deployment verification gate
 

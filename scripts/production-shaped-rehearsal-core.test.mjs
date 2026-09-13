@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSyntheticTables, productionScale, reconcileContracts, runSyntheticRehearsal, tableContracts } from "./production-shaped-rehearsal-core.mjs";
+import { buildSyntheticTables, normalizeRehearsalInventory, productionScale, reconcileContracts, runSyntheticRehearsal, tableContracts } from "./production-shaped-rehearsal-core.mjs";
 
 const inventory = {
   format: "tracepoint-production-source-inventory/v1",
@@ -16,6 +16,18 @@ const inventory = {
 };
 test("production-shaped scale distinguishes physical rows from derived views", () => {
   assert.deepEqual(productionScale(inventory), { exposedRows: 4358, viewRows: 253, physicalRows: 4105, copiedPublicRows: 4007, relations: 87, derivedViews: 3 });
+});
+test("sanitized reconciliation contracts can drive the rehearsal without restoring private inventory", () => {
+  const contract = {
+    format: "tracepoint-production-reconciliation-contract/v1",
+    sourceInventorySha256: "a".repeat(64),
+    database: { exposedRows: 4358, relations: inventory.database.exposedRelations.map(item => ({ relation: item.name, observedSourceRows: item.rowCount })) },
+    identity: { users: 96, memberships: 95 },
+    storage: { objects: 2 },
+  };
+  const normalized = normalizeRehearsalInventory(contract);
+  assert.equal(normalized.contentSha256, contract.sourceInventorySha256);
+  assert.deepEqual(productionScale(contract), productionScale(inventory));
 });
 test("table contracts fail closed on row, key, tenant and timestamp drift", () => {
   const tables = buildSyntheticTables(inventory), source = tableContracts(tables);

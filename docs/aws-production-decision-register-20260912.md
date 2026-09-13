@@ -13,7 +13,7 @@
 | Human operational alert mailbox | Owner-approved endpoint; live confirmation pending | Owner designated `contact@tracepointhq.com` | CDK requires the exact address; unconfirmed SNS subscription is a cutover blocker |
 | Membership-less platform administrator migration | Unresolved | Read-only inventory found one such identity | Must not invent a department membership |
 | Inactive-only identity migration | Proposed: import disabled with no email | Read-only inventory found one such identity | Requires explicit owner disposition |
-| Production hard budget | Owner-approved $175/month target; live change pending | $131.72 steady / $144.38 rolling / $153.58 storage peak | Last-observed $150 budget must be updated before deployment |
+| Production hard budget | Owner-approved $150/month target; no increase authorized | $131.72 steady / $144.38 normal rolling fit; $153.58 max-storage rolling exceeds the boundary | Keep the live and synthesized budget at $150; pause before any modeled state above it |
 | Public DNS remains owner-controlled at Wix | Owner-controlled external action | Current authoritative nameservers and DNS-deny guardrail | No automated DNS mutation |
 
 No row in this register redefines migration completion. “Complete” remains

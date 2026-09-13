@@ -79,7 +79,7 @@ export function validateProductionRecoveryAssembly({manifest, templates}) {
   const webAclText = JSON.stringify(resourcesOf(requests, 'AWS::WAFv2::WebACL'));
   assert.ok(webAclText.includes('RequestFlood'));
   assert.ok(webAclText.includes('ResponseCode":429'));
-  assert.ok(!webAclText.includes('SyntheticRateProbe'));
+  assert.ok(!webAclText.includes('SyntheticRateProbe'), 'Synthetic production WAF probe rules are forbidden');
   retained(resourcesOf(requests, 'AWS::Logs::LogGroup'), 'production WAF log group');
 
   retained(resourcesOf(alerts, 'AWS::SQS::Queue'), 'production alert queues');

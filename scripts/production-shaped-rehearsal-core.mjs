@@ -5,7 +5,30 @@ const sha256 = value => createHash("sha256").update(typeof value === "string" ? 
 const departments = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002", "10000000-0000-4000-8000-000000000003"];
 const uuid = index => `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
 
+export function normalizeRehearsalInventory(inventory) {
+  if (inventory?.format === "tracepoint-production-source-inventory/v1") return inventory;
+  assert.equal(inventory?.format, "tracepoint-production-reconciliation-contract/v1");
+  assert.match(inventory.sourceInventorySha256 ?? "", /^[0-9a-f]{64}$/);
+  return {
+    format: "tracepoint-production-source-inventory/v1",
+    contentSha256: inventory.sourceInventorySha256,
+    database: {
+      totalRows: inventory.database?.exposedRows,
+      exposedRelations: (inventory.database?.relations ?? []).map(item => ({
+        name: item.relation,
+        rowCount: item.observedSourceRows,
+      })),
+    },
+    identityTransition: {
+      cohortUsers: inventory.identity?.users,
+      membershipLinks: inventory.identity?.memberships,
+    },
+    storage: { totalObjects: inventory.storage?.objects },
+  };
+}
+
 export function productionScale(inventory) {
+  inventory = normalizeRehearsalInventory(inventory);
   assert.equal(inventory.format, "tracepoint-production-source-inventory/v1");
   assert.equal(inventory.database.totalRows, 4358);
   assert.equal(inventory.identityTransition.cohortUsers, 96);
@@ -32,6 +55,7 @@ function row(table, index, rowCount) {
 }
 
 export function buildSyntheticTables(inventory) {
+  inventory = normalizeRehearsalInventory(inventory);
   const result = {};
   for (const relation of inventory.database.exposedRelations.filter(item => !item.name.startsWith("v_"))) {
     result[relation.name] = Array.from({ length: relation.rowCount }, (_, index) => row(relation.name, index, relation.rowCount));
@@ -73,6 +97,7 @@ export async function resumableCreateOnly(items, target, checkpoint, stopAfter =
 }
 
 export async function runSyntheticRehearsal(inventory) {
+  inventory = normalizeRehearsalInventory(inventory);
   const scale = productionScale(inventory);
   const tables = buildSyntheticTables(inventory);
   const sourceContracts = tableContracts(tables);

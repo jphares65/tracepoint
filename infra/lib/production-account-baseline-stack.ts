@@ -190,7 +190,7 @@ export interface ProductionCostControlsStackProps extends cdk.StackProps {
 export class ProductionCostControlsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ProductionCostControlsStackProps) {
     super(scope, id, props);
-    if (props.accountId === '265544358665' || props.monthlyBudgetUsd !== 175) {
+    if (props.accountId === '265544358665' || props.monthlyBudgetUsd !== 150) {
       throw new Error('Reviewed production account and monthly budget are required');
     }
 

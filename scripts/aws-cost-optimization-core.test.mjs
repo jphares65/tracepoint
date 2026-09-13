@@ -15,5 +15,6 @@ test("optimized AWS model is internally exact and within the owner targets", asy
 test("rejects a model that crosses the initial-production or hard targets", async () => {
   const model = JSON.parse(await readFile(new URL("../docs/aws-cost-optimization-model-20260912.json", import.meta.url)));
   assert.throws(() => validateAwsCostOptimizationModel({...model,production:{...model.production,optimizedSteadyCents:15001}}));
-  assert.throws(() => validateAwsCostOptimizationModel({...model,production:{...model.production,optimizedRollingAndMaxStoragePeakCents:17501}}));
+  assert.throws(() => validateAwsCostOptimizationModel({...model,production:{...model.production,recommendedBudgetCents:15001}}));
+  assert.throws(() => validateAwsCostOptimizationModel({...model,production:{...model.production,optimizedRollingPeakCents:15001}}));
 });

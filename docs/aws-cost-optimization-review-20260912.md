@@ -82,9 +82,9 @@ A one-AZ endpoint option would reduce staging by another `$14.60/month` but weak
 | Combined optimized baseline | **$235.91** |
 | Combined monthly savings | **$162.85** |
 
-Recommended production AWS Budget: **$175/month**, with actual-spend alerts at 70%, 85% and 100%, forecast at 90% and 100%, and the existing immediate `$10` cost-anomaly threshold. A Budget is an alert, not an enforcement cap. CDK now expresses the approved `$175` target. The live production budget was `$150` with `$11.13` actual spend at the last read-only check; changing it remains a separately authorized deployment action.
+Authorized production AWS Budget: **$150/month**, with actual-spend alerts at 70%, 85% and 100%, forecast at 90% and 100%, and the existing immediate `$10` cost-anomaly threshold. A Budget is an alert, not an enforcement cap. CDK now requires the unchanged owner-approved `$150` target. Read-only verification on 2026-09-13 confirmed the live budget remains `$150` with `$12.297` billing-lagged actual spend.
 
-KMS automatic rotation is a sensitivity: the first paid rotation of eight keys makes steady state **$139.72**, and the second makes it **$147.72**. After the second paid rotation, a normal rolling deployment reaches `$160.38`; with database storage at 100 GiB it reaches `$169.58`. These remain below the recommended budget, but actual security-service usage must also fit the remaining headroom.
+KMS automatic rotation is a sensitivity: the first paid rotation of eight keys makes steady state **$139.72**, and the second makes it **$147.72**. After the second paid rotation, a normal rolling deployment reaches `$160.38`; with database storage at 100 GiB it reaches `$169.58`. Those rolling cases exceed the authorized budget and therefore require cost reduction or separate owner authorization before that state is allowed.
 
 ## Tier plan
 
