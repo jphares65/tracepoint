@@ -31,9 +31,11 @@ if ($nativeContainers.Count -ne 1) { throw 'The AWS-native task must contain exa
 if (-not $nativeContainer -or $nativeContainer.image -notmatch '^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/(?<nativeRepository>[a-z0-9._/-]+)@(?<nativeDigest>sha256:[0-9a-f]{64})$') { throw 'The AWS-native task must use the reviewed digest-pinned image reference.' }
 $nativeDigest = $Matches.nativeDigest
 if ($LASTEXITCODE -ne 0 -or $nativeDigest -cne $manifest.evidence.awsImageDigest) { throw 'The active AWS-native task image does not match the immutable manifest.' }
-$nativeScan = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.nativeRepository --image-ids "imageDigest=$nativeDigest" --output json | ConvertFrom-Json
-$nativeSeverity = $nativeScan.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
-if ($LASTEXITCODE -ne 0 -or $nativeScan.imageDetails[0].imageScanStatus.status -cne 'COMPLETE' -or ($nativeSeverity.CRITICAL ?? 0) -ne 0 -or ($nativeSeverity.HIGH ?? 0) -ne 0) { throw 'The AWS-native image scan is incomplete or has disallowed findings.' }
+$nativeScan = & aws.exe ecr describe-image-scan-findings --region $manifest.evidence.region --repository-name $Matches.nativeRepository --image-id "imageDigest=$nativeDigest" --output json | ConvertFrom-Json
+$nativeSeverity = $nativeScan.imageScanFindings.findingSeverityCounts
+$nativeCritical = if ($null -ne $nativeSeverity.PSObject.Properties['CRITICAL']) { [int]$nativeSeverity.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$nativeHigh = if ($null -ne $nativeSeverity.PSObject.Properties['HIGH']) { [int]$nativeSeverity.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($LASTEXITCODE -ne 0 -or $nativeScan.imageId.imageDigest -cne $nativeDigest -or $nativeScan.imageScanStatus.status -cne 'COMPLETE' -or $nativeCritical -ne 0 -or $nativeHigh -ne 0) { throw 'The AWS-native image scan is incomplete or has disallowed findings.' }
 $task = (& aws.exe ecs describe-task-definition --region $manifest.evidence.region --task-definition $manifest.evidence.bridgeTaskDefinitionArn --output json | ConvertFrom-Json).taskDefinition
 if ($LASTEXITCODE -ne 0 -or $task.status -cne 'ACTIVE' -or $task.taskDefinitionArn -cne $manifest.evidence.bridgeTaskDefinitionArn) { throw 'The immutable bridge task definition could not be verified.' }
 $containers = @($task.containerDefinitions) | Where-Object { $_.name -eq $manifest.evidence.service.containerName }
@@ -42,9 +44,11 @@ if ($containers.Count -ne 1) { throw 'The bridge task must contain exactly one r
 if (-not $container -or $container.image -notmatch '^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/(?<repository>[a-z0-9._/-]+):(?<tag>[a-z0-9._-]+)$') { throw 'The bridge task image reference is invalid.' }
 $digest = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.repository --image-ids "imageTag=$($Matches.tag)" --query 'imageDetails[0].imageDigest' --output text
 if ($LASTEXITCODE -ne 0 -or $digest -cne $manifest.evidence.bridgeImageDigest) { throw 'The bridge task image does not match the immutable manifest.' }
-$scan = & aws.exe ecr describe-images --region $manifest.evidence.region --repository-name $Matches.repository --image-ids "imageDigest=$digest" --output json | ConvertFrom-Json
-$severity = $scan.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
-if ($LASTEXITCODE -ne 0 -or $scan.imageDetails[0].imageScanStatus.status -cne 'COMPLETE' -or ($severity.CRITICAL ?? 0) -ne 0 -or ($severity.HIGH ?? 0) -ne 0) { throw 'The bridge image scan is incomplete or has disallowed findings.' }
+$scan = & aws.exe ecr describe-image-scan-findings --region $manifest.evidence.region --repository-name $Matches.repository --image-id "imageDigest=$digest" --output json | ConvertFrom-Json
+$severity = $scan.imageScanFindings.findingSeverityCounts
+$critical = if ($null -ne $severity.PSObject.Properties['CRITICAL']) { [int]$severity.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$high = if ($null -ne $severity.PSObject.Properties['HIGH']) { [int]$severity.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($LASTEXITCODE -ne 0 -or $scan.imageId.imageDigest -cne $digest -or $scan.imageScanStatus.status -cne 'COMPLETE' -or $critical -ne 0 -or $high -ne 0) { throw 'The bridge image scan is incomplete or has disallowed findings.' }
 if (-not (@($container.secrets) | Where-Object { $_.valueFrom -like "$($manifest.evidence.bridgeApplicationSecret.arn)*" })) { throw 'The bridge task is not bound to the preserved bridge secret.' }
 $currentBridgeVersion = & aws.exe secretsmanager get-secret-value --region $manifest.evidence.region --secret-id $manifest.evidence.bridgeApplicationSecret.arn --version-stage AWSCURRENT --query VersionId --output text
 if ($LASTEXITCODE -ne 0) { throw 'The preserved bridge secret version could not be verified.' }

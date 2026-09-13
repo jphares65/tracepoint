@@ -33,9 +33,13 @@ $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json
 $costAgeHours = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
 if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 125) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
 $image = & aws.exe ecr describe-images --region $region --repository-name $RepositoryName --image-ids "imageTag=$Commit-postgres-migration" --output json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -cne 'COMPLETE') { throw 'Immutable migration image or scan evidence is invalid.' }
-$findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
-if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'Migration image has disallowed vulnerability findings.' }
+if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest) { throw 'Immutable migration image evidence is invalid.' }
+$scan = & aws.exe ecr describe-image-scan-findings --region $region --repository-name $RepositoryName --image-id "imageDigest=$ImageDigest" --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $scan.imageId.imageDigest -cne $ImageDigest -or $scan.imageScanStatus.status -cne 'COMPLETE') { throw 'Immutable migration image scan evidence is invalid.' }
+$findings = $scan.imageScanFindings.findingSeverityCounts
+$criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [int]$findings.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'Migration image has disallowed vulnerability findings.' }
 
 $stack = "tracepoint-$Environment-database-migration-$RunId"
 $contexts = @(

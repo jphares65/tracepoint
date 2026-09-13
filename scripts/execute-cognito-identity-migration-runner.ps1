@@ -71,9 +71,13 @@ $cost = Get-Content -Raw -LiteralPath $CostEvidencePath | ConvertFrom-Json
 $costAgeHours = (Get-Date).ToUniversalTime().Subtract([datetime]$cost.queriedAtUTC).TotalHours
 if (($Environment -eq 'staging' -and $ApprovedBudgetLimitUSD -ne 125) -or $cost.account -cne $account -or $cost.budgetLimitUSD -ne $ApprovedBudgetLimitUSD -or $cost.withinCeiling -ne $true -or $costAgeHours -lt 0 -or $costAgeHours -gt 24) { throw 'Fresh cost evidence within the approved ceiling is required.' }
 $image = & aws.exe ecr describe-images --region $region --repository-name $RepositoryName --image-ids "imageTag=$Commit-identity-migration" --output json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -cne 'COMPLETE') { throw 'Immutable identity migration image or scan evidence is invalid.' }
-$findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
-if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'Identity migration image has disallowed vulnerability findings.' }
+if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest) { throw 'Immutable identity migration image evidence is invalid.' }
+$scan = & aws.exe ecr describe-image-scan-findings --region $region --repository-name $RepositoryName --image-id "imageDigest=$ImageDigest" --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $scan.imageId.imageDigest -cne $ImageDigest -or $scan.imageScanStatus.status -cne 'COMPLETE') { throw 'Immutable identity migration image scan evidence is invalid.' }
+$findings = $scan.imageScanFindings.findingSeverityCounts
+$criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [int]$findings.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'Identity migration image has disallowed vulnerability findings.' }
 $buildEvidence = Get-Content -Raw -LiteralPath $BuildEvidencePath | ConvertFrom-Json
 if ($buildEvidence.account -cne $account -or $buildEvidence.region -cne $region -or $buildEvidence.commit -cne $Commit -or $buildEvidence.imageTag -cne "$Commit-identity-migration" -or $buildEvidence.imageDigest -cne $ImageDigest -or $buildEvidence.buildStatus -cne 'SUCCEEDED' -or $buildEvidence.scanStatus -cne 'COMPLETE' -or $buildEvidence.sourceArchiveSha256 -notmatch '^[0-9a-f]{64}$') { throw 'Identity image build provenance evidence is invalid.' }
 $build = & aws.exe codebuild batch-get-builds --region $region --ids $buildEvidence.buildId --output json | ConvertFrom-Json

@@ -48,8 +48,12 @@ if ($buildEvidence.account -cne $account -or $buildEvidence.commit -cne $Commit 
 $build = & aws.exe codebuild batch-get-builds --region $region --ids $buildEvidence.buildId --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $build.builds.Count -ne 1 -or $build.builds[0].buildStatus -cne 'SUCCEEDED' -or $build.builds[0].sourceVersion -cne $buildEvidence.sourceVersion) { throw 'Identity CodeBuild provenance is invalid.' }
 $image = & aws.exe ecr describe-images --region $region --repository-name $repositoryName --image-ids "imageTag=$Commit-identity-migration" --output json | ConvertFrom-Json
-$findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
-if ($LASTEXITCODE -ne 0 -or $image.imageDetails[0].imageDigest -cne $ImageDigest -or $image.imageDetails[0].imageScanStatus.status -cne 'COMPLETE' -or ($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'Identity image digest or scan evidence is invalid.' }
+if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1 -or $image.imageDetails[0].imageDigest -cne $ImageDigest) { throw 'Identity image digest evidence is invalid.' }
+$scan = & aws.exe ecr describe-image-scan-findings --region $region --repository-name $repositoryName --image-id "imageDigest=$ImageDigest" --output json | ConvertFrom-Json
+$findings = $scan.imageScanFindings.findingSeverityCounts
+$criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [int]$findings.PSObject.Properties['CRITICAL'].Value } else { 0 }
+$highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
+if ($LASTEXITCODE -ne 0 -or $scan.imageId.imageDigest -cne $ImageDigest -or $scan.imageScanStatus.status -cne 'COMPLETE' -or $criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'Identity image scan evidence is invalid.' }
 $cluster = & aws.exe ecs describe-clusters --region $region --clusters $ClusterName --output json | ConvertFrom-Json
 $repository = & aws.exe ecr describe-repositories --region $region --repository-names $repositoryName --output json | ConvertFrom-Json
 $vpc = & aws.exe ec2 describe-vpcs --region $region --vpc-ids $VpcId --output json | ConvertFrom-Json

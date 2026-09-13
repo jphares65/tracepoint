@@ -35,9 +35,15 @@ try {
         & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$tag" --region us-east-1
         if ($LASTEXITCODE -ne 0) { throw 'Identity image scan did not complete.' }
         $image = & aws.exe ecr describe-images --repository-name tracepoint-staging --image-ids "imageTag=$tag" --region us-east-1 --output json | ConvertFrom-Json
-        $findings = $image.imageDetails[0].imageScanFindingsSummary.findingSeverityCounts
-        if (($findings.CRITICAL ?? 0) -ne 0 -or ($findings.HIGH ?? 0) -ne 0) { throw 'Identity image has disallowed vulnerability findings.' }
-        $evidence.buildStatus = 'SUCCEEDED'; $evidence.imageDigest = $image.imageDetails[0].imageDigest; $evidence.scanStatus = $image.imageDetails[0].imageScanStatus.status; $evidence.criticalFindings = ($findings.CRITICAL ?? 0); $evidence.highFindings = ($findings.HIGH ?? 0)
+        if ($LASTEXITCODE -ne 0 -or $image.imageDetails.Count -ne 1) { throw 'Identity image digest could not be resolved.' }
+        $digest = $image.imageDetails[0].imageDigest
+        $scan = & aws.exe ecr describe-image-scan-findings --repository-name tracepoint-staging --image-id "imageDigest=$digest" --region us-east-1 --output json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $scan.imageId.imageDigest -cne $digest -or $scan.imageScanStatus.status -cne 'COMPLETE') { throw 'Identity image scan evidence is invalid.' }
+        $findings = $scan.imageScanFindings.findingSeverityCounts
+        $criticalFindings = if ($null -ne $findings.PSObject.Properties['CRITICAL']) { [int]$findings.PSObject.Properties['CRITICAL'].Value } else { 0 }
+        $highFindings = if ($null -ne $findings.PSObject.Properties['HIGH']) { [int]$findings.PSObject.Properties['HIGH'].Value } else { 0 }
+        if ($criticalFindings -ne 0 -or $highFindings -ne 0) { throw 'Identity image has disallowed vulnerability findings.' }
+        $evidence.buildStatus = 'SUCCEEDED'; $evidence.imageDigest = $digest; $evidence.scanStatus = $scan.imageScanStatus.status; $evidence.criticalFindings = $criticalFindings; $evidence.highFindings = $highFindings
     }
     if ($EvidenceOutputPath) {
         $parent = Resolve-Path -LiteralPath (Split-Path -Parent $EvidenceOutputPath)
