@@ -1,9 +1,9 @@
 # TracePoint production pre-cutover live execution — 2026-09-13
 
 The authorized non-traffic foundations are substantially live. Production customer data,
-identities, email, DNS, traffic, Wix and Supabase were not changed. Live-verified readiness
-remains **79%**: this checkpoint closes meaningful sub-work, but neither the database-rehearsal
-gate nor the timed-restore gate is complete, so no fractional or evidence-only credit is claimed.
+identities, email, DNS, traffic, Wix and Supabase were not changed. Live-verified readiness is
+**81%**. The two net-new points are for the completed production recovery gate; the schema-only
+bootstrap advances the still-open final customer-data migration gate but earns no fractional credit.
 
 ## Completed live work
 
@@ -34,15 +34,24 @@ gate nor the timed-restore gate is complete, so no fractional or evidence-only c
 - Created AWS Backup job `aea72c7a-bbf2-44a1-be9f-88f4a274f6f7` from the empty, non-customer
   RDS target. It completed at `2026-09-13T17:57:54.887Z` and produced retained recovery point
   `arn:aws:rds:us-east-1:193644343389:snapshot:awsbackup:job-aea72c7a-bbf2-44a1-be9f-88f4a274f6f7`.
+- Ran schema-only ECS task
+  `arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/267449788dfd4b8595425cc8d75fd388`
+  with task definition revision 2 and immutable image digest
+  `sha256:c8a84f687c251c5b169d79655408dd4c8448b2282421dcf45d395a952b265686`.
+  It exited 0 and applied all 97 lineage entries: 76 source migrations and 21 AWS overlays.
+- Ran the same schema-only path once as a focused idempotent reconciliation. Task
+  `arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/b561080d17834764af4cdc297c90f3f5`
+  exited 0, reported 76+21, applied zero new entries, verified the bounded runtime role and found
+  zero Supabase authorization references.
+- Completed AWS Backup restore job `16737bce-8bfa-4bec-8ec8-494626850117` in 512.051 seconds.
+  The disposable target was PostgreSQL 17.9 on `db.t4g.small`, private, KMS-encrypted, 20 GiB gp3,
+  in the approved VPC/subnet group/security group, and `available` with no pending modifications.
+  Its disposal tags were verified, the target was deleted, and the original recovery point remains.
 
 ## Actions still blocked or intentionally deferred
 
-- The environment safety reviewer blocked the expressly authorized ECS schema-bootstrap task
-  because it treated the production RDS write as outside trusted inline authority. No bypass was
-  attempted. Consequently the 76 source migrations plus 21 AWS overlays remain offline-verified
-  but not live-verified on production RDS.
-- The reviewer also blocked creation of the private disposable RDS restore target. The recovery
-  point is complete, but no timed restore or recovery-integrity proof is claimed.
+- The production data-migration gate remains open because no customer rows were copied or
+  reconciled. The schema-only target is ready at exact 97/97 lineage.
 - The live AWS-native runtime remains undeployed. The existing bridge service remains at two
   healthy tasks on task definition
   `arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:2`;
@@ -62,7 +71,10 @@ The live Budget remains healthy and exactly **$150/month**. Billing-lagged actua
 **$13.964**. The deterministic Tier 1 model already includes the now-live WAF groups, security
 alarms, scoped CloudTrail events, CodeBuild allowance and 20-GiB Backup allowance: **$131.72/month**
 at one-task steady state and **$144.38/month** for the current/normal rolling shape. The
-**$153.58** 100-GiB rolling scenario remains prohibited. No budget change was made.
+**$153.58** 100-GiB rolling scenario remains prohibited. The disposable restore cost model was
+**$0.035151/hour**; a conservative two-hour allowance would bring the rolling equivalent to
+**$144.450301**, leaving **$5.549699** below the budget. The target was removed after 512.051
+seconds. No budget change was made.
 
 ## Governance and rollback
 
@@ -90,10 +102,16 @@ No governance rollback was executed.
 - Provider reachability covered 154 entry points and 322 reachable modules with zero static legacy
   edges, zero unapproved dynamic legacy edges and zero unapproved endpoint literals.
 - PowerShell parsing passed for 31/31 scripts; `git diff --check` passed.
+- Focused post-action checks passed: 16 bootstrap/lineage/recovery tests, two database-bootstrap
+  infrastructure tests and four complete production-target infrastructure tests. The first local
+  harness attempt omitted the required `tsx` loader and was sandbox-denied for CDK temporary output;
+  the corrected, unchanged test runs passed.
 - Access Analyzer and GuardDuty report zero active findings; Security Hub V2 is present; CloudTrail
   is logging to both S3 and CloudWatch. The runtime image scan is `COMPLETE` with zero findings.
 - RDS is `available`, private, encrypted, deletion-protected, TLS-enforced through its parameter
   group, 20 GiB with 100-GiB maximum, and retains 35 days of automated backups/PITR.
+- All 17 production metric alarms and the composite runtime alarm are `OK`; Access Analyzer is
+  active with zero active findings; the completed recovery point remains encrypted and retained.
 
 The structured, sanitized evidence and exact remaining blockers are in
 `docs/aws-precutover-live-execution-20260913.json`.

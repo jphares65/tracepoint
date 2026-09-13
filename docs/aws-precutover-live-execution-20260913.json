@@ -1,6 +1,6 @@
 {
   "format": "tracepoint-aws-precutover-live-execution/v1",
-  "observedAtUtc": "2026-09-13T18:15:20.8397443Z",
+  "observedAtUtc": "2026-09-13T18:43:00Z",
   "target": {
     "account": "193644343389",
     "region": "us-east-1",
@@ -21,7 +21,12 @@
     "tier1OneTaskSteadyUsd": 131.72,
     "currentTwoTaskMonthlyEquivalentUsd": 144.38,
     "rollingAt100GiBUsd": 153.58,
-    "rollingAt100GiBAllowed": false
+    "rollingAt100GiBAllowed": false,
+    "disposableRestoreDurationSeconds": 512.051,
+    "disposableRestoreModeledHourlyUsd": 0.035151,
+    "disposableRestoreTwoHourCeilingUsd": 0.070301,
+    "rollingPlusTwoHourRestoreUsd": 144.450301,
+    "remainingBudgetHeadroomUsd": 5.549699
   },
   "cloudFormation": {
     "completeTracePointProductionStacks": 18,
@@ -67,10 +72,32 @@
     "automatedSnapshots": 1,
     "bootstrapTaskDefinitionRevision": 2,
     "bootstrapImageDigest": "sha256:c8a84f687c251c5b169d79655408dd4c8448b2282421dcf45d395a952b265686",
-    "bootstrapTaskRuns": 0,
-    "verifiedLineageEntries": 0,
+    "bootstrapTaskRuns": 2,
+    "bootstrapTaskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/267449788dfd4b8595425cc8d75fd388",
+    "bootstrapTaskDefinitionArn": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepoint-production-database-bootstrap:2",
+    "bootstrapStartedAt": "2026-09-13T18:24:59.167Z",
+    "bootstrapStoppedAt": "2026-09-13T18:25:25.975Z",
+    "bootstrapExitCode": 0,
+    "bootstrapStopCode": "EssentialContainerExited",
+    "bootstrapStoppedReason": "Essential container in task exited",
+    "bootstrapLogStream": "database-bootstrap/bootstrap/267449788dfd4b8595425cc8d75fd388",
+    "bootstrapNewlyApplied": 97,
+    "lineageReconciliationTaskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/b561080d17834764af4cdc297c90f3f5",
+    "lineageReconciliationLogStream": "database-bootstrap/bootstrap/b561080d17834764af4cdc297c90f3f5",
+    "lineageReconciliationExitCode": 0,
+    "lineageReconciliationNewlyApplied": 0,
+    "runtimeRoleVerified": true,
+    "supabaseAuthorizationReferences": 0,
+    "verifiedLineageEntries": 97,
     "expectedSourceMigrations": 76,
-    "expectedAwsOverlays": 21
+    "expectedAwsOverlays": 21,
+    "postBootstrapHealth": {
+      "status": "available",
+      "private": true,
+      "encrypted": true,
+      "deletionProtection": true,
+      "backupRetentionDays": 35
+    }
   },
   "storage": {
     "privateBucketPresent": true,
@@ -103,8 +130,31 @@
     "backupJobId": "aea72c7a-bbf2-44a1-be9f-88f4a274f6f7",
     "recoveryPointArn": "arn:aws:rds:us-east-1:193644343389:snapshot:awsbackup:job-aea72c7a-bbf2-44a1-be9f-88f4a274f6f7",
     "backupJobStatus": "COMPLETED",
-    "timedRestoreVerified": false,
-    "restoreBlocker": "Environment safety reviewer did not accept the attached authorization as trusted authority to create the disposable RDS restore target"
+    "timedRestoreVerified": true,
+    "restoreJobId": "16737bce-8bfa-4bec-8ec8-494626850117",
+    "restoreStartedAt": "2026-09-13T18:31:15.952Z",
+    "restoreCompletedAt": "2026-09-13T18:39:48.003Z",
+    "restoreDurationSeconds": 512.051,
+    "restoredDatabaseIdentifier": "tracepoint-precutover-restore-20260913",
+    "restoredDatabaseValidated": {
+      "status": "available",
+      "engine": "postgres",
+      "engineVersion": "17.9",
+      "class": "db.t4g.small",
+      "allocatedGiB": 20,
+      "storageType": "gp3",
+      "encrypted": true,
+      "kmsMatched": true,
+      "publiclyAccessible": false,
+      "multiAz": false,
+      "vpcMatched": true,
+      "subnetGroupMatched": true,
+      "securityGroupsMatched": true,
+      "endpointPort": 5432,
+      "pendingModifiedValues": 0
+    },
+    "disposableTargetCleanupCompleted": true,
+    "recoveryPointPreserved": true
   },
   "ses": {
     "identityVerified": true,
@@ -212,9 +262,11 @@
     "typescript": "PASSED",
     "infrastructureTests": {"passed": 61, "failed": 0},
     "migrationAndToolingTests": {"passed": 172, "failed": 0, "typescriptAwareSplitRunner": true},
+    "focusedBootstrapAndRecoveryTests": {"passed": 16, "failed": 0},
+    "focusedInfrastructureTests": {"databaseBootstrapPassed": 2, "productionTargetPassed": 4, "failed": 0},
     "providerReachability": {"entrypoints": 154, "reachableModules": 322, "staticLegacyEdges": 0, "unapprovedDynamicLegacyEdges": 0, "unapprovedLegacyEndpointLiterals": 0},
     "archiveValidation": {"runtimeFiles": 501, "migrationFiles": 113, "identityFiles": 495},
-    "cleanAwsNativeBootstrap": {"sourceMigrations": 76, "awsOverlays": 21, "status": "PASSED", "liveProductionExecution": false},
+    "cleanAwsNativeBootstrap": {"sourceMigrations": 76, "awsOverlays": 21, "status": "PASSED", "liveProductionExecution": true, "verifiedLineageEntries": 97},
     "lineageUpgradeTests": {"cleanBootstrap": "PASSED", "productionUpgrade": "PASSED", "stagingUpgrade": "PASSED", "structuralParity": "PASSED"},
     "logicalDumpRestore": {"status": "BLOCKED", "reason": "Official pg_dump.exe is not installed on this host"},
     "productionSynth": {"stacks": 13, "cdkNagBlockingFindings": 0, "status": "PASSED"},
@@ -226,15 +278,12 @@
   },
   "readiness": {
     "implementationPreparedPercent": 100,
-    "liveVerifiedPercent": 79,
-    "netNewLivePointsThisExecution": 0,
-    "creditedGate": null,
-    "remainingGateIds": [8, 13, 15, 16, 17, 18, 19, 21]
+    "liveVerifiedPercent": 81,
+    "netNewLivePointsThisExecution": 2,
+    "creditedGate": 19,
+    "remainingGateIds": [8, 13, 15, 16, 17, 18, 21]
   },
-  "blockedAuthorizedActions": [
-    "Run the schema-only ECS bootstrap task: the environment safety reviewer did not accept the attached reaffirmation as trusted authority for a production RDS write.",
-    "Create the disposable private RDS restore target: the environment safety reviewer did not accept the attached reaffirmation as trusted authority for production-account RDS provisioning."
-  ],
+  "blockedAuthorizedActions": [],
   "externalCutoverBlockers": [
     "Public DS removal is propagated at Google, Cloudflare and the authoritative .com server, but tracepointhq.com is not yet present in Route 53 Domains in the production account and Wix remains authoritative.",
     "Custom MAIL FROM cannot become SUCCESS until the prepared Route 53 zone is authoritative.",
