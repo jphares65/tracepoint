@@ -17,5 +17,5 @@ phases:
     commands:
       - docker build --pull -f Dockerfile.identity-migration --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=temporary-identity-migration -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker run --rm --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --test scripts/cognito-identity-batch-core.test.mjs
-      - docker run --rm --entrypoint npx "$ECR_REPOSITORY_URI:$IMAGE_TAG" tsc --noEmit
+      - docker run --rm --entrypoint npx "$ECR_REPOSITORY_URI:$IMAGE_TAG" tsc --noEmit --incremental false
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
