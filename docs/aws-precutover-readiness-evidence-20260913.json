@@ -1,0 +1,153 @@
+{
+  "format": "tracepoint-aws-precutover-readiness/v1",
+  "observedAtUtc": "2026-09-13T04:50:19.9282739Z",
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction",
+    "branch": "codex/aws-precutover-completion-20260913",
+    "sourceBaselineHead": "1eecc7a",
+    "productionMutationThisRun": false
+  },
+  "cost": {
+    "budgetName": "tracepoint-production-monthly",
+    "budgetUsd": 150,
+    "billingLaggedActualUsd": 12.297,
+    "forecastAvailable": false,
+    "projectedTier1SteadyUsd": 131.72,
+    "projectedNormalRollingUsd": 144.38,
+    "projectedRollingAt100GiBUsd": 153.58,
+    "rollingAt100GiBAllowed": false,
+    "incrementalCostCreatedThisRunUsd": 0
+  },
+  "live": {
+    "cloudFormation": {
+      "protectedCompleteStacks": 12,
+      "fullAwsDataPlaneStacksAbsent": [
+        "tracepoint-production-full-aws-storage",
+        "tracepoint-production-full-aws-database",
+        "tracepoint-production-full-aws-cognito",
+        "tracepoint-production-full-aws-ses-feedback-worker",
+        "tracepoint-production-full-aws-backup"
+      ]
+    },
+    "runtime": {
+      "ecsDesired": 2,
+      "ecsRunning": 2,
+      "albTargetsHealthy": 2,
+      "imageTag": "ae3d2a4ce87b2085e251b1995f51a7b07058ec4d",
+      "awsNativeImage": false,
+      "legacySecretNamesPresent": true,
+      "publicDnsPointsToRuntime": false,
+      "remaining": "Owner-authorized image publication, full-AWS data-plane deployment, secret finalization, and runtime replacement"
+    },
+    "database": { "instances": 0, "remaining": "Deploy private encrypted RDS and bootstrap 76+20" },
+    "cognito": { "userPools": 0, "remaining": "Deploy pool and execute the separately authorized identity transition" },
+    "storage": { "privateApplicationBucketPresent": false, "productionObjectsCopied": false },
+    "backup": { "vaults": 0, "productionRestoreProven": false },
+    "ses": {
+      "foundationStack": "CREATE_COMPLETE",
+      "identityVerified": false,
+      "dkimStatus": "PENDING",
+      "mailFromStatus": "PENDING",
+      "productionAccess": false,
+      "lastAccessRequestStatus": "DENIED",
+      "caseId": "178924156800066",
+      "configurationSets": ["tracepoint-production", "tracepoint-production-cognito"],
+      "suppression": ["BOUNCE", "COMPLAINT"],
+      "emailSentThisRun": false
+    },
+    "security": {
+      "cloudTrailMultiRegion": true,
+      "cloudTrailLogValidation": true,
+      "cloudTrailManagementEvents": true,
+      "cloudTrailS3DataEvents": false,
+      "configRecording": true,
+      "configLastStatus": "SUCCESS",
+      "configLiveResourceTypeCount": 26,
+      "configDesiredResourceTypeCount": 41,
+      "guardDuty": "ENABLED",
+      "guardDutyActiveFindingCount": 0,
+      "inspector": "DISABLED",
+      "accessAnalyzerAccountAnalyzers": 0,
+      "securityHubV2StackResourcePresent": true,
+      "wafLiveRules": ["RequestFlood"],
+      "wafDesiredAddsManagedGroups": 3
+    },
+    "operations": {
+      "metricAlarmsOk": 7,
+      "compositeRuntimeAlarmOk": true,
+      "compositeAlarmHasEncryptedSnsAction": true,
+      "humanEmailSubscriptionPresent": false,
+      "monitoredMailbox": "contact@tracepointhq.com"
+    }
+  },
+  "dns": {
+    "route53HostedZoneId": "Z06725946QWMQBKB1JT8",
+    "route53RecordSets": 31,
+    "currentPublicNameservers": ["ns10.wixdns.net", "ns11.wixdns.net"],
+    "route53DomainPresentInProductionAccount": false,
+    "parentComAuthoritativeDsPresent": false,
+    "cloudflareResolverDsPresent": false,
+    "googleResolverStillCachedPriorDs": "35882 8 2 BE5370254126A888C374E7133B0AE38CEE0582679AA6E2969773F05A84B0F0DC",
+    "dnssecRemovalFullyPropagated": false,
+    "websiteStatus": 200,
+    "microsoft365MxPreserved": true,
+    "microsoft365SpfPreserved": true,
+    "autodiscoverPreserved": true,
+    "mutationThisRun": false
+  },
+  "offlineValidation": {
+    "sourceMigrations": 76,
+    "awsOverlays": 20,
+    "targetLedgerEntries": 96,
+    "cleanBootstrap": "PASSED",
+    "dumpRestoreReconciliationMs": 2833,
+    "productionShaped": {
+      "status": "PASSED",
+      "exposedRows": 4358,
+      "physicalRows": 4105,
+      "identities": 96,
+      "memberships": 95,
+      "objects": 2,
+      "totalMs": 11439,
+      "sensitiveValuesEmitted": false
+    },
+    "applicationTests": { "passed": 405, "failed": 0 },
+    "migrationScriptTests": { "passed": 168, "failed": 0, "splitRunnerRequiredForTypescriptAssemblyTest": true },
+    "infrastructureTests": { "passed": 61, "failed": 0 },
+    "typescript": "PASSED",
+    "productionBuild": "PASSED",
+    "infrastructureBuild": "PASSED",
+    "productionCdkSynth": { "status": "PASSED", "stacks": 13, "cdkNag": "PASSED", "warnings": "Hard-coded us-east-1a validation warnings retained for review" },
+    "providerReachability": { "entrypoints": 154, "reachableModules": 322, "staticLegacyEdges": 0, "reviewedDynamicRollbackEdges": 29, "unapprovedDynamicLegacyEdges": 0, "unapprovedLegacyEndpointLiterals": 0 },
+    "powershellParsing": "PASSED",
+    "diffCheck": "PASSED",
+    "touchedFileLint": "PASSED",
+    "repositoryWideLint": { "status": "FAILED_BASELINE", "findingsBeforeGeneratedOutputIgnore": 498, "findingsAfterGeneratedOutputIgnore": 270, "errorsAfterGeneratedOutputIgnore": 226, "warningsAfterGeneratedOutputIgnore": 44, "scope": "pre-existing application lint debt outside this migration change" },
+    "containerBuild": { "status": "BLOCKED", "reason": "Docker is not installed and production CodeBuild publication is not authorized" }
+  },
+  "readiness": {
+    "liveVerifiedPercent": 77,
+    "implementationPreparedPercent": 95,
+    "categoryPercentagesAreDiagnosticNotLedgerCredit": true,
+    "categories": {
+      "dns": 70,
+      "registrar": 33,
+      "ses": 67,
+      "network": 75,
+      "compute": 63,
+      "database": 63,
+      "storage": 71,
+      "identityAuth": 63,
+      "permissionsRls": 90,
+      "notifications": 75,
+      "security": 73,
+      "backupRecovery": 63,
+      "application": 90,
+      "migrationTooling": 90,
+      "rollback": 80
+    }
+  },
+  "creditCaveat": "No readiness credit was added for revalidation, offline preparation, or resources that are not deployed and exercised on the AWS-native production path."
+}

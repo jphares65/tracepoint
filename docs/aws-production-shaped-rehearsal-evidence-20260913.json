@@ -1,0 +1,70 @@
+{
+  "format": "tracepoint-production-shaped-rehearsal/v1",
+  "generatedAt": "2026-09-13T04:45:31.360Z",
+  "sourceInventorySha256": "01fd0efb02c2dbd3ca9faadc2bf42a921bf1c714c061202931e4aa747cde5a3d",
+  "sourceScale": {
+    "exposedRows": 4358,
+    "viewRows": 253,
+    "physicalRows": 4105,
+    "copiedPublicRows": 4007,
+    "relations": 87,
+    "derivedViews": 3
+  },
+  "lineage": {
+    "productionSource": 60,
+    "authoritativeSource": 76,
+    "sourceDeltasAfterCopy": 16,
+    "awsOverlaysAfterCopy": 20,
+    "targetTotal": 96
+  },
+  "database": {
+    "tables": 87,
+    "rows": 4105,
+    "contractSha256": "98bd4d44dc09f175b2c050092fed478b354dabffeba9fb9bc5c2437817b4b8ca",
+    "clean": true,
+    "cleanBootstrap": true,
+    "dumpRestoreReconciled": true,
+    "dumpRestoreMs": 2833,
+    "bootstrapAndRestoreWallMs": 11335,
+    "retryContract": "single-transaction restore; exact anchor-only or full-content resume; partial/conflicting data fails closed"
+  },
+  "identity": {
+    "users": 96,
+    "memberships": 95,
+    "membershipRoles": 86,
+    "departments": 3,
+    "inactive": 1,
+    "noMembership": 1,
+    "multiDepartment": 0,
+    "platformAdministrators": 1,
+    "platformAdministratorsWithNoMembership": 1,
+    "duplicateEmailGroups": 0,
+    "cohortSha256": "1fd3f51b682ea3efd97a7d14700bc05af21dcd1caa672c7b066e1d37cf09d9b7",
+    "interruptionAfter": 37,
+    "targetCreates": 96,
+    "repeatResumed": 96
+  },
+  "storage": {
+    "objects": 2,
+    "bytes": 522978,
+    "interruptionAfter": 1,
+    "targetCreates": 2,
+    "repeatResumed": 2,
+    "manifestSha256": "f6e40040c461be820b614677ae92a48ba6fc75d35bf52675d885f0d18b613dbd"
+  },
+  "rollback": {
+    "preWriteBridgeRestore": "allowed",
+    "postWriteBridgeRestore": "freeze-and-reconcile"
+  },
+  "timings": {
+    "syntheticContractMs": 104,
+    "totalMs": 11439
+  },
+  "privacy": {
+    "syntheticOnly": true,
+    "emailsEmitted": false,
+    "userIdsEmitted": false,
+    "objectKeysEmitted": false,
+    "recordContentsEmitted": false
+  }
+}
