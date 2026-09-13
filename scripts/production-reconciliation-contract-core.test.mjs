@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createProductionReconciliationContract } from "./production-reconciliation-contract-core.mjs";
+import { sha256 } from "./production-source-inventory-core.mjs";
 
 const names = Array.from({ length: 77 }, (_, index) => `table_${String(index).padStart(2, "0")}`);
 const relations = [
@@ -10,11 +11,12 @@ const relations = [
   { name: "user_activation_tokens", rowCount: 6, countStatus: "exact" },
   { name: "v_one", rowCount: 253, countStatus: "exact" },
 ];
-const inventory = {
-  format: "tracepoint-production-source-inventory/v1", contentSha256: "a".repeat(64), database: { totalRows: 4358, exposedRelations: relations },
+const inventoryPayload = {
+  format: "tracepoint-production-source-inventory/v1", database: { totalRows: 4358, exactCountComplete: true, exposedRelations: relations },
   identityTransition: { cohortUsers: 96, cohortUserSetSha256: "b".repeat(64), membershipLinks: 95, membershipLinkSetSha256: "c".repeat(64), usersWithActiveMembership: 94, usersWithOnlyInactiveMembership: 1, usersWithNoMembership: 1, platformAdministratorsWithNoMembership: 1, duplicateEmailGroups: 0 },
   storage: { totalObjects: 2, totalBytes: 522978, buckets: [{ name: "department-assets", objectCount: 2, totalBytes: 522978, public: true }] },
 };
+const inventory = { ...inventoryPayload, contentSha256: sha256(inventoryPayload) };
 
 test("creates a privacy-safe fail-closed production reconciliation contract", () => {
   const result = createProductionReconciliationContract(inventory, "2026-09-12T00:00:00.000Z");
@@ -27,6 +29,17 @@ test("creates a privacy-safe fail-closed production reconciliation contract", ()
   assert.equal(JSON.stringify(result).includes("@"), false);
 });
 
-test("refuses source-scale drift", () => {
-  assert.throws(() => createProductionReconciliationContract({ ...inventory, database: { ...inventory.database, totalRows: 4357 } }), /4358/);
+test("accepts newly observed row counts only when the inventory is internally consistent and hash-bound", () => {
+  const changedPayload = {
+    ...inventoryPayload,
+    database: {
+      ...inventoryPayload.database,
+      totalRows: 4377,
+      exposedRelations: inventoryPayload.database.exposedRelations.map((relation, index) => index === 0 ? { ...relation, rowCount: relation.rowCount + 19 } : relation),
+    },
+  };
+  const changed = { ...changedPayload, contentSha256: sha256(changedPayload) };
+  assert.equal(createProductionReconciliationContract(changed).database.exposedRows, 4377);
+  assert.throws(() => createProductionReconciliationContract({ ...changed, database: { ...changed.database, totalRows: 4376 } }), /integrity/);
+  assert.throws(() => createProductionReconciliationContract({ ...changed, contentSha256: "d".repeat(64) }), /integrity/);
 });

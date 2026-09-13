@@ -12,7 +12,13 @@ const sha256 = value => createHash("sha256").update(canonical(value)).digest("he
 export function createProductionReconciliationContract(inventory, generatedAt = new Date().toISOString()) {
   assert.equal(inventory.format, "tracepoint-production-source-inventory/v1");
   assert.match(inventory.contentSha256, /^[0-9a-f]{64}$/);
-  assert.equal(inventory.database.totalRows, 4358);
+  const { contentSha256: suppliedInventorySha256, ...inventoryPayload } = inventory;
+  assert.equal(suppliedInventorySha256, sha256(inventoryPayload), "Source inventory integrity check failed");
+  assert.equal(inventory.database.exactCountComplete, true, "Every source relation requires an exact row count");
+  assert.ok(Array.isArray(inventory.database.exposedRelations) && inventory.database.exposedRelations.length > 0);
+  assert.equal(new Set(inventory.database.exposedRelations.map(relation => relation.name)).size, inventory.database.exposedRelations.length, "Source relation names must be unique");
+  assert.ok(inventory.database.exposedRelations.every(relation => Number.isSafeInteger(relation.rowCount) && relation.rowCount >= 0 && relation.countStatus === "exact"), "Source relation counts must be exact non-negative integers");
+  assert.equal(inventory.database.totalRows, inventory.database.exposedRelations.reduce((sum, relation) => sum + relation.rowCount, 0), "Source total must equal the exact relation counts");
   assert.equal(inventory.identityTransition.cohortUsers, 96);
   assert.equal(inventory.identityTransition.membershipLinks, 95);
   assert.equal(inventory.storage.totalObjects, 2);
@@ -34,8 +40,7 @@ export function createProductionReconciliationContract(inventory, generatedAt = 
   });
   const physicalRows = relations.filter(item => item.kind === "table").reduce((sum, item) => sum + item.observedSourceRows, 0);
   const copiedRows = relations.filter(item => item.copyMode === "copy-source-row").reduce((sum, item) => sum + item.observedSourceRows, 0);
-  assert.equal(physicalRows, 4105);
-  assert.equal(copiedRows, 4007);
+  assert.ok(physicalRows >= copiedRows && copiedRows >= 0);
   const payload = {
     format: "tracepoint-production-reconciliation-contract/v1",
     generatedAt,

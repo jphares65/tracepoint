@@ -5,8 +5,13 @@ import { buildSyntheticTables, normalizeRehearsalInventory, productionScale, rec
 const inventory = {
   format: "tracepoint-production-source-inventory/v1",
   database: { totalRows: 4358, exposedRelations: [
-    { name: "audit_events", rowCount: 4105 },
-    ...Array.from({ length: 86 }, (_, index) => ({ name: `empty_relation_${String(index).padStart(2, "0")}`, rowCount: 0 })),
+    { name: "audit_events", rowCount: 4007 },
+    ...Array.from({ length: 81 }, (_, index) => ({ name: `empty_relation_${String(index).padStart(2, "0")}`, rowCount: 0 })),
+    { name: "roles", rowCount: 10 },
+    { name: "permissions", rowCount: 21 },
+    { name: "role_permissions", rowCount: 52 },
+    { name: "feature_catalog", rowCount: 9 },
+    { name: "user_activation_tokens", rowCount: 6 },
     { name: "v_active_firearm_assignments", rowCount: 155 },
     { name: "v_latest_qualification_results", rowCount: 93 },
     { name: "v_range_day_summary", rowCount: 5 },
@@ -16,6 +21,14 @@ const inventory = {
 };
 test("production-shaped scale distinguishes physical rows from derived views", () => {
   assert.deepEqual(productionScale(inventory), { exposedRows: 4358, viewRows: 253, physicalRows: 4105, copiedPublicRows: 4007, relations: 87, derivedViews: 3 });
+});
+test("production-shaped scale accepts row growth while retaining the reviewed relation set", () => {
+  const changed = structuredClone(inventory);
+  changed.database.exposedRelations[0].rowCount += 19;
+  changed.database.totalRows += 19;
+  assert.deepEqual(productionScale(changed), { exposedRows: 4377, viewRows: 253, physicalRows: 4124, copiedPublicRows: 4026, relations: 87, derivedViews: 3 });
+  changed.database.totalRows -= 1;
+  assert.throws(() => productionScale(changed), /total/);
 });
 test("sanitized reconciliation contracts can drive the rehearsal without restoring private inventory", () => {
   const contract = {

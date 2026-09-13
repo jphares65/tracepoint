@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { TARGET_SEEDED_TABLES, TRANSIENT_TABLES } from "./database-migration-core.mjs";
 
 const sha256 = value => createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value)).digest("hex");
 const departments = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002", "10000000-0000-4000-8000-000000000003"];
@@ -30,16 +31,20 @@ export function normalizeRehearsalInventory(inventory) {
 export function productionScale(inventory) {
   inventory = normalizeRehearsalInventory(inventory);
   assert.equal(inventory.format, "tracepoint-production-source-inventory/v1");
-  assert.equal(inventory.database.totalRows, 4358);
   assert.equal(inventory.identityTransition.cohortUsers, 96);
   assert.equal(inventory.identityTransition.membershipLinks, 95);
   assert.equal(inventory.storage.totalObjects, 2);
+  assert.equal(inventory.database.exposedRelations.length, 90, "Production schema must expose the reviewed 90 relations");
+  assert.equal(new Set(inventory.database.exposedRelations.map(item => item.name)).size, 90, "Production relation names must be unique");
+  assert.ok(inventory.database.exposedRelations.every(item => Number.isSafeInteger(item.rowCount) && item.rowCount >= 0), "Production relation counts must be non-negative integers");
   const views = inventory.database.exposedRelations.filter(item => item.name.startsWith("v_"));
   const physical = inventory.database.exposedRelations.filter(item => !item.name.startsWith("v_"));
   const viewRows = views.reduce((sum, item) => sum + item.rowCount, 0);
   const physicalRows = physical.reduce((sum, item) => sum + item.rowCount, 0);
-  assert.equal(viewRows, 253); assert.equal(physicalRows, 4105);
-  return { exposedRows: 4358, viewRows, physicalRows, copiedPublicRows: physicalRows - 92 - 6, relations: physical.length, derivedViews: views.length };
+  assert.equal(inventory.database.totalRows, viewRows + physicalRows, "Production total must equal physical and derived relation counts");
+  const seeded = new Set(TARGET_SEEDED_TABLES), transient = new Set(TRANSIENT_TABLES);
+  const copiedPublicRows = physical.filter(item => !seeded.has(item.name) && !transient.has(item.name)).reduce((sum, item) => sum + item.rowCount, 0);
+  return { exposedRows: inventory.database.totalRows, viewRows, physicalRows, copiedPublicRows, relations: physical.length, derivedViews: views.length };
 }
 
 export function buildSyntheticCohort() {

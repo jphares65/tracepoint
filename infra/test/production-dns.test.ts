@@ -109,8 +109,8 @@ test("delegation remains blocked while the authorized pre-cutover zone is synthe
   assert.equal(config.preCutoverDeploymentReady, true);
   assert.equal(config.signedInWixExportVerified, true);
   assert.deepEqual(config.cutoverBlockers, [
-    "The Wix-registered domain cannot change authoritative name servers without first moving registration to a registrar that permits custom name servers.",
-    "The parent .com zone currently contains a DNSSEC DS record for the Wix signing key; it must be removed and allowed to expire before delegation changes.",
+    "The registrar transfer is still pending; Wix must remain authoritative until the transfer completes.",
+    "Changing the registrar nameserver delegation to the reviewed Route 53 nameservers requires separate owner authorization.",
   ]);
   templates();
 });

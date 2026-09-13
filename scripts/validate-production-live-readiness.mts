@@ -43,7 +43,27 @@ const guardDutyDetectors = detectorIds.map((detectorId: string) => ({
   Status: optional(['guardduty', 'get-detector', '--detector-id', detectorId], {}).Status,
 }));
 const securityHubEnabled = Boolean(optional(['securityhub', 'describe-security-hub-v2'], {}).HubV2Arn);
-const policies = optional(['organizations', 'list-policies-for-target', '--target-id', target.account, '--filter', 'SERVICE_CONTROL_POLICY', ...(organizationsProfile ? ['--profile', organizationsProfile] : [])], null);
+function effectiveScpIds(account: string) {
+  if (!organizationsProfile) return null;
+  const ids = new Set<string>(), visited = new Set<string>();
+  let current = account;
+  try {
+    for (let depth = 0; depth < 8; depth += 1) {
+      assert.equal(visited.has(current), false, 'Organizations hierarchy contains a cycle');
+      visited.add(current);
+      const policies = aws(['organizations', 'list-policies-for-target', '--target-id', current, '--filter', 'SERVICE_CONTROL_POLICY', '--profile', organizationsProfile]);
+      for (const policy of policies.Policies ?? []) if (typeof policy.Id === 'string') ids.add(policy.Id);
+      if (current.startsWith('r-')) return [...ids].sort();
+      const parents: Array<{ Id: string; Type: string }> = aws(['organizations', 'list-parents', '--child-id', current, '--profile', organizationsProfile]).Parents ?? [];
+      assert.equal(parents.length, 1, 'Every production Organizations node requires exactly one parent');
+      current = parents[0].Id;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+const effectiveScps = effectiveScpIds(target.account);
 const budgetResponse = optional(['budgets', 'describe-budgets', '--account-id', target.account, '--max-results', '100'], {Budgets:[]});
 
 const report = evaluateProductionLiveReadiness({
@@ -58,8 +78,8 @@ const report = evaluateProductionLiveReadiness({
   configurationRecorders,
   guardDutyDetectors,
   securityHubEnabled,
-  effectiveGuardrailsAuthorized:policies !== null,
-  attachedScpCount:policies?.Policies?.length ?? null,
+  effectiveGuardrailsAuthorized:effectiveScps !== null,
+  attachedScpCount:effectiveScps?.length ?? null,
   budgets:budgetResponse.Budgets ?? [],
 });
 console.log(JSON.stringify({...report, checkedAt:new Date().toISOString()}, null, 2));
