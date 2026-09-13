@@ -1,0 +1,50 @@
+{
+  "evidenceType": "signed-in-wix-dns-export-reconciliation",
+  "reconciledAt": "2026-09-12T23:18:00-04:00",
+  "hostedZoneId": "Z06725946QWMQBKB1JT8",
+  "screenshotEvidence": [
+    {"sha256": "5d345da1fd52c7bac3ac3c80c3e5dcc808285f87694837a61608e3b6901dedba", "section": "A"},
+    {"sha256": "5dd1da700d46ded54cddc924b9d96e84b6e73b93930cc881ef1e39770d437a63", "section": "CNAME-part-1"},
+    {"sha256": "fd6add5bbf492244f01dac3dd73a0db2ee4d466fa48086c32a05f00a65392bcf", "section": "CNAME-part-2"},
+    {"sha256": "aa09f49a484d2614881d3573a153b2a6b7fbd89429921bb7ef9c1686de842cdd", "section": "CNAME-part-3"},
+    {"sha256": "bdbe68a1ce71397479c4d48189d703ff6d9e7db173cb964589c000b67c80f699", "section": "TXT"},
+    {"sha256": "4ec45a26a81a72cb5b573c3aed942c69725f7c9ae927624ec970269a1a61b18d", "section": "SRV-and-MX"},
+    {"sha256": "100b3ca076a3d31f2cb8d8e886175878a21482b10a67624d923b2797da7f5871", "section": "NS"}
+  ],
+  "wixVisible": {
+    "logicalRecordSetsExcludingProviderNs": 28,
+    "individualRows": {"A": 1, "CNAME": 20, "TXT": 7, "SRV": 2, "MX": 1, "NS": 2},
+    "providerSpecificNameServers": ["ns10.wixdns.net", "ns11.wixdns.net"]
+  },
+  "route53": {
+    "managedRecordSets": 29,
+    "providerRecordSets": 2,
+    "totalRecordSets": 31,
+    "directChecks": 116,
+    "directMismatches": 0
+  },
+  "correction": [
+    {"name": "_cf183eaeec77acfda74681d687456469.tracepointhq.com", "type": "CNAME", "ttl": 3600, "value": "_09b5cb9ef970b57b1d638cd814364d07.jkddzztszm.acm-validations.aws"},
+    {"name": "_cf391b761ec604139a02ad89ac26fc3b.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "value": "_0c3b1ad8d569000f2d926c56c9c29f47.jkddzztszm.acm-validations.aws"},
+    {"name": "3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "value": "3drryitjdubjinnkgryh3tbpzxoinewk.dkim.amazonses.com"},
+    {"name": "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "value": "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu.dkim.amazonses.com"},
+    {"name": "vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "value": "vzklmpevtuvf4g3sqev3y3z7eknsmsu5.dkim.amazonses.com"},
+    {"name": "bounce.staging.tracepointhq.com", "type": "TXT", "ttl": 3600, "value": "v=spf1 include:amazonses.com -all"}
+  ],
+  "result": {
+    "match": 27,
+    "intentionalAddition": 1,
+    "intentionalCleanup": 1,
+    "reviewRequired": 0,
+    "unexplainedMissing": 0,
+    "microsoft365Preserved": true,
+    "vercelPreserved": true,
+    "productionSesDkimPreserved": true,
+    "productionBounceSpfPreserved": true,
+    "productionBounceMxIntentionalAddition": true,
+    "duplicateWixDmarcIntentionalCleanup": "Route 53 contains only v=DMARC1; p=none;",
+    "signedInWixExportGateSatisfied": true,
+    "registrarTransferPhaseReady": true,
+    "delegationReady": false
+  }
+}

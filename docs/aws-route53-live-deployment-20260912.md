@@ -8,10 +8,12 @@ Completed 2026-09-12 ET in production account `193644343389`, region `us-east-1`
 - Name servers: `ns-1725.awsdns-23.co.uk`, `ns-1133.awsdns-13.org`, `ns-746.awsdns-29.net`, `ns-401.awsdns-50.com`
 - SOA: `ns-1725.awsdns-23.co.uk. awsdns-hostmaster.amazon.com. 1 7200 900 1209600 86400`
 - Creation change: `/change/C08569111XPQCXPIW3RG5`, `INSYNC`
-- Records: 23 reviewed RRsets plus provider NS and SOA, 25 total
-- Both CDK stacks are `CREATE_COMPLETE`, termination protected; the zone resource has retain policies.
+- Records: 29 reviewed RRsets plus provider NS and SOA, 31 total
+- The zone stack is `CREATE_COMPLETE`; the records stack is `UPDATE_COMPLETE`. Both are termination protected, and the zone resource has retain policies.
 
-All 23 manifest RRsets were queried directly against each of the four assigned servers: **92/92 exact value checks passed, 0 mismatches**. Public resolvers still return Wix `ns10.wixdns.net` and `ns11.wixdns.net`; the parent DS remains unchanged.
+All 29 manifest RRsets were queried directly against each of the four assigned servers: **116/116 exact value checks passed, 0 mismatches**. Public resolvers still return Wix `ns10.wixdns.net` and `ns11.wixdns.net`; the parent DS remains unchanged.
+
+The complete seven-screenshot signed-in Wix export was reconciled after the initial public-only inventory exposed six omissions. The two ACM validation CNAMEs, three staging SES DKIM CNAMEs, and staging MAIL FROM SPF TXT were added at TTL 3600. The signed-in export gate now passes.
 
 ## Wix-to-Route 53 reconciliation
 
@@ -35,16 +37,19 @@ All 23 manifest RRsets were queried directly against each of the four assigned s
 | `bounce.tracepointhq.com` | MX | NODATA | `10 feedback-smtp.us-east-1.amazonses.com` | — → 300 | INTENTIONAL ADDITION |
 | `bounce.tracepointhq.com` | TXT | SES SPF | same | 3600 → 300 | MATCH |
 | `_dmarc.tracepointhq.com` | TXT | approved policy plus conflicting Brevo policy | only `v=DMARC1; p=none;` | 3600 → 300 | INTENTIONAL CLEANUP |
+| production and staging ACM validation | CNAME | two ACM validation targets | same | 3600 → 3600 | MATCH |
+| three staging SES Easy DKIM names | CNAME | three SES DKIM targets | same | 3600 → 3600 | MATCH |
+| `bounce.staging.tracepointhq.com` | TXT | `v=spf1 include:amazonses.com -all` | same | 3600 → 3600 | MATCH |
 
-The exact unabridged 23-RRset values are in `infra/config/production-dns-target.json`. There are 21 matches, one approved addition, one approved cleanup, and zero review-required discrepancies. The currently delegated website remained Vercel HTTP 200 at the apex and HTTP 307 from `www`; Microsoft 365 MX, root SPF, verification, Autodiscover, Teams/Skype, and device records remained unchanged.
+The exact unabridged 29-RRset values are in `infra/config/production-dns-target.json`. There are 27 matches, one approved addition, one approved cleanup, zero review-required discrepancies, and zero unexplained omissions. The currently delegated website remained Vercel HTTP 200 at the apex and HTTP 307 from `www`; Microsoft 365 MX, root SPF, verification, Autodiscover, Teams/Skype, and device records remained unchanged.
 
 ## Governance and isolation
 
-Boundary v8 (`2dd0df…07128`) is preserved for rollback. Temporary v9 (`7b368a…6deb2`) allowed only the CDK execution role to create/tag the zone while the SCP still denied record changes. Final v10 (`0d64a6…43d8d`) removes zone creation and permits record changes only for zone `Z06725946QWMQBKB1JT8`, the CDK execution role, 20 exact names, five exact types, and `CREATE`/`UPSERT`/`DELETE`, with non-null multi-value guards. The SCP changed from `47b11e…ab09` to `f38899…dcb62`; it explicitly denies every unrelated hosted zone and any reviewed-zone change outside the CDK execution role. Access Analyzer reported zero findings.
+Boundary v10 (`0d64a6…43d8d`) is preserved as the immediate reconciliation rollback. Final v11 (`50c675…62d87`) permits record changes only for zone `Z06725946QWMQBKB1JT8`, the CDK execution role, 26 exact names, five exact types, and `CREATE`/`UPSERT`/`DELETE`, with non-null multi-value guards. The SCP remains unchanged at `f38899…dcb62`; it explicitly denies every unrelated hosted zone and any reviewed-zone change outside the CDK execution role. Access Analyzer reported zero findings.
 
 Simulation proved: exact-zone CloudFormation change allowed; unrelated-zone change explicit-denied; direct migration-role record change explicit-denied; further zone creation implicit-denied; `route53domains:UpdateDomainNameservers` explicit-denied.
 
-The two stacks contain only one `AWS::Route53::HostedZone`, 23 `AWS::Route53::RecordSet`, and CDK metadata. ECS, RDS, Cognito, Lambda, EC2, ALB, S3, Route 53 Domains, application runtime, and customer-data resources total zero.
+The two stacks contain only one `AWS::Route53::HostedZone`, 29 `AWS::Route53::RecordSet`, and CDK metadata. ECS, RDS, Cognito, Lambda, EC2, ALB, S3, Route 53 Domains, application runtime, and customer-data resources total zero.
 
 ## Cost and rollback
 
@@ -53,12 +58,12 @@ Current incremental fixed cost is `$0.50/month`, plus `$0.40/million` standard q
 Safe rollback now is governance-only because the zone is undelegated and cannot affect users:
 
 1. Confirm both DNS stacks have no in-progress operation.
-2. Set boundary v8 as default: `aws iam set-default-policy-version --policy-arn arn:aws:iam::193644343389:policy/TracePointProductionBoundary --version-id v8 --profile tracepoint-production`.
-3. Restore the prior SCP: `aws organizations update-policy --policy-id p-rvx1u7q7 --name TracePointProductionGuardrails --description "TracePoint production guardrails: us-east-1 runtime, protected audit/security controls, no DNS/Cognito changes; SES foundation-only exception with sending denied" --content file://infra/policies/tracepoint-production-guardrails.pre-route53-20260912.scp.json --profile tracepoint-staging`.
-4. Re-run simulations and verify the v8 and prior-SCP hashes above. Leave the undelegated retained zone intact; deleting it is unnecessary, would be destructive, and is not permitted by final governance.
+2. To roll back only the reconciliation permission expansion, set boundary v10 as default: `aws iam set-default-policy-version --policy-arn arn:aws:iam::193644343389:policy/TracePointProductionBoundary --version-id v10 --profile tracepoint-production`.
+3. No SCP rollback is required because the reconciliation did not change it; verify its canonical hash remains `f388995b2d63f445a8ded1dc94c41f5749132f170c0081674f7e18bc43bdcb62`.
+4. Re-run simulations and verify boundary v10 and the unchanged SCP hashes above. Leave the undelegated retained zone intact; deleting it is unnecessary, would be destructive, and is not permitted by final governance.
 
 ## Future DNSSEC sequence and next owner action
 
 Route 53 DNSSEC is disabled. The Wix parent DS remains active. Future order remains: validate/export parity → transfer registrar while retaining Wix NS → remove Wix DS and wait for no DS → separately authorize NS delegation → validate website/mail/SES → enable Route 53 DNSSEC → publish the new Route 53 DS.
 
-The single next owner action is to obtain the authoritative Wix DNS export and choose/approve a registrar that permits custom nameservers. Do not change NS or DS yet.
+The Route 53 zone is ready for the registrar-transfer phase, but not for delegation. The single next owner action is to approve the destination registrar and transfer procedure while retaining the Wix name servers and current DNSSEC state. Do not change NS or DS yet.

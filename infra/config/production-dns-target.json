@@ -4,11 +4,10 @@
   "expectedRegion": "us-east-1",
   "cutoverReady": false,
   "preCutoverDeploymentReady": true,
+  "signedInWixExportVerified": true,
   "cutoverBlockers": [
     "The Wix-registered domain cannot change authoritative name servers without first moving registration to a registrar that permits custom name servers.",
-    "The parent .com zone currently contains a DNSSEC DS record for the Wix signing key; it must be removed and allowed to expire before delegation changes.",
-    "A signed-in Wix DNS export was unavailable, so public DNS and certificate-transparency discovery cannot prove that arbitrary undiscovered labels do not exist.",
-    "The live _dmarc TXT RRset contains two DMARC policies. The Route 53 target intentionally retains only the owner-specified SES policy and requires explicit approval for that behavior change."
+    "The parent .com zone currently contains a DNSSEC DS record for the Wix signing key; it must be removed and allowed to expire before delegation changes."
   ],
   "recordSets": [
     { "name": "tracepointhq.com", "type": "A", "ttl": 3600, "values": ["216.198.79.1"], "purpose": "Current Vercel apex routing" },
@@ -33,6 +32,12 @@
     { "name": "yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "values": ["yabannzf7xcqdnbgbxoee5k2c77xktci.dkim.amazonses.com"], "purpose": "SES Easy DKIM" },
     { "name": "bounce.tracepointhq.com", "type": "MX", "ttl": 300, "values": ["10 feedback-smtp.us-east-1.amazonses.com"], "purpose": "SES custom MAIL FROM" },
     { "name": "bounce.tracepointhq.com", "type": "TXT", "ttl": 300, "values": ["v=spf1 include:amazonses.com ~all"], "purpose": "SES custom MAIL FROM SPF" },
-    { "name": "_dmarc.tracepointhq.com", "type": "TXT", "ttl": 300, "values": ["v=DMARC1; p=none;"], "purpose": "Owner-specified SES DMARC policy" }
+    { "name": "_dmarc.tracepointhq.com", "type": "TXT", "ttl": 300, "values": ["v=DMARC1; p=none;"], "purpose": "Owner-specified SES DMARC policy" },
+    { "name": "_cf183eaeec77acfda74681d687456469.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["_09b5cb9ef970b57b1d638cd814364d07.jkddzztszm.acm-validations.aws"], "purpose": "Production ACM certificate validation" },
+    { "name": "_cf391b761ec604139a02ad89ac26fc3b.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["_0c3b1ad8d569000f2d926c56c9c29f47.jkddzztszm.acm-validations.aws"], "purpose": "Staging ACM certificate validation" },
+    { "name": "3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["3drryitjdubjinnkgryh3tbpzxoinewk.dkim.amazonses.com"], "purpose": "Staging SES Easy DKIM" },
+    { "name": "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["e5uy6cdpk3j3wy2iezyywdqqqqhoerdu.dkim.amazonses.com"], "purpose": "Staging SES Easy DKIM" },
+    { "name": "vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["vzklmpevtuvf4g3sqev3y3z7eknsmsu5.dkim.amazonses.com"], "purpose": "Staging SES Easy DKIM" },
+    { "name": "bounce.staging.tracepointhq.com", "type": "TXT", "ttl": 3600, "values": ["v=spf1 include:amazonses.com -all"], "purpose": "Staging SES custom MAIL FROM SPF" }
   ]
 }

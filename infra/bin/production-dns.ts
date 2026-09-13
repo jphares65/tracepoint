@@ -11,6 +11,7 @@ interface ProductionDnsConfig {
   expectedRegion: "us-east-1";
   cutoverReady: boolean;
   preCutoverDeploymentReady: boolean;
+  signedInWixExportVerified: boolean;
   cutoverBlockers: string[];
   recordSets: ProductionDnsRecordSet[];
 }
@@ -30,8 +31,8 @@ if (
 }
 
 if (operation === "authorized") {
-  if (!config.preCutoverDeploymentReady) {
-    throw new Error("Production DNS pre-cutover deployment is not approved");
+  if (!config.preCutoverDeploymentReady || !config.signedInWixExportVerified) {
+    throw new Error("Production DNS pre-cutover deployment and signed-in Wix export verification are required");
   }
   if (process.env.TRACEPOINT_PRODUCTION_ROUTE53_AUTHORIZATION !== authorizationReference) {
     throw new Error("Matching production Route 53 authorization is required");

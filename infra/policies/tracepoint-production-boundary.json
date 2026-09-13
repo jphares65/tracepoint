@@ -119,7 +119,9 @@
           "route53:ChangeResourceRecordSetsNormalizedRecordNames": [
             "tracepointhq.com",
             "www.tracepointhq.com",
+            "_cf183eaeec77acfda74681d687456469.tracepointhq.com",
             "staging.tracepointhq.com",
+            "_cf391b761ec604139a02ad89ac26fc3b.staging.tracepointhq.com",
             "autodiscover.tracepointhq.com",
             "sip.tracepointhq.com",
             "lyncdiscover.tracepointhq.com",
@@ -135,7 +137,11 @@
             "t3pxf5n23dcf5ahxn4xzhcxfxnvushzh._domainkey.tracepointhq.com",
             "yiaen5uag5n6evooqpo2rt3earh3zwcq._domainkey.tracepointhq.com",
             "yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com",
+            "3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging.tracepointhq.com",
+            "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging.tracepointhq.com",
+            "vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging.tracepointhq.com",
             "bounce.tracepointhq.com",
+            "bounce.staging.tracepointhq.com",
             "_dmarc.tracepointhq.com"
           ],
           "route53:ChangeResourceRecordSetsRecordTypes": ["A", "CNAME", "MX", "SRV", "TXT"],

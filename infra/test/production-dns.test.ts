@@ -12,6 +12,7 @@ const config = JSON.parse(readFileSync(resolve(process.cwd(), "config/production
   expectedRegion: "us-east-1";
   cutoverReady: boolean;
   preCutoverDeploymentReady: boolean;
+  signedInWixExportVerified: boolean;
   cutoverBlockers: string[];
   recordSets: ProductionDnsRecordSet[];
 };
@@ -69,7 +70,7 @@ test("Microsoft 365 records and SES MAIL FROM remain separate", () => {
 });
 
 test("all six owner-specified SES records are exact and DNSSEC delegation is not synthesized", () => {
-  const ses = config.recordSets.filter((record) => /amazonses|DMARC1/.test(record.values.join(" ")));
+  const ses = config.recordSets.filter((record) => !record.name.includes("staging.tracepointhq.com") && /amazonses|DMARC1/.test(record.values.join(" ")));
   assert.equal(ses.length, 6);
   assert.deepEqual(
     ses.filter((record) => record.type === "CNAME").map((record) => record.name).sort(),
@@ -106,7 +107,11 @@ test("configuration fails closed for duplicate, cross-zone, or mail-destructive 
 test("delegation remains blocked while the authorized pre-cutover zone is synthesizable", () => {
   assert.equal(config.cutoverReady, false);
   assert.equal(config.preCutoverDeploymentReady, true);
-  assert.ok(config.cutoverBlockers.length >= 4);
+  assert.equal(config.signedInWixExportVerified, true);
+  assert.deepEqual(config.cutoverBlockers, [
+    "The Wix-registered domain cannot change authoritative name servers without first moving registration to a registrar that permits custom name servers.",
+    "The parent .com zone currently contains a DNSSEC DS record for the Wix signing key; it must be removed and allowed to expire before delegation changes.",
+  ]);
   templates();
 });
 
@@ -119,11 +124,29 @@ test("governance confines writes to the reviewed zone, role, names, types, and a
   assert.equal(allow.Condition.ArnEquals["aws:PrincipalArn"], "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1");
   assert.deepEqual(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsActions"], ["CREATE", "UPSERT", "DELETE"]);
   assert.deepEqual(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsRecordTypes"], ["A", "CNAME", "MX", "SRV", "TXT"]);
-  assert.equal(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsNormalizedRecordNames"].length, 20);
+  assert.equal(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsNormalizedRecordNames"].length, 26);
   assert.ok(Object.values(allow.Condition.Null).every((value) => value === "false"));
   assert.equal(boundary.Statement.some((statement: {Action?: string | string[]}) => (JSON.stringify(statement.Action) ?? "").includes("route53:CreateHostedZone")), false);
   const registrarDeny = scp.Statement.find((statement: {Sid?: string}) => statement.Sid === "DenyProductionRegistrarMutations");
   assert.ok(registrarDeny.Action.includes("route53domains:UpdateDomainNameservers"));
   const outside = scp.Statement.find((statement: {Sid?: string}) => statement.Sid === "DenyDnsRecordChangesOutsideReviewedZone");
   assert.equal(outside.NotResource, "arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8");
+});
+
+test("signed-in Wix reconciliation additions are exact and complete", () => {
+  const expected: Record<string, string> = {
+    "_cf183eaeec77acfda74681d687456469.tracepointhq.com": "_09b5cb9ef970b57b1d638cd814364d07.jkddzztszm.acm-validations.aws",
+    "_cf391b761ec604139a02ad89ac26fc3b.staging.tracepointhq.com": "_0c3b1ad8d569000f2d926c56c9c29f47.jkddzztszm.acm-validations.aws",
+    "3drryitjdubjinnkgryh3tbpzxoinewk._domainkey.staging.tracepointhq.com": "3drryitjdubjinnkgryh3tbpzxoinewk.dkim.amazonses.com",
+    "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu._domainkey.staging.tracepointhq.com": "e5uy6cdpk3j3wy2iezyywdqqqqhoerdu.dkim.amazonses.com",
+    "vzklmpevtuvf4g3sqev3y3z7eknsmsu5._domainkey.staging.tracepointhq.com": "vzklmpevtuvf4g3sqev3y3z7eknsmsu5.dkim.amazonses.com",
+    "bounce.staging.tracepointhq.com": "v=spf1 include:amazonses.com -all",
+  };
+  const additions = config.recordSets.filter((record) => record.name in expected);
+  assert.equal(additions.length, 6);
+  for (const record of additions) {
+    assert.deepEqual(record.values, [expected[record.name]]);
+    assert.equal(record.ttl, 3600);
+  }
+  templates().records.resourceCountIs("AWS::Route53::RecordSet", 29);
 });
