@@ -31,7 +31,14 @@ export function createCognitoInitialSessionVerifier(
       // share token state. ID signature/client/nonce are checked first by the
       // PKCE verifier. Access signature/client/expiry and stable mapping are
       // checked before this session callback is invoked.
-      const access = createCognitoAuthenticationProvider(config, mapping, async verified => {
+      const initialMapping: IdentityMappingStore = {
+        async findActive(issuer, subject) {
+          const active = await mapping.findActive(issuer, subject);
+          if (active || !mapping.activatePendingPlatformAdministrator) return active;
+          return mapping.activatePendingPlatformAdministrator(issuer, subject);
+        },
+      };
+      const access = createCognitoAuthenticationProvider(config, initialMapping, async verified => {
         const claims = JSON.parse(Buffer.from(snapshot.accessToken.split('.')[1], 'base64url').toString('utf8'));
         const idClaims = JSON.parse(Buffer.from(snapshot.idToken.split('.')[1], 'base64url').toString('utf8'));
         if (idClaims.sub !== verified.subject || !Number.isInteger(claims.exp) || claims.sub !== verified.subject ||

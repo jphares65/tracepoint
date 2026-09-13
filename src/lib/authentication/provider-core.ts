@@ -7,6 +7,7 @@ export type TracePointIdentity = {
 export interface AuthenticationProvider { verifySession(token?: string): Promise<TracePointIdentity | null>; }
 export interface IdentityMappingStore {
   findActive(issuer: string, subject: string): Promise<{ userId: string } | null>;
+  activatePendingPlatformAdministrator?(issuer: string, subject: string): Promise<{ userId: string } | null>;
 }
 export type ActiveDepartmentMembership = { departmentId: string; permissions: string[] };
 export async function resolveIdentityDepartment(identity: TracePointIdentity, departmentId: string,
