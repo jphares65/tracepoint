@@ -22,7 +22,7 @@ test("full-AWS production assembly composes native providers backup and exact ta
  assert.equal(stacks.runtime.stackName,"tracepoint-production-runtime");
  assert.equal(stacks.requestControls.stackName,"tracepoint-production-request-controls");
  assert.equal(stacks.alerts.stackName,"tracepoint-production-alert-delivery");
- const runtime=Template.fromStack(stacks.runtime),database=Template.fromStack(stacks.database),backup=Template.fromStack(stacks.backup),auth=Template.fromStack(stacks.cognito),email=Template.fromStack(stacks.ses),storage=Template.fromStack(stacks.storage),feedback=Template.fromStack(stacks.sesFeedbackWorker);
+ const runtime=Template.fromStack(stacks.runtime),database=Template.fromStack(stacks.database),backup=Template.fromStack(stacks.backup),auth=Template.fromStack(stacks.cognito),email=Template.fromStack(stacks.ses),storage=Template.fromStack(stacks.storage),feedback=Template.fromStack(stacks.sesFeedbackWorker),compute=Template.fromStack(stacks.compute);
  const serialized=JSON.stringify(runtime.toJSON());
  for(const value of ["postgres","cognito","s3","ses","TRACEPOINT_DATABASE_SECRET_JSON"])assert.match(serialized,new RegExp(value));
  assert.doesNotMatch(serialized,/NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
@@ -37,6 +37,12 @@ test("full-AWS production assembly composes native providers backup and exact ta
  const storagePolicies=JSON.stringify(storage.findResources("AWS::IAM::Policy"));
  for(const permission of ["s3:GetObject","s3:PutObject","s3:DeleteObject","kms:Decrypt","kms:GenerateDataKey","kms:ViaService"])assert.match(storagePolicies,new RegExp(permission));
  assert.doesNotMatch(storagePolicies,/s3:\*|s3:ListBucket|s3:DeleteObjectVersion/);
+ assert.doesNotMatch(JSON.stringify(compute.toJSON()),/tracepoint-production-full-aws-database/,"compute must deploy before the database stack exists");
+ runtime.hasResourceProperties("AWS::IAM::Policy",{
+  PolicyName:"tracepoint-production-runtime-database-secret-read",
+  Roles:[Match.anyValue()],
+  PolicyDocument:{Statement:Match.arrayWith([Match.objectLike({Action:["secretsmanager:GetSecretValue","secretsmanager:DescribeSecret"],Effect:"Allow"})])}
+ });
  for(const stack of Object.values(stacks))for(const role of Object.values(Template.fromStack(stack).findResources("AWS::IAM::Role")))assert.match(JSON.stringify(role.Properties.PermissionsBoundary),/TracePointProductionBoundary/);
 });
 

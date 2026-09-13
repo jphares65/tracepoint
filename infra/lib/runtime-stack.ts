@@ -125,15 +125,25 @@ export class RuntimeStack extends cdk.Stack {
       SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "SUPABASE_SECRET_KEY"),
       BREVO_API_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "BREVO_API_KEY"),
     };
+    const runtimeExecutionRole = awsNative
+      ? iam.Role.fromRoleArn(this, "AwsNativeExecutionRole", props.executionRole.roleArn, { mutable: false })
+      : props.executionRole;
     if (awsNative) {
-      // Keep the secret permission identity-based. Secret.grantRead() also mutates
-      // the customer-managed KMS key policy; because that key lives in the
-      // security stack and this role lives in the compute stack, the mutation
-      // creates a security <-> compute CloudFormation dependency cycle.
-      props.executionRole.addToPrincipalPolicy(new iam.PolicyStatement({
-        actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        resources: [props.databaseSecret!.secretArn],
-      }));
+      // Own this attachment in the downstream runtime stack. Mutating the role
+      // construct directly would add the database import to the compute stack,
+      // preventing compute from deploying before the database exists.
+      new iam.CfnPolicy(this, "DatabaseSecretReadPolicy", {
+        policyName: `tracepoint-${props.environmentName}-runtime-database-secret-read`,
+        roles: [runtimeExecutionRole.roleName],
+        policyDocument: {
+          Version: "2012-10-17",
+          Statement: [{
+            Effect: "Allow",
+            Action: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+            Resource: props.databaseSecret!.secretArn,
+          }],
+        },
+      });
     }
 
     const service = new ecsPatterns.ApplicationLoadBalancedFargateService(
@@ -163,7 +173,7 @@ export class RuntimeStack extends cdk.Stack {
             : ecs.ContainerImage.fromEcrRepository(props.repository, props.imageTag),
           containerName: "tracepoint",
           containerPort: 3000,
-          executionRole: props.executionRole,
+          executionRole: runtimeExecutionRole,
           taskRole: props.taskRole,
           logDriver: ecs.LogDrivers.awsLogs({
             logGroup: props.appLogGroup,
