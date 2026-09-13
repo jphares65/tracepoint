@@ -96,7 +96,7 @@ export class IdentityMigrationRunnerStack extends cdk.Stack {
     taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject'], resources: props.mode === 'prepare' ? [artifactBucket.arnForObjects(`${artifactPrefix}/manifest.json`)] : [artifactBucket.arnForObjects(`${artifactPrefix}/checkpoint.json`), artifactBucket.arnForObjects(`${artifactPrefix}/evidence.json`)] }));
     taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['kms:Decrypt', 'kms:GenerateDataKey'], resources: [artifactKey.keyArn], conditions: { StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } } }));
     if (props.mode === 'execute') {
-      taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser'], resources: [`arn:aws:cognito-idp:us-east-1:${this.account}:userpool/${props.userPoolId}`] }));
+      taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminDisableUser'], resources: [`arn:aws:cognito-idp:us-east-1:${this.account}:userpool/${props.userPoolId}`] }));
       taskRole.addToPolicy(new iam.PolicyStatement({ actions: ['ses:SendEmail'], resources: [`arn:aws:ses:us-east-1:${this.account}:identity/${domain}`], conditions: { StringEquals: { 'ses:FromAddress': props.fromAddress } } }));
     }
 

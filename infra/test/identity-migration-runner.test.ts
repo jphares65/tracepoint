@@ -35,6 +35,7 @@ test('identity task is one-shot, immutable, least-privilege, and AWS-native only
   const serialized = JSON.stringify(template.toJSON());
   assert.match(serialized, /sha256:[0-9a-f]{64}/);
   assert.match(serialized, /cognito-idp:AdminCreateUser/);
+  assert.match(serialized, /cognito-idp:AdminDisableUser/);
   assert.match(serialized, /ses:SendEmail/);
   assert.doesNotMatch(serialized, /SUPABASE|VERCEL|BREVO|AdminDeleteUser|TRACEPOINT_AUTH_STATE_KEYS|TRACEPOINT_AUTH_REFRESH_KEYS/);
 });
