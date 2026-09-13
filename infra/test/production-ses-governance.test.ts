@@ -27,6 +27,12 @@ function actions(statement: Statement): string[] {
   return Array.isArray(statement.Action) ? statement.Action : [statement.Action ?? ''];
 }
 
+function byAction(statements: Statement[], action: string): Statement {
+  const result = statements.find((statement) => actions(statement).includes(action));
+  assert.ok(result, `missing action ${action}`);
+  return result;
+}
+
 test('production SCP permits only reviewed foundation principals and still denies SES sending', () => {
   const statements = policy('tracepoint-production-guardrails.scp.json').Statement;
   const exception = bySid(statements, 'KeepSesDisabledOutsideAuthorizedFoundationRoles');
@@ -45,7 +51,7 @@ test('production SCP permits only reviewed foundation principals and still denie
 
 test('production boundary grants only reviewed SES foundation and account-control writes', () => {
   const statements = policy('tracepoint-production-boundary.json').Statement;
-  const creation = bySid(statements, 'AllowReviewedSesFoundationCreationViaCloudFormation');
+  const creation = byAction(statements, 'ses:CreateEmailIdentity');
   assert.deepEqual(actions(creation), ['ses:CreateConfigurationSet', 'ses:CreateEmailIdentity']);
   assert.equal(creation.Resource, '*');
   assert.equal(
@@ -53,14 +59,14 @@ test('production boundary grants only reviewed SES foundation and account-contro
     'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1',
   );
 
-  const resources = bySid(statements, 'AllowReviewedSesFoundationResources');
+  const resources = byAction(statements, 'ses:DeleteEmailIdentity');
   assert.deepEqual(resources.Resource, [
     'arn:aws:ses:us-east-1:193644343389:identity/tracepointhq.com',
     'arn:aws:ses:us-east-1:193644343389:configuration-set/tracepoint-production',
     'arn:aws:ses:us-east-1:193644343389:configuration-set/tracepoint-production-cognito',
   ]);
 
-  const account = bySid(statements, 'AllowReviewedSesAccountControls');
+  const account = byAction(statements, 'ses:PutAccountDetails');
   assert.deepEqual(actions(account), ['ses:PutAccountDetails', 'ses:PutAccountSuppressionAttributes']);
   assert.equal(account.Condition?.ArnEquals?.['aws:PrincipalArn'], 'arn:aws:iam::193644343389:role/TracePointMigrationProduction');
 
@@ -70,15 +76,30 @@ test('production boundary grants only reviewed SES foundation and account-contro
   assert.ok(!added.some((action) => /^(iam|ecs|rds|cognito|lambda|route53):/.test(action)));
 });
 
-test('production boundary confines Cognito creation and mutation while runtime lifecycle remains inactive', () => {
+test('production boundary confines Cognito foundation and runtime lifecycle authority', () => {
   const statements = policy('tracepoint-production-boundary.json').Statement;
   const cfn = 'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1';
-  const creation = bySid(statements, 'AllowReviewedCognitoFoundationCreationViaCloudFormation');
+  const creation = byAction(statements, 'cognito-idp:CreateUserPool');
   assert.deepEqual(actions(creation), ['cognito-idp:CreateUserPool', 'cognito-idp:CreateUserPoolClient', 'cognito-idp:CreateUserPoolDomain', 'cognito-idp:TagResource', 'cognito-idp:UntagResource']);
   assert.equal(creation.Resource, '*');
   assert.equal(creation.Condition?.ArnEquals?.['aws:PrincipalArn'], cfn);
-  const resources = bySid(statements, 'AllowReviewedCognitoFoundationResources');
+  const resources = byAction(statements, 'cognito-idp:SetUserPoolMfaConfig');
   assert.equal(resources.Resource, 'arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_*');
   assert.equal(resources.Condition?.ArnEquals?.['aws:PrincipalArn'], cfn);
-  assert.equal(statements.some((statement) => actions(statement).some((action) => action.startsWith('cognito-idp:Admin'))), false);
+  const runtime = byAction(statements, 'cognito-idp:AdminCreateUser');
+  assert.deepEqual(actions(runtime), [
+    'cognito-idp:AdminCreateUser',
+    'cognito-idp:AdminDeleteUser',
+    'cognito-idp:AdminDisableUser',
+    'cognito-idp:AdminEnableUser',
+    'cognito-idp:AdminGetUser',
+    'cognito-idp:AdminResetUserPassword',
+    'cognito-idp:AdminSetUserPassword',
+    'cognito-idp:AdminUpdateUserAttributes',
+    'cognito-idp:AdminUserGlobalSignOut',
+  ]);
+  assert.equal(runtime.Resource, 'arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_diFmWDMe9');
+  assert.equal(runtime.Condition?.ArnEquals?.['aws:PrincipalArn'], 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-ecs-task');
+  assert.ok(!actions(runtime).includes('cognito-idp:*'));
+  assert.ok(!actions(runtime).some((action) => /CreateUserPool|DeleteUserPool|AdminAddUserToGroup/.test(action)));
 });

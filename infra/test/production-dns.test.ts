@@ -118,14 +118,14 @@ test("delegation remains blocked while the authorized pre-cutover zone is synthe
 test("governance confines writes to the reviewed zone, role, names, types, and actions", () => {
   const boundary = JSON.parse(readFileSync(resolve(process.cwd(), "policies/tracepoint-production-boundary.json"), "utf8"));
   const scp = JSON.parse(readFileSync(resolve(process.cwd(), "policies/tracepoint-production-guardrails.scp.json"), "utf8"));
-  const allow = boundary.Statement.find((statement: {Sid?: string}) => statement.Sid === "AllowReviewedRoute53RecordChangesViaCloudFormation");
+  const allow = boundary.Statement.find((statement: {Action?: string}) => statement.Action === "route53:ChangeResourceRecordSets");
   assert.equal(allow.Action, "route53:ChangeResourceRecordSets");
   assert.equal(allow.Resource, "arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8");
   assert.equal(allow.Condition.ArnEquals["aws:PrincipalArn"], "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1");
   assert.deepEqual(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsActions"], ["CREATE", "UPSERT", "DELETE"]);
   assert.deepEqual(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsRecordTypes"], ["A", "CNAME", "MX", "SRV", "TXT"]);
   assert.equal(allow.Condition["ForAllValues:StringEquals"]["route53:ChangeResourceRecordSetsNormalizedRecordNames"].length, 26);
-  assert.ok(Object.values(allow.Condition.Null).every((value) => value === "false"));
+  assert.ok(Object.values(allow.Condition.Null).every((value) => value === false));
   assert.equal(boundary.Statement.some((statement: {Action?: string | string[]}) => (JSON.stringify(statement.Action) ?? "").includes("route53:CreateHostedZone")), false);
   const registrarDeny = scp.Statement.find((statement: {Sid?: string}) => statement.Sid === "DenyProductionRegistrarMutations");
   assert.ok(registrarDeny.Action.includes("route53domains:UpdateDomainNameservers"));

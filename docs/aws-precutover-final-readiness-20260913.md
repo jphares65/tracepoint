@@ -1,11 +1,11 @@
 # TracePoint final pre-cutover readiness checkpoint — 2026-09-13
 
-The AWS-native production runtime is privately deployed and healthy behind the existing ALB, but it is not publicly authoritative. Task definition revision 3 uses the exact authorized digest and is steady at desired/running/pending `1/1/0`; retained bridge revision 2 remains the exact rollback target. Public DNS still points to Vercel, and no customer traffic, customer data, identity, email or DNS state changed. Private validation passed except for one precise blocker: `TracePointProductionBoundary` v15 denies the ECS task role's Cognito lifecycle calls even though Organizations and the role's scoped inline policy permit them.
+The AWS-native production runtime is privately deployed and healthy behind the existing ALB, but it is not publicly authoritative. Task definition revision 3 uses the exact authorized digest and is steady at desired/running/pending `1/1/0`; retained bridge revision 2 remains the exact rollback target. Public DNS still points to Vercel, and no customer traffic, customer data, identity, email or DNS state changed. `TracePointProductionBoundary` v16 now permits exactly the nine code-derived Cognito lifecycle calls for the exact runtime role and production pool. The no-create runtime probe passes; authenticated positive-path validation remains blocked because the reviewed synthetic fixture procedure is staging-only.
 
 ## Current production posture
 
 - Account `193644343389`, role `TracePointMigrationProduction`, region `us-east-1` were reconfirmed.
-- The Budget remains exactly **$150/month**. Billing-lagged actual spend is **$13.964**; AWS provides no forecast. Tier 1 remains **$131.72 steady** and **$144.38 during a normal rolling deployment**. The **$153.58** rolling state at 100-GiB RDS allocation remains prohibited.
+- The Budget remains exactly **$150/month**. Billing-lagged actual spend is **$15.014**; AWS provides no forecast. Tier 1 remains **$131.72 steady** and **$144.38 during a normal rolling deployment**. The **$153.58** rolling state at 100-GiB RDS allocation remains prohibited.
 - Production PostgreSQL 17.9 is available on private, encrypted, deletion-protected `db.t4g.small` RDS with 20 GiB allocated, 35-day PITR and exact **97/97** lineage: 76 source migrations plus 21 AWS overlays.
 - The immutable AWS-native runtime, database-migration and identity-migration images are published and have completed scans with zero critical or high findings. Runtime revision 3 is pinned to `sha256:5f4b8fe59eaf8befd29bf7ca455ec1d4eb2b18836e66818bf2cc8cae55a90c0b`; retained bridge revision 2 remains `ACTIVE` for rollback.
 - The 13-stack AWS-native production assembly synthesizes cleanly. The exclusive runtime deployment added only the reviewed AWS-native secret/task roles, PostgreSQL security-group path, digest-pinned task definition and Tier 1 desired/max capacity; it contained no DNS or customer-data operation. CloudFormation ran from `20:55:42.893Z` through `21:05:34.489Z` and completed successfully.
@@ -36,7 +36,7 @@ The deployed service is steady at `1/1/0` with one healthy ALB target. Direct AL
 
 A short-lived revision-3 task proved verified PostgreSQL TLS, the bounded `tracepoint_runtime` login, connection limit 20, no superuser or RLS bypass, 96 RLS-protected tables, zero remaining `auth.uid()` policies, fail-closed synthetic tenant visibility and denied service-role escalation. It performed no database writes and read no customer data. A separate revision-3 task proved S3 put/get/KMS encryption/delete using a 41-byte synthetic object; its exact object version and delete marker were then removed and a follow-up listing returned none.
 
-Cognito foundation configuration is otherwise ready: deletion protection is active, MFA is on, the pool contains zero users, auth-code/OIDC configuration is present, token revocation and refresh rotation are enabled, and activation/recovery email uses the reviewed SES configuration set. The runtime's no-create `AdminGetUser` probe failed with `AccessDeniedException`. IAM simulation identified the exact cause: Organizations allows the action, but permissions boundary `TracePointProductionBoundary` v15 does not. No permission was broadened and no identity was created.
+Cognito foundation configuration is ready: deletion protection is active, MFA is on, the pool contains zero users, auth-code/OIDC configuration is present, token revocation and refresh rotation are enabled, and activation/recovery email uses the reviewed SES configuration set. `TracePointProductionBoundary` v16 permits exactly the nine runtime lifecycle calls for role `tracepoint-production-aws-native-ecs-task` on pool `us-east-1_diFmWDMe9`; cross-role, cross-pool, group-administration, pool-administration and general IAM controls remain denied. The runtime's no-create `AdminGetUser` task exited 0 with the expected `UserNotFoundException`. Authenticated positive-path RBAC/session validation is still unexecuted because the only reviewed disposable three-user procedure is explicitly staging-only. No production identity or synthetic database row was created.
 
 ## SES, registrar and DNS
 
@@ -51,6 +51,7 @@ Verisign RDAP reports `pending transfer`; Wix nameservers `ns10.wixdns.net` and 
 3. Corrected effective-SCP validation to traverse the account, OU and root hierarchy.
 4. Corrected migration, identity and rollback tooling for enhanced ECR scanning by querying scan findings with the immutable digest and safely handling absent zero-count severity fields.
 5. Removed the already-propagated historical DS record from the current DNS blocker list.
+6. Corrected the production runtime boundary with the exact code-derived Cognito lifecycle set while preserving v15 rollback and avoiding any SCP change.
 
 ## Readiness and remaining blockers
 
@@ -58,7 +59,7 @@ Implementation-prepared readiness remains **100%**. Live-verified full-AWS readi
 
 Only these blockers remain:
 
-1. A separately authorized narrow update to `TracePointProductionBoundary` must permit only the reviewed Cognito lifecycle actions from `tracepoint-production-aws-native-ecs-task` to user pool `us-east-1_diFmWDMe9`; the role policy already scopes those actions to that pool.
+1. Explicitly approve a production adaptation of the reviewed staging-only three-user synthetic fixture procedure so authenticated RBAC, RLS, session refresh and logout can be exercised and cleaned up; the production pool remains at zero users.
 2. Registrar transfer completion, followed by separate nameserver-delegation authorization.
 3. Route 53 authority so custom MAIL FROM can validate, then separate SES access-request resubmission and smoke-email authorization.
 4. Owner authorization for the final source secret, write freeze, database copy/reconciliation, two-object copy, 96-user Cognito execution/activation and public traffic switch.
@@ -66,7 +67,7 @@ Only these blockers remain:
 
 ## Exact final sequence
 
-1. Authorize and apply the narrow Cognito runtime permissions-boundary correction, then repeat only the failed no-create Cognito probe and authenticated synthetic RBAC path.
+1. With explicit fixture-procedure approval, run and clean up the three-user authenticated synthetic RBAC/session path; the boundary correction and no-create runtime probe are complete.
 2. Preserve the deployed digest-pinned revision 3 privately and retained bridge revision 2 as the rollback target until customer cutover authorization.
 3. Complete the registrar transfer while retaining Wix nameservers.
 4. Recheck DS absence and the exact 31-record Route 53 manifest.

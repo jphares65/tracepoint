@@ -1,0 +1,126 @@
+{
+  "format": "tracepoint-production-cognito-boundary-validation/v1",
+  "observedAtUtc": "2026-09-13T22:44:03Z",
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction",
+    "runtimeRole": "arn:aws:iam::193644343389:role/tracepoint-production-aws-native-ecs-task",
+    "userPool": "arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_diFmWDMe9"
+  },
+  "boundary": {
+    "policyArn": "arn:aws:iam::193644343389:policy/TracePointProductionBoundary",
+    "beforeVersion": "v15",
+    "beforeCanonicalCompactSha256": "39acb70e0f81ae0f430de60eddf52ce37afea56b588451f552fdd313d005eacc",
+    "afterVersion": "v16",
+    "afterCanonicalCompactSha256": "a24e22905394a7fc046a9550ff5c2488cfb67c0764fec877dafed45fd7ff7d65",
+    "afterCompactCharacters": 6143,
+    "rollbackVersionRetained": "v15",
+    "rollbackCommand": "aws iam set-default-policy-version --policy-arn arn:aws:iam::193644343389:policy/TracePointProductionBoundary --version-id v15 --profile tracepoint-production",
+    "removedNonDefaultVersionToFreeSlot": "v11",
+    "semanticSizeReduction": "Removed optional Sid labels and encoded existing Route53 Null false values as JSON booleans; actions, resources, principals and conditions other than the new runtime statement are unchanged.",
+    "accessAnalyzerPolicyValidationFindings": 0
+  },
+  "actions": [
+    "cognito-idp:AdminCreateUser",
+    "cognito-idp:AdminDeleteUser",
+    "cognito-idp:AdminDisableUser",
+    "cognito-idp:AdminEnableUser",
+    "cognito-idp:AdminGetUser",
+    "cognito-idp:AdminResetUserPassword",
+    "cognito-idp:AdminSetUserPassword",
+    "cognito-idp:AdminUpdateUserAttributes",
+    "cognito-idp:AdminUserGlobalSignOut"
+  ],
+  "leastPrivilege": {
+    "derivedFrom": "src/lib/authentication/cognito-admin.ts",
+    "tool": "iam-policy-autopilot 0.3.0",
+    "preChange": "All nine actions implicitDeny; Organizations allowed; permissions boundary denied.",
+    "postChange": "All nine actions allowed; Organizations allowed; permissions boundary allowed.",
+    "crossPoolAdminGetUser": "implicitDeny",
+    "otherRoleAdminGetUser": "implicitDeny",
+    "adminAddUserToGroup": "implicitDeny",
+    "createUserPool": "implicitDeny",
+    "iamCreateUser": "implicitDeny",
+    "scpChanged": false,
+    "wildcardCognitoActionAdded": false,
+    "crossPoolAuthorityAdded": false,
+    "generalIamAuthorityAdded": false
+  },
+  "noCreateProbe": {
+    "status": "PASSED",
+    "taskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/22e311195b8e40adb3a3b8878ba4914c",
+    "taskDefinition": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:3",
+    "startedAtUtc": "2026-09-13T22:32:02.441Z",
+    "stoppedAtUtc": "2026-09-13T22:32:28.409Z",
+    "exitCode": 0,
+    "operation": "AdminGetUser",
+    "result": "UserNotFoundException",
+    "identityCreated": false,
+    "emailSent": false,
+    "credentialsPrinted": false,
+    "discardedProbeAttempt": {
+      "taskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/3d83c69adbc74905a197c0ee91eb2929",
+      "exitCode": 1,
+      "cause": "Validation-only package was absent from the standalone production image; no AWS API call or state mutation occurred."
+    }
+  },
+  "databaseBoundaryProbe": {
+    "status": "PASSED",
+    "taskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/2fc0c3f704ef4ee1b3012b9b125de28a",
+    "startedAtUtc": "2026-09-13T22:41:46.747Z",
+    "stoppedAtUtc": "2026-09-13T22:42:12.082Z",
+    "exitCode": 0,
+    "tls": true,
+    "runtimeRole": "tracepoint_runtime",
+    "superuser": false,
+    "bypassRls": false,
+    "connectionLimit": 20,
+    "rlsTables": 96,
+    "legacyAuthUidPolicies": 0,
+    "syntheticTenantVisibleDepartments": 0,
+    "syntheticTenantVisibleMemberships": 0,
+    "serviceRoleEscalationDenied": true,
+    "writesPerformed": false,
+    "customerDataRead": false
+  },
+  "authenticatedValidation": {
+    "status": "BLOCKED_BEFORE_EXECUTION",
+    "reason": "The reviewed disposable three-user acceptance procedure is explicitly staging-only. No reviewed production fixture procedure exists, and the owner's authorization permits synthetic users only when the existing reviewed procedure supports them.",
+    "productionUsersBefore": 0,
+    "productionUsersAfter": 0,
+    "syntheticUsersCreated": 0,
+    "databaseRowsCreated": 0,
+    "objectsCreated": 0,
+    "cleanupRequired": false,
+    "ownerAction": "Explicitly approve a production adaptation of the reviewed three-user synthetic fixture procedure, including suppressed Cognito creation, isolated synthetic database rows, encrypted temporary credential handling, and verified deletion."
+  },
+  "operations": {
+    "ecs": "ACTIVE_1_DESIRED_1_RUNNING_0_PENDING_ROLLOUT_COMPLETE",
+    "alb": "ONE_HEALTHY_TARGET",
+    "healthEndpoint": "HTTP_200_DIRECT_ALB_NO_DNS_CHANGE",
+    "alarms": "17_OF_17_OK",
+    "accessAnalyzer": "ACTIVE_ACCOUNT_UNUSED_ACCESS_ZERO_ACTIVE_FINDINGS",
+    "cognitoUsers": 0,
+    "productionBudgetUsd": 150,
+    "billingLaggedActualUsd": 15.014,
+    "budgetChanged": false,
+    "incrementalRecurringCostUsd": 0
+  },
+  "prohibitedActions": {
+    "customerIdentityMigration": false,
+    "emailSent": false,
+    "databaseOrObjectMigration": false,
+    "writeFreeze": false,
+    "trafficOrDnsChange": false,
+    "supabaseChange": false,
+    "mainModified": false,
+    "budgetIncreased": false
+  },
+  "readiness": {
+    "implementationPreparedPercent": 100,
+    "liveVerifiedPercent": 81,
+    "netNewLivePoints": 0,
+    "reason": "The IAM blocker and no-create runtime reachability are resolved, but the weighted authentication gate requires a successful authenticated synthetic application path; no partial credit is claimed."
+  }
+}

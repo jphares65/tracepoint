@@ -2,7 +2,6 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AllowProductionAdministrationExceptReservedChanges",
       "Effect": "Allow",
       "NotAction": [
         "organizations:*",
@@ -25,7 +24,6 @@
       "Resource": "*"
     },
     {
-      "Sid": "AllowReadOnlyReservedServices",
       "Effect": "Allow",
       "Action": [
         "organizations:Describe*",
@@ -45,7 +43,6 @@
       "Resource": "*"
     },
     {
-      "Sid": "AllowReviewedSesFoundationCreationViaCloudFormation",
       "Effect": "Allow",
       "Action": [
         "ses:CreateConfigurationSet",
@@ -59,7 +56,6 @@
       }
     },
     {
-      "Sid": "AllowReviewedSesFoundationResources",
       "Effect": "Allow",
       "Action": [
         "ses:DeleteConfigurationSet",
@@ -93,7 +89,6 @@
       }
     },
     {
-      "Sid": "AllowReviewedSesAccountControls",
       "Effect": "Allow",
       "Action": [
         "ses:PutAccountDetails",
@@ -107,7 +102,6 @@
       }
     },
     {
-      "Sid": "AllowReviewedCognitoFoundationCreationViaCloudFormation",
       "Effect": "Allow",
       "Action": [
         "cognito-idp:CreateUserPool",
@@ -124,7 +118,6 @@
       }
     },
     {
-      "Sid": "AllowReviewedCognitoFoundationResources",
       "Effect": "Allow",
       "Action": [
         "cognito-idp:DeleteUserPool",
@@ -143,7 +136,26 @@
       }
     },
     {
-      "Sid": "AllowReviewedRoute53RecordChangesViaCloudFormation",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminDisableUser",
+        "cognito-idp:AdminEnableUser",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminResetUserPassword",
+        "cognito-idp:AdminSetUserPassword",
+        "cognito-idp:AdminUpdateUserAttributes",
+        "cognito-idp:AdminUserGlobalSignOut"
+      ],
+      "Resource": "arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_diFmWDMe9",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/tracepoint-production-aws-native-ecs-task"
+        }
+      }
+    },
+    {
       "Effect": "Allow",
       "Action": "route53:ChangeResourceRecordSets",
       "Resource": "arn:aws:route53:::hostedzone/Z06725946QWMQBKB1JT8",
@@ -184,14 +196,13 @@
           "route53:ChangeResourceRecordSetsActions": ["CREATE", "UPSERT", "DELETE"]
         },
         "Null": {
-          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "false",
-          "route53:ChangeResourceRecordSetsRecordTypes": "false",
-          "route53:ChangeResourceRecordSetsActions": "false"
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": false,
+          "route53:ChangeResourceRecordSetsRecordTypes": false,
+          "route53:ChangeResourceRecordSetsActions": false
         }
       }
     },
     {
-      "Sid": "AllowPassOnlyTracePointAndCdkRoles",
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": [
@@ -216,7 +227,6 @@
       }
     },
     {
-      "Sid": "AllowRequiredServiceLinkedRoles",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
       "Resource": "*",
