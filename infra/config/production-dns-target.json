@@ -1,0 +1,37 @@
+{
+  "zoneName": "tracepointhq.com",
+  "expectedAccount": "193644343389",
+  "expectedRegion": "us-east-1",
+  "cutoverReady": false,
+  "cutoverBlockers": [
+    "The Wix-registered domain cannot change authoritative name servers without first moving registration to a registrar that permits custom name servers.",
+    "The parent .com zone currently contains a DNSSEC DS record for the Wix signing key; it must be removed and allowed to expire before delegation changes.",
+    "A signed-in Wix DNS export was unavailable, so public DNS and certificate-transparency discovery cannot prove that arbitrary undiscovered labels do not exist.",
+    "The live _dmarc TXT RRset contains two DMARC policies. The Route 53 target intentionally retains only the owner-specified SES policy and requires explicit approval for that behavior change."
+  ],
+  "recordSets": [
+    { "name": "tracepointhq.com", "type": "A", "ttl": 3600, "values": ["216.198.79.1"], "purpose": "Current Vercel apex routing" },
+    { "name": "tracepointhq.com", "type": "MX", "ttl": 3600, "values": ["10 tracepointhq-com.mail.protection.outlook.com"], "purpose": "Microsoft 365 inbound mail" },
+    { "name": "tracepointhq.com", "type": "TXT", "ttl": 3600, "values": ["v=spf1 include:spf.protection.outlook.com -all", "MS=ms61865803", "brevo-code:0afe68b5616645db30eabaadc7d23aa8"], "purpose": "Microsoft 365 SPF and verification; preserved legacy Brevo verification" },
+    { "name": "www.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["cname.vercel-dns.com"], "purpose": "Current Vercel website routing" },
+    { "name": "staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["tracep-servi-g9c0rkjqmcj4-947860151.us-east-1.elb.amazonaws.com"], "purpose": "Existing AWS-native staging endpoint" },
+    { "name": "autodiscover.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["autodiscover.outlook.com"], "purpose": "Microsoft 365 Autodiscover" },
+    { "name": "sip.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["sipdir.online.lync.com"], "purpose": "Microsoft 365 Teams/Skype" },
+    { "name": "lyncdiscover.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["webdir.online.lync.com"], "purpose": "Microsoft 365 Teams/Skype" },
+    { "name": "enterpriseregistration.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["enterpriseregistration.windows.net"], "purpose": "Microsoft 365 device registration" },
+    { "name": "enterpriseenrollment.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["enterpriseenrollment.manage.microsoft.com"], "purpose": "Microsoft 365 device enrollment" },
+    { "name": "_sip._tls.tracepointhq.com", "type": "SRV", "ttl": 3600, "values": ["100 1 443 sipdir.online.lync.com"], "purpose": "Microsoft 365 Teams/Skype" },
+    { "name": "_sipfederationtls._tcp.tracepointhq.com", "type": "SRV", "ttl": 3600, "values": ["100 1 5061 sipfed.online.lync.com"], "purpose": "Microsoft 365 Teams/Skype federation" },
+    { "name": "send.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["send-tracepointhq-com.brand.brevosend.com"], "purpose": "Preserved legacy Brevo rollback record" },
+    { "name": "r.send.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["send-tracepointhq-com.r.brand.brevosend.com"], "purpose": "Preserved legacy Brevo rollback record" },
+    { "name": "img.send.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["send-tracepointhq-com.img.brand.brevosend.com"], "purpose": "Preserved legacy Brevo rollback record" },
+    { "name": "brevo1._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["b1.tracepointhq-com.dkim.brevo.com"], "purpose": "Preserved legacy Brevo rollback record" },
+    { "name": "brevo2._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["b2.tracepointhq-com.dkim.brevo.com"], "purpose": "Preserved legacy Brevo rollback record" },
+    { "name": "t3pxf5n23dcf5ahxn4xzhcxfxnvushzh._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "values": ["t3pxf5n23dcf5ahxn4xzhcxfxnvushzh.dkim.amazonses.com"], "purpose": "SES Easy DKIM" },
+    { "name": "yiaen5uag5n6evooqpo2rt3earh3zwcq._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "values": ["yiaen5uag5n6evooqpo2rt3earh3zwcq.dkim.amazonses.com"], "purpose": "SES Easy DKIM" },
+    { "name": "yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 300, "values": ["yabannzf7xcqdnbgbxoee5k2c77xktci.dkim.amazonses.com"], "purpose": "SES Easy DKIM" },
+    { "name": "bounce.tracepointhq.com", "type": "MX", "ttl": 300, "values": ["10 feedback-smtp.us-east-1.amazonses.com"], "purpose": "SES custom MAIL FROM" },
+    { "name": "bounce.tracepointhq.com", "type": "TXT", "ttl": 300, "values": ["v=spf1 include:amazonses.com ~all"], "purpose": "SES custom MAIL FROM SPF" },
+    { "name": "_dmarc.tracepointhq.com", "type": "TXT", "ttl": 300, "values": ["v=DMARC1; p=none;"], "purpose": "Owner-specified SES DMARC policy" }
+  ]
+}

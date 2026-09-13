@@ -1,0 +1,100 @@
+{
+  "evidenceType": "route53-authoritative-dns-migration-preparation",
+  "observedAt": "2026-09-12T21:20:00-04:00",
+  "mutationPerformed": false,
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction",
+    "budgetName": "tracepoint-production-monthly",
+    "budgetUsdPerMonth": 150,
+    "budgetChanged": false
+  },
+  "registrar": {
+    "name": "Wix.com Ltd.",
+    "ianaId": "3817",
+    "status": ["client transfer prohibited", "client update prohibited"],
+    "customNameServerConstraint": "Wix documentation states that Wix-registered domains cannot change name servers; registration must move to a registrar that supports custom authoritative name servers."
+  },
+  "currentAuthority": {
+    "nameServers": ["ns10.wixdns.net", "ns11.wixdns.net"],
+    "soa": "ns10.wixdns.net support.wix.com 2026062713 10800 3600 1209600 3600",
+    "dnssec": {
+      "enabled": true,
+      "parentDs": "35882 8 2 BE5370254126A888C374E7133B0AE38CEE0582679AA6E2969773F05A84B0F0DC",
+      "observedDsTtlSeconds": [21600, 86400],
+      "route53TargetSigningPrepared": false,
+      "reason": "The parent DS must be removed and expire before authoritative servers change; a new Route 53 KSK/DS is established only after delegation is stable."
+    },
+    "caaPresent": false,
+    "wildcardPresent": false
+  },
+  "inventoryMethod": {
+    "resolvers": ["Google Public DNS-over-HTTPS", "Cloudflare DNS-over-HTTPS"],
+    "authoritativeSourceReported": ["216.239.36.100", "216.239.38.100"],
+    "directPort53Result": "Timed out from this workstation",
+    "zoneTransferResult": "Unavailable/refused by timeout",
+    "certificateTransparencyReviewed": true,
+    "signedInWixExportAvailable": false,
+    "completeness": "All publicly verified known records are captured, but arbitrary undiscovered labels cannot be excluded without a Wix dashboard export. Cutover is fail-closed."
+  },
+  "recordSets": [
+    { "name": "tracepointhq.com", "type": "A", "ttl": 3600, "values": ["216.198.79.1"] },
+    { "name": "tracepointhq.com", "type": "MX", "ttl": 3600, "values": ["10 tracepointhq-com.mail.protection.outlook.com"] },
+    { "name": "tracepointhq.com", "type": "TXT", "ttl": 3600, "values": ["v=spf1 include:spf.protection.outlook.com -all", "MS=ms61865803", "brevo-code:0afe68b5616645db30eabaadc7d23aa8"] },
+    { "name": "www.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["cname.vercel-dns.com"] },
+    { "name": "staging.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["tracep-servi-g9c0rkjqmcj4-947860151.us-east-1.elb.amazonaws.com"] },
+    { "name": "autodiscover.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["autodiscover.outlook.com"] },
+    { "name": "sip.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["sipdir.online.lync.com"] },
+    { "name": "lyncdiscover.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["webdir.online.lync.com"] },
+    { "name": "enterpriseregistration.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["enterpriseregistration.windows.net"] },
+    { "name": "enterpriseenrollment.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["enterpriseenrollment.manage.microsoft.com"] },
+    { "name": "_sip._tls.tracepointhq.com", "type": "SRV", "ttl": 3600, "values": ["100 1 443 sipdir.online.lync.com"] },
+    { "name": "_sipfederationtls._tcp.tracepointhq.com", "type": "SRV", "ttl": 3600, "values": ["100 1 5061 sipfed.online.lync.com"] },
+    { "name": "send.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["send-tracepointhq-com.brand.brevosend.com"] },
+    { "name": "r.send.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["send-tracepointhq-com.r.brand.brevosend.com"] },
+    { "name": "img.send.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["send-tracepointhq-com.img.brand.brevosend.com"] },
+    { "name": "brevo1._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["b1.tracepointhq-com.dkim.brevo.com"] },
+    { "name": "brevo2._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["b2.tracepointhq-com.dkim.brevo.com"] },
+    { "name": "t3pxf5n23dcf5ahxn4xzhcxfxnvushzh._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["t3pxf5n23dcf5ahxn4xzhcxfxnvushzh.dkim.amazonses.com"] },
+    { "name": "yiaen5uag5n6evooqpo2rt3earh3zwcq._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["yiaen5uag5n6evooqpo2rt3earh3zwcq.dkim.amazonses.com"] },
+    { "name": "yabannzf7xcqdnbgbxoee5k2c77xktci._domainkey.tracepointhq.com", "type": "CNAME", "ttl": 3600, "values": ["yabannzf7xcqdnbgbxoee5k2c77xktci.dkim.amazonses.com"] },
+    { "name": "bounce.tracepointhq.com", "type": "TXT", "ttl": 3600, "values": ["v=spf1 include:amazonses.com ~all"] },
+    { "name": "_dmarc.tracepointhq.com", "type": "TXT", "ttl": 3600, "values": ["v=DMARC1; p=none;", "v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com"] }
+  ],
+  "negativeFindings": [
+    { "name": "tracepointhq.com", "type": "AAAA", "result": "NODATA" },
+    { "name": "tracepointhq.com", "type": "CAA", "result": "NODATA" },
+    { "name": "bounce.tracepointhq.com", "type": "MX", "result": "NODATA" },
+    { "name": "selector1._domainkey.tracepointhq.com", "type": "CNAME", "result": "NXDOMAIN" },
+    { "name": "selector2._domainkey.tracepointhq.com", "type": "CNAME", "result": "NXDOMAIN" },
+    { "name": "msoid.tracepointhq.com", "type": "CNAME", "result": "NXDOMAIN" },
+    { "name": "random-route53-audit-20260912.tracepointhq.com", "type": "ANY", "result": "NXDOMAIN" }
+  ],
+  "sesDnsStatus": {
+    "present": ["three Easy DKIM CNAME records", "bounce MAIL FROM SPF TXT", "owner-specified DMARC TXT"],
+    "missing": ["bounce.tracepointhq.com MX 10 feedback-smtp.us-east-1.amazonses.com"],
+    "conflict": "The live _dmarc RRset has two DMARC policy records, which can produce DMARC permanent error. The target keeps only v=DMARC1; p=none; and requires owner authorization for that semantic change."
+  },
+  "website": {
+    "apexProvider": "Vercel",
+    "wwwProvider": "Vercel",
+    "apexHttps": "200",
+    "wwwHttps": "307 to https://tracepointhq.com/",
+    "discrepancy": "The observed website is Vercel-hosted, not Wix-hosted; Route 53 preparation preserves the observed behavior and does not change application traffic."
+  },
+  "awsPermissionCheck": [
+    { "action": "route53:CreateHostedZone", "decision": "implicitDeny", "allowedByPermissionsBoundary": false, "allowedByOrganizations": true },
+    { "action": "route53:ChangeResourceRecordSets", "decision": "explicitDeny", "allowedByOrganizations": false },
+    { "action": "route53:GetHostedZone", "decision": "allowed" },
+    { "action": "route53:ListHostedZones", "decision": "allowed" },
+    { "action": "route53domains:UpdateDomainNameservers", "decision": "explicitDeny", "allowedByOrganizations": false }
+  ],
+  "awsHostedZone": {
+    "created": false,
+    "existingZoneCount": 0,
+    "hostedZoneId": null,
+    "assignedNameServers": [],
+    "incurredCostUsd": 0
+  }
+}
