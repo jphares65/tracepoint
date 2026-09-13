@@ -107,6 +107,42 @@
       }
     },
     {
+      "Sid": "AllowReviewedCognitoFoundationCreationViaCloudFormation",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:CreateUserPoolDomain",
+        "cognito-idp:TagResource",
+        "cognito-idp:UntagResource"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "AllowReviewedCognitoFoundationResources",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DeleteUserPool",
+        "cognito-idp:DeleteUserPoolClient",
+        "cognito-idp:DeleteUserPoolDomain",
+        "cognito-idp:SetUserPoolMfaConfig",
+        "cognito-idp:UpdateUserPool",
+        "cognito-idp:UpdateUserPoolClient",
+        "cognito-idp:UpdateUserPoolDomain"
+      ],
+      "Resource": "arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_*",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1"
+        }
+      }
+    },
+    {
       "Sid": "AllowReviewedRoute53RecordChangesViaCloudFormation",
       "Effect": "Allow",
       "Action": "route53:ChangeResourceRecordSets",
@@ -173,7 +209,8 @@
             "lambda.amazonaws.com",
             "ecs-tasks.amazonaws.com",
             "codebuild.amazonaws.com",
-            "application-autoscaling.amazonaws.com"
+            "application-autoscaling.amazonaws.com",
+            "backup.amazonaws.com"
           ]
         }
       }
@@ -192,6 +229,8 @@
             "config.amazonaws.com",
             "securityhub.amazonaws.com",
             "securityhubv2.amazonaws.com",
+            "rds.amazonaws.com",
+            "email.cognito-idp.amazonaws.com",
             "ecs.application-autoscaling.amazonaws.com"
           ]
         }

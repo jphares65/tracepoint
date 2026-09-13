@@ -17,11 +17,14 @@ test('production boundary reserves account, DNS, identity-provider and email mut
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('config.amazonaws.com'));
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('vpc-flow-logs.amazonaws.com'));
   assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('lambda.amazonaws.com'));
+  assert.ok(passRole.Condition.StringEquals['iam:PassedToService'].includes('backup.amazonaws.com'));
   const serviceLinkedRole = boundary.Statement.find(statement => statement.Sid === 'AllowRequiredServiceLinkedRoles');
   assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('ecs.amazonaws.com'));
   assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('ecs.application-autoscaling.amazonaws.com'));
   assert.ok(!serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('application-autoscaling.amazonaws.com'));
   assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('securityhubv2.amazonaws.com'));
+  assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('rds.amazonaws.com'));
+  assert.ok(serviceLinkedRole.Condition.StringEquals['iam:AWSServiceName'].includes('email.cognito-idp.amazonaws.com'));
 });
 
 test('production migration role trusts only the exact management SSO role', () => {
@@ -48,4 +51,6 @@ test('production SCP confines regions and protects explicit owner-controlled gat
   assert.equal(region.Condition.StringNotEquals['aws:RequestedRegion'], 'us-east-1');
   assert.ok(region.NotAction.includes('iam:*'));
   assert.ok(region.NotAction.includes('organizations:*'));
+  const cognito = guardrails.Statement.find(statement => statement.Sid === 'KeepCognitoDisabledOutsideAuthorizedFoundationRole');
+  assert.deepEqual(cognito.Condition.ArnNotEquals['aws:PrincipalArn'], 'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1');
 });
