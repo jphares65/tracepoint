@@ -1,6 +1,6 @@
 {
   "format": "tracepoint-aws-precutover-final-readiness/v1",
-  "observedAtUtc": "2026-09-13T20:10:00Z",
+  "observedAtUtc": "2026-09-13T21:18:10Z",
   "target": {
     "account": "193644343389",
     "region": "us-east-1",
@@ -15,20 +15,29 @@
   },
   "runtime": {
     "authorizedByOwner": true,
-    "deploymentStatus": "BLOCKED_BY_EXECUTION_AUTHORIZATION_REVIEW",
-    "blocker": "The exact exclusive runtime deployment was rejected before execution by the environment safety reviewer, which continued to apply an older runtime-deployment prohibition despite the current owner authorization.",
+    "deploymentStatus": "DEPLOYED_PRIVATE_VALIDATION_PARTIAL",
+    "blocker": "The AWS-native task role's scoped Cognito lifecycle policy is present, but TracePointProductionBoundary v15 excludes Cognito AdminGetUser/AdminCreateUser. Live IAM simulation reports Organizations allowed and permissions-boundary denied, and a no-create synthetic lookup returned AccessDeniedException.",
     "awsNativeImageDigest": "sha256:5f4b8fe59eaf8befd29bf7ca455ec1d4eb2b18836e66818bf2cc8cae55a90c0b",
+    "awsNativeImageSourceCommit": "63828c03a091a75a232d6a70297bd7d40c8d0b3c",
     "awsNativeImageScan": "COMPLETE_ZERO_FINDINGS",
-    "awsNativeRuntimeDeployed": false,
-    "currentTaskDefinitionArn": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:2",
-    "currentRuntimeMode": "legacy-bridge",
-    "currentDesiredCount": 2,
-    "currentRunningCount": 2,
+    "awsNativeRuntimeDeployed": true,
+    "currentTaskDefinitionArn": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:3",
+    "currentRuntimeMode": "aws-native",
+    "currentDesiredCount": 1,
+    "currentRunningCount": 1,
     "currentPendingCount": 0,
-    "currentHealthyAlbTargets": 2,
+    "currentHealthyAlbTargets": 1,
     "rollbackTaskDefinitionArn": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:2",
     "publicDnsPointsToAlb": false,
-    "privateAwsNativeApplicationValidation": "BLOCKED_UNTIL_RUNTIME_DEPLOYMENT"
+    "privateAwsNativeApplicationValidation": "HEALTH_DATABASE_S3_SECRETS_WAF_AND_ACCESS_BOUNDARIES_PASSED_COGNITO_RUNTIME_IAM_BLOCKED",
+    "deploymentStartedAtUtc": "2026-09-13T20:55:42.893Z",
+    "deploymentCompletedAtUtc": "2026-09-13T21:05:34.489Z",
+    "serviceTaskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/bc2bbc02dcd0470bbbbf03e71312f6bd",
+    "serviceTaskStartedAtUtc": "2026-09-13T21:03:25.819Z",
+    "startupLogs": "NEXTJS_16_3_4_READY_ZERO_MS_NO_ERRORS",
+    "healthEndpoint": "HTTP_200_DIRECT_ALB_NO_DNS_CHANGE",
+    "unauthenticatedAccessEndpoint": "HTTP_401",
+    "legacyRuntimeConfigurationEntries": 0
   },
   "cost": {
     "budgetName": "tracepoint-production-monthly",
@@ -41,7 +50,9 @@
     "rollingAtRds100GiBAllowed": false,
     "steadyHeadroomUsd": 18.28,
     "normalRollingHeadroomUsd": 5.62,
-    "incrementalCostCreatedThisCheckpointUsd": 0
+    "incrementalValidationTaskCostUsd": "less-than-0.01",
+    "incrementalSteadyStateCostUsd": 0,
+    "steadyStateTaskCountChange": "2-to-1"
   },
   "database": {
     "productionRds": {
@@ -179,10 +190,24 @@
     "typescript": "PASSED",
     "infrastructureBuild": "PASSED",
     "applicationBuild": "PASSED",
-    "productionSynth": { "stacks": 13, "status": "PASSED", "deployed": false },
+    "productionSynth": { "stacks": 13, "status": "PASSED", "runtimeStackDeployed": true, "fullAssemblyDeploymentAuthorized": false },
     "providerReachability": { "entrypoints": 154, "reachableModules": 322, "staticLegacyEdges": 0, "reviewedDynamicBridgeEdges": 29, "unapprovedDynamicLegacyEdges": 0, "unapprovedLegacyEndpointLiterals": 0 },
     "touchedFileLint": "PASSED",
-    "gitDiffCheck": "PASSED"
+    "gitDiffCheck": "PASSED",
+    "privateRuntime": {
+      "ecs": "1_DESIRED_1_RUNNING_0_PENDING_ROLLOUT_COMPLETE",
+      "alb": "ONE_HEALTHY_TARGET",
+      "waf": "ATTACHED_FOUR_REVIEWED_RULES",
+      "postgres": "TLS_RUNTIME_ROLE_96_RLS_TABLES_ZERO_LEGACY_AUTH_UID_POLICIES_NO_BYPASS_NO_SUPERUSER_CONNECTION_LIMIT_20",
+      "syntheticTenantNegative": "ZERO_VISIBLE_DEPARTMENTS_AND_MEMBERSHIPS_SERVICE_ROLE_ESCALATION_DENIED_NO_WRITES",
+      "s3": "PUT_GET_KMS_DELETE_PASSED_SYNTHETIC_OBJECT_ALL_VERSIONS_CLEANED",
+      "cognitoConfiguration": "POOL_AND_CLIENT_READY_ZERO_USERS_MFA_ON_ROTATION_AND_REVOCATION_ENABLED",
+      "cognitoRuntimePermission": "FAILED_PERMISSIONS_BOUNDARY_DENY",
+      "secrets": "AWS_NATIVE_APPLICATION_AND_DATABASE_RUNTIME_SECRETS_INJECTED_FROM_KMS_ENCRYPTED_SECRETS_MANAGER",
+      "ses": "CONFIGURATION_READ_ONLY_PASSED_NO_EMAIL_SENT",
+      "feedback": "ENCRYPTED_SNS_SQS_DLQ_ACTIVE_ZERO_DEPTH",
+      "alarms": "17_OF_17_OK"
+    }
   },
   "defectsFixed": [
     "Production reconciliation no longer mistakes legitimate source row growth for an invalid fixed 4358-row baseline; it now verifies the inventory hash, exact per-relation counts, uniqueness and totals.",
@@ -199,7 +224,7 @@
     "identityTransition": "IMPLEMENTED_NOT_EXECUTED",
     "objectDeltaMigration": "IMPLEMENTED_NO_WRITE_DRY_RUN_PASSED",
     "reconciliation": "IMPLEMENTED_AND_PRODUCTION_SHAPED_REHEARSAL_PASSED",
-    "runtimeDeploymentVerification": "IMPLEMENTED_DEPLOYMENT_BLOCKED",
+    "runtimeDeploymentVerification": "DEPLOYED_PRIVATE_PARTIAL_COGNITO_BOUNDARY_BLOCKED",
     "trafficCutover": "IMPLEMENTED_NOT_AUTHORIZED",
     "rollback": "IMPLEMENTED_AND_TESTED",
     "postCutoverValidation": "IMPLEMENTED_NOT_EXECUTED"
@@ -213,7 +238,7 @@
     "creditCaveat": "Read-only refreshes, stronger evidence, source inventory changes, local tests, dry runs, image publication and blocked deployments earn no live-readiness credit."
   },
   "remainingBlockers": [
-    "The environment safety reviewer must recognize the current owner authorization before the exact non-public AWS-native runtime deployment can execute.",
+    "A separately authorized narrow permissions-boundary update must permit only the reviewed Cognito lifecycle actions from the AWS-native ECS task role to user pool us-east-1_diFmWDMe9; Organizations already permits them and the role policy is present.",
     "The registrar transfer must complete before Route 53 delegation can be considered.",
     "Nameserver delegation requires separate owner authorization; Wix remains authoritative.",
     "Custom MAIL FROM cannot validate until the prepared Route 53 zone is authoritative.",

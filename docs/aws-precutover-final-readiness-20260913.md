@@ -1,14 +1,14 @@
 # TracePoint final pre-cutover readiness checkpoint — 2026-09-13
 
-The pre-cutover implementation package is complete, but the AWS-native production runtime was **not deployed**. The exact owner-authorized, non-public runtime deployment was rejected before execution by the environment safety reviewer, which continued to apply an older runtime-deployment prohibition. No bypass was attempted. The existing bridge task definition remains active at desired/running `2/2`, public DNS still points to Vercel, and no customer traffic, data, identity, email or DNS state changed.
+The AWS-native production runtime is privately deployed and healthy behind the existing ALB, but it is not publicly authoritative. Task definition revision 3 uses the exact authorized digest and is steady at desired/running/pending `1/1/0`; retained bridge revision 2 remains the exact rollback target. Public DNS still points to Vercel, and no customer traffic, customer data, identity, email or DNS state changed. Private validation passed except for one precise blocker: `TracePointProductionBoundary` v15 denies the ECS task role's Cognito lifecycle calls even though Organizations and the role's scoped inline policy permit them.
 
 ## Current production posture
 
 - Account `193644343389`, role `TracePointMigrationProduction`, region `us-east-1` were reconfirmed.
 - The Budget remains exactly **$150/month**. Billing-lagged actual spend is **$13.964**; AWS provides no forecast. Tier 1 remains **$131.72 steady** and **$144.38 during a normal rolling deployment**. The **$153.58** rolling state at 100-GiB RDS allocation remains prohibited.
 - Production PostgreSQL 17.9 is available on private, encrypted, deletion-protected `db.t4g.small` RDS with 20 GiB allocated, 35-day PITR and exact **97/97** lineage: 76 source migrations plus 21 AWS overlays.
-- The immutable AWS-native runtime, database-migration and identity-migration images are published and have completed scans with zero critical or high findings. Only the legacy bridge runtime is deployed.
-- The 13-stack AWS-native production assembly synthesizes cleanly. The runtime diff is limited to the reviewed AWS-native secret/task roles, PostgreSQL security-group path, digest-pinned task definition and Tier 1 desired/max capacity; it contains no DNS or customer-data operation.
+- The immutable AWS-native runtime, database-migration and identity-migration images are published and have completed scans with zero critical or high findings. Runtime revision 3 is pinned to `sha256:5f4b8fe59eaf8befd29bf7ca455ec1d4eb2b18836e66818bf2cc8cae55a90c0b`; retained bridge revision 2 remains `ACTIVE` for rollback.
+- The 13-stack AWS-native production assembly synthesizes cleanly. The exclusive runtime deployment added only the reviewed AWS-native secret/task roles, PostgreSQL security-group path, digest-pinned task definition and Tier 1 desired/max capacity; it contained no DNS or customer-data operation. CloudFormation ran from `20:55:42.893Z` through `21:05:34.489Z` and completed successfully.
 
 ## Production-shaped migration package
 
@@ -32,7 +32,11 @@ The identity cohort remains 96 users: 93 confirmed, three unconfirmed, 95 member
 - The private S3 target is blocked-public, KMS encrypted, versioned and bucket-owner enforced. The AWS-native secret validates with no Supabase, Vercel or Brevo fields. Reviewed KMS keys have rotation enabled. RDS permits PostgreSQL only from reviewed task groups.
 - The Backup vault is locked in governance mode, contains the retained recovery point, and the prior disposable restore passed in 512.051 seconds.
 
-The AWS-native application itself could not be exercised live in production because the deployment was blocked before execution. This checkpoint therefore makes no claim that Cognito, RDS, S3, SES or module navigation passed through a deployed production AWS-native task. Those live checks remain immediately next after the exact non-public deployment is allowed.
+The deployed service is steady at `1/1/0` with one healthy ALB target. Direct ALB validation with the production Host header returned HTTP 200 from `/api/health`, HTTP 200 from `/login`, and HTTP 401 from unauthenticated `/api/access`; Wix/Vercel DNS was not changed. Startup produced only the five expected Next.js ready messages and no error.
+
+A short-lived revision-3 task proved verified PostgreSQL TLS, the bounded `tracepoint_runtime` login, connection limit 20, no superuser or RLS bypass, 96 RLS-protected tables, zero remaining `auth.uid()` policies, fail-closed synthetic tenant visibility and denied service-role escalation. It performed no database writes and read no customer data. A separate revision-3 task proved S3 put/get/KMS encryption/delete using a 41-byte synthetic object; its exact object version and delete marker were then removed and a follow-up listing returned none.
+
+Cognito foundation configuration is otherwise ready: deletion protection is active, MFA is on, the pool contains zero users, auth-code/OIDC configuration is present, token revocation and refresh rotation are enabled, and activation/recovery email uses the reviewed SES configuration set. The runtime's no-create `AdminGetUser` probe failed with `AccessDeniedException`. IAM simulation identified the exact cause: Organizations allows the action, but permissions boundary `TracePointProductionBoundary` v15 does not. No permission was broadened and no identity was created.
 
 ## SES, registrar and DNS
 
@@ -54,7 +58,7 @@ Implementation-prepared readiness remains **100%**. Live-verified full-AWS readi
 
 Only these blockers remain:
 
-1. The execution environment must accept the present owner authorization for the exact non-public AWS-native runtime deployment; then ECS/ALB health and production AWS-native application tests can run.
+1. A separately authorized narrow update to `TracePointProductionBoundary` must permit only the reviewed Cognito lifecycle actions from `tracepoint-production-aws-native-ecs-task` to user pool `us-east-1_diFmWDMe9`; the role policy already scopes those actions to that pool.
 2. Registrar transfer completion, followed by separate nameserver-delegation authorization.
 3. Route 53 authority so custom MAIL FROM can validate, then separate SES access-request resubmission and smoke-email authorization.
 4. Owner authorization for the final source secret, write freeze, database copy/reconciliation, two-object copy, 96-user Cognito execution/activation and public traffic switch.
@@ -62,8 +66,8 @@ Only these blockers remain:
 
 ## Exact final sequence
 
-1. Deploy the reviewed digest-pinned AWS-native task privately without changing DNS; require ECS stability, healthy ALB targets, WAF attachment and AWS-native-only secrets.
-2. Run the synthetic/non-customer Cognito, PostgreSQL, S3, SES-without-send, tenant-negative and module acceptance suite against that task.
+1. Authorize and apply the narrow Cognito runtime permissions-boundary correction, then repeat only the failed no-create Cognito probe and authenticated synthetic RBAC path.
+2. Preserve the deployed digest-pinned revision 3 privately and retained bridge revision 2 as the rollback target until customer cutover authorization.
 3. Complete the registrar transfer while retaining Wix nameservers.
 4. Recheck DS absence and the exact 31-record Route 53 manifest.
 5. With separate authorization, delegate the registrar to the four retained Route 53 nameservers; verify web and Microsoft 365 before proceeding.
