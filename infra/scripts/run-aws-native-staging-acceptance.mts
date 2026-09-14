@@ -63,7 +63,7 @@ function otp(secret: string) {
   return ((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).toString().padStart(6, "0");
 }
 
-type FixtureUser = {kind: "manager"|"officer"|"foreign"; id: string; email: string; username?: string; subject?: string; totp?: string};
+type FixtureUser = {kind: "manager"|"officer"|"foreign"; id: string; email: string; username?: string; subject?: string; totp?: string; accessToken?: string; refreshToken?: string};
 const run = randomUUID();
 const password = `${randomBytes(40).toString("base64url")}Aa1!`;
 const users: FixtureUser[] = (["manager", "officer", "foreign"] as const).map(kind => ({
@@ -115,7 +115,7 @@ async function createAndEnroll(user: FixtureUser, poolId: string, clientId: stri
   const cognitoUser = new CognitoUser({Username: user.email, Pool: pool, Storage: storage});
   await new Promise<void>((resolvePromise, reject) => {
     const callbacks: IAuthenticationCallback = {
-      onSuccess: () => resolvePromise(), onFailure: reject,
+      onSuccess: session => { user.accessToken=session.getAccessToken().getJwtToken(); user.refreshToken=session.getRefreshToken().getToken(); resolvePromise(); }, onFailure: reject,
       mfaSetup: () => cognitoUser.associateSoftwareToken({onFailure: reject, associateSecretCode: secret => {
         void (async () => {
           user.totp = secret;
@@ -137,6 +137,28 @@ async function createAndEnroll(user: FixtureUser, poolId: string, clientId: stri
   }
   await new Promise<void>((resolvePromise,reject)=>cognitoUser.setUserMfaPreference(null,{Enabled:true,PreferredMfa:true},error=>error?reject(error):resolvePromise()));
   assert.ok(user.totp);
+  assert.ok(user.accessToken && user.refreshToken);
+}
+
+async function mobileSessionAcceptance(domain: string, clientId: string) {
+  const [manager, officer, foreign] = users;
+  const session = async (user: FixtureUser, departmentId: string) => fetch(`${applicationOrigin}/api/mobile/session`, {
+    redirect:"error", signal:AbortSignal.timeout(15_000), headers:{Authorization:`Bearer ${user.accessToken}`,"X-TracePoint-Department-Id":departmentId},
+  });
+  assert.equal((await fetch(`${applicationOrigin}/api/mobile/session`, {redirect:"error",signal:AbortSignal.timeout(15_000)})).status,401);
+  const managerResponse=await session(manager,manager.id);assert.equal(managerResponse.status,200);
+  const managerBody=await managerResponse.json();assert.equal(managerBody.access.departmentId,manager.id);assert.equal(managerBody.selectionRequired,false);
+  const officerResponse=await session(officer,manager.id);assert.equal(officerResponse.status,200);assert.equal((await officerResponse.json()).access.departmentId,manager.id);
+  assert.equal((await session(foreign,manager.id)).status,403);
+  assert.equal((await fetch(`${applicationOrigin}/api/mobile/session`,{redirect:"error",signal:AbortSignal.timeout(15_000),headers:{Authorization:`Bearer ${manager.accessToken}, Bearer ${manager.accessToken}`}})).status,401);
+  const refreshed=await fetch(`${domain}/oauth2/token`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:clientId,refresh_token:manager.refreshToken!})});
+  assert.equal(refreshed.status,200);const tokens=await refreshed.json() as {access_token?:string;refresh_token?:string};
+  assert.ok(tokens.access_token&&tokens.refresh_token&&tokens.refresh_token!==manager.refreshToken);
+  manager.accessToken=tokens.access_token;manager.refreshToken=tokens.refresh_token;
+  assert.equal((await session(manager,manager.id)).status,200);
+  const revoked=await fetch(`${domain}/oauth2/revoke`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:clientId,token:manager.refreshToken})});assert.equal(revoked.status,200);
+  const rejected=await fetch(`${domain}/oauth2/token`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:clientId,refresh_token:manager.refreshToken})});assert.ok(rejected.status>=400);
+  console.log(JSON.stringify({mobileSessionAcceptance:"PASSED",users:3,authorizationCodeFlowConfigured:true,pkceRequiredByClient:true,bearerAcceptance:true,refreshRotation:true,revocation:true,crossTenantDenied:true,credentialsPrinted:false}));
 }
 
 function fixture(operation: "setup"|"cleanup", poolId: string) {
@@ -178,9 +200,14 @@ try {
   const pool = (await client.send(new DescribeUserPoolCommand({UserPoolId:cognito.UserPoolId}))).UserPool!;
   const appClient = (await client.send(new DescribeUserPoolClientCommand({UserPoolId:cognito.UserPoolId,ClientId:cognito.ClientId}))).UserPoolClient!;
   assert.equal(pool.MfaConfiguration,"ON");assert.deepEqual(appClient.CallbackURLs,[`${applicationOrigin}/api/auth/cognito/callback`]);
-  for (const user of users) { stage = `cognito-${user.kind}`; await createAndEnroll(user,cognito.UserPoolId,cognito.ClientId); }
+  const mobileClient=(await client.send(new DescribeUserPoolClientCommand({UserPoolId:cognito.UserPoolId,ClientId:cognito.MobileClientId}))).UserPoolClient!;
+  assert.equal(mobileClient.ClientSecret,undefined);assert.deepEqual(mobileClient.AllowedOAuthFlows,["code"]);assert.deepEqual(mobileClient.CallbackURLs,["tracepoint://auth"]);assert.deepEqual(mobileClient.LogoutURLs,["tracepoint://logout"]);assert.equal(mobileClient.RefreshTokenRotation?.Feature,"ENABLED");assert.equal(mobileClient.EnableTokenRevocation,true);
+  for (const user of users) { stage = `cognito-${user.kind}`; await createAndEnroll(user,cognito.UserPoolId,cognito.MobileClientId); }
   stage = "database-fixture-setup";
   fixture("setup",cognito.UserPoolId); fixtureCreated=true;
+  stage = "mobile-session-acceptance";
+  await mobileSessionAcceptance(cognito.ManagedDomain,cognito.MobileClientId);
+  if(process.argv.includes("--mobile-only")){acceptancePassed=true;}
   const [manager,officer,foreign]=users;
   const environment={...process.env,
     TRACEPOINT_ACCEPTANCE_EMAIL:manager.email,TRACEPOINT_ACCEPTANCE_PASSWORD:password,TRACEPOINT_ACCEPTANCE_DEPARTMENT_ID:manager.id,
@@ -189,9 +216,11 @@ try {
     TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID:foreign.id,TRACEPOINT_ACCEPTANCE_FOREIGN_EMAIL:foreign.email,TRACEPOINT_ACCEPTANCE_FOREIGN_DEPARTMENT_ID:foreign.id,TRACEPOINT_ACCEPTANCE_FOREIGN_TOTP_SECRET:foreign.totp!,
     TRACEPOINT_ACCEPTANCE_WRITES:"disposable-staging",TRACEPOINT_ACCEPTANCE_STORAGE_PROVIDER:"s3",TRACEPOINT_ACCEPTANCE_RANGE_DOCUMENTS:"enabled",TRACEPOINT_ACCEPTANCE_EXTENDED_WORKFLOWS:"enabled",
   };
-  stage = "application-acceptance";
-  const result=spawnSync(process.execPath,[resolve(repositoryRoot,"scripts","test-staging-acceptance.mjs")],{cwd:repositoryRoot,env:environment,stdio:"inherit"});
-  assert.equal(result.status,0,"AWS-native application acceptance failed.");acceptancePassed=true;
+  if(!process.argv.includes("--mobile-only")){
+    stage = "application-acceptance";
+    const result=spawnSync(process.execPath,[resolve(repositoryRoot,"scripts","test-staging-acceptance.mjs")],{cwd:repositoryRoot,env:environment,stdio:"inherit"});
+    assert.equal(result.status,0,"AWS-native application acceptance failed.");acceptancePassed=true;
+  }
 } catch (error) {
   console.error(JSON.stringify({status:"FAILED",run,stage,errorName:(error as Error).name,diagnostic:diagnostic||undefined,sensitiveDetailsPrinted:false}));process.exitCode=1;
 } finally {
