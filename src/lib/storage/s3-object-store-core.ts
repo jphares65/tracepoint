@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, type S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
   attachmentPathForUpload,
+  attachmentPathForIntent,
   attachmentPathFromMetadata,
   departmentPatchPathForUpload,
   departmentPatchPathFromMetadata,
@@ -62,6 +63,50 @@ export class S3ObjectStore implements ObjectStore {
 
   uploadDrillDocument(input: AttachmentUploadInput) {
     return this.upload("drill-document", input);
+  }
+
+  async createFleetInspectionEvidenceUpload(input: Omit<AttachmentUploadInput, "bytes"> & { size: number }) {
+    const path = attachmentPathForIntent("fleet-inspection", input, this.departmentId);
+    try {
+      const command = new PutObjectCommand({
+        ...this.object(`attachments/${path}`),
+        ContentLength: input.size,
+        ContentType: input.contentType,
+        Metadata: {
+          "tracepoint-department-id": this.departmentId,
+          "tracepoint-domain": "fleet-inspection",
+          "tracepoint-object-id": input.objectId,
+        },
+      });
+      return {
+        path,
+        signedUrl: await this.sign(this.client, command, { expiresIn: PRESIGNED_URL_TTL_SECONDS }),
+        expiresIn: PRESIGNED_URL_TTL_SECONDS,
+        error: null,
+      };
+    } catch {
+      return { path, signedUrl: null, expiresIn: 0, error: failure() };
+    }
+  }
+
+  async confirmFleetInspectionEvidence(
+    path: AttachmentObjectPath,
+    expected: { objectId: string; contentType: string; size: number },
+  ) {
+    const key = `attachments/${this.attachment(path)}`;
+    try {
+      const result = await this.client.send(new HeadObjectCommand(this.object(key)));
+      const valid = result.ContentLength === expected.size &&
+        result.ContentType === expected.contentType &&
+        result.Metadata?.["tracepoint-department-id"] === this.departmentId &&
+        result.Metadata?.["tracepoint-domain"] === "fleet-inspection" &&
+        result.Metadata?.["tracepoint-object-id"] === expected.objectId;
+      if (valid) return { error: null };
+      await this.client.send(new DeleteObjectCommand(this.object(key))).catch(() => undefined);
+      return { error: failure() };
+    } catch {
+      return { error: failure() };
+    }
   }
 
   async removeAttachment(path: AttachmentObjectPath) {

@@ -37,7 +37,7 @@ export type DepartmentPatchUploadInput = {
   timestamp: number;
 };
 
-export type AttachmentDomain = "qualification" | "agency-training" | "firearm" | "drill-document";
+export type AttachmentDomain = "qualification" | "agency-training" | "firearm" | "drill-document" | "fleet-inspection";
 export type StorageProvider = "s3" | "supabase";
 export type StorageRuntimeEnvironment = Record<string, string | undefined> & {
   TRACEPOINT_RUNTIME_PROVIDER_MODE?: string;
@@ -56,6 +56,7 @@ const ATTACHMENT_POLICIES: Record<AttachmentDomain, { maxBytes: number; contentT
   "agency-training": { maxBytes: 25 * 1024 * 1024 },
   firearm: { maxBytes: 15 * 1024 * 1024, contentTypes: new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]) },
   "drill-document": { maxBytes: 15 * 1024 * 1024, contentTypes: new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]) },
+  "fleet-inspection": { maxBytes: 25 * 1024 * 1024, contentTypes: new Set(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/quicktime", "video/webm"]) },
 };
 
 const CONTENT_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/i;
@@ -136,6 +137,25 @@ export function attachmentPathForUpload(domain: AttachmentDomain, input: Attachm
   assertSafeIdentifier(input.objectId, "object identifier");
   const encodedRecordId = domain === "qualification" || domain === "drill-document" ? encodeURIComponent(input.recordId) : input.recordId;
   const fallback = domain === "qualification" ? "target-photo" : domain === "firearm" ? "attachment" : domain === "drill-document" ? "document" : "file";
+  const path = `${input.departmentId}/${domain}/${encodedRecordId}/${input.objectId}-${safeName(input.fileName, fallback, domain !== "agency-training")}`;
+  const validated = attachmentPathFromMetadata(path, authorizedDepartmentId);
+  if (!validated) throw new Error("Invalid attachment path");
+  return validated;
+}
+
+export function attachmentPathForIntent(
+  domain: AttachmentDomain,
+  input: Omit<AttachmentUploadInput, "bytes"> & { size: number },
+  authorizedDepartmentId: string,
+): AttachmentObjectPath {
+  const policy = ATTACHMENT_POLICIES[domain];
+  if (input.departmentId !== authorizedDepartmentId) throw new Error("Department mismatch");
+  if (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > policy.maxBytes) throw new Error("Invalid attachment size");
+  if (!CONTENT_TYPE.test(input.contentType) || (policy.contentTypes && !policy.contentTypes.has(input.contentType))) throw new Error("Invalid attachment content type");
+  assertSafeIdentifier(input.recordId, "record identifier");
+  assertSafeIdentifier(input.objectId, "object identifier");
+  const encodedRecordId = domain === "qualification" || domain === "drill-document" ? encodeURIComponent(input.recordId) : input.recordId;
+  const fallback = domain === "fleet-inspection" ? "evidence" : "attachment";
   const path = `${input.departmentId}/${domain}/${encodedRecordId}/${input.objectId}-${safeName(input.fileName, fallback, domain !== "agency-training")}`;
   const validated = attachmentPathFromMetadata(path, authorizedDepartmentId);
   if (!validated) throw new Error("Invalid attachment path");

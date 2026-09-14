@@ -4,6 +4,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 
 import {
   loadSelectedObjectStore,
+  selectStorageProvider,
   type ObjectStore,
   type StorageRuntimeEnvironment,
 } from "./object-store-core";
@@ -22,7 +23,7 @@ const s3Clients = new Map<string, S3Client>();
 function s3Client(region: string) {
   const existing = s3Clients.get(region);
   if (existing) return existing;
-  const client = new S3Client({ region, maxAttempts: 1 });
+  const client = new S3Client({ region, maxAttempts: 1, requestChecksumCalculation: "WHEN_REQUIRED" });
   s3Clients.set(region, client);
   return client;
 }
@@ -42,4 +43,13 @@ export async function createObjectStore(
       return createSupabaseObjectStore(legacyClient, authorizedDepartmentId);
     },
   });
+}
+
+export function createS3MobileObjectStore(
+  authorizedDepartmentId: string,
+  environment: StorageRuntimeEnvironment = process.env,
+) {
+  if (selectStorageProvider(environment) !== "s3") throw new Error("Mobile object upload requires AWS-native storage.");
+  const target = requireS3Configuration(environment);
+  return new S3ObjectStore(s3Client(target.region), target.bucket, target.account, authorizedDepartmentId);
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, type S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { S3ObjectStore, requireS3Configuration } from './s3-object-store-core.ts';
 import { departmentPatchPathFromMetadata, type AttachmentObjectPath, type DepartmentAssetObjectPath } from './object-store-core.ts';
 const department='10000000-0000-4000-8000-000000000001', foreign='20000000-0000-4000-8000-000000000002';
@@ -14,3 +14,13 @@ test('S3 rejects empty, oversized and invalid-content uploads before SDK access'
 test('department patch delivery remains a stable authenticated path and view is signed',async()=>{const {store,calls}=fixture();const result=await store.uploadDepartmentPatch({departmentId:department,extension:'png',bytes:base.bytes,contentType:'image/png',timestamp:123});const delivery=await store.createDepartmentPatchDelivery(result.path);assert.equal(delivery.signedUrl,'/api/settings/department-patch?path='+encodeURIComponent(result.path));assert.equal(calls.length,1);assert.equal((await store.createDepartmentPatchView(result.path)).error,null);assert.equal((await store.removeDepartmentPatch(result.path)).error,null);assert.equal(departmentPatchPathFromMetadata(foreign+'/patch-123.png',department),null);await assert.rejects(async()=>store.createDepartmentPatchView((department+'/../patch-1.png') as DepartmentAssetObjectPath));});
 test('storage errors are sanitized without retrying ambiguous writes',async()=>{const {store,calls}=fixture(true);const result=await store.uploadDrillDocument(base);assert.equal(result.error?.message,'Object storage operation failed.');assert.equal(calls.length,1);assert.equal((await store.createAttachmentView(result.path)).signedUrl,null);});
 test('configuration isolates account, environment, bucket and region',()=>{const env={CONFIGURATION_ENVIRONMENT:'staging',AWS_REGION:'us-east-1',TRACEPOINT_S3_EXPECTED_OWNER:'559054714699',TRACEPOINT_S3_BUCKET:'tracepoint-staging-private-559054714699'};assert.equal(requireS3Configuration(env).account,'559054714699');for(const override of [{CONFIGURATION_ENVIRONMENT:'production'},{AWS_REGION:'us-west-2'},{TRACEPOINT_S3_EXPECTED_OWNER:'265544358665'},{TRACEPOINT_S3_BUCKET:'public-bucket'}])assert.throws(()=>requireS3Configuration({...env,...override}));assert.equal(requireS3Configuration({...env,CONFIGURATION_ENVIRONMENT:'production',TRACEPOINT_S3_EXPECTED_OWNER:'111111111111',TRACEPOINT_S3_BUCKET:'tracepoint-production-private-111111111111'}).account,'111111111111');});
+test('mobile inspection uploads are exact, short-lived, tenant-bound, and confirmed with S3 metadata',async()=>{
+ const commands:Array<PutObjectCommand|HeadObjectCommand|DeleteObjectCommand>=[];
+ const client={send:async(command:PutObjectCommand|HeadObjectCommand|DeleteObjectCommand)=>{commands.push(command);if(command instanceof HeadObjectCommand)return {ContentLength:1024,ContentType:'video/mp4',Metadata:{'tracepoint-department-id':department,'tracepoint-domain':'fleet-inspection','tracepoint-object-id':base.objectId}};return {};}} as unknown as S3Client;
+ const store=new S3ObjectStore(client,'tracepoint-staging-private-559054714699','559054714699',department,async(_client,command,options)=>{commands.push(command as unknown as PutObjectCommand);assert.equal(options?.expiresIn,60);return 'https://private.invalid/upload';});
+ const upload=await store.createFleetInspectionEvidenceUpload({...base,fileName:'evidence.mp4',contentType:'video/mp4',size:1024});
+ assert.equal(upload.error,null);assert.equal(upload.expiresIn,60);assert.ok(upload.path.includes('/fleet-inspection/'));
+ const signed=commands[0] as PutObjectCommand;assert.equal(signed.input.ContentLength,1024);assert.equal(signed.input.ContentType,'video/mp4');assert.equal(signed.input.ExpectedBucketOwner,'559054714699');
+ assert.equal((await store.confirmFleetInspectionEvidence(upload.path,{objectId:base.objectId,contentType:'video/mp4',size:1024})).error,null);
+ assert.ok(commands[1] instanceof HeadObjectCommand);
+});
