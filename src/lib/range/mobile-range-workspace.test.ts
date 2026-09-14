@@ -26,3 +26,16 @@ test("finalized days and history removal fail closed", () => {
   assert.equal(applyMobileRangeMutation({ workspace: withScore, rangeDayId: "day", permissions: ["manage_range_days"], action: { type: "remove-roster", operationId: "x", rosterEntryId: "roster" } }).ok, false);
   assert.equal(mobileRangeDaySummary(workspace, "day").roster.length, 1);
 });
+test("drill assignment copies an active server-side template and validates ordering", () => {
+  const source = { ...workspace, drillLibrary: [{ id: "template", status: "Active", name: "Authoritative Drill", category: "Handgun", defaultScoringMode: "Points", defaultRunCount: 2 }] };
+  const added = applyMobileRangeMutation({ workspace: source, rangeDayId: "day", permissions: ["manage_range_days"], action: { type: "add-drill", operationId: "add", drill: { id: "second", sourceTemplateId: "template", name: "Untrusted Name" } } });
+  assert.ok(added.ok);
+  const drills = added.workspace.rangeDayDrills as Record<string, unknown>[];
+  assert.equal(drills[1].name, "Authoritative Drill");
+  assert.equal(drills[1].sourceTemplateId, "template");
+  const invalidOrder = applyMobileRangeMutation({ workspace: added.workspace, rangeDayId: "day", permissions: ["manage_range_days"], action: { type: "reorder-drills", operationId: "order", drillIds: ["second"] } });
+  assert.equal(invalidOrder.ok, false);
+  const reordered = applyMobileRangeMutation({ workspace: added.workspace, rangeDayId: "day", permissions: ["manage_range_days"], action: { type: "reorder-drills", operationId: "order", drillIds: ["second", "drill"] } });
+  assert.ok(reordered.ok);
+  assert.deepEqual((reordered.workspace.rangeDayDrills as Record<string, unknown>[]).map((item) => item.sortOrder), [2, 1]);
+});
