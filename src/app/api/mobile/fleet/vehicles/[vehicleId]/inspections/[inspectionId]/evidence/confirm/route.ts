@@ -30,6 +30,16 @@ export async function POST(request: NextRequest, routeContext: Context) {
   });
   if (confirmed.error) return NextResponse.json({ error: "The uploaded object did not match its authorized metadata." }, { status: 409 });
 
+  const previousEvidence = authorized.checklist.flatMap((item) => Array.isArray(item.evidence) ? item.evidence : [])
+    .find((item: Record<string, unknown>) => item.id === intent.attachmentId) as Record<string, unknown> | undefined;
+  if (previousEvidence) {
+    const same = previousEvidence.storagePath === intent.path && previousEvidence.fileName === intent.fileName &&
+      previousEvidence.mimeType === intent.contentType && previousEvidence.size === intent.size &&
+      previousEvidence.uploadedByUserId === access.context.userId;
+    if (!same) return NextResponse.json({ error: "The attachment identifier is already confirmed with different metadata." }, { status: 409 });
+    return NextResponse.json({ ok: true, alreadyConfirmed: true, evidence: previousEvidence }, { headers: { "Cache-Control": "no-store, private" } });
+  }
+
   const evidence = {
     id: intent.attachmentId,
     storagePath: intent.path,

@@ -98,6 +98,8 @@ export class S3ObjectStore implements ObjectStore {
       const result = await this.client.send(new HeadObjectCommand(this.object(key)));
       const valid = result.ContentLength === expected.size &&
         result.ContentType === expected.contentType &&
+        result.ServerSideEncryption === "aws:kms" &&
+        typeof result.SSEKMSKeyId === "string" && result.SSEKMSKeyId.length > 0 &&
         result.Metadata?.["tracepoint-department-id"] === this.departmentId &&
         result.Metadata?.["tracepoint-domain"] === "fleet-inspection" &&
         result.Metadata?.["tracepoint-object-id"] === expected.objectId;
