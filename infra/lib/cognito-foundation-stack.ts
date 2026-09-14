@@ -54,7 +54,7 @@ export class CognitoFoundationStack extends cdk.Stack {
     readAttributes:new cognito.ClientAttributes().withStandardAttributes({email:true,emailVerified:true}),
     writeAttributes:new cognito.ClientAttributes().withStandardAttributes({email:true}),
     oAuth:{flows:{authorizationCodeGrant:true,implicitCodeGrant:false,clientCredentials:false},
-     scopes:[cognito.OAuthScope.OPENID,cognito.OAuthScope.EMAIL,cognito.OAuthScope.PROFILE],callbackUrls:[props.mobileClient.callbackUrl],logoutUrls:[props.mobileClient.logoutUrl]},
+     scopes:[cognito.OAuthScope.OPENID,cognito.OAuthScope.EMAIL,cognito.OAuthScope.PROFILE,cognito.OAuthScope.COGNITO_ADMIN],callbackUrls:[props.mobileClient.callbackUrl],logoutUrls:[props.mobileClient.logoutUrl]},
    });
    (mobile.node.defaultChild as cognito.CfnUserPoolClient).explicitAuthFlows=['ALLOW_USER_SRP_AUTH'];
    new cdk.CfnOutput(this,'MobileClientId',{value:mobile.userPoolClientId});

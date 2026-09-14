@@ -17,7 +17,7 @@ for(const environmentName of ['staging','production'] as const){
   template.hasResourceProperties('AWS::Cognito::UserPoolClient',{GenerateSecret:false,AllowedOAuthFlows:['code'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10},AccessTokenValidity:5,IdTokenValidity:5,
    CallbackURLs:[(environmentName==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback']});
   template.resourceCountIs('AWS::Cognito::UserPoolClient',environmentName==='staging'?2:1);
-  if(environmentName==='staging')template.hasResourceProperties('AWS::Cognito::UserPoolClient',{ClientName:'tracepoint-staging-mobile',GenerateSecret:false,AllowedOAuthFlows:['code'],AllowedOAuthScopes:['openid','email','profile'],CallbackURLs:['tracepoint://auth'],LogoutURLs:['tracepoint://logout'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10}});
+  if(environmentName==='staging')template.hasResourceProperties('AWS::Cognito::UserPoolClient',{ClientName:'tracepoint-staging-mobile',GenerateSecret:false,AllowedOAuthFlows:['code'],AllowedOAuthScopes:['openid','email','profile','aws.cognito.signin.user.admin'],CallbackURLs:['tracepoint://auth'],LogoutURLs:['tracepoint://logout'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10}});
   template.hasResource('AWS::Cognito::UserPool',{DeletionPolicy:'Retain'});
  });
  test(environmentName+' SES preview retains encrypted feedback and restricts sender IAM',()=>{

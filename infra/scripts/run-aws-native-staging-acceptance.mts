@@ -145,20 +145,22 @@ async function mobileSessionAcceptance(domain: string, clientId: string) {
   const session = async (user: FixtureUser, departmentId: string) => fetch(`${applicationOrigin}/api/mobile/session`, {
     redirect:"error", signal:AbortSignal.timeout(15_000), headers:{Authorization:`Bearer ${user.accessToken}`,"X-TracePoint-Department-Id":departmentId},
   });
-  assert.equal((await fetch(`${applicationOrigin}/api/mobile/session`, {redirect:"error",signal:AbortSignal.timeout(15_000)})).status,401);
-  const managerResponse=await session(manager,manager.id);assert.equal(managerResponse.status,200);
+  diagnostic="mobile:anonymous";assert.equal((await fetch(`${applicationOrigin}/api/mobile/session`, {redirect:"error",signal:AbortSignal.timeout(15_000)})).status,401);
+  diagnostic="mobile:manager-session";const managerResponse=await session(manager,manager.id);diagnostic+=`:${managerResponse.status}`;assert.equal(managerResponse.status,200);
   const managerBody=await managerResponse.json();assert.equal(managerBody.access.departmentId,manager.id);assert.equal(managerBody.selectionRequired,false);
-  const officerResponse=await session(officer,manager.id);assert.equal(officerResponse.status,200);assert.equal((await officerResponse.json()).access.departmentId,manager.id);
-  assert.equal((await session(foreign,manager.id)).status,403);
-  assert.equal((await fetch(`${applicationOrigin}/api/mobile/session`,{redirect:"error",signal:AbortSignal.timeout(15_000),headers:{Authorization:`Bearer ${manager.accessToken}, Bearer ${manager.accessToken}`}})).status,401);
+  diagnostic="mobile:officer-session";const officerResponse=await session(officer,manager.id);assert.equal(officerResponse.status,200);assert.equal((await officerResponse.json()).access.departmentId,manager.id);
+  diagnostic="mobile:foreign-tenant";assert.equal((await session(foreign,manager.id)).status,403);
+  diagnostic="mobile:ambiguous-bearer";assert.equal((await fetch(`${applicationOrigin}/api/mobile/session`,{redirect:"error",signal:AbortSignal.timeout(15_000),headers:{Authorization:`Bearer ${manager.accessToken}, Bearer ${manager.accessToken}`}})).status,401);
+  diagnostic="mobile:refresh";
   const refreshed=await fetch(`${domain}/oauth2/token`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:clientId,refresh_token:manager.refreshToken!})});
   assert.equal(refreshed.status,200);const tokens=await refreshed.json() as {access_token?:string;refresh_token?:string};
   assert.ok(tokens.access_token&&tokens.refresh_token&&tokens.refresh_token!==manager.refreshToken);
   manager.accessToken=tokens.access_token;manager.refreshToken=tokens.refresh_token;
-  assert.equal((await session(manager,manager.id)).status,200);
-  const revoked=await fetch(`${domain}/oauth2/revoke`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:clientId,token:manager.refreshToken})});assert.equal(revoked.status,200);
+  diagnostic="mobile:refreshed-session";assert.equal((await session(manager,manager.id)).status,200);
+  diagnostic="mobile:revoke";const revoked=await fetch(`${domain}/oauth2/revoke`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:clientId,token:manager.refreshToken})});assert.equal(revoked.status,200);
+  diagnostic="mobile:revoked-refresh";
   const rejected=await fetch(`${domain}/oauth2/token`,{method:"POST",redirect:"error",signal:AbortSignal.timeout(15_000),headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:clientId,refresh_token:manager.refreshToken})});assert.ok(rejected.status>=400);
-  console.log(JSON.stringify({mobileSessionAcceptance:"PASSED",users:3,authorizationCodeFlowConfigured:true,pkceRequiredByClient:true,bearerAcceptance:true,refreshRotation:true,revocation:true,crossTenantDenied:true,credentialsPrinted:false}));
+  diagnostic="";console.log(JSON.stringify({mobileSessionAcceptance:"PASSED",users:3,authorizationCodeFlowConfigured:true,pkceRequiredByClient:true,bearerAcceptance:true,refreshRotation:true,revocation:true,crossTenantDenied:true,credentialsPrinted:false}));
 }
 
 function fixture(operation: "setup"|"cleanup", poolId: string) {
@@ -201,7 +203,7 @@ try {
   const appClient = (await client.send(new DescribeUserPoolClientCommand({UserPoolId:cognito.UserPoolId,ClientId:cognito.ClientId}))).UserPoolClient!;
   assert.equal(pool.MfaConfiguration,"ON");assert.deepEqual(appClient.CallbackURLs,[`${applicationOrigin}/api/auth/cognito/callback`]);
   const mobileClient=(await client.send(new DescribeUserPoolClientCommand({UserPoolId:cognito.UserPoolId,ClientId:cognito.MobileClientId}))).UserPoolClient!;
-  assert.equal(mobileClient.ClientSecret,undefined);assert.deepEqual(mobileClient.AllowedOAuthFlows,["code"]);assert.deepEqual(mobileClient.CallbackURLs,["tracepoint://auth"]);assert.deepEqual(mobileClient.LogoutURLs,["tracepoint://logout"]);assert.equal(mobileClient.RefreshTokenRotation?.Feature,"ENABLED");assert.equal(mobileClient.EnableTokenRevocation,true);
+  assert.equal(mobileClient.ClientSecret,undefined);assert.deepEqual(mobileClient.AllowedOAuthFlows,["code"]);assert.deepEqual(mobileClient.AllowedOAuthScopes?.slice().sort(),["aws.cognito.signin.user.admin","email","openid","profile"]);assert.deepEqual(mobileClient.CallbackURLs,["tracepoint://auth"]);assert.deepEqual(mobileClient.LogoutURLs,["tracepoint://logout"]);assert.equal(mobileClient.RefreshTokenRotation?.Feature,"ENABLED");assert.equal(mobileClient.EnableTokenRevocation,true);
   for (const user of users) { stage = `cognito-${user.kind}`; await createAndEnroll(user,cognito.UserPoolId,cognito.MobileClientId); }
   stage = "database-fixture-setup";
   fixture("setup",cognito.UserPoolId); fixtureCreated=true;
