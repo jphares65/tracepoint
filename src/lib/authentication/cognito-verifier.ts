@@ -2,7 +2,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import type { JwksCache } from 'aws-jwt-verify/jwk';
 import type { AuthenticationProvider, IdentityMappingStore, TracePointIdentity } from './provider-core';
 import { cognitoIssuer, isCognitoPoolForRegion, isCognitoRegion } from './cognito-endpoints';
-export type CognitoVerificationConfig = { environment: 'staging' | 'production'; account: string; region: string; userPoolId: string; clientId: string };
+export type CognitoVerificationConfig = { environment: 'staging' | 'production'; account: string; region: string; userPoolId: string; clientId: string; trustedClientIds?: string[] };
 export type SessionActivityCheck = (input: { userId: string; issuer: string; subject: string; tokenId: string; issuedAt: number }) => Promise<boolean>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -12,9 +12,9 @@ export function createCognitoAuthenticationProvider(config: CognitoVerificationC
   isSessionActive: SessionActivityCheck, options: { jwksCache?: JwksCache } = {}): AuthenticationProvider {
   if (!/^\d{12}$/.test(config.account) || config.account === '265544358665' || !isCognitoRegion(config.region) || (config.environment === 'staging' && config.region !== 'us-east-1') ||
     (config.environment === 'staging' ? config.account !== '559054714699' : config.environment !== 'production' || ['559054714699', '111111111111'].includes(config.account)) ||
-    !isCognitoPoolForRegion(config.userPoolId, config.region) || !/^[A-Za-z0-9]{1,128}$/.test(config.clientId) || typeof isSessionActive !== 'function') throw new Error('Invalid Cognito verification boundary.');
+    !isCognitoPoolForRegion(config.userPoolId, config.region) || !validClientIds(config.clientId, config.trustedClientIds) || typeof isSessionActive !== 'function') throw new Error('Invalid Cognito verification boundary.');
   const issuer = cognitoIssuer(config.region, config.userPoolId);
-  const verifier = CognitoJwtVerifier.create({ userPoolId: config.userPoolId, clientId: config.clientId, tokenUse: 'access',
+  const verifier = CognitoJwtVerifier.create({ userPoolId: config.userPoolId, clientId: config.trustedClientIds ?? config.clientId, tokenUse: 'access',
     includeRawJwtInErrors: false, graceSeconds: 0,
     customJwtCheck: ({ header, payload }) => {
       const now = Math.floor(Date.now() / 1000);
@@ -34,4 +34,10 @@ export function createCognitoAuthenticationProvider(config: CognitoVerificationC
       return { userId: linked.userId, provider: 'cognito', issuer, subject: claims.sub };
     } catch { return null; }
   } };
+}
+
+function validClientIds(primary: string, trusted: string[] | undefined) {
+  const values = trusted ?? [primary];
+  return /^[A-Za-z0-9]{1,128}$/.test(primary) && values.length >= 1 && values.length <= 2 && values[0] === primary &&
+    new Set(values).size === values.length && values.every(clientId => /^[A-Za-z0-9]{1,128}$/.test(clientId));
 }

@@ -20,6 +20,11 @@ test('valid signed access token maps to stable identity and ignores privilege-be
  const identity=await provider().verifySession(token({'cognito:groups':['administrator'],'custom:department_id':'foreign','custom:user_id':'attacker',email:'attacker@example.invalid'}));
  assert.deepEqual(identity,{userId:stable,provider:'cognito',issuer,subject});
 });
+test('accepts only the two explicitly configured web and mobile clients',async()=>{
+ const dual=createCognitoAuthenticationProvider({...config,trustedClientIds:['syntheticclient','syntheticmobileclient']},{async findActive(){return {userId:stable}}},async()=>true,{jwksCache:cache});
+ assert.equal((await dual.verifySession(token({client_id:'syntheticmobileclient'})))?.userId,stable);
+ for(const trustedClientIds of [['syntheticclient','syntheticclient'],['syntheticclient','mobile','third'],['syntheticclient','invalid client'],['syntheticmobileclient']])assert.throws(()=>createCognitoAuthenticationProvider({...config,trustedClientIds},{async findActive(){return null}},async()=>true),/boundary/);
+});
 test('wrong issuer/client/token type, expiration and excessive lifetime fail closed',async()=>{
  const now=Math.floor(Date.now()/1000);
  for(const patch of [{iss:issuer+'foreign'},{client_id:'other'},{token_use:'id',aud:config.clientId},{exp:now-1},{iat:now+120,exp:now+300},{exp:now+3600},{nbf:now+60},{nbf:'invalid'},{jti:'invalid'},{sub:'invalid'}])assert.equal(await provider().verifySession(token(patch)),null);

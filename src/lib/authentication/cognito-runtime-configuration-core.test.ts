@@ -14,6 +14,7 @@ const valid = {
   AWS_REGION: "us-east-1",
   TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_Synthetic",
   TRACEPOINT_COGNITO_CLIENT_ID: "syntheticclient",
+  TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: "syntheticmobileclient",
   TRACEPOINT_AUTH_STATE_KEYS: JSON.stringify({ active: "current", keys: { current: key() } }),
   TRACEPOINT_AUTH_REFRESH_KEYS: JSON.stringify({ active: "current", keys: { current: key() } }),
 };
@@ -21,6 +22,8 @@ const valid = {
 test("parses a bounded AWS-native Cognito key configuration", () => {
   const configuration = parseCognitoRuntimeConfiguration(valid);
   assert.equal(configuration.verification.account, "559054714699");
+  assert.equal(configuration.verification.clientId, "syntheticclient");
+  assert.deepEqual(configuration.verification.trustedClientIds, ["syntheticclient", "syntheticmobileclient"]);
   assert.equal(configuration.state.keys.get("current")?.byteLength, 32);
   assert.equal(configuration.refresh.keys.get("current")?.byteLength, 32);
 });
@@ -31,6 +34,8 @@ test("rejects bridge, mixed-account and malformed key configurations", () => {
     { ...valid, TRACEPOINT_AUTH_PROVIDER: "supabase" },
     { ...valid, TRACEPOINT_AWS_ACCOUNT_ID: "265544358665" },
     { ...valid, TRACEPOINT_AUTH_STATE_KEYS: "not-json" },
+    { ...valid, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: "syntheticclient" },
+    { ...valid, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: "invalid client" },
     { ...valid, TRACEPOINT_AUTH_STATE_KEYS: JSON.stringify({ active: "missing", keys: { current: key() } }) },
     { ...valid, TRACEPOINT_AUTH_REFRESH_KEYS: JSON.stringify({ active: "current", keys: { current: "short" } }) },
   ]) assert.throws(() => parseCognitoRuntimeConfiguration(environment));

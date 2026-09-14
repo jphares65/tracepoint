@@ -139,6 +139,7 @@ const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStac
   taskRole: compute.awsNativeTaskRole,
   sesFromAddress: ses.fromAddress,
   sesConfigurationSetName: ses.cognitoConfigurationSetName,
+  mobileClient: productionPreview ? undefined : { callbackUrl: "tracepoint://auth", logoutUrl: "tracepoint://logout" },
 }) : undefined;
 if (cognito) { cognito.addStackDependency(compute); cognito.addStackDependency(ses!); }
 const sesFeedbackWorker = providerMode === "aws-native" && database && ses ? new SesFeedbackWorkerStack(app, `${environmentName}-ses-feedback-worker`, {
@@ -225,6 +226,7 @@ if (runtimeEnabled) {
     databaseSecurityGroup: network.databaseSecurityGroup,
     cognitoUserPoolId: cognito?.userPool.userPoolId,
     cognitoClientId: cognito?.userPoolClient.userPoolClientId,
+    cognitoMobileClientId: cognito?.mobileUserPoolClient?.userPoolClientId,
     sesConfigurationSet: ses?.configurationSetName,
     emailFromAddress: ses?.fromAddress ?? app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,

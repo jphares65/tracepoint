@@ -36,6 +36,7 @@ export interface RuntimeStackProps extends cdk.StackProps {
   databaseSecurityGroup?: ec2.ISecurityGroup;
   cognitoUserPoolId?: string;
   cognitoClientId?: string;
+  cognitoMobileClientId?: string;
   sesConfigurationSet?: string;
   singleAzRuntime?: boolean;
 }
@@ -58,6 +59,7 @@ export class RuntimeStack extends cdk.Stack {
     if (awsNative && (!props.storageBucketName || !props.databaseSecret || !props.databaseSecurityGroup || !emailFromAddress ||
       !validTarget(props.cognitoUserPoolId, /^us-east-1_[A-Za-z0-9]+$/) ||
       !validTarget(props.cognitoClientId, /^[A-Za-z0-9]{1,128}$/) ||
+      (props.environmentName === "staging" && !validTarget(props.cognitoMobileClientId, /^[A-Za-z0-9]{1,128}$/)) ||
       !validTarget(props.sesConfigurationSet, /^[A-Za-z0-9_-]{1,64}$/))) {
       throw new Error("Full-AWS runtime requires explicit PostgreSQL, Cognito, S3, and SES targets");
     }
@@ -102,6 +104,7 @@ export class RuntimeStack extends cdk.Stack {
       TRACEPOINT_DATABASE_CA_PATH: "/app/rds-ca.pem",
       TRACEPOINT_COGNITO_USER_POOL_ID: props.cognitoUserPoolId!,
       TRACEPOINT_COGNITO_CLIENT_ID: props.cognitoClientId!,
+      ...(props.cognitoMobileClientId ? { TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: props.cognitoMobileClientId } : {}),
       TRACEPOINT_AWS_ACCOUNT_ID: this.account,
       TRACEPOINT_SES_CONFIGURATION_SET: props.sesConfigurationSet!,
       AWS_REGION: this.region,

@@ -238,6 +238,7 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
     storageBucketName: "tracepoint-staging-private-559054714699",
     cognitoUserPoolId: "us-east-1_Y9GiDA5Zy",
     cognitoClientId: "syntheticclientid",
+    cognitoMobileClientId: "syntheticmobileclientid",
     sesConfigurationSet: "tracepoint-staging",
   });
   const serialized = JSON.stringify(Template.fromStack(runtime).toJSON());
@@ -246,7 +247,7 @@ test("full-AWS runtime mode contains no Supabase or Brevo provider configuration
   // immutable digest independently so the test follows the rendered semantics.
   assert.match(serialized, /AppRepository/);
   assert.match(serialized, new RegExp(`@sha256:${"a".repeat(64)}`));
-  for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_EMAIL_PROVIDER", "ses", "TRACEPOINT_STORAGE_PROVIDER", "TRACEPOINT_DATABASE_SECRET_JSON"]) assert.match(serialized, new RegExp(value));
+  for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_COGNITO_MOBILE_CLIENT_ID", "syntheticmobileclientid", "TRACEPOINT_EMAIL_PROVIDER", "ses", "TRACEPOINT_STORAGE_PROVIDER", "TRACEPOINT_DATABASE_SECRET_JSON"]) assert.match(serialized, new RegExp(value));
   assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|SUPABASE_SERVICE_ROLE|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
   Template.fromStack(runtime).hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
     IpProtocol: "tcp", FromPort: 5432, ToPort: 5432,

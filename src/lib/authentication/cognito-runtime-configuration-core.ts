@@ -65,10 +65,14 @@ export function parseCognitoTargetConfiguration(
   const region = environment.AWS_REGION ?? "";
   const userPoolId = environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "";
   const clientId = environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "";
-  if (!isCognitoRegion(region) || (stage === "staging" && region !== "us-east-1") || !isCognitoPoolForRegion(userPoolId, region) || !/^[A-Za-z0-9]{1,128}$/.test(clientId)) {
+  const mobileClientId = environment.TRACEPOINT_COGNITO_MOBILE_CLIENT_ID?.trim();
+  const clientIds = mobileClientId ? [clientId, mobileClientId] : [clientId];
+  if (!isCognitoRegion(region) || (stage === "staging" && region !== "us-east-1") || !isCognitoPoolForRegion(userPoolId, region) ||
+      clientIds.some(value => !/^[A-Za-z0-9]{1,128}$/.test(value)) || new Set(clientIds).size !== clientIds.length) {
     throw new Error("Invalid Cognito provider target.");
   }
-  return { verification: { environment: stage, account, region, userPoolId, clientId } };
+  return { verification: { environment: stage, account, region, userPoolId, clientId,
+    ...(mobileClientId ? { trustedClientIds: clientIds } : {}) } };
 }
 
 export function parseCognitoRuntimeConfiguration(
