@@ -5,6 +5,7 @@ import { resolveRuntimeCognitoBearerPrincipal } from "@/lib/authentication/cogni
 import { parseUniqueBearerToken } from "@/lib/authentication/request-bearer-core";
 import {
   listPostgresMemberships,
+  resolvePostgresIdentitySummary,
   resolvePostgresAccess,
 } from "@/lib/tracepoint/server-access-postgres";
 import { toAccessPayload } from "@/lib/tracepoint/server-access";
@@ -24,7 +25,10 @@ export async function GET() {
     return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   }
 
-  const memberships = await listPostgresMemberships(principal);
+  const [memberships, identity] = await Promise.all([
+    listPostgresMemberships(principal),
+    resolvePostgresIdentitySummary(principal),
+  ]);
   const selected = requestHeaders.get("x-tracepoint-department-id")?.trim() ?? "";
   if (selected && !uuid.test(selected)) {
     return NextResponse.json({ error: "The selected department is invalid." }, { status: 400 });
@@ -39,9 +43,23 @@ export async function GET() {
     unitName: String(membership.unit_name ?? ""),
   }));
 
+  if (memberships.length === 0) {
+    if (!identity.isPlatformAdmin) return NextResponse.json({ error: "No active department membership was found." }, { status: 403 });
+    return NextResponse.json({
+      userId: principal.userId,
+      displayIdentity: { fullName: identity.fullName, email: identity.email },
+      platformAdmin: true,
+      selectionRequired: true,
+      requiresSupportContext: true,
+      memberships: [],
+    }, { headers: { "Cache-Control": "no-store, private" } });
+  }
+
   if (!selected && memberships.length > 1) {
     return NextResponse.json({
       userId: principal.userId,
+      displayIdentity: { fullName: identity.fullName, email: identity.email },
+      platformAdmin: identity.isPlatformAdmin,
       selectionRequired: true,
       memberships: membershipPayload,
     }, { headers: { "Cache-Control": "no-store, private" } });
@@ -53,6 +71,7 @@ export async function GET() {
   }
   return NextResponse.json({
     selectionRequired: false,
+    platformAdmin: identity.isPlatformAdmin,
     memberships: membershipPayload,
     access: toAccessPayload(resolved.context),
   }, { headers: { "Cache-Control": "no-store, private" } });

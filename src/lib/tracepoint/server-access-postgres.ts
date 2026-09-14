@@ -30,6 +30,18 @@ export async function listPostgresMemberships(principal:AuthenticatedPrincipal){
  }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
 }
 
+export async function resolvePostgresIdentitySummary(principal:AuthenticatedPrincipal){
+ const client=await getPostgresPool().connect();
+ try{
+  await beginSubject(client,principal.userId);
+  const result=await client.query(`select public.is_platform_admin() as is_platform_admin,p.full_name,p.email
+    from public.profiles p where p.id=$1`,[principal.userId]);
+  await client.query("commit");
+  const row=result.rows[0];
+  return {isPlatformAdmin:row?.is_platform_admin===true,fullName:clean(row?.full_name)||principal.fullName,email:clean(row?.email)||principal.email};
+ }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
+}
+
 export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,selectedDepartmentId:string,supportDepartmentId:string){
  const client=await getPostgresPool().connect();
  try{

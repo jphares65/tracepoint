@@ -20,6 +20,7 @@ export function createCognitoAuthenticationProvider(config: CognitoVerificationC
       const now = Math.floor(Date.now() / 1000);
       if (header.alg !== 'RS256' || payload.iss !== issuer || typeof payload.iat !== 'number' || typeof payload.exp !== 'number' ||
         payload.iat > now + 30 || payload.exp - payload.iat > 900 || payload.exp <= payload.iat ||
+        (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf > now)) ||
         typeof payload.jti !== 'string' || !uuid.test(payload.jti) || typeof payload.sub !== 'string' || !uuid.test(payload.sub)) throw new Error('Invalid access token claims.');
     },
   }, options.jwksCache ? { jwksCache: options.jwksCache } : undefined);
