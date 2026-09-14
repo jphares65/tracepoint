@@ -39,3 +39,8 @@ test("drill assignment copies an active server-side template and validates order
   assert.ok(reordered.ok);
   assert.deepEqual((reordered.workspace.rangeDayDrills as Record<string, unknown>[]).map((item) => item.sortOrder), [2, 1]);
 });
+test("automatic scoring thresholds override client-supplied pass claims", () => {
+  const scored = applyMobileRangeMutation({ workspace: { ...workspace, rangeDayDrills: [{ id: "drill", rangeDayId: "day", scoringFormat: "Points", passingScore: 80 }] }, rangeDayId: "day", permissions: ["score_range_days"], action: { type: "save-score", operationId: "threshold", result: { id: "result", drillId: "drill", officerId: "officer", score: 90, passed: false } } });
+  assert.ok(scored.ok);
+  assert.equal((scored.workspace.results as Record<string, unknown>[])[0].finalPassed, true);
+});

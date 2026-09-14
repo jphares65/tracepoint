@@ -3,6 +3,7 @@ type Workspace = Record<string, unknown>;
 
 export type MobileRangeAction =
   | { type: "attendance"; operationId: string; rosterEntryId: string; attended: boolean }
+  | { type: "bulk-attendance"; operationId: string; attended: boolean }
   | { type: "save-score"; operationId: string; result: Row }
   | { type: "add-roster"; operationId: string; entry: Row }
   | { type: "remove-roster"; operationId: string; rosterEntryId: string }
@@ -24,6 +25,16 @@ const canScore = (permissions: readonly string[]) => canManage(permissions) || p
 
 function operationExists(workspace: Workspace, operationId: string) {
   return ["rangeRoster", "rangeDayDrills", "results"].some((key) => rows(workspace[key]).some((row) => row.mobileMutationId === operationId));
+}
+
+function authoritativePass(drill: Row, result: Row) {
+  const format = id(drill.scoringFormat ?? drill.scoringMode).toLowerCase();
+  if ((format === "qualification" || format === "points") && typeof drill.passingScore === "number" && typeof result.score === "number") return result.score >= drill.passingScore;
+  if (format === "time" && typeof drill.passingTimeSeconds === "number" && typeof result.timeSeconds === "number") return result.timeSeconds <= drill.passingTimeSeconds;
+  if (format === "hit count" && typeof drill.minimumHits === "number" && typeof result.hitCount === "number") return result.hitCount >= drill.minimumHits;
+  if (format === "completion" && typeof result.completed === "boolean") return result.completed;
+  if (format === "notes only") return undefined;
+  return typeof result.passed === "boolean" ? result.passed : undefined;
 }
 
 export function applyMobileRangeMutation(input: {
@@ -49,7 +60,8 @@ export function applyMobileRangeMutation(input: {
     const result = action.result;
     const drillId = id(result.drillId ?? result.drill_id);
     const officerId = id(result.officerId ?? result.officer_id);
-    if (!drills.some((item) => dayId(item) === input.rangeDayId && id(item.id) === drillId) ||
+    const drill = drills.find((item) => dayId(item) === input.rangeDayId && id(item.id) === drillId);
+    if (!drill ||
         !roster.some((item) => dayId(item) === input.rangeDayId && id(item.officerId ?? item.officer_id) === officerId)) {
       return { ok: false, status: 403, error: "The score references a drill or officer outside this range day." };
     }
@@ -59,7 +71,8 @@ export function applyMobileRangeMutation(input: {
       ? id(item.id) === resultId
       : dayId(item) === input.rangeDayId && id(item.drillId ?? item.drill_id) === drillId &&
         id(item.officerId ?? item.officer_id) === officerId && Number(item.runNumber ?? item.run_number ?? 1) === Number(result.runNumber ?? result.run_number ?? 1));
-    const next = { ...result, rangeDayId: input.rangeDayId, mobileMutationId: action.operationId };
+    const pass = authoritativePass(drill, result);
+    const next = { ...result, rangeDayId: input.rangeDayId, passed: pass, finalPassed: pass, mobileMutationId: action.operationId };
     if (index >= 0) results[index] = { ...results[index], ...next };
     else results.push(next);
     workspace.results = results;
@@ -73,6 +86,12 @@ export function applyMobileRangeMutation(input: {
     if (index < 0) return { ok: false, status: 404, error: "Roster entry was not found." };
     roster[index] = { ...roster[index], attended: action.attended, mobileMutationId: action.operationId };
     workspace.rangeRoster = roster;
+  } else if (action.type === "bulk-attendance") {
+    const roster = rows(workspace.rangeRoster);
+    if (!roster.some((item) => dayId(item) === input.rangeDayId)) return { ok: false, status: 404, error: "The Range Day roster is empty." };
+    workspace.rangeRoster = roster.map((item) => dayId(item) === input.rangeDayId
+      ? { ...item, attended: action.attended, mobileMutationId: action.operationId }
+      : item);
   } else if (action.type === "add-roster") {
     const roster = rows(workspace.rangeRoster);
     const officerId = id(action.entry.officerId ?? action.entry.officer_id);
@@ -128,11 +147,18 @@ export function applyMobileRangeMutation(input: {
 
 export function mobileRangeDaySummary(workspaceValue: unknown, rangeDayId: string) {
   const workspace = workspaceValue && typeof workspaceValue === "object" ? workspaceValue as Workspace : {};
+  const roster = rows(workspace.rangeRoster).filter((item) => dayId(item) === rangeDayId);
+  const drills = rows(workspace.rangeDayDrills).filter((item) => dayId(item) === rangeDayId)
+    .sort((left, right) => Number(left.sortOrder ?? left.sort_order ?? 0) - Number(right.sortOrder ?? right.sort_order ?? 0));
+  const results = rows(workspace.results).filter((item) => dayId(item) === rangeDayId);
+  const lastResult = results.at(-1);
   return {
     rangeDay: rows(workspace.rangeDays).find((item) => id(item.id) === rangeDayId) ?? null,
-    roster: rows(workspace.rangeRoster).filter((item) => dayId(item) === rangeDayId),
-    drills: rows(workspace.rangeDayDrills).filter((item) => dayId(item) === rangeDayId),
-    results: rows(workspace.results).filter((item) => dayId(item) === rangeDayId),
+    roster,
+    attendance: { roster: roster.length, present: roster.filter((item) => item.attended === true).length, absent: roster.filter((item) => item.attended !== true).length, excused: 0 },
+    drills,
+    results,
+    resume: lastResult ? { drillId: id(lastResult.drillId ?? lastResult.drill_id), runNumber: Number(lastResult.runNumber ?? lastResult.run_number ?? 1) } : null,
     malfunctions: rows(workspace.malfunctions).filter((item) => dayId(item) === rangeDayId),
   };
 }

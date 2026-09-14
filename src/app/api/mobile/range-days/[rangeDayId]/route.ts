@@ -18,6 +18,7 @@ function parseAction(body: Record<string, unknown>, userId: string): MobileRange
     const rosterEntryId = text(body.rosterEntryId, 128);
     return safeId.test(rosterEntryId) && typeof body.attended === "boolean" ? { type, operationId, rosterEntryId, attended: body.attended } : null;
   }
+  if (type === "bulk-attendance") return typeof body.attended === "boolean" ? { type, operationId, attended: body.attended } : null;
   if (type === "remove-roster") {
     const rosterEntryId = text(body.rosterEntryId, 128);
     return safeId.test(rosterEntryId) ? { type, operationId, rosterEntryId } : null;
