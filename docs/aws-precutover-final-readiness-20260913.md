@@ -1,6 +1,6 @@
 # TracePoint final pre-cutover readiness checkpoint — 2026-09-13
 
-The AWS-native production runtime is privately deployed and healthy behind the existing ALB, but it is not publicly authoritative. Task definition revision 3 uses the exact authorized digest and is steady at desired/running/pending `1/1/0`; retained bridge revision 2 remains the exact rollback target. Public DNS still points to Vercel, and no customer traffic, customer data, identity, email or DNS state changed. `TracePointProductionBoundary` v16 now permits exactly the nine code-derived Cognito lifecycle calls for the exact runtime role and production pool. The no-create runtime probe passes; authenticated positive-path validation remains blocked because the reviewed synthetic fixture procedure is staging-only.
+The AWS-native production runtime is privately deployed and healthy behind the existing ALB, but it is not publicly authoritative. Task definition revision 3 uses the exact authorized digest and is steady at desired/running/pending `1/1/0`; retained bridge revision 2 remains the exact rollback target. Public DNS still points to Vercel, and no customer traffic, customer data, real identity, email or DNS state changed. `TracePointProductionBoundary` v16 permits exactly the nine code-derived Cognito lifecycle calls for the exact runtime role and production pool. The no-create probe and the owner-authorized three-user synthetic authentication/RBAC validation now pass with complete cleanup.
 
 ## Current production posture
 
@@ -36,7 +36,9 @@ The deployed service is steady at `1/1/0` with one healthy ALB target. Direct AL
 
 A short-lived revision-3 task proved verified PostgreSQL TLS, the bounded `tracepoint_runtime` login, connection limit 20, no superuser or RLS bypass, 96 RLS-protected tables, zero remaining `auth.uid()` policies, fail-closed synthetic tenant visibility and denied service-role escalation. It performed no database writes and read no customer data. A separate revision-3 task proved S3 put/get/KMS encryption/delete using a 41-byte synthetic object; its exact object version and delete marker were then removed and a follow-up listing returned none.
 
-Cognito foundation configuration is ready: deletion protection is active, MFA is on, the pool contains zero users, auth-code/OIDC configuration is present, token revocation and refresh rotation are enabled, and activation/recovery email uses the reviewed SES configuration set. `TracePointProductionBoundary` v16 permits exactly the nine runtime lifecycle calls for role `tracepoint-production-aws-native-ecs-task` on pool `us-east-1_diFmWDMe9`; cross-role, cross-pool, group-administration, pool-administration and general IAM controls remain denied. The runtime's no-create `AdminGetUser` task exited 0 with the expected `UserNotFoundException`. Authenticated positive-path RBAC/session validation is still unexecuted because the only reviewed disposable three-user procedure is explicitly staging-only. No production identity or synthetic database row was created.
+Cognito foundation configuration is ready: deletion protection is active, MFA is on, the pool contains zero users after cleanup, auth-code/OIDC configuration is present, token revocation and refresh rotation are enabled, and activation/recovery email uses the reviewed SES configuration set. `TracePointProductionBoundary` v16 permits exactly the nine runtime lifecycle calls for role `tracepoint-production-aws-native-ecs-task` on pool `us-east-1_diFmWDMe9`; cross-role, cross-pool, group-administration, pool-administration and general IAM controls remain denied. The runtime's no-create `AdminGetUser` task exited 0 with the expected `UserNotFoundException`.
+
+The owner-authorized production-safe fixture then created exactly three run-scoped `example.invalid` identities with delivery suppressed and only the minimum two departments, three memberships, three roles and two feature rows. All three completed password authentication, mandatory TOTP MFA and authorization-code/PKCE. Admin, ordinary and foreign-tenant positive/negative paths passed; forged tenant selection was ignored; direct RLS exposed zero cross-tenant rows; refresh rotation, logout, global sign-out and revoked-session rejection passed. SES send count remained unchanged. Cleanup returned Cognito, all synthetic database categories and objects to zero. The focused authentication/RBAC suite passed 43/43. Sanitized evidence is in `docs/aws-production-synthetic-auth-validation-20260913.json`.
 
 ## SES, registrar and DNS
 
@@ -52,38 +54,37 @@ Verisign RDAP reports `pending transfer`; Wix nameservers `ns10.wixdns.net` and 
 4. Corrected migration, identity and rollback tooling for enhanced ECR scanning by querying scan findings with the immutable digest and safely handling absent zero-count severity fields.
 5. Removed the already-propagated historical DS record from the current DNS blocker list.
 6. Corrected the production runtime boundary with the exact code-derived Cognito lifecycle set while preserving v15 rollback and avoiding any SCP change.
+7. Corrected the disposable production authentication harness for the runtime Node entry point, omitted ECS log-stream metadata, trigger-created profiles and the local ALB DNS resolver while preserving exact cleanup.
 
 ## Readiness and remaining blockers
 
-Implementation-prepared readiness remains **100%**. Live-verified full-AWS readiness remains **81%** with **zero net-new live points** in this checkpoint. Gates 8, 13, 15, 16, 17, 18 and 21 remain open for 19 points. No credit is claimed for read-only refreshes, stronger evidence, source inventory growth, local tests, dry runs, published-but-undeployed images or the rejected deployment.
+Implementation-prepared readiness remains **100%**. Live-verified full-AWS readiness remains **81%** with **zero net-new live points** in this checkpoint. The authenticated synthetic-production blocker is closed, but gates 8, 13, 15, 16, 17, 18 and 21 remain open for 19 points. Gate 8 requires migration, activation and reconciliation of the real 96-user cohort, so no readiness credit is claimed for disposable synthetic validation.
 
 Only these blockers remain:
 
-1. Explicitly approve a production adaptation of the reviewed staging-only three-user synthetic fixture procedure so authenticated RBAC, RLS, session refresh and logout can be exercised and cleaned up; the production pool remains at zero users.
-2. Registrar transfer completion, followed by separate nameserver-delegation authorization.
-3. Route 53 authority so custom MAIL FROM can validate, then separate SES access-request resubmission and smoke-email authorization.
-4. Owner authorization for the final source secret, write freeze, database copy/reconciliation, two-object copy, 96-user Cognito execution/activation and public traffic switch.
-5. Successful observation, followed by separately authorized legacy credential revocation, Supabase retirement and Route 53 DNSSEC/new DS publication.
+1. Registrar transfer completion, followed by separate nameserver-delegation authorization.
+2. Route 53 authority so custom MAIL FROM can validate, then separate SES access-request resubmission and smoke-email authorization.
+3. Owner authorization for the final source secret, write freeze, database copy/reconciliation, two-object copy, 96-user Cognito execution/activation and public traffic switch.
+4. Successful observation, followed by separately authorized legacy credential revocation, Supabase retirement and Route 53 DNSSEC/new DS publication.
 
 ## Exact final sequence
 
-1. With explicit fixture-procedure approval, run and clean up the three-user authenticated synthetic RBAC/session path; the boundary correction and no-create runtime probe are complete.
-2. Preserve the deployed digest-pinned revision 3 privately and retained bridge revision 2 as the rollback target until customer cutover authorization.
-3. Complete the registrar transfer while retaining Wix nameservers.
-4. Recheck DS absence and the exact 31-record Route 53 manifest.
-5. With separate authorization, delegate the registrar to the four retained Route 53 nameservers; verify web and Microsoft 365 before proceeding.
-6. Wait for custom MAIL FROM `SUCCESS`; preserve the already-verified DKIM identity.
-7. With separate authorization, resubmit SES production access, obtain approval, confirm the monitored alert path and authorize one non-customer smoke email.
-8. Reconfirm account, role, budget, immutable digests, image scans, recovery point, alarms and rollback task definition.
-9. Enter the approved maintenance window; pause asynchronous dispatch and freeze source writes.
-10. Require two consecutive zero-write checks and capture final source snapshot/LSN, row, identity and object manifests.
-11. Execute the resumable database copy, then apply the 16 ordered source deltas and 21 AWS overlays; fail closed on any reconciliation discrepancy.
-12. Execute the create-only two-object copy and reconcile byte counts, SHA-256, metadata and tenant prefixes.
-13. Generate and execute the exact standard and exceptional Cognito batches; reconcile all 96 identities and 95 memberships before changing authentication.
-14. Promote the already-validated AWS-native task and run health, session, tenant-negative and module smoke checks.
-15. With separate traffic authority, apply the reviewed Route 53 application aliases and verify customer traffic.
-16. Reopen writes only after database, object, identity, email-feedback, alarms and backups are green; otherwise execute the phase-appropriate rollback.
-17. Observe for at least 168 hours with Supabase sealed and unchanged as the rollback source.
-18. Under later destructive authority, revoke legacy credentials and retire Supabase/Vercel/Brevo dependencies; then separately enable Route 53 DNSSEC and publish the new parent DS.
+1. Preserve the deployed digest-pinned revision 3 privately and retained bridge revision 2 as the rollback target until customer cutover authorization; the no-create and three-user synthetic authenticated paths are complete.
+2. Complete the registrar transfer while retaining Wix nameservers.
+3. Recheck DS absence and the exact 31-record Route 53 manifest.
+4. With separate authorization, delegate the registrar to the four retained Route 53 nameservers; verify web and Microsoft 365 before proceeding.
+5. Wait for custom MAIL FROM `SUCCESS`; preserve the already-verified DKIM identity.
+6. With separate authorization, resubmit SES production access, obtain approval, confirm the monitored alert path and authorize one non-customer smoke email.
+7. Reconfirm account, role, budget, immutable digests, image scans, recovery point, alarms and rollback task definition.
+8. Enter the approved maintenance window; pause asynchronous dispatch and freeze source writes.
+9. Require two consecutive zero-write checks and capture final source snapshot/LSN, row, identity and object manifests.
+10. Execute the resumable database copy, then apply the 16 ordered source deltas and 21 AWS overlays; fail closed on any reconciliation discrepancy.
+11. Execute the create-only two-object copy and reconcile byte counts, SHA-256, metadata and tenant prefixes.
+12. Generate and execute the exact standard and exceptional Cognito batches; reconcile all 96 identities and 95 memberships before changing authentication.
+13. Promote the already-validated AWS-native task and run health, session, tenant-negative and module smoke checks.
+14. With separate traffic authority, apply the reviewed Route 53 application aliases and verify customer traffic.
+15. Reopen writes only after database, object, identity, email-feedback, alarms and backups are green; otherwise execute the phase-appropriate rollback.
+16. Observe for at least 168 hours with Supabase sealed and unchanged as the rollback source.
+17. Under later destructive authority, revoke legacy credentials and retire Supabase/Vercel/Brevo dependencies; then separately enable Route 53 DNSSEC and publish the new parent DS.
 
 Machine-readable sanitized evidence is in `docs/aws-precutover-final-readiness-20260913.json`. Private identifiers, source object keys, credentials and customer data are excluded.

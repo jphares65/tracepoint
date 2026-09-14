@@ -1,0 +1,103 @@
+{
+  "format": "tracepoint-production-synthetic-auth-validation-evidence/v1",
+  "authorizationReference": "owner-authorized-production-synthetic-auth-rbac-20260913",
+  "observedWindowUtc": {
+    "startedAt": "2026-09-13T23:54:44.839Z",
+    "completedAt": "2026-09-14T00:06:15.656Z"
+  },
+  "target": {
+    "account": "193644343389",
+    "region": "us-east-1",
+    "role": "TracePointMigrationProduction",
+    "userPool": "us-east-1_diFmWDMe9",
+    "runtimeTaskDefinition": "tracepointproductionruntimeServiceTaskDefA64ABA6A:3",
+    "databaseTaskDefinition": "tracepoint-production-database-bootstrap:2",
+    "budgetUsd": 150,
+    "budgetChanged": false
+  },
+  "fixture": {
+    "usersCreated": 3,
+    "userClasses": ["ordinary", "department-administrator", "foreign-tenant-unauthorized"],
+    "addressing": "unique run-scoped aliases under RFC-reserved example.invalid",
+    "delivery": "AdminCreateUser MessageAction SUPPRESS",
+    "departments": 2,
+    "memberships": 3,
+    "membershipRoles": 3,
+    "featureRows": 2,
+    "businessRows": 0,
+    "objectsCreated": 0,
+    "customerDepartmentsUsed": 0
+  },
+  "validation": {
+    "cognitoPasswordAuthentication": "PASSED_THREE_OF_THREE",
+    "softwareTokenMfa": "PASSED_THREE_OF_THREE",
+    "authorizationCodePkce": "PASSED_THREE_OF_THREE",
+    "tokenAcceptance": "PASSED",
+    "currentSession": "PASSED",
+    "refreshRotation": "PASSED",
+    "ordinaryAuthorizedRead": "PASSED",
+    "administratorAuthorizedRead": "PASSED_ADMINISTER_DEPARTMENT",
+    "ordinaryPrivilegedReadDenied": "PASSED_HTTP_403",
+    "foreignPrivilegedReadDenied": "PASSED_HTTP_403",
+    "forgedDepartmentCookieIgnored": "PASSED",
+    "directRlsTenantIsolation": "PASSED_ZERO_CROSS_TENANT_ROWS",
+    "logout": "PASSED",
+    "globalSignOut": "PASSED",
+    "revokedRefreshRejected": "PASSED_HTTP_401",
+    "revokedSessionRejected": "PASSED_HTTP_401",
+    "providerIsolation": "PASSED_ZERO_SUPABASE_VERCEL_BREVO_REQUESTS",
+    "lineage": "PASSED_76_SOURCE_PLUS_21_AWS",
+    "focusedTests": { "passed": 43, "failed": 0 },
+    "gitDiffCheck": "PASSED"
+  },
+  "safety": {
+    "emailSent": 0,
+    "sesSentLast24HoursCounter": "UNCHANGED",
+    "customerDataRead": false,
+    "customerDataModified": false,
+    "customerObjectsAccessed": 0,
+    "crossTenantVisibility": 0,
+    "privilegeEscalation": false,
+    "productionTrafficChanged": false,
+    "dnsChanged": false,
+    "runtimeServiceChanged": false
+  },
+  "cleanup": {
+    "status": "PASSED",
+    "cognitoUsers": 0,
+    "databaseResidue": {
+      "authUsers": 0,
+      "profiles": 0,
+      "identityLinks": 0,
+      "departments": 0,
+      "memberships": 0,
+      "membershipRoles": 0,
+      "features": 0,
+      "accessSessions": 0,
+      "refreshSessions": 0
+    },
+    "syntheticObjects": 0
+  },
+  "postCleanupHealth": {
+    "ecs": "ACTIVE_1_DESIRED_1_RUNNING_0_PENDING_ROLLOUT_COMPLETE",
+    "alb": "ONE_HEALTHY_TARGET",
+    "metricAlarms": "17_OF_17_OK",
+    "accessAnalyzer": "ACCOUNT_UNUSED_ACCESS_ACTIVE_ZERO_ACTIVE_FINDINGS"
+  },
+  "defectsCorrected": [
+    "Resolve the Cognito test dependency from the existing infrastructure workspace rather than assuming a root installation.",
+    "Honor the runtime image's Node entry point by passing only -e and the program in the ECS command override.",
+    "Derive omitted ECS log-stream names from the audited stream prefix, container name and task ID.",
+    "Retain the authoritative staging fixture's idempotent profile upsert because the auth.users trigger creates profiles.",
+    "Use a read-only Windows DNS fallback when Node's local resolver rejects the ALB lookup."
+  ],
+  "transientEvents": [
+    "One Fargate validation task failed before container start with CannotPullContainerError; the immutable digest was immediately verified ACTIVE in ECR and the unchanged retry passed."
+  ],
+  "readiness": {
+    "implementationPreparedPercent": 100,
+    "liveVerifiedPercent": 81,
+    "netNewLivePoints": 0,
+    "impact": "The authenticated synthetic production-validation blocker is closed. The separate three-point production identity gate remains open until the authorized 96-user customer cohort is migrated, activated and reconciled."
+  }
+}

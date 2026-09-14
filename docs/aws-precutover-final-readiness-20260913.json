@@ -1,6 +1,6 @@
 {
   "format": "tracepoint-aws-precutover-final-readiness/v1",
-  "observedAtUtc": "2026-09-13T22:44:03Z",
+  "observedAtUtc": "2026-09-14T00:06:15Z",
   "target": {
     "account": "193644343389",
     "region": "us-east-1",
@@ -15,8 +15,8 @@
   },
   "runtime": {
     "authorizedByOwner": true,
-    "deploymentStatus": "DEPLOYED_PRIVATE_COGNITO_REACHABILITY_VALIDATED",
-    "blocker": "Authenticated positive-path RBAC remains unexecuted because the reviewed disposable three-user procedure is staging-only; no reviewed production fixture procedure is authorized.",
+    "deploymentStatus": "DEPLOYED_PRIVATE_AUTHENTICATED_SYNTHETIC_VALIDATED",
+    "blocker": null,
     "awsNativeImageDigest": "sha256:5f4b8fe59eaf8befd29bf7ca455ec1d4eb2b18836e66818bf2cc8cae55a90c0b",
     "awsNativeImageSourceCommit": "63828c03a091a75a232d6a70297bd7d40c8d0b3c",
     "awsNativeImageScan": "COMPLETE_ZERO_FINDINGS",
@@ -29,7 +29,7 @@
     "currentHealthyAlbTargets": 1,
     "rollbackTaskDefinitionArn": "arn:aws:ecs:us-east-1:193644343389:task-definition/tracepointproductionruntimeServiceTaskDefA64ABA6A:2",
     "publicDnsPointsToAlb": false,
-    "privateAwsNativeApplicationValidation": "HEALTH_DATABASE_S3_SECRETS_WAF_ACCESS_BOUNDARIES_AND_COGNITO_NO_CREATE_PASSED_AUTHENTICATED_SYNTHETIC_BLOCKED",
+    "privateAwsNativeApplicationValidation": "HEALTH_DATABASE_S3_SECRETS_WAF_ACCESS_BOUNDARIES_COGNITO_PKCE_SESSION_REFRESH_RBAC_RLS_LOGOUT_AND_REVOCATION_PASSED",
     "deploymentStartedAtUtc": "2026-09-13T20:55:42.893Z",
     "deploymentCompletedAtUtc": "2026-09-13T21:05:34.489Z",
     "serviceTaskArn": "arn:aws:ecs:us-east-1:193644343389:task/tracepoint-production/bc2bbc02dcd0470bbbbf03e71312f6bd",
@@ -128,6 +128,7 @@
     "identityImageDigest": "sha256:43ea22695cecd0f90e8d1fed669082c22318718ff0efa892cf43dd8c76c55026",
     "identityImageScan": "COMPLETE_ZERO_FINDINGS",
     "mappingAndCompensationTests": "PASSED",
+    "productionSyntheticAuthenticationValidation": "PASSED_THREE_DISPOSABLE_USERS_ZERO_RESIDUE_NO_EMAIL",
     "privateExecutableManifests": "DEPEND_ON_AUTHORIZED_CUSTOMER_DATABASE_COPY",
     "activation": "NOT_AUTHORIZED"
   },
@@ -194,6 +195,7 @@
     "providerReachability": { "entrypoints": 154, "reachableModules": 322, "staticLegacyEdges": 0, "reviewedDynamicBridgeEdges": 29, "unapprovedDynamicLegacyEdges": 0, "unapprovedLegacyEndpointLiterals": 0 },
     "touchedFileLint": "PASSED",
     "gitDiffCheck": "PASSED",
+    "focusedSyntheticAuthenticationTests": { "passed": 43, "failed": 0 },
     "privateRuntime": {
       "ecs": "1_DESIRED_1_RUNNING_0_PENDING_ROLLOUT_COMPLETE",
       "alb": "ONE_HEALTHY_TARGET",
@@ -203,7 +205,7 @@
       "s3": "PUT_GET_KMS_DELETE_PASSED_SYNTHETIC_OBJECT_ALL_VERSIONS_CLEANED",
       "cognitoConfiguration": "POOL_AND_CLIENT_READY_ZERO_USERS_MFA_ON_ROTATION_AND_REVOCATION_ENABLED",
       "cognitoRuntimePermission": "PASSED_EXACT_ROLE_POOL_NINE_ACTIONS_NO_CREATE_RUNTIME_PROBE",
-      "authenticatedSyntheticRbac": "BLOCKED_NO_REVIEWED_PRODUCTION_FIXTURE_PROCEDURE_ZERO_USERS_CREATED",
+      "authenticatedSyntheticRbac": "PASSED_THREE_USERS_PKCE_MFA_SESSION_REFRESH_RBAC_RLS_LOGOUT_GLOBAL_SIGNOUT_ZERO_RESIDUE",
       "secrets": "AWS_NATIVE_APPLICATION_AND_DATABASE_RUNTIME_SECRETS_INJECTED_FROM_KMS_ENCRYPTED_SECRETS_MANAGER",
       "ses": "CONFIGURATION_READ_ONLY_PASSED_NO_EMAIL_SENT",
       "feedback": "ENCRYPTED_SNS_SQS_DLQ_ACTIVE_ZERO_DEPTH",
@@ -216,7 +218,8 @@
     "Production live-readiness validation now evaluates effective SCPs through the account, OU and root hierarchy instead of only account-direct attachments.",
     "Migration, identity and rollback scripts now query enhanced ECR scan findings by immutable digest and safely treat absent zero-count severity properties as zero.",
     "The DNS target no longer reports the already-propagated historical DS record as a current blocker.",
-    "TracePointProductionBoundary v16 now admits only the nine code-derived Cognito runtime lifecycle calls for the exact ECS task role and exact production pool; v15 remains the rollback."
+    "TracePointProductionBoundary v16 now admits only the nine code-derived Cognito runtime lifecycle calls for the exact ECS task role and exact production pool; v15 remains the rollback.",
+    "The production-safe synthetic authentication harness now preserves the runtime Node entry point, derives ECS log streams when DescribeTasks omits them, retains idempotent profile upserts, and has a bounded read-only ALB DNS fallback."
   ],
   "automation": {
     "preflight": "IMPLEMENTED_AND_TESTED",
@@ -226,7 +229,7 @@
     "identityTransition": "IMPLEMENTED_NOT_EXECUTED",
     "objectDeltaMigration": "IMPLEMENTED_NO_WRITE_DRY_RUN_PASSED",
     "reconciliation": "IMPLEMENTED_AND_PRODUCTION_SHAPED_REHEARSAL_PASSED",
-    "runtimeDeploymentVerification": "DEPLOYED_PRIVATE_COGNITO_NO_CREATE_PASSED_AUTHENTICATED_SYNTHETIC_BLOCKED",
+    "runtimeDeploymentVerification": "DEPLOYED_PRIVATE_COGNITO_PKCE_SESSION_REFRESH_RBAC_RLS_LOGOUT_AND_REVOCATION_PASSED_ZERO_RESIDUE",
     "trafficCutover": "IMPLEMENTED_NOT_AUTHORIZED",
     "rollback": "IMPLEMENTED_AND_TESTED",
     "postCutoverValidation": "IMPLEMENTED_NOT_EXECUTED"
@@ -240,7 +243,6 @@
     "creditCaveat": "Read-only refreshes, stronger evidence, source inventory changes, local tests, dry runs, image publication and blocked deployments earn no live-readiness credit."
   },
   "remainingBlockers": [
-    "Authenticated production RBAC/session validation requires explicit approval of a production adaptation of the reviewed staging-only three-user synthetic fixture procedure; the pool remains at zero users.",
     "The registrar transfer must complete before Route 53 delegation can be considered.",
     "Nameserver delegation requires separate owner authorization; Wix remains authoritative.",
     "Custom MAIL FROM cannot validate until the prepared Route 53 zone is authoritative.",

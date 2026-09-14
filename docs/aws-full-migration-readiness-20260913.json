@@ -15,7 +15,7 @@
     {"id":5,"weight":2,"gate":"AWS staging data parity, tenant-negative, backup and restore acceptance","liveVerified":true,"implementationComplete":true},
     {"id":6,"weight":3,"gate":"Cognito login, callback, refresh, logout and durable sessions active in staging","liveVerified":true,"implementationComplete":true},
     {"id":7,"weight":2,"gate":"Synthetic Cognito lifecycle, tenant/RLS and revocation parity in staging","liveVerified":true,"implementationComplete":true},
-    {"id":8,"weight":3,"gate":"Production Cognito user migration, activation, MFA and communication transition","liveVerified":false,"implementationComplete":true,"remaining":"The immutable zero-finding identity image is published; execution, activation communication and live reconciliation remain separately gated"},
+    {"id":8,"weight":3,"gate":"Production Cognito user migration, activation, MFA and communication transition","liveVerified":false,"implementationComplete":true,"remaining":"Disposable production PKCE, MFA, session, refresh, RBAC, RLS, logout and revocation validation passed with zero residue; the immutable zero-finding identity image is published, while execution, activation communication and live reconciliation of the real 96-user cohort remain separately gated"},
     {"id":9,"weight":5,"gate":"Browser data calls are server-mediated and auth.uid behavior is safely replaced","liveVerified":true,"implementationComplete":true},
     {"id":10,"weight":3,"gate":"Service-role bypasses and legacy credential fallbacks are absent from AWS-native runtime","liveVerified":true,"implementationComplete":true},
     {"id":11,"weight":2,"gate":"Static/runtime provider-isolation and egress gate passes","liveVerified":true,"implementationComplete":true},
