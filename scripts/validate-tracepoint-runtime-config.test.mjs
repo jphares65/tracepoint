@@ -86,6 +86,7 @@ test("accepts only the complete provider-free AWS runtime tuple", () => {
     TRACEPOINT_AWS_ACCOUNT_ID: "559054714699",
     TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_AbCdEf123",
     TRACEPOINT_COGNITO_CLIENT_ID: "client123",
+    TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: "mobileclient123",
     TRACEPOINT_SES_CONFIGURATION_SET: "tracepoint-staging",
     TRACEPOINT_FROM_EMAIL: "contact@tracepointhq.com",
     TRACEPOINT_S3_EXPECTED_OWNER: "559054714699",
@@ -93,6 +94,8 @@ test("accepts only the complete provider-free AWS runtime tuple", () => {
   };
 
   assert.doesNotThrow(() => validateTracePointRuntimeConfig(awsNative));
+  assert.throws(() => validateTracePointRuntimeConfig({ ...awsNative, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: undefined }), /TRACEPOINT_COGNITO_MOBILE_CLIENT_ID/);
+  assert.throws(() => validateTracePointRuntimeConfig({ ...awsNative, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: "client123" }), /TRACEPOINT_COGNITO_MOBILE_CLIENT_ID/);
   assert.throws(
     () => validateTracePointRuntimeConfig({ ...awsNative, SUPABASE_SECRET_KEY: "must-not-be-present" }),
     /SUPABASE_SECRET_KEY/,

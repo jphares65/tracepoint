@@ -147,6 +147,7 @@ export function validateTracePointRuntimeConfig(environment = process.env) {
     (value(environment, "TRACEPOINT_DATA_PROVIDER") === "postgres" ? "aws-native" : "bridge");
   const tuple = providerTuples[mode];
   const required = [...commonRequired, ...(mode === "aws-native" ? awsNativeRequired : bridgeRequired)];
+  if (mode === "aws-native" && stage === "staging") required.push("TRACEPOINT_COGNITO_MOBILE_CLIENT_ID");
   const missing = required.filter((name) => !present(environment, name));
   const invalidProviders = [];
   const invalid = [];
@@ -183,6 +184,8 @@ export function validateTracePointRuntimeConfig(environment = process.env) {
     if (!new RegExp(`^${region.replaceAll("-", "\\-")}_[A-Za-z0-9]+$`).test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_USER_POOL_ID");
     if (!/^\d{12}$/.test(environment.TRACEPOINT_AWS_ACCOUNT_ID ?? "") || environment.TRACEPOINT_AWS_ACCOUNT_ID !== environment.TRACEPOINT_S3_EXPECTED_OWNER) invalid.push("TRACEPOINT_AWS_ACCOUNT_ID");
     if (!/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "")) invalid.push("TRACEPOINT_COGNITO_CLIENT_ID");
+    if (stage === "staging" && (!/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_MOBILE_CLIENT_ID ?? "") ||
+        environment.TRACEPOINT_COGNITO_MOBILE_CLIENT_ID === environment.TRACEPOINT_COGNITO_CLIENT_ID)) invalid.push("TRACEPOINT_COGNITO_MOBILE_CLIENT_ID");
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(environment.TRACEPOINT_SES_CONFIGURATION_SET ?? "")) invalid.push("TRACEPOINT_SES_CONFIGURATION_SET");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(environment.TRACEPOINT_FROM_EMAIL ?? "")) invalid.push("TRACEPOINT_FROM_EMAIL");
   }
