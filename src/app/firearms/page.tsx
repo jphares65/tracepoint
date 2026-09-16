@@ -323,7 +323,7 @@ export default function FirearmsPage() {
       visibleFocusColumns
         .map(
           (column) =>
-            `minmax(${FOCUS_COLUMN_CONFIG[column].minimumWidth}px, ${FOCUS_COLUMN_CONFIG[column].minimumWidth}fr)`,
+            `minmax(${FOCUS_COLUMN_CONFIG[column].minimumWidth}px, 1fr)`,
         )
         .join(" "),
     [visibleFocusColumns],
