@@ -7,6 +7,10 @@ export type RangeDayStatus =
   | "Locked"
   | "Archived";
 
+export type RangeDayAttendanceMode =
+  | "Scheduled Roster"
+  | "Open / Rolling Attendance";
+
 export type DrillCategory =
   | "Qualification"
   | "Marksmanship"
@@ -90,6 +94,7 @@ export type RangeDay = {
   status: RangeDayStatus;
   leadInstructorId: string;
   instructorIds: string[];
+  attendanceMode?: RangeDayAttendanceMode;
   weather?: string;
   notes?: string;
 };
