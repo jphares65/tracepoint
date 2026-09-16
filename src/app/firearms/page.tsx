@@ -123,14 +123,14 @@ const FIREARM_TYPES: { value: FirearmType; label: string }[] = [
 
 const FOCUS_COLUMN_CONFIG: Record<
   FirearmSortKey,
-  { label: string; width: string }
+  { label: string; minimumWidth: number }
 > = {
-  firearm: { label: "Firearm", width: "22%" },
-  serial: { label: "Serial", width: "18%" },
-  asset: { label: "Asset", width: "12%" },
-  type: { label: "Type / Caliber", width: "15%" },
-  status: { label: "Status", width: "14%" },
-  custody: { label: "Issued To", width: "19%" },
+  firearm: { label: "Firearm", minimumWidth: 170 },
+  serial: { label: "Serial", minimumWidth: 135 },
+  asset: { label: "Asset", minimumWidth: 105 },
+  type: { label: "Type / Caliber", minimumWidth: 135 },
+  status: { label: "Status", minimumWidth: 125 },
+  custody: { label: "Issued To", minimumWidth: 155 },
 };
 
 const EMPTY_FORM: NewFirearmForm = {
@@ -309,6 +309,25 @@ export default function FirearmsPage() {
     [focusPreferences],
   );
 
+  const focusTableMinimumWidth = useMemo(
+    () =>
+      visibleFocusColumns.reduce(
+        (width, column) => width + FOCUS_COLUMN_CONFIG[column].minimumWidth,
+        0,
+      ),
+    [visibleFocusColumns],
+  );
+
+  const focusColumnWidths = useMemo(() => {
+    const total = Math.max(focusTableMinimumWidth, 1);
+    return Object.fromEntries(
+      visibleFocusColumns.map((column) => [
+        column,
+        `${(FOCUS_COLUMN_CONFIG[column].minimumWidth / total) * 100}%`,
+      ]),
+    ) as Record<FirearmSortKey, string>;
+  }, [focusTableMinimumWidth, visibleFocusColumns]);
+
   function selectInventoryFirearm(firearmId: string) {
     setSelectedFirearmId(firearmId);
     if (inventoryView === "focus") setFocusDetailOpen(true);
@@ -363,12 +382,12 @@ export default function FirearmsPage() {
     column: FirearmSortKey,
   ) {
     const status = normalizeStatus(firearm.condition_status);
-    const cellClass = "truncate px-2 py-1 text-[11px]";
+    const cellClass = "truncate px-1.5 py-0.5 text-[11px]";
 
     switch (column) {
       case "firearm":
         return (
-          <td key={column} className="px-2 py-1">
+          <td key={column} className="px-1.5 py-0.5">
             <div className="flex flex-wrap items-center gap-1">
               <p className="truncate font-bold text-white">{getFirearmLabel(firearm)}</p>
               {firearm.needs_attention ? (
@@ -387,7 +406,7 @@ export default function FirearmsPage() {
         return <td key={column} className={`${cellClass} text-slate-300`}>{formatFirearmType(firearm.firearm_type)}{firearm.caliber ? ` · ${firearm.caliber}` : ""}</td>;
       case "status":
         return (
-          <td key={column} className="px-2 py-1">
+          <td key={column} className="px-1.5 py-0.5">
             <span className={`inline-flex rounded-full border px-1.5 py-0 text-[10px] font-bold ${STATUS_CLASS[status]}`}>
               {status}
             </span>
@@ -904,8 +923,8 @@ The firearm will be removed from active inventory and future operational selecti
             </section>
           )}
 
-          <section className={inventoryView === "focus" ? "flex min-h-0 flex-1" : "grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]"}>
-            <div className={`rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "flex min-h-0 flex-1 flex-col p-2 sm:p-2.5" : "p-5"}`}>
+          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]"}>
+            <div className={`rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "flex min-h-0 w-full min-w-0 flex-1 flex-col p-2 sm:p-2.5" : "p-5"}`}>
               <div className={`flex flex-col ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
                 <div className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
                   <div className="min-w-0">
@@ -1022,11 +1041,18 @@ The firearm will be removed from active inventory and future operational selecti
               ) : (
                 <div className={`overflow-hidden rounded-3xl border border-slate-200 ${inventoryView === "focus" ? "mt-2 min-h-0 flex-1" : "mt-5"}`}>
                   <div className={`overflow-auto ${inventoryView === "focus" ? "h-full" : "max-h-[620px]"}`}>
-                    <table className={inventoryView === "focus" ? "min-w-[760px] w-full table-fixed divide-y divide-slate-800 text-left text-xs" : "min-w-[920px] divide-y divide-slate-800 text-left text-sm"}>
+                    <table
+                      className={inventoryView === "focus" ? "w-full table-fixed divide-y divide-slate-800 text-left text-xs" : "min-w-[920px] divide-y divide-slate-800 text-left text-sm"}
+                      style={
+                        inventoryView === "focus"
+                          ? { minWidth: `${focusTableMinimumWidth}px` }
+                          : undefined
+                      }
+                    >
                       {inventoryView === "focus" && (
                         <colgroup>
                           {visibleFocusColumns.map((column) => (
-                            <col key={column} style={{ width: FOCUS_COLUMN_CONFIG[column].width }} />
+                            <col key={column} style={{ width: focusColumnWidths[column] }} />
                           ))}
                         </colgroup>
                       )}
@@ -1045,7 +1071,7 @@ The firearm will be removed from active inventory and future operational selecti
                                   onDragOver={(event) => event.preventDefault()}
                                   onDrop={() => handleFocusColumnDrop(column)}
                                   onDragEnd={() => setDraggedFocusColumn(null)}
-                                  className={`sticky top-0 z-10 cursor-grab bg-slate-950 px-2 py-1 font-semibold active:cursor-grabbing ${draggedFocusColumn === column ? "opacity-40" : ""}`}
+                                  className={`sticky top-0 z-10 cursor-grab bg-slate-950 px-1.5 py-0.5 font-semibold active:cursor-grabbing ${draggedFocusColumn === column ? "opacity-40" : ""}`}
                                   title="Drag to reorder column"
                                 >
                                   <button type="button" onClick={() => updateSort(column)} className="inline-flex max-w-full items-center gap-1 truncate hover:text-white">
