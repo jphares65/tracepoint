@@ -52,6 +52,13 @@ import {
   getPerformanceTrend,
   getRangeDayCompletionSummary,
 } from "@/app/lib/tracepoint/range-day-utils";
+import {
+  canAddOpenAttendanceShooter,
+  normalizeRangeDayAttendanceMode,
+  OPEN_ROLLING_ATTENDANCE,
+  RANGE_DAY_ATTENDANCE_MODES,
+  SCHEDULED_ROSTER_ATTENDANCE,
+} from "@/lib/range/attendance-mode";
 
 type RangeDayType =
   | "Qualification"
@@ -1121,6 +1128,9 @@ function normalizeRangeDaysForWorkspace(
       ...rangeDay,
       leadInstructorId: fallbackLeadInstructorId,
       instructorIds,
+      attendanceMode: normalizeRangeDayAttendanceMode(
+        rangeDay.attendanceMode,
+      ),
       staffingNotes: rangeDay.staffingNotes ?? "",
       outline:
         Array.isArray(rangeDay.outline) && rangeDay.outline.length > 0
@@ -1857,6 +1867,8 @@ export default function RangeDaysPage() {
   const [newDrillTags, setNewDrillTags] = useState("");
   const [newDrillNotes, setNewDrillNotes] = useState("");
   const [newRosterOfficerId, setNewRosterOfficerId] = useState("");
+  const [openAttendanceOfficerId, setOpenAttendanceOfficerId] = useState("");
+  const [openAttendanceSearch, setOpenAttendanceSearch] = useState("");
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
   const [newEquipmentLabel, setNewEquipmentLabel] = useState("");
 
@@ -1942,6 +1954,10 @@ export default function RangeDaysPage() {
     [selectedRoster],
   );
 
+  const isOpenAttendance =
+    normalizeRangeDayAttendanceMode(selectedRangeDay?.attendanceMode) ===
+    OPEN_ROLLING_ATTENDANCE;
+
   const availableRosterOfficers = useMemo(() => {
     if (!selectedRangeDay) return [];
 
@@ -1951,6 +1967,42 @@ export default function RangeDaysPage() {
 
     return personnel.filter((user) => !rosteredOfficerIds.has(user.id));
   }, [personnel, selectedRangeDay, selectedRoster]);
+
+  const openAttendanceOfficers = useMemo(() => {
+    const query = openAttendanceSearch.trim().toLowerCase();
+    if (!query) return availableRosterOfficers;
+
+    return availableRosterOfficers.filter((officer) =>
+      [
+        officer.displayName,
+        officer.fullName,
+        officer.badgeNumber,
+        officer.rankTitle,
+        officer.unitName,
+      ]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query)),
+    );
+  }, [availableRosterOfficers, openAttendanceSearch]);
+
+  useEffect(() => {
+    if (!isOpenAttendance) return;
+
+    if (
+      openAttendanceOfficerId &&
+      openAttendanceOfficers.some(
+        (officer) => officer.id === openAttendanceOfficerId,
+      )
+    ) {
+      return;
+    }
+
+    setOpenAttendanceOfficerId(openAttendanceOfficers[0]?.id ?? "");
+  }, [
+    isOpenAttendance,
+    openAttendanceOfficerId,
+    openAttendanceOfficers,
+  ]);
 
   const availableInstructorUsers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -2415,6 +2467,7 @@ export default function RangeDaysPage() {
 
     if (availableRosterOfficers.length === 0) {
       setNewRosterOfficerId("");
+      setOpenAttendanceOfficerId("");
       return;
     }
 
@@ -2425,7 +2478,20 @@ export default function RangeDaysPage() {
     if (!selectedOfficerIsAvailable) {
       setNewRosterOfficerId(availableRosterOfficers[0].id);
     }
-  }, [availableRosterOfficers, newRosterOfficerId, selectedRangeDay]);
+
+    const openAttendanceOfficerIsAvailable = availableRosterOfficers.some(
+      (user) => user.id === openAttendanceOfficerId,
+    );
+
+    if (!openAttendanceOfficerIsAvailable) {
+      setOpenAttendanceOfficerId(availableRosterOfficers[0].id);
+    }
+  }, [
+    availableRosterOfficers,
+    newRosterOfficerId,
+    openAttendanceOfficerId,
+    selectedRangeDay,
+  ]);
 
   useEffect(() => {
     if (!selectedRangeDay) return;
@@ -2697,6 +2763,7 @@ export default function RangeDaysPage() {
       location: "",
       status: "Planned",
       rangeType: "Training",
+      attendanceMode: SCHEDULED_ROSTER_ATTENDANCE,
       packetStatus: "Needs Setup",
       leadInstructorId: currentUserId,
       instructorIds: [currentUserId],
@@ -2954,6 +3021,37 @@ export default function RangeDaysPage() {
 
     setRangeRoster((current) => [...current, newRosterEntry]);
     setSelectedOfficerId(newRosterOfficerId);
+    resetEntryForm(1);
+  }
+
+  function handleAddOpenAttendanceShooter() {
+    if (!canEditSelectedRangeDay) return;
+    if (!selectedRangeDay || !openAttendanceOfficerId) return;
+
+    if (
+      !canAddOpenAttendanceShooter({
+        attendanceMode: selectedRangeDay.attendanceMode,
+        roster: rangeRoster,
+        rangeDayId: selectedRangeDay.id,
+        officerId: openAttendanceOfficerId,
+      })
+    ) {
+      return;
+    }
+
+    const newRosterEntry: RangeRosterEntry = {
+      id: `roster-${Date.now()}`,
+      rangeDayId: selectedRangeDay.id,
+      officerId: openAttendanceOfficerId,
+      assignedFirearmIds: [],
+      attended: true,
+      attendanceTime: new Date().toISOString(),
+      notes: "Added during open attendance.",
+    };
+
+    setRangeRoster((current) => [...current, newRosterEntry]);
+    setSelectedOfficerId(openAttendanceOfficerId);
+    setOpenAttendanceSearch("");
     resetEntryForm(1);
   }
 
@@ -4519,6 +4617,33 @@ export default function RangeDaysPage() {
                     </select>
                   </div>
 
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Attendance Mode
+                    </label>
+                    <select
+                      value={normalizeRangeDayAttendanceMode(
+                        selectedRangeDay.attendanceMode,
+                      )}
+                      onChange={(event) =>
+                        updateSelectedRangeDay(
+                          "attendanceMode",
+                          event.target.value as PlannedRangeDay["attendanceMode"],
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {RANGE_DAY_ATTENDANCE_MODES.map((mode) => (
+                        <option key={mode} value={mode}>
+                          {mode}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Open sessions let instructors add present shooters while scoring.
+                    </p>
+                  </div>
+
                   <div className="lg:col-span-2">
                     <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                       Syllabus / Day Outline
@@ -5923,6 +6048,63 @@ export default function RangeDaysPage() {
                   {attendingRoster.length} attending officer{attendingRoster.length === 1 ? "" : "s"}
                 </div>
               </div>
+
+              {isOpenAttendance && (
+                <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] p-3">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
+                        Add shooter to open attendance
+                      </label>
+                      <input
+                        value={openAttendanceSearch}
+                        onChange={(event) => setOpenAttendanceSearch(event.target.value)}
+                        placeholder="Search by name, badge, rank, or unit"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
+                        Officer
+                      </label>
+                      <select
+                        value={openAttendanceOfficerId}
+                        onChange={(event) =>
+                          setOpenAttendanceOfficerId(event.target.value)
+                        }
+                        disabled={openAttendanceOfficers.length === 0}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                      >
+                        {openAttendanceOfficers.length === 0 ? (
+                          <option value="">No available officers match</option>
+                        ) : (
+                          openAttendanceOfficers.map((officer) => (
+                            <option key={officer.id} value={officer.id}>
+                              {officer.displayName}
+                              {officer.badgeNumber
+                                ? ` — ${officer.badgeNumber}`
+                                : ""}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddOpenAttendanceShooter}
+                      disabled={
+                        !canEditSelectedRangeDay ||
+                        openAttendanceOfficers.length === 0 ||
+                        !openAttendanceOfficerId
+                      }
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                    >
+                      <Plus size={15} />
+                      Add Shooter
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
                 <div>

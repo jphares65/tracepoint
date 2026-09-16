@@ -45,6 +45,7 @@ type TracePointShellProps = {
   activePage: string;
   children: ReactNode;
   accessEnabled?: boolean;
+  compactNavigation?: boolean;
 };
 
 type NavigationLeaf = {
@@ -710,6 +711,7 @@ export default function TracePointShell({
   activePage,
   children,
   accessEnabled = true,
+  compactNavigation = false,
 }: TracePointShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -951,7 +953,7 @@ export default function TracePointShell({
       <AppearanceStyleOverrides />
       <IdleSessionGuard />
       <div className="flex min-h-screen">
-        <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col">
+        <aside className={compactNavigation ? "hidden" : "fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col"}>
           <div className="border-b border-slate-800 px-5 py-3.5">
             <BrandHeader />
           </div>
@@ -972,7 +974,7 @@ export default function TracePointShell({
           />
         </aside>
 
-        {mobileOpen && (
+        {mobileOpen && !compactNavigation && (
           <div className="fixed inset-0 z-50 lg:hidden">
             <button
               type="button"
@@ -1014,8 +1016,8 @@ export default function TracePointShell({
           </div>
         )}
 
-        <main className="min-h-screen min-w-0 flex-1 lg:pl-72">
-          <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden">
+        <main className={`min-h-screen min-w-0 flex-1 ${compactNavigation ? "lg:pl-0" : "lg:pl-72"}`}>
+          <header className={`sticky top-0 z-40 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden ${compactNavigation ? "hidden" : "flex"}`}>
             <BrandHeader compact />
 
             <button

@@ -15,11 +15,22 @@ import {
   UserPlus,
   Wrench,
   RotateCcw,
+  ArrowDownUp,
+  X,
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import FirearmAttachments from "@/app/components/FirearmAttachments";
+import {
+  matchesFirearmInventorySearch,
+  nextFirearmSort,
+  sortFirearmInventory,
+  toggleFirearmInventoryView,
+  type FirearmInventoryView,
+  type FirearmSortKey,
+  type SortDirection,
+} from "@/lib/armory/inventory-view";
 
 type ArmoryMember = {
   user_id: string;
@@ -165,27 +176,6 @@ function sortFirearms(firearms: ArmoryFirearm[]) {
   });
 }
 
-function matchesSearch(firearm: ArmoryFirearm, query: string) {
-  if (!query.trim()) return true;
-
-  const normalized = query.toLowerCase();
-  const fields = [
-    firearm.make,
-    firearm.model,
-    firearm.serial_number,
-    firearm.asset_number,
-    firearm.caliber,
-    firearm.firearm_type,
-    firearm.condition_status,
-    firearm.active_assignment?.assigned_to_name,
-  ];
-
-  return fields.some(
-    (field) =>
-      typeof field === "string" && field.toLowerCase().includes(normalized),
-  );
-}
-
 async function readError(response: Response) {
   try {
     const payload = (await response.json()) as { error?: string };
@@ -230,6 +220,10 @@ export default function FirearmsPage() {
   const [statusFilter, setStatusFilter] = useState<"All" | FirearmStatus>(
     "All",
   );
+  const [inventoryView, setInventoryView] = useState<FirearmInventoryView>("standard");
+  const [sortKey, setSortKey] = useState<FirearmSortKey>("firearm");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [focusDetailOpen, setFocusDetailOpen] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<FirearmWorkspaceTab>("custody");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -270,9 +264,25 @@ export default function FirearmsPage() {
       const status = normalizeStatus(firearm.condition_status);
       const statusMatches = statusFilter === "All" || status === statusFilter;
 
-      return archiveMatches && statusMatches && matchesSearch(firearm, query);
+      return archiveMatches && statusMatches && matchesFirearmInventorySearch(firearm, query);
     });
   }, [firearms, query, showArchived, statusFilter]);
+
+  const focusFirearms = useMemo(
+    () => sortFirearmInventory(filteredFirearms, sortKey, sortDirection),
+    [filteredFirearms, sortDirection, sortKey],
+  );
+
+  function selectInventoryFirearm(firearmId: string) {
+    setSelectedFirearmId(firearmId);
+    if (inventoryView === "focus") setFocusDetailOpen(true);
+  }
+
+  function updateSort(requestedKey: FirearmSortKey) {
+    const next = nextFirearmSort(sortKey, sortDirection, requestedKey);
+    setSortKey(next.key);
+    setSortDirection(next.direction);
+  }
 
   const inventoryCounts = useMemo(() => {
     const activeFirearms = firearms.filter((firearm) => firearm.is_active);
@@ -725,21 +735,30 @@ The firearm will be removed from active inventory and future operational selecti
   }
 
   return (
-    <TracePointShell activePage="Armory">
-      <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-5 lg:p-6">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
+    <TracePointShell activePage="Armory" compactNavigation={inventoryView === "focus"}>
+      <div className={`min-h-screen bg-slate-950 text-slate-100 ${inventoryView === "focus" ? "p-2 sm:p-3" : "p-4 sm:p-5 lg:p-6"}`}>
+        <div className={`mx-auto flex w-full flex-col gap-4 ${inventoryView === "focus" ? "max-w-none" : "max-w-[1600px]"}`}>
           <ArmorySectionShell
             title="Department Firearms"
             description="Inventory, custody, condition, documents, and accountability."
             actions={
-              <button
-                type="button"
-                onClick={() => setShowAddFirearm((current) => !current)}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-slate-200"
-              >
-                <Plus className="h-4 w-4" />
-                {showAddFirearm ? "Close Add Form" : "Add Firearm"}
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-1">
+                  {(["standard", "focus"] as const).map((view) => (
+                    <button key={view} type="button" onClick={() => { if (view === inventoryView) return; const next = toggleFirearmInventoryView(inventoryView); setInventoryView(next); if (next === "standard") setFocusDetailOpen(false); }} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${inventoryView === view ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                      {view === "standard" ? "Standard" : "Focus"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddFirearm((current) => !current)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-slate-200"
+                >
+                  <Plus className="h-4 w-4" />
+                  {showAddFirearm ? "Close Add Form" : "Add Firearm"}
+                </button>
+              </div>
             }
           />
 
@@ -755,8 +774,8 @@ The firearm will be removed from active inventory and future operational selecti
             </section>
           )}
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]">
-            <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
+          <section className={inventoryView === "focus" ? "block" : "grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]"}>
+            <div className={`rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "p-3 sm:p-4" : "p-5"}`}>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
@@ -835,19 +854,27 @@ The firearm will be removed from active inventory and future operational selecti
                   </p>
                 </div>
               ) : (
-                <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
-                  <div className="max-h-[620px] overflow-auto">
-                    <table className="min-w-full divide-y divide-slate-800 text-left text-sm">
+                <div className={`mt-5 overflow-hidden rounded-3xl border border-slate-200 ${inventoryView === "focus" ? "" : ""}`}>
+                  <div className={`overflow-auto ${inventoryView === "focus" ? "max-h-[calc(100vh-230px)]" : "max-h-[620px]"}`}>
+                    <table className="min-w-[920px] divide-y divide-slate-800 text-left text-sm">
                       <thead className="sticky top-0 bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-500">
                         <tr>
-                          <th className="px-4 py-3 font-semibold">Firearm</th>
-                          <th className="px-4 py-3 font-semibold">Serial</th>
-                          <th className="px-4 py-3 font-semibold">Status</th>
-                          <th className="px-4 py-3 font-semibold">Custody</th>
+                          {([
+                            ["firearm", "Firearm"], ["serial", "Serial"], ["asset", "Asset"],
+                            ["type", "Type / Caliber"], ["status", "Status"], ["custody", "Issued To"],
+                          ] as Array<[FirearmSortKey, string]>).map(([key, label]) => (
+                            <th key={key} className={`sticky top-0 z-10 bg-slate-950 font-semibold ${inventoryView === "standard" && (key === "asset" || key === "type") ? "hidden" : ""} ${inventoryView === "focus" ? "px-3 py-2" : "px-4 py-3"}`}>
+                              {inventoryView === "focus" ? (
+                                <button type="button" onClick={() => updateSort(key)} className="inline-flex items-center gap-1 hover:text-white">
+                                  {label}<ArrowDownUp className={`h-3 w-3 ${sortKey === key ? "text-blue-300" : ""}`} />
+                                </button>
+                              ) : label}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800 bg-slate-900">
-                        {filteredFirearms.map((firearm) => {
+                        {(inventoryView === "focus" ? focusFirearms : filteredFirearms).map((firearm) => {
                           const status = normalizeStatus(
                             firearm.condition_status,
                           );
@@ -856,12 +883,12 @@ The firearm will be removed from active inventory and future operational selecti
                           return (
                             <tr
                               key={firearm.id}
-                              onClick={() => setSelectedFirearmId(firearm.id)}
+                              onClick={() => selectInventoryFirearm(firearm.id)}
                               className={`cursor-pointer transition hover:bg-slate-200/70 ${
                                 selected ? "bg-slate-800/80" : ""
                               }`}
                             >
-                              <td className="px-4 py-4">
+                              <td className={inventoryView === "focus" ? "px-3 py-2" : "px-4 py-4"}>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="font-bold text-white">
                                     {getFirearmLabel(firearm)}
@@ -872,24 +899,30 @@ The firearm will be removed from active inventory and future operational selecti
                                     </span>
                                   ) : null}
                                 </div>
-                                <p className="text-xs text-slate-500">
-                                  {formatFirearmType(firearm.firearm_type)}
-                                  {firearm.caliber
-                                    ? ` | ${firearm.caliber}`
-                                    : ""}
-                                </p>
+                                {inventoryView === "standard" && (
+                                  <p className="text-xs text-slate-500">
+                                    {formatFirearmType(firearm.firearm_type)}
+                                    {firearm.caliber ? ` | ${firearm.caliber}` : ""}
+                                  </p>
+                                )}
                               </td>
-                              <td className="px-4 py-4 font-mono text-xs text-slate-600">
+                              <td className={inventoryView === "focus" ? "px-3 py-2 font-mono text-xs text-slate-400" : "px-4 py-4 font-mono text-xs text-slate-600"}>
                                 {firearm.serial_number}
                               </td>
-                              <td className="px-4 py-4">
+                              <td className={inventoryView === "focus" ? "px-3 py-2 font-mono text-xs text-slate-400" : "hidden"}>
+                                {firearm.asset_number || "—"}
+                              </td>
+                              <td className={inventoryView === "focus" ? "px-3 py-2 text-xs text-slate-300" : "hidden"}>
+                                {formatFirearmType(firearm.firearm_type)}{firearm.caliber ? ` · ${firearm.caliber}` : ""}
+                              </td>
+                              <td className={inventoryView === "focus" ? "px-3 py-2" : "px-4 py-4"}>
                                 <span
                                   className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[status]}`}
                                 >
                                   {status}
                                 </span>
                               </td>
-                              <td className="px-4 py-4 text-sm text-slate-600">
+                              <td className={inventoryView === "focus" ? "px-3 py-2 text-xs text-slate-400" : "px-4 py-4 text-sm text-slate-600"}>
                                 {firearm.active_assignment ? (
                                   <span className="font-semibold text-slate-100">
                                     {firearm.active_assignment.assigned_to_name}
@@ -910,7 +943,29 @@ The firearm will be removed from active inventory and future operational selecti
               )}
             </div>
 
-            <div className="flex flex-col gap-6">
+            {inventoryView === "focus" && focusDetailOpen && selectedFirearm && (
+              <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Selected firearm details">
+                <div className="h-full w-full max-w-xl overflow-y-auto border-l border-slate-700 bg-slate-900 p-5 shadow-2xl sm:rounded-l-3xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Selected firearm</p>
+                      <h2 className="mt-1 text-xl font-bold text-white">{getFirearmLabel(selectedFirearm)}</h2>
+                      <p className="mt-1 font-mono text-xs text-slate-400">{selectedFirearm.serial_number}</p>
+                    </div>
+                    <button type="button" onClick={() => setFocusDetailOpen(false)} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" aria-label="Close firearm details"><X className="h-4 w-4" /></button>
+                  </div>
+                  <div className="mt-5 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm sm:grid-cols-2">
+                    <div><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Status</p><p className="mt-1 font-semibold text-white">{normalizeStatus(selectedFirearm.condition_status)}</p></div>
+                    <div><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Asset</p><p className="mt-1 font-semibold text-white">{selectedFirearm.asset_number || "Not recorded"}</p></div>
+                    <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Current custody</p><p className="mt-1 font-semibold text-white">{selectedFirearm.active_assignment?.assigned_to_name || "Unassigned"}</p></div>
+                  </div>
+                  <p className="mt-5 text-sm leading-6 text-slate-400">Use the full firearm workspace for custody actions, documents, status changes, and audit-preserving edits.</p>
+                  <a href={`/firearms/${selectedFirearm.id}`} className="mt-4 inline-flex rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-slate-200">Open full firearm record</a>
+                </div>
+              </div>
+            )}
+
+            <div className={inventoryView === "standard" ? "flex flex-col gap-6" : "hidden"}>
               <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -1535,6 +1590,7 @@ The firearm will be removed from active inventory and future operational selecti
                   </div>
                 )}
               </div>
+            </div>
 
               {showAddFirearm && (
               <div className="rounded-[2rem] border border-slate-700 bg-slate-900/90 p-5 shadow-sm">
@@ -1685,7 +1741,6 @@ The firearm will be removed from active inventory and future operational selecti
                 )}
               </div>
               )}
-            </div>
           </section>
         </div>
       </div>
