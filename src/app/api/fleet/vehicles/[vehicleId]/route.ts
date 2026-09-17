@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  attachmentPathFromMetadata,
+  createObjectStore,
+} from "@/lib/storage/object-store";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
@@ -17,8 +21,71 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
   if (!detail) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
 
+  const inspections = detail.inspections as Array<Record<string, unknown>>;
+  const inspectionIds = inspections.map((inspection) =>
+    String(inspection.id),
+  );
+  const evidenceByInspection = new Map<string, Record<string, unknown>[]>();
+
+  if (inspectionIds.length) {
+    const evidenceResult = await context.admin
+      .from("attachments")
+      .select(
+        "id,entity_id,attachment_type,file_name,storage_path,mime_type,file_size,description,uploaded_at",
+      )
+      .eq("department_id", context.departmentId)
+      .eq("entity_type", "fleet_vehicle_inspection")
+      .in("entity_id", inspectionIds)
+      .is("archived_at", null)
+      .order("uploaded_at", { ascending: false });
+
+    if (evidenceResult.error) {
+      return NextResponse.json(
+        { error: evidenceResult.error.message },
+        { status: 500 },
+      );
+    }
+
+    const objectStore = createObjectStore(context.admin, context.departmentId);
+    const evidence = await Promise.all(
+      (evidenceResult.data ?? []).map(async (attachment: Record<string, unknown>) => {
+        if (typeof attachment.storage_path !== "string") return null;
+        const path = attachmentPathFromMetadata(
+          attachment.storage_path,
+          context.departmentId,
+        );
+        if (!path) return null;
+        const view = await objectStore.createAttachmentView(path);
+        if (view.error || !view.signedUrl) return null;
+        return {
+          id: attachment.id,
+          inspectionId: attachment.entity_id,
+          attachmentType: attachment.attachment_type,
+          fileName: attachment.file_name,
+          mimeType: attachment.mime_type,
+          fileSize: attachment.file_size,
+          description: attachment.description,
+          uploadedAt: attachment.uploaded_at,
+          viewUrl: view.signedUrl,
+          downloadUrl: `/api/attachments/${attachment.id}/download`,
+        };
+      }),
+    );
+
+    for (const item of evidence) {
+      if (!item) continue;
+      const inspectionEvidence = evidenceByInspection.get(item.inspectionId) ?? [];
+      inspectionEvidence.push(item);
+      evidenceByInspection.set(item.inspectionId, inspectionEvidence);
+    }
+  }
+
   return NextResponse.json({
     ...detail,
+    inspections: inspections.map((inspection) => ({
+      ...inspection,
+      evidence: evidenceByInspection.get(String(inspection.id)) ?? [],
+    })),
     canManage: canManageFleet(context, detail.rules),
     canMaintain: canPerformFleetMaintenance(context, detail.rules),
     canConfigure: canConfigureFleet(context),

@@ -6,6 +6,7 @@ import {
   meetsPermissionRequirement,
 } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
+import { readBearerToken } from "@/lib/authentication/request-bearer";
 
 import type { Database } from "./database.types";
 
@@ -129,7 +130,11 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
+  const accessToken = readBearerToken(request.headers.get("authorization"));
   const supabase = createServerClient<Database>(url, publishableKey, {
+    global: accessToken
+      ? { headers: { Authorization: `Bearer ${accessToken}` } }
+      : undefined,
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -148,7 +153,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const { data: claimsData } = await supabase.auth.getClaims();
+  const { data: claimsData } = await supabase.auth.getClaims(accessToken);
   const claims = claimsData?.claims;
 
   const pathname = request.nextUrl.pathname;
