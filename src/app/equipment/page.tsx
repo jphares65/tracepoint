@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import { groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
 
 type ReadinessStatus =
@@ -2233,7 +2234,24 @@ const filteredReadiness = useMemo(() => {
               <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
                 {[["Serial number", detailAsset.serial_number], ["Asset number", detailAsset.asset_number], ["Lot number", detailAsset.lot_number], ["Status", detailAsset.lifecycle_status], ["Issue date", formatDate(detailAsset.issue_date)], ["Expiration", formatDate(detailAsset.expiration_date)], ["Last inspection", formatDate(detailAsset.last_inspection_date)], ["Next inspection", formatDate(detailAsset.next_inspection_date)], ["Notes", detailAsset.notes]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-800 p-3"><dt className="text-[10px] uppercase text-slate-500">{label}</dt><dd className="mt-1 text-slate-200">{value || "—"}</dd></div>)}
               </dl>
-              {canManage ? <div className="mt-5 flex justify-end"><button type="button" onClick={() => { setDetailAsset(null); editAsset(detailAsset); }} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Pencil size={13}/> Edit Equipment</button></div> : null}
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                {detailAsset.lifecycle_status !== "removed" ? (
+                  <TracePointQrLabel
+                    kind="equipment"
+                    id={detailAsset.id}
+                    title={typeMap.get(detailAsset.equipment_type_id)?.name ?? "Equipment"}
+                    subtitle={
+                      [
+                        detailAsset.asset_number ? `Asset ${detailAsset.asset_number}` : null,
+                        detailAsset.serial_number ? `SN ${detailAsset.serial_number}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "TracePoint equipment"
+                    }
+                  />
+                ) : null}
+                {canManage ? <button type="button" onClick={() => { setDetailAsset(null); editAsset(detailAsset); }} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Pencil size={13}/> Edit Equipment</button> : null}
+              </div>
             </div>
           </div>
         ) : null}
