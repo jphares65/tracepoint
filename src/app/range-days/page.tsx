@@ -66,7 +66,10 @@ import {
   getOpenAttendanceFirearmLabel,
   resolveOpenAttendanceFirearmSelection,
 } from "@/lib/range/open-attendance-firearms";
-import { filterOpenAttendanceOfficers } from "@/lib/range/open-attendance-officers";
+import {
+  filterOpenAttendanceOfficers,
+  getOpenAttendanceOfficerLabel,
+} from "@/lib/range/open-attendance-officers";
 
 type RangeDayType =
   | "Qualification"
@@ -6175,18 +6178,18 @@ export default function RangeDaysPage() {
                                 onClick={() => {
                                   setOpenAttendanceOfficerId(officer.id);
                                   setOpenAttendanceFirearmId("");
-                                  setOpenAttendanceSearch(officer.displayName);
+                                  setOpenAttendanceSearch(
+                                    getOpenAttendanceOfficerLabel(officer),
+                                  );
                                   setOpenAttendanceOfficerPickerOpen(false);
                                 }}
                                 className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-800 focus:bg-slate-800 focus:outline-none"
                               >
                                 <span className="block text-[12px] font-semibold text-white">
-                                  {officer.displayName}
+                                  {getOpenAttendanceOfficerLabel(officer)}
                                 </span>
                                 <span className="mt-0.5 block text-[10px] text-slate-400">
-                                  {[officer.badgeNumber, officer.rankTitle, officer.unitName]
-                                    .filter(Boolean)
-                                    .join(" · ") || "Officer"}
+                                  {officer.rankTitle || "Officer"}
                                 </span>
                               </button>
                             ))

@@ -162,3 +162,54 @@ test("does not expose a firearm until an officer has been selected", () => {
     { source: "assigned", firearms: [] },
   );
 });
+
+test("keeps same-name officers isolated by active assignment user ID", () => {
+  const michaelTorresFirearms = [
+    {
+      id: "abd6ca1d-79f2-4ebd-93be-3ecaee858412",
+      make: "Glock",
+      model: "17 Gen5",
+      serial_number: "TPD-1005",
+      asset_number: "FA-005",
+      firearm_type: "handgun",
+      condition_status: "In Service",
+      is_active: true,
+      active_assignment: {
+        assigned_to_user_id: "20992e6b-005e-42e1-9710-eaa294462de8",
+      },
+    },
+    {
+      id: "shared-range-glock-45",
+      make: "Glock",
+      model: "45",
+      serial_number: "TPD-G45-SP1",
+      asset_number: "HG-SP1",
+      firearm_type: "handgun",
+      condition_status: "In Service",
+      is_active: true,
+      active_assignment: null,
+    },
+  ];
+
+  const patrolTorres = getOpenAttendanceFirearmOptions({
+    firearms: michaelTorresFirearms,
+    officerId: "20992e6b-005e-42e1-9710-eaa294462de8",
+  });
+  const detectiveTorres = getOpenAttendanceFirearmOptions({
+    firearms: michaelTorresFirearms,
+    officerId: "9d37a6ac-e685-4950-9424-8d52c6510978",
+  });
+
+  assert.deepEqual(patrolTorres, {
+    source: "assigned",
+    firearms: [michaelTorresFirearms[0]],
+  });
+  assert.deepEqual(detectiveTorres, {
+    source: "shared",
+    firearms: [michaelTorresFirearms[1]],
+  });
+  assert.equal(
+    detectiveTorres.firearms.some((firearm) => firearm.asset_number === "FA-005"),
+    false,
+  );
+});
