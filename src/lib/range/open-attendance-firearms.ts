@@ -65,24 +65,22 @@ export function getOpenAttendanceAssignedFirearms({
 }
 
 /**
- * Returns in-service Armory firearms that can be recorded for this range day
- * when the arriving officer has no active duty firearm. This does not change
- * Armory custody; the chosen ID is stored only on the range-day roster entry.
+ * Returns unassigned, in-service Armory firearms for an explicitly requested
+ * shared/range-day selection. It deliberately excludes firearms issued to
+ * another officer and does not change permanent Armory custody.
  */
-export function getOpenAttendanceFallbackFirearms({
+export function getOpenAttendanceSharedRangeFirearms({
   firearms,
-  officerId,
   requiredFirearmType,
 }: {
   firearms: OpenAttendanceFirearm[];
-  officerId: string;
   requiredFirearmType?: string | null;
 }) {
   return sortOpenAttendanceFirearms(
     firearms.filter(
       (firearm) =>
         isEligibleRangeDayFirearm(firearm) &&
-        firearm.active_assignment?.assigned_to_user_id !== officerId,
+        !firearm.active_assignment,
     ),
     requiredFirearmType,
   );
@@ -92,16 +90,6 @@ export function getOpenAttendanceFirearmLabel(firearm: OpenAttendanceFirearm) {
   return `${firearm.make} ${firearm.model} — ${
     firearm.asset_number || firearm.serial_number
   }`;
-}
-
-export function getOpenAttendanceFirearmCustodyLabel(
-  firearm: OpenAttendanceFirearm,
-) {
-  return firearm.active_assignment?.assigned_to_name
-    ? `Issued to ${firearm.active_assignment.assigned_to_name}`
-    : firearm.active_assignment?.assigned_to_user_id
-      ? "Issued to another officer"
-      : "Unassigned range firearm";
 }
 
 export function getOpenAttendanceFirearmDefault(

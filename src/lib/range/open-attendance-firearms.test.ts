@@ -3,8 +3,7 @@ import test from "node:test";
 
 import {
   getOpenAttendanceAssignedFirearms,
-  getOpenAttendanceFallbackFirearms,
-  getOpenAttendanceFirearmCustodyLabel,
+  getOpenAttendanceSharedRangeFirearms,
   getOpenAttendanceFirearmDefault,
   getOpenAttendanceFirearmLabel,
   resolveOpenAttendanceFirearmSelection,
@@ -135,19 +134,12 @@ test("changing officers clears a firearm that is not assigned to the new officer
   );
 });
 
-test("offers eligible range-day firearms when an arriving officer has no assigned firearm", () => {
+test("offers only unassigned shared/range firearms through the explicit fallback", () => {
   assert.deepEqual(
-    getOpenAttendanceFallbackFirearms({
+    getOpenAttendanceSharedRangeFirearms({
       firearms,
-      officerId: "officer-3",
       requiredFirearmType: "handgun",
     }).map((firearm) => firearm.id),
-    ["other-officer", "handgun-1", "range-handgun", "rifle-1"],
+    ["range-handgun"],
   );
-  assert.equal(
-    getOpenAttendanceFirearmCustodyLabel(firearms[4]),
-    "Issued to Officer Two",
-  );
-  assert.equal(
-    getOpenAttendanceFirearmCustodyLabel(firearms[5]), "Unassigned range firearm");
 });
