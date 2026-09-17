@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Archive,
@@ -39,6 +39,7 @@ import {
   FIREARM_INVENTORY_GROUP_BY,
   moveFocusInventoryColumn,
   saveFocusInventoryPreferences,
+  shouldSortFocusColumnHeader,
   type FocusInventoryPreferences,
 } from "@/lib/armory/inventory-focus-preferences";
 import {
@@ -262,6 +263,8 @@ export default function FirearmsPage() {
     useState<FocusInventoryPreferences>(DEFAULT_FOCUS_INVENTORY_PREFERENCES);
   const [draggedFocusColumn, setDraggedFocusColumn] =
     useState<FirearmSortKey | null>(null);
+  const draggedFocusColumnRef = useRef<FirearmSortKey | null>(null);
+  const suppressFocusColumnSortRef = useRef(false);
   const [showFocusColumns, setShowFocusColumns] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<FirearmWorkspaceTab>("custody");
   const [loading, setLoading] = useState(true);
@@ -396,18 +399,38 @@ export default function FirearmsPage() {
     });
   }
 
-  function handleFocusColumnDrop(destination: FirearmSortKey) {
-    if (!draggedFocusColumn) return;
+  function handleFocusColumnDragStart(column: FirearmSortKey) {
+    draggedFocusColumnRef.current = column;
+    setDraggedFocusColumn(column);
+  }
 
-    updateFocusPreferences((current) => ({
-      ...current,
-      columnOrder: moveFocusInventoryColumn(
-        current.columnOrder,
-        draggedFocusColumn,
-        destination,
-      ),
-    }));
+  function handleFocusColumnDragEnd() {
+    draggedFocusColumnRef.current = null;
     setDraggedFocusColumn(null);
+  }
+
+  function handleFocusColumnDrop(destination: FirearmSortKey) {
+    const source = draggedFocusColumnRef.current;
+    if (!source) return;
+
+    suppressFocusColumnSortRef.current = true;
+
+    if (source !== destination) {
+      updateFocusPreferences((current) => ({
+        ...current,
+        columnOrder: moveFocusInventoryColumn(current.columnOrder, source, destination),
+      }));
+    }
+    handleFocusColumnDragEnd();
+  }
+
+  function handleFocusColumnSort(column: FirearmSortKey) {
+    if (!shouldSortFocusColumnHeader(suppressFocusColumnSortRef.current)) {
+      suppressFocusColumnSortRef.current = false;
+      return;
+    }
+
+    updateSort(column);
   }
 
   function updateFirearmGrouping(groupBy: FocusInventoryPreferences["groupBy"]) {
@@ -1068,8 +1091,8 @@ The firearm will be removed from active inventory and future operational selecti
             </section>
           )}
 
-          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]"}>
-            <div className={`rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "flex min-h-0 w-full min-w-0 flex-1 flex-col p-2 sm:p-2.5" : "p-5"}`}>
+          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]"}>
+            <div className={`min-w-0 rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "flex min-h-0 w-full flex-1 flex-col p-2 sm:p-2.5" : "p-5"}`}>
               <div className={`flex flex-col ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
                 <div className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
                   <div className="min-w-0">
@@ -1090,7 +1113,7 @@ The firearm will be removed from active inventory and future operational selecti
                   </div>
                 </div>
 
-                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "gap-2 md:grid-cols-[minmax(0,1fr)_180px_150px_auto_auto]"}`}>
+                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "gap-2 sm:grid-cols-[minmax(0,1fr)_180px_150px] xl:grid-cols-[minmax(0,1fr)_180px_150px_auto_auto]"}`}>
                   <label className="relative min-w-0">
                     <Search className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-500 ${inventoryView === "focus" ? "left-2 h-3.5 w-3.5" : "left-3 h-4 w-4"}`} />
                     <input
@@ -1164,7 +1187,7 @@ The firearm will be removed from active inventory and future operational selecti
                       )}
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1">
                     <select
                       value={focusPreferences.groupBy}
                       onChange={(event) =>
@@ -1219,8 +1242,8 @@ The firearm will be removed from active inventory and future operational selecti
                   </p>
                 </div>
               ) : (
-                <div className={`overflow-hidden rounded-3xl border border-slate-200 ${inventoryView === "focus" ? "mt-2 min-h-0 flex-1" : "mt-5"}`}>
-                  <div className={`overflow-auto ${inventoryView === "focus" ? "h-full" : "max-h-[620px]"}`}>
+                <div className={`min-w-0 overflow-hidden rounded-3xl border border-slate-200 ${inventoryView === "focus" ? "mt-2 min-h-0 flex-1" : "mt-5"}`}>
+                  <div className={`min-w-0 overflow-auto ${inventoryView === "focus" ? "h-full" : "max-h-[620px]"}`}>
                     {inventoryView === "focus" ? (
                       <div
                         role="table"
@@ -1241,15 +1264,15 @@ The firearm will be removed from active inventory and future operational selecti
                                 onDragStart={(event) => {
                                   event.dataTransfer.effectAllowed = "move";
                                   event.dataTransfer.setData("text/plain", column);
-                                  setDraggedFocusColumn(column);
+                                  handleFocusColumnDragStart(column);
                                 }}
                                 onDragOver={(event) => event.preventDefault()}
                                 onDrop={() => handleFocusColumnDrop(column)}
-                                onDragEnd={() => setDraggedFocusColumn(null)}
+                                onDragEnd={handleFocusColumnDragEnd}
                                 className={`cursor-grab px-1.5 py-0.5 font-semibold active:cursor-grabbing ${draggedFocusColumn === column ? "opacity-40" : ""}`}
                                 title="Drag to reorder column"
                               >
-                                <button type="button" onClick={() => updateSort(column)} className="inline-flex max-w-full items-center gap-1 truncate hover:text-white">
+                                <button type="button" onClick={() => handleFocusColumnSort(column)} className="inline-flex max-w-full items-center gap-1 truncate hover:text-white">
                                   <span className="truncate">{FOCUS_COLUMN_CONFIG[column].label}</span>
                                   <ArrowDownUp className={`h-3 w-3 shrink-0 ${sortKey === column ? "text-blue-300" : ""}`} />
                                 </button>
@@ -1287,8 +1310,21 @@ The firearm will be removed from active inventory and future operational selecti
                       </div>
                     ) : (
                     <table
-                      className="min-w-[920px] divide-y divide-slate-800 text-left text-sm"
+                      className="w-full min-w-[920px] table-fixed divide-y divide-slate-800 text-left text-sm"
+                      style={{ minWidth: `${focusTableMinimumWidth}px` }}
                     >
+                      <colgroup>
+                        {visibleFocusColumns.map((column) => (
+                          <col
+                            key={column}
+                            style={{
+                              width: `${FOCUS_COLUMN_CONFIG[column].minimumWidth}px`,
+                              minWidth: `${FOCUS_COLUMN_CONFIG[column].minimumWidth}px`,
+                              maxWidth: `${FOCUS_COLUMN_CONFIG[column].minimumWidth * 2}px`,
+                            }}
+                          />
+                        ))}
+                      </colgroup>
                       <thead className="sticky top-0 bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-500">
                         <tr>
                           {visibleFocusColumns.map((column) => (
@@ -1298,17 +1334,17 @@ The firearm will be removed from active inventory and future operational selecti
                               onDragStart={(event) => {
                                 event.dataTransfer.effectAllowed = "move";
                                 event.dataTransfer.setData("text/plain", column);
-                                setDraggedFocusColumn(column);
+                                handleFocusColumnDragStart(column);
                               }}
                               onDragOver={(event) => event.preventDefault()}
                               onDrop={() => handleFocusColumnDrop(column)}
-                              onDragEnd={() => setDraggedFocusColumn(null)}
+                              onDragEnd={handleFocusColumnDragEnd}
                               className={`sticky top-0 z-10 cursor-grab bg-slate-950 px-4 py-3 font-semibold active:cursor-grabbing ${draggedFocusColumn === column ? "opacity-40" : ""}`}
                               title="Drag to reorder column"
                             >
                               <button
                                 type="button"
-                                onClick={() => updateSort(column)}
+                                onClick={() => handleFocusColumnSort(column)}
                                 className="inline-flex items-center gap-1 hover:text-white"
                               >
                                 {FOCUS_COLUMN_CONFIG[column].label}

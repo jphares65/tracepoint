@@ -74,6 +74,10 @@ export function moveFocusInventoryColumn(
   return next;
 }
 
+export function shouldSortFocusColumnHeader(dragCompleted: boolean) {
+  return !dragCompleted;
+}
+
 export function getFocusInventoryPreferenceKey(departmentId: string) {
   return `tracepoint:armory:focus-columns:v1:${departmentId}`;
 }
