@@ -1,10 +1,12 @@
 ﻿import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
+import { readBearerToken } from "@/lib/authentication/request-bearer";
 import type { Database } from "./database.types";
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const accessToken = readBearerToken((await headers()).get("authorization"));
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey =
@@ -17,6 +19,9 @@ export async function createClient() {
   }
 
   return createServerClient<Database>(url, publishableKey, {
+    global: accessToken
+      ? { headers: { Authorization: `Bearer ${accessToken}` } }
+      : undefined,
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
+import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import {
   ASSIGNMENT_TYPES,
   FLEET_STATUSES,
@@ -38,6 +40,13 @@ import {
   type InventorySortColumn,
   type ScheduleState,
 } from "@/lib/fleet/inventory-state";
+import {
+  getStoredTableGroupingPreferences,
+  groupTableRows,
+  saveTableGroupingPreferences,
+  toggleCollapsedTableGroup,
+  type TableGroupingPreferences,
+} from "@/lib/tables/grouping";
 
 type FleetVehicle = FleetInventoryVehicle & {
   registration_expiration_date: string | null;
@@ -118,6 +127,17 @@ const EMPTY_FORM: VehicleForm = {
 };
 
 const STATUSES: FleetStatus[] = [...FLEET_STATUSES];
+
+const FLEET_INVENTORY_GROUP_BY = ["none", "status", "vehicleType", "assignment"] as const;
+type FleetInventoryGroupBy = (typeof FLEET_INVENTORY_GROUP_BY)[number];
+type FleetGroupingPreferences = TableGroupingPreferences<FleetInventoryGroupBy>;
+const FLEET_GROUPING_STORAGE_KEY = "tracepoint:fleet:inventory-groups:v1";
+const FLEET_GROUP_LABELS: Record<FleetInventoryGroupBy, string> = {
+  none: "None",
+  status: "Status",
+  vehicleType: "Vehicle Type",
+  assignment: "Assignment",
+};
 
 const PREVIEW_VEHICLE: FleetVehicle = {
   id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001",
@@ -319,6 +339,8 @@ function FleetManagementContent() {
   const [showForm, setShowForm] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
+  const [groupingPreferences, setGroupingPreferences] =
+    useState<FleetGroupingPreferences>({ groupBy: "none", collapsedGroupKeys: [] });
 
   function replaceQuery(next: InventoryQueryState) {
     const value = serializeInventoryQuery(next).toString();
@@ -387,6 +409,16 @@ function FleetManagementContent() {
     void loadFleet();
   }, []);
 
+  useEffect(() => {
+    setGroupingPreferences(
+      getStoredTableGroupingPreferences(
+        FLEET_GROUPING_STORAGE_KEY,
+        FLEET_INVENTORY_GROUP_BY,
+        "none",
+      ),
+    );
+  }, []);
+
   const summary = useMemo(() => {
     const activeVehicles = vehicles.filter((vehicle) => vehicle.status !== "Retired");
     return {
@@ -405,6 +437,49 @@ function FleetManagementContent() {
     [query, vehicles],
   );
 
+  const vehicleGroups = useMemo(
+    () =>
+      groupTableRows(filteredVehicles, groupingPreferences.groupBy, (vehicle, groupBy) => {
+        switch (groupBy) {
+          case "status":
+            return { key: vehicle.status, label: vehicle.status };
+          case "vehicleType": {
+            const label = vehicle.vehicle_type || "Unclassified";
+            return { key: vehicle.vehicle_type || "unclassified", label };
+          }
+          case "assignment": {
+            const label = vehicle.assigned_to || vehicle.assignment_type || "Unassigned";
+            return { key: vehicle.assigned_to || vehicle.assignment_type || "unassigned", label };
+          }
+        }
+      }),
+    [filteredVehicles, groupingPreferences.groupBy],
+  );
+
+  function updateGroupingPreferences(
+    updater: (current: FleetGroupingPreferences) => FleetGroupingPreferences,
+  ) {
+    setGroupingPreferences((current) => {
+      const next = updater(current);
+      saveTableGroupingPreferences(
+        FLEET_GROUPING_STORAGE_KEY,
+        next,
+        FLEET_INVENTORY_GROUP_BY,
+        "none",
+      );
+      return next;
+    });
+  }
+
+  function vehicleGroupSummary(groupVehicles: FleetVehicle[]) {
+    const unavailable = groupVehicles.filter(
+      (vehicle) => vehicle.status === "Maintenance" || vehicle.status === "Out of Service",
+    ).length;
+    const assigned = groupVehicles.filter((vehicle) => Boolean(vehicle.assigned_to)).length;
+    const segments = [`${assigned} assigned`];
+    if (unavailable) segments.push(`${unavailable} unavailable`);
+    return segments.join(" · ");
+  }
   const locations = useMemo(
     () => [...new Set(vehicles.map((vehicle) => vehicle.home_location?.trim()).filter((value): value is string => Boolean(value)))]
       .sort((left, right) => left.localeCompare(right, "en-US", { numeric: true, sensitivity: "base" })),
@@ -611,6 +686,41 @@ function FleetManagementContent() {
                     </span>
                   ) : null}
                 </button>
+                <select
+                  value={groupingPreferences.groupBy}
+                  onChange={(event) =>
+                    updateGroupingPreferences((current) => ({
+                      ...current,
+                      groupBy: event.target.value as FleetInventoryGroupBy,
+                    }))
+                  }
+                  aria-label="Group vehicles by"
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 outline-none focus:border-blue-500"
+                >
+                  {FLEET_INVENTORY_GROUP_BY.map((groupBy) => (
+                    <option key={groupBy} value={groupBy}>
+                      Group by: {FLEET_GROUP_LABELS[groupBy]}
+                    </option>
+                  ))}
+                </select>
+                {groupingPreferences.groupBy !== "none" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: [] }))}
+                      className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: vehicleGroups.map((group) => group.key) }))}
+                      className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
+                    >
+                      Collapse All
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
 
@@ -744,7 +854,36 @@ function FleetManagementContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {filteredVehicles.map((vehicle) => {
+                  {(groupingPreferences.groupBy === "none"
+                    ? [{ key: "flat", label: "", items: filteredVehicles }]
+                    : vehicleGroups
+                  ).map((group) => {
+                    const expanded = !groupingPreferences.collapsedGroupKeys.includes(group.key);
+                    return (
+                      <Fragment key={group.key}>
+                        {groupingPreferences.groupBy !== "none" ? (
+                          <tr>
+                            <td colSpan={9} className="p-0">
+                              <CollapsibleTableGroupHeader
+                                label={group.label}
+                                count={group.items.length}
+                                expanded={expanded}
+                                onToggle={() =>
+                                  updateGroupingPreferences((current) => ({
+                                    ...current,
+                                    collapsedGroupKeys: toggleCollapsedTableGroup(
+                                      current.collapsedGroupKeys,
+                                      group.key,
+                                    ),
+                                  }))
+                                }
+                                summary={vehicleGroupSummary(group.items)}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                        {expanded
+                          ? group.items.map((vehicle) => {
                     const vehicleInspectionState = inspectionState(vehicle.inspection_due_date);
                     const vehicleServiceState = serviceState(vehicle);
                     const openIssueCount = vehicle.open_issue_count ?? 0;
@@ -838,6 +977,19 @@ function FleetManagementContent() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-2">
+                            <TracePointQrLabel
+                              kind="vehicle"
+                              id={vehicle.id}
+                              title={`Unit ${vehicle.unit_number}`}
+                              subtitle={
+                                [vehicle.year, vehicle.make, vehicle.model]
+                                  .filter(Boolean)
+                                  .join(" ") ||
+                                vehicle.license_plate ||
+                                "TracePoint vehicle"
+                              }
+                              compact
+                            />
                             {canManage ? (
                               <button
                                 type="button"
@@ -858,6 +1010,10 @@ function FleetManagementContent() {
                         </td>
                       </tr>
                     );
+                          })
+                          : null}
+                      </Fragment>
+                    );
                   })}
                 </tbody>
               </table>
@@ -870,7 +1026,7 @@ function FleetManagementContent() {
             <QrCode size={19} className="text-blue-300" />
             <h2 className="mt-3 text-sm font-bold text-white">QR vehicle access</h2>
             <p className="mt-2 text-xs leading-5 text-slate-500">
-              Planned next: scan a unit to open its mobile inspection, equipment checklist, and history.
+              Generate and print durable labels from any vehicle row. Scanning opens that unit directly in the mobile inspection workflow.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
