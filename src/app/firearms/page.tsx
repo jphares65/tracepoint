@@ -30,12 +30,15 @@ import {
   sortFirearmInventory,
   toggleFirearmInventoryView,
   type FirearmInventoryView,
+  type FirearmInventoryColumn,
   type FirearmSortKey,
   type SortDirection,
 } from "@/lib/armory/inventory-view";
 import {
   DEFAULT_FOCUS_INVENTORY_PREFERENCES,
   getStoredFocusInventoryPreferences,
+  getStandardDefaultHiddenColumns,
+  hasStoredFocusInventoryPreferences,
   FIREARM_INVENTORY_GROUP_BY,
   moveFocusInventoryColumn,
   saveFocusInventoryPreferences,
@@ -130,7 +133,7 @@ const FIREARM_TYPES: { value: FirearmType; label: string }[] = [
 ];
 
 const FOCUS_COLUMN_CONFIG: Record<
-  FirearmSortKey,
+  FirearmInventoryColumn,
   { label: string; minimumWidth: number }
 > = {
   firearm: { label: "Firearm", minimumWidth: 170 },
@@ -141,7 +144,7 @@ const FOCUS_COLUMN_CONFIG: Record<
   custody: { label: "Issued To", minimumWidth: 155 },
 };
 
-const STANDARD_COLUMN_MINIMUM_WIDTH: Record<FirearmSortKey, number> = {
+const STANDARD_COLUMN_MINIMUM_WIDTH: Record<FirearmInventoryColumn, number> = {
   firearm: 155,
   serial: 90,
   asset: 70,
@@ -156,6 +159,16 @@ const FIREARM_GROUP_LABELS = {
   status: "Status",
   assignment: "Assignment / Assigned Officer",
 } as const;
+
+const STANDARD_SORT_OPTIONS: Array<{ value: FirearmSortKey; label: string }> = [
+  { value: "firearm", label: "Firearm" },
+  { value: "type", label: "Type" },
+  { value: "caliber", label: "Caliber" },
+  { value: "serial", label: "Serial" },
+  { value: "asset", label: "Asset" },
+  { value: "status", label: "Status" },
+  { value: "custody", label: "Issued To" },
+];
 
 const EMPTY_FORM: NewFirearmForm = {
   make: "",
@@ -270,9 +283,10 @@ export default function FirearmsPage() {
   const [departmentId, setDepartmentId] = useState("");
   const [focusPreferences, setFocusPreferences] =
     useState<FocusInventoryPreferences>(DEFAULT_FOCUS_INVENTORY_PREFERENCES);
+  const [hasSavedFocusPreferences, setHasSavedFocusPreferences] = useState(false);
   const [draggedFocusColumn, setDraggedFocusColumn] =
-    useState<FirearmSortKey | null>(null);
-  const draggedFocusColumnRef = useRef<FirearmSortKey | null>(null);
+    useState<FirearmInventoryColumn | null>(null);
+  const draggedFocusColumnRef = useRef<FirearmInventoryColumn | null>(null);
   const suppressFocusColumnSortRef = useRef(false);
   const [showFocusColumns, setShowFocusColumns] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<FirearmWorkspaceTab>("custody");
@@ -332,6 +346,23 @@ export default function FirearmsPage() {
     [focusPreferences],
   );
 
+  const standardHiddenColumns = useMemo(
+    () =>
+      getStandardDefaultHiddenColumns(
+        focusPreferences.hiddenColumns,
+        hasSavedFocusPreferences,
+      ),
+    [focusPreferences.hiddenColumns, hasSavedFocusPreferences],
+  );
+
+  const visibleStandardColumns = useMemo(
+    () =>
+      focusPreferences.columnOrder.filter(
+        (column) => !standardHiddenColumns.includes(column),
+      ),
+    [focusPreferences.columnOrder, standardHiddenColumns],
+  );
+
   const focusTableMinimumWidth = useMemo(
     () =>
       visibleFocusColumns.reduce(
@@ -343,11 +374,11 @@ export default function FirearmsPage() {
 
   const standardTableMinimumWidth = useMemo(
     () =>
-      visibleFocusColumns.reduce(
+      visibleStandardColumns.reduce(
         (width, column) => width + STANDARD_COLUMN_MINIMUM_WIDTH[column],
         0,
       ),
-    [visibleFocusColumns],
+    [visibleStandardColumns],
   );
 
   const focusGridTemplate = useMemo(
@@ -393,6 +424,12 @@ export default function FirearmsPage() {
     setSortDirection(next.direction);
   }
 
+  function setSortBy(requestedKey: FirearmSortKey) {
+    if (requestedKey === sortKey) return;
+    setSortKey(requestedKey);
+    setSortDirection("asc");
+  }
+
   function updateFocusPreferences(
     updater: (current: FocusInventoryPreferences) => FocusInventoryPreferences,
   ) {
@@ -403,21 +440,33 @@ export default function FirearmsPage() {
     });
   }
 
-  function toggleFocusColumn(column: FirearmSortKey) {
+  function toggleInventoryColumn(column: FirearmInventoryColumn) {
     updateFocusPreferences((current) => {
-      const isHidden = current.hiddenColumns.includes(column);
-      if (!isHidden && visibleFocusColumns.length === 1) return current;
+      const hiddenColumns =
+        inventoryView === "standard"
+          ? getStandardDefaultHiddenColumns(
+              current.hiddenColumns,
+              hasSavedFocusPreferences,
+            )
+          : current.hiddenColumns;
+      const isHidden = hiddenColumns.includes(column);
+      const visibleColumns =
+        inventoryView === "standard" ? visibleStandardColumns : visibleFocusColumns;
+      if (!isHidden && visibleColumns.length === 1) return current;
+
+      const nextHiddenColumns: FirearmInventoryColumn[] = isHidden
+        ? hiddenColumns.filter((item) => item !== column)
+        : [...hiddenColumns, column];
 
       return {
         ...current,
-        hiddenColumns: isHidden
-          ? current.hiddenColumns.filter((item) => item !== column)
-          : [...current.hiddenColumns, column],
+        hiddenColumns: nextHiddenColumns,
       };
     });
+    setHasSavedFocusPreferences(true);
   }
 
-  function handleFocusColumnDragStart(column: FirearmSortKey) {
+  function handleFocusColumnDragStart(column: FirearmInventoryColumn) {
     draggedFocusColumnRef.current = column;
     setDraggedFocusColumn(column);
   }
@@ -427,7 +476,7 @@ export default function FirearmsPage() {
     setDraggedFocusColumn(null);
   }
 
-  function handleFocusColumnDrop(destination: FirearmSortKey) {
+  function handleFocusColumnDrop(destination: FirearmInventoryColumn) {
     const source = draggedFocusColumnRef.current;
     if (!source) return;
 
@@ -442,7 +491,7 @@ export default function FirearmsPage() {
     handleFocusColumnDragEnd();
   }
 
-  function handleFocusColumnSort(column: FirearmSortKey) {
+  function handleFocusColumnSort(column: FirearmInventoryColumn) {
     if (!shouldSortFocusColumnHeader(suppressFocusColumnSortRef.current)) {
       suppressFocusColumnSortRef.current = false;
       return;
@@ -471,7 +520,7 @@ export default function FirearmsPage() {
 
   function renderFocusInventoryCell(
     firearm: ArmoryFirearm,
-    column: FirearmSortKey,
+    column: FirearmInventoryColumn,
   ) {
     const status = normalizeStatus(firearm.condition_status);
     const cellClass = "truncate px-1.5 py-0.5 text-[11px]";
@@ -521,7 +570,7 @@ export default function FirearmsPage() {
 
   function renderStandardInventoryCell(
     firearm: ArmoryFirearm,
-    column: FirearmSortKey,
+    column: FirearmInventoryColumn,
   ) {
     const status = normalizeStatus(firearm.condition_status);
 
@@ -607,7 +656,7 @@ export default function FirearmsPage() {
           onClick={() => selectInventoryFirearm(firearm.id)}
           className={`cursor-pointer transition hover:bg-slate-200/70 ${selected ? "bg-slate-800/80" : ""}`}
         >
-          {visibleFocusColumns.map((column) => renderStandardInventoryCell(firearm, column))}
+          {visibleStandardColumns.map((column) => renderStandardInventoryCell(firearm, column))}
         </tr>
       );
     });
@@ -686,6 +735,7 @@ export default function FirearmsPage() {
   useEffect(() => {
     if (!departmentId) return;
     setFocusPreferences(getStoredFocusInventoryPreferences(departmentId));
+    setHasSavedFocusPreferences(hasStoredFocusInventoryPreferences(departmentId));
   }, [departmentId]);
 
   useEffect(() => {
@@ -1187,14 +1237,19 @@ The firearm will be removed from active inventory and future operational selecti
                             Visible columns
                           </p>
                           {focusPreferences.columnOrder.map((column) => {
-                            const checked = !focusPreferences.hiddenColumns.includes(column);
+                            const checked = inventoryView === "standard"
+                              ? !standardHiddenColumns.includes(column)
+                              : !focusPreferences.hiddenColumns.includes(column);
+                            const visibleColumns = inventoryView === "standard"
+                              ? visibleStandardColumns
+                              : visibleFocusColumns;
                             return (
                               <label key={column} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-slate-300 hover:bg-slate-900">
                                 <input
                                   type="checkbox"
                                   checked={checked}
-                                  disabled={checked && visibleFocusColumns.length === 1}
-                                  onChange={() => toggleFocusColumn(column)}
+                                  disabled={checked && visibleColumns.length === 1}
+                                  onChange={() => toggleInventoryColumn(column)}
                                   className="h-3.5 w-3.5 rounded border-slate-700 bg-slate-900"
                                 />
                                 {FOCUS_COLUMN_CONFIG[column].label}
@@ -1206,6 +1261,30 @@ The firearm will be removed from active inventory and future operational selecti
                   </div>
 
                   <div className="flex min-w-0 flex-wrap items-center gap-1">
+                    {inventoryView === "standard" ? (
+                      <>
+                        <select
+                          value={sortKey}
+                          onChange={(event) => setSortBy(event.target.value as FirearmSortKey)}
+                          aria-label="Sort firearms by"
+                          className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300 outline-none focus:border-slate-500"
+                        >
+                          {STANDARD_SORT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              Sort by: {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setSortDirection((direction) => direction === "asc" ? "desc" : "asc")}
+                          className="rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300 hover:text-white"
+                          aria-label={`Sort ${sortDirection === "asc" ? "ascending" : "descending"}; toggle direction`}
+                        >
+                          {sortDirection === "asc" ? "↑" : "↓"}
+                        </button>
+                      </>
+                    ) : null}
                     <select
                       value={focusPreferences.groupBy}
                       onChange={(event) =>
@@ -1332,7 +1411,7 @@ The firearm will be removed from active inventory and future operational selecti
                       style={{ minWidth: `${standardTableMinimumWidth}px` }}
                     >
                       <colgroup>
-                        {visibleFocusColumns.map((column) => (
+                        {visibleStandardColumns.map((column) => (
                           <col
                             key={column}
                             style={{
@@ -1345,7 +1424,7 @@ The firearm will be removed from active inventory and future operational selecti
                       </colgroup>
                       <thead className="sticky top-0 bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-500">
                         <tr>
-                          {visibleFocusColumns.map((column) => (
+                          {visibleStandardColumns.map((column) => (
                             <th
                               key={column}
                               draggable
@@ -1373,14 +1452,14 @@ The firearm will be removed from active inventory and future operational selecti
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800 bg-slate-900">
-                        {focusPreferences.groupBy === "none"
+                          {focusPreferences.groupBy === "none"
                           ? renderStandardFirearmRows(focusFirearms)
                           : firearmGroups.map((group) => {
                               const expanded = !focusPreferences.collapsedGroupKeys.includes(group.key);
                               return (
                                 <Fragment key={group.key}>
                                   <tr>
-                                    <td colSpan={visibleFocusColumns.length} className="p-0">
+                                    <td colSpan={visibleStandardColumns.length} className="p-0">
                                       <CollapsibleTableGroupHeader
                                         label={group.label}
                                         count={group.items.length}

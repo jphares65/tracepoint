@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   DEFAULT_FOCUS_INVENTORY_PREFERENCES,
+  FOCUS_INVENTORY_COLUMNS,
+  getStandardDefaultHiddenColumns,
   getFocusInventoryPreferenceKey,
   getStoredFocusInventoryPreferences,
   moveFocusInventoryColumn,
@@ -39,6 +41,16 @@ test("moves a shared inventory column without changing the remaining sequence", 
       "serial",
     ),
     ["firearm", "custody", "serial", "asset", "type", "status"],
+  );
+});
+
+test("keeps Type / Caliber available while hiding it for a new Standard layout only", () => {
+  assert.equal(FOCUS_INVENTORY_COLUMNS.includes("type"), true);
+  assert.deepEqual(getStandardDefaultHiddenColumns([], false), ["type"]);
+  assert.deepEqual(getStandardDefaultHiddenColumns([], true), []);
+  assert.deepEqual(
+    getStandardDefaultHiddenColumns(["asset"], false),
+    ["asset", "type"],
   );
 });
 

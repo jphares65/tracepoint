@@ -1,5 +1,6 @@
 export type FirearmInventoryView = "standard" | "focus";
-export type FirearmSortKey = "firearm" | "serial" | "type" | "status" | "custody" | "asset";
+export type FirearmInventoryColumn = "firearm" | "serial" | "type" | "status" | "custody" | "asset";
+export type FirearmSortKey = FirearmInventoryColumn | "caliber";
 export type SortDirection = "asc" | "desc";
 
 type SortableFirearm = {
@@ -7,6 +8,7 @@ type SortableFirearm = {
   model: string;
   serial_number: string;
   firearm_type: string;
+  caliber?: string | null;
   asset_number?: string | null;
   condition_status?: string | null;
   active_assignment?: { assigned_to_name?: string | null } | null;
@@ -36,6 +38,7 @@ export function sortFirearmInventory<T extends SortableFirearm>(
       case "firearm": return `${firearm.make} ${firearm.model}`.trim();
       case "serial": return firearm.serial_number;
       case "type": return firearm.firearm_type;
+      case "caliber": return firearm.caliber ?? "";
       case "status": return firearm.condition_status ?? "In Service";
       case "custody": return firearm.active_assignment?.assigned_to_name ?? "Unassigned";
       case "asset": return firearm.asset_number ?? "";
