@@ -142,12 +142,12 @@ const FOCUS_COLUMN_CONFIG: Record<
 };
 
 const STANDARD_COLUMN_MINIMUM_WIDTH: Record<FirearmSortKey, number> = {
-  firearm: 140,
-  serial: 105,
-  asset: 85,
+  firearm: 135,
+  serial: 100,
+  asset: 80,
   type: 110,
   status: 100,
-  custody: 120,
+  custody: 115,
 };
 
 const FIREARM_GROUP_LABELS = {
@@ -529,30 +529,30 @@ export default function FirearmsPage() {
       case "firearm":
         return (
           <td key={column} className="px-4 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-bold text-white">{getFirearmLabel(firearm)}</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate font-bold text-white" title={getFirearmLabel(firearm)}>{getFirearmLabel(firearm)}</p>
               {firearm.needs_attention ? (
                 <span className="inline-flex rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-300">
                   Needs Attention
                 </span>
               ) : null}
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="truncate text-xs text-slate-500">
               {formatFirearmType(firearm.firearm_type)}
               {firearm.caliber ? ` | ${firearm.caliber}` : ""}
             </p>
           </td>
         );
       case "serial":
-        return <td key={column} className="px-4 py-4 font-mono text-xs text-slate-600">{firearm.serial_number}</td>;
+        return <td key={column} className="truncate whitespace-nowrap px-4 py-4 font-mono text-xs text-slate-600" title={firearm.serial_number}>{firearm.serial_number}</td>;
       case "asset":
-        return <td key={column} className="px-4 py-4 font-mono text-xs text-slate-600">{firearm.asset_number || "—"}</td>;
+        return <td key={column} className="truncate whitespace-nowrap px-4 py-4 font-mono text-xs text-slate-600" title={firearm.asset_number || undefined}>{firearm.asset_number || "—"}</td>;
       case "type":
-        return <td key={column} className="px-4 py-4 text-sm text-slate-400">{formatFirearmType(firearm.firearm_type)}{firearm.caliber ? ` · ${firearm.caliber}` : ""}</td>;
+        return <td key={column} className="truncate whitespace-nowrap px-4 py-4 text-sm text-slate-400" title={`${formatFirearmType(firearm.firearm_type)}${firearm.caliber ? ` · ${firearm.caliber}` : ""}`}>{formatFirearmType(firearm.firearm_type)}{firearm.caliber ? ` · ${firearm.caliber}` : ""}</td>;
       case "status":
         return (
           <td key={column} className="px-4 py-4">
-            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[status]}`}>
+            <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[status]}`}>
               {status}
             </span>
           </td>
@@ -561,7 +561,7 @@ export default function FirearmsPage() {
         return (
           <td key={column} className="px-4 py-4 text-sm text-slate-600">
             {firearm.active_assignment ? (
-              <span className="font-semibold text-slate-100">
+              <span className="block truncate whitespace-nowrap font-semibold text-slate-100" title={firearm.active_assignment.assigned_to_name}>
                 {firearm.active_assignment.assigned_to_name}
               </span>
             ) : (
@@ -1109,7 +1109,7 @@ The firearm will be removed from active inventory and future operational selecti
             </section>
           )}
 
-          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid min-w-0 gap-6 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"}>
+          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid min-w-0 gap-6 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]"}>
             <div className={`min-w-0 rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "flex min-h-0 w-full flex-1 flex-col p-2 sm:p-2.5" : "p-5"}`}>
               <div className={`flex flex-col ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
                 <div className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
