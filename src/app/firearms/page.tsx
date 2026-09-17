@@ -1587,8 +1587,8 @@ The firearm will be removed from active inventory and future operational selecti
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-1.5">
-                      <div className="grid grid-cols-4 gap-1">
+                    <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40 p-1">
+                      <div className="flex min-w-max gap-1">
                         {([
                           ["custody", "Custody"],
                           ["documents", "Documents"],
@@ -1599,7 +1599,7 @@ The firearm will be removed from active inventory and future operational selecti
                             key={tab}
                             type="button"
                             onClick={() => setWorkspaceTab(tab)}
-                            className={`rounded-xl px-2 py-2 text-xs font-bold transition ${
+                            className={`shrink-0 whitespace-nowrap rounded-xl px-1.5 py-2 text-xs font-bold transition ${
                               workspaceTab === tab
                                 ? "bg-blue-600 text-white shadow-sm"
                                 : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
