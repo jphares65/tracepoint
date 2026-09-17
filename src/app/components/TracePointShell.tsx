@@ -40,6 +40,7 @@ import {
   type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { getTracePointEnvironmentIndicator } from "@/lib/tracepoint/environment-indicator";
 
 type TracePointShellProps = {
   activePage: string;
@@ -707,6 +708,32 @@ function BrandHeader({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function EnvironmentIndicator() {
+  const indicator = getTracePointEnvironmentIndicator({
+    configurationEnvironment: process.env.NEXT_PUBLIC_CONFIGURATION_ENVIRONMENT,
+    vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
+    nodeEnvironment: process.env.NODE_ENV,
+  });
+
+  if (!indicator) return null;
+
+  const colorClass = {
+    staging: "border-amber-400/35 bg-amber-400/10 text-amber-200",
+    preview: "border-violet-400/35 bg-violet-400/10 text-violet-200",
+    development: "border-sky-400/35 bg-sky-400/10 text-sky-200",
+    unknown: "border-slate-500/50 bg-slate-800 text-slate-300",
+  }[indicator.environment];
+
+  return (
+    <span
+      title={indicator.title}
+      className={`inline-flex shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.12em] ${colorClass}`}
+    >
+      {indicator.label}
+    </span>
+  );
+}
+
 export default function TracePointShell({
   activePage,
   children,
@@ -954,8 +981,9 @@ export default function TracePointShell({
       <IdleSessionGuard />
       <div className="flex min-h-screen">
         <aside className={compactNavigation ? "hidden" : "fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col"}>
-          <div className="border-b border-slate-800 px-5 py-3.5">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-5 py-3.5">
             <BrandHeader />
+            <EnvironmentIndicator />
           </div>
 
           <NavigationLinks
@@ -986,15 +1014,17 @@ export default function TracePointShell({
             <aside className="absolute inset-y-0 left-0 flex w-[86vw] max-w-[340px] flex-col border-r border-slate-800 bg-slate-950 shadow-2xl">
               <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3.5">
                 <BrandHeader compact />
-
-                <button
-                  type="button"
-                  aria-label="Close navigation"
-                  onClick={() => setMobileOpen(false)}
-                  className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 transition hover:border-blue-500/40 hover:text-white"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <EnvironmentIndicator />
+                  <button
+                    type="button"
+                    aria-label="Close navigation"
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 transition hover:border-blue-500/40 hover:text-white"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               <NavigationLinks
@@ -1018,7 +1048,10 @@ export default function TracePointShell({
 
         <main className={`min-h-screen min-w-0 flex-1 ${compactNavigation ? "lg:pl-0" : "lg:pl-72"}`}>
           <header className={`sticky top-0 z-40 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden ${compactNavigation ? "hidden" : "flex"}`}>
-            <BrandHeader compact />
+            <div className="flex min-w-0 items-center gap-2">
+              <BrandHeader compact />
+              <EnvironmentIndicator />
+            </div>
 
             <button
               type="button"
