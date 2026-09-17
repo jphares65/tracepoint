@@ -1,10 +1,10 @@
-import type { FirearmSortKey } from "./inventory-view";
+import type { FirearmInventoryColumn } from "./inventory-view";
 import {
   normalizeTableGroupingPreferences,
   type TableGroupingPreferences,
 } from "@/lib/tables/grouping";
 
-export const FOCUS_INVENTORY_COLUMNS: FirearmSortKey[] = [
+export const FOCUS_INVENTORY_COLUMNS: FirearmInventoryColumn[] = [
   "firearm",
   "serial",
   "asset",
@@ -23,8 +23,8 @@ export const FIREARM_INVENTORY_GROUP_BY = [
 export type FirearmInventoryGroupBy = (typeof FIREARM_INVENTORY_GROUP_BY)[number];
 
 export type FocusInventoryPreferences = TableGroupingPreferences<FirearmInventoryGroupBy> & {
-  columnOrder: FirearmSortKey[];
-  hiddenColumns: FirearmSortKey[];
+  columnOrder: FirearmInventoryColumn[];
+  hiddenColumns: FirearmInventoryColumn[];
 };
 
 export const DEFAULT_FOCUS_INVENTORY_PREFERENCES: FocusInventoryPreferences = {
@@ -34,8 +34,8 @@ export const DEFAULT_FOCUS_INVENTORY_PREFERENCES: FocusInventoryPreferences = {
   collapsedGroupKeys: [],
 };
 
-function isFocusColumn(value: unknown): value is FirearmSortKey {
-  return typeof value === "string" && FOCUS_INVENTORY_COLUMNS.includes(value as FirearmSortKey);
+function isFocusColumn(value: unknown): value is FirearmInventoryColumn {
+  return typeof value === "string" && FOCUS_INVENTORY_COLUMNS.includes(value as FirearmInventoryColumn);
 }
 
 export function normalizeFocusInventoryPreferences(
@@ -62,9 +62,9 @@ export function normalizeFocusInventoryPreferences(
 }
 
 export function moveFocusInventoryColumn(
-  columns: FirearmSortKey[],
-  source: FirearmSortKey,
-  destination: FirearmSortKey,
+  columns: FirearmInventoryColumn[],
+  source: FirearmInventoryColumn,
+  destination: FirearmInventoryColumn,
 ) {
   if (source === destination) return columns;
   const next = columns.filter((column) => column !== source);
@@ -76,6 +76,15 @@ export function moveFocusInventoryColumn(
 
 export function shouldSortFocusColumnHeader(dragCompleted: boolean) {
   return !dragCompleted;
+}
+
+export function getStandardDefaultHiddenColumns(
+  hiddenColumns: FirearmInventoryColumn[],
+  hasSavedPreferences: boolean,
+): FirearmInventoryColumn[] {
+  return hasSavedPreferences || hiddenColumns.includes("type")
+    ? hiddenColumns
+    : [...hiddenColumns, "type"];
 }
 
 export function getFocusInventoryPreferenceKey(departmentId: string) {
@@ -96,6 +105,16 @@ export function getStoredFocusInventoryPreferences(departmentId: string) {
     );
   } catch {
     return DEFAULT_FOCUS_INVENTORY_PREFERENCES;
+  }
+}
+
+export function hasStoredFocusInventoryPreferences(departmentId: string) {
+  if (typeof window === "undefined" || !departmentId) return false;
+
+  try {
+    return window.localStorage.getItem(getFocusInventoryPreferenceKey(departmentId)) !== null;
+  } catch {
+    return false;
   }
 }
 
