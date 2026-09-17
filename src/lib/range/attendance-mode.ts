@@ -43,3 +43,44 @@ export function canAddOpenAttendanceShooter({
     )
   );
 }
+
+export function getOpenAttendanceScoringState({
+  attendanceMode,
+  attendingCount,
+}: {
+  attendanceMode: unknown;
+  attendingCount: number;
+}) {
+  if (
+    normalizeRangeDayAttendanceMode(attendanceMode) !==
+    OPEN_ROLLING_ATTENDANCE
+  ) {
+    return "scheduled" as const;
+  }
+
+  return attendingCount > 0 ? "active" as const : "empty" as const;
+}
+
+export function createOpenAttendanceRosterEntry({
+  id,
+  rangeDayId,
+  officerId,
+  attendanceTime,
+  firearmId,
+}: {
+  id: string;
+  rangeDayId: string;
+  officerId: string;
+  attendanceTime: string;
+  firearmId?: string;
+}): RangeRosterEntry {
+  return {
+    id,
+    rangeDayId,
+    officerId,
+    assignedFirearmIds: firearmId ? [firearmId] : [],
+    attended: true,
+    attendanceTime,
+    notes: "Added during open attendance.",
+  };
+}
