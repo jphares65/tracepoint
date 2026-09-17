@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   getOpenAttendanceAssignedFirearms,
+  getOpenAttendanceFirearmOptions,
   getOpenAttendanceSharedRangeFirearms,
   getOpenAttendanceFirearmDefault,
   getOpenAttendanceFirearmLabel,
@@ -78,7 +79,7 @@ const firearms = [
   },
 ];
 
-test("returns only current in-service firearms assigned to the selected officer", () => {
+test("uses the selected personnel ID against active_assignment.assigned_to_user_id", () => {
   assert.deepEqual(
     getOpenAttendanceAssignedFirearms({
       firearms,
@@ -134,12 +135,30 @@ test("changing officers clears a firearm that is not assigned to the new officer
   );
 });
 
-test("offers only unassigned shared/range firearms through the explicit fallback", () => {
+test("automatically falls back to unassigned shared/range firearms when no assignment exists", () => {
   assert.deepEqual(
     getOpenAttendanceSharedRangeFirearms({
       firearms,
       requiredFirearmType: "handgun",
     }).map((firearm) => firearm.id),
     ["range-handgun"],
+  );
+  assert.deepEqual(
+    getOpenAttendanceFirearmOptions({
+      firearms,
+      officerId: "officer-3",
+      requiredFirearmType: "handgun",
+    }),
+    {
+      source: "shared",
+      firearms: [firearms[5]],
+    },
+  );
+});
+
+test("does not expose a firearm until an officer has been selected", () => {
+  assert.deepEqual(
+    getOpenAttendanceFirearmOptions({ firearms, officerId: "" }),
+    { source: "assigned", firearms: [] },
   );
 });

@@ -62,8 +62,7 @@ import {
   SCHEDULED_ROSTER_ATTENDANCE,
 } from "@/lib/range/attendance-mode";
 import {
-  getOpenAttendanceAssignedFirearms,
-  getOpenAttendanceSharedRangeFirearms,
+  getOpenAttendanceFirearmOptions,
   getOpenAttendanceFirearmLabel,
   resolveOpenAttendanceFirearmSelection,
 } from "@/lib/range/open-attendance-firearms";
@@ -1881,8 +1880,6 @@ export default function RangeDaysPage() {
   const [openAttendanceSearch, setOpenAttendanceSearch] = useState("");
   const [openAttendanceOfficerPickerOpen, setOpenAttendanceOfficerPickerOpen] =
     useState(false);
-  const [openAttendanceUseSharedRangeFirearm, setOpenAttendanceUseSharedRangeFirearm] =
-    useState(false);
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
   const [newEquipmentLabel, setNewEquipmentLabel] = useState("");
 
@@ -2009,7 +2006,6 @@ export default function RangeDaysPage() {
 
     setOpenAttendanceOfficerId("");
     setOpenAttendanceFirearmId("");
-    setOpenAttendanceUseSharedRangeFirearm(false);
   }, [
     isOpenAttendance,
     openAttendanceOfficerId,
@@ -2042,9 +2038,9 @@ export default function RangeDaysPage() {
     selectedDrills.find((drill) => drill.id === selectedDrillId) ??
     selectedDrills[0];
 
-  const openAttendanceFirearms = useMemo(
+  const openAttendanceFirearmOptions = useMemo(
     () =>
-      getOpenAttendanceAssignedFirearms({
+      getOpenAttendanceFirearmOptions({
         firearms,
         officerId: openAttendanceOfficerId,
         requiredFirearmType: selectedDrill?.firearmType,
@@ -2052,26 +2048,12 @@ export default function RangeDaysPage() {
     [firearms, openAttendanceOfficerId, selectedDrill?.firearmType],
   );
 
-  const openAttendanceFallbackFirearms = useMemo(
-    () =>
-      getOpenAttendanceSharedRangeFirearms({
-        firearms,
-        requiredFirearmType: selectedDrill?.firearmType,
-      }),
-    [firearms, openAttendanceOfficerId, selectedDrill?.firearmType],
-  );
-
-  const selectableOpenAttendanceFirearms =
-    openAttendanceUseSharedRangeFirearm
-      ? openAttendanceFallbackFirearms
-      : openAttendanceFirearms;
+  const selectableOpenAttendanceFirearms = openAttendanceFirearmOptions.firearms;
 
   useEffect(() => {
     const nextFirearmId = resolveOpenAttendanceFirearmSelection({
       currentFirearmId: openAttendanceFirearmId,
-      firearms: openAttendanceUseSharedRangeFirearm
-        ? []
-        : selectableOpenAttendanceFirearms,
+      firearms: selectableOpenAttendanceFirearms,
     });
 
     if (nextFirearmId !== openAttendanceFirearmId) {
@@ -2079,7 +2061,6 @@ export default function RangeDaysPage() {
     }
   }, [
     openAttendanceFirearmId,
-    openAttendanceUseSharedRangeFirearm,
     selectableOpenAttendanceFirearms,
   ]);
 
@@ -2522,7 +2503,6 @@ export default function RangeDaysPage() {
       setNewRosterOfficerId("");
       setOpenAttendanceOfficerId("");
       setOpenAttendanceFirearmId("");
-      setOpenAttendanceUseSharedRangeFirearm(false);
       return;
     }
 
@@ -2541,7 +2521,6 @@ export default function RangeDaysPage() {
     if (!openAttendanceOfficerIsAvailable) {
       setOpenAttendanceOfficerId("");
       setOpenAttendanceFirearmId("");
-      setOpenAttendanceUseSharedRangeFirearm(false);
     }
   }, [
     availableRosterOfficers,
@@ -3126,7 +3105,6 @@ export default function RangeDaysPage() {
     setOpenAttendanceFirearmId("");
     setOpenAttendanceSearch("");
     setOpenAttendanceOfficerPickerOpen(false);
-    setOpenAttendanceUseSharedRangeFirearm(false);
     resetEntryForm(1);
   }
 
@@ -6169,7 +6147,6 @@ export default function RangeDaysPage() {
                           setOpenAttendanceSearch(event.target.value);
                           setOpenAttendanceOfficerId("");
                           setOpenAttendanceFirearmId("");
-                          setOpenAttendanceUseSharedRangeFirearm(false);
                           setOpenAttendanceOfficerPickerOpen(true);
                         }}
                         onFocus={() => setOpenAttendanceOfficerPickerOpen(true)}
@@ -6198,7 +6175,6 @@ export default function RangeDaysPage() {
                                 onClick={() => {
                                   setOpenAttendanceOfficerId(officer.id);
                                   setOpenAttendanceFirearmId("");
-                                  setOpenAttendanceUseSharedRangeFirearm(false);
                                   setOpenAttendanceSearch(officer.displayName);
                                   setOpenAttendanceOfficerPickerOpen(false);
                                 }}
@@ -6224,9 +6200,7 @@ export default function RangeDaysPage() {
                     </div>
                     <div className="min-w-0">
                       <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
-                        {openAttendanceUseSharedRangeFirearm
-                          ? "Shared / range firearm"
-                          : "Assigned firearm"}
+                        Firearm
                       </label>
                       <select
                         value={openAttendanceFirearmId}
@@ -6237,23 +6211,21 @@ export default function RangeDaysPage() {
                         <option value="">
                           {!openAttendanceOfficerId
                             ? "Select an officer first"
-                            : !openAttendanceUseSharedRangeFirearm && openAttendanceFirearms.length === 0
-                              ? "No assigned firearms found"
-                              : selectableOpenAttendanceFirearms.length === 0
-                              ? "No eligible shared/range firearms"
+                            : selectableOpenAttendanceFirearms.length === 0
+                              ? "No eligible firearms found"
                               : "Select firearm"}
                         </option>
-                        {!openAttendanceUseSharedRangeFirearm && openAttendanceFirearms.length > 0 ? (
-                          <optgroup label="Officer's assigned firearms">
-                            {openAttendanceFirearms.map((firearm) => (
+                        {openAttendanceFirearmOptions.source === "assigned" ? (
+                          <optgroup label="Assigned to selected officer">
+                            {selectableOpenAttendanceFirearms.map((firearm) => (
                               <option key={firearm.id} value={firearm.id}>
                                 {getOpenAttendanceFirearmLabel(firearm)}
                               </option>
                             ))}
                           </optgroup>
-                        ) : openAttendanceUseSharedRangeFirearm && openAttendanceFallbackFirearms.length > 0 ? (
-                          <optgroup label="Eligible range firearms">
-                            {openAttendanceFallbackFirearms.map((firearm) => (
+                        ) : selectableOpenAttendanceFirearms.length > 0 ? (
+                          <optgroup label="Shared / Range">
+                            {selectableOpenAttendanceFirearms.map((firearm) => (
                               <option key={firearm.id} value={firearm.id}>
                                 {getOpenAttendanceFirearmLabel(firearm)}
                               </option>
@@ -6263,37 +6235,12 @@ export default function RangeDaysPage() {
                       </select>
                       {openAttendanceOfficerId ? (
                         <p className="mt-1 text-[10px] text-blue-200/70">
-                          {openAttendanceUseSharedRangeFirearm
-                            ? "Range-day selection only; permanent Armory custody is unchanged."
-                            : openAttendanceFirearms.length > 0
+                          {openAttendanceFirearmOptions.source === "assigned"
                             ? "Firearm is required before adding the shooter."
-                            : "No assigned firearms found."}
+                            : selectableOpenAttendanceFirearms.length > 0
+                              ? "Shared/range selection is for this Range Day only; permanent Armory custody is unchanged."
+                              : "No eligible firearms found."}
                         </p>
-                      ) : null}
-                      {openAttendanceOfficerId && !openAttendanceUseSharedRangeFirearm ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenAttendanceUseSharedRangeFirearm(true);
-                            setOpenAttendanceFirearmId("");
-                          }}
-                          disabled={openAttendanceFallbackFirearms.length === 0}
-                          className="mt-1.5 text-[10px] font-semibold text-blue-200 underline decoration-blue-400/50 underline-offset-2 hover:text-white disabled:cursor-not-allowed disabled:no-underline disabled:text-slate-600"
-                        >
-                          Use shared/range firearm
-                        </button>
-                      ) : null}
-                      {openAttendanceOfficerId && openAttendanceUseSharedRangeFirearm ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenAttendanceUseSharedRangeFirearm(false);
-                            setOpenAttendanceFirearmId("");
-                          }}
-                          className="mt-1.5 text-[10px] font-semibold text-blue-200 underline decoration-blue-400/50 underline-offset-2 hover:text-white"
-                        >
-                          Use assigned firearm
-                        </button>
                       ) : null}
                     </div>
                     <button

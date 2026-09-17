@@ -86,6 +86,36 @@ export function getOpenAttendanceSharedRangeFirearms({
   );
 }
 
+export function getOpenAttendanceFirearmOptions({
+  firearms,
+  officerId,
+  requiredFirearmType,
+}: {
+  firearms: OpenAttendanceFirearm[];
+  officerId: string;
+  requiredFirearmType?: string | null;
+}) {
+  if (!officerId) {
+    return { source: "assigned" as const, firearms: [] };
+  }
+
+  const assigned = getOpenAttendanceAssignedFirearms({
+    firearms,
+    officerId,
+    requiredFirearmType,
+  });
+
+  return assigned.length > 0
+    ? { source: "assigned" as const, firearms: assigned }
+    : {
+        source: "shared" as const,
+        firearms: getOpenAttendanceSharedRangeFirearms({
+          firearms,
+          requiredFirearmType,
+        }),
+      };
+}
+
 export function getOpenAttendanceFirearmLabel(firearm: OpenAttendanceFirearm) {
   return `${firearm.make} ${firearm.model} — ${
     firearm.asset_number || firearm.serial_number
