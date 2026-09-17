@@ -7,6 +7,19 @@ export type OpenAttendanceOfficer = {
   unitName?: string | null;
 };
 
+/** Provides a stable, disambiguating label for the walk-up officer picker. */
+export function getOpenAttendanceOfficerLabel(
+  officer: OpenAttendanceOfficer,
+) {
+  const name = officer.fullName?.trim() || officer.displayName;
+  const badge = officer.badgeNumber?.trim();
+  const unit = officer.unitName?.trim();
+
+  return [name, badge ? `#${badge}` : null, unit]
+    .filter(Boolean)
+    .join(" — ");
+}
+
 /** Filters the walk-up picker without exposing officers already on this session. */
 export function filterOpenAttendanceOfficers<T extends OpenAttendanceOfficer>(
   officers: T[],
