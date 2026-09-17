@@ -9,14 +9,11 @@ import {
   Car,
   ChevronRight,
   CheckCircle2,
-  ClipboardCheck,
   Plus,
   Pencil,
-  QrCode,
   RefreshCw,
   Search,
   SlidersHorizontal,
-  Wrench,
   X,
 } from "lucide-react";
 
@@ -686,41 +683,43 @@ function FleetManagementContent() {
                     </span>
                   ) : null}
                 </button>
-                <select
-                  value={groupingPreferences.groupBy}
-                  onChange={(event) =>
-                    updateGroupingPreferences((current) => ({
-                      ...current,
-                      groupBy: event.target.value as FleetInventoryGroupBy,
-                    }))
-                  }
-                  aria-label="Group vehicles by"
-                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 outline-none focus:border-blue-500"
-                >
-                  {FLEET_INVENTORY_GROUP_BY.map((groupBy) => (
-                    <option key={groupBy} value={groupBy}>
-                      Group by: {FLEET_GROUP_LABELS[groupBy]}
-                    </option>
-                  ))}
-                </select>
-                {groupingPreferences.groupBy !== "none" ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: [] }))}
-                      className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
-                    >
-                      Expand All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: vehicleGroups.map((group) => group.key) }))}
-                      className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
-                    >
-                      Collapse All
-                    </button>
-                  </>
-                ) : null}
+                <div className="flex items-center gap-1">
+                  <select
+                    value={groupingPreferences.groupBy}
+                    onChange={(event) =>
+                      updateGroupingPreferences((current) => ({
+                        ...current,
+                        groupBy: event.target.value as FleetInventoryGroupBy,
+                      }))
+                    }
+                    aria-label="Group vehicles by"
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 outline-none focus:border-blue-500"
+                  >
+                    {FLEET_INVENTORY_GROUP_BY.map((groupBy) => (
+                      <option key={groupBy} value={groupBy}>
+                        Group by: {FLEET_GROUP_LABELS[groupBy]}
+                      </option>
+                    ))}
+                  </select>
+                  {groupingPreferences.groupBy !== "none" ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: [] }))}
+                        className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
+                      >
+                        Expand All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: vehicleGroups.map((group) => group.key) }))}
+                        className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
+                      >
+                        Collapse All
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -989,6 +988,7 @@ function FleetManagementContent() {
                                 "TracePoint vehicle"
                               }
                               compact
+                              viewOnly
                             />
                             {canManage ? (
                               <button
@@ -1019,30 +1019,6 @@ function FleetManagementContent() {
               </table>
             </div>
           )}
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <QrCode size={19} className="text-blue-300" />
-            <h2 className="mt-3 text-sm font-bold text-white">QR vehicle access</h2>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Generate and print durable labels from any vehicle row. Scanning opens that unit directly in the mobile inspection workflow.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <ClipboardCheck size={19} className="text-blue-300" />
-            <h2 className="mt-3 text-sm font-bold text-white">Readiness automation</h2>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Planned next: evaluate agency rules and automatically restrict vehicles with critical deficiencies.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <Wrench size={19} className="text-blue-300" />
-            <h2 className="mt-3 text-sm font-bold text-white">Maintenance routing</h2>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Planned next: route defects, photos, and inspection context to the responsible fleet manager or mechanic.
-            </p>
-          </div>
         </section>
 
         {showForm ? (
