@@ -142,12 +142,12 @@ const FOCUS_COLUMN_CONFIG: Record<
 };
 
 const STANDARD_COLUMN_MINIMUM_WIDTH: Record<FirearmSortKey, number> = {
-  firearm: 135,
-  serial: 100,
-  asset: 80,
-  type: 110,
-  status: 100,
-  custody: 115,
+  firearm: 155,
+  serial: 90,
+  asset: 70,
+  type: 85,
+  status: 90,
+  custody: 160,
 };
 
 const FIREARM_GROUP_LABELS = {
