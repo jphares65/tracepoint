@@ -61,6 +61,11 @@ import {
   RANGE_DAY_ATTENDANCE_MODES,
   SCHEDULED_ROSTER_ATTENDANCE,
 } from "@/lib/range/attendance-mode";
+import {
+  getOpenAttendanceAssignedFirearms,
+  getOpenAttendanceFirearmLabel,
+  resolveOpenAttendanceFirearmSelection,
+} from "@/lib/range/open-attendance-firearms";
 
 type RangeDayType =
   | "Qualification"
@@ -1994,16 +1999,6 @@ export default function RangeDaysPage() {
     );
   }, [availableRosterOfficers, openAttendanceSearch]);
 
-  const openAttendanceFirearms = useMemo(
-    () =>
-      firearms.filter(
-        (firearm) =>
-          firearm.active_assignment?.assigned_to_user_id ===
-          openAttendanceOfficerId,
-      ),
-    [firearms, openAttendanceOfficerId],
-  );
-
   useEffect(() => {
     if (!isOpenAttendance) return;
 
@@ -2022,19 +2017,6 @@ export default function RangeDaysPage() {
     openAttendanceOfficerId,
     openAttendanceOfficers,
   ]);
-
-  useEffect(() => {
-    if (
-      openAttendanceFirearmId &&
-      openAttendanceFirearms.some(
-        (firearm) => firearm.id === openAttendanceFirearmId,
-      )
-    ) {
-      return;
-    }
-
-    setOpenAttendanceFirearmId("");
-  }, [openAttendanceFirearmId, openAttendanceFirearms]);
 
   const availableInstructorUsers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -2061,6 +2043,27 @@ export default function RangeDaysPage() {
   const selectedDrill =
     selectedDrills.find((drill) => drill.id === selectedDrillId) ??
     selectedDrills[0];
+
+  const openAttendanceFirearms = useMemo(
+    () =>
+      getOpenAttendanceAssignedFirearms({
+        firearms,
+        officerId: openAttendanceOfficerId,
+        requiredFirearmType: selectedDrill?.firearmType,
+      }),
+    [firearms, openAttendanceOfficerId, selectedDrill?.firearmType],
+  );
+
+  useEffect(() => {
+    const nextFirearmId = resolveOpenAttendanceFirearmSelection({
+      currentFirearmId: openAttendanceFirearmId,
+      firearms: openAttendanceFirearms,
+    });
+
+    if (nextFirearmId !== openAttendanceFirearmId) {
+      setOpenAttendanceFirearmId(nextFirearmId);
+    }
+  }, [openAttendanceFirearmId, openAttendanceFirearms]);
 
   const selectedEffectiveRunCount = getEffectiveRunCount(selectedDrill);
 
@@ -6102,10 +6105,10 @@ export default function RangeDaysPage() {
 
               {canManageOpenAttendance && (
                 <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] p-3">
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
-                    <div className="min-w-0 flex-1">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(240px,1.6fr)_minmax(180px,1fr)_minmax(190px,1fr)_auto] xl:items-end">
+                    <div className="min-w-0">
                       <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
-                        Add shooter to open attendance
+                        Search officer
                       </label>
                       <input
                         value={openAttendanceSearch}
@@ -6114,7 +6117,7 @@ export default function RangeDaysPage() {
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                       />
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
                         Officer
                       </label>
@@ -6140,7 +6143,7 @@ export default function RangeDaysPage() {
                         )}
                       </select>
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
                         Firearm
                       </label>
@@ -6149,23 +6152,30 @@ export default function RangeDaysPage() {
                         onChange={(event) =>
                           setOpenAttendanceFirearmId(event.target.value)
                         }
-                        disabled={!openAttendanceOfficerId}
+                        disabled={
+                          !openAttendanceOfficerId ||
+                          openAttendanceFirearms.length === 0
+                        }
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
                       >
                         <option value="">
-                          {openAttendanceOfficerId
-                            ? "Select firearm (optional)"
-                            : "Select an officer first"}
+                          {!openAttendanceOfficerId
+                            ? "Select an officer first"
+                            : openAttendanceFirearms.length === 0
+                              ? "No assigned firearms found"
+                              : "Select firearm (optional)"}
                         </option>
                         {openAttendanceFirearms.map((firearm) => (
                           <option key={firearm.id} value={firearm.id}>
-                            {getFirearmName(firearm.id)}
+                            {getOpenAttendanceFirearmLabel(firearm)}
                           </option>
                         ))}
                       </select>
                       {openAttendanceOfficerId ? (
                         <p className="mt-1 text-[10px] text-blue-200/70">
-                          A firearm is required before scoring.
+                          {openAttendanceFirearms.length === 0
+                            ? "Assign a firearm through the roster before scoring."
+                            : "A firearm is required before scoring."}
                         </p>
                       ) : null}
                     </div>
@@ -6177,7 +6187,7 @@ export default function RangeDaysPage() {
                         openAttendanceOfficers.length === 0 ||
                         !openAttendanceOfficerId
                       }
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                      className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                     >
                       <Plus size={15} />
                       Add Shooter
