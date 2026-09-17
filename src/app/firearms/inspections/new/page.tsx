@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -26,6 +27,8 @@ type ActiveAssignment = {
   id: string;
   assigned_to_user_id: string;
   assigned_to_name: string;
+  assigned_to_badge_number?: string | null;
+  assigned_to_unit_name?: string | null;
   assigned_at: string;
 };
 
@@ -437,7 +440,9 @@ function NewInspectionContent() {
           inspectionDate: inspectionDateTime,
           inspectionLocation,
           assigneeName:
-            selectedFirearm.active_assignment?.assigned_to_name ?? null,
+            selectedFirearm.active_assignment
+              ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
+              : null,
           weaponCleared,
           ammunitionRemoved: ammoRemoved,
           magazinesPresented,
@@ -594,7 +599,8 @@ function NewInspectionContent() {
                         label="Assigned To"
                         value={
                           selectedFirearm.active_assignment
-                            ?.assigned_to_name ?? "Unassigned"
+                            ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
+                            : "Unassigned"
                         }
                       />
                       <DetailPill

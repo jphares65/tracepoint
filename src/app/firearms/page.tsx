@@ -25,6 +25,10 @@ import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import FirearmAttachments from "@/app/components/FirearmAttachments";
 import {
+  getAssignedOfficerContext,
+  getAssignedOfficerDisplayName,
+} from "@/lib/armory/assignment-identity";
+import {
   matchesFirearmInventorySearch,
   nextFirearmSort,
   sortFirearmInventory,
@@ -62,6 +66,8 @@ type ActiveAssignment = {
   id: string;
   assigned_to_user_id: string;
   assigned_to_name: string;
+  assigned_to_badge_number?: string | null;
+  assigned_to_unit_name?: string | null;
   assigned_at: string;
   magazines_issued: number;
   magazine_description?: string | null;
@@ -405,7 +411,9 @@ export default function FirearmsPage() {
             return { key: label, label };
           }
           case "assignment": {
-            const label = firearm.active_assignment?.assigned_to_name || "Unassigned";
+            const label = firearm.active_assignment
+              ? getAssignedOfficerDisplayName(firearm.active_assignment)
+              : "Unassigned";
             return { key: firearm.active_assignment?.assigned_to_user_id || "unassigned", label };
           }
         }
@@ -557,8 +565,13 @@ export default function FirearmsPage() {
         return (
           <div key={column} role="cell" className={`${cellClass} text-slate-400`}>
             {firearm.active_assignment ? (
-              <span className="font-semibold text-slate-100">
+              <span className="block font-semibold text-slate-100">
                 {firearm.active_assignment.assigned_to_name}
+                {getAssignedOfficerContext(firearm.active_assignment) ? (
+                  <span className="mt-0.5 block text-[10px] font-medium text-slate-400">
+                    {getAssignedOfficerContext(firearm.active_assignment)}
+                  </span>
+                ) : null}
               </span>
             ) : (
               <span className="text-slate-500">Unassigned</span>
@@ -610,8 +623,13 @@ export default function FirearmsPage() {
         return (
           <td key={column} className="px-4 py-4 text-sm text-slate-600">
             {firearm.active_assignment ? (
-              <span className="block truncate whitespace-nowrap font-semibold text-slate-100" title={firearm.active_assignment.assigned_to_name}>
+              <span className="block truncate whitespace-nowrap font-semibold text-slate-100" title={getAssignedOfficerDisplayName(firearm.active_assignment)}>
                 {firearm.active_assignment.assigned_to_name}
+                {getAssignedOfficerContext(firearm.active_assignment) ? (
+                  <span className="block truncate text-[10px] font-medium text-slate-400">
+                    {getAssignedOfficerContext(firearm.active_assignment)}
+                  </span>
+                ) : null}
               </span>
             ) : (
               <span className="text-slate-500">Unassigned</span>
@@ -1499,7 +1517,7 @@ The firearm will be removed from active inventory and future operational selecti
                   <div className="mt-5 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm sm:grid-cols-2">
                     <div><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Status</p><p className="mt-1 font-semibold text-white">{normalizeStatus(selectedFirearm.condition_status)}</p></div>
                     <div><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Asset</p><p className="mt-1 font-semibold text-white">{selectedFirearm.asset_number || "Not recorded"}</p></div>
-                    <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Current custody</p><p className="mt-1 font-semibold text-white">{selectedFirearm.active_assignment?.assigned_to_name || "Unassigned"}</p></div>
+                    <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.14em] text-slate-500">Current custody</p><p className="mt-1 font-semibold text-white">{selectedFirearm.active_assignment ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment) : "Unassigned"}</p></div>
                   </div>
                   <p className="mt-5 text-sm leading-6 text-slate-400">Use the full firearm workspace for custody actions, documents, status changes, and audit-preserving edits.</p>
                   <a href={`/firearms/${selectedFirearm.id}`} className="mt-4 inline-flex rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-slate-200">Open full firearm record</a>
@@ -1632,6 +1650,11 @@ The firearm will be removed from active inventory and future operational selecti
                           <p className="mt-1 text-lg font-bold text-emerald-100">
                             {selectedFirearm.active_assignment.assigned_to_name}
                           </p>
+                          {getAssignedOfficerContext(selectedFirearm.active_assignment) ? (
+                            <p className="mt-1 text-xs font-semibold text-emerald-300">
+                              {getAssignedOfficerContext(selectedFirearm.active_assignment)}
+                            </p>
+                          ) : null}
                           <p className="mt-1 text-xs text-emerald-300">
                             Assigned{" "}
                             {formatDateTime(
@@ -2089,7 +2112,7 @@ The firearm will be removed from active inventory and future operational selecti
                           <div className="mt-4 rounded-2xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">
                             This firearm is currently assigned to{" "}
                             <span className="font-bold">
-                              {selectedFirearm.active_assignment.assigned_to_name}
+                              {getAssignedOfficerDisplayName(selectedFirearm.active_assignment)}
                             </span>
                             . Record its return before archiving it.
                           </div>

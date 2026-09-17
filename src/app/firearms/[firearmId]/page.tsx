@@ -19,11 +19,14 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
 
 type ActiveAssignment = {
   id: string;
   assigned_to_user_id: string;
   assigned_to_name: string;
+  assigned_to_badge_number?: string | null;
+  assigned_to_unit_name?: string | null;
   assigned_at: string;
   magazines_issued: number;
   magazine_description?: string | null;
@@ -415,7 +418,7 @@ export default function FirearmRecordPage() {
                   <div className="mt-5 space-y-4">
                     <InfoField
                       label="Assigned Officer"
-                      value={firearm.active_assignment.assigned_to_name}
+                      value={getAssignedOfficerDisplayName(firearm.active_assignment)}
                     />
 
                     <div className="grid gap-4 sm:grid-cols-2">

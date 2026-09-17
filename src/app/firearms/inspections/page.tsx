@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -27,6 +28,8 @@ type ActiveAssignment = {
   id: string;
   assigned_to_user_id: string;
   assigned_to_name: string;
+  assigned_to_badge_number?: string | null;
+  assigned_to_unit_name?: string | null;
   assigned_at: string;
 };
 
@@ -243,7 +246,7 @@ export default function ArmoryInspectionsPage() {
           firearm.serial_number ?? "",
           firearm.asset_number ?? "",
           firearm.condition_status,
-          firearm.active_assignment?.assigned_to_name ?? "",
+          getAssignedOfficerDisplayName(firearm.active_assignment),
         ]
           .join(" ")
           .toLowerCase();
@@ -406,8 +409,9 @@ export default function ArmoryInspectionsPage() {
                       </td>
 
                       <td className="px-4 py-3 text-[12px] text-slate-400">
-                        {firearm.active_assignment?.assigned_to_name ??
-                          "Unassigned"}
+                        {firearm.active_assignment
+                          ? getAssignedOfficerDisplayName(firearm.active_assignment)
+                          : "Unassigned"}
                       </td>
 
                       <td className="px-4 py-3">

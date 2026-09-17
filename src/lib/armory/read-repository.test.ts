@@ -19,13 +19,13 @@ test("preserves self-only firearm visibility, member mapping, defaults, and acce
   const repository = new TenantBoundArmoryReadRepository(source({
     listActiveAssignments: async (departmentId, userId) => { observed.push([departmentId, userId]); return result([{ id: "a", firearm_id: "f", assigned_to_user_id: "u" }]); },
     listFirearms: async (departmentId, input) => { observed.push([departmentId, input]); return result([{ id: "f", condition_status: null }]); },
-    listActiveMembers: async () => result([{ user_id: "u", rank_title: "Officer", badge_number: "7" }]),
+    listActiveMembers: async () => result([{ user_id: "u", rank_title: "Officer", badge_number: "7", unit_name: "Patrol" }]),
     listProfiles: async () => result([{ id: "u", full_name: "Alex", email: "profile@example.test" }]),
     listAuthUsers: async () => ({ data: { users: [{ id: "u", email: "auth@example.test" }] }, error: null }),
   }), "dept", "u");
   const data = await repository.getFirearmInventory({ departmentId: "dept", userId: "u", includeArchived: true, canViewAll: false, canManage: false, canInspect: false });
   assert.deepEqual(observed, [["dept", "u"], ["dept", { includeArchived: false, firearmIds: ["f"] }]]);
-  assert.deepEqual(data.firearms[0], { id: "f", condition_status: "In Service", active_assignment: { id: "a", firearm_id: "f", assigned_to_user_id: "u", assigned_to_name: "Alex" } });
+  assert.deepEqual(data.firearms[0], { id: "f", condition_status: "In Service", active_assignment: { id: "a", firearm_id: "f", assigned_to_user_id: "u", assigned_to_name: "Alex", assigned_to_badge_number: "7", assigned_to_unit_name: "Patrol" } });
   assert.deepEqual(data.members, []); assert.deepEqual(data.access, { canViewAll: false, canManage: false, canInspect: false });
 });
 
