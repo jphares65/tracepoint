@@ -8,6 +8,7 @@ import {
   moveFocusInventoryColumn,
   normalizeFocusInventoryPreferences,
   saveFocusInventoryPreferences,
+  shouldSortFocusColumnHeader,
   type FocusInventoryPreferences,
 } from "./inventory-focus-preferences.ts";
 
@@ -39,6 +40,17 @@ test("moves a shared inventory column without changing the remaining sequence", 
     ),
     ["firearm", "custody", "serial", "asset", "type", "status"],
   );
+});
+
+test("only reorders on drop and suppresses the follow-up sort click from a drag", () => {
+  const columns = ["firearm", "serial", "asset", "type", "status", "custody"] as const;
+  assert.deepEqual(moveFocusInventoryColumn([...columns], "serial", "serial"), columns);
+  assert.deepEqual(
+    moveFocusInventoryColumn([...columns], "serial", "status"),
+    ["firearm", "asset", "type", "serial", "status", "custody"],
+  );
+  assert.equal(shouldSortFocusColumnHeader(true), false);
+  assert.equal(shouldSortFocusColumnHeader(false), true);
 });
 
 test("persists one column layout that both inventory views can reuse", () => {
