@@ -20,6 +20,23 @@ export function getOpenAttendanceOfficerLabel(
     .join(" — ");
 }
 
+/** Keeps the visible combobox value separate from its selected personnel ID. */
+export function getOpenAttendanceOfficerInputValue({
+  isOpen,
+  searchQuery,
+  selectedOfficer,
+}: {
+  isOpen: boolean;
+  searchQuery: string;
+  selectedOfficer: OpenAttendanceOfficer | null;
+}) {
+  if (isOpen) return searchQuery;
+
+  return selectedOfficer
+    ? getOpenAttendanceOfficerLabel(selectedOfficer)
+    : searchQuery;
+}
+
 /** Filters the walk-up picker without exposing officers already on this session. */
 export function filterOpenAttendanceOfficers<T extends OpenAttendanceOfficer>(
   officers: T[],
