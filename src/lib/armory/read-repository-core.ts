@@ -63,10 +63,18 @@ export class TenantBoundArmoryReadRepository {
     const usersById = new Map((usersResult.data?.users ?? []).map((row) => [text(row.id), row]));
     const members = memberships.map((membership) => {
       const id = text(membership.user_id); const profile = profilesById.get(id); const user = usersById.get(id); const meta = metadata(user);
-      return { user_id: id, full_name: text(profile?.full_name) || text(meta.full_name) || text(meta.name) || text(meta.display_name) || text(profile?.email) || text(user?.email) || "Unknown User", email: text(profile?.email) || text(user?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null };
+      return { user_id: id, full_name: text(profile?.full_name) || text(meta.full_name) || text(meta.name) || text(meta.display_name) || text(profile?.email) || text(user?.email) || "Unknown User", email: text(profile?.email) || text(user?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null, unit_name: membership.unit_name ?? null };
     }).sort((left, right) => left.full_name.localeCompare(right.full_name));
     const membersById = new Map(members.map((member) => [member.user_id, member]));
-    const assignmentsByFirearmId = new Map(assignments.map((assignment) => [text(assignment.firearm_id), { ...assignment, assigned_to_name: membersById.get(text(assignment.assigned_to_user_id))?.full_name ?? "Unknown User" }]));
+    const assignmentsByFirearmId = new Map(assignments.map((assignment) => {
+      const member = membersById.get(text(assignment.assigned_to_user_id));
+      return [text(assignment.firearm_id), {
+        ...assignment,
+        assigned_to_name: member?.full_name ?? "Unknown User",
+        assigned_to_badge_number: member?.badge_number ?? null,
+        assigned_to_unit_name: member?.unit_name ?? null,
+      }];
+    }));
     return { departmentId: input.departmentId, firearms: firearms.map((firearm) => ({ ...firearm, condition_status: firearm.condition_status ?? "In Service", active_assignment: assignmentsByFirearmId.get(text(firearm.id)) ?? null })), members: input.canManage ? members : [], access: { canViewAll: input.canViewAll, canManage: input.canManage, canInspect: input.canInspect } };
   }
 
