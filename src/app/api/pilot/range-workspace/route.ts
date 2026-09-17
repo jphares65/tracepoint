@@ -19,6 +19,9 @@ type StoredRangeDayWorkspace = {
   rangeRoster?: unknown[];
   results?: unknown[];
   malfunctions?: unknown[];
+  selectedRangeDayId?: unknown;
+  selectedDrillId?: unknown;
+  selectedRunNumber?: unknown;
 };
 
 function normalizeWorkspace(value: unknown): StoredRangeDayWorkspace {
@@ -46,6 +49,20 @@ function normalizeWorkspace(value: unknown): StoredRangeDayWorkspace {
     malfunctions: Array.isArray(workspace.malfunctions)
       ? workspace.malfunctions
       : [],
+    selectedRangeDayId:
+      typeof workspace.selectedRangeDayId === "string"
+        ? workspace.selectedRangeDayId
+        : undefined,
+    selectedDrillId:
+      typeof workspace.selectedDrillId === "string"
+        ? workspace.selectedDrillId
+        : undefined,
+    selectedRunNumber:
+      typeof workspace.selectedRunNumber === "number" &&
+      Number.isInteger(workspace.selectedRunNumber) &&
+      workspace.selectedRunNumber > 0
+        ? workspace.selectedRunNumber
+        : undefined,
   };
 }
 

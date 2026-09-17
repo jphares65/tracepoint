@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  LatestWorkspaceSaveQueue,
+  type WorkspaceAutosaveState,
+} from "@/lib/range/workspace-autosave";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
 import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
@@ -414,6 +418,9 @@ type StoredRangeDayWorkspace = {
   rangeRoster: RangeRosterEntry[];
   results: DrillRunResult[];
   malfunctions: FirearmMalfunction[];
+  selectedRangeDayId?: string;
+  selectedDrillId?: string;
+  selectedRunNumber?: number;
 };
 
 function loadStoredRangeDayWorkspace(): Partial<StoredRangeDayWorkspace> | null {
@@ -469,8 +476,6 @@ async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWork
   }
 }
 
-let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
-
 async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   const response = await fetch("/api/pilot/range-workspace", {
     method: "PUT",
@@ -483,19 +488,6 @@ async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 }
 
-function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
-  if (typeof window === "undefined") return;
-
-  if (remoteWorkspaceSyncTimer) {
-    clearTimeout(remoteWorkspaceSyncTimer);
-  }
-
-  remoteWorkspaceSyncTimer = setTimeout(() => {
-    saveRemoteRangeDayWorkspace(workspace).catch((error) => {
-      console.warn("Could not save range day workspace.", error);
-    });
-  }, 650);
-}
 
 async function loadPilotPersonnel() {
   if (typeof window === "undefined") {
@@ -1891,6 +1883,12 @@ export default function RangeDaysPage() {
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedDrillId, setSelectedDrillId] = useState("");
   const [selectedRunNumber, setSelectedRunNumber] = useState(1);
+  const [workspaceSaveState, setWorkspaceSaveState] =
+    useState<WorkspaceAutosaveState>("idle");
+  const [workspaceSaveError, setWorkspaceSaveError] = useState("");
+  const workspaceSaveQueue = useRef<LatestWorkspaceSaveQueue<StoredRangeDayWorkspace> | null>(null);
+  const workspaceSaveDelay = useRef(650);
+  if (!workspaceSaveQueue.current) workspaceSaveQueue.current = new LatestWorkspaceSaveQueue();
   const [qualificationStandards, setQualificationStandards] = useState<
     QualificationStandardReference[]
   >([]);
@@ -2422,6 +2420,9 @@ export default function RangeDaysPage() {
           malfunctions: Array.isArray(remoteWorkspace.malfunctions)
             ? remoteWorkspace.malfunctions
             : [],
+          selectedRangeDayId: remoteWorkspace.selectedRangeDayId,
+          selectedDrillId: remoteWorkspace.selectedDrillId,
+          selectedRunNumber: remoteWorkspace.selectedRunNumber,
         });
       }
 
@@ -2452,6 +2453,15 @@ export default function RangeDaysPage() {
       if (Array.isArray(storedWorkspace?.malfunctions)) {
         setMalfunctions(storedWorkspace.malfunctions);
       }
+      if (typeof storedWorkspace?.selectedRangeDayId === "string") {
+        setSelectedRangeDayId(storedWorkspace.selectedRangeDayId);
+      }
+      if (typeof storedWorkspace?.selectedDrillId === "string") {
+        setSelectedDrillId(storedWorkspace.selectedDrillId);
+      }
+      if (typeof storedWorkspace?.selectedRunNumber === "number") {
+        setSelectedRunNumber(storedWorkspace.selectedRunNumber);
+      }
 
       setHasLoadedStoredWorkspace(true);
     }
@@ -2466,19 +2476,9 @@ export default function RangeDaysPage() {
   useEffect(() => {
     if (!hasLoadedStoredWorkspace) return;
 
-    const workspace = {
-      rangeDays,
-      drillLibrary,
-      rangeDayDrills,
-      rangeRoster,
-      results,
-      malfunctions,
-    };
-
-    writeStoredRangeDayWorkspace(workspace);
-    if (canManageRangeDays || canScoreRangeDays) {
-      writeRemoteRangeDayWorkspace(workspace);
-    }
+    const delay = workspaceSaveDelay.current;
+    workspaceSaveDelay.current = 650;
+    queueRangeDayWorkspaceSave(createRangeDayWorkspaceSnapshot(), delay);
   }, [
     drillLibrary,
     hasLoadedStoredWorkspace,
@@ -2487,9 +2487,14 @@ export default function RangeDaysPage() {
     rangeDays,
     rangeRoster,
     results,
+    selectedDrillId,
+    selectedRangeDayId,
+    selectedRunNumber,
     canManageRangeDays,
     canScoreRangeDays,
   ]);
+
+  useEffect(() => () => workspaceSaveQueue.current?.dispose(), []);
 
   useEffect(() => {
     if (!selectedRangeDay) return;
@@ -2822,6 +2827,15 @@ export default function RangeDaysPage() {
   ) {
     if (!selectedRangeDay || !canEditSelectedRangeDay) return;
 
+    requestWorkspaceSave(
+      key === "attendanceMode" ||
+        key === "status" ||
+        key === "packetStatus" ||
+        key === "equipmentChecklist"
+        ? "immediate"
+        : "debounced",
+    );
+
     setRangeDays((current) =>
       current.map((rangeDay) =>
         rangeDay.id === selectedRangeDay.id
@@ -2894,6 +2908,8 @@ export default function RangeDaysPage() {
   function handleChangeRangeDayType(nextRangeType: RangeDayType) {
     if (!selectedRangeDay) return;
 
+    requestWorkspaceSave("immediate");
+
     setRangeDays((current) =>
       current.map((rangeDay) =>
         rangeDay.id === selectedRangeDay.id
@@ -2917,6 +2933,7 @@ export default function RangeDaysPage() {
     if (!canManageRangeDays) return;
     const currentDay = rangeDays.find((item) => item.id === rangeDayId);
     if (currentDay && (["Completed", "Locked", "Archived"].includes(currentDay.status) || currentDay.packetStatus === "Ready")) return;
+    requestWorkspaceSave("immediate");
     setRangeDays((current) =>
       current.map((rangeDay) =>
         rangeDay.id === rangeDayId
@@ -2929,37 +2946,72 @@ export default function RangeDaysPage() {
     );
   }
 
-  async function handleSaveRangeDayWorkspace() {
-    if (!canManageRangeDays && !canScoreRangeDays) {
-      setSaveMessage("You do not have permission to update range records.");
-      return;
-    }
-    const workspace = {
+  function createRangeDayWorkspaceSnapshot(): StoredRangeDayWorkspace {
+    return {
       rangeDays,
       drillLibrary,
       rangeDayDrills,
       rangeRoster,
       results,
       malfunctions,
+      selectedRangeDayId: selectedRangeDayId ?? undefined,
+      selectedDrillId,
+      selectedRunNumber,
     };
-    writeStoredRangeDayWorkspace(workspace);
+  }
 
-    setSaveMessage("Saving...");
-    try {
-      await saveRemoteRangeDayWorkspace(workspace);
-      setSaveMessage("Saved");
-    } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "The range workspace could not be saved.");
+  function requestWorkspaceSave(
+    priority: "immediate" | "debounced" = "debounced",
+  ) {
+    workspaceSaveDelay.current = priority === "immediate" ? 0 : 650;
+  }
+
+  function updateWorkspaceSaveState(
+    state: WorkspaceAutosaveState,
+    error?: string,
+  ) {
+    setWorkspaceSaveState(state);
+    setWorkspaceSaveError(error ?? "");
+  }
+
+  function queueRangeDayWorkspaceSave(
+    workspace: StoredRangeDayWorkspace,
+    delay: number,
+  ) {
+    writeStoredRangeDayWorkspace(workspace);
+    if (!canManageRangeDays && !canScoreRangeDays) return;
+    workspaceSaveQueue.current?.schedule(
+      workspace,
+      delay,
+      saveRemoteRangeDayWorkspace,
+      updateWorkspaceSaveState,
+    );
+  }
+
+  function retryRangeDayWorkspaceSave() {
+    workspaceSaveQueue.current?.retry(
+      saveRemoteRangeDayWorkspace,
+      updateWorkspaceSaveState,
+    );
+  }
+
+  function handleSaveRangeDayWorkspace() {
+    if (!canManageRangeDays && !canScoreRangeDays) {
+      setSaveMessage("You do not have permission to update range records.");
       return;
     }
-
-    if (typeof window !== "undefined") {
-      window.setTimeout(() => setSaveMessage(""), 2000);
-    }
+    queueRangeDayWorkspaceSave(createRangeDayWorkspaceSnapshot(), 0);
+    void workspaceSaveQueue.current?.flushNow(
+      saveRemoteRangeDayWorkspace,
+      updateWorkspaceSaveState,
+    );
+    setSaveMessage("Saving...");
   }
 
   function handleSetLeadInstructor(userId: string) {
     if (!selectedRangeDay || !userId || !canEditSelectedRangeDay) return;
+
+    requestWorkspaceSave("immediate");
 
     const currentInstructorIds = selectedRangeDay.instructorIds ?? [];
 
@@ -2988,6 +3040,8 @@ export default function RangeDaysPage() {
 
     if (currentInstructorIds.includes(newInstructorUserId)) return;
 
+    requestWorkspaceSave("immediate");
+
     setRangeDays((current) =>
       current.map((rangeDay) =>
         rangeDay.id === selectedRangeDay.id
@@ -3003,6 +3057,8 @@ export default function RangeDaysPage() {
   function handleRemoveInstructorFromRangeDay(userId: string) {
     if (!canEditSelectedRangeDay) return;
     if (!selectedRangeDay) return;
+
+    requestWorkspaceSave("immediate");
 
     const remainingInstructorIds = (selectedRangeDay.instructorIds ?? []).filter(
       (instructorId) => instructorId !== userId,
@@ -3042,6 +3098,8 @@ export default function RangeDaysPage() {
 
     if (alreadyRostered) return;
 
+    requestWorkspaceSave("immediate");
+
     const newRosterEntry: RangeRosterEntry = {
       id: `roster-${Date.now()}`,
       rangeDayId: selectedRangeDay.id,
@@ -3076,6 +3134,8 @@ export default function RangeDaysPage() {
       return;
     }
 
+    requestWorkspaceSave("immediate");
+
     const arrival = new Date();
     const newRosterEntry = createOpenAttendanceRosterEntry({
       id: `roster-${arrival.getTime()}`,
@@ -3107,6 +3167,8 @@ export default function RangeDaysPage() {
     if (!canEditSelectedRangeDay) return;
     const entryToRemove = rangeRoster.find((entry) => entry.id === rosterEntryId);
 
+    requestWorkspaceSave("immediate");
+
     setRangeRoster((current) =>
       current.filter((entry) => entry.id !== rosterEntryId),
     );
@@ -3135,6 +3197,7 @@ export default function RangeDaysPage() {
 
   function handleToggleRosterAttendance(rosterEntryId: string) {
     if (!canEditSelectedRangeDay) return;
+    requestWorkspaceSave("immediate");
     setRangeRoster((current) =>
       current.map((entry) =>
         entry.id === rosterEntryId
@@ -3152,6 +3215,7 @@ export default function RangeDaysPage() {
     firearmId: string,
   ) {
     if (!canEditSelectedRangeDay) return;
+    requestWorkspaceSave("immediate");
     setRangeRoster((current) =>
       current.map((entry) => {
         if (entry.id !== rosterEntryId) return entry;
@@ -3463,6 +3527,7 @@ export default function RangeDaysPage() {
       return [result];
     });
 
+    requestWorkspaceSave("immediate");
     setResults((current) => [
       ...current.filter(
         (result) =>
@@ -4448,13 +4513,33 @@ export default function RangeDaysPage() {
 
               <button
                 type="button"
-                onClick={() => void handleSaveRangeDayWorkspace()}
+                onClick={handleSaveRangeDayWorkspace}
                 disabled={(!canManageRangeDays && !canScoreRangeDays) || selectedRangeDayFinalized}
                 className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Save size={14} />
                 {saveMessage || "Save Range Day"}
               </button>
+              <div className="inline-flex min-h-8 items-center gap-2 text-[11px]" role="status" aria-live="polite">
+                {workspaceSaveState === "saving" ? (
+                  <span className="text-slate-400">Saving…</span>
+                ) : workspaceSaveState === "saved" ? (
+                  <span className="text-emerald-400">Saved</span>
+                ) : workspaceSaveState === "error" ? (
+                  <>
+                    <span className="text-amber-300" title={workspaceSaveError}>
+                      Save failed
+                    </span>
+                    <button
+                      type="button"
+                      onClick={retryRangeDayWorkspaceSave}
+                      className="font-semibold text-blue-300 hover:text-blue-200"
+                    >
+                      Retry
+                    </button>
+                  </>
+                ) : null}
+              </div>
               <span className="sr-only" role="status" aria-live="polite">{saveMessage}</span>
             </div>
           </div>
@@ -6279,6 +6364,7 @@ export default function RangeDaysPage() {
                   <select
                     value={selectedDrill?.id ?? ""}
                     onChange={(event) => {
+                      requestWorkspaceSave("immediate");
                       setSelectedDrillId(event.target.value);
                       setSelectedRunNumber(1);
                     }}
@@ -6298,9 +6384,10 @@ export default function RangeDaysPage() {
                   </label>
                   <select
                     value={selectedRunNumber}
-                    onChange={(event) =>
-                      setSelectedRunNumber(Number(event.target.value))
-                    }
+                    onChange={(event) => {
+                      requestWorkspaceSave("immediate");
+                      setSelectedRunNumber(Number(event.target.value));
+                    }}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                   >
                     {Array.from(
