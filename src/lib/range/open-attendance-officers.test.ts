@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   filterOpenAttendanceOfficers,
+  getOpenAttendanceOfficerInputValue,
   getOpenAttendanceOfficerLabel,
 } from "./open-attendance-officers.ts";
 
@@ -78,5 +79,35 @@ test("keeps same-name officers distinct by badge, unit, and ID", () => {
   assert.equal(
     getOpenAttendanceOfficerLabel(michaelTorres[1]),
     "Michael Torres — #227 — Detective Bureau",
+  );
+});
+
+test("keeps a selected officer identity independent from the search query", () => {
+  const selectedOfficer = {
+    id: "officer-1",
+    displayName: "Alex Morgan",
+    badgeNumber: "214",
+    unitName: "Patrol",
+  };
+
+  assert.equal(
+    getOpenAttendanceOfficerInputValue({
+      isOpen: false,
+      searchQuery: "",
+      selectedOfficer,
+    }),
+    "Alex Morgan — #214 — Patrol",
+  );
+  assert.equal(
+    getOpenAttendanceOfficerInputValue({
+      isOpen: true,
+      searchQuery: "317",
+      selectedOfficer,
+    }),
+    "317",
+  );
+  assert.deepEqual(
+    filterOpenAttendanceOfficers(officers, "317").map((officer) => officer.id),
+    ["officer-2"],
   );
 });

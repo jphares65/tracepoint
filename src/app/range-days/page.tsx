@@ -68,6 +68,7 @@ import {
 } from "@/lib/range/open-attendance-firearms";
 import {
   filterOpenAttendanceOfficers,
+  getOpenAttendanceOfficerInputValue,
   getOpenAttendanceOfficerLabel,
 } from "@/lib/range/open-attendance-officers";
 
@@ -1880,7 +1881,8 @@ export default function RangeDaysPage() {
   const [newRosterOfficerId, setNewRosterOfficerId] = useState("");
   const [openAttendanceOfficerId, setOpenAttendanceOfficerId] = useState("");
   const [openAttendanceFirearmId, setOpenAttendanceFirearmId] = useState("");
-  const [openAttendanceSearch, setOpenAttendanceSearch] = useState("");
+  const [openAttendanceOfficerSearchQuery, setOpenAttendanceOfficerSearchQuery] =
+    useState("");
   const [openAttendanceOfficerPickerOpen, setOpenAttendanceOfficerPickerOpen] =
     useState(false);
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
@@ -1991,29 +1993,19 @@ export default function RangeDaysPage() {
   const openAttendanceOfficers = useMemo(() => {
     return filterOpenAttendanceOfficers(
       availableRosterOfficers,
-      openAttendanceSearch,
+      openAttendanceOfficerSearchQuery,
     );
-  }, [availableRosterOfficers, openAttendanceSearch]);
+  }, [availableRosterOfficers, openAttendanceOfficerSearchQuery]);
 
-  useEffect(() => {
-    if (!isOpenAttendance) return;
-
-    if (
-      openAttendanceOfficerId &&
-      openAttendanceOfficers.some(
-        (officer) => officer.id === openAttendanceOfficerId,
-      )
-    ) {
-      return;
-    }
-
-    setOpenAttendanceOfficerId("");
-    setOpenAttendanceFirearmId("");
-  }, [
-    isOpenAttendance,
-    openAttendanceOfficerId,
-    openAttendanceOfficers,
-  ]);
+  const selectedOpenAttendanceOfficer = useMemo(
+    () =>
+      personnel.find((officer) => officer.id === openAttendanceOfficerId) ??
+      null,
+    [openAttendanceOfficerId, personnel],
+  );
+  const selectedOpenAttendanceOfficerLabel = selectedOpenAttendanceOfficer
+    ? getOpenAttendanceOfficerLabel(selectedOpenAttendanceOfficer)
+    : "";
 
   const availableInstructorUsers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -3106,7 +3098,7 @@ export default function RangeDaysPage() {
     setSelectedOfficerId(openAttendanceOfficerId);
     setOpenAttendanceOfficerId("");
     setOpenAttendanceFirearmId("");
-    setOpenAttendanceSearch("");
+    setOpenAttendanceOfficerSearchQuery("");
     setOpenAttendanceOfficerPickerOpen(false);
     resetEntryForm(1);
   }
@@ -6145,22 +6137,56 @@ export default function RangeDaysPage() {
                         aria-autocomplete="list"
                         aria-controls="open-attendance-officer-options"
                         aria-expanded={openAttendanceOfficerPickerOpen}
-                        value={openAttendanceSearch}
+                        value={getOpenAttendanceOfficerInputValue({
+                          isOpen: openAttendanceOfficerPickerOpen,
+                          searchQuery: openAttendanceOfficerSearchQuery,
+                          selectedOfficer: selectedOpenAttendanceOfficer,
+                        })}
                         onChange={(event) => {
-                          setOpenAttendanceSearch(event.target.value);
-                          setOpenAttendanceOfficerId("");
-                          setOpenAttendanceFirearmId("");
+                          setOpenAttendanceOfficerSearchQuery(event.target.value);
                           setOpenAttendanceOfficerPickerOpen(true);
                         }}
-                        onFocus={() => setOpenAttendanceOfficerPickerOpen(true)}
+                        onFocus={() => {
+                          setOpenAttendanceOfficerPickerOpen(true);
+                          setOpenAttendanceOfficerSearchQuery("");
+                        }}
+                        onClick={() => {
+                          if (!openAttendanceOfficerPickerOpen) {
+                            setOpenAttendanceOfficerPickerOpen(true);
+                            setOpenAttendanceOfficerSearchQuery("");
+                          }
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === "Escape") {
                             setOpenAttendanceOfficerPickerOpen(false);
+                            setOpenAttendanceOfficerSearchQuery("");
                           }
                         }}
                         placeholder="Name, badge, rank, or unit"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 pr-16 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                       />
+                      {selectedOpenAttendanceOfficer ? (
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setOpenAttendanceOfficerId("");
+                            setOpenAttendanceFirearmId("");
+                            setOpenAttendanceOfficerSearchQuery("");
+                            setOpenAttendanceOfficerPickerOpen(true);
+                          }}
+                          className="absolute bottom-2 right-2 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          aria-label="Clear selected officer"
+                        >
+                          Change
+                        </button>
+                      ) : null}
+                      {openAttendanceOfficerPickerOpen &&
+                      selectedOpenAttendanceOfficerLabel ? (
+                        <p className="mt-1 text-[10px] text-blue-200/70">
+                          Selected: {selectedOpenAttendanceOfficerLabel}
+                        </p>
+                      ) : null}
                       {openAttendanceOfficerPickerOpen ? (
                         <div
                           id="open-attendance-officer-options"
@@ -6178,9 +6204,7 @@ export default function RangeDaysPage() {
                                 onClick={() => {
                                   setOpenAttendanceOfficerId(officer.id);
                                   setOpenAttendanceFirearmId("");
-                                  setOpenAttendanceSearch(
-                                    getOpenAttendanceOfficerLabel(officer),
-                                  );
+                                  setOpenAttendanceOfficerSearchQuery("");
                                   setOpenAttendanceOfficerPickerOpen(false);
                                 }}
                                 className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-800 focus:bg-slate-800 focus:outline-none"
