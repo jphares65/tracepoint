@@ -39,7 +39,6 @@ export class S3ObjectStore implements ObjectStore {
   uploadQualificationEvidence(input:AttachmentUploadInput){return this.upload('qualification',input);}
   uploadTrainingFile(input:AttachmentUploadInput){return this.upload('agency-training',input);}
   uploadFirearmAttachment(input:AttachmentUploadInput){return this.upload('firearm',input);}
-  uploadFleetInspectionEvidence(input:AttachmentUploadInput){return this.upload('fleet-inspection',input);}
   uploadDrillDocument(input:AttachmentUploadInput){return this.upload('drill-document',input);}
   async removeAttachment(path:AttachmentObjectPath){const key='attachments/'+this.attachment(path);try{await this.client.send(new DeleteObjectCommand(this.object(key)));return {error:null};}catch{return {error:failure()};}}
   private async signed(key:string,disposition?:string){try{return {signedUrl:await this.sign(this.client,new GetObjectCommand({...this.object(key),ResponseContentDisposition:disposition}),{expiresIn:60}),error:null};}catch{return {signedUrl:null,error:failure()};}}

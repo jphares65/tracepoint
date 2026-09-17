@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Archive,
@@ -22,7 +22,6 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
-import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import FirearmAttachments from "@/app/components/FirearmAttachments";
 import {
   matchesFirearmInventorySearch,
@@ -34,17 +33,11 @@ import {
   type SortDirection,
 } from "@/lib/armory/inventory-view";
 import {
-  DEFAULT_FOCUS_INVENTORY_PREFERENCES,
   getStoredFocusInventoryPreferences,
-  FIREARM_INVENTORY_GROUP_BY,
   moveFocusInventoryColumn,
   saveFocusInventoryPreferences,
   type FocusInventoryPreferences,
 } from "@/lib/armory/inventory-focus-preferences";
-import {
-  groupTableRows,
-  toggleCollapsedTableGroup,
-} from "@/lib/tables/grouping";
 
 type ArmoryMember = {
   user_id: string;
@@ -139,13 +132,6 @@ const FOCUS_COLUMN_CONFIG: Record<
   status: { label: "Status", minimumWidth: 125 },
   custody: { label: "Issued To", minimumWidth: 155 },
 };
-
-const FIREARM_GROUP_LABELS = {
-  none: "None",
-  type: "Firearm Type",
-  status: "Status",
-  assignment: "Assignment / Assigned Officer",
-} as const;
 
 const EMPTY_FORM: NewFirearmForm = {
   make: "",
@@ -259,7 +245,10 @@ export default function FirearmsPage() {
   const [focusDetailOpen, setFocusDetailOpen] = useState(false);
   const [departmentId, setDepartmentId] = useState("");
   const [focusPreferences, setFocusPreferences] =
-    useState<FocusInventoryPreferences>(DEFAULT_FOCUS_INVENTORY_PREFERENCES);
+    useState<FocusInventoryPreferences>({
+      columnOrder: ["firearm", "serial", "asset", "type", "status", "custody"],
+      hiddenColumns: [],
+    });
   const [draggedFocusColumn, setDraggedFocusColumn] =
     useState<FirearmSortKey | null>(null);
   const [showFocusColumns, setShowFocusColumns] = useState(false);
@@ -340,27 +329,6 @@ export default function FirearmsPage() {
     [visibleFocusColumns],
   );
 
-  const firearmGroups = useMemo(
-    () =>
-      groupTableRows(focusFirearms, focusPreferences.groupBy, (firearm, groupBy) => {
-        switch (groupBy) {
-          case "type": {
-            const label = formatFirearmType(firearm.firearm_type);
-            return { key: firearm.firearm_type || "other", label };
-          }
-          case "status": {
-            const label = normalizeStatus(firearm.condition_status);
-            return { key: label, label };
-          }
-          case "assignment": {
-            const label = firearm.active_assignment?.assigned_to_name || "Unassigned";
-            return { key: firearm.active_assignment?.assigned_to_user_id || "unassigned", label };
-          }
-        }
-      }),
-    [focusFirearms, focusPreferences.groupBy],
-  );
-
   function selectInventoryFirearm(firearmId: string) {
     setSelectedFirearmId(firearmId);
     if (inventoryView === "focus") setFocusDetailOpen(true);
@@ -408,24 +376,6 @@ export default function FirearmsPage() {
       ),
     }));
     setDraggedFocusColumn(null);
-  }
-
-  function updateFirearmGrouping(groupBy: FocusInventoryPreferences["groupBy"]) {
-    updateFocusPreferences((current) => ({ ...current, groupBy }));
-  }
-
-  function toggleFirearmGroup(groupKey: string) {
-    updateFocusPreferences((current) => ({
-      ...current,
-      collapsedGroupKeys: toggleCollapsedTableGroup(current.collapsedGroupKeys, groupKey),
-    }));
-  }
-
-  function setAllFirearmGroupsCollapsed(collapsed: boolean) {
-    updateFocusPreferences((current) => ({
-      ...current,
-      collapsedGroupKeys: collapsed ? firearmGroups.map((group) => group.key) : [],
-    }));
   }
 
   function renderFocusInventoryCell(
@@ -476,100 +426,6 @@ export default function FirearmsPage() {
           </div>
         );
     }
-  }
-
-  function renderStandardInventoryCell(
-    firearm: ArmoryFirearm,
-    column: FirearmSortKey,
-  ) {
-    const status = normalizeStatus(firearm.condition_status);
-
-    switch (column) {
-      case "firearm":
-        return (
-          <td key={column} className="px-4 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-bold text-white">{getFirearmLabel(firearm)}</p>
-              {firearm.needs_attention ? (
-                <span className="inline-flex rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-300">
-                  Needs Attention
-                </span>
-              ) : null}
-            </div>
-            <p className="text-xs text-slate-500">
-              {formatFirearmType(firearm.firearm_type)}
-              {firearm.caliber ? ` | ${firearm.caliber}` : ""}
-            </p>
-          </td>
-        );
-      case "serial":
-        return <td key={column} className="px-4 py-4 font-mono text-xs text-slate-600">{firearm.serial_number}</td>;
-      case "asset":
-        return <td key={column} className="px-4 py-4 font-mono text-xs text-slate-600">{firearm.asset_number || "—"}</td>;
-      case "type":
-        return <td key={column} className="px-4 py-4 text-sm text-slate-400">{formatFirearmType(firearm.firearm_type)}{firearm.caliber ? ` · ${firearm.caliber}` : ""}</td>;
-      case "status":
-        return (
-          <td key={column} className="px-4 py-4">
-            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[status]}`}>
-              {status}
-            </span>
-          </td>
-        );
-      case "custody":
-        return (
-          <td key={column} className="px-4 py-4 text-sm text-slate-600">
-            {firearm.active_assignment ? (
-              <span className="font-semibold text-slate-100">
-                {firearm.active_assignment.assigned_to_name}
-              </span>
-            ) : (
-              <span className="text-slate-500">Unassigned</span>
-            )}
-          </td>
-        );
-    }
-  }
-
-  function firearmGroupSummary(firearmsInGroup: ArmoryFirearm[]) {
-    const assigned = firearmsInGroup.filter((firearm) => firearm.active_assignment).length;
-    const unavailable = firearmsInGroup.filter((firearm) =>
-      ["Out of Service", "Maintenance", "Inspection Required"].includes(
-        normalizeStatus(firearm.condition_status),
-      ),
-    ).length;
-    const segments = [`${assigned} assigned`, `${firearmsInGroup.length - assigned} unassigned`];
-    if (unavailable) segments.push(`${unavailable} out of service`);
-    return segments.join(" · ");
-  }
-
-  function renderFocusFirearmRows(rows: ArmoryFirearm[]) {
-    return rows.map((firearm) => (
-      <div
-        key={firearm.id}
-        role="row"
-        onClick={() => selectInventoryFirearm(firearm.id)}
-        className={`grid w-full cursor-pointer transition hover:bg-slate-200/70 ${firearm.id === selectedFirearmId ? "bg-slate-800/80" : ""}`}
-        style={{ gridTemplateColumns: focusGridTemplate }}
-      >
-        {visibleFocusColumns.map((column) => renderFocusInventoryCell(firearm, column))}
-      </div>
-    ));
-  }
-
-  function renderStandardFirearmRows(rows: ArmoryFirearm[]) {
-    return rows.map((firearm) => {
-      const selected = firearm.id === selectedFirearmId;
-      return (
-        <tr
-          key={firearm.id}
-          onClick={() => selectInventoryFirearm(firearm.id)}
-          className={`cursor-pointer transition hover:bg-slate-200/70 ${selected ? "bg-slate-800/80" : ""}`}
-        >
-          {visibleFocusColumns.map((column) => renderStandardInventoryCell(firearm, column))}
-        </tr>
-      );
-    });
   }
 
   const inventoryCounts = useMemo(() => {
@@ -1090,7 +946,7 @@ The firearm will be removed from active inventory and future operational selecti
                   </div>
                 </div>
 
-                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "gap-2 md:grid-cols-[minmax(0,1fr)_180px_150px_auto_auto]"}`}>
+                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto]" : "gap-2 md:grid-cols-[minmax(0,1fr)_180px_150px]"}`}>
                   <label className="relative min-w-0">
                     <Search className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-500 ${inventoryView === "focus" ? "left-2 h-3.5 w-3.5" : "left-3 h-4 w-4"}`} />
                     <input
@@ -1130,14 +986,15 @@ The firearm will be removed from active inventory and future operational selecti
                     Archived Only
                   </label>
 
-                  <div className="relative">
+                  {inventoryView === "focus" && (
+                    <div className="relative">
                       <button
                         type="button"
                         onClick={() => setShowFocusColumns((current) => !current)}
-                        className={`inline-flex w-full items-center justify-center border border-slate-800 bg-slate-900/90 font-semibold text-slate-300 hover:text-white ${inventoryView === "focus" ? "gap-1.5 rounded-lg px-2 py-1.5 text-xs" : "gap-2 rounded-2xl px-3 py-2 text-sm"}`}
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/90 px-2 py-1.5 text-xs font-semibold text-slate-300 hover:text-white"
                         aria-expanded={showFocusColumns}
                       >
-                        <Columns3 className={inventoryView === "focus" ? "h-3.5 w-3.5" : "h-4 w-4"} />
+                        <Columns3 className="h-3.5 w-3.5" />
                         Columns
                       </button>
                       {showFocusColumns && (
@@ -1162,44 +1019,8 @@ The firearm will be removed from active inventory and future operational selecti
                           })}
                         </div>
                       )}
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={focusPreferences.groupBy}
-                      onChange={(event) =>
-                        updateFirearmGrouping(
-                          event.target.value as FocusInventoryPreferences["groupBy"],
-                        )
-                      }
-                      aria-label="Group firearms by"
-                      className={`border border-slate-800 bg-slate-900/90 font-semibold text-slate-300 outline-none focus:border-slate-500 ${inventoryView === "focus" ? "rounded-lg px-2 py-1.5 text-xs" : "rounded-2xl px-3 py-2 text-sm"}`}
-                    >
-                      {FIREARM_INVENTORY_GROUP_BY.map((groupBy) => (
-                        <option key={groupBy} value={groupBy}>
-                          Group by: {FIREARM_GROUP_LABELS[groupBy]}
-                        </option>
-                      ))}
-                    </select>
-                    {focusPreferences.groupBy !== "none" ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setAllFirearmGroupsCollapsed(false)}
-                          className={`font-semibold text-slate-400 hover:text-white ${inventoryView === "focus" ? "text-[10px]" : "text-xs"}`}
-                        >
-                          Expand All
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAllFirearmGroupsCollapsed(true)}
-                          className={`font-semibold text-slate-400 hover:text-white ${inventoryView === "focus" ? "text-[10px]" : "text-xs"}`}
-                        >
-                          Collapse All
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1258,31 +1079,19 @@ The firearm will be removed from active inventory and future operational selecti
                           </div>
                         </div>
                         <div role="rowgroup" className="divide-y divide-slate-800 bg-slate-900">
-                          {focusPreferences.groupBy === "none"
-                            ? renderFocusFirearmRows(focusFirearms)
-                            : firearmGroups.map((group) => {
-                                const expanded = !focusPreferences.collapsedGroupKeys.includes(group.key);
-                                return (
-                                  <div key={group.key}>
-                                    <div
-                                      role="row"
-                                      className="grid w-full"
-                                      style={{ gridTemplateColumns: focusGridTemplate }}
-                                    >
-                                      <div role="cell" className="col-span-full">
-                                        <CollapsibleTableGroupHeader
-                                          label={group.label}
-                                          count={group.items.length}
-                                          expanded={expanded}
-                                          onToggle={() => toggleFirearmGroup(group.key)}
-                                          summary={firearmGroupSummary(group.items)}
-                                        />
-                                      </div>
-                                    </div>
-                                    {expanded ? renderFocusFirearmRows(group.items) : null}
-                                  </div>
-                                );
-                              })}
+                          {focusFirearms.map((firearm) => (
+                            <div
+                              key={firearm.id}
+                              role="row"
+                              onClick={() => selectInventoryFirearm(firearm.id)}
+                              className={`grid w-full cursor-pointer transition hover:bg-slate-200/70 ${firearm.id === selectedFirearmId ? "bg-slate-800/80" : ""}`}
+                              style={{ gridTemplateColumns: focusGridTemplate }}
+                            >
+                              {visibleFocusColumns.map((column) =>
+                                renderFocusInventoryCell(firearm, column),
+                              )}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ) : (
@@ -1291,55 +1100,63 @@ The firearm will be removed from active inventory and future operational selecti
                     >
                       <thead className="sticky top-0 bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-500">
                         <tr>
-                          {visibleFocusColumns.map((column) => (
-                            <th
-                              key={column}
-                              draggable
-                              onDragStart={(event) => {
-                                event.dataTransfer.effectAllowed = "move";
-                                event.dataTransfer.setData("text/plain", column);
-                                setDraggedFocusColumn(column);
-                              }}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={() => handleFocusColumnDrop(column)}
-                              onDragEnd={() => setDraggedFocusColumn(null)}
-                              className={`sticky top-0 z-10 cursor-grab bg-slate-950 px-4 py-3 font-semibold active:cursor-grabbing ${draggedFocusColumn === column ? "opacity-40" : ""}`}
-                              title="Drag to reorder column"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => updateSort(column)}
-                                className="inline-flex items-center gap-1 hover:text-white"
-                              >
-                                {FOCUS_COLUMN_CONFIG[column].label}
-                                <ArrowDownUp className={`h-3 w-3 ${sortKey === column ? "text-blue-300" : ""}`} />
-                              </button>
+                          {([
+                            ["firearm", "Firearm"], ["serial", "Serial"], ["asset", "Asset"],
+                            ["type", "Type / Caliber"], ["status", "Status"], ["custody", "Issued To"],
+                          ] as Array<[FirearmSortKey, string]>).map(([key, label]) => (
+                            <th key={key} className={`${key === "asset" || key === "type" ? "hidden" : ""} sticky top-0 z-10 bg-slate-950 px-4 py-3 font-semibold`}>
+                              {label}
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800 bg-slate-900">
-                        {focusPreferences.groupBy === "none"
-                          ? renderStandardFirearmRows(focusFirearms)
-                          : firearmGroups.map((group) => {
-                              const expanded = !focusPreferences.collapsedGroupKeys.includes(group.key);
-                              return (
-                                <Fragment key={group.key}>
-                                  <tr>
-                                    <td colSpan={visibleFocusColumns.length} className="p-0">
-                                      <CollapsibleTableGroupHeader
-                                        label={group.label}
-                                        count={group.items.length}
-                                        expanded={expanded}
-                                        onToggle={() => toggleFirearmGroup(group.key)}
-                                        summary={firearmGroupSummary(group.items)}
-                                      />
-                                    </td>
-                                  </tr>
-                                  {expanded ? renderStandardFirearmRows(group.items) : null}
-                                </Fragment>
-                              );
-                            })}
+                        {filteredFirearms.map((firearm) => {
+                          const status = normalizeStatus(firearm.condition_status);
+                          const selected = firearm.id === selectedFirearmId;
+
+                          return (
+                            <tr
+                              key={firearm.id}
+                              onClick={() => selectInventoryFirearm(firearm.id)}
+                              className={`cursor-pointer transition hover:bg-slate-200/70 ${selected ? "bg-slate-800/80" : ""}`}
+                            >
+                              <>
+                                  <td className="px-4 py-4">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="font-bold text-white">{getFirearmLabel(firearm)}</p>
+                                      {firearm.needs_attention ? (
+                                        <span className="inline-flex rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-300">
+                                          Needs Attention
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                      {formatFirearmType(firearm.firearm_type)}
+                                      {firearm.caliber ? ` | ${firearm.caliber}` : ""}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-4 font-mono text-xs text-slate-600">
+                                    {firearm.serial_number}
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[status]}`}>
+                                      {status}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-4 text-sm text-slate-600">
+                                    {firearm.active_assignment ? (
+                                      <span className="font-semibold text-slate-100">
+                                        {firearm.active_assignment.assigned_to_name}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500">Unassigned</span>
+                                    )}
+                                  </td>
+                              </>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                     )}

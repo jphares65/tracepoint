@@ -9,7 +9,6 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import Image from "next/image";
 
 const DEFAULT_ITEMS = [
   ["body", "Body, windshield and mirrors"],
@@ -41,15 +40,6 @@ type Item = {
   sort_order: number;
   equipmentId?: string;
   equipmentStatus?: string;
-};
-
-type InspectionEvidence = {
-  id: string;
-  attachmentType: "photo" | "video";
-  fileName: string;
-  description?: string | null;
-  viewUrl: string;
-  downloadUrl: string;
 };
 
 function badge(result: string) {
@@ -546,77 +536,29 @@ export default function QuickInspectionPanel({
             allInspections.map((item) => (
               <article
                 key={item.id}
-                className="p-4"
+                className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {item.inspection_type}
-                    </p>
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      Performed by{" "}
-                      {item.inspector_name || "System / legacy record"} ·{" "}
-                      {new Date(item.inspected_at).toLocaleString()} ·{" "}
-                      {Number(item.mileage || 0).toLocaleString()} mi ·{" "}
-                      {Number(item.hours || 0).toLocaleString()} hrs ·{" "}
-                      {item.defect_count || 0} defects
-                    </p>
-                  </div>
-
-                  <span
-                    className={`self-start rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase ${badge(
-                      item.result,
-                    )}`}
-                  >
-                    {item.result}
-                  </span>
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    {item.inspection_type}
+                  </p>
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Performed by{" "}
+                    {item.inspector_name || "System / legacy record"} ·{" "}
+                    {new Date(item.inspected_at).toLocaleString()} ·{" "}
+                    {Number(item.mileage || 0).toLocaleString()} mi ·{" "}
+                    {Number(item.hours || 0).toLocaleString()} hrs ·{" "}
+                    {item.defect_count || 0} defects
+                  </p>
                 </div>
 
-                {Array.isArray(item.evidence) && item.evidence.length ? (
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {item.evidence.map((evidence: InspectionEvidence) => (
-                      <a
-                        key={evidence.id}
-                        href={evidence.downloadUrl}
-                        className="group overflow-hidden rounded-xl border border-slate-700 bg-slate-950/60 hover:border-blue-500/60"
-                      >
-                        <div className="relative aspect-video bg-black">
-                          {evidence.attachmentType === "video" ? (
-                            <video
-                              controls
-                              preload="metadata"
-                              src={evidence.viewUrl}
-                              className="h-full w-full object-cover"
-                              onClick={(event) => event.preventDefault()}
-                            >
-                              Your browser does not support video playback.
-                            </video>
-                          ) : (
-                            <Image
-                              unoptimized
-                              fill
-                              sizes="(max-width: 640px) 100vw, 33vw"
-                              src={evidence.viewUrl}
-                              alt={evidence.description || evidence.fileName}
-                              className="object-cover transition group-hover:opacity-90"
-                            />
-                          )}
-                        </div>
-                        <div className="p-2.5">
-                          <p className="truncate text-[10px] font-semibold text-slate-200">
-                            {evidence.description || evidence.fileName}
-                          </p>
-                          <p className="mt-1 text-[9px] uppercase tracking-wide text-blue-300">
-                            {evidence.attachmentType === "video"
-                              ? "Video evidence"
-                              : "Photo evidence"}{" "}
-                            · Open file
-                          </p>
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
+                <span
+                  className={`self-start rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase ${badge(
+                    item.result,
+                  )}`}
+                >
+                  {item.result}
+                </span>
               </article>
             ))
           ) : (

@@ -10,9 +10,9 @@ function assertSupabaseConfiguration(environment: NodeJS.ProcessEnv) {
   if (!issuer || !/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(issuer)) throw new Error('Invalid authentication issuer configuration.');
   return issuer;
 }
-export async function getServerAuthenticatedUser(client: SupabaseClient, environment = process.env, accessToken?: string) {
+export async function getServerAuthenticatedUser(client: SupabaseClient, environment = process.env) {
   assertSupabaseConfiguration(environment);
-  const result = await client.auth.getUser(accessToken);
+  const result = await client.auth.getUser();
   return result.error ? null : result.data.user;
 }
 export function createServerAuthenticationProvider(client: SupabaseClient, environment = process.env) {

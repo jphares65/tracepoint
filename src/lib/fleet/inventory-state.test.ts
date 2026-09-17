@@ -12,7 +12,6 @@ import {
   type FleetInventoryVehicle,
   type InventoryQueryState,
 } from "./inventory-state.ts";
-import { groupTableRows } from "@/lib/tables/grouping";
 
 const NOW = new Date("2026-09-08T12:00:00-04:00");
 
@@ -170,24 +169,4 @@ test("missing data is searchable, filterable, and sortable without throwing", ()
   assert.deepEqual(applyInventoryView([missing], query({ inspection: "not-scheduled", service: "not-scheduled", issues: "none" }), NOW), [missing]);
   assert.deepEqual(sortFleetVehicles([missing, vehicle("complete")], "mileage", "asc").map((item) => item.id), ["complete", "missing"]);
   assert.deepEqual(sortFleetVehicles([missing, vehicle("complete")], "mileage", "desc").map((item) => item.id), ["complete", "missing"]);
-});
-
-test("uses the shared table grouping helper after Fleet filtering and sorting", () => {
-  const visible = applyInventoryView(
-    [
-      vehicle("12", { vehicle_type: "Patrol", status: "Available" }),
-      vehicle("2", { vehicle_type: "Detective", status: "Attention" }),
-      vehicle("10", { vehicle_type: "Patrol", status: "Available" }),
-    ],
-    query({ sort: "unit", direction: "asc" }),
-  );
-  const groups = groupTableRows(visible, "vehicleType" as const, (item) => ({
-    key: item.vehicle_type || "unclassified",
-    label: item.vehicle_type || "Unclassified",
-  }));
-
-  assert.deepEqual(groups.map((group) => [group.label, group.items.map((item) => item.id)]), [
-    ["Detective", ["2"]],
-    ["Patrol", ["10", "12"]],
-  ]);
 });

@@ -32,8 +32,6 @@ export async function GET(_request: Request, routeContext: RouteContext) {
     }
   } else if (row.entity_type === "agency_training_event") {
     authorized = true;
-  } else if (row.entity_type === "fleet_vehicle_inspection") {
-    authorized ||= hasAnyServerPermission(resolved.context, ["perform_fleet_inspections", "manage_fleet", "manage_fleet_rules"]);
   }
   if (!authorized) return permissionDeniedResponse("You do not have permission to download this attachment.");
   const storagePath = attachmentPathFromMetadata(

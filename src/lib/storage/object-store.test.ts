@@ -73,14 +73,6 @@ test("pins attachment operations to the private bucket and preserves path format
     bytes,
     contentType: "application/pdf",
   });
-  const inspection = await store.uploadFleetInspectionEvidence({
-    departmentId: "department-a",
-    recordId: "inspection-a",
-    objectId: "object-e",
-    fileName: "driver side.mp4",
-    bytes,
-    contentType: "video/mp4",
-  });
   const drill = await store.uploadDrillDocument({
     departmentId: "department-a",
     recordId: "drill-template-a",
@@ -93,7 +85,6 @@ test("pins attachment operations to the private bucket and preserves path format
   assert.equal(qualification.path, "department-a/qualification/result%2Fa/object-a-target-photo.png");
   assert.equal(training.path, "department-a/agency-training/event-a/object-b-lesson-plan.pdf");
   assert.equal(firearm.path, "department-a/firearm/firearm-a/object-c-receipt-signed-.pdf");
-  assert.equal(inspection.path, "department-a/fleet-inspection/inspection-a/object-e-driver-side.mp4");
   assert.equal(drill.path, "department-a/drill-document/drill-template-a/object-d-range-diagram.webp");
   assert.deepEqual(
     calls.map(({ bucket, operation, options }) => ({ bucket, operation, options })),
@@ -101,7 +92,6 @@ test("pins attachment operations to the private bucket and preserves path format
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "image/png", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
-      { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "video/mp4", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "image/webp", upsert: false } },
     ],
   );

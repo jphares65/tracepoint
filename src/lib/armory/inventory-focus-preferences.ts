@@ -1,8 +1,4 @@
 import type { FirearmSortKey } from "./inventory-view";
-import {
-  normalizeTableGroupingPreferences,
-  type TableGroupingPreferences,
-} from "@/lib/tables/grouping";
 
 export const FOCUS_INVENTORY_COLUMNS: FirearmSortKey[] = [
   "firearm",
@@ -13,16 +9,7 @@ export const FOCUS_INVENTORY_COLUMNS: FirearmSortKey[] = [
   "custody",
 ];
 
-export const FIREARM_INVENTORY_GROUP_BY = [
-  "none",
-  "type",
-  "status",
-  "assignment",
-] as const;
-
-export type FirearmInventoryGroupBy = (typeof FIREARM_INVENTORY_GROUP_BY)[number];
-
-export type FocusInventoryPreferences = TableGroupingPreferences<FirearmInventoryGroupBy> & {
+export type FocusInventoryPreferences = {
   columnOrder: FirearmSortKey[];
   hiddenColumns: FirearmSortKey[];
 };
@@ -30,8 +17,6 @@ export type FocusInventoryPreferences = TableGroupingPreferences<FirearmInventor
 export const DEFAULT_FOCUS_INVENTORY_PREFERENCES: FocusInventoryPreferences = {
   columnOrder: FOCUS_INVENTORY_COLUMNS,
   hiddenColumns: [],
-  groupBy: "none",
-  collapsedGroupKeys: [],
 };
 
 function isFocusColumn(value: unknown): value is FirearmSortKey {
@@ -52,13 +37,7 @@ export function normalizeFocusInventoryPreferences(
     ? [...new Set(value.hiddenColumns.filter(isFocusColumn))]
     : [];
 
-  const grouping = normalizeTableGroupingPreferences(
-    value,
-    FIREARM_INVENTORY_GROUP_BY,
-    "none",
-  );
-
-  return { columnOrder, hiddenColumns, ...grouping };
+  return { columnOrder, hiddenColumns };
 }
 
 export function moveFocusInventoryColumn(

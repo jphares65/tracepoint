@@ -1,12 +1,11 @@
 import "server-only";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { getServerAuthenticatedUser } from "@/lib/authentication/server-provider";
-import { readBearerToken } from "@/lib/authentication/request-bearer";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
@@ -120,8 +119,7 @@ function uniqueStrings(values: unknown[]) {
 
 export async function resolveServerAccess(): Promise<ServerAccessResult> {
   const server = await createServerClient();
-  const accessToken = readBearerToken((await headers()).get("authorization"));
-  const user = await getServerAuthenticatedUser(server, process.env, accessToken);
+  const user = await getServerAuthenticatedUser(server);
 
   if (!user) {
     return {
