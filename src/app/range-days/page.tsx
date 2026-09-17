@@ -63,9 +63,12 @@ import {
 } from "@/lib/range/attendance-mode";
 import {
   getOpenAttendanceAssignedFirearms,
+  getOpenAttendanceFallbackFirearms,
+  getOpenAttendanceFirearmCustodyLabel,
   getOpenAttendanceFirearmLabel,
   resolveOpenAttendanceFirearmSelection,
 } from "@/lib/range/open-attendance-firearms";
+import { filterOpenAttendanceOfficers } from "@/lib/range/open-attendance-officers";
 
 type RangeDayType =
   | "Qualification"
@@ -1877,6 +1880,8 @@ export default function RangeDaysPage() {
   const [openAttendanceOfficerId, setOpenAttendanceOfficerId] = useState("");
   const [openAttendanceFirearmId, setOpenAttendanceFirearmId] = useState("");
   const [openAttendanceSearch, setOpenAttendanceSearch] = useState("");
+  const [openAttendanceOfficerPickerOpen, setOpenAttendanceOfficerPickerOpen] =
+    useState(false);
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
   const [newEquipmentLabel, setNewEquipmentLabel] = useState("");
 
@@ -1983,19 +1988,9 @@ export default function RangeDaysPage() {
   }, [personnel, selectedRangeDay, selectedRoster]);
 
   const openAttendanceOfficers = useMemo(() => {
-    const query = openAttendanceSearch.trim().toLowerCase();
-    if (!query) return availableRosterOfficers;
-
-    return availableRosterOfficers.filter((officer) =>
-      [
-        officer.displayName,
-        officer.fullName,
-        officer.badgeNumber,
-        officer.rankTitle,
-        officer.unitName,
-      ]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(query)),
+    return filterOpenAttendanceOfficers(
+      availableRosterOfficers,
+      openAttendanceSearch,
     );
   }, [availableRosterOfficers, openAttendanceSearch]);
 
@@ -2011,7 +2006,7 @@ export default function RangeDaysPage() {
       return;
     }
 
-    setOpenAttendanceOfficerId(openAttendanceOfficers[0]?.id ?? "");
+    setOpenAttendanceOfficerId("");
   }, [
     isOpenAttendance,
     openAttendanceOfficerId,
@@ -2054,16 +2049,38 @@ export default function RangeDaysPage() {
     [firearms, openAttendanceOfficerId, selectedDrill?.firearmType],
   );
 
+  const openAttendanceFallbackFirearms = useMemo(
+    () =>
+      openAttendanceFirearms.length === 0
+        ? getOpenAttendanceFallbackFirearms({
+            firearms,
+            officerId: openAttendanceOfficerId,
+            requiredFirearmType: selectedDrill?.firearmType,
+          })
+        : [],
+    [
+      firearms,
+      openAttendanceFirearms.length,
+      openAttendanceOfficerId,
+      selectedDrill?.firearmType,
+    ],
+  );
+
+  const selectableOpenAttendanceFirearms =
+    openAttendanceFirearms.length > 0
+      ? openAttendanceFirearms
+      : openAttendanceFallbackFirearms;
+
   useEffect(() => {
     const nextFirearmId = resolveOpenAttendanceFirearmSelection({
       currentFirearmId: openAttendanceFirearmId,
-      firearms: openAttendanceFirearms,
+      firearms: selectableOpenAttendanceFirearms,
     });
 
     if (nextFirearmId !== openAttendanceFirearmId) {
       setOpenAttendanceFirearmId(nextFirearmId);
     }
-  }, [openAttendanceFirearmId, openAttendanceFirearms]);
+  }, [openAttendanceFirearmId, selectableOpenAttendanceFirearms]);
 
   const selectedEffectiveRunCount = getEffectiveRunCount(selectedDrill);
 
@@ -2519,7 +2536,8 @@ export default function RangeDaysPage() {
     );
 
     if (!openAttendanceOfficerIsAvailable) {
-      setOpenAttendanceOfficerId(availableRosterOfficers[0].id);
+      setOpenAttendanceOfficerId("");
+      setOpenAttendanceFirearmId("");
     }
   }, [
     availableRosterOfficers,
@@ -3061,7 +3079,13 @@ export default function RangeDaysPage() {
 
   function handleAddOpenAttendanceShooter() {
     if (!canEditSelectedRangeDay) return;
-    if (!selectedRangeDay || !openAttendanceOfficerId) return;
+    if (
+      !selectedRangeDay ||
+      !openAttendanceOfficerId ||
+      !openAttendanceFirearmId
+    ) {
+      return;
+    }
 
     if (
       !canAddOpenAttendanceShooter({
@@ -3080,7 +3104,7 @@ export default function RangeDaysPage() {
       rangeDayId: selectedRangeDay.id,
       officerId: openAttendanceOfficerId,
       attendanceTime: arrival.toISOString(),
-      firearmId: openAttendanceFirearmId || undefined,
+      firearmId: openAttendanceFirearmId,
     });
 
     setRangeRoster((current) =>
@@ -3094,14 +3118,11 @@ export default function RangeDaysPage() {
         : current,
     );
     setSelectedOfficerId(openAttendanceOfficerId);
+    setOpenAttendanceOfficerId("");
     setOpenAttendanceFirearmId("");
     setOpenAttendanceSearch("");
+    setOpenAttendanceOfficerPickerOpen(false);
     resetEntryForm(1);
-  }
-
-  function openRosterFirearmAssignment(officerId: string) {
-    setSelectedOfficerId(officerId);
-    setActiveRangeDayTab("roster");
   }
 
   function handleRemoveOfficerFromRoster(rosterEntryId: string) {
@@ -4499,6 +4520,14 @@ export default function RangeDaysPage() {
             <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
               {RANGE_DAY_DETAIL_TABS.map((tab) => {
                 const active = activeRangeDayTab === tab.id;
+                const openAttendanceManagementTab =
+                  isOpenAttendance && tab.id === "roster";
+                const tabLabel = openAttendanceManagementTab
+                  ? "Attendance / Manage"
+                  : tab.label;
+                const tabDescription = openAttendanceManagementTab
+                  ? "Corrections and history"
+                  : tab.description;
 
                 return (
                   <button
@@ -4511,9 +4540,9 @@ export default function RangeDaysPage() {
                         : "border border-transparent text-slate-500 hover:border-slate-800 hover:bg-slate-950/40 hover:text-slate-300"
                     }`}
                   >
-                    <p className="text-[12px] font-bold">{tab.label}</p>
+                    <p className="text-[12px] font-bold">{tabLabel}</p>
                     <p className="mt-0.5 hidden text-[10px] leading-4 md:block">
-                      {tab.description}
+                      {tabDescription}
                     </p>
                   </button>
                 );
@@ -5011,16 +5040,18 @@ export default function RangeDaysPage() {
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-[17px] font-bold text-white">
-                    Roster & Firearms
+                    {isOpenAttendance ? "Attendance / Manage" : "Roster & Firearms"}
                   </h2>
                   <p className="mt-1 text-[12px] text-slate-500">
-                    Add officers, mark attendance, and assign firearms without scrolling through the entire range day.
+                    {isOpenAttendance
+                      ? "Live arrivals are added from Scoring. Use this area for attendance corrections and range-day history."
+                      : "Add officers, mark attendance, and assign firearms without scrolling through the entire range day."}
                     {" "}
                     <span className="text-blue-300">{personnelMessage}</span>
                   </p>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-[260px_auto]">
+                {!isOpenAttendance ? <div className="grid gap-2 sm:grid-cols-[260px_auto]">
                   <select
                     value={newRosterOfficerId}
                     onChange={(event) => setNewRosterOfficerId(event.target.value)}
@@ -5047,7 +5078,7 @@ export default function RangeDaysPage() {
                     <Plus size={14} />
                     Add Officer
                   </button>
-                </div>
+                </div> : null}
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
@@ -6103,79 +6134,129 @@ export default function RangeDaysPage() {
                 </div>
               </div>
 
+              {openAttendanceScoringState === "empty" && canManageOpenAttendance ? (
+                <div className="mb-4 rounded-2xl border border-dashed border-blue-500/40 bg-blue-500/[0.04] px-4 py-5 text-center">
+                  <p className="text-sm font-semibold text-blue-100">No shooters yet</p>
+                  <p className="mt-1 text-[12px] text-slate-400">
+                    Add officers as they arrive.
+                  </p>
+                </div>
+              ) : null}
+
               {canManageOpenAttendance && (
                 <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] p-3">
-                  <div className="grid gap-3 xl:grid-cols-[minmax(240px,1.6fr)_minmax(180px,1fr)_minmax(190px,1fr)_auto] xl:items-end">
-                    <div className="min-w-0">
-                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
-                        Search officer
+                  <div className="grid gap-3 xl:grid-cols-[minmax(280px,1.65fr)_minmax(220px,1fr)_auto] xl:items-end">
+                    <div className="relative min-w-0">
+                      <label
+                        htmlFor="open-attendance-officer"
+                        className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70"
+                      >
+                        Search / Select officer
                       </label>
                       <input
+                        id="open-attendance-officer"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-controls="open-attendance-officer-options"
+                        aria-expanded={openAttendanceOfficerPickerOpen}
                         value={openAttendanceSearch}
-                        onChange={(event) => setOpenAttendanceSearch(event.target.value)}
-                        placeholder="Search by name, badge, rank, or unit"
+                        onChange={(event) => {
+                          setOpenAttendanceSearch(event.target.value);
+                          setOpenAttendanceOfficerId("");
+                          setOpenAttendanceFirearmId("");
+                          setOpenAttendanceOfficerPickerOpen(true);
+                        }}
+                        onFocus={() => setOpenAttendanceOfficerPickerOpen(true)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setOpenAttendanceOfficerPickerOpen(false);
+                          }
+                        }}
+                        placeholder="Name, badge, rank, or unit"
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                       />
+                      {openAttendanceOfficerPickerOpen ? (
+                        <div
+                          id="open-attendance-officer-options"
+                          role="listbox"
+                          className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-1 shadow-2xl"
+                        >
+                          {openAttendanceOfficers.length > 0 ? (
+                            openAttendanceOfficers.slice(0, 12).map((officer) => (
+                              <button
+                                key={officer.id}
+                                type="button"
+                                role="option"
+                                aria-selected={openAttendanceOfficerId === officer.id}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => {
+                                  setOpenAttendanceOfficerId(officer.id);
+                                  setOpenAttendanceFirearmId("");
+                                  setOpenAttendanceSearch(officer.displayName);
+                                  setOpenAttendanceOfficerPickerOpen(false);
+                                }}
+                                className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-800 focus:bg-slate-800 focus:outline-none"
+                              >
+                                <span className="block text-[12px] font-semibold text-white">
+                                  {officer.displayName}
+                                </span>
+                                <span className="mt-0.5 block text-[10px] text-slate-400">
+                                  {[officer.badgeNumber, officer.rankTitle, officer.unitName]
+                                    .filter(Boolean)
+                                    .join(" · ") || "Officer"}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-[11px] text-slate-500">
+                              No available officers match this search.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="min-w-0">
                       <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
-                        Officer
-                      </label>
-                      <select
-                        value={openAttendanceOfficerId}
-                        onChange={(event) =>
-                          setOpenAttendanceOfficerId(event.target.value)
-                        }
-                        disabled={openAttendanceOfficers.length === 0}
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                      >
-                        {openAttendanceOfficers.length === 0 ? (
-                          <option value="">No available officers match</option>
-                        ) : (
-                          openAttendanceOfficers.map((officer) => (
-                            <option key={officer.id} value={officer.id}>
-                              {officer.displayName}
-                              {officer.badgeNumber
-                                ? ` — ${officer.badgeNumber}`
-                                : ""}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-                    <div className="min-w-0">
-                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
-                        Firearm
+                        Select firearm
                       </label>
                       <select
                         value={openAttendanceFirearmId}
-                        onChange={(event) =>
-                          setOpenAttendanceFirearmId(event.target.value)
-                        }
-                        disabled={
-                          !openAttendanceOfficerId ||
-                          openAttendanceFirearms.length === 0
-                        }
+                        onChange={(event) => setOpenAttendanceFirearmId(event.target.value)}
+                        disabled={!openAttendanceOfficerId || selectableOpenAttendanceFirearms.length === 0}
                         className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
                       >
                         <option value="">
                           {!openAttendanceOfficerId
                             ? "Select an officer first"
-                            : openAttendanceFirearms.length === 0
-                              ? "No assigned firearms found"
-                              : "Select firearm (optional)"}
+                            : selectableOpenAttendanceFirearms.length === 0
+                              ? "No eligible In Service firearms"
+                              : "Select firearm"}
                         </option>
-                        {openAttendanceFirearms.map((firearm) => (
-                          <option key={firearm.id} value={firearm.id}>
-                            {getOpenAttendanceFirearmLabel(firearm)}
-                          </option>
-                        ))}
+                        {openAttendanceFirearms.length > 0 ? (
+                          <optgroup label="Officer's assigned firearms">
+                            {openAttendanceFirearms.map((firearm) => (
+                              <option key={firearm.id} value={firearm.id}>
+                                {getOpenAttendanceFirearmLabel(firearm)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : openAttendanceFallbackFirearms.length > 0 ? (
+                          <optgroup label="Eligible range firearms">
+                            {openAttendanceFallbackFirearms.map((firearm) => (
+                              <option key={firearm.id} value={firearm.id}>
+                                {getOpenAttendanceFirearmLabel(firearm)} — {getOpenAttendanceFirearmCustodyLabel(firearm)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
                       </select>
                       {openAttendanceOfficerId ? (
                         <p className="mt-1 text-[10px] text-blue-200/70">
-                          {openAttendanceFirearms.length === 0
-                            ? "Assign a firearm through the roster before scoring."
-                            : "A firearm is required before scoring."}
+                          {openAttendanceFirearms.length > 0
+                            ? "Firearm is required before adding the shooter."
+                            : openAttendanceFallbackFirearms.length > 0
+                              ? "Range-day selection only; permanent Armory custody is unchanged."
+                              : "No eligible In Service firearms are available."}
                         </p>
                       ) : null}
                     </div>
@@ -6184,8 +6265,8 @@ export default function RangeDaysPage() {
                       onClick={handleAddOpenAttendanceShooter}
                       disabled={
                         !canEditSelectedRangeDay ||
-                        openAttendanceOfficers.length === 0 ||
-                        !openAttendanceOfficerId
+                        !openAttendanceOfficerId ||
+                        !openAttendanceFirearmId
                       }
                       className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                     >
@@ -6195,15 +6276,6 @@ export default function RangeDaysPage() {
                   </div>
                 </div>
               )}
-
-              {openAttendanceScoringState === "empty" && canManageOpenAttendance ? (
-                <div className="mb-4 rounded-2xl border border-dashed border-blue-500/40 bg-blue-500/[0.04] px-4 py-5 text-center">
-                  <p className="text-sm font-semibold text-blue-100">No shooters yet</p>
-                  <p className="mt-1 text-[12px] text-slate-400">
-                    Add officers as they arrive.
-                  </p>
-                </div>
-              ) : null}
 
               <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
                 <div>
@@ -6375,17 +6447,6 @@ export default function RangeDaysPage() {
                                     ? "Firearm required before scoring."
                                     : "No firearm selected for this officer."}
                                 </span>
-                                {isOpenAttendance ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      openRosterFirearmAssignment(entry.officerId)
-                                    }
-                                    className="rounded-lg border border-red-400/40 px-2 py-1 text-[11px] font-semibold text-red-100 hover:border-red-300 hover:text-white"
-                                  >
-                                    Select Firearm
-                                  </button>
-                                ) : null}
                               </div>
                             )}
                           </div>
@@ -6776,17 +6837,6 @@ export default function RangeDaysPage() {
                                       ? "Firearm required before scoring."
                                       : "No firearm selected for this officer."}
                                   </span>
-                                  {isOpenAttendance ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openRosterFirearmAssignment(entry.officerId)
-                                      }
-                                      className="font-semibold text-red-100 underline decoration-red-400/60 underline-offset-2 hover:text-white"
-                                    >
-                                      Select Firearm
-                                    </button>
-                                  ) : null}
                                 </div>
                               )}
                             </div>

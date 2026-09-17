@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   getOpenAttendanceAssignedFirearms,
+  getOpenAttendanceFallbackFirearms,
+  getOpenAttendanceFirearmCustodyLabel,
   getOpenAttendanceFirearmDefault,
   getOpenAttendanceFirearmLabel,
   resolveOpenAttendanceFirearmSelection,
@@ -59,7 +61,21 @@ const firearms = [
     firearm_type: "handgun",
     condition_status: "In Service",
     is_active: true,
-    active_assignment: { assigned_to_user_id: "officer-2" },
+    active_assignment: {
+      assigned_to_user_id: "officer-2",
+      assigned_to_name: "Officer Two",
+    },
+  },
+  {
+    id: "range-handgun",
+    make: "SIG Sauer",
+    model: "P320",
+    serial_number: "P320-9",
+    asset_number: "RG-09",
+    firearm_type: "handgun",
+    condition_status: "In Service",
+    is_active: true,
+    active_assignment: null,
   },
 ];
 
@@ -117,4 +133,21 @@ test("changing officers clears a firearm that is not assigned to the new officer
     }),
     "",
   );
+});
+
+test("offers eligible range-day firearms when an arriving officer has no assigned firearm", () => {
+  assert.deepEqual(
+    getOpenAttendanceFallbackFirearms({
+      firearms,
+      officerId: "officer-3",
+      requiredFirearmType: "handgun",
+    }).map((firearm) => firearm.id),
+    ["other-officer", "handgun-1", "range-handgun", "rifle-1"],
+  );
+  assert.equal(
+    getOpenAttendanceFirearmCustodyLabel(firearms[4]),
+    "Issued to Officer Two",
+  );
+  assert.equal(
+    getOpenAttendanceFirearmCustodyLabel(firearms[5]), "Unassigned range firearm");
 });
