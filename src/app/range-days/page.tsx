@@ -6129,7 +6129,7 @@ export default function RangeDaysPage() {
                         htmlFor="open-attendance-officer"
                         className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70"
                       >
-                        Search / Select officer
+                        Officer
                       </label>
                       <input
                         id="open-attendance-officer"
@@ -6163,24 +6163,8 @@ export default function RangeDaysPage() {
                           }
                         }}
                         placeholder="Name, badge, rank, or unit"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 pr-16 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                       />
-                      {selectedOpenAttendanceOfficer ? (
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            setOpenAttendanceOfficerId("");
-                            setOpenAttendanceFirearmId("");
-                            setOpenAttendanceOfficerSearchQuery("");
-                            setOpenAttendanceOfficerPickerOpen(true);
-                          }}
-                          className="absolute bottom-2 right-2 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          aria-label="Clear selected officer"
-                        >
-                          Change
-                        </button>
-                      ) : null}
                       {openAttendanceOfficerPickerOpen &&
                       selectedOpenAttendanceOfficerLabel ? (
                         <p className="mt-1 text-[10px] text-blue-200/70">
@@ -6251,7 +6235,7 @@ export default function RangeDaysPage() {
                             ))}
                           </optgroup>
                         ) : selectableOpenAttendanceFirearms.length > 0 ? (
-                          <optgroup label="Shared / Range">
+                          <optgroup label="Available firearms">
                             {selectableOpenAttendanceFirearms.map((firearm) => (
                               <option key={firearm.id} value={firearm.id}>
                                 {getOpenAttendanceFirearmLabel(firearm)}
@@ -6265,7 +6249,7 @@ export default function RangeDaysPage() {
                           {openAttendanceFirearmOptions.source === "assigned"
                             ? "Firearm is required before adding the shooter."
                             : selectableOpenAttendanceFirearms.length > 0
-                              ? "Shared/range selection is for this Range Day only; permanent Armory custody is unchanged."
+                              ? "Firearm selection is for this Range Day only; permanent Armory custody is unchanged."
                               : "No eligible firearms found."}
                         </p>
                       ) : null}
