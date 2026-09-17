@@ -141,6 +141,15 @@ const FOCUS_COLUMN_CONFIG: Record<
   custody: { label: "Issued To", minimumWidth: 155 },
 };
 
+const STANDARD_COLUMN_MINIMUM_WIDTH: Record<FirearmSortKey, number> = {
+  firearm: 140,
+  serial: 105,
+  asset: 85,
+  type: 110,
+  status: 100,
+  custody: 120,
+};
+
 const FIREARM_GROUP_LABELS = {
   none: "None",
   type: "Firearm Type",
@@ -327,6 +336,15 @@ export default function FirearmsPage() {
     () =>
       visibleFocusColumns.reduce(
         (width, column) => width + FOCUS_COLUMN_CONFIG[column].minimumWidth,
+        0,
+      ),
+    [visibleFocusColumns],
+  );
+
+  const standardTableMinimumWidth = useMemo(
+    () =>
+      visibleFocusColumns.reduce(
+        (width, column) => width + STANDARD_COLUMN_MINIMUM_WIDTH[column],
         0,
       ),
     [visibleFocusColumns],
@@ -1053,13 +1071,13 @@ The firearm will be removed from active inventory and future operational selecti
 
   return (
     <TracePointShell activePage="Armory" compactNavigation={inventoryView === "focus"}>
-      <div className={`min-h-screen bg-slate-950 text-slate-100 ${inventoryView === "focus" ? "h-dvh overflow-hidden p-1.5 sm:p-2" : "p-4 sm:p-5 lg:p-6"}`}>
-        <div className={`mx-auto flex w-full flex-col ${inventoryView === "focus" ? "h-full gap-2" : "gap-4 max-w-[1600px]"}`}>
+      <div className={`min-h-screen min-w-0 bg-slate-950 text-slate-100 ${inventoryView === "focus" ? "h-dvh overflow-hidden p-1.5 sm:p-2" : "p-4 sm:p-5 lg:p-6"}`}>
+        <div className={`mx-auto flex min-w-0 w-full flex-col ${inventoryView === "focus" ? "h-full gap-2" : "gap-4 max-w-[1600px]"}`}>
           <ArmorySectionShell
             title="Department Firearms"
             description={inventoryView === "focus" ? undefined : "Inventory, custody, condition, documents, and accountability."}
             actions={
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-1">
                   {(["standard", "focus"] as const).map((view) => (
                     <button key={view} type="button" onClick={() => { if (view === inventoryView) return; const next = toggleFirearmInventoryView(inventoryView); setInventoryView(next); if (next === "standard") setFocusDetailOpen(false); }} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${inventoryView === view ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>
@@ -1091,7 +1109,7 @@ The firearm will be removed from active inventory and future operational selecti
             </section>
           )}
 
-          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.9fr)]"}>
+          <section className={inventoryView === "focus" ? "flex min-h-0 w-full flex-1" : "grid min-w-0 gap-6 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"}>
             <div className={`min-w-0 rounded-[2rem] border border-slate-800 bg-slate-900/90 shadow-sm ${inventoryView === "focus" ? "flex min-h-0 w-full flex-1 flex-col p-2 sm:p-2.5" : "p-5"}`}>
               <div className={`flex flex-col ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
                 <div className={`flex flex-col lg:flex-row lg:items-center lg:justify-between ${inventoryView === "focus" ? "gap-2" : "gap-3"}`}>
@@ -1113,7 +1131,7 @@ The firearm will be removed from active inventory and future operational selecti
                   </div>
                 </div>
 
-                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "gap-2 sm:grid-cols-[minmax(0,1fr)_180px_150px] xl:grid-cols-[minmax(0,1fr)_180px_150px_auto_auto]"}`}>
+                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "gap-2 sm:grid-cols-[minmax(0,1fr)_180px_150px] min-[1500px]:grid-cols-[minmax(0,1fr)_180px_150px_auto_auto]"}`}>
                   <label className="relative min-w-0">
                     <Search className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-500 ${inventoryView === "focus" ? "left-2 h-3.5 w-3.5" : "left-3 h-4 w-4"}`} />
                     <input
@@ -1310,17 +1328,17 @@ The firearm will be removed from active inventory and future operational selecti
                       </div>
                     ) : (
                     <table
-                      className="w-full min-w-[920px] table-fixed divide-y divide-slate-800 text-left text-sm"
-                      style={{ minWidth: `${focusTableMinimumWidth}px` }}
+                      className="w-full table-fixed divide-y divide-slate-800 text-left text-sm"
+                      style={{ minWidth: `${standardTableMinimumWidth}px` }}
                     >
                       <colgroup>
                         {visibleFocusColumns.map((column) => (
                           <col
                             key={column}
                             style={{
-                              width: `${FOCUS_COLUMN_CONFIG[column].minimumWidth}px`,
-                              minWidth: `${FOCUS_COLUMN_CONFIG[column].minimumWidth}px`,
-                              maxWidth: `${FOCUS_COLUMN_CONFIG[column].minimumWidth * 2}px`,
+                              width: `${STANDARD_COLUMN_MINIMUM_WIDTH[column]}px`,
+                              minWidth: `${STANDARD_COLUMN_MINIMUM_WIDTH[column]}px`,
+                              maxWidth: `${STANDARD_COLUMN_MINIMUM_WIDTH[column] * 2}px`,
                             }}
                           />
                         ))}
@@ -1406,8 +1424,8 @@ The firearm will be removed from active inventory and future operational selecti
               </div>
             )}
 
-            <div className={inventoryView === "standard" ? "flex flex-col gap-6" : "hidden"}>
-              <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-5 shadow-sm">
+            <div className={inventoryView === "standard" ? "flex min-w-0 flex-col gap-6" : "hidden"}>
+              <div className="min-w-0 break-words rounded-[2rem] border border-slate-800 bg-slate-900/90 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h2 className="text-lg font-bold text-white">
