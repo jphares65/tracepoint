@@ -54,6 +54,8 @@ import {
 } from "@/app/lib/tracepoint/range-day-utils";
 import {
   canAddOpenAttendanceShooter,
+  createOpenAttendanceRosterEntry,
+  getOpenAttendanceScoringState,
   normalizeRangeDayAttendanceMode,
   OPEN_ROLLING_ATTENDANCE,
   RANGE_DAY_ATTENDANCE_MODES,
@@ -1868,6 +1870,7 @@ export default function RangeDaysPage() {
   const [newDrillNotes, setNewDrillNotes] = useState("");
   const [newRosterOfficerId, setNewRosterOfficerId] = useState("");
   const [openAttendanceOfficerId, setOpenAttendanceOfficerId] = useState("");
+  const [openAttendanceFirearmId, setOpenAttendanceFirearmId] = useState("");
   const [openAttendanceSearch, setOpenAttendanceSearch] = useState("");
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
   const [newEquipmentLabel, setNewEquipmentLabel] = useState("");
@@ -1957,6 +1960,12 @@ export default function RangeDaysPage() {
   const isOpenAttendance =
     normalizeRangeDayAttendanceMode(selectedRangeDay?.attendanceMode) ===
     OPEN_ROLLING_ATTENDANCE;
+  const openAttendanceScoringState = getOpenAttendanceScoringState({
+    attendanceMode: selectedRangeDay?.attendanceMode,
+    attendingCount: attendingRoster.length,
+  });
+  const canManageOpenAttendance =
+    isOpenAttendance && canEditSelectedRangeDay && canScoreRangeDays;
 
   const availableRosterOfficers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -1985,6 +1994,16 @@ export default function RangeDaysPage() {
     );
   }, [availableRosterOfficers, openAttendanceSearch]);
 
+  const openAttendanceFirearms = useMemo(
+    () =>
+      firearms.filter(
+        (firearm) =>
+          firearm.active_assignment?.assigned_to_user_id ===
+          openAttendanceOfficerId,
+      ),
+    [firearms, openAttendanceOfficerId],
+  );
+
   useEffect(() => {
     if (!isOpenAttendance) return;
 
@@ -2003,6 +2022,19 @@ export default function RangeDaysPage() {
     openAttendanceOfficerId,
     openAttendanceOfficers,
   ]);
+
+  useEffect(() => {
+    if (
+      openAttendanceFirearmId &&
+      openAttendanceFirearms.some(
+        (firearm) => firearm.id === openAttendanceFirearmId,
+      )
+    ) {
+      return;
+    }
+
+    setOpenAttendanceFirearmId("");
+  }, [openAttendanceFirearmId, openAttendanceFirearms]);
 
   const availableInstructorUsers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -3039,20 +3071,34 @@ export default function RangeDaysPage() {
       return;
     }
 
-    const newRosterEntry: RangeRosterEntry = {
-      id: `roster-${Date.now()}`,
+    const arrival = new Date();
+    const newRosterEntry = createOpenAttendanceRosterEntry({
+      id: `roster-${arrival.getTime()}`,
       rangeDayId: selectedRangeDay.id,
       officerId: openAttendanceOfficerId,
-      assignedFirearmIds: [],
-      attended: true,
-      attendanceTime: new Date().toISOString(),
-      notes: "Added during open attendance.",
-    };
+      attendanceTime: arrival.toISOString(),
+      firearmId: openAttendanceFirearmId || undefined,
+    });
 
-    setRangeRoster((current) => [...current, newRosterEntry]);
+    setRangeRoster((current) =>
+      canAddOpenAttendanceShooter({
+        attendanceMode: selectedRangeDay.attendanceMode,
+        roster: current,
+        rangeDayId: selectedRangeDay.id,
+        officerId: openAttendanceOfficerId,
+      })
+        ? [...current, newRosterEntry]
+        : current,
+    );
     setSelectedOfficerId(openAttendanceOfficerId);
+    setOpenAttendanceFirearmId("");
     setOpenAttendanceSearch("");
     resetEntryForm(1);
+  }
+
+  function openRosterFirearmAssignment(officerId: string) {
+    setSelectedOfficerId(officerId);
+    setActiveRangeDayTab("roster");
   }
 
   function handleRemoveOfficerFromRoster(rosterEntryId: string) {
@@ -6045,11 +6091,16 @@ export default function RangeDaysPage() {
 
                 <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
                   <UserCheck size={14} className="text-blue-400" />
-                  {attendingRoster.length} attending officer{attendingRoster.length === 1 ? "" : "s"}
+                  {isOpenAttendance
+                    ? `${attendingRoster.length} current shooter${attendingRoster.length === 1 ? "" : "s"}`
+                    : `${attendingRoster.length} attending officer${attendingRoster.length === 1 ? "" : "s"}`}
+                  {isOpenAttendance ? (
+                    <StatusPill label="Open / Rolling" tone="blue" />
+                  ) : null}
                 </div>
               </div>
 
-              {isOpenAttendance && (
+              {canManageOpenAttendance && (
                 <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] p-3">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
                     <div className="min-w-0 flex-1">
@@ -6089,6 +6140,35 @@ export default function RangeDaysPage() {
                         )}
                       </select>
                     </div>
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
+                        Firearm
+                      </label>
+                      <select
+                        value={openAttendanceFirearmId}
+                        onChange={(event) =>
+                          setOpenAttendanceFirearmId(event.target.value)
+                        }
+                        disabled={!openAttendanceOfficerId}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                      >
+                        <option value="">
+                          {openAttendanceOfficerId
+                            ? "Select firearm (optional)"
+                            : "Select an officer first"}
+                        </option>
+                        {openAttendanceFirearms.map((firearm) => (
+                          <option key={firearm.id} value={firearm.id}>
+                            {getFirearmName(firearm.id)}
+                          </option>
+                        ))}
+                      </select>
+                      {openAttendanceOfficerId ? (
+                        <p className="mt-1 text-[10px] text-blue-200/70">
+                          A firearm is required before scoring.
+                        </p>
+                      ) : null}
+                    </div>
                     <button
                       type="button"
                       onClick={handleAddOpenAttendanceShooter}
@@ -6105,6 +6185,15 @@ export default function RangeDaysPage() {
                   </div>
                 </div>
               )}
+
+              {openAttendanceScoringState === "empty" && canManageOpenAttendance ? (
+                <div className="mb-4 rounded-2xl border border-dashed border-blue-500/40 bg-blue-500/[0.04] px-4 py-5 text-center">
+                  <p className="text-sm font-semibold text-blue-100">No shooters yet</p>
+                  <p className="mt-1 text-[12px] text-slate-400">
+                    Add officers as they arrive.
+                  </p>
+                </div>
+              ) : null}
 
               <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
                 <div>
@@ -6167,7 +6256,9 @@ export default function RangeDaysPage() {
                 <div className="mt-4 space-y-3 lg:hidden">
                   {attendingRoster.length === 0 ? (
                     <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-[12px] text-slate-500">
-                      Mark at least one rostered officer present before scoring.
+                      {isOpenAttendance
+                        ? "No shooters yet. Add officers as they arrive."
+                        : "Mark at least one rostered officer present before scoring."}
                     </div>
                   ) : (
                     attendingRoster.map((entry) => {
@@ -6266,10 +6357,25 @@ export default function RangeDaysPage() {
                                   </option>
                                 ))}
                               </select>
-                            ) : (
-                              <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3 py-3 text-[12px] text-red-300">
+                          ) : (
+                              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3 py-3 text-[12px] text-red-300">
                                 <AlertTriangle size={14} />
-                                No firearm selected for this officer.
+                                <span>
+                                  {isOpenAttendance
+                                    ? "Firearm required before scoring."
+                                    : "No firearm selected for this officer."}
+                                </span>
+                                {isOpenAttendance ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openRosterFirearmAssignment(entry.officerId)
+                                    }
+                                    className="rounded-lg border border-red-400/40 px-2 py-1 text-[11px] font-semibold text-red-100 hover:border-red-300 hover:text-white"
+                                  >
+                                    Select Firearm
+                                  </button>
+                                ) : null}
                               </div>
                             )}
                           </div>
@@ -6479,7 +6585,9 @@ export default function RangeDaysPage() {
 
                     {attendingRoster.length === 0 ? (
                       <div className="px-3 py-6 text-center text-[12px] text-slate-500">
-                        Mark at least one rostered officer present before scoring.
+                        {isOpenAttendance
+                          ? "No shooters yet. Add officers as they arrive."
+                          : "Mark at least one rostered officer present before scoring."}
                       </div>
                     ) : (
                       attendingRoster.map((entry) => {
@@ -6648,15 +6756,27 @@ export default function RangeDaysPage() {
                                   )}
                                 </>
                               ) : (
-                                <div className="mt-1.5 flex items-start gap-1.5 text-[10px] font-medium leading-4 text-red-300">
+                                <div className="mt-1.5 flex flex-wrap items-start gap-1.5 text-[10px] font-medium leading-4 text-red-300">
                                   <AlertTriangle
                                     size={11}
                                     className="mt-0.5 flex-shrink-0"
                                   />
                                   <span>
-                                    No firearm selected for this
-                                    officer
+                                    {isOpenAttendance
+                                      ? "Firearm required before scoring."
+                                      : "No firearm selected for this officer."}
                                   </span>
+                                  {isOpenAttendance ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openRosterFirearmAssignment(entry.officerId)
+                                      }
+                                      className="font-semibold text-red-100 underline decoration-red-400/60 underline-offset-2 hover:text-white"
+                                    >
+                                      Select Firearm
+                                    </button>
+                                  ) : null}
                                 </div>
                               )}
                             </div>
