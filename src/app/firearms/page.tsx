@@ -1181,7 +1181,8 @@ The firearm will be removed from active inventory and future operational selecti
                   </div>
                 </div>
 
-                <div className={`grid min-w-0 ${inventoryView === "focus" ? "gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "gap-2 sm:grid-cols-[minmax(0,1fr)_180px_150px] min-[1500px]:grid-cols-[minmax(0,1fr)_180px_150px_auto_auto]"}`}>
+                <div className={`min-w-0 ${inventoryView === "focus" ? "grid gap-1 md:grid-cols-[minmax(0,1fr)_150px_132px_auto_auto]" : "flex flex-col gap-2"}`}>
+                  <div className={inventoryView === "focus" ? "contents" : "grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_180px_150px]"}>
                   <label className="relative min-w-0">
                     <Search className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-500 ${inventoryView === "focus" ? "left-2 h-3.5 w-3.5" : "left-3 h-4 w-4"}`} />
                     <input
@@ -1220,7 +1221,9 @@ The firearm will be removed from active inventory and future operational selecti
                     />
                     Archived Only
                   </label>
+                  </div>
 
+                  <div className={inventoryView === "focus" ? "contents" : "flex min-w-0 flex-wrap items-center gap-2"}>
                   <div className="relative">
                       <button
                         type="button"
@@ -1262,28 +1265,28 @@ The firearm will be removed from active inventory and future operational selecti
 
                   <div className="flex min-w-0 flex-wrap items-center gap-1">
                     {inventoryView === "standard" ? (
-                      <>
+                      <div className="inline-flex">
                         <select
                           value={sortKey}
                           onChange={(event) => setSortBy(event.target.value as FirearmSortKey)}
                           aria-label="Sort firearms by"
-                          className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300 outline-none focus:border-slate-500"
+                          className="min-w-0 rounded-l-2xl border border-r-0 border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300 outline-none focus:border-slate-500"
                         >
                           {STANDARD_SORT_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
-                              Sort by: {option.label}
+                              Sort: {option.label}
                             </option>
                           ))}
                         </select>
                         <button
                           type="button"
                           onClick={() => setSortDirection((direction) => direction === "asc" ? "desc" : "asc")}
-                          className="rounded-2xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-sm font-semibold text-slate-300 hover:text-white"
+                          className="rounded-r-2xl border border-slate-800 bg-slate-900/90 px-2.5 py-2 text-sm font-semibold text-slate-300 hover:text-white"
                           aria-label={`Sort ${sortDirection === "asc" ? "ascending" : "descending"}; toggle direction`}
                         >
                           {sortDirection === "asc" ? "↑" : "↓"}
                         </button>
-                      </>
+                      </div>
                     ) : null}
                     <select
                       value={focusPreferences.groupBy}
@@ -1297,7 +1300,7 @@ The firearm will be removed from active inventory and future operational selecti
                     >
                       {FIREARM_INVENTORY_GROUP_BY.map((groupBy) => (
                         <option key={groupBy} value={groupBy}>
-                          Group by: {FIREARM_GROUP_LABELS[groupBy]}
+                          {inventoryView === "standard" ? "Group" : "Group by"}: {FIREARM_GROUP_LABELS[groupBy]}
                         </option>
                       ))}
                     </select>
@@ -1319,6 +1322,7 @@ The firearm will be removed from active inventory and future operational selecti
                         </button>
                       </>
                     ) : null}
+                  </div>
                   </div>
                 </div>
               </div>
