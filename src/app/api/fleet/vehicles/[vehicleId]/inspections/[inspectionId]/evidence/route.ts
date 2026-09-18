@@ -104,7 +104,7 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   }
 
   const attachmentId = crypto.randomUUID();
-  const objectStore = createObjectStore(context.admin, context.departmentId);
+  const objectStore = await createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadFleetInspectionEvidence({
     departmentId: context.departmentId,
     recordId: inspectionId,

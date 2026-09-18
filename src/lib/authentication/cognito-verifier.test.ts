@@ -22,7 +22,8 @@ test('valid signed access token maps to stable identity and ignores privilege-be
 });
 test('wrong issuer/client/token type, expiration and excessive lifetime fail closed',async()=>{
  const now=Math.floor(Date.now()/1000);
- for(const patch of [{iss:issuer+'foreign'},{client_id:'other'},{token_use:'id',aud:config.clientId},{exp:now-1},{iat:now+120,exp:now+300},{exp:now+3600},{jti:'invalid'},{sub:'invalid'}])assert.equal(await provider().verifySession(token(patch)),null);
+ for(const patch of [{iss:issuer+'foreign'},{client_id:'other'},{token_use:'id',aud:config.clientId},{exp:now-1},{iat:now+120,exp:now+300},{exp:now+3600},{jti:'invalid'},{sub:''},{sub:'x'.repeat(257)}])assert.equal(await provider().verifySession(token(patch)),null);
+ assert.equal((await provider().verifySession(token({sub:'opaque-cognito-subject'})))?.subject,'opaque-cognito-subject');
  assert.equal(await provider().verifySession(token({}, {alg:'none'})),null);
  const signed=token();assert.equal(await provider().verifySession(signed.slice(0,-8)+'tampered'),null);
 });

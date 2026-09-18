@@ -55,7 +55,7 @@ export class TenantBoundArmoryReadRepository {
     const profilesById = new Map(profiles.map((row) => [text(row.id), row]));
     const members = memberships.map((membership) => {
       const id = text(membership.user_id); const profile = profilesById.get(id);
-      return { user_id: id, full_name: text(profile?.full_name) || text(profile?.email) || "Unknown User", email: text(profile?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null };
+      return { user_id: id, full_name: text(profile?.full_name) || text(profile?.email) || "Unknown User", email: text(profile?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null, unit_name: membership.unit_name ?? null };
     }).sort((left, right) => left.full_name.localeCompare(right.full_name));
     const membersById = new Map(members.map((member) => [member.user_id, member]));
     const assignmentsByFirearmId = new Map(assignments.map((assignment) => {

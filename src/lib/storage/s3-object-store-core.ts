@@ -60,6 +60,10 @@ export class S3ObjectStore implements ObjectStore {
     return this.upload("firearm", input);
   }
 
+  uploadFleetInspectionEvidence(input: AttachmentUploadInput) {
+    return this.upload("fleet-inspection", input);
+  }
+
   uploadDrillDocument(input: AttachmentUploadInput) {
     return this.upload("drill-document", input);
   }

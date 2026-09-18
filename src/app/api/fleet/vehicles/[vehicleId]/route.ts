@@ -46,7 +46,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const objectStore = createObjectStore(context.admin, context.departmentId);
+    const objectStore = await createObjectStore(context.admin, context.departmentId);
     const evidence = await Promise.all(
       (evidenceResult.data ?? []).map(async (attachment: Record<string, unknown>) => {
         if (typeof attachment.storage_path !== "string") return null;

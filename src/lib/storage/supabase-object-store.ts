@@ -55,6 +55,10 @@ export class SupabaseObjectStore implements ObjectStore {
     return this.uploadAttachment("firearm", input);
   }
 
+  uploadFleetInspectionEvidence(input: AttachmentUploadInput) {
+    return this.uploadAttachment("fleet-inspection", input);
+  }
+
   uploadDrillDocument(input: AttachmentUploadInput) {
     return this.uploadAttachment("drill-document", input);
   }

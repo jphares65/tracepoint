@@ -100,6 +100,13 @@ export class RuntimeStack extends cdk.Stack {
       TRACEPOINT_AWS_ACCOUNT_ID: this.account,
       TRACEPOINT_SES_CONFIGURATION_SET: props.sesConfigurationSet!,
       AWS_REGION: this.region,
+      ...(props.environmentName === "staging" ? {
+        TRACEPOINT_MOBILE_COGNITO_ENABLED: "true",
+        TRACEPOINT_MOBILE_COGNITO_ACCOUNT: "559054714699",
+        TRACEPOINT_MOBILE_COGNITO_REGION: "us-east-1",
+        TRACEPOINT_MOBILE_COGNITO_USER_POOL_ID: "us-east-1_Y9GiDA5Zy",
+        TRACEPOINT_MOBILE_COGNITO_CLIENT_ID: "5s8l4b8jt4vi8oubbj9m6dabbj",
+      } : {}),
     } : {
       TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge",
       TRACEPOINT_DATA_PROVIDER: "supabase",
