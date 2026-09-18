@@ -27,14 +27,13 @@ export default function IdleSessionGuard() {
     }
   }, []);
 
-  const signOut = useCallback(() => {
-    window.location.assign("/auth/signout");
+  const signOut = useCallback(async () => {
+    const response = await fetch("/auth/signout", { method: "POST", redirect: "follow" }).catch(() => null);
+    window.location.assign(response?.url || "/login");
   }, []);
 
-  const resetTimers = useCallback(() => {
+  const scheduleTimers = useCallback(() => {
     clearTimers();
-    setShowWarning(false);
-
     warningTimer.current = setTimeout(() => {
       setShowWarning(true);
     }, WARNING_AFTER_MS);
@@ -44,8 +43,19 @@ export default function IdleSessionGuard() {
     }, SIGN_OUT_AFTER_MS);
   }, [clearTimers, signOut]);
 
-  useEffect(() => {
+  const resetTimers = useCallback(() => {
+    setShowWarning(false);
+    scheduleTimers();
+  }, [scheduleTimers]);
+
+  const staySignedIn = useCallback(async () => {
+    const response = await fetch("/api/auth/session/refresh", { method: "POST" }).catch(() => null);
+    if (!response?.ok) { await signOut(); return; }
     resetTimers();
+  }, [resetTimers, signOut]);
+
+  useEffect(() => {
+    scheduleTimers();
 
     for (const eventName of ACTIVITY_EVENTS) {
       window.addEventListener(eventName, resetTimers, { passive: true });
@@ -58,7 +68,7 @@ export default function IdleSessionGuard() {
         window.removeEventListener(eventName, resetTimers);
       }
     };
-  }, [clearTimers, resetTimers]);
+  }, [clearTimers, resetTimers, scheduleTimers]);
 
   if (!showWarning) return null;
 
@@ -89,7 +99,7 @@ export default function IdleSessionGuard() {
         <div className="mt-6 flex gap-3">
           <button
             type="button"
-            onClick={resetTimers}
+            onClick={staySignedIn}
             className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
           >
             Stay Signed In

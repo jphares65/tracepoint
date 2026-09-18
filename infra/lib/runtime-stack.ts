@@ -30,6 +30,12 @@ export interface RuntimeStackProps extends cdk.StackProps {
   maxCapacity?: number;
   deletionProtection?: boolean;
   productionControls?: boolean;
+  providerMode?: "bridge" | "aws-native";
+  databaseSecret?: secretsmanager.ISecret;
+  databaseSecurityGroup?: ec2.ISecurityGroup;
+  cognitoUserPoolId?: string;
+  cognitoClientId?: string;
+  sesConfigurationSet?: string;
 }
 
 export class RuntimeStack extends cdk.Stack {
@@ -38,8 +44,18 @@ export class RuntimeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: RuntimeStackProps) {
     super(scope, id, props);
 
+    const providerMode = props.providerMode ?? "bridge";
+    const awsNative = providerMode === "aws-native";
     const emailFromAddress = props.emailFromAddress ?? (props.environmentName === "staging" ? "contact@tracepointhq.com" : undefined);
     if (emailFromAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFromAddress)) throw new Error("Invalid email sender address");
+    const validTarget = (value:string|undefined, pattern:RegExp) => Boolean(value) &&
+      (cdk.Token.isUnresolved(value) || pattern.test(value!));
+    if (awsNative && (!props.storageBucketName || !props.databaseSecret || !props.databaseSecurityGroup || !emailFromAddress ||
+      !validTarget(props.cognitoUserPoolId, /^us-east-1_[A-Za-z0-9]+$/) ||
+      !validTarget(props.cognitoClientId, /^[A-Za-z0-9]{1,128}$/) ||
+      !validTarget(props.sesConfigurationSet, /^[A-Za-z0-9_-]{1,64}$/))) {
+      throw new Error("Full-AWS runtime requires explicit PostgreSQL, Cognito, S3, and SES targets");
+    }
     const certificate = acm.Certificate.fromCertificateArn(
       this,
       "Certificate",
@@ -53,16 +69,67 @@ export class RuntimeStack extends cdk.Stack {
       allowAllOutbound: false,
     });
     taskSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS providers");
-    taskSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
-      ec2.Port.udp(53),
-      "VPC DNS over UDP",
-    );
-    taskSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
-      ec2.Port.tcp(53),
-      "VPC DNS over TCP",
-    );
+    taskSecurityGroup.addEgressRule(ec2.Peer.ipv4(props.vpc.vpcCidrBlock), ec2.Port.udp(53), "VPC DNS over UDP");
+    taskSecurityGroup.addEgressRule(ec2.Peer.ipv4(props.vpc.vpcCidrBlock), ec2.Port.tcp(53), "VPC DNS over TCP");
+    if (awsNative) {
+      taskSecurityGroup.addEgressRule(props.databaseSecurityGroup!, ec2.Port.tcp(5432), "Private PostgreSQL");
+      // Own the ingress rule in this downstream stack. This keeps the database
+      // SG in the network stack without creating a network -> runtime reference
+      // or replacing the bridge runtime's existing task security group.
+      new ec2.CfnSecurityGroupIngress(this, "DatabaseFromApplicationTasks", {
+        groupId: props.databaseSecurityGroup!.securityGroupId,
+        sourceSecurityGroupId: taskSecurityGroup.securityGroupId,
+        ipProtocol: "tcp",
+        fromPort: 5432,
+        toPort: 5432,
+        description: "TracePoint application task PostgreSQL",
+      });
+    }
+
+    const providerEnvironment: Record<string, string> = awsNative ? {
+      TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native",
+      TRACEPOINT_DATA_PROVIDER: "postgres",
+      TRACEPOINT_AUTH_PROVIDER: "cognito",
+      TRACEPOINT_EMAIL_PROVIDER: "ses",
+      TRACEPOINT_STORAGE_PROVIDER: "s3",
+      TRACEPOINT_S3_BUCKET: props.storageBucketName!,
+      TRACEPOINT_S3_EXPECTED_OWNER: this.account,
+      TRACEPOINT_DATABASE_CA_PATH: "/app/rds-ca.pem",
+      TRACEPOINT_COGNITO_USER_POOL_ID: props.cognitoUserPoolId!,
+      TRACEPOINT_COGNITO_CLIENT_ID: props.cognitoClientId!,
+      TRACEPOINT_AWS_ACCOUNT_ID: this.account,
+      TRACEPOINT_SES_CONFIGURATION_SET: props.sesConfigurationSet!,
+      AWS_REGION: this.region,
+    } : {
+      TRACEPOINT_RUNTIME_PROVIDER_MODE: "bridge",
+      TRACEPOINT_DATA_PROVIDER: "supabase",
+      TRACEPOINT_AUTH_PROVIDER: "supabase",
+      TRACEPOINT_EMAIL_PROVIDER: "brevo",
+      TRACEPOINT_STORAGE_PROVIDER: props.storageBucketName ? "s3" : "supabase",
+      ...(props.storageBucketName ? { TRACEPOINT_S3_BUCKET:props.storageBucketName, TRACEPOINT_S3_EXPECTED_OWNER:this.account, AWS_REGION:this.region } : {}),
+    };
+    const providerSecrets: Record<string, ecs.Secret> = awsNative ? {
+      TRACEPOINT_DATABASE_SECRET_JSON: ecs.Secret.fromSecretsManager(props.databaseSecret!),
+      TRACEPOINT_IMPORT_APPROVAL_SECRET: ecs.Secret.fromSecretsManager(props.appSecrets, "TRACEPOINT_IMPORT_APPROVAL_SECRET"),
+      TRACEPOINT_AUTH_STATE_KEYS: ecs.Secret.fromSecretsManager(props.appSecrets, "TRACEPOINT_AUTH_STATE_KEYS"),
+      TRACEPOINT_AUTH_REFRESH_KEYS: ecs.Secret.fromSecretsManager(props.appSecrets, "TRACEPOINT_AUTH_REFRESH_KEYS"),
+    } : {
+      NEXT_PUBLIC_SUPABASE_URL: ecs.Secret.fromSecretsManager(props.appSecrets, "NEXT_PUBLIC_SUPABASE_URL"),
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
+      SUPABASE_SECRET_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "SUPABASE_SECRET_KEY"),
+      SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "SUPABASE_SECRET_KEY"),
+      BREVO_API_KEY: ecs.Secret.fromSecretsManager(props.appSecrets, "BREVO_API_KEY"),
+    };
+    if (awsNative) {
+      // Keep the secret permission identity-based. Secret.grantRead() also mutates
+      // the customer-managed KMS key policy; because that key lives in the
+      // security stack and this role lives in the compute stack, the mutation
+      // creates a security <-> compute CloudFormation dependency cycle.
+      props.executionRole.addToPrincipalPolicy(new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+        resources: [props.databaseSecret!.secretArn],
+      }));
+    }
 
     const service = new ecsPatterns.ApplicationLoadBalancedFargateService(
       this,
@@ -96,37 +163,19 @@ export class RuntimeStack extends cdk.Stack {
           environment: {
             NODE_ENV: "production",
             PORT: "3000",
-            TRACEPOINT_DATA_PROVIDER: "supabase",
-            TRACEPOINT_EMAIL_PROVIDER: "brevo",
             ...(emailFromAddress ? { TRACEPOINT_FROM_EMAIL: emailFromAddress } : {}),
-            TRACEPOINT_STORAGE_PROVIDER: props.storageBucketName ? "s3" : "supabase",
-            ...(props.storageBucketName ? { TRACEPOINT_S3_BUCKET:props.storageBucketName, TRACEPOINT_S3_EXPECTED_OWNER:this.account, AWS_REGION:this.region } : {}),
+            ...providerEnvironment,
           },
           secrets: {
             CONFIGURATION_ENVIRONMENT: ecs.Secret.fromSecretsManager(
               props.appSecrets,
               "CONFIGURATION_ENVIRONMENT",
             ),
-            NEXT_PUBLIC_SUPABASE_URL: ecs.Secret.fromSecretsManager(
-              props.appSecrets,
-              "NEXT_PUBLIC_SUPABASE_URL",
-            ),
-            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ecs.Secret.fromSecretsManager(
-              props.appSecrets,
-              "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-            ),
             NEXT_PUBLIC_SITE_URL: ecs.Secret.fromSecretsManager(
               props.appSecrets,
               "NEXT_PUBLIC_SITE_URL",
             ),
-            SUPABASE_SECRET_KEY: ecs.Secret.fromSecretsManager(
-              props.appSecrets,
-              "SUPABASE_SECRET_KEY",
-            ),
-            BREVO_API_KEY: ecs.Secret.fromSecretsManager(
-              props.appSecrets,
-              "BREVO_API_KEY",
-            ),
+            ...providerSecrets,
             NOTIFICATION_DISPATCH_SECRET: ecs.Secret.fromSecretsManager(
               props.appSecrets,
               "NOTIFICATION_DISPATCH_SECRET",

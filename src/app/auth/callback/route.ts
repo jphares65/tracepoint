@@ -1,13 +1,16 @@
 import {internalAuthRedirect,configuredSiteOrigin} from '@/lib/authentication/redirects';
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { createClient as createServerClient } from "@/lib/supabase/server";
-
 function getSafeNextPath(value:string|null) {return internalAuthRedirect(value,'/');}
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const siteOrigin = configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL);
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+    const loginUrl = new URL("/login", siteOrigin);
+    loginUrl.searchParams.set("error", "This legacy authentication callback is disabled.");
+    return NextResponse.redirect(loginUrl);
+  }
   const code = requestUrl.searchParams.get("code");
   const nextPath = getSafeNextPath(
     requestUrl.searchParams.get("next"),
@@ -25,7 +28,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const supabase = await createServerClient();
+  const supabase = await (await import("@/lib/supabase/server")).createClient();
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 

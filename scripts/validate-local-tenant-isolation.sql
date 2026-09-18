@@ -17,6 +17,7 @@ insert into public.pilot_range_workspaces(department_id) values
 -- Exercise the grants supplied by migrations, without test-only grants.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-8000-000000000001',true);
+select set_config('tracepoint.subject_id','00000000-0000-4000-8000-000000000001',true);
 do $$
 declare affected integer;
 begin

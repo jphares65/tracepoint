@@ -7,7 +7,7 @@ import {
   completeActivation,
   validateActivationToken,
 } from "@/lib/tracepoint/activation";
-import { createClient } from "@/lib/supabase/server";
+import { COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
 
 type ActivatePageProps = {
   searchParams: Promise<{
@@ -40,10 +40,10 @@ async function activateAccount(formData: FormData) {
     redirect("/login?error=Activation link is missing.");
   }
 
-  if (password.length < 8) {
+  if (!isCognitoCompliantPassword(password)) {
     redirectWithError(
       token,
-      "Password must be at least 8 characters.",
+      COGNITO_PASSWORD_REQUIREMENTS,
     );
   }
 
@@ -64,6 +64,8 @@ async function activateAccount(formData: FormData) {
     );
   }
 
+  if(process.env.TRACEPOINT_AUTH_PROVIDER==="cognito")redirect(`/login?next=${encodeURIComponent("/")}`);
+  const {createClient}=await import("@/lib/supabase/server");
   const supabase = await createClient();
   const { error: signInError } =
     await supabase.auth.signInWithPassword({
@@ -169,7 +171,7 @@ export default async function ActivatePage({
                     name="password"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={14}
                     autoComplete="new-password"
                     className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                   />
@@ -183,7 +185,7 @@ export default async function ActivatePage({
                     name="confirmPassword"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={14}
                     autoComplete="new-password"
                     className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                   />

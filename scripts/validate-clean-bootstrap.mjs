@@ -1,6 +1,7 @@
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { catalogSql, manifestSql } from "./staging-management-manifest.mjs";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
+import { loadVerifiedAwsMigrations } from "./aws-migration-ledger.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import assert from "node:assert/strict";
@@ -22,8 +23,9 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 73;
+const expectedMigrationCount = 75;
 const migrationsDir = path.resolve("supabase/migrations");
+const awsTargetOverlaysDir = path.resolve("database/aws");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = await localPostgresPort();
 const postgres = new EmbeddedPostgres({
@@ -89,10 +91,65 @@ try {
     }
   }
 
+  // Reapply the reconciler before provider-exit overlays. This preserves the
+  // historical idempotency check without restoring Supabase-era definitions
+  // after the final AWS schema has been composed.
   const authorityMigration = "202609050002_granular_permission_authority.sql";
   await client.query("begin");
   await client.query(await readFile(path.join(migrationsDir, authorityMigration), "utf8"));
   await client.query("commit");
+
+  let awsTargetOverlayCount = 0;
+  if (process.argv.includes("--aws-target") || process.argv.includes("--aws-native-final")) {
+    const overlays = await loadVerifiedAwsMigrations(awsTargetOverlaysDir);
+    for (const overlay of overlays) {
+      await client.query("begin");
+      try {
+        await client.query(overlay.sql);
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw new Error(`AWS target overlay failed in ${overlay.name}: ${error.message}`, { cause: error });
+      }
+    }
+    awsTargetOverlayCount = overlays.length;
+
+    await client.query("alter role tracepoint_runtime login password 'synthetic-runtime-test-only'");
+    const runtimeClient = new client.constructor({
+      host: "127.0.0.1",
+      port,
+      user: "tracepoint_runtime",
+      password: "synthetic-runtime-test-only",
+      database: "postgres",
+    });
+    try {
+      await runtimeClient.connect();
+      await runtimeClient.query("select count(*) from public.authentication_access_sessions");
+      await runtimeClient.query("select count(*) from public.email_suppressions");
+      await runtimeClient.query("select count(*) from public.notification_email_queue");
+      await assert.rejects(
+        runtimeClient.query("select count(*) from public.profiles"),
+        (error) => error?.code === "42501",
+        "Runtime login must not inherit authenticated application-table grants",
+      );
+      await runtimeClient.query("set role authenticated");
+      await runtimeClient.query("select count(*) from public.profiles");
+      await assert.rejects(
+        runtimeClient.query("set role service_role"),
+        (error) => error?.code === "42501",
+        "Runtime login must never assume the legacy service role",
+      );
+      await runtimeClient.query("reset role");
+      await assert.rejects(
+        runtimeClient.query("create table public.runtime_escape_test(id integer)"),
+        (error) => error?.code === "42501",
+        "Runtime login must not create schema objects",
+      );
+    } finally {
+      await runtimeClient.end();
+      await client.query("alter role tracepoint_runtime nologin");
+    }
+  }
 
   const requiredTables = [
     "profiles", "departments", "department_memberships",
@@ -203,11 +260,52 @@ try {
       values ('${users.platform}', 'Permission Audit Platform', true);
   `);
 
+  if (awsTargetOverlayCount) {
+    const operationId = "30000000-0000-4000-8000-000000000001";
+    const providerUsername = "40000000-0000-4000-8000-000000000001";
+    const providerSubject = "50000000-0000-4000-8000-000000000001";
+    const issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Synthetic";
+    await client.query(
+      "insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username) values('cognito',$1,$2,$3,'pending',$4)",
+      [issuer, providerSubject, users.granted, providerUsername],
+    );
+    await client.query("alter role tracepoint_runtime login password 'synthetic-runtime-test-only'");
+    const runtimeClient = new client.constructor({
+      host: "127.0.0.1", port, user: "tracepoint_runtime",
+      password: "synthetic-runtime-test-only", database: "postgres",
+    });
+    try {
+      await runtimeClient.connect();
+      await runtimeClient.query("begin");
+      await runtimeClient.query("set local role authenticated");
+      await runtimeClient.query("select set_config('tracepoint.subject_id',$1,true)", [users.administrator]);
+      await runtimeClient.query("select set_config('tracepoint.department_id',$1,true)", [departmentA]);
+      const prepared = await runtimeClient.query(
+        "select * from tracepoint_auth.prepare_cognito_password_operation($1,'assign_password',$2,$3,null)",
+        [operationId, departmentA, users.granted],
+      );
+      assert.deepEqual(prepared.rows[0], {
+        user_id: users.granted, provider_username: providerUsername,
+        provider_subject: providerSubject, issuer, email: "granted@example.test", identity_state: "pending",
+      });
+      await runtimeClient.query("commit");
+      await runtimeClient.query("select tracepoint_auth.finish_cognito_password_operation($1,true,null)", [operationId]);
+    } finally {
+      await runtimeClient.end();
+      await client.query("alter role tracepoint_runtime nologin");
+    }
+    const lifecycle = await client.query("select state from public.authentication_lifecycle_operations where id=$1", [operationId]);
+    assert.equal(lifecycle.rows[0]?.state, "committed", "Cognito password lifecycle did not commit");
+    const revocation = await client.query("select count(*)::int as count from public.authentication_session_revocations where tracepoint_user_id=$1 and issuer=$2", [users.granted, issuer]);
+    assert.equal(revocation.rows[0]?.count, 1, "Cognito password lifecycle did not revoke local sessions");
+  }
+
   async function permissionAs(userId, departmentId, permissionCode) {
     await client.query("begin");
     try {
       await client.query("set local role authenticated");
       await client.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
+      await client.query("select set_config('tracepoint.subject_id', $1, true)", [userId]);
       const result = await client.query(
         "select public.has_department_permission($1, $2) as allowed",
         [departmentId, permissionCode],
@@ -264,6 +362,7 @@ try {
   await client.query("begin");
   await client.query("set local role authenticated");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.administrator]);
+  await client.query("select set_config('tracepoint.subject_id', $1, true)", [users.administrator]);
   const saved = await client.query(
     "select public.set_department_role_permissions($1, $2, $3::text[]) as permissions",
     [departmentA, "audit_denied", ["manage_training"]],
@@ -275,6 +374,7 @@ try {
   await client.query("begin");
   await client.query("set local role authenticated");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.administrator]);
+  await client.query("select set_config('tracepoint.subject_id', $1, true)", [users.administrator]);
   await client.query(
     "select public.set_department_member_roles($1, $2, $3::text[])",
     [departmentA, users.administrator, ["administrator", "chief"]],
@@ -299,6 +399,7 @@ try {
   await client.query("begin");
   await client.query("set local role authenticated");
   await client.query("select set_config('request.jwt.claim.sub', $1, true)", [users.platform]);
+  await client.query("select set_config('tracepoint.subject_id', $1, true)", [users.platform]);
   const platformSave = await client.query(
     "select public.set_department_role_permissions($1, $2, $3::text[]) as permissions",
     [departmentA, "audit_denied", ["view_audit_log"]],
@@ -450,7 +551,7 @@ try {
     }
   }
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission and retirement matrices passed; disposable database removed.`);
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsTargetOverlayCount} AWS target overlays; permission and retirement matrices passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {

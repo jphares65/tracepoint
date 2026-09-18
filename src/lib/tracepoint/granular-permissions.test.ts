@@ -53,7 +53,7 @@ test("Settings saves through an authenticated tenant-bound API and reports succe
   const [route, overviewRoute, page] = await Promise.all([
     readFile("src/app/api/settings/role-permissions/route.ts", "utf8"),
     readFile("src/app/api/settings/overview/route.ts", "utf8"),
-    readFile("src/app/settings/page.tsx", "utf8"),
+    readFile("src/app/settings/legacy-page.tsx", "utf8"),
   ]);
   assert.match(route, /resolveServerAccess\(\)/);
   assert.match(route, /departmentId !== context\.departmentId/);

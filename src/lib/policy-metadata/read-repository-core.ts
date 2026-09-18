@@ -2,7 +2,7 @@ export type PolicyResult = { data: unknown; error: { message: string } | null };
 export interface PolicyReadDataSource { listCertificationCapabilities(id: string): PromiseLike<PolicyResult>; getOffDutyRules(id: string): PromiseLike<PolicyResult>; }
 export class PolicyReadAuthorizationError extends Error {}
 export class PolicyReadRepositoryError extends Error {}
-export function requirePolicyReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase") throw new Error(`Unsupported data provider: ${provider}. Only supabase is implemented.`); }
+export function requirePolicyReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase" && provider !== "postgres") throw new Error(`Unsupported data provider: ${provider}.`); }
 export class TenantBoundPolicyReadRepository {
   private readonly source: PolicyReadDataSource; private readonly id: string;
   constructor(source: PolicyReadDataSource, id: string) { if (!id) throw new PolicyReadAuthorizationError(); this.source = source; this.id = id; }

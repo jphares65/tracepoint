@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type ReadResult = { data: any; error: { message: string } | null };
 export interface OffDutyReadDataSource {
   listRequests(departmentId: string, officerUserId?: string): PromiseLike<ReadResult>;
@@ -11,7 +12,7 @@ export interface OffDutyReadDataSource {
 }
 export class OffDutyReadAuthorizationError extends Error {}
 export class OffDutyReadRepositoryError extends Error {}
-export function requireOffDutyReadProvider(value?: string) { const provider=value?.trim().toLowerCase()||"supabase"; if(provider!=="supabase") throw new Error(`Unsupported data provider: ${provider}. Only supabase is implemented.`); return provider; }
+export function requireOffDutyReadProvider(value?: string) { const provider=value?.trim().toLowerCase()||"supabase"; if(provider!=="supabase"&&provider!=="postgres") throw new Error(`Unsupported data provider: ${provider}.`); return provider; }
 export class TenantBoundOffDutyReadRepository {
   private source: OffDutyReadDataSource;
   private departmentId: string;

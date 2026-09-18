@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-09",
+  "sourceChecklist": "aws-readiness-20260907.json",
+  "priorWeightedReadiness": 73.0,
+  "newWeightedReadiness": 79.0,
+  "method": "The existing weighted binary checklist is unchanged. Only three previously-false production capabilities receive credit. Staging validation, rollback repetition, documentation, and previously credited controls receive no additional credit.",
+  "creditedCapabilities": [
+    {
+      "category": "DNS/TLS",
+      "capability": "production AWS certificate verified",
+      "weightEarned": 2.0,
+      "evidence": "The production ACM certificate is ISSUED with successful DNS validation."
+    },
+    {
+      "category": "runtime deployment",
+      "capability": "production runtime deployed",
+      "weightEarned": 2.0,
+      "evidence": "The production ECS runtime is live and healthy without public DNS or customer traffic cutover."
+    },
+    {
+      "category": "network and compute",
+      "capability": "production load/failure test",
+      "weightEarned": 2.0,
+      "evidence": "Bounded production load, rejection, and recovery validation passed without customer traffic."
+    }
+  ],
+  "completedThisStagingRunWithoutAdditionalCredit": [
+    "isolated importer source integration and immutable image deployment",
+    "75-migration live staging ledger and RLS/grant validation",
+    "full disposable authenticated and AI importer acceptance",
+    "bounded load, failure, WAF, alarm, queue, and log validation",
+    "real ECS revision 24 to 23 to 24 rollback rehearsal",
+    "runtime CloudFormation drift IN_SYNC and CDK diff with zero differences"
+  ],
+  "stillFalseWeightedCapabilities": [
+    "production data rehearsal",
+    "production database moved",
+    "production PITR restore timed",
+    "replacement identity provider deployed",
+    "MFA and session cutover validated",
+    "production DNS cutover validated",
+    "notification escalation tested",
+    "production backup restore validated",
+    "DNS rollback rehearsed",
+    "agency cutover approved"
+  ],
+  "deferredExternalGate": {
+    "capability": "notification escalation tested",
+    "notBefore": "2026-09-15T02:48:00Z",
+    "reason": "SNS email endpoint suppression window; no further subscription request is permitted before this time.",
+    "machineAlertPath": "SQS ALARM and OK delivery passed and remains active"
+  }
+}

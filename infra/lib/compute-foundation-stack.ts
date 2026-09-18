@@ -95,7 +95,7 @@ export class ComputeFoundationStack extends cdk.Stack {
     if (props.environmentName === "production") {
       NagSuppressions.addResourceSuppressions(this.appSecrets, [{
         id: "AwsSolutions-SMG4",
-        reason: "This JSON secret contains Supabase and Brevo credentials whose vendor-side rotation must be coordinated and rehearsed before automatic rotation can be enabled.",
+        reason: "This provider-neutral JSON secret contains independent application encryption keyrings and non-provider secrets; rotation is performed by the versioned application-key workflow rather than one Secrets Manager database rotation schedule.",
       }]);
       const executionPolicy = this.executionRole.node.findChild("DefaultPolicy");
       NagSuppressions.addResourceSuppressions(executionPolicy, [{

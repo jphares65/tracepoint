@@ -9,6 +9,19 @@ export type QualificationReadinessStatus =
 
 export type QualificationComponent = "day" | "night";
 
+export function requiredHandgunQualificationComponents(
+  rules: unknown,
+): QualificationComponent[] {
+  const candidate = rules && typeof rules === "object" && !Array.isArray(rules)
+    ? rules as Record<string, unknown>
+    : {};
+
+  return [
+    ...(candidate.require_day_handgun_qualification === false ? [] : ["day" as const]),
+    ...(candidate.require_night_handgun_qualification === false ? [] : ["night" as const]),
+  ];
+}
+
 export type QualificationReadinessEvent = {
   date: string;
   runLabel: string;
@@ -262,10 +275,20 @@ export function evaluateQualificationReadiness({
   requiredComponents?: readonly QualificationComponent[];
   today?: Date;
 }): QualificationReadinessResult {
+  if (requiredComponents.length === 0) {
+    return {
+      status: "Current",
+      statusReason: "The agency does not require day or night handgun qualification components for readiness.",
+    };
+  }
+
   const passes = { day: lastDayQualification, night: lastNightQualification };
   const newestActionableFailure = [...failedQualifications]
     .sort((a, b) => getDateValue(b.date) - getDateValue(a.date))
     .find((failure) => {
+      if (failure.component && !requiredComponents.includes(failure.component)) {
+        return false;
+      }
       const relevantPass = failure.component
         ? passes[failure.component]
         : [lastDayQualification, lastNightQualification]

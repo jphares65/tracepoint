@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-const repository='jphares65/tracepoint',environment='aws-staging',branch='codex/aws-staging-readiness-20260902';
+const repository='jphares65/tracepoint',environment='aws-staging',branch='main';
 async function main(){
  assert.equal(process.argv[2],'--execute');assert.equal(process.argv.length,3);
  const identity=JSON.parse(execFileSync('aws.exe',['sts','get-caller-identity','--region','us-east-1','--output','json'],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));assert.equal(identity.Account,'559054714699');assert.match(identity.Arn,/^arn:aws:sts::559054714699:assumed-role\/[^/]*TracePointMigrationStaging[^/]*\//);

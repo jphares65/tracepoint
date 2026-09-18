@@ -2,7 +2,7 @@ import {execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {operationsEvidence} from './staging-operations-evidence.mjs';
-const repository='jphares65/tracepoint',branch='codex/aws-staging-readiness-20260902';
+const repository='jphares65/tracepoint',branch='main';
 try {
  const sha=process.argv[2];assert.match(sha??'',/^[0-9a-f]{40}$/);
  const git=args=>execFileSync('git',['-c','safe.directory='+process.cwd(),...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();

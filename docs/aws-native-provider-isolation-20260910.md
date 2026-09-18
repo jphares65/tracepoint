@@ -1,0 +1,5 @@
+# AWS-native Supabase isolation audit
+
+This offline audit covers the 19 direct application usages called out by the readiness review. The nine platform/onboarding handlers and the platform/settings pages are retained as dynamically loaded `legacy-*` adapters behind entry modules that refuse or redirect `aws-native` requests before import. The settings-only browser panels are reachable only through that legacy settings chunk. Dashboard customization checks the public immutable build-provider marker before dynamically loading its legacy browser adapter. Login, refresh, and signout select Cognito before their existing dynamic legacy imports.
+
+`node scripts/assert-aws-native-provider-reachability.mjs` constructs the static module graph from every active App Router page, layout, and route plus the proxy. It fails if any reachable module statically imports `@supabase/*` or a TracePoint Supabase client. Dynamic legacy chunks are deliberately not treated as native dependencies; their calling source must remain in the reviewed 19-entry disposition ledger. This is source reachability evidence, not a claim about a deployed image.

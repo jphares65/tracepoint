@@ -1,3 +1,5 @@
+import { sortFleetVehiclesByUnit } from "./unit-order.ts";
+
 export type FleetRow = Record<string, unknown>;
 export type FleetResult = { data: unknown; error: { message: string; code?: string } | null };
 export interface FleetReadDataSource {
@@ -14,7 +16,7 @@ export interface FleetReadDataSource {
 export class FleetReadAuthorizationError extends Error { constructor() { super("Authorized department context is required."); this.name = "FleetReadAuthorizationError"; } }
 export class FleetReadRepositoryError extends Error { readonly code?: string; constructor(message: string, code?: string) { super(message); this.name = "FleetReadRepositoryError"; this.code = code; } }
 export class FleetReadConfigurationError extends Error { constructor(provider: string) { super(`Unsupported data provider: ${provider}. Only supabase is implemented.`); this.name = "FleetReadConfigurationError"; } }
-export function requireFleetReadProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase") throw new FleetReadConfigurationError(value); return value; }
+export function requireFleetReadProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase" && value !== "postgres") throw new FleetReadConfigurationError(value); return value; }
 const rows = (result: FleetResult) => Array.isArray(result.data) ? result.data as FleetRow[] : [];
 const row = (result: FleetResult) => result.data && !Array.isArray(result.data) ? result.data as FleetRow : null;
 export class TenantBoundFleetReadRepository {
@@ -22,7 +24,7 @@ export class TenantBoundFleetReadRepository {
   constructor(source: FleetReadDataSource, departmentId: string) { if (!departmentId) throw new FleetReadAuthorizationError(); this.source = source; this.departmentId = departmentId; }
   private authorize(id: string) { if (!id || id !== this.departmentId) throw new FleetReadAuthorizationError(); }
   private required(result: FleetResult) { if (result.error) throw new FleetReadRepositoryError(result.error.message, result.error.code); return result; }
-  async getVehicleList(input: { departmentId: string; vehicleFields: string }) { this.authorize(input.departmentId); const [rulesResult, vehiclesResult] = await Promise.all([this.source.getRules(input.departmentId, "fleet_manager_role_codes"), this.source.listVehicles(input.departmentId, input.vehicleFields)]); this.required(vehiclesResult); return { rules: row(rulesResult), items: rows(vehiclesResult) }; }
+  async getVehicleList(input: { departmentId: string; vehicleFields: string }) { this.authorize(input.departmentId); const [rulesResult, vehiclesResult] = await Promise.all([this.source.getRules(input.departmentId, "fleet_manager_role_codes"), this.source.listVehicles(input.departmentId, input.vehicleFields)]); this.required(vehiclesResult); return { rules: row(rulesResult), items: sortFleetVehiclesByUnit(rows(vehiclesResult)) }; }
   async getRules(input: { departmentId: string }) { this.authorize(input.departmentId); return row(this.required(await this.source.getRules(input.departmentId, "*"))); }
   async getVehicleDetail(input: { departmentId: string; vehicleId: string; canViewNetworkDetails: (rules: FleetRow | null) => boolean }) {
     this.authorize(input.departmentId); if (!input.vehicleId) throw new FleetReadAuthorizationError();

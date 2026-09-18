@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   evaluateCanonicalQualificationReadiness,
+  evaluateQualificationReadiness,
+  requiredHandgunQualificationComponents,
 } from "./qualification-readiness.ts";
 
 const today = new Date("2026-09-05T12:00:00-04:00");
@@ -180,4 +182,40 @@ test("explicit firearm and standard scopes reject otherwise-current mismatches",
   ];
   assert.equal(readiness(entries, [], { firearmId: "handgun-b" }).status, "No Record");
   assert.equal(readiness(entries, [], { standardId: "different-standard" }).status, "No Record");
+});
+
+test("agency day and night policy is normalized with backward-compatible defaults", () => {
+  assert.deepEqual(requiredHandgunQualificationComponents(undefined), ["day", "night"]);
+  assert.deepEqual(requiredHandgunQualificationComponents({ require_night_handgun_qualification: false }), ["day"]);
+  assert.deepEqual(requiredHandgunQualificationComponents({ require_day_handgun_qualification: false }), ["night"]);
+  assert.deepEqual(requiredHandgunQualificationComponents({
+    require_day_handgun_qualification: false,
+    require_night_handgun_qualification: false,
+  }), []);
+});
+
+test("unrequired components cannot create missing or failed readiness", () => {
+  const dayOnly = readiness([
+    workspaceAttempt({ id: "day", runNumber: 1 }),
+    workspaceAttempt({ id: "night-failure", runNumber: 2, passed: false }),
+  ], [], { requiredComponents: ["day"] });
+  assert.equal(dayOnly.status, "Current");
+
+  const nightOnly = readiness([
+    workspaceAttempt({ id: "night", runNumber: 2 }),
+  ], [], { requiredComponents: ["night"] });
+  assert.equal(nightOnly.status, "Current");
+
+  const noneRequired = evaluateQualificationReadiness({
+    failedQualifications: [{
+      date: "2026-09-01",
+      runLabel: "Day Qualification",
+      component: "day",
+    }],
+    qualificationValidDays: 365,
+    qualificationDueSoonDays: 30,
+    requiredComponents: [],
+    today,
+  });
+  assert.equal(noneRequired.status, "Current");
 });

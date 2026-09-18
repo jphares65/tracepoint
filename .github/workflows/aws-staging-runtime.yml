@@ -2,7 +2,7 @@
 on:
   workflow_dispatch:
   push:
-    branches: [codex/aws-staging-readiness-20260902]
+    branches: [main]
     paths: [.github/staging-release.json]
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
       - run: npx tsc --noEmit
   release:
     needs: validate
-    if: github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 90
     environment: aws-staging
@@ -71,10 +71,6 @@ jobs:
         run: |
           ./scripts/test-deployment-safety.ps1
           ./scripts/test-release-orchestration.ps1
-      - name: Require repaired Vercel branch Preview
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/wait-for-staging-preview.mjs
       - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}

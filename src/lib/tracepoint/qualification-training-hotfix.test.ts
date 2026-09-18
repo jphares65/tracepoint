@@ -47,16 +47,22 @@ test("obsolete Qualification Scoring notice is removed without removing real ran
   assert.match(rangeDays, /departmentStandardPassed/);
 });
 
-test("Qualifications, Training Alerts, and notification generation share canonical readiness", async () => {
-  const [qualifications, performance, notifications] = await Promise.all([
+test("all current qualification readiness consumers apply the agency component requirements", async () => {
+  const [qualifications, performance, notifications, offDuty] = await Promise.all([
     readFile("src/app/qualifications/page.tsx", "utf8"),
     readFile("src/app/api/pilot/performance-summary/route.ts", "utf8"),
     readFile("src/app/api/notifications/route.ts", "utf8"),
+    readFile("src/lib/tracepoint/off-duty-qualification-readiness.ts", "utf8"),
   ]);
   assert.match(qualifications, /evaluateCanonicalQualificationReadiness/);
+  assert.match(qualifications, /scope: { requiredComponents }/);
   assert.match(performance, /evaluateCanonicalQualificationReadiness/);
+  assert.match(performance, /scope: { requiredComponents }/);
   assert.match(performance, /repository\.getWorkspace\(departmentId\)/);
   assert.match(notifications, /evaluateCanonicalQualificationReadiness/);
+  assert.match(notifications, /scope: { requiredComponents }/);
+  assert.match(offDuty, /requiredHandgunQualificationComponents/);
+  assert.match(offDuty, /requiredComponents,/);
   assert.doesNotMatch(performance, /function qualificationStatus/);
 });
 

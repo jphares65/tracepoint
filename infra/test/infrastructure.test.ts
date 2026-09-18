@@ -185,7 +185,6 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
         Environment: Match.arrayWith([
           { Name: "TRACEPOINT_DATA_PROVIDER", Value: "supabase" },
           { Name: "TRACEPOINT_EMAIL_PROVIDER", Value: "brevo" },
-          { Name: "TRACEPOINT_FROM_EMAIL", Value: "contact@tracepointhq.com" },
           { Name: "TRACEPOINT_STORAGE_PROVIDER", Value: "supabase" },
         ]),
       }),
@@ -195,6 +194,51 @@ test("runtime is single-task, rollback-enabled, TLS-only, and pins providers", (
   template.resourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 2);
   template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
   assert.match(JSON.stringify(template.toJSON()), /CONFIGURATION_ENVIRONMENT/);
+  assert.match(JSON.stringify(template.toJSON()), /TRACEPOINT_FROM_EMAIL.*contact@tracepointhq\.com/);
+});
+
+test("AWS-native image builder has no Supabase build secret or endpoint", () => {
+  const { app, compute } = foundations();
+  const imageBuild = new ImageBuildStack(app, "aws-native-image-build", {
+    env, environmentName: "staging", repository: compute.repository,
+    appSecrets: compute.appSecrets, providerMode: "aws-native",
+  });
+  const serialized = JSON.stringify(Template.fromStack(imageBuild).toJSON());
+  assert.match(serialized, /TRACEPOINT_BUILD_PROVIDER_MODE/);
+  assert.match(serialized, /aws-native/);
+  assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY|supabase\.co/);
+});
+
+test("full-AWS runtime mode contains no Supabase or Brevo provider configuration", () => {
+  const { app, network, compute } = foundations();
+  const runtime = new RuntimeStack(app, "aws-native-runtime", {
+    env,
+    environmentName: "staging",
+    vpc: network.vpc,
+    repository: compute.repository,
+    cluster: compute.cluster,
+    appLogGroup: compute.appLogGroup,
+    appSecrets: compute.appSecrets,
+    databaseSecret: compute.appSecrets,
+    databaseSecurityGroup: network.databaseSecurityGroup,
+    executionRole: compute.executionRole,
+    taskRole: compute.taskRole,
+    certificateArn: "arn:aws:acm:us-east-1:559054714699:certificate/00000000-0000-4000-8000-000000000000",
+    imageTag: "0123456789abcdef",
+    providerMode: "aws-native",
+    storageBucketName: "tracepoint-staging-private-559054714699",
+    cognitoUserPoolId: "us-east-1_Y9GiDA5Zy",
+    cognitoClientId: "syntheticclientid",
+    sesConfigurationSet: "tracepoint-staging",
+  });
+  const serialized = JSON.stringify(Template.fromStack(runtime).toJSON());
+  for (const value of ["TRACEPOINT_DATA_PROVIDER", "postgres", "TRACEPOINT_AUTH_PROVIDER", "cognito", "TRACEPOINT_EMAIL_PROVIDER", "ses", "TRACEPOINT_STORAGE_PROVIDER", "TRACEPOINT_DATABASE_SECRET_JSON"]) assert.match(serialized, new RegExp(value));
+  assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET|SUPABASE_SERVICE_ROLE|BREVO_API_KEY|\"Value\":\"supabase\"|\"Value\":\"brevo\"/);
+  Template.fromStack(runtime).hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
+    IpProtocol: "tcp", FromPort: 5432, ToPort: 5432,
+    GroupId: Match.anyValue(), SourceSecurityGroupId: Match.anyValue(),
+  });
+  assert.doesNotMatch(serialized, /Application subnet PostgreSQL/);
 });
 
 test("production template retains resources, scales two to four tasks, and separates providers", () => {
@@ -217,9 +261,10 @@ test("production template retains resources, scales two to four tasks, and separ
 });
 
 test('private storage encrypts, versions, retains and scopes runtime access',()=>{
- const {app,compute}=foundations();const storage=new PrivateStorageStack(app,'storage',{env,environmentName:'staging',taskRole:compute.taskRole});
+ const {app,compute,security}=foundations();const storage=new PrivateStorageStack(app,'storage',{env,environmentName:'staging',taskRole:compute.taskRole,dataKey:security.dataKey});
  const template=Template.fromStack(storage);template.resourceCountIs('AWS::S3::Bucket',2);
- template.hasResourceProperties('AWS::S3::Bucket',{BucketName:'tracepoint-staging-private-559054714699',VersioningConfiguration:{Status:'Enabled'},PublicAccessBlockConfiguration:{BlockPublicAcls:true,BlockPublicPolicy:true,IgnorePublicAcls:true,RestrictPublicBuckets:true},BucketEncryption:{ServerSideEncryptionConfiguration:[{ServerSideEncryptionByDefault:{SSEAlgorithm:'AES256'}}]},OwnershipControls:{Rules:[{ObjectOwnership:'BucketOwnerEnforced'}]},LoggingConfiguration:Match.objectLike({LogFilePrefix:'objects/'})});
+ template.hasResourceProperties('AWS::S3::Bucket',{BucketName:'tracepoint-staging-private-559054714699',VersioningConfiguration:{Status:'Enabled'},PublicAccessBlockConfiguration:{BlockPublicAcls:true,BlockPublicPolicy:true,IgnorePublicAcls:true,RestrictPublicBuckets:true},BucketEncryption:{ServerSideEncryptionConfiguration:[{BucketKeyEnabled:true,ServerSideEncryptionByDefault:{SSEAlgorithm:'aws:kms',KMSMasterKeyID:Match.anyValue()}}]},OwnershipControls:{Rules:[{ObjectOwnership:'BucketOwnerEnforced'}]},LoggingConfiguration:Match.objectLike({LogFilePrefix:'objects/'})});
  for(const bucket of Object.values(template.findResources('AWS::S3::Bucket'))){assert.equal(bucket.DeletionPolicy,'Retain');assert.equal(bucket.UpdateReplacePolicy,'Retain');}
- const policies=JSON.stringify(template.findResources('AWS::IAM::Policy'));assert.ok(policies.includes('s3:GetObject'));assert.ok(policies.includes('s3:ResourceAccount'));assert.ok(!policies.includes('s3:*'));assert.ok(!policies.includes('DeleteObjectVersion'));assert.ok(!policies.includes('ListBucket'));
+ const bucketPolicies=JSON.stringify(template.findResources('AWS::S3::BucketPolicy'));for(const sid of ['DenyExplicitNonKmsEncryption','DenyExplicitWrongKmsKey','DenyKmsWithoutExplicitKey'])assert.ok(bucketPolicies.includes(sid));
+ const policies=JSON.stringify(template.findResources('AWS::IAM::Policy'));assert.ok(policies.includes('s3:GetObject'));assert.ok(policies.includes('s3:ResourceAccount'));assert.ok(policies.includes('kms:GenerateDataKey'));assert.ok(policies.includes('kms:ViaService'));assert.ok(!policies.includes('s3:*'));assert.ok(!policies.includes('DeleteObjectVersion'));assert.ok(!policies.includes('ListBucket'));
 });

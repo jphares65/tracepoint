@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 export function validateOperationsRequest(request,context){
- assert.equal(context.branch,'refs/heads/codex/aws-staging-readiness-20260902');
+ assert.equal(context.branch,'refs/heads/main');
  assert.match(context.head,/^[0-9a-f]{40}$/);assert.equal(request.reviewedCommit,context.parent);assert.match(request.reviewedCommit,/^[0-9a-f]{40}$/);
  assert.deepEqual(context.changedFiles,['.github/staging-operations.json']);
  assert.deepEqual(Object.keys(request).sort(),['account','action','imageCommit','region','reviewedCommit'].sort());

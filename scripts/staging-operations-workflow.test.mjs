@@ -4,10 +4,10 @@ import {readFileSync} from 'node:fs';
 import yaml from 'js-yaml';
 test('operations workflow cannot publish or deploy and restricts its OIDC session',()=>{
  const workflow=yaml.load(readFileSync('.github/workflows/aws-staging-operations.yml','utf8'));
- assert.deepEqual(workflow.on,{push:{branches:['codex/aws-staging-readiness-20260902'],paths:['.github/staging-operations.json']}});
+ assert.deepEqual(workflow.on,{push:{branches:['main'],paths:['.github/staging-operations.json']}});
  assert.equal(workflow.concurrency.group,'tracepoint-staging-release');assert.equal(workflow.concurrency['cancel-in-progress'],false);
  assert.deepEqual(Object.keys(workflow.jobs),['evidence']);const job=workflow.jobs.evidence;
- assert.equal(job.environment,'aws-staging');assert.equal(job.if,"github.ref == 'refs/heads/codex/aws-staging-readiness-20260902'");
+ assert.equal(job.environment,'aws-staging');assert.equal(job.if,"github.ref == 'refs/heads/main'");
  assert.deepEqual(job.env,{AWS_REGION:'us-east-1',AWS_DEFAULT_REGION:'us-east-1'});
  const credentialIndex=job.steps.findIndex(step=>step.id==='credentials'),credentials=job.steps[credentialIndex];
  assert.ok(job.steps.findIndex(step=>step.id==='request')<credentialIndex);

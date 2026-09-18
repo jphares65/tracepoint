@@ -58,7 +58,7 @@ try {
     .sort()
     .map((file) => path.join(migrationsDir, file));
   const currentVersions = currentFiles.map(migrationVersion);
-  assert.equal(currentFiles.length, 73);
+  assert.equal(currentFiles.length, 75);
   assert.equal(new Set(currentVersions).size, currentVersions.length);
 
   const common = currentFiles.filter(

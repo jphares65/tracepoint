@@ -8,7 +8,8 @@ FROM node:24-alpine
 RUN apk upgrade --no-cache && apk add --no-cache postgresql18-client
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql ./scripts/
+COPY scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/aws-migration-ledger.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql ./scripts/
+COPY database/aws ./database/aws
 COPY supabase/migrations ./supabase/migrations
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN chmod 444 /app/rds-ca.pem

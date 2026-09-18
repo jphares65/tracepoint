@@ -1,12 +1,10 @@
 import "server-only";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
-import { getServerAuthenticatedUser } from "@/lib/authentication/server-provider";
-import { readBearerToken } from "@/lib/authentication/request-bearer";
+import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { resolvePostgresAccess } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
@@ -31,6 +29,8 @@ export type ServerAccessPayload = {
   departmentName: string;
   departmentShortName: string;
   departmentPatchUrl: string;
+  accentColor: string;
+  loginTheme: string;
   badgeNumber: string;
   rankTitle: string;
   unitName: string;
@@ -52,7 +52,8 @@ export type ServerAccessContext = ServerAccessPayload & {
   admin: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any;
-  authDb: Awaited<ReturnType<typeof createServerClient>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  authDb: any;
 };
 
 type MembershipRow = {
@@ -66,6 +67,8 @@ type DepartmentRow = {
   name?: string | null;
   short_name?: string | null;
   patch_url?: string | null;
+  accent_color?: string | null;
+  login_theme?: string | null;
 };
 
 type ProfileRow = {
@@ -119,9 +122,23 @@ function uniqueStrings(values: unknown[]) {
 }
 
 export async function resolveServerAccess(): Promise<ServerAccessResult> {
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    try {
+      const principal = await resolveAuthenticatedPrincipal();
+      if (!principal) return { ok: false, status: 401, error: "Authentication is required." };
+      const cookieStore = await cookies();
+      const selected = clean(cookieStore.get("tracepoint_department_id")?.value);
+      const support = clean(cookieStore.get("tracepoint_support_department_id")?.value);
+      return await resolvePostgresAccess(principal, selected, support) as ServerAccessResult;
+    } catch {
+      return { ok: false, status: 500, error: "PostgreSQL access verification failed." };
+    }
+  }
+  const [{ createClient: createServerClient }, { createAdminClient }, { getServerAuthenticatedUser }] = await Promise.all([
+    import("@/lib/supabase/server"), import("@/lib/supabase/admin"), import("@/lib/authentication/server-provider"),
+  ]);
   const server = await createServerClient();
-  const accessToken = readBearerToken((await headers()).get("authorization"));
-  const user = await getServerAuthenticatedUser(server, process.env, accessToken);
+  const user = await getServerAuthenticatedUser(server);
 
   if (!user) {
     return {
@@ -161,7 +178,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
 
       admin
         .from("departments")
-        .select("name,short_name,patch_url")
+        .select("name,short_name,patch_url,accent_color,login_theme")
         .eq("id", supportDepartmentId)
         .maybeSingle(),
 
@@ -254,6 +271,8 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
           clean(department.name) ||
           "TracePoint",
         departmentPatchUrl: clean(department.patch_url),
+        accentColor: clean(department.accent_color),
+        loginTheme: clean(department.login_theme),
         badgeNumber: "",
         rankTitle: "TracePoint Platform Administrator",
         unitName: "",
@@ -327,7 +346,7 @@ let membership: MembershipRow | undefined;
   ] = await Promise.all([
     admin
       .from("departments")
-      .select("name,short_name,patch_url")
+      .select("name,short_name,patch_url,accent_color,login_theme")
       .eq("id", departmentId)
       .maybeSingle(),
 
@@ -490,6 +509,8 @@ let membership: MembershipRow | undefined;
         clean(department?.name) ||
         "TracePoint",
       departmentPatchUrl: clean(department?.patch_url),
+      accentColor: clean(department?.accent_color),
+      loginTheme: clean(department?.login_theme),
       badgeNumber: clean(membership.badge_number),
       rankTitle: clean(membership.rank_title),
       unitName: clean(membership.unit_name),

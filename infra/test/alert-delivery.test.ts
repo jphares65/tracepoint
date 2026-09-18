@@ -9,7 +9,8 @@ test('staging alert fanout is encrypted, retained, scoped and contains no human 
  t.resourceCountIs('AWS::CloudWatch::Alarm',0);t.resourceCountIs('AWS::CloudWatch::CompositeAlarm',1);
  t.hasResourceProperties('AWS::CloudWatch::CompositeAlarm',{AlarmName:'tracepoint-staging-runtime-alert',AlarmActions:Match.anyValue(),OKActions:Match.anyValue()});
  t.hasResourceProperties('AWS::SNS::Topic',{KmsMasterKeyId:Match.anyValue()});t.hasResourceProperties('AWS::SNS::Subscription',{Protocol:'sqs',RawMessageDelivery:false});t.resourceCountIs('AWS::SNS::Subscription',1);
- t.hasResourceProperties('AWS::KMS::Key',{EnableKeyRotation:true,KeyPolicy:{Statement:Match.arrayWith([Match.objectLike({Principal:{Service:'cloudwatch.amazonaws.com'},Condition:{StringEquals:{'aws:SourceAccount':'559054714699'},ArnEquals:{'aws:SourceArn':Match.anyValue()}}})])}});
+ t.hasResourceProperties('AWS::KMS::Key',{EnableKeyRotation:true,KeyPolicy:{Statement:Match.arrayWith([Match.objectLike({Principal:{Service:'cloudwatch.amazonaws.com'},Condition:{StringEquals:{'aws:SourceAccount':'559054714699'},ArnEquals:{'aws:SourceArn':Match.anyValue()}}}),Match.objectLike({Sid:'AllowStagingBudgetAlerts',Principal:{Service:'budgets.amazonaws.com'}})])}});
+ t.hasResourceProperties('AWS::SNS::TopicPolicy',{PolicyDocument:{Statement:Match.arrayWith([Match.objectLike({Sid:'AllowStagingBudgetAlerts',Principal:{Service:'budgets.amazonaws.com'},Action:'sns:Publish'})])}});
  t.resourceCountIs('AWS::SQS::Queue',2);t.hasResource('AWS::SQS::Queue',{DeletionPolicy:'Retain',Properties:Match.objectLike({SqsManagedSseEnabled:true,MessageRetentionPeriod:1209600})});
 });
 test('production alert fanout observes production-only CPU and latency alarms',()=>{

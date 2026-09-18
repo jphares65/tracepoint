@@ -1,0 +1,3 @@
+import assert from "node:assert/strict";import test from "node:test";import {isAwsNativePublicPath,safeRequestedPath}from"./request-proxy-core.ts";
+test("AWS-native proxy exposes only exact reviewed auth and health routes",()=>{for(const p of ["/login","/api/health","/api/auth/cognito/login","/api/auth/cognito/callback","/api/auth/cognito/refresh","/api/auth/cognito/logout"])assert.equal(isAwsNativePublicPath(p),true);for(const p of ["/","/api/access","/api/auth/cognito/login/extra","/settings"])assert.equal(isAwsNativePublicPath(p),false);});
+test("redirect path stays same-origin relative",()=>{assert.equal(safeRequestedPath("/settings","?tab=x"),"/settings?tab=x");assert.equal(safeRequestedPath("//evil",""),"/");});

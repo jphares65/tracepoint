@@ -11,7 +11,9 @@ export interface CognitoTransportPorts {
  rotate(handle:string):Promise<SessionReceipt>;
  revoke(handle:string):Promise<void>;
 }
-const flowCookie='__Host-tracepoint-cognito-flow',sessionCookie='__Host-tracepoint-cognito-session';
+export const COGNITO_FLOW_COOKIE='__Host-tracepoint-cognito-flow';
+export const COGNITO_SESSION_COOKIE='__Host-tracepoint-cognito-session';
+const flowCookie=COGNITO_FLOW_COOKIE,sessionCookie=COGNITO_SESSION_COOKIE;
 const handlePattern=/^[A-Za-z0-9_-]{43}$/;
 function readCookie(request:Request,name:string){
  const matches=(request.headers.get('cookie')??'').split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));
@@ -48,7 +50,7 @@ export function createCognitoTransport(config:CognitoVerificationConfig,ports:Co
  return {
   async begin(request:Request){
    const rejected=guard(request,'/api/auth/cognito/login','POST');if(rejected)return rejected;
-   try{const flow=await ports.pkce.begin(),url=new URL(flow.url);
+   try{const body=await request.text();if(body.length>4096)throw Error();const params=new URLSearchParams(body);if(params.getAll('next').length>1)throw Error();const returnTo=params.get('next')||'/';const flow=await ports.pkce.begin(returnTo),url=new URL(flow.url);
     if(url.origin!==providerOrigin||url.pathname!=='/oauth2/authorize'||url.searchParams.get('client_id')!==config.clientId||url.searchParams.get('redirect_uri')!==origin+'/api/auth/cognito/callback'||flow.cookie.name!==flowCookie||!handlePattern.test(flow.cookie.value))throw Error();
     return response(303,'authorization_started',{location:flow.url,cookies:[cookie(flowCookie,flow.cookie.value,300)]});
    }catch{return response(503,'authorization_unavailable');}
@@ -62,7 +64,7 @@ export function createCognitoTransport(config:CognitoVerificationConfig,ports:Co
      const result=await ports.establish(tokens,nonce);session(result);established=result;return {userId:result.userId};
     });
     if(!established||identity.userId!==established.userId)throw Error();
-    return response(303,'authenticated',{location:origin+'/',cookies:[cleared,session(established)]});
+    return response(303,'authenticated',{location:origin+identity.returnTo,cookies:[cleared,session(established)]});
    }catch{return response(401,'authorization_rejected',{cookies:[cleared]});}
   },
   async refresh(request:Request){
@@ -72,7 +74,7 @@ export function createCognitoTransport(config:CognitoVerificationConfig,ports:Co
   },
   async logout(request:Request){
    const rejected=guard(request,'/api/auth/cognito/logout','POST');if(rejected)return rejected;
-   const cleared=[cookie(sessionCookie,'',0),cookie(flowCookie,'',0)];
+   const cleared=[cookie(sessionCookie,'',0),cookie(flowCookie,'',0),cookie('tracepoint_department_id','',0),cookie('tracepoint_support_department_id','',0)];
    try{await ports.revoke(readCookie(request,sessionCookie));const url=new URL(providerOrigin+'/logout');url.search=new URLSearchParams({client_id:config.clientId,logout_uri:origin+'/login'}).toString();return response(303,'signed_out',{location:url.toString(),cookies:cleared});}
    catch{return response(503,'logout_unconfirmed',{cookies:cleared});}
   },

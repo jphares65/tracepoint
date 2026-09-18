@@ -2,7 +2,9 @@ import "server-only";
 
 export {
   createQualificationHistoryRepository,
+  createPostgresQualificationHistoryRepository,
   mapQualificationHistoryRows,
+  PostgresQualificationHistoryRepository,
   QualificationHistoryAuthorizationError,
   QualificationHistoryRepositoryConfigurationError,
   QualificationHistoryRepositoryError,
@@ -12,6 +14,7 @@ export {
 
 export type {
   QualificationHistoryInput,
+  QualificationHistoryPostgresClient,
   QualificationHistoryRepository,
   QualificationHistoryResult,
   QualificationHistoryRow,

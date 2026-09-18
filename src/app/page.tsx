@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
-import { createClient } from "@/lib/supabase/client";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Priority = "Critical" | "High" | "Normal";
@@ -62,44 +61,6 @@ type HomeProfile = {
   badge: string;
 };
 
-type ProfileRow = {
-  full_name?: string | null;
-};
-
-type MembershipRow = {
-  department_id?: string | null;
-  badge_number?: string | null;
-  rank_title?: string | null;
-  unit_name?: string | null;
-};
-
-type MembershipRoleRow = {
-  role_code?: string | null;
-};
-
-
-const ROLE_PRIORITY = [
-  "administrator",
-  "chief",
-  "command_staff",
-  "supervisor",
-  "range_master",
-  "armorer",
-  "instructor",
-  "officer",
-] as const;
-
-const ROLE_LABELS: Record<string, string> = {
-  administrator: "Administrator",
-  chief: "Chief",
-  command_staff: "Command Staff",
-  supervisor: "Supervisor",
-  range_master: "Range Master",
-  armorer: "Armorer",
-  instructor: "Instructor",
-  officer: "Officer",
-};
-
 const RANK_ABBREVIATIONS: Record<string, string> = {
   "Chief of Police": "Chief",
   Chief: "Chief",
@@ -122,14 +83,6 @@ const SOURCE_ORDER = [
   "Qualifications",
   "System",
 ];
-
-function getRoleLabel(rows: MembershipRoleRow[]) {
-  const roleCode = ROLE_PRIORITY.find((code) =>
-    rows.some((row) => row.role_code === code),
-  );
-
-  return roleCode ? ROLE_LABELS[roleCode] : "Member";
-}
 
 function professionalGreeting(profile: HomeProfile) {
   const parts = profile.name.trim().split(/\s+/).filter(Boolean);
@@ -241,14 +194,22 @@ async function responseError(response: Response) {
 }
 
 export default function OfficerHomePage() {
-  const { hasPermission, departmentId } = useTracePointAccess();
-  const [profile, setProfile] = useState<HomeProfile>({
-    name: "",
-    rankTitle: "",
-    role: "Member",
-    unit: "Department",
-    badge: "",
-  });
+  const {
+    hasPermission,
+    departmentId,
+    fullName,
+    rankTitle,
+    primaryRoleLabel,
+    unitName,
+    badgeNumber,
+  } = useTracePointAccess();
+  const profile = useMemo<HomeProfile>(() => ({
+    name: fullName,
+    rankTitle,
+    role: primaryRoleLabel || "Member",
+    unit: unitName || "Department",
+    badge: badgeNumber,
+  }), [badgeNumber, fullName, primaryRoleLabel, rankTitle, unitName]);
   const [notifications, setNotifications] =
     useState<NotificationPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -279,76 +240,6 @@ export default function OfficerHomePage() {
 
   useEffect(() => {
     void loadNotifications();
-  }, [departmentId]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadProfile() {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user || !active) return;
-
-      const [{ data: profileData }, { data: membershipData }] =
-        await Promise.all([
-          supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", user.id)
-            .maybeSingle(),
-          supabase
-            .from("department_memberships")
-            .select("department_id,badge_number,rank_title,unit_name")
-            .eq("user_id", user.id)
-            .eq("is_active", true)
-            .eq("department_id", departmentId)
-            .maybeSingle(),
-        ]);
-
-      const profileRow = profileData as ProfileRow | null;
-      const membership = membershipData as MembershipRow | null;
-      let roleRows: MembershipRoleRow[] = [];
-
-      if (membership?.department_id) {
-        const { data } = await supabase
-          .from("department_membership_roles")
-          .select("role_code")
-          .eq("department_id", membership.department_id)
-          .eq("user_id", user.id);
-
-        roleRows = (data ?? []) as MembershipRoleRow[];
-      }
-
-      if (!active) return;
-
-      const metadataName =
-        typeof user.user_metadata?.full_name === "string"
-          ? user.user_metadata.full_name.trim()
-          : "";
-      const storedName = profileRow?.full_name?.trim() || "";
-      const emailHandle = user.email?.split("@")[0]?.toLowerCase() || "";
-      const resolvedName =
-        storedName.toLowerCase() === emailHandle
-          ? metadataName
-          : storedName || metadataName;
-
-      setProfile({
-        name: resolvedName,
-        rankTitle: membership?.rank_title?.trim() || "",
-        role: getRoleLabel(roleRows),
-        unit: membership?.unit_name?.trim() || "Department",
-        badge: membership?.badge_number?.trim() || "",
-      });
-    }
-
-    void loadProfile();
-
-    return () => {
-      active = false;
-    };
   }, [departmentId]);
 
   async function updateNotification(

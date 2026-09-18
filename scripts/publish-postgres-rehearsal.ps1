@@ -6,11 +6,12 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 Assert-TracePointStagingIdentity | Out-Null
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $commit=(& git.exe -C $root rev-parse HEAD).Trim()
-if($commit -notmatch '^[0-9a-f]{40}$' -or (& git.exe -C $root branch --show-current).Trim() -ne 'codex/aws-staging-readiness-20260902'){throw 'Reviewed AWS branch required'}
+$branch=(& git.exe -C $root branch --show-current).Trim()
+if($commit -notmatch '^[0-9a-f]{40}$' -or $branch -notin @('main','codex/aws-main-integration-final-20260908')){throw 'Reviewed main or isolated AWS integration branch required'}
 if(@(& git.exe -C $root status --porcelain).Count){throw 'Commit reviewed work before publication'}
 $archive=Join-Path ([IO.Path]::GetTempPath()) ('tp-postgres-source-'+[guid]::NewGuid().ToString('N')+'.zip')
 try {
- & git.exe -C $root archive --format=zip --output=$archive $commit -- Dockerfile.postgres-rehearsal Dockerfile.postgres-rehearsal.dockerignore buildspec.postgres-rehearsal.yml package.json package-lock.json scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql supabase/migrations
+ & git.exe -C $root archive --format=zip --output=$archive $commit -- Dockerfile.postgres-rehearsal Dockerfile.postgres-rehearsal.dockerignore buildspec.postgres-rehearsal.yml package.json package-lock.json database/aws scripts/run-aws-postgres-rehearsal.mjs scripts/run-aws-postgres-rehearsal.test.mjs scripts/aws-migration-ledger.mjs scripts/postgres-bootstrap-prerequisites.mjs scripts/staging-management-manifest.mjs scripts/validate-local-tenant-isolation.sql scripts/validate-local-armory-workflows.sql supabase/migrations
  if($LASTEXITCODE -ne 0){throw 'Source archive failed'}
  Assert-TracePointStagingIdentity | Out-Null
  $version=& aws.exe s3api put-object --bucket tracepoint-staging-build-source-559054714699 --key source/tracepoint-staging-source.zip --body $archive --region us-east-1 --query VersionId --output text

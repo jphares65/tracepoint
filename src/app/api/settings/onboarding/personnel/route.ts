@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { configuredSiteOrigin } from "@/lib/authentication/redirects";
+import {
+  accessFailureResponse,
+  hasServerPermission,
+  resolveServerAccess,
+} from "@/lib/tracepoint/server-access";
 
 type PersonnelImportRequest = {
   departmentId?: string;
@@ -39,7 +43,7 @@ function isActiveValue(value: unknown) {
 }
 
 async function findUserByEmail(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
   email: string,
 ) {
   const target = email.toLowerCase();
@@ -88,6 +92,66 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+      const access = await resolveServerAccess();
+      if (!access.ok) return accessFailureResponse(access);
+      if (access.context.departmentId !== departmentId) {
+        return NextResponse.json(
+          { error: "The active agency does not match this request." },
+          { status: 403 },
+        );
+      }
+      if (!hasServerPermission(access.context, "manage_users")) {
+        return NextResponse.json(
+          { error: "You do not have permission to import personnel." },
+          { status: 403 },
+        );
+      }
+
+      const { writeCognitoPersonnel } = await import(
+        "@/lib/ai-importer/server/cognito-personnel-writer"
+      );
+      const result = await writeCognitoPersonnel({
+        admin: access.context.admin,
+        departmentId,
+        actorId: access.context.userId,
+        siteUrl: configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL),
+        row: {
+          rowNumber: 1,
+          status: "valid",
+          action: "CREATE",
+          values: {
+            firstName,
+            lastName,
+            fullName,
+            email,
+            badgeNumber,
+            rankTitle,
+            unitName,
+            employeeNumber,
+            active,
+          },
+          issues: [],
+          changes: [],
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        userId: result.userId,
+        createdAuthUser: result.createdIdentity,
+        activationEmailSent: result.invitationSent,
+        message: result.createdIdentity
+          ? active
+            ? `${fullName} imported pending activation.`
+            : `${fullName} imported as inactive personnel.`
+          : `${fullName} added using an existing TracePoint account.`,
+      });
+    }
+
+    const { createClient: createServerClient } = await import(
+      "@/lib/supabase/server"
+    );
     const server = await createServerClient();
 
     const {
@@ -130,6 +194,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { createAdminClient } = await import("@/lib/supabase/admin");
     const admin = createAdminClient();
 
     let targetUser = await findUserByEmail(admin, email);

@@ -1,5 +1,10 @@
 # Provider abstraction design
 
+**Binding scope correction (2026-09-08):** Supabase-only implementations below
+describe the migration bridge. They are not an approved final state. Completion
+requires PostgreSQL/Cognito/S3/SES implementations and removal of Supabase from
+the production runtime.
+
 ## Decision
 
 Introduce boundaries one bounded context at a time. Supabase remains the only

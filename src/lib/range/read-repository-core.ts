@@ -17,7 +17,7 @@ export interface RangeReadDataSource {
 export class RangeReadAuthorizationError extends Error {}
 export class RangeReadRepositoryError extends Error {}
 const rows = (result: RangeReadResult) => Array.isArray(result.data) ? result.data as Record<string, unknown>[] : [];
-export function requireRangeReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase") throw new Error(`Unsupported data provider: ${provider}. Only supabase is implemented.`); }
+export function requireRangeReadProvider(value?: string) { const provider = value?.trim().toLowerCase() || "supabase"; if (provider !== "supabase" && provider !== "postgres") throw new Error(`Unsupported data provider: ${provider}.`); }
 export class TenantBoundRangeReadRepository {
   private readonly source: RangeReadDataSource;
   private readonly departmentId: string;

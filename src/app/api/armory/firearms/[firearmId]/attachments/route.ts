@@ -14,6 +14,8 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
 const VALID_CATEGORIES = new Set(["acquisition", "transfer_disposition", "maintenance_repair", "inspection", "photo", "other"]);
 
+// The shared access context intentionally exposes its provider-neutral query client as `any`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function verifyFirearm(admin: any, departmentId: string, firearmId: string) {
   return admin.from("firearms").select("id").eq("id", firearmId).eq("department_id", departmentId).maybeSingle();
 }
@@ -61,11 +63,11 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
   if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file to upload." }, { status: 400 });
   if (!VALID_CATEGORIES.has(category)) return NextResponse.json({ error: "Invalid document type." }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: "Only PDF, JPG, PNG, and WebP files are allowed." }, { status: 400 });
-  if (file.size > MAX_BYTES) return NextResponse.json({ error: "Files may not exceed 15 MB." }, { status: 400 });
+  if (file.size <= 0 || file.size > MAX_BYTES) return NextResponse.json({ error: "Files must be non-empty and may not exceed 15 MB." }, { status: 400 });
 
   const attachmentId = crypto.randomUUID();
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const objectStore = createObjectStore(context.admin, context.departmentId);
+  const objectStore = await createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadFirearmAttachment({
     departmentId: context.departmentId,
     recordId: firearmId,

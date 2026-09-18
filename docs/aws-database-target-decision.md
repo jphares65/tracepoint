@@ -2,6 +2,12 @@
 
 ## Decision
 
+**Binding scope correction (2026-09-08):** Supabase is a temporary migration
+source and rollback bridge only. Migration completion requires Aurora/RDS
+PostgreSQL to be authoritative with no Supabase runtime, credential, backup, or
+recovery dependency. References below to retaining Supabase describe sequencing,
+not the final architecture.
+
 Retain Supabase PostgreSQL through the first AWS hosting release. For a later
 database migration, use **Aurora PostgreSQL (serverless capacity)** as the
 primary target. Provisioned RDS PostgreSQL is the credible low-cost alternative

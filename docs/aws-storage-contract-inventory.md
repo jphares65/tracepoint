@@ -1,5 +1,7 @@
 # Supabase Storage contract inventory
 
+> Historical pre-S3 baseline. For the completed provider-neutral and S3 inventory, see `aws-s3-storage-inventory-20260909.md`.
+
 **Source review:** 2026-08-30
 **Runtime provider:** Supabase Storage only
 **Buckets:** private-use `tracepoint-attachments`; public `department-assets`

@@ -6,7 +6,7 @@ const issuerPattern=/^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-
 const hash=(handle:string)=>{if(!/^[A-Za-z0-9_-]{43}$/.test(handle))throw Error('Invalid refresh handle.');return createHash('sha256').update(handle).digest('hex');};
 export type RefreshIdentity={userId:string;issuer:string;subject:string;clientId:string;authenticatedAt:number;expiresAt:number};
 export type ConsumedRefresh=RefreshIdentity & {familyId:string;generation:number;refreshToken:string};
-type Row={family_id:string;issuer:string;subject:string;tracepoint_user_id:string;client_id:string;handle_hash:string;generation:number;state:string;sealed_payload:string|null;authenticated_at:Date;expires_at:Date};
+type Row={family_id:string;issuer:string;subject:string;tracepoint_user_id:string;client_id:string;handle_hash:string;generation:number;state:string;sealed_payload:string|null;authenticated_at:Date;expires_at:Date;last_seen_at:Date;idle_expires_at:Date};
 function valid(identity:RefreshIdentity){const now=Math.floor(Date.now()/1000);return uuid.test(identity.userId)&&uuid.test(identity.subject)&&issuerPattern.test(identity.issuer)&&/^[A-Za-z0-9]{1,128}$/.test(identity.clientId)&&Number.isInteger(identity.authenticatedAt)&&Number.isInteger(identity.expiresAt)&&identity.authenticatedAt<=now+30&&identity.expiresAt>now&&identity.expiresAt>identity.authenticatedAt&&identity.expiresAt-identity.authenticatedAt<=86400;}
 const tokenValid=(token:string)=>typeof token==='string'&&token.length>0&&token.length<=16384&&!/[\s\x00-\x1f]/.test(token);
 function identity(row:Row):RefreshIdentity{return {userId:row.tracepoint_user_id,issuer:row.issuer,subject:row.subject,clientId:row.client_id,authenticatedAt:Math.floor(new Date(row.authenticated_at).getTime()/1000),expiresAt:Math.floor(new Date(row.expires_at).getTime()/1000)};}
@@ -49,9 +49,9 @@ export class PostgresCognitoRefreshStore {
  }
  async createVerified(value:RefreshIdentity,refreshToken:string){
   if(!valid(value)||!this.matchesTarget(value)||!tokenValid(refreshToken))throw Error('Invalid verified refresh identity.');
-  const handle=randomBytes(32).toString('base64url'),row:Row={family_id:randomUUID(),issuer:value.issuer,subject:value.subject,tracepoint_user_id:value.userId,client_id:value.clientId,handle_hash:hash(handle),generation:0,state:'ready',sealed_payload:null,authenticated_at:new Date(value.authenticatedAt*1000),expires_at:new Date(value.expiresAt*1000)};
+  const handle=randomBytes(32).toString('base64url'),now=new Date(),row:Row={family_id:randomUUID(),issuer:value.issuer,subject:value.subject,tracepoint_user_id:value.userId,client_id:value.clientId,handle_hash:hash(handle),generation:0,state:'ready',sealed_payload:null,authenticated_at:new Date(value.authenticatedAt*1000),expires_at:new Date(value.expiresAt*1000),last_seen_at:now,idle_expires_at:new Date(Math.min(value.expiresAt*1000,now.getTime()+1800000))};
   const client=await this.connect();try{await client.query('begin');await this.activeMapping(client,value);
-   await client.query(`insert into public.authentication_refresh_sessions(family_id,issuer,subject,tracepoint_user_id,client_id,handle_hash,sealed_payload,authenticated_at,expires_at) values($1,$2,$3,$4,$5,$6,$7,to_timestamp($8),to_timestamp($9))`,[row.family_id,value.issuer,value.subject,value.userId,value.clientId,row.handle_hash,this.sealer.seal(refreshToken,binding(row)),value.authenticatedAt,value.expiresAt]);await client.query('commit');
+   await client.query(`insert into public.authentication_refresh_sessions(family_id,issuer,subject,tracepoint_user_id,client_id,handle_hash,sealed_payload,authenticated_at,expires_at,last_seen_at,idle_expires_at) values($1,$2,$3,$4,$5,$6,$7,to_timestamp($8),to_timestamp($9),$10,$11)`,[row.family_id,value.issuer,value.subject,value.userId,value.clientId,row.handle_hash,this.sealer.seal(refreshToken,binding(row)),value.authenticatedAt,value.expiresAt,row.last_seen_at,row.idle_expires_at]);await client.query('commit');
    return {familyId:row.family_id,handle,expiresAt:value.expiresAt};
   }catch{await client.query('rollback').catch(()=>{});throw Error('Refresh session registration rejected.');}finally{client.release();}
  }
@@ -74,12 +74,25 @@ export class PostgresCognitoRefreshStore {
    const result=await client.query<Row>("select * from public.authentication_refresh_sessions where family_id=$1 and state='consumed' and generation=$2 and expires_at>clock_timestamp() for update",[consumed.familyId,consumed.generation]);const row=result.rows[0];
    if(!row||JSON.stringify(identity(row))!==JSON.stringify({userId:consumed.userId,issuer:consumed.issuer,subject:consumed.subject,clientId:consumed.clientId,authenticatedAt:consumed.authenticatedAt,expiresAt:consumed.expiresAt}))throw Error();
    const handle=randomBytes(32).toString('base64url');row.handle_hash=hash(handle);row.generation++;
-   await client.query("update public.authentication_refresh_sessions set handle_hash=$2,generation=$3,state='ready',sealed_payload=$4,updated_at=clock_timestamp() where family_id=$1",[row.family_id,row.handle_hash,row.generation,this.sealer.seal(rotatedRefreshToken,binding(row))]);await client.query('commit');return {familyId:row.family_id,handle,expiresAt:consumed.expiresAt};
+   await client.query("update public.authentication_refresh_sessions set handle_hash=$2,generation=$3,state='ready',sealed_payload=$4,last_seen_at=statement_timestamp(),idle_expires_at=least(expires_at,statement_timestamp()+interval '30 minutes'),updated_at=statement_timestamp() where family_id=$1",[row.family_id,row.handle_hash,row.generation,this.sealer.seal(rotatedRefreshToken,binding(row))]);await client.query('commit');return {familyId:row.family_id,handle,expiresAt:consumed.expiresAt};
   }catch{await client.query('rollback').catch(()=>{});throw Error('Refresh rotation could not be committed. Start a new sign-in.');}finally{client.release();}
  }
  async revokeFamily(familyId:string,owner:{userId:string;issuer:string}){
   if(!uuid.test(familyId)||!uuid.test(owner.userId)||owner.issuer!==this.target.issuer)throw Error('Invalid refresh revocation boundary.');
   await this.pool.query("update public.authentication_refresh_sessions set state='revoked',sealed_payload=null,updated_at=clock_timestamp() where family_id=$1 and tracepoint_user_id=$2 and issuer=$3 and client_id=$4",[familyId,owner.userId,owner.issuer,this.target.clientId]).catch(()=>{throw Error('Refresh revocation could not be persisted.');});
+ }
+ async resolveReady(handle:string):Promise<{userId:string;issuer:string;subject:string;expiresAt:number}|null>{
+  const handleHash=hash(handle);
+  try{
+   const result=await this.pool.query<Row>(`update public.authentication_refresh_sessions s
+    set last_seen_at=statement_timestamp(),idle_expires_at=least(s.expires_at,statement_timestamp()+interval '30 minutes'),updated_at=statement_timestamp()
+    where s.handle_hash=$1 and s.issuer=$2 and s.client_id=$3 and s.state='ready'
+      and s.expires_at>clock_timestamp() and s.idle_expires_at>clock_timestamp()
+      and exists(select 1 from public.authentication_identity_links l where l.provider='cognito' and l.issuer=s.issuer and l.subject=s.subject and l.tracepoint_user_id=s.tracepoint_user_id and l.state='active')
+      and not exists(select 1 from public.authentication_session_revocations r where r.tracepoint_user_id=s.tracepoint_user_id and r.issuer=s.issuer and r.revoked_before>=s.authenticated_at)
+    returning s.tracepoint_user_id,s.issuer,s.subject,s.expires_at`,[handleHash,this.target.issuer,this.target.clientId]);
+   const row=result.rows[0];return result.rowCount===1&&row?{userId:row.tracepoint_user_id,issuer:row.issuer,subject:row.subject,expiresAt:Math.floor(new Date(row.expires_at).getTime()/1000)}:null;
+  }catch{throw Error('Application session could not be verified.');}
  }
  async purgeExpired(){try{const result=await this.pool.query('delete from public.authentication_refresh_sessions where issuer=$1 and client_id=$2 and expires_at<=clock_timestamp()',[this.target.issuer,this.target.clientId]);return result.rowCount??0;}catch{throw Error('Refresh expiry cleanup failed.');}}
 }

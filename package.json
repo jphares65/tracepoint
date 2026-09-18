@@ -7,12 +7,20 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "storage:migration": "node scripts/storage-migration.mjs",
+    "storage:migration:test": "node --test scripts/storage-migration.test.mjs",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
-    "db:verify-staging": "node scripts/verify-staging-schema.mjs"
+    "db:verify-staging": "node scripts/verify-staging-schema.mjs",
+    "provider:assert-native": "node scripts/assert-aws-native-provider-reachability.mjs",
+    "migration:synthetic:test": "node --test scripts/synthetic-table-migration.test.mjs scripts/synthetic-cognito-migration.test.mjs",
+    "secrets:native:test": "node --test scripts/native-secret-material.test.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "3.1127.0",
+    "@aws-sdk/client-cognito-identity-provider": "3.1127.0",
     "@aws-sdk/client-s3": "3.1127.0",
+    "@aws-sdk/client-secrets-manager": "^3.1127.0",
     "@aws-sdk/client-sesv2": "^3.1127.0",
     "@aws-sdk/s3-request-presigner": "3.1127.0",
     "@supabase/ssr": "^0.12.0",
@@ -22,6 +30,7 @@
     "next": "16.3.4",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
+    "pg": "^8.16.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
@@ -37,7 +46,6 @@
     "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
-    "pg": "^8.16.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"

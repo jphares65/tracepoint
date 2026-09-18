@@ -64,7 +64,7 @@ export class EquipmentReadRepositoryConfigurationError extends Error {
 
 export function requireEquipmentReadProvider(provider: string | undefined) {
   const normalized = provider?.trim().toLowerCase() || "supabase";
-  if (normalized !== "supabase") {
+  if (normalized !== "supabase" && normalized !== "postgres") {
     throw new EquipmentReadRepositoryConfigurationError(normalized);
   }
   return normalized;

@@ -7,6 +7,8 @@ import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-r
 type RouteContext = { params: Promise<{ eventId: string }> };
 const MANAGE = ["manage_training"] as const;
 
+// The shared access context intentionally exposes its provider-neutral query client as `any`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function eventExists(admin: any, departmentId: string, eventId: string) {
   return admin.from("agency_training_events").select("id,status").eq("department_id", departmentId).eq("id", eventId).maybeSingle();
 }
@@ -19,10 +21,12 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   try {
   const data = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getFiles({ departmentId: context.departmentId, eventId });
   if (!data) return NextResponse.json({ error: "Training event not found." }, { status: 404 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const names = new Map(data.profiles.map((row: any) => [String(row.id), row.full_name]));
   return NextResponse.json({
     status: data.event.status,
     files: data.files,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     certificates: data.certificates.map((row: any) => ({ ...row, fullName: names.get(String(row.user_id)) ?? "Department Member" })),
     canManage: hasAnyServerPermission(context, MANAGE),
   }, { headers: { "Cache-Control": "no-store" } });
@@ -44,10 +48,10 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   const file = form.get("file");
   const kind = String(form.get("kind") ?? "supporting_document");
   if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file to upload." }, { status: 400 });
-  if (file.size > 25 * 1024 * 1024) return NextResponse.json({ error: "Training files may not exceed 25 MB." }, { status: 400 });
+  if (file.size <= 0 || file.size > 25 * 1024 * 1024) return NextResponse.json({ error: "Training files must be non-empty and may not exceed 25 MB." }, { status: 400 });
   const attachmentType = kind === "lesson_plan" ? "training_lesson_plan" : "training_supporting_document";
   const attachmentId = crypto.randomUUID();
-  const objectStore = createObjectStore(context.admin, context.departmentId);
+  const objectStore = await createObjectStore(context.admin, context.departmentId);
   const upload = await objectStore.uploadTrainingFile({
     departmentId: context.departmentId,
     recordId: eventId,

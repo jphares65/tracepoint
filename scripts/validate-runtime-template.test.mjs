@@ -28,6 +28,22 @@ test('private storage activation requires exact account bucket region and no unr
  for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment[2].Value='other-bucket',t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'AWS_REGION',Value:'us-west-2'}),t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[],t=>t.Resources.Service.Properties.DesiredCount=2]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,commit,{allowPrivateStorage:true}));}
 });
 
+test('importer secret alias must reference the existing Supabase secret field exactly',()=>{
+ const before=structuredClone(old);before.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[{Name:'SUPABASE_SECRET_KEY',ValueFrom:{'Fn::Join':['',['secret',':SUPABASE_SECRET_KEY::']]}}];
+ const after=updated();after.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[...before.Resources.Task.Properties.ContainerDefinitions[0].Secrets,{Name:'SUPABASE_SERVICE_ROLE_KEY',ValueFrom:{'Fn::Join':['',['secret',':SUPABASE_SECRET_KEY::']]}}];
+ assert.throws(()=>validateRuntimeTemplate(before,after,commit));
+ assert.equal(validateRuntimeTemplate(before,after,commit,{allowImporterSecretAlias:true}).safe,true);
+ for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets[1].ValueFrom={'Fn::Join':['',['other-secret',':SUPABASE_SECRET_KEY::']]},t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets.push({Name:'UNREVIEWED',ValueFrom:'secret'})]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,commit,{allowImporterSecretAlias:true}));}
+});
+
+test('reviewed bridge composition admits only explicit staging provider declarations and the exact storage export',()=>{
+ const before=structuredClone(old);before.Resources.Task.Properties.ContainerDefinitions[0].Environment=[{Name:'TRACEPOINT_DATA_PROVIDER',Value:'supabase'},{Name:'TRACEPOINT_EMAIL_PROVIDER',Value:'brevo'},{Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'s3'},{Name:'TRACEPOINT_S3_BUCKET',Value:'tracepoint-staging-private-559054714699'},{Name:'TRACEPOINT_S3_EXPECTED_OWNER',Value:'559054714699'},{Name:'AWS_REGION',Value:'us-east-1'}];before.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[{Name:'NEXT_PUBLIC_SUPABASE_URL',ValueFrom:'secret:url'},{Name:'NEXT_PUBLIC_SITE_URL',ValueFrom:'secret:site'}];
+ const after=updated();after.Resources.Task.Properties.ContainerDefinitions[0].Environment=[{Name:'TRACEPOINT_RUNTIME_PROVIDER_MODE',Value:'bridge'},{Name:'TRACEPOINT_AUTH_PROVIDER',Value:'supabase'},{Name:'AWS_REGION',Value:'us-east-1'},{Name:'TRACEPOINT_S3_BUCKET',Value:{'Fn::ImportValue':'tracepoint-staging-storage:ExportsOutputRefObjectsA92BA4F157B12E12'}},{Name:'TRACEPOINT_DATA_PROVIDER',Value:'supabase'},{Name:'TRACEPOINT_EMAIL_PROVIDER',Value:'brevo'},{Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'s3'},{Name:'TRACEPOINT_S3_EXPECTED_OWNER',Value:'559054714699'}];after.Resources.Task.Properties.ContainerDefinitions[0].Secrets=[...before.Resources.Task.Properties.ContainerDefinitions[0].Secrets].reverse();
+ assert.throws(()=>validateRuntimeTemplate(before,after,commit));
+ assert.equal(validateRuntimeTemplate(before,after,commit,{allowReviewedBridgeComposition:true}).safe,true);
+ for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.find(x=>x.Name==='TRACEPOINT_AUTH_PROVIDER').Value='cognito',t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.find(x=>x.Name==='TRACEPOINT_S3_BUCKET').Value={'Fn::ImportValue':'production-storage'},t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'UNREVIEWED',Value:'1'}),t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets.push({Name:'UNREVIEWED',ValueFrom:'secret'})]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,commit,{allowReviewedBridgeComposition:true}));}
+});
+
 test('CDK telemetry can vary across runners without admitting resource changes',()=>{
  const before=structuredClone(old);before.Resources.CDKMetadata={Type:'AWS::CDK::Metadata',Properties:{Analytics:'node24.15'},Condition:'TelemetryEnabled'};
  const after=updated();after.Resources.CDKMetadata=structuredClone(before.Resources.CDKMetadata);after.Resources.CDKMetadata.Properties.Analytics='node24.19';

@@ -1,8 +1,9 @@
 import { workspaceHasDrillTemplate } from "../tracepoint/drill-documents-core.ts";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type EvidenceResult={data:any;error:{message:string}|null};
 export interface EvidenceReadDataSource { getFirearm(d:string,id:string):PromiseLike<EvidenceResult>; listFirearmAttachments(d:string,id:string):PromiseLike<EvidenceResult>; getRangeWorkspace(d:string):PromiseLike<EvidenceResult>; listQualificationEvidence(d:string,id:string):PromiseLike<EvidenceResult>; listDrillDocuments(d:string,id:string):PromiseLike<EvidenceResult>; getAttachment(d:string,id:string):PromiseLike<EvidenceResult>; }
 export class EvidenceReadAuthorizationError extends Error{} export class EvidenceReadRepositoryError extends Error{}
-export function requireEvidenceReadProvider(value?:string){const p=value?.trim().toLowerCase()||"supabase";if(p!=="supabase")throw new Error(`Unsupported data provider: ${p}. Only supabase is implemented.`);return p;}
+export function requireEvidenceReadProvider(value?:string){const p=value?.trim().toLowerCase()||"supabase";if(p!=="supabase"&&p!=="postgres")throw new Error(`Unsupported data provider: ${p}.`);return p;}
 export class TenantBoundEvidenceReadRepository{
  private source:EvidenceReadDataSource; private departmentId:string;
  constructor(source:EvidenceReadDataSource,departmentId:string){this.source=source;this.departmentId=departmentId;if(!departmentId)throw new EvidenceReadAuthorizationError();}

@@ -3,12 +3,14 @@ import test from "node:test";
 
 import {
   createQualificationHistoryRepository,
+  createPostgresQualificationHistoryRepository,
   mapQualificationHistoryRows,
   QUALIFICATION_HISTORY_FIELDS,
   QualificationHistoryAuthorizationError,
   QualificationHistoryRepositoryConfigurationError,
   QualificationHistoryRepositoryError,
   SupabaseQualificationHistoryRepository,
+  PostgresQualificationHistoryRepository,
   type QualificationHistoryRow,
   type QualificationHistorySupabaseClient,
 } from "./history-repository-core.ts";
@@ -67,6 +69,66 @@ test("preserves the exact read-only Supabase query contract and tenant binding",
     { method: "order:qualification_date", value: { ascending: false } },
   ]);
   assert.equal(calls.some((call) => ["insert", "update", "upsert", "delete"].includes(call.method)), false);
+});
+
+test("uses a parameterized PostgreSQL query with the same tenant and history filters", async () => {
+  const calls: Array<{ text: string; values: readonly unknown[] }> = [];
+  const repository = createPostgresQualificationHistoryRepository(
+    {
+      async query(text, values) {
+        calls.push({ text, values });
+        return { rows: [row] };
+      },
+    },
+    "department-a",
+  );
+
+  assert.ok(repository instanceof PostgresQualificationHistoryRepository);
+  assert.deepEqual(await repository.listImportedHistory({ departmentId: "department-a" }), [row]);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].text, /from public\.qualification_results/);
+  assert.match(calls[0].text, /department_id = \$1/);
+  assert.match(calls[0].text, /record_origin = \$2/);
+  assert.match(calls[0].text, /order by qualification_date desc/);
+  assert.deepEqual(calls[0].values, ["department-a", "historical_import"]);
+});
+
+test("PostgreSQL repository denies cross-tenant input before database access", async () => {
+  let called = false;
+  const repository = createPostgresQualificationHistoryRepository(
+    {
+      async query() {
+        called = true;
+        return { rows: [] };
+      },
+    },
+    "department-a",
+  );
+
+  await assert.rejects(
+    repository.listImportedHistory({ departmentId: "department-b" }),
+    QualificationHistoryAuthorizationError,
+  );
+  assert.equal(called, false);
+});
+
+test("PostgreSQL repository maps provider failures without leaking SQL details", async () => {
+  const repository = createPostgresQualificationHistoryRepository(
+    {
+      async query() {
+        throw new Error("synthetic relation and connection details");
+      },
+    },
+    "department-a",
+  );
+
+  await assert.rejects(
+    repository.listImportedHistory({ departmentId: "department-a" }),
+    (error) =>
+      error instanceof QualificationHistoryRepositoryError &&
+      error.message === "Qualification history could not be loaded." &&
+      !error.message.includes("relation"),
+  );
 });
 
 test("preserves empty-list not-found behavior", async () => {

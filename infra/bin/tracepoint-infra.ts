@@ -8,6 +8,12 @@ import { ImageBuildStack } from "../lib/image-build-stack";
 import { directStagingSynthesizer } from "../lib/staging-synthesizer";
 
 import { PrivateStorageStack } from "../lib/private-storage-stack";
+import { StagingDatabaseStack } from "../lib/staging-database-stack";
+import { CognitoFoundationStack } from "../lib/cognito-foundation-stack";
+import { SesFoundationStack } from "../lib/ses-foundation-stack";
+import { AlertDeliveryStack } from "../lib/alert-delivery-stack";
+import { SesFeedbackWorkerStack } from "../lib/ses-feedback-worker-stack";
+import { BackupRecoveryStack } from "../lib/backup-recovery-stack";
 
 const app = new cdk.App();
 
@@ -18,6 +24,7 @@ const account = productionPreview ? "111111111111" : app.node.tryGetContext("acc
 const region = app.node.tryGetContext("region");
 const workloadEnvironment = productionPreview ? "production" : "staging";
 const directDeployment=app.node.tryGetContext('directDeployment')==='true';
+const providerMode = app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge";
 if(productionPreview&&directDeployment)throw Error('Direct GitHub deployment is staging-only');
 if (app.node.tryGetContext("account") === "265544358665") throw new Error("Management account is forbidden");
 if (region !== "us-east-1") throw new Error("Region must equal us-east-1");
@@ -81,15 +88,76 @@ const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
   environmentName: workloadEnvironment,
   repository: compute.repository,
   appSecrets: compute.appSecrets,
+  providerMode,
 });
 imageBuild.addStackDependency(compute);
 
 const storageEnabled = app.node.tryGetContext("privateStorageEnabled") === "true";
 const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName}-storage`, {
- ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,
+ ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,dataKey:security.dataKey,
 }) : undefined;
+if (storage) storage.addStackDependency(security);
 const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
 if(!['supabase','s3'].includes(storageProvider)||storageProvider==='s3'&&!storage)throw new Error('Private storage must be explicitly provisioned before activation');
+const databaseEnabled = app.node.tryGetContext("databaseEnabled") === "true";
+const database = databaseEnabled ? new StagingDatabaseStack(app, `${environmentName}-database`, {
+  ...commonProps,
+  stackName: `${environmentName}-database`,
+  environmentName: "staging",
+  vpc: network.vpc,
+  dataKey: security.dataKey,
+  securityGroup: network.databaseSecurityGroup,
+  expiresAfterUtc: app.node.tryGetContext("databaseExpiresAfterUtc"),
+  leaseOwner: app.node.tryGetContext("databaseLeaseOwner"),
+  leaseReference: app.node.tryGetContext("databaseLeaseReference"),
+}) : undefined;
+if (database) {
+  database.addStackDependency(network);
+  database.addStackDependency(security);
+}
+const backup = providerMode === "aws-native" && database ? new BackupRecoveryStack(app, `${environmentName}-backup`, {
+  ...commonProps, stackName: `${environmentName}-backup`, environmentName: "staging",
+}) : undefined;
+if (backup) backup.addStackDependency(database!);
+const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${environmentName}-ses-foundation`, {
+  ...commonProps,
+  stackName: `${environmentName}-ses-foundation`,
+  environmentName: workloadEnvironment,
+  mailFromSubdomain: "bounce",
+  taskRole: compute.taskRole,
+}) : undefined;
+if (ses) ses.addStackDependency(compute);
+const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStack(app, `${environmentName}-cognito`, {
+  ...commonProps,
+  stackName: `${environmentName}-cognito`,
+  environmentName: workloadEnvironment,
+  taskRole: compute.taskRole,
+  sesFromAddress: ses.fromAddress,
+  sesConfigurationSetName: ses.cognitoConfigurationSetName,
+}) : undefined;
+if (cognito) { cognito.addStackDependency(compute); cognito.addStackDependency(ses!); }
+const sesFeedbackWorker = providerMode === "aws-native" && database && ses ? new SesFeedbackWorkerStack(app, `${environmentName}-ses-feedback-worker`, {
+  ...commonProps,
+  stackName: `${environmentName}-ses-feedback-worker`,
+  environmentName: workloadEnvironment,
+  vpc: network.vpc,
+  databaseSecurityGroup: network.databaseSecurityGroup,
+  databaseSecret: database.runtimeSecret,
+  feedbackTopic: ses.feedbackTopic,
+  feedbackQueue: ses.feedbackQueue,
+  feedbackDeadLetterQueue: ses.feedbackDeadLetterQueue,
+}) : undefined;
+if (sesFeedbackWorker) {
+  sesFeedbackWorker.addStackDependency(network);
+  sesFeedbackWorker.addStackDependency(database!);
+  sesFeedbackWorker.addStackDependency(ses!);
+}
+const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {
+  ...commonProps,
+  stackName: `${environmentName}-alert-delivery`,
+  environment: workloadEnvironment,
+  expectedAccount: account,
+});
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {
   const certificateArn = app.node.tryGetContext("certificateArn");
@@ -120,13 +188,23 @@ if (runtimeEnabled) {
     taskRole: compute.taskRole,
     certificateArn,
     imageTag,
-    storageBucketName: storageProvider === "s3" ? `tracepoint-${workloadEnvironment}-private-${account}` : undefined,
-    emailFromAddress: app.node.tryGetContext("emailFromAddress"),
+    storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
+    providerMode,
+    databaseSecret: database?.runtimeSecret,
+    databaseSecurityGroup: network.databaseSecurityGroup,
+    cognitoUserPoolId: cognito?.userPool.userPoolId,
+    cognitoClientId: cognito?.userPoolClient.userPoolClientId,
+    sesConfigurationSet: ses?.configurationSetName,
+    emailFromAddress: ses?.fromAddress ?? app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,
     deletionProtection: productionPreview,
   });
   if(storage && storageProvider === "s3") runtime.addStackDependency(storage);
+  if(database) runtime.addStackDependency(database);
+  if(cognito) runtime.addStackDependency(cognito);
+  if(ses) runtime.addStackDependency(ses);
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);
+  alertDelivery.addStackDependency(runtime);
 }

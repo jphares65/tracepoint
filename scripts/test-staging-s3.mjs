@@ -17,10 +17,10 @@ let passed=false;
 try {
  const access=await client.send(new GetPublicAccessBlockCommand(target));assert.ok(Object.values(access.PublicAccessBlockConfiguration??{}).length===4&&Object.values(access.PublicAccessBlockConfiguration).every(Boolean));
  assert.equal((await client.send(new GetBucketVersioningCommand(target))).Status,'Enabled');
- assert.equal((await client.send(new GetBucketEncryptionCommand(target))).ServerSideEncryptionConfiguration?.Rules?.[0]?.ApplyServerSideEncryptionByDefault?.SSEAlgorithm,'AES256');
+ assert.equal((await client.send(new GetBucketEncryptionCommand(target))).ServerSideEncryptionConfiguration?.Rules?.[0]?.ApplyServerSideEncryptionByDefault?.SSEAlgorithm,'aws:kms');
  identity();
  for(const method of ['uploadQualificationEvidence','uploadTrainingFile','uploadFirearmAttachment','uploadDrillDocument']){
-  const result=await store[method]({departmentId:run,recordId:randomUUID(),objectId:randomUUID(),fileName:'synthetic.txt',bytes,contentType:'text/plain'});assert.equal(result.error,null);
+  const imageOnly=method==='uploadQualificationEvidence';const result=await store[method]({departmentId:run,recordId:randomUUID(),objectId:randomUUID(),fileName:imageOnly?'synthetic.png':'synthetic.pdf',bytes,contentType:imageOnly?'image/png':method==='uploadTrainingFile'?'text/plain':'application/pdf'});assert.equal(result.error,null);
   const unsigned=await fetch('https://'+target.Bucket+'.s3.us-east-1.amazonaws.com/attachments/'+result.path,{redirect:'error',signal:AbortSignal.timeout(15000)});assert.equal(unsigned.status,403);
   const signed=await store.createAttachmentDownload(result.path,'synthetic.txt');assert.equal(signed.error,null);
   const response=await fetch(signed.signedUrl,{redirect:'error',signal:AbortSignal.timeout(15000)});assert.equal(response.status,200);assert.equal(digest(new Uint8Array(await response.arrayBuffer())),digest(bytes));
