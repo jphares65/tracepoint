@@ -22,6 +22,15 @@ export const OBJECT_MANIFEST = Object.freeze([
 // feature-catalog field is excluded from the semantic comparison.
 export const FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS = Object.freeze(["created_at"]);
 export const FEATURE_CATALOG_TARGET_OWNED_COLUMNS = Object.freeze(["display_name", "description", "sort_order", "created_at"]);
+// These global defaults are deliberately target-owned.  Actual department
+// grants live in department_role_permissions and remain migration data.
+export const TARGET_SEEDED_ROLE_PERMISSION_SOURCE_ONLY = Object.freeze([
+  { roleCode: "administrator", permissionCode: "manage_certifications" },
+  { roleCode: "administrator", permissionCode: "manage_equipment" },
+  { roleCode: "supervisor", permissionCode: "manage_certifications" },
+  { roleCode: "supervisor", permissionCode: "manage_equipment" },
+  { roleCode: "supervisor", permissionCode: "manage_training" },
+]);
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
@@ -165,6 +174,13 @@ export function reconcileRolePermissionDifferences(sourceRows, targetRows) {
     targetStableKeySha256: sha256(sort([...target.values()])),
     stableKeyParity: sourceOnly.length === 0 && targetOnly.length === 0,
   });
+}
+
+export function requireTargetSeededRolePermissionRule(reconciliation) {
+  assert.equal(reconciliation.relation, "role_permissions");
+  assert.deepEqual(reconciliation.targetOnly, [], "TARGET_SEEDED_ROLE_PERMISSIONS_TARGET_ONLY");
+  assert.deepEqual(reconciliation.sourceOnly, [...TARGET_SEEDED_ROLE_PERMISSION_SOURCE_ONLY], "TARGET_SEEDED_ROLE_PERMISSIONS_UNREVIEWED_SOURCE_ONLY");
+  return Object.freeze({ ...reconciliation, classification: "target-seeded reference data — excluded by design", sourceOnlyRule: "reviewed legacy/global defaults; department_role_permissions remains source-authoritative" });
 }
 
 export function validateTargetSecret(value) {
