@@ -45,7 +45,10 @@ export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
     const sourceSecret = secretsmanager.Secret.fromSecretCompleteArn(this, 'SourceSecret', props.sourceSecretArn);
     const taskPrincipal = new iam.ServicePrincipal('ecs-tasks.amazonaws.com', { conditions: { StringEquals: { 'aws:SourceAccount': account }, ArnLike: { 'aws:SourceArn': `arn:${this.partition}:ecs:us-east-1:${account}:*` } } });
 
-    this.executionRole = new iam.Role(this, 'ExecutionRole', { roleName: `TracePointProdRestLedgerExec-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary source-only TracePoint Supabase REST/Admin ledger execution role' });
+    // The existing CloudFormation execution-boundary permits passing only
+    // TracePoint-* roles to ECS tasks. Keeping this temporary role in that
+    // reviewed naming family avoids expanding the already-full boundary.
+    this.executionRole = new iam.Role(this, 'ExecutionRole', { roleName: `TracePoint-RestLedgerExec-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary source-only TracePoint Supabase REST/Admin ledger execution role' });
     const boundary = iam.ManagedPolicy.fromManagedPolicyArn(this, 'ProductionPermissionsBoundary', `arn:aws:iam::${account}:policy/TracePointProductionBoundary`);
     iam.PermissionsBoundary.of(this.executionRole).apply(boundary);
     this.executionRole.addToPolicy(new iam.PolicyStatement({
