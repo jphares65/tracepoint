@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+import * as cdk from 'aws-cdk-lib';
+import { SupabaseRestInitialImportStack } from '../lib/supabase-rest-initial-import-stack';
+const app=new cdk.App(); const context=(name:string)=>app.node.tryGetContext(name);
+new SupabaseRestInitialImportStack(app,`tracepoint-production-rest-initial-import-${String(context('runId')).slice(0,8)}`,{env:{account:context('account'),region:context('region')},runId:context('runId'),authorizationReference:context('authorizationReference'),commit:context('commit'),imageDigest:context('imageDigest'),repositoryName:context('repositoryName'),clusterName:context('clusterName'),vpcId:context('vpcId'),publicSubnetIds:String(context('publicSubnetIds')??'').split(',').filter(Boolean),databaseSecurityGroupId:context('databaseSecurityGroupId'),sourceSecretArn:context('sourceSecretArn'),targetSecretArn:context('targetSecretArn'),terminationProtection:true,description:'Temporary REST-to-RDS and create-only S3 initial migration — isolated from runtime authority'});
