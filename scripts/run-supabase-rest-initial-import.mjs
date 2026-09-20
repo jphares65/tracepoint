@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, IMPORT_RELATIONS, OBJECT_MANIFEST, TARGET_ACCOUNT, TARGET_BUCKET, allAdminUsers, allRelationRows, canonicalRowsHash, importEvidence, insertSql, reconcileFeatureCatalog, requireTargetSeededFeatureCatalogParity, sourceHeaders, sourceObjectUrl, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, IMPORT_RELATIONS, OBJECT_MANIFEST, TARGET_ACCOUNT, TARGET_BUCKET, allAdminUsers, allRelationRows, canonicalRowsHash, classifyTargetOnlyColumn, importEvidence, insertSql, reconcileFeatureCatalog, requireTargetSeededFeatureCatalogParity, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile", "A reviewed database, objects, or reconciliation mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract", "A reviewed database, objects, reconciliation, or schema-contract mode is required");
 validateImportInvocation(process.env, mode);
 const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
@@ -124,6 +124,30 @@ async function runFeatureCatalogReconciliation() {
   finally { await client.end().catch(() => undefined); }
 }
 async function targetRowsForReconciliation(client, columns) { return (await client.query(targetRowsSql("feature_catalog", columns, ["code"]))).rows.map(item => item.row); }
+async function querySchemaContract(client, relation) {
+  const columns = await client.query("select column_name,data_type,udt_name,is_nullable,column_default,(is_identity='YES') as is_identity from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position", [relation]);
+  const primary = await client.query("select a.attname as column_name from pg_index i join pg_class t on t.oid=i.indrelid join pg_namespace n on n.oid=t.relnamespace join unnest(i.indkey) with ordinality as k(attnum,position) on true join pg_attribute a on a.attrelid=t.oid and a.attnum=k.attnum where i.indisprimary and n.nspname='public' and t.relname=$1 order by k.position", [relation]);
+  const foreign = await client.query("select kcu.column_name,ccu.table_schema||'.'||ccu.table_name as referenced_table,ccu.column_name as referenced_column from information_schema.table_constraints tc join information_schema.key_column_usage kcu on tc.constraint_name=kcu.constraint_name and tc.table_schema=kcu.table_schema join information_schema.constraint_column_usage ccu on tc.constraint_name=ccu.constraint_name and tc.table_schema=ccu.table_schema where tc.table_schema='public' and tc.table_name=$1 and tc.constraint_type='FOREIGN KEY' order by kcu.ordinal_position", [relation]);
+  const primaryColumns = new Set(primary.rows.map(row => row.column_name)); const foreignByColumn = new Map();
+  for (const row of foreign.rows) foreignByColumn.set(row.column_name, { table: row.referenced_table, column: row.referenced_column });
+  return columns.rows.map(column => ({ ...column, primaryKey: primaryColumns.has(column.column_name), foreignKey: foreignByColumn.get(column.column_name) ?? null }));
+}
+async function runFirearmAssignmentsSchemaContract() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-firearm-assignments-schema-contract" });
+  let phase = "source firearm_assignments contract";
+  try {
+    const sourceRows = await allRelationRows(fetch, headers, "firearm_assignments"); const source = sourceColumns(sourceRows);
+    phase = "target read-only schema transaction"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
+    const targetColumns = await querySchemaContract(client, "firearm_assignments"); await client.query("commit");
+    const targetNames = new Set(targetColumns.map(column => column.column_name)), sourceNames = new Set(source);
+    const sourceOnly = source.filter(column => !targetNames.has(column)).map(column => ({ sourceColumn: column, classification: "UNKNOWN_CONFLICT", statistics: summarizeSourceColumn(sourceRows, column) }));
+    const targetOnly = targetColumns.filter(column => !sourceNames.has(column.column_name)).map(column => ({ ...column, classification: classifyTargetOnlyColumn(column) }));
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, relation: "firearm_assignments", sourceContract: { columns: source, statistics: source.map(column => summarizeSourceColumn(sourceRows, column)) }, targetContract: { columns: targetColumns }, sourceOnly, targetOnly, commonColumns: source.filter(column => targetNames.has(column)), sourceCanonicalSha256: canonicalRowsHash(sourceRows), targetClientsInitialized: true, targetWriteClientsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
 function assertSourceObjectUrl(url, object) { const parsed = new URL(url); assert.equal(parsed.origin, PROJECT_URL); assert.equal(parsed.protocol, "https:"); assert.equal(parsed.pathname, `/storage/v1/object/${object.sourceBucket}/${object.sourceKey}`); }
 async function fetchObject(object) { const url = sourceObjectUrl(object); assertSourceObjectUrl(url, object); const response = await fetch(url, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(30_000) }); if (!response.ok) throw new Error(`SOURCE_OBJECT_GET_FAILED:${response.status}`); const bytes = new Uint8Array(await response.arrayBuffer()); validateObjectBytes(object, bytes); return bytes; }
 async function getTargetObject(s3, object) { try { const response = await s3.send(new GetObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" })); const bytes = new Uint8Array(await response.Body.transformToByteArray()); return bytes; } catch (error) { if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return null; throw error; } }
@@ -132,4 +156,4 @@ async function runObjects() {
   try { const results=[]; for (const object of OBJECT_MANIFEST) { assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH"); let target = await getTargetObject(s3, object); if (target) { validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "verified-existing", bytes: object.bytes, sha256: object.sha256 }); continue; } phase = "source object read"; const bytes = await fetchObject(object); phase = "create-only target write"; try { await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } })); } catch (error) { if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error; } phase = "target object verification"; target = await getTargetObject(s3, object); assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE"); validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "created-and-verified", bytes: object.bytes, sha256: object.sha256 }); } console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { s3.destroy(); }
 }
-await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : runFeatureCatalogReconciliation());
+await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : runFirearmAssignmentsSchemaContract());

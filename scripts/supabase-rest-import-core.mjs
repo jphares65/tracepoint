@@ -31,7 +31,7 @@ export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_ACCOUNT, TARGET_ACCOUNT, "Production account is required");
   assert.equal(env.SOURCE_SUPABASE_REST_SECRET_ARN, "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi", "Only the dedicated REST source secret is permitted");
   assert.equal(env.TRACEPOINT_REST_IMPORT_MODE, mode, "Explicit reviewed import mode is required");
-  if (mode === "database" || mode === "reconcile") {
+  if (mode === "database" || mode === "reconcile" || mode === "schema-contract") {
     assert.equal(env.TARGET_DATABASE_SECRET_ARN, TARGET_SECRET_ARN, "Only the reviewed target migrator secret is permitted");
     assert.equal(env.TARGET_PGHOST, TARGET_HOST, "Only the reviewed RDS target is permitted");
     assert.equal(env.TARGET_PGDATABASE, TARGET_DATABASE, "Only the reviewed RDS database is permitted");
@@ -151,6 +151,24 @@ export function sourceColumns(rows) {
   assert.ok(columns.every(column => identifier.test(column)), "Source relation has an unsafe column");
   assert.ok(rows.every(row => row && typeof row === "object" && !Array.isArray(row) && Object.keys(row).every(key => columns.includes(key))), "Source row is invalid");
   return columns;
+}
+
+export function summarizeSourceColumn(rows, column) {
+  assert.ok(Array.isArray(rows) && identifier.test(column));
+  const values = rows.map(row => row[column]);
+  const populated = values.filter(value => value !== null && value !== undefined);
+  const typeCounts = Object.fromEntries(populated.reduce((counts, value) => {
+    const type = Array.isArray(value) ? "array" : typeof value;
+    counts.set(type, (counts.get(type) ?? 0) + 1); return counts;
+  }, new Map()).entries());
+  return { sourceColumn: column, rowCount: rows.length, populatedRowCount: populated.length, nullOrMissingRowCount: rows.length - populated.length, distinctValueCount: new Set(populated.map(canonical)).size, observedJsonTypeCounts: typeCounts };
+}
+
+export function classifyTargetOnlyColumn(column) {
+  assert.ok(column && typeof column === "object" && identifier.test(column.column_name));
+  if (column.is_identity || column.column_default !== null) return "TARGET_DEFAULTED";
+  if (column.is_nullable === "NO") return "REQUIRED_IMPORT_VALUE";
+  return "UNKNOWN_CONFLICT";
 }
 
 export function validateColumnMapping(relation, rows, targetColumns) {
