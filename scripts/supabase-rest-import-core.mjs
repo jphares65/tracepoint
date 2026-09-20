@@ -30,7 +30,8 @@ export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, 
 export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE]);
+export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -125,6 +126,45 @@ export function requireExactTargetSeededParity(reconciliation) {
   assert.equal(reconciliation.stableKeyParity, true, `TARGET_SEEDED_STABLE_KEY_MISMATCH:${reconciliation.relation}`);
   assert.equal(reconciliation.canonicalParity, true, `TARGET_SEEDED_SEMANTIC_MISMATCH:${reconciliation.relation}`);
   return reconciliation;
+}
+
+// This is intentionally a diagnostic, not a merge policy.  Global role
+// assignments determine authorization semantics, so any non-identical pair
+// remains a hard stop until its provenance is separately reviewed.
+export function reconcileRolePermissionDifferences(sourceRows, targetRows) {
+  const keyFor = row => {
+    assert.ok(row && typeof row === "object" && !Array.isArray(row), "ROLE_PERMISSION_ROW_INVALID");
+    for (const column of ["role_code", "permission_code"]) {
+      assert.equal(typeof row[column], "string", "ROLE_PERMISSION_STABLE_KEY_INVALID");
+      assert.match(row[column], identifier, "ROLE_PERMISSION_STABLE_KEY_INVALID");
+    }
+    return `${row.role_code}\u0000${row.permission_code}`;
+  };
+  const byKey = rows => {
+    const values = new Map();
+    for (const row of rows) {
+      const key = keyFor(row);
+      assert.equal(values.has(key), false, "ROLE_PERMISSION_DUPLICATE_STABLE_KEY");
+      values.set(key, { roleCode: row.role_code, permissionCode: row.permission_code });
+    }
+    return values;
+  };
+  const source = byKey(sourceRows), target = byKey(targetRows);
+  const sort = values => [...values].sort((left, right) => canonical([left.roleCode, left.permissionCode]).localeCompare(canonical([right.roleCode, right.permissionCode])));
+  const sourceOnly = sort([...source].filter(([key]) => !target.has(key)).map(([, value]) => value));
+  const targetOnly = sort([...target].filter(([key]) => !source.has(key)).map(([, value]) => value));
+  return Object.freeze({
+    relation: "role_permissions",
+    stableColumns: ["role_code", "permission_code"],
+    sourceCount: source.size,
+    targetCount: target.size,
+    exactMatchCount: source.size - sourceOnly.length,
+    sourceOnly,
+    targetOnly,
+    sourceStableKeySha256: sha256(sort([...source.values()])),
+    targetStableKeySha256: sha256(sort([...target.values()])),
+    stableKeyParity: sourceOnly.length === 0 && targetOnly.length === 0,
+  });
 }
 
 export function validateTargetSecret(value) {
