@@ -13,6 +13,7 @@ test("rejects mutating, non-project, and unapproved relation requests", () => {
   assert.throws(() => assertReadOnlyRequest("POST", relationUrl(MIGRATION_RELATIONS[0], 0)));
   assert.throws(() => assertReadOnlyRequest("GET", "https://evil.invalid/rest/v1/profiles"));
   assert.throws(() => relationUrl("arbitrary_relation", 0));
+  assert.match(relationUrl("fleet_rules", 0), /order=department_id\.asc/);
 });
 
 test("sanitized manifests reconcile only exact known inventory and never include record data", () => {
