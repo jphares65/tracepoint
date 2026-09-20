@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, OBJECT_MANIFEST, TARGET_ACCOUNT, TARGET_BUCKET, allAdminUsers, allRelationRows, canonicalRowsHash, importEvidence, insertSql, reconcileFeatureCatalog, sourceHeaders, sourceObjectUrl, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, IMPORT_RELATIONS, OBJECT_MANIFEST, TARGET_ACCOUNT, TARGET_BUCKET, allAdminUsers, allRelationRows, canonicalRowsHash, importEvidence, insertSql, reconcileFeatureCatalog, requireTargetSeededFeatureCatalogParity, sourceHeaders, sourceObjectUrl, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
 assert.ok(mode === "database" || mode === "objects" || mode === "reconcile", "A reviewed database, objects, or reconciliation mode is required");
@@ -34,17 +34,18 @@ async function preflightTarget(client, snapshot) {
   for (const relation of COPY_RELATIONS) assert.equal(kinds.get(relation), "r", `TARGET_TABLE_MISSING:${relation}`);
   for (const relation of DERIVED_RELATIONS) assert.equal(kinds.get(relation), "v", `TARGET_VIEW_MISSING:${relation}`);
   const mappings = []; const targetBefore = new Map();
-  for (const relation of COPY_RELATIONS) {
+  for (const relation of IMPORT_RELATIONS) {
     const rows = snapshot.rows.get(relation) ?? []; const mapping = validateColumnMapping(relation, rows, await queryColumns(client, relation));
     const existing = await targetRows(client, relation, mapping.sourceColumns);
     if (existing.length && canonicalRowsHash(existing) !== canonicalRowsHash(rows)) throw new Error(`TARGET_UNEXPLAINED_ROWS:${relation}`);
     mappings.push(mapping); targetBefore.set(relation, existing.length);
   }
+  const featureCatalog = requireTargetSeededFeatureCatalogParity(reconcileFeatureCatalog(snapshot.rows.get("feature_catalog") ?? [], await targetRowsForReconciliation(client, (await queryColumns(client, "feature_catalog")).map(column => column.column_name)), (await queryColumns(client, "feature_catalog")).map(column => column.column_name)));
   const authUsers = Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count);
   if (authUsers !== 0 && authUsers !== snapshot.users.length) throw new Error("TARGET_UNEXPLAINED_IDENTITY_ANCHORS");
   const lineage = Number((await client.query("select count(*)::int as count from tracepoint_migrations.applied_migrations")).rows[0].count);
   assert.equal(lineage, 97, "TARGET_MIGRATION_LINEAGE_MISMATCH");
-  return { mappings, targetBefore, authUsers, order: topologicalImportOrder(COPY_RELATIONS, await targetForeignKeys(client)) };
+  return { mappings, targetBefore, authUsers, featureCatalog, order: topologicalImportOrder(IMPORT_RELATIONS, await targetForeignKeys(client)) };
 }
 async function insertIdentityAnchors(client, users) {
   const profiles = new Set();
@@ -81,11 +82,14 @@ async function repairSequences(client) {
 }
 async function verifyDatabase(client, snapshot, preflight) {
   const sourceTables = []; const targetTables = [];
-  for (const relation of COPY_RELATIONS) {
+  for (const relation of IMPORT_RELATIONS) {
     const mapping = preflight.mappings.find(item => item.relation === relation); const sourceRows = snapshot.rows.get(relation) ?? []; const target = await targetRows(client, relation, mapping.sourceColumns);
     assert.equal(target.length, sourceRows.length, `TARGET_ROW_COUNT_MISMATCH:${relation}`); assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_ROW_HASH_MISMATCH:${relation}`);
     sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target) });
   }
+  const featureSource = snapshot.rows.get("feature_catalog") ?? [];
+  sourceTables.push({ name: "feature_catalog", rows: featureSource.length, canonicalDataSha256: canonicalRowsHash(featureSource), reconciliation: "target-seeded reference data — excluded by design" });
+  targetTables.push({ name: "feature_catalog", rows: preflight.featureCatalog.targetCount, canonicalDataSha256: preflight.featureCatalog.targetCanonicalSha256, reconciliation: "target-seeded reference data — excluded by design" });
   for (const relation of DERIVED_RELATIONS) {
     const sourceRows = snapshot.rows.get(relation) ?? []; const columns = sourceRows.length ? Object.keys(sourceRows[0]).sort() : (RELATION_ORDER_COLUMNS[relation] ?? ["id"]); const target = await targetRows(client, relation, columns);
     assert.equal(target.length, sourceRows.length, `TARGET_VIEW_ROW_COUNT_MISMATCH:${relation}`); assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_VIEW_HASH_MISMATCH:${relation}`);
@@ -93,7 +97,7 @@ async function verifyDatabase(client, snapshot, preflight) {
   }
   const invalidForeignKeys = Number((await client.query("select count(*)::int as count from pg_constraint where contype='f' and not convalidated")).rows[0].count); assert.equal(invalidForeignKeys, 0, "TARGET_INVALID_FOREIGN_KEYS");
   const memberships = snapshot.rows.get("department_memberships") ?? [];
-  return importEvidence({ mappings: preflight.mappings.map(({ relation, mapping }) => ({ relation, mapping })), sourceTables, targetTables, identities: { count: snapshot.users.length, canonicalDataSha256: canonicalRowsHash(snapshot.users) }, memberships: { count: memberships.length, canonicalDataSha256: canonicalRowsHash(memberships) } });
+  return importEvidence({ mappings: preflight.mappings.map(({ relation, mapping }) => ({ relation, mapping })), sourceTables, targetTables, featureCatalog: preflight.featureCatalog, identities: { count: snapshot.users.length, canonicalDataSha256: canonicalRowsHash(snapshot.users) }, memberships: { count: memberships.length, canonicalDataSha256: canonicalRowsHash(memberships) } });
 }
 async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");

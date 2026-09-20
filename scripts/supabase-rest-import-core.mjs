@@ -9,6 +9,8 @@ export const TARGET_BUCKET = "tracepoint-production-private-193644343389";
 export const TARGET_ACCOUNT = "193644343389";
 export const COPY_RELATIONS = Object.freeze(MIGRATION_RELATIONS.filter(name => !name.startsWith("v_")));
 export const DERIVED_RELATIONS = Object.freeze(MIGRATION_RELATIONS.filter(name => name.startsWith("v_")));
+export const TARGET_SEEDED_REFERENCE_RELATIONS = Object.freeze(["feature_catalog"]);
+export const IMPORT_RELATIONS = Object.freeze(COPY_RELATIONS.filter(name => !TARGET_SEEDED_REFERENCE_RELATIONS.includes(name)));
 export const OBJECT_MANIFEST = Object.freeze([
   { sourceBucket: "department-assets", sourceKey: "1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", destinationKey: "department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", bytes: 5030, sha256: "8f82fca7c0da9d2fbbb9c11a2f0b88ee6fc4c3dc51e7d9b6a72f493473bc9422", contentType: "image/jpeg", departmentId: "1d0e2994-4224-4237-8328-71020ba20027" },
   { sourceBucket: "department-assets", sourceKey: "d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png", destinationKey: "department-assets/d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png", bytes: 517948, sha256: "04f20e6c0c4d783230f484830a3169bf9fd956f12d6b42e729504340ef202ea2", contentType: "image/png", departmentId: "d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0" },
@@ -17,6 +19,7 @@ export const OBJECT_MANIFEST = Object.freeze([
 // therefore environment-generated rather than source-authoritative.  No other
 // feature-catalog field is excluded from the semantic comparison.
 export const FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS = Object.freeze(["created_at"]);
+export const FEATURE_CATALOG_TARGET_OWNED_COLUMNS = Object.freeze(["display_name", "description", "sort_order", "created_at"]);
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
@@ -58,15 +61,19 @@ export function reconcileFeatureCatalog(sourceRows, targetRows, targetColumns) {
   const targetByCode = new Map(target.map(row => [row.code, row]));
   const rows = [...new Set([...sourceByCode.keys(), ...targetByCode.keys()])].sort().map(code => {
     const sourceRow = sourceByCode.get(code), targetRow = targetByCode.get(code);
-    if (!sourceRow) return { code, classification: "target-only-intentional-bootstrap-row", differingColumns: [], sourceCanonicalSha256: null, targetCanonicalSha256: sha256(targetRow) };
-    if (!targetRow) return { code, classification: "source-only-row-requiring-insert", differingColumns: [], sourceCanonicalSha256: sha256(sourceRow), targetCanonicalSha256: null };
+    if (!sourceRow) return { code, classification: "target-only-code-invariant-failure", differingColumns: [], isActiveParity: null, sourceCanonicalSha256: null, targetCanonicalSha256: sha256(targetRow) };
+    if (!targetRow) return { code, classification: "source-only-code-invariant-failure", differingColumns: [], isActiveParity: null, sourceCanonicalSha256: sha256(sourceRow), targetCanonicalSha256: null };
     const columns = [...new Set([...Object.keys(sourceRow), ...Object.keys(targetRow)])].sort();
     const differingColumns = columns.filter(column => canonical(sourceRow[column]) !== canonical(targetRow[column]));
-    const semanticDifference = differingColumns.filter(column => !FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS.includes(column));
+    assert.equal(typeof sourceRow.is_active, "boolean", "FEATURE_CATALOG_SOURCE_ACTIVE_INVALID");
+    assert.equal(typeof targetRow.is_active, "boolean", "FEATURE_CATALOG_TARGET_ACTIVE_INVALID");
+    const isActiveParity = sourceRow.is_active === targetRow.is_active;
+    const nonTargetOwnedDifferences = differingColumns.filter(column => !FEATURE_CATALOG_TARGET_OWNED_COLUMNS.includes(column));
     return {
       code,
-      classification: differingColumns.length === 0 ? "exact-source-match" : semanticDifference.length === 0 ? "semantically-equivalent-bootstrap-row" : "genuine-conflict-unexplained-mismatch",
+      classification: isActiveParity && nonTargetOwnedDifferences.length === 0 ? "target-seeded reference data — excluded by design" : "target-seeded-reference-invariant-failure",
       differingColumns,
+      isActiveParity,
       sourceCanonicalSha256: sha256(sourceRow),
       targetCanonicalSha256: sha256(targetRow),
     };
@@ -76,10 +83,21 @@ export function reconcileFeatureCatalog(sourceRows, targetRows, targetColumns) {
     relation: "feature_catalog", stableIdentifier: "code", sourceCount: source.length, targetCount: target.length,
     sourceCanonicalSha256: sha256(source), targetCanonicalSha256: sha256(target),
     semanticCanonicalSha256: { source: sha256(sourceSemantic), target: sha256(targetSemantic) },
-    excludedNonAuthoritativeColumns: [...FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS], targetColumns: [...targetColumns].sort(), rows,
-    hasGenuineConflict: rows.some(row => row.classification === "genuine-conflict-unexplained-mismatch"),
-    hasSourceOnlyRows: rows.some(row => row.classification === "source-only-row-requiring-insert"),
+    excludedNonAuthoritativeColumns: [...FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS], targetOwnedBootstrapColumns: [...FEATURE_CATALOG_TARGET_OWNED_COLUMNS], targetColumns: [...targetColumns].sort(), rows,
+    hasSourceOnlyRows: rows.some(row => row.classification === "source-only-code-invariant-failure"),
+    hasTargetOnlyRows: rows.some(row => row.classification === "target-only-code-invariant-failure"),
+    hasActiveStateMismatch: rows.some(row => row.isActiveParity === false),
+    hasInvariantFailure: rows.some(row => row.classification !== "target-seeded reference data — excluded by design"),
   };
+}
+
+export function requireTargetSeededFeatureCatalogParity(reconciliation) {
+  assert.equal(reconciliation.relation, "feature_catalog");
+  assert.equal(reconciliation.hasSourceOnlyRows, false, "TARGET_SEEDED_FEATURE_CATALOG_SOURCE_ONLY_CODE");
+  assert.equal(reconciliation.hasTargetOnlyRows, false, "TARGET_SEEDED_FEATURE_CATALOG_TARGET_ONLY_CODE");
+  assert.equal(reconciliation.hasActiveStateMismatch, false, "TARGET_SEEDED_FEATURE_CATALOG_ACTIVE_STATE_MISMATCH");
+  assert.equal(reconciliation.hasInvariantFailure, false, "TARGET_SEEDED_FEATURE_CATALOG_INVARIANT_FAILURE");
+  return reconciliation;
 }
 
 export function validateTargetSecret(value) {
@@ -136,7 +154,7 @@ export function sourceColumns(rows) {
 }
 
 export function validateColumnMapping(relation, rows, targetColumns) {
-  assert.ok(COPY_RELATIONS.includes(relation), "Unapproved import relation");
+  assert.ok(IMPORT_RELATIONS.includes(relation), "Unapproved import relation");
   const source = sourceColumns(rows);
   const target = new Map(targetColumns.map(column => [column.column_name, column]));
   assert.ok(source.every(column => target.has(column)), `SOURCE_TARGET_COLUMN_MISMATCH:${relation}`);
@@ -157,7 +175,7 @@ export function topologicalImportOrder(relations, foreignKeys) {
 }
 
 export function insertSql(relation, columns) {
-  assert.ok(COPY_RELATIONS.includes(relation)); assert.ok(columns.length > 0 && columns.every(column => identifier.test(column)));
+  assert.ok(IMPORT_RELATIONS.includes(relation)); assert.ok(columns.length > 0 && columns.every(column => identifier.test(column)));
   const list = columns.map(quote).join(",");
   return `insert into public.${quote(relation)} (${list}) select ${list} from json_populate_record(null::public.${quote(relation)},$1::json)`;
 }
