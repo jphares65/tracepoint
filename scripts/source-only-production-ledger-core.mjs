@@ -19,6 +19,7 @@ export const PRIOR_MEMBERSHIPS = 95;
 export const APPROVED_SOURCE_CONNECTIONS = Object.freeze([
   Object.freeze({ kind: "direct", host: DIRECT_SOURCE_HOST, port: SOURCE_PORT, database: SOURCE_DATABASE, username: "postgres" }),
   Object.freeze({ kind: "session-pooler", host: SESSION_POOLER_SOURCE_HOST, port: SOURCE_PORT, database: SOURCE_DATABASE, username: `postgres.${SOURCE_PROJECT_REF}` }),
+  Object.freeze({ kind: "session-pooler", host: SESSION_POOLER_SOURCE_HOST, port: SOURCE_PORT, database: SOURCE_DATABASE, username: `tracepoint_migration_reader.${SOURCE_PROJECT_REF}` }),
 ]);
 
 const prohibitedSql = /\b(?:alter|analyze|call|copy|create|delete|drop|grant|insert|listen|lock|merge|notify|reassign|refresh|reindex|revoke|security|truncate|unlisten|update|vacuum)\b/i;
@@ -54,11 +55,14 @@ export function validateSourceSecret(value) {
   const required = ["dbname", "host", "password", "port", "username"];
   if (required.some(key => !keys.includes(key))) fail("SOURCE_SECRET_MISSING_REQUIRED_KEY");
   if (keys.some(key => !required.includes(key))) fail("SOURCE_SECRET_UNEXPECTED_KEY");
-  const approved = APPROVED_SOURCE_CONNECTIONS.find(candidate => candidate.host === value.host);
-  if (!approved) fail("SOURCE_SECRET_HOST_UNEXPECTED");
-  if (Number(value.port) !== approved.port) fail("SOURCE_SECRET_PORT_INVALID");
-  if (value.dbname !== approved.database) fail("SOURCE_SECRET_DATABASE_INVALID");
-  if (value.username !== approved.username) fail("SOURCE_SECRET_USERNAME_PROJECT_MISMATCH");
+  const hostCandidates = APPROVED_SOURCE_CONNECTIONS.filter(candidate => candidate.host === value.host);
+  if (hostCandidates.length === 0) fail("SOURCE_SECRET_HOST_UNEXPECTED");
+  const portCandidates = hostCandidates.filter(candidate => Number(value.port) === candidate.port);
+  if (portCandidates.length === 0) fail("SOURCE_SECRET_PORT_INVALID");
+  const databaseCandidates = portCandidates.filter(candidate => value.dbname === candidate.database);
+  if (databaseCandidates.length === 0) fail("SOURCE_SECRET_DATABASE_INVALID");
+  const approved = databaseCandidates.find(candidate => value.username === candidate.username);
+  if (!approved) fail("SOURCE_SECRET_USERNAME_PROJECT_MISMATCH");
   if (typeof value.password !== "string" || value.password.length === 0) fail("SOURCE_SECRET_PASSWORD_INVALID");
   return { host: value.host, port: approved.port, database: value.dbname, user: value.username, password: value.password, endpointKind: approved.kind };
 }
@@ -84,18 +88,15 @@ export function createSanitizedEvidence(input) {
     totalRelationalRowCount: baseTableRowCount,
     exposedRelationRowCount,
     migrationLedger: { count: input.migrationVersions.length, sha256: sha256([...input.migrationVersions].map(String)) },
-    identities: input.identities,
+    tenantDepartment: input.tenantDepartment,
     sourcePrivileges: input.sourcePrivileges,
     comparison: {
       priorExposedRelationRows: PRIOR_EXPOSED_RELATION_ROWS,
       freshExposedRelationRows: exposedRelationRowCount,
       delta: exposedRelationRowCount - PRIOR_EXPOSED_RELATION_ROWS,
-      priorIdentities: PRIOR_IDENTITIES,
-      freshIdentities: input.identities.identityCount,
-      identityDelta: input.identities.identityCount - PRIOR_IDENTITIES,
       priorMemberships: PRIOR_MEMBERSHIPS,
-      freshMemberships: input.identities.membershipCount,
-      membershipDelta: input.identities.membershipCount - PRIOR_MEMBERSHIPS,
+      freshMemberships: input.tenantDepartment.membershipCount,
+      membershipDelta: input.tenantDepartment.membershipCount - PRIOR_MEMBERSHIPS,
     },
     privacy: { credentialsEmitted: false, recordContentsEmitted: false, emailsEmitted: false, userIdsEmitted: false, targetClientsInitialized: false },
   };

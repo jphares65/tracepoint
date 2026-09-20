@@ -36,19 +36,25 @@ async function readRelations(client) {
   const result = [];
   for (const row of rows) {
     const identifier = quoteIdentifier(String(row.name));
-    const count = (await query(client, `select count(*)::bigint as rows from public.${identifier}`)).rows[0];
+    let count;
+    try {
+      count = (await query(client, `select count(*)::bigint as rows from public.${identifier}`)).rows[0];
+    } catch (error) {
+      const blocked = new Error(`SOURCE_RELATION_UNREADABLE:${row.name}`);
+      blocked.code = `SOURCE_RELATION_UNREADABLE:${row.name}`;
+      throw blocked;
+    }
     result.push({ name: String(row.name), kind: String(row.kind), rows: String(count.rows) });
   }
   return result;
 }
 
-async function readIdentityReconciliation(client) {
+async function readTenantDepartmentReconciliation(client) {
   const { rows } = await query(client, `select
-    (select count(*)::int from auth.users) as identity_count,
+    (select count(*)::int from public.departments) as department_count,
     (select count(*)::int from public.department_memberships) as membership_count,
-    (select count(*)::int from public.department_memberships m left join auth.users u on u.id=m.user_id where u.id is null) as membership_users_missing_from_auth,
-    (select count(*)::int from auth.users u left join public.department_memberships m on m.user_id=u.id where m.user_id is null) as identities_without_membership,
-    (select count(*)::int from (select lower(email) from auth.users where email is not null group by lower(email) having count(*) > 1) duplicate_emails) as duplicate_email_groups`);
+    (select count(*)::int from public.department_memberships m left join public.departments d on d.id=m.department_id where d.id is null) as memberships_missing_department,
+    (select count(*)::int from public.department_memberships m left join public.profiles p on p.id=m.user_id where p.id is null) as memberships_missing_profile`);
   const row = rows[0];
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()), Number(value)]));
 }
@@ -84,8 +90,8 @@ try {
   const tables = await readRelations(client);
   phase = "source migration ledger";
   const migrationVersions = (await query(client, "select version::text from supabase_migrations.schema_migrations order by version::text")).rows.map(row => String(row.version));
-  phase = "identity and membership reconciliation";
-  const identities = await readIdentityReconciliation(client);
+  phase = "tenant and department reconciliation";
+  const tenantDepartment = await readTenantDepartmentReconciliation(client);
   phase = "source privilege evidence";
   const sourcePrivileges = (await query(client, `select
     current_setting('transaction_read_only') = 'on' as transaction_enforced_read_only,
@@ -93,7 +99,7 @@ try {
     (select count(*)::int from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and has_table_privilege(c.oid,'INSERT,UPDATE,DELETE,TRUNCATE')) as public_tables_with_write_privilege`)).rows[0];
   const evidence = createSanitizedEvidence({
     capturedAtUtc: new Date(metadata.captured_at_utc).toISOString(), postgresVersion: String(metadata.postgres_version), snapshotId: String(snapshotId), lsn: String(lsn), source: { host: secret.host, port: secret.port, database: secret.database, endpointKind: secret.endpointKind },
-    tables, migrationVersions, identities, sourcePrivileges: {
+    tables, migrationVersions, tenantDepartment, sourcePrivileges: {
       transactionEnforcedReadOnly: sourcePrivileges.transaction_enforced_read_only === true,
       databaseCreatePrivilege: sourcePrivileges.database_create_privilege === true,
       publicTablesWithWritePrivilege: Number(sourcePrivileges.public_tables_with_write_privilege),
