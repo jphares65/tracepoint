@@ -25,7 +25,9 @@ try{
   assert.ok(existing.failures?.length===1&&existing.failures[0].failureCode==='ImageNotFound','Unexpected image lookup result');
   const bucket='tracepoint-production-aws-native-build-source-193644343389';
   assert.equal(aws(['s3api','get-bucket-versioning','--bucket',bucket,'--expected-bucket-owner','193644343389']).Status,'Enabled');
-  const version=aws(['s3api','put-object','--bucket',bucket,'--expected-bucket-owner','193644343389','--key',`source/supabase-rest-ledger/${commit}.zip`,'--body',archive]).VersionId;assert.ok(version&&version!=='null');
+  // The reviewed CodeBuild project has one immutable-versioned S3 source key;
+  // sourceVersion selects the just-uploaded object version for this dedicated build.
+  const version=aws(['s3api','put-object','--bucket',bucket,'--expected-bucket-owner','193644343389','--key','source/tracepoint-production-aws-native-source.zip','--body',archive]).VersionId;assert.ok(version&&version!=='null');
   const build=aws(['codebuild','start-build','--project-name','tracepoint-production-aws-native-image-build','--source-version',version,'--buildspec-override','buildspec.supabase-rest-ledger.yml','--environment-variables-override',`name=IMAGE_TAG,value=${tag},type=PLAINTEXT`,`name=SOURCE_COMMIT,value=${commit},type=PLAINTEXT`]).build;
   assert.equal(build.arn.split(':')[4],'193644343389');console.log(JSON.stringify({buildId:build.id,sourceCommit:commit,imageTag:tag}));
   const deadline=Date.now()+2_700_000;for(;;){const status=aws(['codebuild','batch-get-builds','--ids',build.id]).builds[0].buildStatus;if(status==='SUCCEEDED')break;assert.equal(status,'IN_PROGRESS','REST ledger image build failed');assert.ok(Date.now()<deadline,'REST ledger image build timed out');await new Promise(resolveWait=>setTimeout(resolveWait,20_000));}
