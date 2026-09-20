@@ -13,6 +13,10 @@ export const OBJECT_MANIFEST = Object.freeze([
   { sourceBucket: "department-assets", sourceKey: "1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", destinationKey: "department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", bytes: 5030, sha256: "8f82fca7c0da9d2fbbb9c11a2f0b88ee6fc4c3dc51e7d9b6a72f493473bc9422", contentType: "image/jpeg", departmentId: "1d0e2994-4224-4237-8328-71020ba20027" },
   { sourceBucket: "department-assets", sourceKey: "d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png", destinationKey: "department-assets/d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png", bytes: 517948, sha256: "04f20e6c0c4d783230f484830a3169bf9fd956f12d6b42e729504340ef202ea2", contentType: "image/png", departmentId: "d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0" },
 ]);
+// `created_at` is populated by the bootstrap migration's `default now()` and is
+// therefore environment-generated rather than source-authoritative.  No other
+// feature-catalog field is excluded from the semantic comparison.
+export const FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS = Object.freeze(["created_at"]);
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
@@ -24,11 +28,58 @@ export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_ACCOUNT, TARGET_ACCOUNT, "Production account is required");
   assert.equal(env.SOURCE_SUPABASE_REST_SECRET_ARN, "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi", "Only the dedicated REST source secret is permitted");
   assert.equal(env.TRACEPOINT_REST_IMPORT_MODE, mode, "Explicit reviewed import mode is required");
-  if (mode === "database") {
+  if (mode === "database" || mode === "reconcile") {
     assert.equal(env.TARGET_DATABASE_SECRET_ARN, TARGET_SECRET_ARN, "Only the reviewed target migrator secret is permitted");
     assert.equal(env.TARGET_PGHOST, TARGET_HOST, "Only the reviewed RDS target is permitted");
     assert.equal(env.TARGET_PGDATABASE, TARGET_DATABASE, "Only the reviewed RDS database is permitted");
   } else assert.equal(env.TRACEPOINT_TARGET_BUCKET, TARGET_BUCKET, "Only the reviewed production private bucket is permitted");
+}
+
+function sortedFeatureRows(rows) {
+  assert.ok(Array.isArray(rows));
+  const codes = new Set();
+  return [...rows].map(row => {
+    assert.ok(row && typeof row === "object" && !Array.isArray(row), "FEATURE_CATALOG_ROW_INVALID");
+    assert.equal(typeof row.code, "string", "FEATURE_CATALOG_CODE_INVALID");
+    assert.ok(/^[a-z][a-z0-9_]*$/.test(row.code), "FEATURE_CATALOG_CODE_INVALID");
+    assert.equal(codes.has(row.code), false, "FEATURE_CATALOG_DUPLICATE_CODE"); codes.add(row.code);
+    return row;
+  }).sort((left, right) => left.code.localeCompare(right.code));
+}
+
+function semanticFeatureRow(row) {
+  return Object.fromEntries(Object.entries(row).filter(([column]) => !FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS.includes(column)));
+}
+
+export function reconcileFeatureCatalog(sourceRows, targetRows, targetColumns) {
+  const source = sortedFeatureRows(sourceRows), target = sortedFeatureRows(targetRows);
+  assert.ok(Array.isArray(targetColumns) && targetColumns.every(column => identifier.test(column)), "FEATURE_CATALOG_TARGET_COLUMNS_INVALID");
+  const sourceByCode = new Map(source.map(row => [row.code, row]));
+  const targetByCode = new Map(target.map(row => [row.code, row]));
+  const rows = [...new Set([...sourceByCode.keys(), ...targetByCode.keys()])].sort().map(code => {
+    const sourceRow = sourceByCode.get(code), targetRow = targetByCode.get(code);
+    if (!sourceRow) return { code, classification: "target-only-intentional-bootstrap-row", differingColumns: [], sourceCanonicalSha256: null, targetCanonicalSha256: sha256(targetRow) };
+    if (!targetRow) return { code, classification: "source-only-row-requiring-insert", differingColumns: [], sourceCanonicalSha256: sha256(sourceRow), targetCanonicalSha256: null };
+    const columns = [...new Set([...Object.keys(sourceRow), ...Object.keys(targetRow)])].sort();
+    const differingColumns = columns.filter(column => canonical(sourceRow[column]) !== canonical(targetRow[column]));
+    const semanticDifference = differingColumns.filter(column => !FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS.includes(column));
+    return {
+      code,
+      classification: differingColumns.length === 0 ? "exact-source-match" : semanticDifference.length === 0 ? "semantically-equivalent-bootstrap-row" : "genuine-conflict-unexplained-mismatch",
+      differingColumns,
+      sourceCanonicalSha256: sha256(sourceRow),
+      targetCanonicalSha256: sha256(targetRow),
+    };
+  });
+  const sourceSemantic = source.map(semanticFeatureRow), targetSemantic = target.map(semanticFeatureRow);
+  return {
+    relation: "feature_catalog", stableIdentifier: "code", sourceCount: source.length, targetCount: target.length,
+    sourceCanonicalSha256: sha256(source), targetCanonicalSha256: sha256(target),
+    semanticCanonicalSha256: { source: sha256(sourceSemantic), target: sha256(targetSemantic) },
+    excludedNonAuthoritativeColumns: [...FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS], targetColumns: [...targetColumns].sort(), rows,
+    hasGenuineConflict: rows.some(row => row.classification === "genuine-conflict-unexplained-mismatch"),
+    hasSourceOnlyRows: rows.some(row => row.classification === "source-only-row-requiring-insert"),
+  };
 }
 
 export function validateTargetSecret(value) {
