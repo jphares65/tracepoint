@@ -164,6 +164,20 @@ export function summarizeSourceColumn(rows, column) {
   return { sourceColumn: column, rowCount: rows.length, populatedRowCount: populated.length, nullOrMissingRowCount: rows.length - populated.length, distinctValueCount: new Set(populated.map(canonical)).size, observedJsonTypeCounts: typeCounts };
 }
 
+export function compareSourceColumns(rows, leftColumn, rightColumn) {
+  assert.ok(Array.isArray(rows) && identifier.test(leftColumn) && identifier.test(rightColumn));
+  const summary = { leftColumn, rightColumn, rowCount: rows.length, equalRowCount: 0, unequalRowCount: 0, bothPopulatedRowCount: 0, leftOnlyPopulatedRowCount: 0, rightOnlyPopulatedRowCount: 0, bothNullOrMissingRowCount: 0 };
+  for (const row of rows) {
+    const left = row[leftColumn], right = row[rightColumn], leftPresent = left !== null && left !== undefined, rightPresent = right !== null && right !== undefined;
+    if (leftPresent && rightPresent) summary.bothPopulatedRowCount += 1;
+    else if (leftPresent) summary.leftOnlyPopulatedRowCount += 1;
+    else if (rightPresent) summary.rightOnlyPopulatedRowCount += 1;
+    else summary.bothNullOrMissingRowCount += 1;
+    if (canonical(left) === canonical(right)) summary.equalRowCount += 1; else summary.unequalRowCount += 1;
+  }
+  return summary;
+}
+
 export function classifyTargetOnlyColumn(column) {
   assert.ok(column && typeof column === "object" && identifier.test(column.column_name));
   if (column.is_identity || column.column_default !== null) return "TARGET_DEFAULTED";
