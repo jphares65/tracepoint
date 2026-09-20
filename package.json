@@ -13,6 +13,8 @@
     "storage:migration:test": "node --test scripts/storage-migration.test.mjs",
     "identity:migration": "tsx --conditions=react-server scripts/migrate-cognito-identities.mts",
     "identity:migration:prepare": "tsx --conditions=react-server scripts/prepare-cognito-identity-batch.mts",
+    "db:source-ledger": "node scripts/run-source-only-production-ledger.mjs",
+    "db:source-ledger:test": "node --test scripts/source-only-production-ledger.test.mjs",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
     "db:verify-staging": "node scripts/verify-staging-schema.mjs"
