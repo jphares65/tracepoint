@@ -40,7 +40,8 @@ export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
 export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE]);
+export const FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE = "foreign-key-cycle-diagnosis";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -306,6 +307,15 @@ export function topologicalImportOrder(relations, foreignKeys) {
   while (ready.length) { const current = ready.shift(); order.push(current); for (const child of [...outgoing.get(current)].sort()) { incoming.get(child).delete(current); if (incoming.get(child).size === 0) { ready.push(child); ready.sort(); } } }
   if (order.length !== relations.length) throw new Error("TARGET_FOREIGN_KEY_CYCLE");
   return order;
+}
+
+export function foreignKeyCycles(relations, foreignKeys) {
+  const nodes=new Set(relations),edges=foreignKeys.filter(({child,parent})=>nodes.has(child)&&nodes.has(parent)&&child!==parent),outgoing=new Map(relations.map(name=>[name,[]]));
+  for(const edge of edges) outgoing.get(edge.parent).push(edge.child);
+  const seen=new Set(),visiting=new Set(),cycles=[];
+  const visit=(node,path)=>{seen.add(node);visiting.add(node);for(const next of [...outgoing.get(node)].sort()){if(visiting.has(next)){const tables=[...path.slice(path.indexOf(next)),next];cycles.push({tables:[...new Set(tables)].sort(),foreignKeys:edges.filter(edge=>tables.includes(edge.child)&&tables.includes(edge.parent)).sort((a,b)=>canonical(a).localeCompare(canonical(b)))});}else if(!seen.has(next))visit(next,[...path,next]);}visiting.delete(node);};
+  for(const relation of [...relations].sort())if(!seen.has(relation))visit(relation,[relation]);
+  return cycles.filter((cycle,index,all)=>index===all.findIndex(item=>canonical(item.tables)===canonical(cycle.tables)));
 }
 
 export function insertSql(relation, columns) {
