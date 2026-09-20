@@ -10,17 +10,19 @@ const source = validateSourceSecret(JSON.parse(rawSecret));
 const headers = Object.freeze({ apikey: source.serviceRoleKey, Authorization: `Bearer ${source.serviceRoleKey}`, Accept: "application/json" });
 source.serviceRoleKey = undefined;
 
-async function get(url) {
+async function get(url, sourceLabel) {
   assertReadOnlyRequest("GET", url);
   const response = await fetch(url, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`SOURCE_REST_GET_FAILED:${response.status}`);
+  // Labels are fixed contract relation names only; response bodies remain unread
+  // so malformed-query diagnosis cannot expose source records or credentials.
+  if (!response.ok) throw new Error(`SOURCE_REST_GET_FAILED:${sourceLabel}:${response.status}`);
   return response.json();
 }
 
 async function allRows(relation) {
   const rows = [];
   for (let offset = 0; ; offset += 500) {
-    const page = await get(relationUrl(relation, offset));
+    const page = await get(relationUrl(relation, offset), relation);
     assert.ok(Array.isArray(page), "Source relation response is not an array");
     rows.push(...page);
     if (page.length < 500) return rows;
@@ -31,7 +33,7 @@ async function allRows(relation) {
 async function allUsers() {
   const users = [];
   for (let page = 1; ; page += 1) {
-    const payload = await get(usersUrl(page));
+    const payload = await get(usersUrl(page), 'admin-identities');
     assert.ok(Array.isArray(payload.users), "Admin identities response is invalid");
     users.push(...payload.users);
     if (payload.users.length < 200 || (payload.last_page && page >= payload.last_page)) return users;
