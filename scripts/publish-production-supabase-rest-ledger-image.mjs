@@ -9,6 +9,7 @@ const root=resolve(import.meta.dirname,'..');
 const command=(program,args)=>{try{return execFileSync(program,args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}catch{throw new Error('Source-only REST ledger image publication failed; command detail suppressed');}};
 const aws=args=>JSON.parse(command('aws.exe',[...args,'--region','us-east-1','--output','json']));
 assert.equal(process.env.TRACEPOINT_FINAL_MIGRATION_DB_AUTHORIZATION,'TP-FINAL-DB-20260920-4272874FBAE4','Approved final migration database authorization is required');
+assert.equal(process.env.AWS_PROFILE,'tracepoint-production','Only the reviewed production AWS profile is permitted');
 const identity=aws(['sts','get-caller-identity']);assert.equal(identity.Account,'193644343389');assert.match(identity.Arn,/^arn:aws:sts::193644343389:assumed-role\/TracePointMigrationProduction\//);
 const commit=command('git.exe',['rev-parse','HEAD']),tag=`${commit}-supabase-rest-ledger`;
 assert.equal(command('git.exe',['status','--porcelain','--untracked-files=no','--',...productionRestLedgerArchivePaths]),'','REST-ledger archive source has tracked changes');
