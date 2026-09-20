@@ -25,13 +25,17 @@ const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
 export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, sourceKey, bytes, sha256: digest }) => ({ bucket: sourceBucket, sourceKey, size: bytes, sha256: digest })));
 
+export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
+export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE]);
+
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
   assert.equal(env.TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE, AUTHORIZATION_REFERENCE, "Approved authorization reference is required");
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_ACCOUNT, TARGET_ACCOUNT, "Production account is required");
   assert.equal(env.SOURCE_SUPABASE_REST_SECRET_ARN, "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi", "Only the dedicated REST source secret is permitted");
   assert.equal(env.TRACEPOINT_REST_IMPORT_MODE, mode, "Explicit reviewed import mode is required");
-  if (mode === "database" || mode === "reconcile" || mode === "schema-contract") {
+  if (DATABASE_MODES.includes(mode)) {
     assert.equal(env.TARGET_DATABASE_SECRET_ARN, TARGET_SECRET_ARN, "Only the reviewed target migrator secret is permitted");
     assert.equal(env.TARGET_PGHOST, TARGET_HOST, "Only the reviewed RDS target is permitted");
     assert.equal(env.TARGET_PGDATABASE, TARGET_DATABASE, "Only the reviewed RDS database is permitted");
@@ -184,6 +188,25 @@ export function classifyTargetOnlyColumn(column) {
   if (column.is_nullable === "NO") return "REQUIRED_IMPORT_VALUE";
   return "UNKNOWN_CONFLICT";
 }
+
+export function classifySourceOnlyColumn(relation, column, statistics) {
+  assert.ok(MIGRATION_RELATIONS.includes(relation) && identifier.test(column));
+  assert.ok(statistics && statistics.sourceColumn === column);
+  // This source field is populated on every live row and differs from
+  // magazines_issued on two rows. It cannot be dropped or coalesced.
+  if (relation === "firearm_assignments" && column === "magazines_expected_return") return "TARGET_SCHEMA_MISSING_COLUMN";
+  return "UNKNOWN_CONFLICT";
+}
+
+export const FIREARM_ASSIGNMENTS_SCHEMA_REPAIR = Object.freeze({
+  relation: "firearm_assignments",
+  column: "magazines_expected_return",
+  constraint: "firearm_assignments_magazines_expected_return_nonnegative",
+  statements: Object.freeze([
+    "ALTER TABLE public.firearm_assignments ADD COLUMN magazines_expected_return integer",
+    "ALTER TABLE public.firearm_assignments ADD CONSTRAINT firearm_assignments_magazines_expected_return_nonnegative CHECK (magazines_expected_return IS NULL OR magazines_expected_return >= 0) NOT VALID",
+  ]),
+});
 
 export function validateColumnMapping(relation, rows, targetColumns) {
   assert.ok(IMPORT_RELATIONS.includes(relation), "Unapproved import relation");

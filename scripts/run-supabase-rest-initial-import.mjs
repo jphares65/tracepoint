@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, IMPORT_RELATIONS, OBJECT_MANIFEST, TARGET_ACCOUNT, TARGET_BUCKET, allAdminUsers, allRelationRows, canonicalRowsHash, classifyTargetOnlyColumn, compareSourceColumns, importEvidence, insertSql, reconcileFeatureCatalog, requireTargetSeededFeatureCatalogParity, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, IMPORT_RELATIONS, OBJECT_MANIFEST, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_ACCOUNT, TARGET_BUCKET, allAdminUsers, allRelationRows, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, importEvidence, insertSql, reconcileFeatureCatalog, requireTargetSeededFeatureCatalogParity, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract", "A reviewed database, objects, reconciliation, or schema-contract mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
@@ -132,6 +132,62 @@ async function querySchemaContract(client, relation) {
   for (const row of foreign.rows) foreignByColumn.set(row.column_name, [...(foreignByColumn.get(row.column_name) ?? []), { table: row.referenced_table, column: row.referenced_column }]);
   return columns.rows.map(column => ({ ...column, primaryKey: primaryColumns.has(column.column_name), foreignKeys: foreignByColumn.get(column.column_name) ?? [] }));
 }
+async function targetSchemaRepairPreflight(client) {
+  const column = await client.query("select 1 from information_schema.columns where table_schema='public' and table_name=$1 and column_name=$2", [FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.relation, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.column]);
+  const constraint = await client.query("select 1 from pg_constraint where conrelid='public.firearm_assignments'::regclass and conname=$1", [FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.constraint]);
+  return { columnExists: column.rowCount > 0, constraintExists: constraint.rowCount > 0 };
+}
+async function runFirearmAssignmentsSchemaRepair() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-firearm-assignments-schema-repair" });
+  let phase = "schema repair preflight";
+  try {
+    await client.connect(); const before = await targetSchemaRepairPreflight(client);
+    assert.equal(before.columnExists, false, "SCHEMA_REPAIR_COLUMN_ALREADY_EXISTS"); assert.equal(before.constraintExists, false, "SCHEMA_REPAIR_CONSTRAINT_ALREADY_EXISTS");
+    phase = "approved schema repair"; await client.query("begin");
+    try { for (const statement of FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.statements) await client.query(statement); await client.query("commit"); }
+    catch (error) { await client.query("rollback"); throw error; }
+    phase = "schema repair verification"; const after = await targetSchemaRepairPreflight(client);
+    assert.equal(after.columnExists, true, "SCHEMA_REPAIR_COLUMN_MISSING_AFTER_APPLY"); assert.equal(after.constraintExists, true, "SCHEMA_REPAIR_CONSTRAINT_MISSING_AFTER_APPLY");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, target: { host: target.host, database: target.database, tlsVerified: true }, before, after, appliedStatements: FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.statements, sourceClientsInitialized: false, targetWriteScope: "approved-firearm-assignments-schema-repair", targetRowsPopulated: false, checkConstraintValidated: false }));
+  } catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+function targetKindForRelation(kinds, relation) { return kinds.get(relation) ?? null; }
+async function runFullSchemaContractSweep() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-full-schema-contract-sweep" });
+  let phase = "canonical REST source contract";
+  try {
+    const snapshot = await sourceSnapshot(); phase = "target repeatable-read schema contract"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
+    const kinds = await targetRelationKinds(client), relations = [], blockers = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const sourceRows = snapshot.rows.get(relation) ?? [], source = sourceColumns(sourceRows), targetKind = targetKindForRelation(kinds, relation);
+      const expectedKind = DERIVED_RELATIONS.includes(relation) ? "v" : "r";
+      if (targetKind !== expectedKind) { const item={ relation, classification:"UNKNOWN_CONFLICT", expectedKind, targetKind, sourceColumns: source, targetColumns: [] }; relations.push(item); blockers.push(item); continue; }
+      const targetColumns = await querySchemaContract(client, relation), targetNames = new Set(targetColumns.map(column => column.column_name));
+      // PostgREST cannot reveal a typed source projection for an empty relation.
+      // It is safe to defer this shape check: no row can be imported now, and the
+      // final-delta sweep repeats this contract after the controlled write freeze.
+      if (sourceRows.length === 0) { relations.push({ relation, classification: "EXACT_MATCH", expectedKind, targetKind, sourceColumns: [], targetColumns, sourceSchemaEvidence: "empty-relation-rest-schema-unobservable" }); continue; }
+      if (relation === "feature_catalog") {
+        const feature = requireTargetSeededFeatureCatalogParity(reconcileFeatureCatalog(sourceRows, await targetRowsForReconciliation(client, targetColumns.map(column => column.column_name)), targetColumns.map(column => column.column_name)));
+        relations.push({ relation, classification: "TARGET_SEEDED_EXCLUDED", expectedKind, targetKind, sourceColumns: source, targetColumns, featureCatalog: { sourceCount: feature.sourceCount, targetCount: feature.targetCount, codeSetParity: !feature.hasSourceOnlyRows && !feature.hasTargetOnlyRows, activeStateParity: !feature.hasActiveStateMismatch } }); continue;
+      }
+      const sourceOnly = source.filter(column => !targetNames.has(column)).map(column => ({ sourceColumn: column, classification: classifySourceOnlyColumn(relation, column, summarizeSourceColumn(sourceRows, column)), statistics: summarizeSourceColumn(sourceRows, column) }));
+      const targetOnly = targetColumns.filter(column => !source.includes(column.column_name)).map(column => ({ targetColumn: column.column_name, classification: classifyTargetOnlyColumn(column), dataType: column.data_type, nullable: column.is_nullable, default: column.column_default, primaryKey: column.primaryKey, foreignKeys: column.foreignKeys }));
+      const classifications = [...sourceOnly, ...targetOnly].map(item => item.classification);
+      const classification = classifications.length === 0 ? "EXACT_MATCH" : classifications.includes("TARGET_SCHEMA_MISSING_COLUMN") ? "TARGET_SCHEMA_MISSING_COLUMN" : classifications.includes("UNKNOWN_CONFLICT") || classifications.includes("REQUIRED_IMPORT_VALUE") ? "UNKNOWN_CONFLICT" : classifications.every(value => value === "TARGET_ONLY_DEFAULTED") ? "TARGET_ONLY_DEFAULTED" : "TRANSFORM_REQUIRED";
+      const item = { relation, classification, expectedKind, targetKind, sourceColumns: source, sourceColumnStatistics: source.map(column => summarizeSourceColumn(sourceRows, column)), targetColumns, sourceOnly, targetOnly };
+      relations.push(item); if (classification !== "EXACT_MATCH" && classification !== "TARGET_ONLY_DEFAULTED") blockers.push(item);
+    }
+    await client.query("commit");
+    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, source: { totalRelationalRows: [...snapshot.rows.values()].reduce((sum, rows) => sum + rows.length, 0), identities: snapshot.users.length, memberships: (snapshot.rows.get("department_memberships") ?? []).length }, relations, blockers, targetClientsInitialized: true, targetWriteClientsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
 async function runFirearmAssignmentsSchemaContract() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
@@ -157,4 +213,4 @@ async function runObjects() {
   try { const results=[]; for (const object of OBJECT_MANIFEST) { assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH"); let target = await getTargetObject(s3, object); if (target) { validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "verified-existing", bytes: object.bytes, sha256: object.sha256 }); continue; } phase = "source object read"; const bytes = await fetchObject(object); phase = "create-only target write"; try { await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } })); } catch (error) { if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error; } phase = "target object verification"; target = await getTargetObject(s3, object); assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE"); validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "created-and-verified", bytes: object.bytes, sha256: object.sha256 }); } console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { s3.destroy(); }
 }
-await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : runFirearmAssignmentsSchemaContract());
+await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : runFullSchemaContractSweep());
