@@ -1,0 +1,12 @@
+FROM public.ecr.aws/docker/library/node:24-alpine AS dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+FROM public.ecr.aws/docker/library/node:24-alpine
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY scripts/supabase-rest-ledger-core.mjs scripts/supabase-rest-ledger-core.test.mjs scripts/run-supabase-rest-ledger.mjs ./scripts/
+USER node
+ENTRYPOINT ["node", "scripts/run-supabase-rest-ledger.mjs"]
