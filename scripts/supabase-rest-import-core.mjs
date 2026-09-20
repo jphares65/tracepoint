@@ -9,7 +9,9 @@ export const TARGET_BUCKET = "tracepoint-production-private-193644343389";
 export const TARGET_ACCOUNT = "193644343389";
 export const COPY_RELATIONS = Object.freeze(MIGRATION_RELATIONS.filter(name => !name.startsWith("v_")));
 export const DERIVED_RELATIONS = Object.freeze(MIGRATION_RELATIONS.filter(name => name.startsWith("v_")));
-export const TARGET_SEEDED_REFERENCE_RELATIONS = Object.freeze(["feature_catalog"]);
+// These are product bootstrap catalogs, not department/customer records. Their
+// source/target parity is mandatory before the importer excludes them.
+export const TARGET_SEEDED_REFERENCE_RELATIONS = Object.freeze(["feature_catalog", "roles", "permissions", "role_permissions"]);
 export const IMPORT_RELATIONS = Object.freeze(COPY_RELATIONS.filter(name => !TARGET_SEEDED_REFERENCE_RELATIONS.includes(name)));
 export const OBJECT_MANIFEST = Object.freeze([
   { sourceBucket: "department-assets", sourceKey: "1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", destinationKey: "department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", bytes: 5030, sha256: "8f82fca7c0da9d2fbbb9c11a2f0b88ee6fc4c3dc51e7d9b6a72f493473bc9422", contentType: "image/jpeg", departmentId: "1d0e2994-4224-4237-8328-71020ba20027" },
@@ -27,7 +29,8 @@ export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, 
 
 export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE]);
+export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -101,6 +104,26 @@ export function requireTargetSeededFeatureCatalogParity(reconciliation) {
   assert.equal(reconciliation.hasTargetOnlyRows, false, "TARGET_SEEDED_FEATURE_CATALOG_TARGET_ONLY_CODE");
   assert.equal(reconciliation.hasActiveStateMismatch, false, "TARGET_SEEDED_FEATURE_CATALOG_ACTIVE_STATE_MISMATCH");
   assert.equal(reconciliation.hasInvariantFailure, false, "TARGET_SEEDED_FEATURE_CATALOG_INVARIANT_FAILURE");
+  return reconciliation;
+}
+
+export function reconcileExactTargetSeededRelation(relation, sourceRows, targetRows, stableColumns) {
+  assert.ok(["roles", "permissions", "role_permissions"].includes(relation));
+  assert.ok(Array.isArray(stableColumns) && stableColumns.length > 0 && stableColumns.every(column => identifier.test(column)));
+  const normalize = rows => [...rows].map(row => {
+    assert.ok(row && typeof row === "object" && !Array.isArray(row));
+    assert.ok(stableColumns.every(column => row[column] !== null && row[column] !== undefined), "TARGET_SEEDED_STABLE_KEY_MISSING");
+    return row;
+  }).sort((left, right) => canonical(stableColumns.map(column => left[column])).localeCompare(canonical(stableColumns.map(column => right[column]))));
+  const source = normalize(sourceRows), target = normalize(targetRows);
+  const sourceKeys = source.map(row => stableColumns.map(column => row[column]));
+  const targetKeys = target.map(row => stableColumns.map(column => row[column]));
+  return { relation, stableColumns, sourceCount: source.length, targetCount: target.length, sourceStableKeySha256: sha256(sourceKeys), targetStableKeySha256: sha256(targetKeys), stableKeyParity: canonical(sourceKeys) === canonical(targetKeys), sourceCanonicalSha256: sha256(source), targetCanonicalSha256: sha256(target), canonicalParity: canonical(source) === canonical(target) };
+}
+
+export function requireExactTargetSeededParity(reconciliation) {
+  assert.equal(reconciliation.stableKeyParity, true, `TARGET_SEEDED_STABLE_KEY_MISMATCH:${reconciliation.relation}`);
+  assert.equal(reconciliation.canonicalParity, true, `TARGET_SEEDED_SEMANTIC_MISMATCH:${reconciliation.relation}`);
   return reconciliation;
 }
 
