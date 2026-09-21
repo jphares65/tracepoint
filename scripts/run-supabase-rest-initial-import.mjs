@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IMPORT_RELATIONS, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, foreignKeyCycles, importEvidence, insertSql, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
 assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, "A reviewed migration mode is required");
@@ -46,7 +46,9 @@ async function preflightTarget(client, snapshot) {
   if (authUsers !== 0 && authUsers !== snapshot.users.length) throw new Error("TARGET_UNEXPLAINED_IDENTITY_ANCHORS");
   const lineage = Number((await client.query("select count(*)::int as count from tracepoint_migrations.applied_migrations")).rows[0].count);
   assert.equal(lineage, 97, "TARGET_MIGRATION_LINEAGE_MISMATCH");
-  return { mappings, targetBefore, authUsers, targetSeeded, order: topologicalImportOrder(IMPORT_RELATIONS, await targetForeignKeys(client)) };
+  const foreignKeys = await targetForeignKeys(client);
+  const cyclePlan = nullableTrainingCertificationCyclePlan(IMPORT_RELATIONS, foreignKeys, snapshot.rows);
+  return { mappings, targetBefore, authUsers, targetSeeded, cyclePlan, order: cyclePlan.order };
 }
 async function insertIdentityAnchors(client, users) {
   const profiles = new Set();
@@ -78,6 +80,48 @@ async function importRelation(client, relation, rows, mapping, alreadyPresent) {
   }
   return { relation, imported: rows.length, resumed: 0 };
 }
+async function importNullableTrainingCertificationCycle(client, snapshot, preflight) {
+  const cycle = preflight.cyclePlan;
+  const attendeeMapping = preflight.mappings.find(item => item.relation === cycle.attendees);
+  const certificationMapping = preflight.mappings.find(item => item.relation === cycle.certifications);
+  assert.equal(preflight.targetBefore.get(cycle.attendees), 0, "CYCLE_TARGET_ATTENDEES_NOT_EMPTY");
+  assert.equal(preflight.targetBefore.get(cycle.certifications), 0, "CYCLE_TARGET_CERTIFICATIONS_NOT_EMPTY");
+  const insert = async (relation, rows, mapping) => {
+    const sql = insertSql(relation, mapping.sourceColumns);
+    for (const row of rows) await client.query(sql, [JSON.stringify(row)]);
+  };
+  const restore = async (relation, column, links) => {
+    for (const link of links) {
+      if (link.value === null) continue;
+      const result = await client.query(`update public.${relation} set ${column}=$1 where id=$2 and department_id=$3`, [link.value, link.id, link.departmentId]);
+      assert.equal(result.rowCount, 1, `CYCLE_RESTORE_ROW_MISMATCH:${relation}`);
+    }
+  };
+  const validate = async () => {
+    const sourceAttendees = snapshot.rows.get(cycle.attendees) ?? [], sourceCertifications = snapshot.rows.get(cycle.certifications) ?? [];
+    const targetAttendees = await targetRows(client, cycle.attendees, attendeeMapping.sourceColumns);
+    const targetCertifications = await targetRows(client, cycle.certifications, certificationMapping.sourceColumns);
+    assert.equal(targetAttendees.length, sourceAttendees.length, "CYCLE_ATTENDEE_ROW_COUNT_MISMATCH");
+    assert.equal(targetCertifications.length, sourceCertifications.length, "CYCLE_CERTIFICATION_ROW_COUNT_MISMATCH");
+    assert.equal(canonicalRowsHash(targetAttendees), canonicalRowsHash(sourceAttendees), "CYCLE_ATTENDEE_SOURCE_TARGET_MISMATCH");
+    assert.equal(canonicalRowsHash(targetCertifications), canonicalRowsHash(sourceCertifications), "CYCLE_CERTIFICATION_SOURCE_TARGET_MISMATCH");
+    const attendeeIntegrity = Number((await client.query("select count(*)::int as count from public.agency_training_attendees a left join public.training_certifications c on c.id=a.certification_id where a.certification_id is not null and (c.id is null or c.department_id is distinct from a.department_id)")).rows[0].count);
+    const certificationIntegrity = Number((await client.query("select count(*)::int as count from public.training_certifications c left join public.agency_training_attendees a on a.id=c.source_training_attendee_id where c.source_training_attendee_id is not null and (a.id is null or a.department_id is distinct from c.department_id)")).rows[0].count);
+    assert.equal(attendeeIntegrity, 0, "CYCLE_ATTENDEE_FK_OR_TENANT_INTEGRITY_FAILURE");
+    assert.equal(certificationIntegrity, 0, "CYCLE_CERTIFICATION_FK_OR_TENANT_INTEGRITY_FAILURE");
+  };
+  await executeNullableTrainingCertificationCycle(cycle, {
+    begin: () => client.query("begin"),
+    insertAttendees: rows => insert(cycle.attendees, rows, attendeeMapping),
+    insertCertifications: rows => insert(cycle.certifications, rows, certificationMapping),
+    restoreAttendees: links => restore(cycle.attendees, cycle.attendeeColumn, links),
+    restoreCertifications: links => restore(cycle.certifications, cycle.certificationColumn, links),
+    validate,
+    commit: () => client.query("commit"),
+    rollback: () => client.query("rollback").catch(() => undefined),
+  });
+  return { relation: `${cycle.attendees}+${cycle.certifications}`, imported: (snapshot.rows.get(cycle.attendees) ?? []).length + (snapshot.rows.get(cycle.certifications) ?? []).length, resumed: 0, strategy: "two-phase-nullable-fk" };
+}
 async function repairSequences(client) {
   await client.query("do $repair$ declare item record; begin for item in select n.nspname as schemaname,c.relname as tablename,a.attname as columnname from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null loop execute format('select setval(pg_get_serial_sequence(%L,%L),coalesce((select max(%I) from %I.%I),1),true)',item.schemaname||'.'||item.tablename,item.columnname,item.columnname,item.schemaname,item.tablename); end loop; end $repair$");
 }
@@ -106,7 +150,7 @@ async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-rest-initial-import" });
   let phase = "source snapshot";
-  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const relation of preflight.order) results.push(await importRelation(client, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(item => item.relation === relation), preflight.targetBefore.get(relation) > 0)); phase = "target sequence repair"; await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", importedRelations: results, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
+  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const item of preflight.order) { if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.targetBefore.get(item) > 0)); } phase = "target sequence repair"; await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", importedRelations: results, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
 }
 async function runFeatureCatalogReconciliation() {

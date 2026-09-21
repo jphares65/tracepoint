@@ -318,6 +318,102 @@ export function foreignKeyCycles(relations, foreignKeys) {
   return cycles.filter((cycle,index,all)=>index===all.findIndex(item=>canonical(item.tables)===canonical(cycle.tables)));
 }
 
+export const NULLABLE_TRAINING_CERTIFICATION_CYCLE = Object.freeze({
+  token: "__nullable_training_certification_cycle__",
+  attendees: "agency_training_attendees",
+  certifications: "training_certifications",
+  attendeeColumn: "certification_id",
+  certificationColumn: "source_training_attendee_id",
+});
+
+function exactSourceId(row, relation) {
+  assert.ok(row && typeof row === "object" && typeof row.id === "string" && row.id.length > 0, `CYCLE_SOURCE_ID_INVALID:${relation}`);
+  assert.ok(typeof row.department_id === "string" && row.department_id.length > 0, `CYCLE_SOURCE_DEPARTMENT_INVALID:${relation}`);
+  return row.id;
+}
+
+function sourceIndex(rows, relation) {
+  const indexed = new Map();
+  for (const row of rows) {
+    const id = exactSourceId(row, relation);
+    assert.equal(indexed.has(id), false, `CYCLE_SOURCE_DUPLICATE_ID:${relation}`);
+    indexed.set(id, row);
+  }
+  return indexed;
+}
+
+function equivalentCycleEdge(edge, child, parent) {
+  return edge.child === child && edge.parent === parent;
+}
+
+// Treat the two nullable relations as one node for ordering.  The returned
+// source links are retained only in process memory and are restored inside the
+// caller's single target transaction.
+export function nullableTrainingCertificationCyclePlan(relations, foreignKeys, rowsByRelation) {
+  const cycle = NULLABLE_TRAINING_CERTIFICATION_CYCLE;
+  assert.ok(relations.includes(cycle.attendees) && relations.includes(cycle.certifications), "CYCLE_RELATIONS_MISSING");
+  const attendees = rowsByRelation.get(cycle.attendees) ?? [];
+  const certifications = rowsByRelation.get(cycle.certifications) ?? [];
+  const attendeeById = sourceIndex(attendees, cycle.attendees);
+  const certificationById = sourceIndex(certifications, cycle.certifications);
+  const attendeeEdge = { child: cycle.attendees, parent: cycle.certifications };
+  const certificationEdge = { child: cycle.certifications, parent: cycle.attendees };
+  assert.ok(foreignKeys.some(edge => equivalentCycleEdge(edge, attendeeEdge.child, attendeeEdge.parent)), "CYCLE_EXPECTED_ATTENDEE_FK_MISSING");
+  assert.ok(foreignKeys.some(edge => equivalentCycleEdge(edge, certificationEdge.child, certificationEdge.parent)), "CYCLE_EXPECTED_CERTIFICATION_FK_MISSING");
+
+  const attendeeLinks = attendees.map(row => ({ id: row.id, departmentId: row.department_id, value: row[cycle.attendeeColumn] ?? null }));
+  const certificationLinks = certifications.map(row => ({ id: row.id, departmentId: row.department_id, value: row[cycle.certificationColumn] ?? null }));
+  for (const link of attendeeLinks) if (link.value !== null) {
+    const parent = certificationById.get(String(link.value));
+    assert.ok(parent, "CYCLE_CERTIFICATION_REFERENCE_MISSING");
+    assert.equal(parent.department_id, link.departmentId, "CYCLE_CROSS_DEPARTMENT_CERTIFICATION_REFERENCE");
+  }
+  for (const link of certificationLinks) if (link.value !== null) {
+    const parent = attendeeById.get(String(link.value));
+    assert.ok(parent, "CYCLE_ATTENDEE_REFERENCE_MISSING");
+    assert.equal(parent.department_id, link.departmentId, "CYCLE_CROSS_DEPARTMENT_ATTENDEE_REFERENCE");
+  }
+
+  const members = new Set([cycle.attendees, cycle.certifications]);
+  const collapsedRelations = [...relations.filter(relation => !members.has(relation)), cycle.token];
+  const collapsedEdges = [];
+  const seen = new Set();
+  for (const edge of foreignKeys) {
+    const child = members.has(edge.child) ? cycle.token : edge.child;
+    const parent = members.has(edge.parent) ? cycle.token : edge.parent;
+    if (child === parent) continue;
+    const key = `${child}\u0000${parent}`;
+    if (!seen.has(key)) { seen.add(key); collapsedEdges.push({ child, parent }); }
+  }
+  const order = topologicalImportOrder(collapsedRelations, collapsedEdges);
+  return Object.freeze({
+    ...cycle,
+    order,
+    phaseOne: Object.freeze({
+      attendees: Object.freeze(attendees.map(row => Object.freeze({ ...row, [cycle.attendeeColumn]: null }))),
+      certifications: Object.freeze(certifications.map(row => Object.freeze({ ...row, [cycle.certificationColumn]: null }))),
+    }),
+    restore: Object.freeze({ attendees: Object.freeze(attendeeLinks), certifications: Object.freeze(certificationLinks) }),
+  });
+}
+
+export async function executeNullableTrainingCertificationCycle(plan, operations) {
+  assert.equal(plan.token, NULLABLE_TRAINING_CERTIFICATION_CYCLE.token, "CYCLE_PLAN_INVALID");
+  for (const name of ["begin", "insertAttendees", "insertCertifications", "restoreAttendees", "restoreCertifications", "validate", "commit", "rollback"]) assert.equal(typeof operations[name], "function", `CYCLE_OPERATION_MISSING:${name}`);
+  await operations.begin();
+  try {
+    await operations.insertAttendees(plan.phaseOne.attendees);
+    await operations.insertCertifications(plan.phaseOne.certifications);
+    await operations.restoreAttendees(plan.restore.attendees);
+    await operations.restoreCertifications(plan.restore.certifications);
+    await operations.validate();
+    await operations.commit();
+  } catch (error) {
+    await operations.rollback();
+    throw error;
+  }
+}
+
 export function insertSql(relation, columns) {
   assert.ok(IMPORT_RELATIONS.includes(relation)); assert.ok(columns.length > 0 && columns.every(column => identifier.test(column)));
   const list = columns.map(quote).join(",");

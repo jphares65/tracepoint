@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { COPY_RELATIONS, DATABASE_MODES, DERIVED_RELATIONS, FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, IMPORT_RELATIONS, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_SEEDED_REFERENCE_RELATIONS, TARGET_HOST, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, insertSql, objectManifestSha256, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, summarizeSourceColumn, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DATABASE_MODES, DERIVED_RELATIONS, FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_SEEDED_REFERENCE_RELATIONS, TARGET_HOST, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, insertSql, nullableTrainingCertificationCyclePlan, objectManifestSha256, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, summarizeSourceColumn, topologicalImportOrder, validateColumnMapping, validateImportInvocation, validateObjectBytes } from "./supabase-rest-import-core.mjs";
 
 test("the import contract excludes only derived views and target-seeded feature catalog", () => { assert.ok(DERIVED_RELATIONS.every(name => name.startsWith("v_"))); assert.ok(COPY_RELATIONS.every(name => !name.startsWith("v_"))); assert.equal(COPY_RELATIONS.length + DERIVED_RELATIONS.length, 90); assert.equal(IMPORT_RELATIONS.includes("feature_catalog"), false); });
 test("import invocation is bound to the one reviewed production run and target", () => { const base={TRACEPOINT_MIGRATION_RUN_ID:"4272874f-bae4-49f4-a0b4-67a39cec2874",TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE:"TP-FINAL-DB-20260920-4272874FBAE4",TRACEPOINT_EXPECTED_AWS_ACCOUNT:"193644343389",SOURCE_SUPABASE_REST_SECRET_ARN:"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi",TRACEPOINT_REST_IMPORT_MODE:"database",TARGET_DATABASE_SECRET_ARN:"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT",TARGET_PGHOST:TARGET_HOST,TARGET_PGDATABASE:"tracepoint"}; assert.doesNotThrow(()=>validateImportInvocation(base,"database")); assert.throws(()=>validateImportInvocation({...base,TARGET_PGHOST:"other"},"database")); });
@@ -14,4 +14,37 @@ test("the approved firearm schema repair is exact and the source-only field cann
 test("source equivalence check proves a mapping without emitting source values", () => { const result=compareSourceColumns([{legacy:2,current:2},{legacy:2,current:2},{legacy:null,current:null}],"legacy","current"); assert.deepEqual(result,{leftColumn:"legacy",rightColumn:"current",rowCount:3,equalRowCount:3,unequalRowCount:0,bothPopulatedRowCount:2,leftOnlyPopulatedRowCount:0,rightOnlyPopulatedRowCount:0,bothNullOrMissingRowCount:1}); });
 test("source-target mappings allow only exact safe source columns and parameterized inserts", () => { const columns=[{column_name:"id",is_nullable:"NO",column_default:null,is_identity:false},{column_name:"name",is_nullable:"YES",column_default:null,is_identity:false}]; const mapping=validateColumnMapping("departments",[{id:"a",name:"dept"}],columns); assert.deepEqual(mapping.mapping,{id:"id",name:"name"}); assert.match(insertSql("departments",["id","name"]),/\$1::json/); assert.throws(()=>sourceColumns([{bad:"x", "unsafe-key":"no"}])); assert.throws(()=>quote("bad;drop")); });
 test("foreign-key ordering is deterministic and cycles fail closed", () => { assert.deepEqual(topologicalImportOrder(["a","b","c"],[{child:"b",parent:"a"},{child:"c",parent:"b"}]),["a","b","c"]); assert.throws(()=>topologicalImportOrder(["a","b"],[{child:"a",parent:"b"},{child:"b",parent:"a"}]),/CYCLE/); });
+const cycleRows = (overrides={}) => new Map([
+  ["departments", [{id:"d1",department_id:"d1"}]],
+  ["agency_training_attendees", [{id:"a1",department_id:"d1",certification_id:"c1",...overrides.attendee}]],
+  ["training_certifications", [{id:"c1",department_id:"d1",source_training_attendee_id:"a1",...overrides.certification}]],
+]);
+const cycleRelations = ["departments","agency_training_attendees","training_certifications"];
+const cycleForeignKeys = [
+  {child:"agency_training_attendees",parent:"departments"}, {child:"training_certifications",parent:"departments"},
+  {child:"agency_training_attendees",parent:"training_certifications"}, {child:"training_certifications",parent:"agency_training_attendees"},
+];
+test("two-phase nullable cycle preserves exact links while masking only phase-one values", () => {
+  const plan=nullableTrainingCertificationCyclePlan(cycleRelations,cycleForeignKeys,cycleRows());
+  assert.deepEqual(plan.order,["departments",NULLABLE_TRAINING_CERTIFICATION_CYCLE.token]);
+  assert.equal(plan.phaseOne.attendees[0].certification_id,null); assert.equal(plan.phaseOne.certifications[0].source_training_attendee_id,null);
+  assert.equal(plan.restore.attendees[0].value,"c1"); assert.equal(plan.restore.certifications[0].value,"a1");
+});
+test("two-phase nullable cycle preserves source nulls without restoration", () => {
+  const plan=nullableTrainingCertificationCyclePlan(cycleRelations,cycleForeignKeys,cycleRows({attendee:{certification_id:null},certification:{source_training_attendee_id:null}}));
+  assert.equal(plan.restore.attendees[0].value,null); assert.equal(plan.restore.certifications[0].value,null);
+});
+test("two-phase nullable cycle fails closed for missing references and cross-tenant links", () => {
+  assert.throws(()=>nullableTrainingCertificationCyclePlan(cycleRelations,cycleForeignKeys,cycleRows({attendee:{certification_id:"missing"}})),/CERTIFICATION_REFERENCE_MISSING/);
+  assert.throws(()=>nullableTrainingCertificationCyclePlan(cycleRelations,cycleForeignKeys,cycleRows({certification:{department_id:"d2"}})),/CROSS_DEPARTMENT_CERTIFICATION_REFERENCE/);
+});
+test("two-phase nullable cycle fails closed for a missing attendee reference and any additional graph cycle", () => {
+  assert.throws(()=>nullableTrainingCertificationCyclePlan(cycleRelations,cycleForeignKeys,cycleRows({certification:{source_training_attendee_id:"missing"}})),/ATTENDEE_REFERENCE_MISSING/);
+  assert.throws(()=>nullableTrainingCertificationCyclePlan([...cycleRelations,"other_a","other_b"],[...cycleForeignKeys,{child:"other_a",parent:"other_b"},{child:"other_b",parent:"other_a"}],cycleRows()),/TARGET_FOREIGN_KEY_CYCLE/);
+});
+test("two-phase nullable cycle rolls back if a second-phase restoration fails", async () => {
+  const plan=nullableTrainingCertificationCyclePlan(cycleRelations,cycleForeignKeys,cycleRows()); const calls=[];
+  await assert.rejects(()=>executeNullableTrainingCertificationCycle(plan,{begin:async()=>calls.push("begin"),insertAttendees:async()=>calls.push("insert-attendees"),insertCertifications:async()=>calls.push("insert-certifications"),restoreAttendees:async()=>calls.push("restore-attendees"),restoreCertifications:async()=>{calls.push("restore-certifications");throw Error("fail");},validate:async()=>calls.push("validate"),commit:async()=>calls.push("commit"),rollback:async()=>calls.push("rollback")}));
+  assert.deepEqual(calls,["begin","insert-attendees","insert-certifications","restore-attendees","restore-certifications","rollback"]);
+});
 test("the object manifest is fixed, checksum complete, and tenant scoped", () => { assert.equal(OBJECT_MANIFEST.length,2); assert.match(objectManifestSha256,/^[0-9a-f]{64}$/); for(const object of OBJECT_MANIFEST){assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`)); assert.throws(()=>validateObjectBytes(object,new Uint8Array(0)),/SIZE/);} assert.notEqual(canonicalRowsHash([{a:1}]),canonicalRowsHash([{a:2}])); });
