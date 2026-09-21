@@ -565,4 +565,17 @@ async function cleanupAuditArtifacts() {
     const deleted=await client.query("delete from public.audit_events where id between 165 and 275"); assert.equal(deleted.rowCount,111,"AUDIT_ARTIFACT_DELETE_COUNT_MISMATCH"); const after=Number((await client.query("select count(*)::int as count from public.audit_events")).rows[0].count),anchorsAfter=Number((await client.query("select count(*)::int as count from public.profiles")).rows[0].count); assert.equal(after,0,"AUDIT_ARTIFACT_NOT_EMPTY_AFTER_DELETE"); assert.equal(anchorsAfter,96,"AUDIT_ANCHOR_CHANGED"); await client.query("commit"); console.log(JSON.stringify({status:"PASSED",runId:RUN_ID,authorizationReference:AUTHORIZATION_REFERENCE,mode,deletedAuditEvents:111,targetAuditEventsAfter:after,preservedProfileAnchors:anchorsAfter,targetWriteScope:"approved-clean-target-audit-events-artifact-cleanup",sourceClientsInitialized:true}));
   } catch(error) { await client.query("rollback").catch(()=>undefined); console.error(JSON.stringify(safeError(error,phase))); process.exitCode=1; } finally { await client.end().catch(()=>undefined); }
 }
-await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight());
+async function runReviewedMode() {
+  return mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
+}
+
+// Node 24 can exit with code 13 when its only outstanding work is a top-level
+// await whose timeout is unref'ed. Keep the event loop alive only while a
+// reviewed mode is running so request timeouts reach the existing fail-closed
+// handlers and emit sanitized evidence.
+const reviewedModeLiveness = setInterval(() => undefined, 1_000);
+try {
+  await runReviewedMode();
+} finally {
+  clearInterval(reviewedModeLiveness);
+}
