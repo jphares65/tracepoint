@@ -7,7 +7,7 @@ import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from 
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
 import { validateImmutableArtifact } from "./immutable-source-artifact-validator.mjs";
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
-import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
+import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
 assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE, "A reviewed migration mode is required");
@@ -60,7 +60,7 @@ async function queryTargetGenerationColumns(query, relation) {
   return (await query(sql, [relation])).rows;
 }
 async function queryTargetTriggers(query, relations) {
-  const sql = "select rel.relname as relation,t.tgname as trigger_name,fnn.nspname as function_schema,fn.proname as function_name,pg_get_functiondef(t.tgfoid) as function_definition from pg_trigger t join pg_class rel on rel.oid=t.tgrelid join pg_namespace ns on ns.oid=rel.relnamespace join pg_proc fn on fn.oid=t.tgfoid join pg_namespace fnn on fnn.oid=fn.pronamespace where ns.nspname='public' and rel.relname=any($1::text[]) and not t.tgisinternal and t.tgenabled <> 'D' order by rel.relname,t.tgname";
+  const sql = "select rel.relname as relation,t.tgname as trigger_name,fnn.nspname as function_schema,fn.proname as function_name,pg_get_triggerdef(t.oid) as trigger_definition,pg_get_functiondef(t.tgfoid) as function_definition from pg_trigger t join pg_class rel on rel.oid=t.tgrelid join pg_namespace ns on ns.oid=rel.relnamespace join pg_proc fn on fn.oid=t.tgfoid join pg_namespace fnn on fnn.oid=fn.pronamespace where ns.nspname='public' and rel.relname=any($1::text[]) and not t.tgisinternal and t.tgenabled <> 'D' order by rel.relname,t.tgname";
   return (await query(sql, [relations])).rows;
 }
 function triggerAssignments(triggers) {
@@ -87,7 +87,9 @@ function safeGenerationConflict(conflict, provenance) {
 }
 async function targetRelationKinds(client) { return new Map((await client.query("select c.relname as name,c.relkind as kind from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=any($1::text[])", [MIGRATION_RELATIONS])).rows.map(row => [row.name, row.kind])); }
 async function targetForeignKeys(client) { return (await client.query("select child.relname as child,parent.relname as parent from pg_constraint fk join pg_class child on child.oid=fk.conrelid join pg_namespace cn on cn.oid=child.relnamespace join pg_class parent on parent.oid=fk.confrelid join pg_namespace pn on pn.oid=parent.relnamespace where fk.contype='f' and cn.nspname='public' and pn.nspname='public'")).rows; }
-function triggerWritesAuditEvents(trigger) { return /\binsert\s+into\s+(?:public\.)?"?audit_events"?\b/iu.test(String(trigger.function_definition ?? "")); }
+function triggerFiresOnInsert(trigger) { return /\b(?:before|after|instead\s+of)\s+insert\b/iu.test(String(trigger.trigger_definition ?? "")); }
+function triggerWritesAuditEvents(trigger) { return triggerFiresOnInsert(trigger) && /\binsert\s+into\s+(?:public\.)?"?audit_events"?\b/iu.test(String(trigger.function_definition ?? "")); }
+function insertedRelations(trigger) { return [...new Set([...String(trigger.function_definition ?? "").matchAll(/\binsert\s+into\s+(?:public\.)?"?([a-z][a-z0-9_]*)"?/giu)].map(match => match[1].toLowerCase()))].sort(); }
 async function assertAuditHistoryEmpty(client, phase) {
   const counts = [];
   for (const relation of AUDIT_HISTORY_RELATIONS) {
@@ -99,10 +101,16 @@ async function assertAuditHistoryEmpty(client, phase) {
 }
 async function deriveAuditPrerequisites(client, preflight) {
   const initial = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS });
-  const triggers = initial.prerequisiteRelations.length ? await queryTargetTriggers((sql, values) => client.query(sql, values), initial.prerequisiteRelations) : [];
-  const auditWriters = triggers.filter(triggerWritesAuditEvents).map(trigger => trigger.relation);
-  const plan = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, auditWritingRelations: auditWriters, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS });
-  return { ...plan, triggerEvidence: triggers.map(trigger => ({ relation: trigger.relation, trigger: trigger.trigger_name, function: `${trigger.function_schema}.${trigger.function_name}`, writesAuditEvents: triggerWritesAuditEvents(trigger) })) };
+  assert.deepEqual(initial.prerequisiteRelations, ["departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  const parentTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), initial.prerequisiteRelations);
+  const bootstrapRelations = [...new Set(parentTriggers.filter(trigger => trigger.relation === "departments" && triggerFiresOnInsert(trigger)).flatMap(insertedRelations))].sort();
+  assert.deepEqual(bootstrapRelations, ["department_role_permissions", "department_rules", "department_security_settings"], "DEPARTMENT_BOOTSTRAP_SIDE_EFFECT_CHANGED");
+  const childTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), bootstrapRelations);
+  const auditWriters = parentTriggers.filter(triggerWritesAuditEvents).map(trigger => trigger.relation);
+  if (childTriggers.some(triggerWritesAuditEvents)) auditWriters.push("departments");
+  const plan = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, auditWritingRelations: auditWriters, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS, approvedBootstrapAuditRelations: ["departments"] });
+  const evidence = triggers => triggers.map(trigger => ({ relation: trigger.relation, trigger: trigger.trigger_name, function: `${trigger.function_schema}.${trigger.function_name}`, firesOnInsert: triggerFiresOnInsert(trigger), writesAuditEvents: triggerWritesAuditEvents(trigger), inserts: insertedRelations(trigger) }));
+  return { ...plan, bootstrapRelations, triggerEvidence: { parent: evidence(parentTriggers), bootstrapChildren: evidence(childTriggers) } };
 }
 async function profilesAreMigrationAnchors(client, sourceProfiles, targetProfiles) {
   if (!targetProfiles.length) return false;
@@ -212,6 +220,54 @@ async function cleanupProvenMigrationArtifacts(client, snapshot, preflight) {
       deleted.push({ relation: item.relation, classification: item.classification, deleted: result.rowCount });
     }
     await client.query("commit"); return deleted;
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+}
+async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites) {
+  assert.deepEqual(auditPrerequisites.prerequisiteRelations, ["departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  const sourceDepartments = snapshot.rows.get("departments") ?? [], sourceAudit = snapshot.rows.get("audit_events") ?? [];
+  const departments = requiredAuditDepartmentParents(sourceDepartments, sourceAudit);
+  // The audit history must cover every department before this controlled
+  // bootstrap can be the only department-insert phase before reconciliation.
+  assert.equal(departments.length, sourceDepartments.length, "AUDIT_PREREQUISITE_DEPARTMENTS_INCOMPLETE");
+  const departmentIds = departments.map(row => row.id).sort();
+  const affectedRelations = [...DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS];
+  for (const relation of ["departments", ...affectedRelations]) assert.equal(preflight.targetBefore.get(relation), 0, `PREREQUISITE_TARGET_NOT_CLEAN:${relation}`);
+  const departmentMapping = preflight.mappings.find(mapping => mapping.relation === "departments");
+  const departmentSql = insertSql("departments", departmentMapping.sourceColumns);
+  const captured = new Map();
+  await client.query("begin");
+  try {
+    for (const row of departments) await client.query(departmentSql, [JSON.stringify(row)]);
+    for (const relation of affectedRelations) {
+      const mapping = preflight.mappings.find(item => item.relation === relation);
+      const rows = await targetRows(client, relation, mapping.sourceColumns);
+      captured.set(relation, rows);
+    }
+    const classifications = affectedRelations.map(relation => classifyDepartmentPrerequisiteBootstrap({ relation, sourceRows: snapshot.rows.get(relation) ?? [], generatedRows: captured.get(relation), departmentIds, stableColumns: RELATION_ORDER_COLUMNS[relation] ?? ["id"] }));
+    // These three relations are owned by the canonical source and are imported
+    // authoritatively after audit history. Their trigger-produced copies are
+    // therefore removed by the exact inserted department IDs only.
+    const deleted = [];
+    for (const relation of ["department_role_permissions", "department_security_settings", "department_rules"]) {
+      const result = await client.query(`delete from public.${relation} where department_id=any($1::uuid[])`, [departmentIds]);
+      assert.equal(result.rowCount, captured.get(relation).length, `PREREQUISITE_BOOTSTRAP_DELETE_COUNT_MISMATCH:${relation}`);
+      const remaining = Number((await client.query(`select count(*)::int as count from public.${relation}`)).rows[0].count);
+      assert.equal(remaining, 0, `PREREQUISITE_BOOTSTRAP_REMAINING_ROWS:${relation}`);
+      deleted.push({ relation, count: result.rowCount });
+    }
+    // Deleting seeded configuration emits additional operational audit rows.
+    // The table was proven empty before this transaction, so every row scoped
+    // to these parents is a generated bootstrap artifact and may be removed.
+    const auditBeforeDelete = Number((await client.query("select count(*)::int as count from public.audit_events")).rows[0].count);
+    const auditDeleted = await client.query("delete from public.audit_events where department_id=any($1::uuid[])", [departmentIds]);
+    assert.equal(auditDeleted.rowCount, auditBeforeDelete, "PREREQUISITE_AUDIT_DELETE_SCOPE_MISMATCH");
+    assert.equal(Number((await client.query("select count(*)::int as count from public.audit_events")).rows[0].count), 0, "PREREQUISITE_AUDIT_NOT_EMPTY_AFTER_CLEANUP");
+    assert.equal(Number((await client.query("select count(*)::int as count from public.retired_permission_assignment_audit")).rows[0].count), 0, "PREREQUISITE_RETIRED_AUDIT_NOT_EMPTY_AFTER_CLEANUP");
+    const importedParents = await targetRows(client, "departments", departmentMapping.sourceColumns);
+    assert.equal(importedParents.length, departments.length, "PREREQUISITE_DEPARTMENT_COUNT_MISMATCH");
+    assert.equal(canonicalRowsHash(importedParents), canonicalRowsHash(departments), "PREREQUISITE_DEPARTMENT_SOURCE_MISMATCH");
+    await client.query("commit");
+    return { rule: "department-prerequisite-bootstrap-cleanup", departmentCount: departments.length, classifications, deleted, auditEventsDeleted: auditDeleted.rowCount, auditHistoryEmptyBeforeSourceImport: true };
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
 async function insertIdentityAnchors(client, users) {
@@ -367,7 +423,39 @@ async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
   let phase = "source snapshot";
-  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "audit prerequisite dependency analysis"; const auditPrerequisites = await deriveAuditPrerequisites(client, preflight); phase = "audit history clean-state preflight"; const auditBefore = await assertAuditHistoryEmpty(client, "before_prerequisites"); phase = "proven migration-artifact cleanup"; const cleanup = await cleanupProvenMigrationArtifacts(client, snapshot, preflight); const results = []; phase = "audit prerequisites"; for (const relation of auditPrerequisites.prerequisiteRelations) results.push(await importRelation(client, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation))); phase = "audit history side-effect check"; const auditAfterPrerequisites = await assertAuditHistoryEmpty(client, "before_source_history"); phase = "source audit history"; for (const relation of AUDIT_HISTORY_RELATIONS) results.push(await importRelation(client, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation))); phase = "audit identity sequence repair"; const auditIdentitySequences = await repairSequences(client); phase = "audit history complete: identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; for (const item of preflight.order) { if ([...auditPrerequisites.prerequisiteRelations, ...AUDIT_HISTORY_RELATIONS].includes(item)) continue; phase = `relational import:${item}`; if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight)); else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.resumePlan.get(item))); } phase = "target sequence repair"; const identitySequences = await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", sourceBaseline: snapshot.artifact ?? null, artifactCleanup: cleanup, auditPrerequisites: { ...auditPrerequisites, before: auditBefore, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
+  try {
+    const snapshot = await sourceSnapshot();
+    phase = "target TLS preflight"; await client.connect();
+    const preflight = await preflightTarget(client, snapshot);
+    phase = "audit prerequisite dependency analysis";
+    const auditPrerequisites = await deriveAuditPrerequisites(client, preflight);
+    phase = "audit history clean-state preflight";
+    const auditBefore = await assertAuditHistoryEmpty(client, "before_department_prerequisite_bootstrap");
+    phase = "department prerequisite bootstrap cleanup";
+    const departmentPrerequisiteBootstrapCleanup = await runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites);
+    phase = "audit history clean-state after bootstrap cleanup";
+    const auditAfterPrerequisites = await assertAuditHistoryEmpty(client, "before_source_history");
+    const results = [{ relation: "departments", imported: departmentPrerequisiteBootstrapCleanup.departmentCount, strategy: departmentPrerequisiteBootstrapCleanup.rule }];
+    phase = "source audit history";
+    for (const relation of AUDIT_HISTORY_RELATIONS) results.push(await importRelation(client, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation)));
+    phase = "audit identity sequence repair";
+    const auditIdentitySequences = await repairSequences(client);
+    phase = "audit history complete: identity anchors";
+    await insertIdentityAnchors(client, snapshot.users);
+    phase = "relational import";
+    for (const item of preflight.order) {
+      if ([...auditPrerequisites.prerequisiteRelations, ...AUDIT_HISTORY_RELATIONS].includes(item)) continue;
+      phase = `relational import:${item}`;
+      if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight));
+      else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight));
+      else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.resumePlan.get(item)));
+    }
+    phase = "target sequence repair";
+    const identitySequences = await repairSequences(client);
+    phase = "target reconciliation";
+    const evidence = await verifyDatabase(client, snapshot, preflight);
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", sourceBaseline: snapshot.artifact ?? null, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, before: auditBefore, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
+  }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
 }
 async function runFeatureCatalogReconciliation() {

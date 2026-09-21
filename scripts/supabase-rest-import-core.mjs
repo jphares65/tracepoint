@@ -40,6 +40,7 @@ export const TARGET_SEEDED_ROLE_PERMISSION_SOURCE_ONLY = Object.freeze([
   { roleCode: "supervisor", permissionCode: "manage_training" },
 ]);
 export const IDENTITY_PRESERVATION_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit"]);
+export const DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS = Object.freeze(["audit_events", "department_rules", "department_security_settings", "department_role_permissions"]);
 // These rows are produced by the reviewed migration-anchor path on the
 // quarantined target.  They are not bootstrap data and may be removed only
 // after their source-key and post-restore provenance is re-proven at runtime.
@@ -507,12 +508,13 @@ export function topologicalImportOrder(relations, foreignKeys) {
 // audit phase, but only if those parent inserts cannot themselves emit a new
 // audit event.  This derives the full transitive parent set from the deployed
 // FK graph; it is not a handwritten ordering exception.
-export function auditPrerequisitePlan({ importRelations, auditRelations, foreignKeys, auditWritingRelations = [], targetSeededRelations = [] }) {
+export function auditPrerequisitePlan({ importRelations, auditRelations, foreignKeys, auditWritingRelations = [], targetSeededRelations = [], approvedBootstrapAuditRelations = [] }) {
   assert.ok(Array.isArray(importRelations) && importRelations.every(name => identifier.test(name)), "AUDIT_PREREQUISITE_RELATIONS_INVALID");
   assert.ok(Array.isArray(auditRelations) && auditRelations.every(name => identifier.test(name)), "AUDIT_HISTORY_RELATIONS_INVALID");
   assert.ok(Array.isArray(foreignKeys) && foreignKeys.every(edge => edge && identifier.test(edge.child) && identifier.test(edge.parent)), "AUDIT_PREREQUISITE_FOREIGN_KEYS_INVALID");
   assert.ok(Array.isArray(auditWritingRelations) && auditWritingRelations.every(name => identifier.test(name)), "AUDIT_WRITING_RELATIONS_INVALID");
   assert.ok(Array.isArray(targetSeededRelations) && targetSeededRelations.every(name => identifier.test(name)), "AUDIT_TARGET_SEEDED_RELATIONS_INVALID");
+  assert.ok(Array.isArray(approvedBootstrapAuditRelations) && approvedBootstrapAuditRelations.every(name => identifier.test(name)), "AUDIT_BOOTSTRAP_CLEANUP_RELATIONS_INVALID");
   const importSet = new Set(importRelations), seeded = new Set(targetSeededRelations), auditSet = new Set(auditRelations.filter(name => importSet.has(name)));
   assert.ok(auditSet.size > 0, "AUDIT_HISTORY_RELATIONS_MISSING");
   const byChild = new Map(importRelations.map(name => [name, []]));
@@ -533,13 +535,50 @@ export function auditPrerequisitePlan({ importRelations, auditRelations, foreign
     relation,
     classification: seeded.has(relation) ? "BOOTSTRAP_ALREADY_PRESENT" : auditWriters.has(relation) ? "PREREQUISITE_CAN_GENERATE_AUDIT" : "SAFE_PREREQUISITE_NO_AUDIT_SIDE_EFFECT",
   }));
-  const unsafe = classifications.filter(item => item.classification === "PREREQUISITE_CAN_GENERATE_AUDIT");
+  const approvedBootstrap = new Set(approvedBootstrapAuditRelations);
+  const unsafe = classifications.filter(item => item.classification === "PREREQUISITE_CAN_GENERATE_AUDIT" && !approvedBootstrap.has(item.relation));
   assert.equal(unsafe.length, 0, `AUDIT_PREREQUISITE_CAN_GENERATE_AUDIT:${unsafe.map(item => item.relation).join(",")}`);
   const importable = prerequisiteRelations.filter(relation => !seeded.has(relation));
   return Object.freeze({
     auditRelations: [...auditSet].sort(),
     prerequisiteRelations: Object.freeze(topologicalImportOrder(importable, foreignKeys.filter(edge => prerequisiteSet.has(edge.child) && prerequisiteSet.has(edge.parent)))),
     classifications: Object.freeze(classifications),
+  });
+}
+
+export function requiredAuditDepartmentParents(departmentRows, auditRows) {
+  assert.ok(Array.isArray(departmentRows) && Array.isArray(auditRows), "AUDIT_PREREQUISITE_ROWS_INVALID");
+  const ids = new Set();
+  for (const row of auditRows) { assert.equal(typeof row?.department_id, "string", "AUDIT_DEPARTMENT_ID_INVALID"); ids.add(row.department_id); }
+  const byId = new Map();
+  for (const row of departmentRows) { assert.equal(typeof row?.id, "string", "DEPARTMENT_ID_INVALID"); assert.equal(byId.has(row.id), false, "DEPARTMENT_ID_DUPLICATE"); byId.set(row.id, row); }
+  const required = [...ids].sort().map(id => { const row = byId.get(id); assert.ok(row, `AUDIT_DEPARTMENT_PARENT_MISSING:${id}`); return row; });
+  return Object.freeze(required);
+}
+
+export function classifyDepartmentPrerequisiteBootstrap({ relation, sourceRows, generatedRows, departmentIds, stableColumns }) {
+  assert.ok(DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS.includes(relation), "DEPARTMENT_BOOTSTRAP_RELATION_INVALID");
+  assert.ok(Array.isArray(sourceRows) && Array.isArray(generatedRows), "DEPARTMENT_BOOTSTRAP_ROWS_INVALID");
+  assert.ok(Array.isArray(departmentIds) && departmentIds.every(id => typeof id === "string"), "DEPARTMENT_BOOTSTRAP_IDS_INVALID");
+  assert.ok(Array.isArray(stableColumns) && stableColumns.length > 0 && stableColumns.every(column => identifier.test(column)), "DEPARTMENT_BOOTSTRAP_STABLE_COLUMNS_INVALID");
+  const departments = new Set(departmentIds), keyFor = row => canonical(stableColumns.map(column => row?.[column]));
+  const source = new Map();
+  for (const row of sourceRows) { const key = keyFor(row); assert.equal(source.has(key), false, `DEPARTMENT_BOOTSTRAP_SOURCE_DUPLICATE:${relation}`); source.set(key, row); }
+  const seen = new Set(), classifications = [];
+  for (const row of generatedRows) {
+    assert.equal(typeof row?.department_id, "string", `UNEXPLAINED_TARGET_ROW:${relation}`);
+    assert.ok(departments.has(row.department_id), `UNEXPLAINED_TARGET_ROW:${relation}`);
+    const key = keyFor(row); assert.equal(seen.has(key), false, `UNEXPLAINED_TARGET_ROW:${relation}`); seen.add(key);
+    const sourceRow = source.get(key);
+    const classification = !sourceRow ? "GENERATED_BOOTSTRAP_ARTIFACT_WITH_NO_SOURCE_ROW" : canonical(sourceRow) === canonical(row) ? "EXACT_CANONICAL_SOURCE_MATCH" : "GENERATED_BOOTSTRAP_ARTIFACT_CONFLICTING_WITH_SOURCE";
+    classifications.push(Object.freeze({ stableKeySha256: sha256(key), classification }));
+  }
+  const names = ["EXACT_CANONICAL_SOURCE_MATCH", "GENERATED_BOOTSTRAP_ARTIFACT_CONFLICTING_WITH_SOURCE", "GENERATED_BOOTSTRAP_ARTIFACT_WITH_NO_SOURCE_ROW"];
+  return Object.freeze({
+    relation,
+    generatedCount: generatedRows.length,
+    classifications: Object.freeze(classifications),
+    classificationCounts: Object.freeze(Object.fromEntries(names.map(name => [name, classifications.filter(item => item.classification === name).length]))),
   });
 }
 
