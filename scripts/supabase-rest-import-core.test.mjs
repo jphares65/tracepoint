@@ -20,6 +20,10 @@ test("artifact-aware resume retains exact rows, resets only proven partial artif
   assert.equal(classifyArtifactResumeRelation({relation:"departments",sourceRows:source,targetRows:source,stableColumns:["id"]}).strategy,"retain-exact-source-match");
   const partial=classifyArtifactResumeRelation({relation:"departments",sourceRows:source,targetRows:[source[0]],stableColumns:["id"]});
   assert.equal(partial.strategy,"cleanup-and-import-full"); assert.equal(partial.classification,"partial-source-subset");
+  const grants=[{department_id:"d",role_code:"officer",permission_code:"view",created_at:"source"},{department_id:"d",role_code:"officer",permission_code:"write",created_at:"source"}];
+  const grantArtifact=classifyArtifactResumeRelation({relation:"department_role_permissions",sourceRows:grants,targetRows:[{...grants[0],created_at:"target"}],stableColumns:["department_id","role_code","permission_code"]});
+  assert.equal(grantArtifact.classification,"partial-source-subset-with-reviewed-security-stable-keys");
+  assert.throws(()=>classifyArtifactResumeRelation({relation:"department_role_permissions",sourceRows:grants,targetRows:[{...grants[0],permission_code:"admin"}],stableColumns:["department_id","role_code","permission_code"]}),/TARGET_UNEXPLAINED_ROWS/);
   assert.equal(classifyArtifactResumeRelation({relation:"department_rules",sourceRows:source,targetRows:[{...source[0],value:3},{...source[1],value:3}],stableColumns:["id"],generatedArtifactProven:true}).classification,"generated-migration-side-effect");
   assert.throws(()=>classifyArtifactResumeRelation({relation:"departments",sourceRows:source,targetRows:[{id:"unexpected",department_id:"d",value:1}],stableColumns:["id"]}),/TARGET_UNEXPLAINED_ROWS/);
   assert.throws(()=>classifyArtifactResumeRelation({relation:"department_rules",sourceRows:source,targetRows:[{...source[0],value:3},{...source[1],value:3}],stableColumns:["id"]}),/TARGET_UNEXPLAINED_ROWS/);

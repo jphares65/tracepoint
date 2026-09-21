@@ -38,6 +38,10 @@ export const IDENTITY_PRESERVATION_RELATIONS = Object.freeze(["audit_events", "r
 // quarantined target.  They are not bootstrap data and may be removed only
 // after their source-key and post-restore provenance is re-proven at runtime.
 export const GENERATED_MIGRATION_ARTIFACT_RELATIONS = Object.freeze(["department_rules", "department_security_settings"]);
+// Department grants are security-sensitive, so this exception is deliberately
+// keyed by the complete authorization tuple rather than by mutable migration
+// metadata.  A target-only tuple is always an immediate hard stop.
+export const STABLE_KEY_MIGRATION_ARTIFACT_RELATIONS = Object.freeze(["department_role_permissions"]);
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
@@ -174,6 +178,8 @@ export function classifyArtifactResumeRelation({ relation, sourceRows, targetRow
   if (exactSourceSubset) return Object.freeze({ relation, strategy: "cleanup-and-import-full", classification: "partial-source-subset", targetRowCount: targetRows.length });
   const sourceKeys = stableRowKeys(sourceRows, stableColumns), targetKeys = stableRowKeys(targetRows, stableColumns);
   const stableKeyParity = canonical([...sourceKeys].sort()) === canonical([...targetKeys].sort());
+  const targetStableKeySubset = targetRows.length < sourceRows.length && targetKeys.every(key => sourceKeys.includes(key));
+  if (STABLE_KEY_MIGRATION_ARTIFACT_RELATIONS.includes(relation) && targetStableKeySubset) return Object.freeze({ relation, strategy: "cleanup-and-import-full", classification: "partial-source-subset-with-reviewed-security-stable-keys", targetRowCount: targetRows.length });
   if (GENERATED_MIGRATION_ARTIFACT_RELATIONS.includes(relation) && generatedArtifactProven && stableKeyParity) return Object.freeze({ relation, strategy: "cleanup-and-import-full", classification: "generated-migration-side-effect", targetRowCount: targetRows.length });
   throw new Error(`TARGET_UNEXPLAINED_ROWS:${relation}`);
 }
