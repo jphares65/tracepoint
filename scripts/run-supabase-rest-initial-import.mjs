@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
@@ -26,6 +26,36 @@ async function sourceSnapshot() {
 }
 function jsonRows(rows) { return rows.map(row => canonical(row)); }
 async function queryColumns(client, relation) { return (await client.query("select column_name,is_nullable,column_default,(is_identity='YES') as is_identity from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position", [relation])).rows; }
+async function queryTargetGenerationColumns(query, relation) {
+  const sql = "select c.column_name,c.data_type,c.udt_name,c.is_nullable,c.is_identity,c.identity_generation,c.is_generated,c.generation_expression,c.column_default,pg_get_serial_sequence(format('%I.%I',c.table_schema,c.table_name),c.column_name) as sequence_name from information_schema.columns c where c.table_schema='public' and c.table_name=$1 order by c.ordinal_position";
+  return (await query(sql, [relation])).rows;
+}
+async function queryTargetTriggers(query, relations) {
+  const sql = "select rel.relname as relation,t.tgname as trigger_name,fnn.nspname as function_schema,fn.proname as function_name,pg_get_functiondef(t.tgfoid) as function_definition from pg_trigger t join pg_class rel on rel.oid=t.tgrelid join pg_namespace ns on ns.oid=rel.relnamespace join pg_proc fn on fn.oid=t.tgfoid join pg_namespace fnn on fnn.oid=fn.pronamespace where ns.nspname='public' and rel.relname=any($1::text[]) and not t.tgisinternal and t.tgenabled <> 'D' order by rel.relname,t.tgname";
+  return (await query(sql, [relations])).rows;
+}
+function triggerAssignments(triggers) {
+  const assignments = new Map();
+  for (const trigger of triggers) {
+    const columns = new Set();
+    for (const match of String(trigger.function_definition ?? "").matchAll(/new\.([a-z][a-z0-9_]*)\s*(?::=|=)/giu)) columns.add(match[1].toLowerCase());
+    for (const column of columns) {
+      const key = `${trigger.relation}\u0000${column}`;
+      const names = assignments.get(key) ?? [];
+      names.push(`${trigger.function_schema}.${trigger.function_name}:${trigger.trigger_name}`);
+      assignments.set(key, names);
+    }
+  }
+  return assignments;
+}
+function generatedColumnRepositoryProvenance(relation, column, triggerNames) {
+  if (relation === "profiles" && ["created_at", "updated_at"].includes(column) && triggerNames.length) return "supabase/migrations/202606220001_tracepoint_foundation.sql: public.handle_new_auth_user and public.profiles_set_updated_at; reviewed migration-anchor exception";
+  if (triggerNames.length) return "target PostgreSQL catalog trigger metadata; no reviewed importer exclusion";
+  return "target PostgreSQL catalog metadata; no reviewed importer exclusion";
+}
+function safeGenerationConflict(conflict, provenance) {
+  return { relation: conflict.relation, column: conflict.column, targetType: conflict.targetType, targetGeneration: conflict.targetGeneration, sourcePresence: conflict.sourceStatistics, repositoryProvenance: provenance, classification: conflict.classification, acceptsExplicitSourceValue: conflict.acceptsExplicitSourceValue };
+}
 async function targetRelationKinds(client) { return new Map((await client.query("select c.relname as name,c.relkind as kind from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=any($1::text[])", [MIGRATION_RELATIONS])).rows.map(row => [row.name, row.kind])); }
 async function targetForeignKeys(client) { return (await client.query("select child.relname as child,parent.relname as parent from pg_constraint fk join pg_class child on child.oid=fk.conrelid join pg_namespace cn on cn.oid=child.relnamespace join pg_class parent on parent.oid=fk.confrelid join pg_namespace pn on pn.oid=parent.relnamespace where fk.contype='f' and cn.nspname='public' and pn.nspname='public'")).rows; }
 async function profilesAreMigrationAnchors(client, sourceProfiles, targetProfiles) {
@@ -36,6 +66,54 @@ async function profilesAreMigrationAnchors(client, sourceProfiles, targetProfile
   return anchors.length === sourceProfiles.length && anchors.every(row => sourceIds.has(row.id) && row.identity_provider === "migration_anchor");
 }
 async function runForeignKeyCycleDiagnosis(){const rawTarget=process.env.TARGET_DATABASE_SECRET_JSON;delete process.env.TARGET_DATABASE_SECRET_JSON;const target=validateTargetSecret(JSON.parse(rawTarget)),ca=await readFile('/app/rds-ca.pem','utf8'),client=new pg.Client({...target,ssl:{ca,rejectUnauthorized:true},application_name:'tracepoint-fk-cycle-diagnosis'});try{await client.connect();await client.query('begin transaction isolation level repeatable read read only');const keys=(await client.query("select c.conname as constraint_name,child.relname as child,parent.relname as parent,ca.attname as child_column,pa.attname as parent_column,ca.attnotnull as child_not_null,c.condeferrable,c.condeferred,c.confdeltype,c.confupdtype from pg_constraint c join pg_class child on child.oid=c.conrelid join pg_namespace n on n.oid=child.relnamespace join pg_class parent on parent.oid=c.confrelid join unnest(c.conkey) with ordinality ck(attnum,pos) on true join unnest(c.confkey) with ordinality pk(attnum,pos) on pk.pos=ck.pos join pg_attribute ca on ca.attrelid=child.oid and ca.attnum=ck.attnum join pg_attribute pa on pa.attrelid=parent.oid and pa.attnum=pk.attnum where c.contype='f' and n.nspname='public' and child.relname=any($1::text[]) and parent.relname=any($1::text[])",[IMPORT_RELATIONS])).rows;await client.query('commit');console.log(JSON.stringify({status:'PASSED',mode,sourceReadOnly:true,targetReadOnly:true,targetWriteClientsInitialized:false,cycles:foreignKeyCycles(IMPORT_RELATIONS,keys),foreignKeys:keys}));}finally{await client.end().catch(()=>undefined);}}
+async function runTargetGeneratedColumnDiagnostic() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-target-generated-column-diagnostic" });
+  let phase = "source contract snapshot";
+  try {
+    const snapshot = await sourceSnapshot();
+    phase = "target read-only transaction";
+    await client.connect();
+    const query = (sql, values = []) => client.query(assertDiagnosticReadOnlySql(sql), values);
+    await query("begin transaction isolation level repeatable read read only");
+    const triggers = await queryTargetTriggers(query, MIGRATION_RELATIONS);
+    const assignments = triggerAssignments(triggers);
+    const relations = [];
+    const conflicts = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const rows = snapshot.rows.get(relation) ?? [];
+      const source = sourceColumns(rows);
+      const targetColumns = await queryTargetGenerationColumns(query, relation);
+      const targetByName = new Map(targetColumns.map(column => [column.column_name, column]));
+      const relationConflicts = [];
+      for (const column of source) {
+        const targetColumn = targetByName.get(column);
+        if (!targetColumn) continue;
+        const triggerNames = assignments.get(`${relation}\u0000${column}`) ?? [];
+        const assessment = classifyTargetGeneratedInput(relation, summarizeSourceColumn(rows, column), targetColumn, triggerNames);
+        const isCandidate = assessment.acceptsExplicitSourceValue === false || assessment.classification === "TARGET_GENERATED_EXCLUDE_FROM_IMPORT";
+        if (!isCandidate) continue;
+        const sanitized = safeGenerationConflict(assessment, generatedColumnRepositoryProvenance(relation, column, triggerNames));
+        relationConflicts.push(sanitized);
+        conflicts.push(sanitized);
+      }
+      relations.push({ relation, sourceColumnCount: source.length, targetColumnCount: targetColumns.length, candidateConflictCount: relationConflicts.length, candidateConflicts: relationConflicts });
+    }
+    await query("commit");
+    const blockers = conflicts.filter(conflict => conflict.classification !== "TARGET_GENERATED_EXCLUDE_FROM_IMPORT");
+    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, sourceClientsInitialized: true, targetClientsInitialized: true, targetWriteClientsInitialized: false, targetTransaction: { isolation: "repeatable read", readOnly: true }, sourceContract: { totalRelationalRows: [...snapshot.rows.values()].reduce((sum, rows) => sum + rows.length, 0), identities: snapshot.users.length, memberships: (snapshot.rows.get("department_memberships") ?? []).length }, relations, conflicts, blockers, importerCanResumeWithoutSemanticChange: blockers.length === 0 }));
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
 async function targetRows(client, relation, columns) { const order = RELATION_ORDER_COLUMNS[relation] ?? ["id"]; return (await client.query(targetRowsSql(relation, columns, order))).rows.map(item => item.row); }
 async function preflightTarget(client, snapshot) {
   const kinds = await targetRelationKinds(client);
@@ -369,4 +447,4 @@ async function runObjects() {
   try { const results=[]; for (const object of OBJECT_MANIFEST) { assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH"); let target = await getTargetObject(s3, object); if (target) { validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "verified-existing", bytes: object.bytes, sha256: object.sha256 }); continue; } phase = "source object read"; const bytes = await fetchObject(object); phase = "create-only target write"; try { await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } })); } catch (error) { if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error; } phase = "target object verification"; target = await getTargetObject(s3, object); assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE"); validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "created-and-verified", bytes: object.bytes, sha256: object.sha256 }); } console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { s3.destroy(); }
 }
-await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight());
+await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight());

@@ -41,7 +41,8 @@ export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
 export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
 export const FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE = "foreign-key-cycle-diagnosis";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE]);
+export const TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE = "target-generated-column-diagnostic";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -54,6 +55,52 @@ export function validateImportInvocation(env, mode) {
     assert.equal(env.TARGET_PGHOST, TARGET_HOST, "Only the reviewed RDS target is permitted");
     assert.equal(env.TARGET_PGDATABASE, TARGET_DATABASE, "Only the reviewed RDS database is permitted");
   } else assert.equal(env.TRACEPOINT_TARGET_BUCKET, TARGET_BUCKET, "Only the reviewed production private bucket is permitted");
+}
+
+// This guard is deliberately narrow. The generated-column diagnostic may read
+// RDS metadata and source contracts, but it cannot submit a data-changing
+// statement even if its implementation is later refactored.
+export function assertDiagnosticReadOnlySql(sql) {
+  assert.equal(typeof sql, "string", "Diagnostic SQL must be a string");
+  const normalized = sql.trim().replace(/^\/\*[^]*?\*\/\s*/u, "").toLowerCase();
+  assert.ok(/^(select|with|begin\s+transaction\s+isolation\s+level\s+repeatable\s+read\s+read\s+only|commit|rollback)\b/u.test(normalized), "DIAGNOSTIC_SQL_NOT_READ_ONLY");
+  assert.doesNotMatch(normalized, /\b(insert|update|delete|merge|truncate|alter|create|drop|grant|revoke|call|do|copy|setval)\b/u, "DIAGNOSTIC_SQL_NOT_READ_ONLY");
+  return sql;
+}
+
+export function classifyTargetGeneratedInput(relation, sourceStatistics, targetColumn, triggerNames = []) {
+  assert.ok(MIGRATION_RELATIONS.includes(relation), "Diagnostic relation is not approved");
+  assert.ok(sourceStatistics && identifier.test(sourceStatistics.sourceColumn), "Diagnostic source statistics are invalid");
+  assert.ok(targetColumn && targetColumn.column_name === sourceStatistics.sourceColumn, "Diagnostic target column is invalid");
+  assert.ok(Array.isArray(triggerNames) && triggerNames.every(name => typeof name === "string"), "Diagnostic trigger names are invalid");
+  const isGenerated = targetColumn.is_generated === "ALWAYS";
+  const isIdentityAlways = targetColumn.is_identity === "YES" && targetColumn.identity_generation === "ALWAYS";
+  const hasDefault = targetColumn.column_default !== null && targetColumn.column_default !== undefined;
+  const sequenceBacked = typeof targetColumn.sequence_name === "string" && targetColumn.sequence_name.length > 0;
+  const migrationAnchorTimestamp = relation === "profiles" && ["created_at", "updated_at"].includes(targetColumn.column_name) && triggerNames.length > 0;
+  const sourceHasValues = sourceStatistics.populatedRowCount > 0;
+  const mustNotReceiveExplicitSourceValue = isGenerated || isIdentityAlways;
+  let classification = null;
+  if (migrationAnchorTimestamp) classification = "TARGET_GENERATED_EXCLUDE_FROM_IMPORT";
+  else if (isGenerated) classification = "UNKNOWN_CONFLICT";
+  else if (isIdentityAlways) classification = targetColumn.column_name === "id" && sourceHasValues ? "SOURCE_AUTHORITATIVE_MUST_PRESERVE" : "UNKNOWN_CONFLICT";
+  return Object.freeze({
+    relation,
+    column: targetColumn.column_name,
+    targetType: targetColumn.data_type,
+    targetGeneration: Object.freeze({
+      isIdentity: targetColumn.is_identity === "YES",
+      identityGeneration: targetColumn.identity_generation ?? null,
+      isGenerated: targetColumn.is_generated ?? "NEVER",
+      generationExpression: targetColumn.generation_expression ?? null,
+      defaultExpression: targetColumn.column_default ?? null,
+      sequenceBacked,
+      triggerNames: [...triggerNames].sort(),
+    }),
+    sourceStatistics,
+    acceptsExplicitSourceValue: !mustNotReceiveExplicitSourceValue,
+    classification,
+  });
 }
 
 function sortedFeatureRows(rows) {
