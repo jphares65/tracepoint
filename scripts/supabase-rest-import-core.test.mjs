@@ -22,6 +22,11 @@ test("retained connection deadline completes normally and fails closed when stal
   const events=[]; assert.equal(await withRetainedDeadline({phase:"dns-resolution",deadlineMs:100,operation:async()=>"ok",onEvent:event=>events.push(event)}),"ok"); assert.deepEqual(events.map(event=>event.event),["connection-probe-phase-start","connection-probe-phase-complete"]);
   const started=Date.now(); await assert.rejects(()=>withRetainedDeadline({phase:"tcp-tls-postgresql-connect",deadlineMs:25,operation:()=>new Promise(()=>undefined)}),/CONNECTION_PROBE_TIMEOUT/); assert.ok(Date.now()-started<250);
 });
+test("department-role-permissions authorization diagnostic is fixed-query, target-only, and read-only", () => {
+  const runner=readFileSync(new URL("./run-supabase-rest-initial-import.mjs",import.meta.url),"utf8"),start=runner.indexOf("async function runDepartmentRolePermissionsAuthorizationDiagnostic"),end=runner.indexOf("async function runTargetGeneratedColumnDiagnostic",start),body=runner.slice(start,end);
+  assert.ok(DATABASE_MODES.includes("department-role-permissions-auth-diagnostic"));
+  assert.ok(start>=0&&end>start); assert.match(body,/begin transaction isolation level repeatable read read only/); assert.match(body,/has_table_privilege/); assert.match(body,/pg_policies/); assert.match(body,/targetWriteClientsInitialized: false/); assert.match(body,/sourceClientsInitialized: false/); assert.doesNotMatch(body,/sourceSnapshot|allRelationRows|allAdminUsers|S3Client|PutObjectCommand/); assert.doesNotMatch(body,/client\.query\(\s*["`](?:insert|update|delete|merge|truncate|alter|create|drop|grant|revoke|call|do|copy|setval)/i);
+});
 test("audit-first preflight bounds every target lifecycle phase and leaves write paths unreachable", () => {
   const runner=readFileSync(new URL("./run-supabase-rest-initial-import.mjs",import.meta.url),"utf8"),start=runner.indexOf("async function runTargetDataPreflight()"),end=runner.indexOf("async function querySchemaContract",start),body=runner.slice(start,end);
   assert.ok(start>=0&&end>start); for(const event of ["target-dns","target-connect","target-readonly","audit-table-query","post-source-06","post-source-08","post-source-09"]) assert.match(body,new RegExp(`eventPrefix: \\"${event}\\"`));
