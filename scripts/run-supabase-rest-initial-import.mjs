@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
@@ -346,6 +346,52 @@ function relationProvenance(relation) {
   return "none";
 }
 function securitySensitive(relation) { return relation === "roles" || relation === "permissions" || relation === "role_permissions" || relation === "department_role_permissions" || relation === "department_membership_roles"; }
+function timestampRange(rows, column) {
+  const values = rows.map(row => row[column]).filter(value => typeof value === "string" && Number.isFinite(Date.parse(value))).map(value => new Date(value).toISOString()).sort();
+  return values.length ? { populatedCount: values.length, earliest: values[0], latest: values.at(-1) } : null;
+}
+function targetProvenanceClassification(relation, sourceRows, targetRows, stableColumns) {
+  const sourceKeys = new Set(sourceRows.map(row => canonical(stableColumns.map(column => row[column]))));
+  const targetKeys = new Set(targetRows.map(row => canonical(stableColumns.map(column => row[column]))));
+  const intersectionCount = [...targetKeys].filter(key => sourceKeys.has(key)).length;
+  const sourceOnlyCount = [...sourceKeys].filter(key => !targetKeys.has(key)).length;
+  const targetOnlyCount = [...targetKeys].filter(key => !sourceKeys.has(key)).length;
+  const exact = canonicalRowsHash(sourceRows) === canonicalRowsHash(targetRows);
+  let classification = "UNKNOWN", evidence = "No approved bootstrap provenance or source-key relationship explains the target rows.";
+  if (TARGET_SEEDED_REFERENCE_RELATIONS.includes(relation)) {
+    classification = "BOOTSTRAP_REQUIRED"; evidence = relationProvenance(relation);
+  } else if (exact) {
+    classification = "MIGRATION_ARTIFACT"; evidence = "Target rows are an exact canonical match of the approved source snapshot and this relation has no target-bootstrap rule.";
+  } else if (targetOnlyCount === 0 && intersectionCount > 0) {
+    classification = "MIGRATION_ARTIFACT"; evidence = "Every target stable key is present in the approved source snapshot, with no target-only key; this is a partial source subset rather than a target bootstrap set.";
+  } else if (intersectionCount > 0) {
+    classification = "MIXED_BOOTSTRAP_AND_MIGRATION"; evidence = "Target and source share stable keys but differ canonically or have target-only keys; preserve bootstrap data only after reset bootstrap is reproduced.";
+  }
+  return { classification, evidence, exactCanonicalParity: exact, sourceStableKeyCount: sourceKeys.size, targetStableKeyCount: targetKeys.size, intersectionStableKeyCount: intersectionCount, sourceOnlyStableKeyCount: sourceOnlyCount, targetOnlyStableKeyCount: targetOnlyCount };
+}
+async function runTargetProvenanceSweep() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-target-provenance-sweep" });
+  let phase = "canonical REST source snapshot";
+  try {
+    const snapshot = await sourceSnapshot(); phase = "target repeatable-read provenance sweep"; await client.connect();
+    const readOnlyQuery = (sql, params) => client.query(assertDiagnosticReadOnlySql(sql), params);
+    await readOnlyQuery("begin transaction isolation level repeatable read read only");
+    const kinds = await targetRelationKinds({ query: readOnlyQuery }), nonempty = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const expectedKind = DERIVED_RELATIONS.includes(relation) ? "v" : "r"; if (targetKindForRelation(kinds, relation) !== expectedKind) continue;
+      const targetColumns = (await queryColumns({ query: readOnlyQuery }, relation)).map(column => column.column_name);
+      const targetRows = await targetRowsForRelation({ query: readOnlyQuery }, relation, targetColumns); if (!targetRows.length) continue;
+      const sourceRows = snapshot.rows.get(relation) ?? [], stableColumns = RELATION_ORDER_COLUMNS[relation] ?? ["id"];
+      const provenance = targetProvenanceClassification(relation, sourceRows, targetRows, stableColumns);
+      nonempty.push({ relation, ...provenance, sourceCount: sourceRows.length, targetCount: targetRows.length, stableColumns, scope: relationScope(sourceColumns(sourceRows)), securitySensitive: securitySensitive(relation), sourceCanonicalSha256: canonicalRowsHash(sourceRows), targetCanonicalSha256: canonicalRowsHash(targetRows), timestamps: { createdAt: timestampRange(targetRows, "created_at"), updatedAt: timestampRange(targetRows, "updated_at") }, repositoryBootstrapProvenance: relationProvenance(relation) });
+    }
+    await readOnlyQuery("commit");
+    console.log(JSON.stringify({ status: nonempty.some(item => item.classification === "UNKNOWN") ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, nonempty, targetWriteClientsInitialized: false, targetMutationPathsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
 async function runTargetDataPreflight() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
@@ -460,4 +506,4 @@ async function runObjects() {
   try { const results=[]; for (const object of OBJECT_MANIFEST) { assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH"); let target = await getTargetObject(s3, object); if (target) { validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "verified-existing", bytes: object.bytes, sha256: object.sha256 }); continue; } phase = "source object read"; const bytes = await fetchObject(object); phase = "create-only target write"; try { await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } })); } catch (error) { if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error; } phase = "target object verification"; target = await getTargetObject(s3, object); assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE"); validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "created-and-verified", bytes: object.bytes, sha256: object.sha256 }); } console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { s3.destroy(); }
 }
-await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight());
+await (mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight());
