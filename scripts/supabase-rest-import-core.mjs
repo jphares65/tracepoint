@@ -5,7 +5,8 @@ import { MIGRATION_RELATIONS, PRIOR_IDENTITIES, PRIOR_MEMBERSHIPS, PRIOR_OBJECT_
 export const TARGET_SECRET_ARN = "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT";
 export const TARGET_HOST = "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
 export const CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
-export const APPROVED_TARGET_HOSTS = Object.freeze([TARGET_HOST, CLEAN_TARGET_HOST]);
+export const AUDIT_FIRST_CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f-auditfirst.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
+export const APPROVED_TARGET_HOSTS = Object.freeze([TARGET_HOST, CLEAN_TARGET_HOST, AUDIT_FIRST_CLEAN_TARGET_HOST]);
 export const TARGET_DATABASE = "tracepoint";
 export const TARGET_BUCKET = "tracepoint-production-private-193644343389";
 export const TARGET_ACCOUNT = "193644343389";
