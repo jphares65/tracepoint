@@ -23,7 +23,7 @@ export function validateImmutableArtifact(artifact, { expectedSha256, expectatio
   assert.equal(artifact.authorizationReference, AUTHORIZATION_REFERENCE, "ARTIFACT_AUTHORIZATION_MISMATCH");
   assert.deepEqual(artifact.source?.relationContract, [...MIGRATION_RELATIONS], "ARTIFACT_RELATION_CONTRACT_MISMATCH");
   assert.equal(artifact.tables?.length, MIGRATION_RELATIONS.length, "ARTIFACT_TABLE_COUNT_MISMATCH");
-  const rowsById = new Map(), idsByRelation = new Map(), departmentById = new Map(), tableSummary = [], violations = new Set();
+  const knownIds = new Set(), idsByRelation = new Map(), departmentsById = new Map(), tableSummary = [], violations = new Set();
   for (const relation of MIGRATION_RELATIONS) {
     const rows = rowsFor(artifact, relation), table = artifact.tables.find(item => item.name === relation);
     assert.ok(table, `TABLE_METADATA_MISSING:${relation}`);
@@ -33,7 +33,15 @@ export function validateImmutableArtifact(artifact, { expectedSha256, expectatio
     for (const row of rows) {
       assert.ok(row && typeof row === "object" && !Array.isArray(row), `ROW_INVALID:${relation}`);
       const key = stableKey(row, keyColumns, relation); assert.equal(keys.has(key), false, `PRIMARY_KEY_DUPLICATE:${relation}`); keys.add(key);
-      if (validUuid(row.id)) { const id = String(row.id); assert.equal(rowsById.has(id), false, `GLOBAL_UUID_ID_DUPLICATE:${relation}`); rowsById.set(id, relation); relationIds.add(id); if (row.department_id !== null && row.department_id !== undefined) departmentById.set(id, String(row.department_id)); }
+      // IDs are unique only in their relation. Derived v_* relations are
+      // projections and therefore legitimately reuse base-table identifiers.
+      if (validUuid(row.id)) {
+        const id = String(row.id); knownIds.add(id); relationIds.add(id);
+        if (row.department_id !== null && row.department_id !== undefined) {
+          const owningDepartments = departmentsById.get(id) ?? new Set();
+          owningDepartments.add(String(row.department_id)); departmentsById.set(id, owningDepartments);
+        }
+      }
     }
     idsByRelation.set(relation, relationIds); tableSummary.push({ relation, count: rows.length, canonicalDataSha256: table.canonicalDataSha256 });
   }
@@ -51,7 +59,12 @@ export function validateImmutableArtifact(artifact, { expectedSha256, expectatio
   const platformAdmins = rowsFor(artifact, "platform_admins"); assert.equal(platformAdmins.length, expectations.platformAdmins, "PLATFORM_ADMIN_EXCEPTION_MISMATCH"); for (const admin of platformAdmins) if (!identityIds.has(String(admin.user_id))) violations.add("PLATFORM_ADMIN_IDENTITY_ORPHAN");
   for (const relation of MIGRATION_RELATIONS) for (const row of rowsFor(artifact, relation)) {
     if (row.department_id !== null && row.department_id !== undefined && !departments.has(String(row.department_id))) violations.add(`TENANT_ORPHAN:${relation}`);
-    for (const [column, value] of Object.entries(row)) { if (!column.endsWith("_id") || column === "department_id" || value === null || value === undefined || !validUuid(value)) continue; const reference = String(value); if (!identityIds.has(reference) && !rowsById.has(reference)) violations.add(`FK_ORPHAN:${relation}.${column}`); const targetDepartment = departmentById.get(reference); if (targetDepartment && row.department_id && targetDepartment !== String(row.department_id)) violations.add(`CROSS_TENANT_REFERENCE:${relation}.${column}`); }
+    for (const [column, value] of Object.entries(row)) {
+      if (!column.endsWith("_id") || column === "department_id" || value === null || value === undefined || !validUuid(value)) continue;
+      const reference = String(value); if (!identityIds.has(reference) && !knownIds.has(reference)) violations.add(`FK_ORPHAN:${relation}.${column}`);
+      const owningDepartments = departmentsById.get(reference);
+      if (owningDepartments && row.department_id && !owningDepartments.has(String(row.department_id))) violations.add(`CROSS_TENANT_REFERENCE:${relation}.${column}`);
+    }
   }
   for (const [relation, column, parent] of [["agency_training_attendees", "certification_id", "training_certifications"], ["training_certifications", "source_training_attendee_id", "agency_training_attendees"]]) for (const row of rowsFor(artifact, relation)) if (row[column] !== null && row[column] !== undefined && !idsByRelation.get(parent).has(String(row[column]))) violations.add(`CYCLE_REFERENCE_ORPHAN:${relation}.${column}`);
   if (enforceCurrentDriftCounts) for (const [relation, count] of Object.entries(DRIFTED_RELATION_COUNTS)) assert.equal(rowsFor(artifact, relation).length, count, `DRIFT_RELATION_COUNT_MISMATCH:${relation}`);
