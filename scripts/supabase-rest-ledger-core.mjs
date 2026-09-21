@@ -11,6 +11,9 @@ export const PRIOR_IDENTITIES = 96;
 export const PRIOR_MEMBERSHIPS = 95;
 export const PRIOR_OBJECTS = 2;
 export const PRIOR_OBJECT_BYTES = 522978;
+export const MIGRATION_ARTIFACT_BUCKET = "tracepoint-production-private-193644343389";
+export const MIGRATION_ARTIFACT_KEY = `migration/source/${RUN_ID}/initial-canonical.json`;
+export const MIGRATION_ARTIFACT_KMS_KEY_ARN = "arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55";
 
 // This contract is deliberately fixed in source. New PostgREST paths cannot become
 // migration inputs merely because the service account exposes them.
@@ -81,6 +84,28 @@ export function assertReadOnlyRequest(method, url) {
   assert.equal(parsed.origin, PROJECT_URL, "REST migration extractor only permits the approved Supabase project");
   assert.equal(parsed.protocol, "https:", "REST migration extractor requires HTTPS");
   assert.equal(parsed.pathname.startsWith("/rest/v1/") || parsed.pathname === "/auth/v1/admin/users", true, "REST migration extractor path is not approved");
+  return parsed;
+}
+
+// The snapshot task may read only these two already-audited source objects.
+// Storage listing is intentionally not permitted: the artifact is bound to the
+// reviewed manifest rather than whatever the source bucket happens to expose.
+export const SOURCE_OBJECT_MANIFEST = Object.freeze([
+  { sourceBucket: "department-assets", sourceKey: "1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", destinationKey: "department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg", bytes: 5030, sha256: "8f82fca7c0da9d2fbbb9c11a2f0b88ee6fc4c3dc51e7d9b6a72f493473bc9422", contentType: "image/jpeg", departmentId: "1d0e2994-4224-4237-8328-71020ba20027" },
+  { sourceBucket: "department-assets", sourceKey: "d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png", destinationKey: "department-assets/d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png", bytes: 517948, sha256: "04f20e6c0c4d783230f484830a3169bf9fd956f12d6b42e729504340ef202ea2", contentType: "image/png", departmentId: "d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0" },
+]);
+
+export function sourceObjectUrl(object) {
+  assert.ok(SOURCE_OBJECT_MANIFEST.includes(object), "Object is outside the reviewed source manifest");
+  return `${PROJECT_URL}/storage/v1/object/${object.sourceBucket}/${object.sourceKey.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+export function assertSourceObjectRequest(method, url, object) {
+  assert.equal(String(method).toUpperCase(), "GET", "Source object verification permits GET only");
+  const parsed = new URL(url);
+  assert.equal(parsed.origin, PROJECT_URL, "Source object verification only permits the approved project");
+  assert.equal(parsed.protocol, "https:", "Source object verification requires HTTPS");
+  assert.equal(parsed.pathname, `/storage/v1/object/${object.sourceBucket}/${object.sourceKey}`, "Source object path is not in the reviewed manifest");
   return parsed;
 }
 

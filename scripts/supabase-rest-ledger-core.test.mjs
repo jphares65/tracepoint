@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MIGRATION_RELATIONS, PROJECT_URL, assertReadOnlyRequest, relationUrl, sanitizedManifest, sha256, validateSourceSecret } from "./supabase-rest-ledger-core.mjs";
+import { MIGRATION_RELATIONS, PROJECT_URL, SOURCE_OBJECT_MANIFEST, assertReadOnlyRequest, assertSourceObjectRequest, relationUrl, sanitizedManifest, sha256, sourceObjectUrl, validateSourceSecret } from "./supabase-rest-ledger-core.mjs";
 
 test("accepts only the dedicated two-field source secret and exact project", () => {
   assert.deepEqual(validateSourceSecret({ projectUrl: PROJECT_URL, serviceRoleKey: "sb_secret_abcdefghijklmnopqrstuvwxyz" }).projectUrl, PROJECT_URL);
@@ -14,6 +14,13 @@ test("rejects mutating, non-project, and unapproved relation requests", () => {
   assert.throws(() => assertReadOnlyRequest("GET", "https://evil.invalid/rest/v1/profiles"));
   assert.throws(() => relationUrl("arbitrary_relation", 0));
   assert.match(relationUrl("fleet_rules", 0), /order=department_id\.asc/);
+});
+
+test("permits source-object verification only for the exact reviewed two-object manifest", () => {
+  const object = SOURCE_OBJECT_MANIFEST[0];
+  assertSourceObjectRequest("GET", sourceObjectUrl(object), object);
+  assert.throws(() => assertSourceObjectRequest("POST", sourceObjectUrl(object), object));
+  assert.throws(() => assertSourceObjectRequest("GET", "https://izlkwggluhlhzlumtzes.supabase.co/storage/v1/object/department-assets/other", object));
 });
 
 test("sanitized manifests reconcile only exact known inventory and never include record data", () => {

@@ -22,6 +22,7 @@ export interface SupabaseRestLedgerRunnerStackProps extends cdk.StackProps {
 export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
   readonly taskDefinition: ecs.CfnTaskDefinition;
   readonly executionRole: iam.Role;
+  readonly taskRole: iam.Role;
   readonly runnerSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: SupabaseRestLedgerRunnerStackProps) {
@@ -59,6 +60,14 @@ export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
     }));
     this.executionRole.addToPolicy(new iam.PolicyStatement({ sid: 'EcrAuthenticationForReviewedRepository', actions: ['ecr:GetAuthorizationToken'], resources: ['*'] }));
 
+    this.taskRole = new iam.Role(this, 'ArtifactTaskRole', { roleName: `TracePoint-RestLedgerArtifact-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary task role that may create exactly one immutable source migration artifact' });
+    iam.PermissionsBoundary.of(this.taskRole).apply(boundary);
+    const artifactBucket = 'tracepoint-production-private-193644343389';
+    const artifactKey = `migration/source/${props.runId}/initial-canonical.json`;
+    const artifactKmsKey = 'arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55';
+    this.taskRole.addToPolicy(new iam.PolicyStatement({ sid: 'CreateOnlyInitialSourceArtifact', actions: ['s3:PutObject'], resources: [`arn:aws:s3:::${artifactBucket}/${artifactKey}`] }));
+    this.taskRole.addToPolicy(new iam.PolicyStatement({ sid: 'EncryptOnlyInitialSourceArtifact', actions: ['kms:GenerateDataKey'], resources: [artifactKmsKey], conditions: { StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } } }));
+
     const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/production/supabase-rest-ledger/${props.runId}`, retention: logs.RetentionDays.ONE_WEEK, removalPolicy: cdk.RemovalPolicy.RETAIN });
     this.executionRole.addToPolicy(new iam.PolicyStatement({ sid: 'WriteSanitizedLedgerEvidenceOnly', actions: ['logs:CreateLogStream', 'logs:PutLogEvents'], resources: [logGroup.logGroupArn] }));
     this.runnerSecurityGroup = new ec2.SecurityGroup(this, 'RunnerSecurityGroup', { vpc, allowAllOutbound: false, description: 'Temporary source-only Supabase REST ledger runner; HTTPS egress only and no inbound traffic' });
@@ -68,7 +77,7 @@ export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
     // execution role is the sole principal and receives only image/log/one-secret rights.
     this.taskDefinition = new ecs.CfnTaskDefinition(this, 'TaskDefinition', {
       family: `tracepoint-production-supabase-rest-ledger-${runSuffix}`,
-      requiresCompatibilities: ['FARGATE'], networkMode: 'awsvpc', cpu: '512', memory: '1024', executionRoleArn: this.executionRole.roleArn,
+      requiresCompatibilities: ['FARGATE'], networkMode: 'awsvpc', cpu: '512', memory: '1024', executionRoleArn: this.executionRole.roleArn, taskRoleArn: this.taskRole.roleArn,
       containerDefinitions: [{
         name: 'source-ledger', image: `${repository.repositoryUri}@${props.imageDigest}`, essential: true, readonlyRootFilesystem: true, user: 'node',
         logConfiguration: { logDriver: 'awslogs', options: { 'awslogs-group': logGroup.logGroupName, 'awslogs-region': 'us-east-1', 'awslogs-stream-prefix': 'source-ledger' } },
@@ -79,7 +88,7 @@ export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
         secrets: [{ name: 'SOURCE_SUPABASE_REST_SECRET_JSON', valueFrom: props.sourceSecretArn }],
       }],
     });
-    for (const resource of [this.executionRole.node.defaultChild, this.taskDefinition, this.runnerSecurityGroup.node.defaultChild, logGroup.node.defaultChild]) (resource as cdk.CfnResource).addMetadata('com.aws.cloudformation.Context', { purpose: 'isolated source-only Supabase REST/Admin ledger', noTargetAccess: true, authorizationReference: props.authorizationReference });
+    for (const resource of [this.executionRole.node.defaultChild, this.taskRole.node.defaultChild, this.taskDefinition, this.runnerSecurityGroup.node.defaultChild, logGroup.node.defaultChild]) (resource as cdk.CfnResource).addMetadata('com.aws.cloudformation.Context', { purpose: 'isolated source-only Supabase REST/Admin ledger', noTargetAccess: true, authorizationReference: props.authorizationReference });
     new cdk.CfnOutput(this, 'ExecutionRoleArn', { value: this.executionRole.roleArn });
     new cdk.CfnOutput(this, 'TaskDefinitionArn', { value: this.taskDefinition.ref });
     new cdk.CfnOutput(this, 'RunnerSecurityGroupId', { value: this.runnerSecurityGroup.securityGroupId });
