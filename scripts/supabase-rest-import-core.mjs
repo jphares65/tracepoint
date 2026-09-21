@@ -420,6 +420,13 @@ export function insertSql(relation, columns) {
   return `insert into public.${quote(relation)} (${list}) select ${list} from json_populate_record(null::public.${quote(relation)},$1::json)`;
 }
 
+export function updateByIdSql(relation, columns) {
+  assert.ok(IMPORT_RELATIONS.includes(relation)); assert.ok(columns.includes("id") && columns.every(column => identifier.test(column)));
+  const updates = columns.filter(column => column !== "id");
+  assert.ok(updates.length > 0, "TARGET_UPDATE_COLUMNS_MISSING");
+  return `update public.${quote(relation)} as target set ${updates.map(column => `${quote(column)}=source.${quote(column)}`).join(",")} from json_populate_record(null::public.${quote(relation)},$1::json) as source where target.${quote("id")}=source.${quote("id")}`;
+}
+
 export function targetRowsSql(relation, columns, orderColumns) {
   assert.ok(MIGRATION_RELATIONS.includes(relation)); assert.ok(columns.every(column => identifier.test(column))); assert.ok(orderColumns.every(column => identifier.test(column)));
   return `select to_jsonb(t) as row from public.${quote(relation)} t order by ${orderColumns.map(quote).join(",")}`;
