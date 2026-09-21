@@ -7,6 +7,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const ARTIFACT_KEY = new RegExp(`^migration/source/${RUN_ID}/(?:initial-canonical|final-frozen)\\.json$`);
 const INITIAL_EXPECTATIONS = Object.freeze({ relationalRows: 4813, identities: 96, memberships: 95, activeMemberships: 94, inactiveMemberships: 1, platformAdmins: 1, objects: 2, objectBytes: 522978 });
 const DRIFTED_RELATION_COUNTS = Object.freeze({ audit_events: 2726, equipment_asset_assignments: 33, equipment_assets: 39, fleet_vehicles: 45 });
+// These columns are intentionally polymorphic audit/evidence references: the
+// source schema has no FK because retained history may point to a deleted
+// entity. They are validated as UUID + typed audit/evidence references below,
+// rather than being misclassified as relational foreign keys.
+const POLYMORPHIC_REFERENCE_COLUMNS = new Set(["audit_events.entity_id", "audit_log.entity_id", "attachments.entity_id"]);
 const rowsFor = (artifact, relation) => { const rows = artifact.rows?.[relation]; assert.ok(Array.isArray(rows), `RELATION_ROWS_MISSING:${relation}`); return rows; };
 const safeFailure = error => ({ status: "FAILED", violation: error instanceof Error ? error.message.replace(/[\r\n]/g, " ").slice(0, 512) : "ARTIFACT_VALIDATION_FAILURE" });
 const validUuid = value => UUID.test(String(value));
@@ -61,6 +66,10 @@ export function validateImmutableArtifact(artifact, { expectedSha256, expectatio
     if (row.department_id !== null && row.department_id !== undefined && !departments.has(String(row.department_id))) violations.add(`TENANT_ORPHAN:${relation}`);
     for (const [column, value] of Object.entries(row)) {
       if (!column.endsWith("_id") || column === "department_id" || value === null || value === undefined || !validUuid(value)) continue;
+      if (POLYMORPHIC_REFERENCE_COLUMNS.has(`${relation}.${column}`)) {
+        assert.ok(typeof row.entity_type === "string" && row.entity_type.trim().length > 0, `POLYMORPHIC_REFERENCE_TYPE_MISSING:${relation}.${column}`);
+        continue;
+      }
       const reference = String(value); if (!identityIds.has(reference) && !knownIds.has(reference)) violations.add(`FK_ORPHAN:${relation}.${column}`);
       const owningDepartments = departmentsById.get(reference);
       if (owningDepartments && row.department_id && !owningDepartments.has(String(row.department_id))) violations.add(`CROSS_TENANT_REFERENCE:${relation}.${column}`);

@@ -51,6 +51,16 @@ test("retains fail-closed FK and tenant ownership validation", () => {
   assert.throws(() => validateImmutableArtifact(value, { expectedSha256: value.masterSha256, expectations: expectationsFor(value) }), /CROSS_TENANT_REFERENCE:equipment_asset_assignments.equipment_asset_id/);
 });
 
+test("validates polymorphic audit references without inventing a foreign key", () => {
+  const rows = Object.fromEntries(MIGRATION_RELATIONS.map(relation => [relation, []]));
+  rows.audit_events = [{ id: 1, entity_type: "deleted_entity", entity_id: "10000000-0000-4000-8000-000000000001" }];
+  const value = artifact(rows);
+  assert.equal(validateImmutableArtifact(value, { expectedSha256: value.masterSha256, expectations: expectationsFor(value) }).relationalRows, 1);
+  rows.audit_events = [{ id: 1, entity_id: "10000000-0000-4000-8000-000000000001" }];
+  const invalid = artifact(rows);
+  assert.throws(() => validateImmutableArtifact(invalid, { expectedSha256: invalid.masterSha256, expectations: expectationsFor(invalid) }), /POLYMORPHIC_REFERENCE_TYPE_MISSING:audit_events.entity_id/);
+});
+
 test("validator has only read-only S3 artifact access and no source or target client", async () => {
   const source = await readFile(new URL("./immutable-source-artifact-validator.mjs", import.meta.url), "utf8");
   assert.match(source, /GetObjectCommand/);
