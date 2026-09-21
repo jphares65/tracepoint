@@ -150,17 +150,30 @@ async function runDepartmentRolePermissionsAuthorizationDiagnostic() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON;
   assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)), ca = await readFile("/app/rds-ca.pem", "utf8"), client = targetClient(target, ca, "tracepoint-department-role-permissions-auth-diagnostic");
-  const query = (sql, values = []) => client.query(assertDiagnosticReadOnlySql(sql), values);
+  // This mode never accepts caller SQL. Its fixed catalog-query allowlist is
+  // intentionally separate from the generic text guard, which rejects the
+  // word INSERT even when it occurs only as a privilege-name literal.
+  const sql = Object.freeze({
+    begin: "begin transaction isolation level repeatable read read only",
+    commit: "commit",
+    session: "select current_user as current_user,session_user as session_user,current_setting('tracepoint.subject_id',true) as subject_id,current_setting('tracepoint.department_id',true) as department_id,current_setting('request.jwt.claim.sub',true) as jwt_subject",
+    privileges: "select has_schema_privilege(current_user,'public','USAGE') as schema_usage,has_table_privilege(current_user,'public.department_role_permissions','INSERT') as table_insert",
+    grants: "select privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='department_role_permissions' and grantee=current_user order by privilege_type",
+    relation: "select c.relrowsecurity as rls_enabled,c.relforcerowsecurity as rls_forced,pg_get_userbyid(c.relowner) as owner from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='department_role_permissions'",
+    policies: "select policyname,roles,cmd,qual,with_check from pg_policies where schemaname='public' and tablename='department_role_permissions' order by policyname",
+    triggers: "select t.tgname as trigger_name,p.proname as function_name,p.prosecdef as security_definer,has_function_privilege(current_user,p.oid,'EXECUTE') as execute_privilege,pg_get_triggerdef(t.oid) as trigger_definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace join pg_proc p on p.oid=t.tgfoid where n.nspname='public' and c.relname='department_role_permissions' and not t.tgisinternal order by t.tgname",
+  });
+  const query = statement => { assert.ok(Object.values(sql).includes(statement), "AUTH_DIAGNOSTIC_SQL_NOT_APPROVED"); return client.query(statement); };
   let phase = "target authorization metadata";
   try {
     await client.connect();
-    await query("begin transaction isolation level repeatable read read only");
-    const session = (await query("select current_user as current_user,session_user as session_user,current_setting('tracepoint.subject_id',true) as subject_id,current_setting('tracepoint.department_id',true) as department_id,current_setting('request.jwt.claim.sub',true) as jwt_subject")).rows[0];
-    const privileges = { ...(await query("select has_schema_privilege(current_user,'public','USAGE') as schema_usage,has_table_privilege(current_user,'public.department_role_permissions','INSERT') as table_insert")).rows[0], granted: (await query("select privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='department_role_permissions' and grantee=current_user order by privilege_type")).rows.map(row => row.privilege_type) };
-    const relation = (await query("select c.relrowsecurity as rls_enabled,c.relforcerowsecurity as rls_forced,pg_get_userbyid(c.relowner) as owner from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='department_role_permissions'")).rows[0];
-    const policies = (await query("select policyname,roles,cmd,qual,with_check from pg_policies where schemaname='public' and tablename='department_role_permissions' order by policyname")).rows;
-    const triggers = (await query("select t.tgname as trigger_name,p.proname as function_name,p.prosecdef as security_definer,has_function_privilege(current_user,p.oid,'EXECUTE') as execute_privilege,pg_get_triggerdef(t.oid) as trigger_definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace join pg_proc p on p.oid=t.tgfoid where n.nspname='public' and c.relname='department_role_permissions' and not t.tgisinternal order by t.tgname")).rows;
-    await query("commit");
+    await query(sql.begin);
+    const session = (await query(sql.session)).rows[0];
+    const privileges = { ...(await query(sql.privileges)).rows[0], granted: (await query(sql.grants)).rows.map(row => row.privilege_type) };
+    const relation = (await query(sql.relation)).rows[0];
+    const policies = (await query(sql.policies)).rows;
+    const triggers = (await query(sql.triggers)).rows;
+    await query(sql.commit);
     console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceClientsInitialized: false, targetReadOnly: true, targetWriteClientsInitialized: false, session, privileges, relation, policies, triggers }));
   } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
   finally { await client.end().catch(() => undefined); }
