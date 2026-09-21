@@ -31,6 +31,7 @@ export const TARGET_SEEDED_ROLE_PERMISSION_SOURCE_ONLY = Object.freeze([
   { roleCode: "supervisor", permissionCode: "manage_equipment" },
   { roleCode: "supervisor", permissionCode: "manage_training" },
 ]);
+export const IDENTITY_PRESERVATION_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit"]);
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
@@ -101,6 +102,55 @@ export function classifyTargetGeneratedInput(relation, sourceStatistics, targetC
     acceptsExplicitSourceValue: !mustNotReceiveExplicitSourceValue,
     classification,
   });
+}
+
+function bigintIdentity(value, errorCode) {
+  const text = typeof value === "bigint" ? value.toString() : typeof value === "number" && Number.isSafeInteger(value) ? String(value) : typeof value === "string" ? value : null;
+  assert.ok(text !== null && /^-?\d+$/u.test(text), errorCode);
+  const parsed = BigInt(text);
+  assert.ok(parsed >= -9223372036854775808n && parsed <= 9223372036854775807n, errorCode);
+  return parsed;
+}
+
+export function identityPreservingInsertSql(relation, columns) {
+  assert.ok(IDENTITY_PRESERVATION_RELATIONS.includes(relation), "IDENTITY_PRESERVATION_RELATION_NOT_ALLOWED");
+  assert.ok(columns.includes("id"), "IDENTITY_PRESERVATION_ID_MISSING");
+  assert.ok(columns.length > 0 && columns.every(column => identifier.test(column)), "IDENTITY_PRESERVATION_COLUMNS_INVALID");
+  const list = columns.map(quote).join(",");
+  return `insert into public.${quote(relation)} (${list}) overriding system value select ${list} from json_populate_record(null::public.${quote(relation)},$1::json)`;
+}
+
+export function requireIdentityPreservationPreflight(relation, sourceRows, targetRows, targetColumns) {
+  assert.ok(IDENTITY_PRESERVATION_RELATIONS.includes(relation), "IDENTITY_PRESERVATION_RELATION_NOT_ALLOWED");
+  assert.ok(Array.isArray(sourceRows) && Array.isArray(targetRows) && Array.isArray(targetColumns), "IDENTITY_PRESERVATION_PREFLIGHT_INVALID");
+  const targetId = targetColumns.find(column => column.column_name === "id");
+  assert.ok(targetId, "IDENTITY_PRESERVATION_ID_COLUMN_MISSING");
+  assert.equal(targetId.data_type, "bigint", "IDENTITY_PRESERVATION_ID_TYPE_MISMATCH");
+  assert.equal(targetId.is_identity, "YES", "IDENTITY_PRESERVATION_ID_NOT_IDENTITY");
+  assert.equal(targetId.identity_generation, "ALWAYS", "IDENTITY_PRESERVATION_ID_NOT_ALWAYS");
+  const sourceById = new Map();
+  for (const row of sourceRows) {
+    const id = bigintIdentity(row?.id, "SOURCE_ID_INVALID").toString();
+    assert.equal(sourceById.has(id), false, "SOURCE_ID_DUPLICATE");
+    sourceById.set(id, row);
+  }
+  const targetById = new Map();
+  for (const row of targetRows) {
+    const id = bigintIdentity(row?.id, "TARGET_ID_INVALID").toString();
+    assert.equal(targetById.has(id), false, "TARGET_ID_DUPLICATE");
+    assert.ok(sourceById.has(id), "TARGET_UNEXPLAINED_IDENTITY_ROW");
+    assert.equal(canonical(row), canonical(sourceById.get(id)), "TARGET_ID_COLLISION");
+    targetById.set(id, row);
+  }
+  return Object.freeze({ relation, sourceIdCount: sourceById.size, targetIdCount: targetById.size, targetIdentity: { dataType: targetId.data_type, identityGeneration: targetId.identity_generation }, allTargetRowsExplained: true, sourceIdsUnique: true });
+}
+
+export function verifyIdentitySequenceAdvance(relation, lastValue, maxImportedId) {
+  assert.ok(IDENTITY_PRESERVATION_RELATIONS.includes(relation), "IDENTITY_PRESERVATION_RELATION_NOT_ALLOWED");
+  const last = bigintIdentity(lastValue, "IDENTITY_SEQUENCE_VALUE_INVALID");
+  const max = bigintIdentity(maxImportedId, "IDENTITY_SEQUENCE_MAX_INVALID");
+  assert.ok(last >= max, "IDENTITY_SEQUENCE_BEHIND_IMPORTED_IDS");
+  return Object.freeze({ relation, lastValue: last.toString(), maxImportedId: max.toString(), nextGeneratedIdCannotCollide: true });
 }
 
 function sortedFeatureRows(rows) {
