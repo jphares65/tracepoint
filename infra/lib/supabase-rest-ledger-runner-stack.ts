@@ -21,8 +21,11 @@ export interface SupabaseRestLedgerRunnerStackProps extends cdk.StackProps {
 
 export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
   readonly taskDefinition: ecs.CfnTaskDefinition;
+  readonly validatorTaskDefinition: ecs.CfnTaskDefinition;
   readonly executionRole: iam.Role;
+  readonly validatorExecutionRole: iam.Role;
   readonly taskRole: iam.Role;
+  readonly validatorTaskRole: iam.Role;
   readonly runnerSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: SupabaseRestLedgerRunnerStackProps) {
@@ -60,37 +63,68 @@ export class SupabaseRestLedgerRunnerStack extends cdk.Stack {
     }));
     this.executionRole.addToPolicy(new iam.PolicyStatement({ sid: 'EcrAuthenticationForReviewedRepository', actions: ['ecr:GetAuthorizationToken'], resources: ['*'] }));
 
-    this.taskRole = new iam.Role(this, 'ArtifactTaskRole', { roleName: `TracePoint-RestLedgerArtifact-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary task role that may create exactly one immutable source migration artifact' });
-    iam.PermissionsBoundary.of(this.taskRole).apply(boundary);
+    this.validatorExecutionRole = new iam.Role(this, 'ValidatorExecutionRole', { roleName: `TracePoint-ArtifactValidatorExec-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary execution role for read-only immutable artifact validation' });
+    iam.PermissionsBoundary.of(this.validatorExecutionRole).apply(boundary);
+    this.validatorExecutionRole.addToPolicy(new iam.PolicyStatement({ sid: 'PullOnlyReviewedMigrationImage', actions: ['ecr:BatchCheckLayerAvailability', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'], resources: [repository.repositoryArn] }));
+    this.validatorExecutionRole.addToPolicy(new iam.PolicyStatement({ sid: 'EcrAuthenticationForReviewedRepository', actions: ['ecr:GetAuthorizationToken'], resources: ['*'] }));
+
     const artifactBucket = 'tracepoint-production-private-193644343389';
     const artifactKey = `migration/source/${props.runId}/initial-canonical.json`;
     const artifactKmsKey = 'arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55';
+    this.taskRole = new iam.Role(this, 'ArtifactTaskRole', { roleName: `TracePoint-RestLedgerArtifact-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary task role that may create exactly one immutable source migration artifact' });
+    iam.PermissionsBoundary.of(this.taskRole).apply(boundary);
     this.taskRole.addToPolicy(new iam.PolicyStatement({ sid: 'CreateOnlyInitialSourceArtifact', actions: ['s3:PutObject'], resources: [`arn:aws:s3:::${artifactBucket}/${artifactKey}`] }));
     this.taskRole.addToPolicy(new iam.PolicyStatement({ sid: 'EncryptOnlyInitialSourceArtifact', actions: ['kms:GenerateDataKey'], resources: [artifactKmsKey], conditions: { StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } } }));
 
+    this.validatorTaskRole = new iam.Role(this, 'ValidatorTaskRole', { roleName: `TracePoint-ArtifactValidator-${runSuffix}`, assumedBy: taskPrincipal, description: 'Temporary task role that may read exactly one immutable source migration artifact' });
+    iam.PermissionsBoundary.of(this.validatorTaskRole).apply(boundary);
+    this.validatorTaskRole.addToPolicy(new iam.PolicyStatement({ sid: 'ReadOnlyInitialSourceArtifact', actions: ['s3:GetObject'], resources: [`arn:aws:s3:::${artifactBucket}/${artifactKey}`] }));
+    this.validatorTaskRole.addToPolicy(new iam.PolicyStatement({ sid: 'DecryptOnlyInitialSourceArtifact', actions: ['kms:Decrypt'], resources: [artifactKmsKey], conditions: { StringEquals: { 'kms:ViaService': 's3.us-east-1.amazonaws.com' } } }));
+
     const logGroup = new logs.LogGroup(this, 'Logs', { logGroupName: `/tracepoint/production/supabase-rest-ledger/${props.runId}`, retention: logs.RetentionDays.ONE_WEEK, removalPolicy: cdk.RemovalPolicy.RETAIN });
+    const validatorLogGroup = new logs.LogGroup(this, 'ValidatorLogs', { logGroupName: `/tracepoint/production/immutable-artifact-validator/${props.runId}`, retention: logs.RetentionDays.ONE_WEEK, removalPolicy: cdk.RemovalPolicy.RETAIN });
     this.executionRole.addToPolicy(new iam.PolicyStatement({ sid: 'WriteSanitizedLedgerEvidenceOnly', actions: ['logs:CreateLogStream', 'logs:PutLogEvents'], resources: [logGroup.logGroupArn] }));
+    this.validatorExecutionRole.addToPolicy(new iam.PolicyStatement({ sid: 'WriteSanitizedValidatorEvidenceOnly', actions: ['logs:CreateLogStream', 'logs:PutLogEvents'], resources: [validatorLogGroup.logGroupArn] }));
     this.runnerSecurityGroup = new ec2.SecurityGroup(this, 'RunnerSecurityGroup', { vpc, allowAllOutbound: false, description: 'Temporary source-only Supabase REST ledger runner; HTTPS egress only and no inbound traffic' });
     this.runnerSecurityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'TLS HTTPS to reviewed Supabase and AWS control planes');
 
     // L1 is intentional: source-only work has no application task role. The ECS
     // execution role is the sole principal and receives only image/log/one-secret rights.
+    // The snapshot task has already completed. Keep its deployed immutable
+    // image/revision pinned so adding a validator cannot replace that task.
+    const sourceLedgerCommit = '7add658d88e98469af50f1e4a756744315e4fccd';
+    const sourceLedgerDigest = 'sha256:b715caa2ec3418d0a0d890e3fb254da3e910b64c2d3bf1f97b9f6ca5a18445ba';
     this.taskDefinition = new ecs.CfnTaskDefinition(this, 'TaskDefinition', {
       family: `tracepoint-production-supabase-rest-ledger-${runSuffix}`,
       requiresCompatibilities: ['FARGATE'], networkMode: 'awsvpc', cpu: '512', memory: '1024', executionRoleArn: this.executionRole.roleArn, taskRoleArn: this.taskRole.roleArn,
       containerDefinitions: [{
-        name: 'source-ledger', image: `${repository.repositoryUri}@${props.imageDigest}`, essential: true, readonlyRootFilesystem: true, user: 'node',
+        name: 'source-ledger', image: `${repository.repositoryUri}@${sourceLedgerDigest}`, essential: true, readonlyRootFilesystem: true, user: 'node',
         logConfiguration: { logDriver: 'awslogs', options: { 'awslogs-group': logGroup.logGroupName, 'awslogs-region': 'us-east-1', 'awslogs-stream-prefix': 'source-ledger' } },
         environment: [
           { name: 'TRACEPOINT_MIGRATION_RUN_ID', value: props.runId }, { name: 'TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE', value: props.authorizationReference },
-          { name: 'TRACEPOINT_EXPECTED_AWS_ACCOUNT', value: account }, { name: 'SOURCE_SUPABASE_REST_SECRET_ARN', value: props.sourceSecretArn }, { name: 'TRACEPOINT_SOURCE_COMMIT', value: props.commit },
+          { name: 'TRACEPOINT_EXPECTED_AWS_ACCOUNT', value: account }, { name: 'SOURCE_SUPABASE_REST_SECRET_ARN', value: props.sourceSecretArn }, { name: 'TRACEPOINT_SOURCE_COMMIT', value: sourceLedgerCommit },
         ],
         secrets: [{ name: 'SOURCE_SUPABASE_REST_SECRET_JSON', valueFrom: props.sourceSecretArn }],
       }],
     });
+    this.validatorTaskDefinition = new ecs.CfnTaskDefinition(this, 'ValidatorTaskDefinition', {
+      family: `tracepoint-production-immutable-artifact-validator-${runSuffix}`,
+      requiresCompatibilities: ['FARGATE'], networkMode: 'awsvpc', cpu: '512', memory: '1024', executionRoleArn: this.validatorExecutionRole.roleArn, taskRoleArn: this.validatorTaskRole.roleArn,
+      containerDefinitions: [{
+        name: 'immutable-artifact-validator', image: `${repository.repositoryUri}@${props.imageDigest}`, command: ['scripts/immutable-source-artifact-validator.mjs'], essential: true, readonlyRootFilesystem: true, user: 'node',
+        logConfiguration: { logDriver: 'awslogs', options: { 'awslogs-group': validatorLogGroup.logGroupName, 'awslogs-region': 'us-east-1', 'awslogs-stream-prefix': 'immutable-artifact-validator' } },
+        environment: [
+          { name: 'TRACEPOINT_MIGRATION_RUN_ID', value: props.runId }, { name: 'TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE', value: props.authorizationReference },
+          { name: 'TRACEPOINT_EXPECTED_AWS_ACCOUNT', value: account }, { name: 'TRACEPOINT_SOURCE_ARTIFACT_KEY', value: artifactKey },
+          { name: 'TRACEPOINT_SOURCE_ARTIFACT_SHA256', value: '8b01ea2a57a650b10d126160c5d171fecf1e98f1e07a9fa720e97e600d8d6d57' },
+        ],
+      }],
+    });
     for (const resource of [this.executionRole.node.defaultChild, this.taskRole.node.defaultChild, this.taskDefinition, this.runnerSecurityGroup.node.defaultChild, logGroup.node.defaultChild]) (resource as cdk.CfnResource).addMetadata('com.aws.cloudformation.Context', { purpose: 'isolated source-only Supabase REST/Admin ledger', noTargetAccess: true, authorizationReference: props.authorizationReference });
+    for (const resource of [this.validatorExecutionRole.node.defaultChild, this.validatorTaskRole.node.defaultChild, this.validatorTaskDefinition, validatorLogGroup.node.defaultChild]) (resource as cdk.CfnResource).addMetadata('com.aws.cloudformation.Context', { purpose: 'isolated immutable source artifact validation', noSourceAccess: true, noTargetAccess: true, authorizationReference: props.authorizationReference });
     new cdk.CfnOutput(this, 'ExecutionRoleArn', { value: this.executionRole.roleArn });
     new cdk.CfnOutput(this, 'TaskDefinitionArn', { value: this.taskDefinition.ref });
+    new cdk.CfnOutput(this, 'ValidatorTaskDefinitionArn', { value: this.validatorTaskDefinition.ref });
     new cdk.CfnOutput(this, 'RunnerSecurityGroupId', { value: this.runnerSecurityGroup.securityGroupId });
     new cdk.CfnOutput(this, 'LogGroupName', { value: logGroup.logGroupName });
     new cdk.CfnOutput(this, 'ClusterName', { value: cluster.clusterName });

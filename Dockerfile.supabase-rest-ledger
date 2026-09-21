@@ -7,6 +7,7 @@ FROM public.ecr.aws/docker/library/node:24-alpine
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY scripts/supabase-rest-ledger-core.mjs scripts/supabase-rest-ledger-core.test.mjs scripts/run-supabase-rest-ledger.mjs ./scripts/
+COPY scripts/supabase-rest-ledger-core.mjs scripts/supabase-rest-ledger-core.test.mjs scripts/run-supabase-rest-ledger.mjs scripts/immutable-source-artifact-validator.mjs scripts/immutable-source-artifact-validator.test.mjs ./scripts/
 USER node
-ENTRYPOINT ["node", "scripts/run-supabase-rest-ledger.mjs"]
+ENTRYPOINT ["node"]
+CMD ["scripts/run-supabase-rest-ledger.mjs"]
