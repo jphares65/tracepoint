@@ -19,9 +19,10 @@ function targetClient(target, ca, application_name) { return new pg.Client({ ...
 
 function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
 async function sourceSnapshot() {
+  const sourceFetchLog = evidence => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...evidence }));
   const rows = new Map();
-  for (const relation of MIGRATION_RELATIONS) rows.set(relation, await allRelationRows(fetch, headers, relation));
-  const users = await allAdminUsers(fetch, headers);
+  for (const relation of MIGRATION_RELATIONS) rows.set(relation, await allRelationRows(fetch, headers, relation, sourceFetchLog));
+  const users = await allAdminUsers(fetch, headers, sourceFetchLog);
   const total = [...rows.values()].reduce((sum, relationRows) => sum + relationRows.length, 0);
   const memberships = rows.get("department_memberships") ?? [];
   assert.equal(total, 4723, "SOURCE_TOTAL_ROW_MISMATCH"); assert.equal(users.length, 96, "SOURCE_IDENTITY_COUNT_MISMATCH"); assert.equal(memberships.length, 95, "SOURCE_MEMBERSHIP_COUNT_MISMATCH");

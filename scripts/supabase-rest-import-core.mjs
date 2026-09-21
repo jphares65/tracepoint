@@ -337,18 +337,29 @@ export function sourceHeaders(raw) {
   return headers;
 }
 
-export async function sourceGet(fetcher, headers, url, label) {
+export async function sourceGet(fetcher, headers, url, label, onEvent = () => undefined, deadlineMs = 30_000) {
   assertReadOnlyRequest("GET", url);
-  const response = await fetcher(url, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`SOURCE_REST_GET_FAILED:${label}:${response.status}`);
-  return response.json();
+  assert.ok(Number.isInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 60_000, "Invalid source REST deadline");
+  const parsed = new URL(url), page = parsed.searchParams.get("offset") ?? parsed.searchParams.get("page") ?? "0", started = Date.now(), controller = new AbortController();
+  const emit = (event, extra = {}) => onEvent({ event, label, page, elapsedMs: Date.now() - started, ...extra });
+  emit("source-fetch-start");
+  const timer = setTimeout(() => { emit("source-fetch-timeout", { classification: "SOURCE_REST_TIMEOUT" }); controller.abort(new Error("SOURCE_REST_TIMEOUT")); }, deadlineMs);
+  try {
+    const response = await fetcher(url, { method: "GET", headers, redirect: "error", signal: controller.signal });
+    if (!response.ok) throw new Error(`SOURCE_REST_GET_FAILED:${label}:${response.status}`);
+    const payload = await response.json(); emit("source-fetch-complete"); return payload;
+  } catch (error) {
+    const classification = controller.signal.aborted ? "SOURCE_REST_TIMEOUT" : "SOURCE_REST_FETCH_FAILED";
+    emit("source-fetch-failure", { classification });
+    throw new Error(classification);
+  } finally { clearTimeout(timer); }
 }
 
-export async function allRelationRows(fetcher, headers, relation) {
+export async function allRelationRows(fetcher, headers, relation, onEvent) {
   assert.ok(COPY_RELATIONS.includes(relation) || DERIVED_RELATIONS.includes(relation), "Unapproved source relation");
   const rows = [];
   for (let offset = 0; ; offset += 500) {
-    const page = await sourceGet(fetcher, headers, relationUrl(relation, offset), relation);
+    const page = await sourceGet(fetcher, headers, relationUrl(relation, offset), relation, onEvent);
     assert.ok(Array.isArray(page), "Source relation response is not an array");
     rows.push(...page);
     if (page.length < 500) return rows;
@@ -356,10 +367,10 @@ export async function allRelationRows(fetcher, headers, relation) {
   }
 }
 
-export async function allAdminUsers(fetcher, headers) {
+export async function allAdminUsers(fetcher, headers, onEvent) {
   const users = [];
   for (let page = 1; ; page += 1) {
-    const payload = await sourceGet(fetcher, headers, usersUrl(page), "admin-identities");
+    const payload = await sourceGet(fetcher, headers, usersUrl(page), "admin-identities", onEvent);
     assert.ok(Array.isArray(payload.users), "Source identities response is invalid");
     users.push(...payload.users);
     if (payload.users.length < 200 || (payload.last_page && page >= payload.last_page)) return users;
