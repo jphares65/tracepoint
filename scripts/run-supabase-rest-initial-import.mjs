@@ -99,12 +99,18 @@ async function assertAuditHistoryEmpty(client, phase) {
   }
   return counts;
 }
+function requireExpectedRelationNames(actual, expected, code) {
+  if (canonical(actual) === canonical(expected)) return;
+  const error = new Error(code);
+  error.safeDiagnostic = { expected: [...expected], observed: [...actual] };
+  throw error;
+}
 async function deriveAuditPrerequisites(client, preflight) {
   const initial = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS });
-  assert.deepEqual(initial.prerequisiteRelations, ["departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  requireExpectedRelationNames(initial.prerequisiteRelations, ["departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
   const parentTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), initial.prerequisiteRelations);
   const bootstrapRelations = [...new Set(parentTriggers.filter(trigger => trigger.relation === "departments" && triggerFiresOnInsert(trigger)).flatMap(insertedRelations))].sort();
-  assert.deepEqual(bootstrapRelations, ["department_role_permissions", "department_rules", "department_security_settings"], "DEPARTMENT_BOOTSTRAP_SIDE_EFFECT_CHANGED");
+  requireExpectedRelationNames(bootstrapRelations, ["department_role_permissions", "department_rules", "department_security_settings"], "DEPARTMENT_BOOTSTRAP_SIDE_EFFECT_CHANGED");
   const childTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), bootstrapRelations);
   const auditWriters = parentTriggers.filter(triggerWritesAuditEvents).map(trigger => trigger.relation);
   if (childTriggers.some(triggerWritesAuditEvents)) auditWriters.push("departments");
