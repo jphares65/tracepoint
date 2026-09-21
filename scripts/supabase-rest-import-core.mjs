@@ -502,6 +502,47 @@ export function topologicalImportOrder(relations, foreignKeys) {
   return order;
 }
 
+// Source audit/history rows are authoritative, including their preserved
+// identity values.  Their FK parents must therefore be present before the
+// audit phase, but only if those parent inserts cannot themselves emit a new
+// audit event.  This derives the full transitive parent set from the deployed
+// FK graph; it is not a handwritten ordering exception.
+export function auditPrerequisitePlan({ importRelations, auditRelations, foreignKeys, auditWritingRelations = [], targetSeededRelations = [] }) {
+  assert.ok(Array.isArray(importRelations) && importRelations.every(name => identifier.test(name)), "AUDIT_PREREQUISITE_RELATIONS_INVALID");
+  assert.ok(Array.isArray(auditRelations) && auditRelations.every(name => identifier.test(name)), "AUDIT_HISTORY_RELATIONS_INVALID");
+  assert.ok(Array.isArray(foreignKeys) && foreignKeys.every(edge => edge && identifier.test(edge.child) && identifier.test(edge.parent)), "AUDIT_PREREQUISITE_FOREIGN_KEYS_INVALID");
+  assert.ok(Array.isArray(auditWritingRelations) && auditWritingRelations.every(name => identifier.test(name)), "AUDIT_WRITING_RELATIONS_INVALID");
+  assert.ok(Array.isArray(targetSeededRelations) && targetSeededRelations.every(name => identifier.test(name)), "AUDIT_TARGET_SEEDED_RELATIONS_INVALID");
+  const importSet = new Set(importRelations), seeded = new Set(targetSeededRelations), auditSet = new Set(auditRelations.filter(name => importSet.has(name)));
+  assert.ok(auditSet.size > 0, "AUDIT_HISTORY_RELATIONS_MISSING");
+  const byChild = new Map(importRelations.map(name => [name, []]));
+  for (const edge of foreignKeys) if (byChild.has(edge.child)) byChild.get(edge.child).push(edge.parent);
+  const required = new Set();
+  const visit = relation => {
+    for (const parent of byChild.get(relation) ?? []) {
+      if (auditSet.has(parent)) continue;
+      assert.ok(importSet.has(parent) || seeded.has(parent), `AUDIT_PREREQUISITE_PARENT_NOT_MANAGED:${relation}:${parent}`);
+      if (required.has(parent)) continue;
+      required.add(parent); visit(parent);
+    }
+  };
+  for (const relation of auditSet) visit(relation);
+  const prerequisiteRelations = [...required].sort();
+  const prerequisiteSet = new Set(prerequisiteRelations), auditWriters = new Set(auditWritingRelations);
+  const classifications = prerequisiteRelations.map(relation => Object.freeze({
+    relation,
+    classification: seeded.has(relation) ? "BOOTSTRAP_ALREADY_PRESENT" : auditWriters.has(relation) ? "PREREQUISITE_CAN_GENERATE_AUDIT" : "SAFE_PREREQUISITE_NO_AUDIT_SIDE_EFFECT",
+  }));
+  const unsafe = classifications.filter(item => item.classification === "PREREQUISITE_CAN_GENERATE_AUDIT");
+  assert.equal(unsafe.length, 0, `AUDIT_PREREQUISITE_CAN_GENERATE_AUDIT:${unsafe.map(item => item.relation).join(",")}`);
+  const importable = prerequisiteRelations.filter(relation => !seeded.has(relation));
+  return Object.freeze({
+    auditRelations: [...auditSet].sort(),
+    prerequisiteRelations: Object.freeze(topologicalImportOrder(importable, foreignKeys.filter(edge => prerequisiteSet.has(edge.child) && prerequisiteSet.has(edge.parent)))),
+    classifications: Object.freeze(classifications),
+  });
+}
+
 export function foreignKeyCycles(relations, foreignKeys) {
   const nodes=new Set(relations),edges=foreignKeys.filter(({child,parent})=>nodes.has(child)&&nodes.has(parent)&&child!==parent),outgoing=new Map(relations.map(name=>[name,[]]));
   for(const edge of edges) outgoing.get(edge.parent).push(edge.child);
