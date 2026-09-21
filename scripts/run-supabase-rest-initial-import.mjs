@@ -87,7 +87,7 @@ function safeGenerationConflict(conflict, provenance) {
 }
 async function targetRelationKinds(client) { return new Map((await client.query("select c.relname as name,c.relkind as kind from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=any($1::text[])", [MIGRATION_RELATIONS])).rows.map(row => [row.name, row.kind])); }
 async function targetForeignKeys(client) { return (await client.query("select child.relname as child,parent.relname as parent from pg_constraint fk join pg_class child on child.oid=fk.conrelid join pg_namespace cn on cn.oid=child.relnamespace join pg_class parent on parent.oid=fk.confrelid join pg_namespace pn on pn.oid=parent.relnamespace where fk.contype='f' and cn.nspname='public' and pn.nspname='public'")).rows; }
-function triggerWritesAuditEvents(trigger) { return /\binsert\s+into\s+(?:public\.)?\"?audit_events\"?\b/iu.test(String(trigger.function_definition ?? "")); }
+function triggerWritesAuditEvents(trigger) { return /\binsert\s+into\s+(?:public\.)?"?audit_events"?\b/iu.test(String(trigger.function_definition ?? "")); }
 async function assertAuditHistoryEmpty(client, phase) {
   const counts = [];
   for (const relation of AUDIT_HISTORY_RELATIONS) {
