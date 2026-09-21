@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { MIGRATION_RELATIONS, PRIOR_IDENTITIES, PRIOR_MEMBERSHIPS, PRIOR_OBJECT_BYTES, PRIOR_OBJECTS, PRIOR_TOTAL_ROWS, PROJECT_URL, RUN_ID, AUTHORIZATION_REFERENCE, assertReadOnlyRequest, canonical, relationUrl, sha256, usersUrl, validateSourceSecret } from "./supabase-rest-ledger-core.mjs";
 
+export const INITIAL_ARTIFACT_BUCKET = "tracepoint-production-private-193644343389";
+export const INITIAL_ARTIFACT_KEY = `migration/source/${RUN_ID}/initial-canonical.json`;
+export const INITIAL_ARTIFACT_SHA256 = "8b01ea2a57a650b10d126160c5d171fecf1e98f1e07a9fa720e97e600d8d6d57";
+export const INITIAL_ARTIFACT_BASELINE = Object.freeze({ relationalRows: 4813, identities: 96, memberships: 95, objects: 2, objectBytes: 522978 });
+
 export const TARGET_SECRET_ARN = "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT";
 export const TARGET_HOST = "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
 export const CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
@@ -64,7 +69,13 @@ export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
   assert.equal(env.TRACEPOINT_MIGRATION_AUTHORIZATION_REFERENCE, AUTHORIZATION_REFERENCE, "Approved authorization reference is required");
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_ACCOUNT, TARGET_ACCOUNT, "Production account is required");
-  assert.equal(env.SOURCE_SUPABASE_REST_SECRET_ARN, "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi", "Only the dedicated REST source secret is permitted");
+  const immutableArtifactMode = env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
+  if (immutableArtifactMode) {
+    assert.ok(DATABASE_MODES.includes(mode), "Immutable source artifacts are permitted only for the isolated RDS lane");
+    assert.equal(env.TRACEPOINT_SOURCE_ARTIFACT_BUCKET, INITIAL_ARTIFACT_BUCKET, "Only the adopted immutable artifact bucket is permitted");
+    assert.equal(env.TRACEPOINT_SOURCE_ARTIFACT_KEY, INITIAL_ARTIFACT_KEY, "Only the adopted initial artifact is permitted");
+    assert.equal(env.TRACEPOINT_SOURCE_ARTIFACT_SHA256, INITIAL_ARTIFACT_SHA256, "Only the adopted initial artifact hash is permitted");
+  } else assert.equal(env.SOURCE_SUPABASE_REST_SECRET_ARN, "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi", "Only the dedicated REST source secret is permitted");
   assert.equal(env.TRACEPOINT_REST_IMPORT_MODE, mode, "Explicit reviewed import mode is required");
   if (DATABASE_MODES.includes(mode)) {
     assert.equal(env.TARGET_DATABASE_SECRET_ARN, TARGET_SECRET_ARN, "Only the reviewed target migrator secret is permitted");
@@ -640,12 +651,13 @@ export function targetRowsSql(relation, columns, orderColumns) {
 }
 
 export function canonicalRowsHash(rows) { return sha256(rows); }
-export function importEvidence({ mappings, sourceTables, targetTables, identities, memberships }) {
+export function importEvidence({ mappings, sourceTables, targetTables, identities, memberships, baseline = null }) {
   const total = sourceTables.reduce((sum, table) => sum + table.rows, 0);
-  assert.equal(total, PRIOR_TOTAL_ROWS, "Fresh source total differs from approved inventory");
-  assert.equal(identities.count, PRIOR_IDENTITIES, "Fresh identity count differs from approved inventory");
-  assert.equal(memberships.count, PRIOR_MEMBERSHIPS, "Fresh membership count differs from approved inventory");
-  return { format: "tracepoint-rest-rds-import-evidence/v1", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships, objects: { count: PRIOR_OBJECTS, totalBytes: PRIOR_OBJECT_BYTES, manifestSha256: objectManifestSha256 }, masterSha256: sha256({ mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships }) };
+  const expected = baseline ?? { relationalRows: PRIOR_TOTAL_ROWS, identities: PRIOR_IDENTITIES, memberships: PRIOR_MEMBERSHIPS, objects: PRIOR_OBJECTS, objectBytes: PRIOR_OBJECT_BYTES };
+  assert.equal(total, expected.relationalRows, "SOURCE_TOTAL_ROW_MISMATCH");
+  assert.equal(identities.count, expected.identities, "SOURCE_IDENTITY_COUNT_MISMATCH");
+  assert.equal(memberships.count, expected.memberships, "SOURCE_MEMBERSHIP_COUNT_MISMATCH");
+  return { format: "tracepoint-rest-rds-import-evidence/v1", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships, objects: { count: expected.objects, totalBytes: expected.objectBytes, manifestSha256: objectManifestSha256 }, ...(baseline ? { sourceBaseline: "adopted-immutable-artifact", sourceArtifactSha256: INITIAL_ARTIFACT_SHA256 } : {}), masterSha256: sha256({ mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships }) };
 }
 
 export function sourceObjectUrl(object) {
