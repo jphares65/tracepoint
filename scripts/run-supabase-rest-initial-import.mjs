@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
-import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
+import { COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
 assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, "A reviewed migration mode is required");
@@ -85,7 +85,8 @@ async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
   const targetRowsBefore = await targetRows(client, relation, mapping.sourceColumns);
   if (!targetRowsBefore.length) return { relation, imported: 0, resumed: 0, strategy: "no-anchor-profile-trigger" };
   assert.equal(await profilesAreMigrationAnchors(client, sourceRows, targetRowsBefore), true, "TARGET_PROFILES_NOT_MIGRATION_ANCHORS");
-  if (canonicalRowsHash(targetRowsBefore) === canonicalRowsHash(sourceRows)) return { relation, imported: 0, resumed: sourceRows.length, strategy: "already-hydrated-migration-anchors" };
+  const anchorsConfirmed = await profilesAreMigrationAnchors(client, sourceRows, targetRowsBefore);
+  if (canonicalRowsHash(targetRowsBefore) === canonicalRowsHash(sourceRows)) return { relation, imported: 0, resumed: sourceRows.length, strategy: "already-hydrated-migration-anchors", reconciliation: requireMigrationAnchorProfileParity(sourceRows, targetRowsBefore, anchorsConfirmed) };
   const sql = updateByIdSql(relation, mapping.sourceColumns);
   await client.query("begin");
   try {
@@ -94,10 +95,10 @@ async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
       assert.equal(result.rowCount, 1, "MIGRATION_ANCHOR_PROFILE_UPDATE_MISMATCH");
     }
     const targetRowsAfter = await targetRows(client, relation, mapping.sourceColumns);
-    assert.equal(canonicalRowsHash(targetRowsAfter), canonicalRowsHash(sourceRows), "MIGRATION_ANCHOR_PROFILE_SOURCE_TARGET_MISMATCH");
+    const reconciliation = requireMigrationAnchorProfileParity(sourceRows, targetRowsAfter, anchorsConfirmed);
     await client.query("commit");
+    return { relation, imported: sourceRows.length, resumed: 0, strategy: "hydrate-proven-migration-anchor-profiles", reconciliation };
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
-  return { relation, imported: sourceRows.length, resumed: 0, strategy: "hydrate-proven-migration-anchor-profiles" };
 }
 async function importRelation(client, relation, rows, mapping, alreadyPresent) {
   if (alreadyPresent) return { relation, imported: 0, resumed: rows.length };
@@ -159,8 +160,11 @@ async function verifyDatabase(client, snapshot, preflight) {
   const sourceTables = []; const targetTables = [];
   for (const relation of IMPORT_RELATIONS) {
     const mapping = preflight.mappings.find(item => item.relation === relation); const sourceRows = snapshot.rows.get(relation) ?? []; const target = await targetRows(client, relation, mapping.sourceColumns);
-    assert.equal(target.length, sourceRows.length, `TARGET_ROW_COUNT_MISMATCH:${relation}`); assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_ROW_HASH_MISMATCH:${relation}`);
-    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target) });
+    assert.equal(target.length, sourceRows.length, `TARGET_ROW_COUNT_MISMATCH:${relation}`);
+    const profileAnchors = relation === "profiles" ? await profilesAreMigrationAnchors(client, sourceRows, target) : false;
+    const profileReconciliation = relation === "profiles" ? requireMigrationAnchorProfileParity(sourceRows, target, profileAnchors) : null;
+    if (!profileReconciliation) assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_ROW_HASH_MISMATCH:${relation}`);
+    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, sourceTimestampEvidenceSha256: profileReconciliation.sourceCanonicalSha256, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, excludedColumns: profileReconciliation.excludedColumns, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}) });
   }
   for (const relation of TARGET_SEEDED_REFERENCE_RELATIONS) {
     const sourceRows = snapshot.rows.get(relation) ?? [], reconciliation = preflight.targetSeeded.get(relation);
