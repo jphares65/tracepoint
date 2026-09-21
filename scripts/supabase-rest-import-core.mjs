@@ -87,7 +87,7 @@ export function assertDiagnosticReadOnlySql(sql) {
 // Do not unref this timer: a diagnostic must either complete or emit its
 // failure evidence, rather than allowing Node to terminate while a socket is
 // still pending.  The operation itself remains read-only by construction.
-export async function withRetainedDeadline({ phase, deadlineMs, operation, onEvent = () => undefined }) {
+export async function withRetainedDeadline({ phase, deadlineMs, operation, onEvent = () => undefined, eventPrefix = "connection-probe-phase", metadata = {} }) {
   assert.match(phase, /^[a-z0-9-]+$/u, "Invalid diagnostic phase");
   assert.ok(Number.isInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 15_000, "Invalid diagnostic deadline");
   assert.equal(typeof operation, "function", "Diagnostic operation is required");
@@ -101,13 +101,15 @@ export async function withRetainedDeadline({ phase, deadlineMs, operation, onEve
       reject(error);
     }, deadlineMs);
   });
-  onEvent({ event: "connection-probe-phase-start", phase, elapsedMs: 0 });
+  assert.match(eventPrefix, /^[a-z0-9-]+$/u, "Invalid diagnostic event prefix");
+  assert.ok(metadata && typeof metadata === "object" && !Array.isArray(metadata), "Invalid diagnostic metadata");
+  onEvent({ event: `${eventPrefix}-start`, phase, elapsedMs: 0, ...metadata });
   try {
     const value = await Promise.race([Promise.resolve().then(operation), timeout]);
-    onEvent({ event: "connection-probe-phase-complete", phase, elapsedMs: elapsedMs() });
+    onEvent({ event: `${eventPrefix}-complete`, phase, elapsedMs: elapsedMs(), ...metadata });
     return value;
   } catch (error) {
-    onEvent({ event: "connection-probe-phase-failed", phase, elapsedMs: elapsedMs(), classification: error?.code === "CONNECTION_PROBE_TIMEOUT" ? "CONNECTION_PROBE_TIMEOUT" : "CONNECTION_PROBE_FAILURE" });
+    onEvent({ event: `${eventPrefix}-failed`, phase, elapsedMs: elapsedMs(), classification: error?.code === "CONNECTION_PROBE_TIMEOUT" ? "CONNECTION_PROBE_TIMEOUT" : "CONNECTION_PROBE_FAILURE", ...metadata });
     throw error;
   } finally {
     clearTimeout(timer);

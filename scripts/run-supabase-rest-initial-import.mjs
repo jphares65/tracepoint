@@ -441,12 +441,21 @@ async function runTargetDataPreflight() {
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
   const client = targetClient(target, ca, "tracepoint-target-data-preflight");
   let phase = "canonical REST source snapshot";
+  const deadline = 15_000;
+  const emit = event => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...event }));
+  const targetQuery = (sql, values = [], relation = "catalog") => withRetainedDeadline({ phase: "audit-table-query", deadlineMs: deadline, operation: () => client.query(assertDiagnosticReadOnlySql(sql), values), onEvent: emit, eventPrefix: "audit-table-query", metadata: { relation } });
   try {
-    const snapshot = await sourceSnapshot(); phase = "target repeatable-read data preflight"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
-    const kinds = await targetRelationKinds(client), nonempty = [];
+    const snapshot = await sourceSnapshot(); phase = "target-dns";
+    const addresses = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => lookup(process.env.TARGET_PGHOST, { all: true, family: 4 }), onEvent: emit, eventPrefix: "target-dns" });
+    assert.ok(addresses.length > 0, "TARGET_DNS_NO_IPV4_ADDRESS");
+    phase = "target-connect"; await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.connect(), onEvent: emit, eventPrefix: "target-connect" }); assert.equal(client.connection.stream?.encrypted, true, "TARGET_TLS_NOT_ENCRYPTED");
+    phase = "target-readonly"; await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => targetQuery("begin transaction isolation level repeatable read read only", [], "transaction"), onEvent: emit, eventPrefix: "target-readonly" });
+    const readOnlyClient = { query: (sql, values) => targetQuery(sql, values) };
+    const kinds = await targetRelationKinds(readOnlyClient), nonempty = [];
     for (const relation of MIGRATION_RELATIONS) {
       const expectedKind = DERIVED_RELATIONS.includes(relation) ? "v" : "r"; if (targetKindForRelation(kinds, relation) !== expectedKind) continue;
-      const targetColumns = (await queryColumns(client, relation)).map(column => column.column_name), targetRows = await targetRowsForRelation(client, relation, targetColumns); if (!targetRows.length) continue;
+      const relationClient = { query: (sql, values) => targetQuery(sql, values, relation) };
+      const targetColumns = (await queryColumns(relationClient, relation)).map(column => column.column_name), targetRows = await targetRowsForRelation(relationClient, relation, targetColumns); if (!targetRows.length) continue;
       const sourceRows = snapshot.rows.get(relation) ?? [], stableColumns = RELATION_ORDER_COLUMNS[relation] ?? ["id"], sourceKeys = sourceRows.map(row => stableColumns.map(column => row[column])), targetKeys = targetRows.map(row => stableColumns.map(column => row[column]));
       let classification = "UNKNOWN", authorizationSemanticParity = null;
       if (relation === "feature_catalog") { const value = reconcileFeatureCatalog(sourceRows, targetRows, targetColumns); classification = value.hasInvariantFailure ? "UNKNOWN" : "TARGET_SEEDED_EXCLUDED"; }
@@ -456,9 +465,9 @@ async function runTargetDataPreflight() {
       else if (relationScope(sourceColumns(sourceRows)) === "tenant-scoped") classification = "CUSTOMER_DATA_CONFLICT";
       nonempty.push({ relation, classification, sourceCount: sourceRows.length, targetCount: targetRows.length, stableColumns, sourceStableKeySha256: sha256(sourceKeys), targetStableKeySha256: sha256(targetKeys), stableKeyParity: canonical(sourceKeys) === canonical(targetKeys), sourceCanonicalSha256: canonicalRowsHash(sourceRows), targetCanonicalSha256: canonicalRowsHash(targetRows), scope: relationScope(sourceColumns(sourceRows)), provenance: relationProvenance(relation), securitySensitive: securitySensitive(relation), authorizationSemanticParity });
     }
-    await client.query("commit"); const blockers = nonempty.filter(item => !["TARGET_SEEDED_EXCLUDED", "TARGET_SEEDED_PARITY_REQUIRED", "TARGET_SYSTEM_INTERNAL"].includes(item.classification));
-    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, nonempty, blockers, targetWriteClientsInitialized: false }));
-  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+    await targetQuery("commit", [], "transaction"); const blockers = nonempty.filter(item => !["TARGET_SEEDED_EXCLUDED", "TARGET_SEEDED_PARITY_REQUIRED", "TARGET_SYSTEM_INTERNAL"].includes(item.classification));
+    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, targetDns: { addresses: addresses.map(({ address }) => address) }, nonempty, blockers, targetWriteClientsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify({ ...safeError(error, phase), classification: connectionProbeClassification(error, phase) })); process.exitCode = 1; }
   finally { await client.end().catch(() => undefined); }
 }
 async function querySchemaContract(client, relation) {
