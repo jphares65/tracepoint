@@ -57,7 +57,8 @@ export const TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE = "target-generated-column-
 export const TARGET_PROVENANCE_SWEEP_MODE = "target-provenance-sweep";
 export const AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE = "audit-identity-collision-diagnostic";
 export const AUDIT_ARTIFACT_CLEANUP_MODE = "audit-events-migration-artifact-cleanup";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE]);
+export const CONNECTION_PROBE_MODE = "rds-connection-probe";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -81,6 +82,36 @@ export function assertDiagnosticReadOnlySql(sql) {
   assert.ok(/^(select|with|begin\s+transaction\s+isolation\s+level\s+repeatable\s+read\s+read\s+only|commit|rollback)\b/u.test(normalized), "DIAGNOSTIC_SQL_NOT_READ_ONLY");
   assert.doesNotMatch(normalized, /\b(insert|update|delete|merge|truncate|alter|create|drop|grant|revoke|call|do|copy|setval)\b/u, "DIAGNOSTIC_SQL_NOT_READ_ONLY");
   return sql;
+}
+
+// Do not unref this timer: a diagnostic must either complete or emit its
+// failure evidence, rather than allowing Node to terminate while a socket is
+// still pending.  The operation itself remains read-only by construction.
+export async function withRetainedDeadline({ phase, deadlineMs, operation, onEvent = () => undefined }) {
+  assert.match(phase, /^[a-z0-9-]+$/u, "Invalid diagnostic phase");
+  assert.ok(Number.isInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 15_000, "Invalid diagnostic deadline");
+  assert.equal(typeof operation, "function", "Diagnostic operation is required");
+  const startedAt = Date.now();
+  let timer;
+  const elapsedMs = () => Date.now() - startedAt;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`CONNECTION_PROBE_TIMEOUT:${phase}`);
+      error.code = "CONNECTION_PROBE_TIMEOUT";
+      reject(error);
+    }, deadlineMs);
+  });
+  onEvent({ event: "connection-probe-phase-start", phase, elapsedMs: 0 });
+  try {
+    const value = await Promise.race([Promise.resolve().then(operation), timeout]);
+    onEvent({ event: "connection-probe-phase-complete", phase, elapsedMs: elapsedMs() });
+    return value;
+  } catch (error) {
+    onEvent({ event: "connection-probe-phase-failed", phase, elapsedMs: elapsedMs(), classification: error?.code === "CONNECTION_PROBE_TIMEOUT" ? "CONNECTION_PROBE_TIMEOUT" : "CONNECTION_PROBE_FAILURE" });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function classifyTargetGeneratedInput(relation, sourceStatistics, targetColumn, triggerNames = []) {

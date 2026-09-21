@@ -1,24 +1,29 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
-import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifyArtifactResumeRelation, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance } from "./supabase-rest-import-core.mjs";
+import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifyArtifactResumeRelation, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
-const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
-delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
-assert.ok(rawSource, "Dedicated source REST secret was not injected");
-const headers = sourceHeaders(JSON.parse(rawSource));
+let headers = null;
+if (mode !== CONNECTION_PROBE_MODE) {
+  const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
+  delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
+  assert.ok(rawSource, "Dedicated source REST secret was not injected");
+  headers = sourceHeaders(JSON.parse(rawSource));
+}
 const AUDIT_HISTORY_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit", "audit_log"]);
 function targetClient(target, ca, application_name) { return new pg.Client({ ...target, host: process.env.TARGET_PGHOST, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name }); }
 
 function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
 async function sourceSnapshot() {
+  assert.ok(headers, "Source REST is unavailable in connection-probe mode");
   const sourceFetchLog = evidence => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...evidence }));
   const rows = new Map();
   for (const relation of MIGRATION_RELATIONS) rows.set(relation, await allRelationRows(fetch, headers, relation, sourceFetchLog));
@@ -566,8 +571,54 @@ async function cleanupAuditArtifacts() {
     const deleted=await client.query("delete from public.audit_events where id between 165 and 275"); assert.equal(deleted.rowCount,111,"AUDIT_ARTIFACT_DELETE_COUNT_MISMATCH"); const after=Number((await client.query("select count(*)::int as count from public.audit_events")).rows[0].count),anchorsAfter=Number((await client.query("select count(*)::int as count from public.profiles")).rows[0].count); assert.equal(after,0,"AUDIT_ARTIFACT_NOT_EMPTY_AFTER_DELETE"); assert.equal(anchorsAfter,96,"AUDIT_ANCHOR_CHANGED"); await client.query("commit"); console.log(JSON.stringify({status:"PASSED",runId:RUN_ID,authorizationReference:AUTHORIZATION_REFERENCE,mode,deletedAuditEvents:111,targetAuditEventsAfter:after,preservedProfileAnchors:anchorsAfter,targetWriteScope:"approved-clean-target-audit-events-artifact-cleanup",sourceClientsInitialized:true}));
   } catch(error) { await client.query("rollback").catch(()=>undefined); console.error(JSON.stringify(safeError(error,phase))); process.exitCode=1; } finally { await client.end().catch(()=>undefined); }
 }
+function connectionProbeClassification(error, phase) {
+  const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+  if (code === "CONNECTION_PROBE_TIMEOUT") return `${phase.toUpperCase().replaceAll("-", "_")}_TIMEOUT`;
+  if (["ENOTFOUND", "EAI_AGAIN"].includes(code)) return "DNS_FAILURE";
+  if (["ETIMEDOUT", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH"].includes(code)) return "TCP_CONNECT_FAILURE";
+  if (code === "28P01") return "POSTGRESQL_AUTH_FAILURE";
+  if (code === "3D000") return "POSTGRESQL_DATABASE_SELECTION_FAILURE";
+  if (/certificate|tls|ssl/i.test(error instanceof Error ? error.message : "")) return "TLS_FAILURE";
+  return "CONNECTION_PROBE_FAILURE";
+}
+
+async function runConnectionProbe() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const emit = event => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...event }));
+  const deadline = 15_000;
+  let client;
+  let phase = "dns-resolution";
+  try {
+    const addresses = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => lookup(process.env.TARGET_PGHOST, { all: true, family: 4 }), onEvent: emit });
+    assert.ok(addresses.length > 0, "DNS_NO_IPV4_ADDRESS");
+    phase = "tcp-tls-postgresql-connect";
+    client = targetClient(target, ca, "tracepoint-rds-connection-probe");
+    await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.connect(), onEvent: emit });
+    assert.equal(client.connection.stream?.encrypted, true, "TLS_NOT_ENCRYPTED");
+    phase = "begin-read-only";
+    await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("begin transaction read only"), onEvent: emit });
+    phase = "query-select-1";
+    const selectOne = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("select 1 as ok"), onEvent: emit });
+    phase = "query-transaction-read-only";
+    const readOnly = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("show transaction_read_only"), onEvent: emit });
+    phase = "query-current-database-user";
+    const identity = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("select current_database() as database, current_user as user"), onEvent: emit });
+    await client.query("rollback");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceClientsInitialized: false, targetWriteClientsInitialized: false, dns: { status: "PASS", addresses: addresses.map(({ address }) => address) }, tcpTls: { status: "PASS" }, postgresqlAuth: { status: "PASS" }, query: { status: "PASS", selectOne: selectOne.rows[0]?.ok === 1, transactionReadOnly: readOnly.rows[0]?.transaction_read_only, database: identity.rows[0]?.database, user: identity.rows[0]?.user } }));
+  } catch (error) {
+    console.error(JSON.stringify({ ...safeError(error, phase), classification: connectionProbeClassification(error, phase), sourceClientsInitialized: false, targetWriteClientsInitialized: false }));
+    process.exitCode = 1;
+  } finally {
+    await client?.end().catch(() => undefined);
+  }
+}
+
 async function runReviewedMode() {
-  return mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
+  return mode === CONNECTION_PROBE_MODE ? runConnectionProbe() : mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
 }
 
 // Node 24 can exit with code 13 when its only outstanding work is a top-level
