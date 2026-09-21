@@ -5,7 +5,7 @@ import pg from "pg";
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
-import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance } from "./supabase-rest-import-core.mjs";
+import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, COPY_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, canonicalRowsHash, classifyArtifactResumeRelation, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
 assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE, "A reviewed migration mode is required");
@@ -117,18 +117,26 @@ async function runTargetGeneratedColumnDiagnostic() {
   }
 }
 async function targetRows(client, relation, columns) { const order = RELATION_ORDER_COLUMNS[relation] ?? ["id"]; return (await client.query(targetRowsSql(relation, columns, order))).rows.map(item => item.row); }
+const CLEAN_TARGET_RESTORE_TIME = Date.parse("2026-09-20T09:53:11.000Z");
+function hasProvenGeneratedArtifactProvenance(relation, targetRows) {
+  if (!targetRows.length || !["department_rules", "department_security_settings"].includes(relation)) return false;
+  return targetRows.every(row => typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at)) && Date.parse(row.created_at) > CLEAN_TARGET_RESTORE_TIME);
+}
 async function preflightTarget(client, snapshot) {
   const kinds = await targetRelationKinds(client);
   for (const relation of COPY_RELATIONS) assert.equal(kinds.get(relation), "r", `TARGET_TABLE_MISSING:${relation}`);
   for (const relation of DERIVED_RELATIONS) assert.equal(kinds.get(relation), "v", `TARGET_VIEW_MISSING:${relation}`);
-  const mappings = []; const targetBefore = new Map(); const identityPreservation = new Map();
+  const mappings = []; const targetBefore = new Map(); const identityPreservation = new Map(); const resumePlan = new Map();
   for (const relation of IMPORT_RELATIONS) {
     const rows = snapshot.rows.get(relation) ?? []; const mapping = validateColumnMapping(relation, rows, await queryColumns(client, relation));
     const existing = await targetRows(client, relation, mapping.sourceColumns);
     if (IDENTITY_PRESERVATION_RELATIONS.includes(relation)) identityPreservation.set(relation, requireIdentityPreservationPreflight(relation, rows, existing, await queryTargetGenerationColumns((sql, values) => client.query(sql, values), relation)));
-    if (existing.length && canonicalRowsHash(existing) !== canonicalRowsHash(rows)) {
-      const approvedAnchorProfiles = relation === "profiles" && await profilesAreMigrationAnchors(client, rows, existing);
-      if (!approvedAnchorProfiles) throw new Error(`TARGET_UNEXPLAINED_ROWS:${relation}`);
+    if (relation === "profiles" && existing.length) {
+      const approvedAnchorProfiles = await profilesAreMigrationAnchors(client, rows, existing);
+      if (!approvedAnchorProfiles) throw new Error("TARGET_PROFILES_NOT_MIGRATION_ANCHORS");
+      resumePlan.set(relation, { relation, strategy: "preserve-migration-anchor-profiles", targetRowCount: existing.length });
+    } else {
+      resumePlan.set(relation, classifyArtifactResumeRelation({ relation, sourceRows: rows, targetRows: existing, stableColumns: RELATION_ORDER_COLUMNS[relation] ?? ["id"], generatedArtifactProven: hasProvenGeneratedArtifactProvenance(relation, existing) }));
     }
     mappings.push(mapping); targetBefore.set(relation, existing.length);
   }
@@ -139,7 +147,28 @@ async function preflightTarget(client, snapshot) {
   assert.equal(lineage, 97, "TARGET_MIGRATION_LINEAGE_MISMATCH");
   const foreignKeys = await targetForeignKeys(client);
   const cyclePlan = nullableTrainingCertificationCyclePlan(IMPORT_RELATIONS, foreignKeys, snapshot.rows);
-  return { mappings, targetBefore, identityPreservation, authUsers, targetSeeded, cyclePlan, order: cyclePlan.order };
+  return { mappings, targetBefore, resumePlan, identityPreservation, authUsers, targetSeeded, cyclePlan, order: cyclePlan.order };
+}
+async function cleanupProvenMigrationArtifacts(client, snapshot, preflight) {
+  const cleanup = [...preflight.resumePlan.values()].filter(item => item.strategy === "cleanup-and-import-full");
+  if (!cleanup.length) return [];
+  await client.query("begin");
+  try {
+    const deleted = [];
+    for (const item of cleanup.sort((left, right) => left.relation.localeCompare(right.relation))) {
+      const mapping = preflight.mappings.find(value => value.relation === item.relation);
+      const existing = await targetRows(client, item.relation, mapping.sourceColumns);
+      const current = classifyArtifactResumeRelation({ relation: item.relation, sourceRows: snapshot.rows.get(item.relation) ?? [], targetRows: existing, stableColumns: RELATION_ORDER_COLUMNS[item.relation] ?? ["id"], generatedArtifactProven: hasProvenGeneratedArtifactProvenance(item.relation, existing) });
+      assert.equal(current.strategy, "cleanup-and-import-full", `ARTIFACT_CLEANUP_PROVENANCE_CHANGED:${item.relation}`);
+      assert.equal(existing.length, item.targetRowCount, `ARTIFACT_CLEANUP_ROW_COUNT_CHANGED:${item.relation}`);
+      const result = await client.query(`delete from public.${item.relation}`);
+      assert.equal(result.rowCount, item.targetRowCount, `ARTIFACT_CLEANUP_DELETE_COUNT_MISMATCH:${item.relation}`);
+      const remaining = Number((await client.query(`select count(*)::int as count from public.${item.relation}`)).rows[0].count);
+      assert.equal(remaining, 0, `ARTIFACT_CLEANUP_REMAINING_ROWS:${item.relation}`);
+      deleted.push({ relation: item.relation, classification: item.classification, deleted: result.rowCount });
+    }
+    await client.query("commit"); return deleted;
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
 async function insertIdentityAnchors(client, users) {
   const profiles = new Set();
@@ -181,8 +210,9 @@ async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
     return { relation, imported: sourceRows.length, resumed: 0, strategy: "hydrate-proven-migration-anchor-profiles", reconciliation };
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
-async function importRelation(client, relation, rows, mapping, alreadyPresent) {
-  if (alreadyPresent) return { relation, imported: 0, resumed: rows.length };
+async function importRelation(client, relation, rows, mapping, resume) {
+  if (resume.strategy === "retain-exact-source-match") return { relation, imported: 0, resumed: rows.length, strategy: resume.strategy };
+  assert.ok(["import-full", "cleanup-and-import-full"].includes(resume.strategy), `UNEXPECTED_RESUME_STRATEGY:${relation}`);
   if (!rows.length) return { relation, imported: 0, resumed: 0 };
   const sql = IDENTITY_PRESERVATION_RELATIONS.includes(relation) ? identityPreservingInsertSql(relation, mapping.sourceColumns) : insertSql(relation, mapping.sourceColumns);
   for (let start = 0; start < rows.length; start += 200) {
@@ -288,7 +318,7 @@ async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
   let phase = "source snapshot";
-  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const item of preflight.order) { phase = `relational import:${item}`; if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight)); else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.targetBefore.get(item) > 0)); } phase = "target sequence repair"; const identitySequences = await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", importedRelations: results, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
+  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "proven migration-artifact cleanup"; const cleanup = await cleanupProvenMigrationArtifacts(client, snapshot, preflight); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const item of preflight.order) { phase = `relational import:${item}`; if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight)); else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.resumePlan.get(item))); } phase = "target sequence repair"; const identitySequences = await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", artifactCleanup: cleanup, importedRelations: results, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
 }
 async function runFeatureCatalogReconciliation() {

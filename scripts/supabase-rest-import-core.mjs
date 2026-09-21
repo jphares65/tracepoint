@@ -34,6 +34,10 @@ export const TARGET_SEEDED_ROLE_PERMISSION_SOURCE_ONLY = Object.freeze([
   { roleCode: "supervisor", permissionCode: "manage_training" },
 ]);
 export const IDENTITY_PRESERVATION_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit"]);
+// These rows are produced by the reviewed migration-anchor path on the
+// quarantined target.  They are not bootstrap data and may be removed only
+// after their source-key and post-restore provenance is re-proven at runtime.
+export const GENERATED_MIGRATION_ARTIFACT_RELATIONS = Object.freeze(["department_rules", "department_security_settings"]);
 
 const identifier = /^[a-z][a-z0-9_]*$/;
 export const quote = value => { assert.match(value, identifier, "Unsafe SQL identifier"); return `\"${value}\"`; };
@@ -148,6 +152,30 @@ export function requireIdentityPreservationPreflight(relation, sourceRows, targe
     targetById.set(id, row);
   }
   return Object.freeze({ relation, sourceIdCount: sourceById.size, targetIdCount: targetById.size, targetIdentity: { dataType: targetId.data_type, identityGeneration: targetId.identity_generation }, allTargetRowsExplained: true, sourceIdsUnique: true });
+}
+
+function stableRowKeys(rows, columns) {
+  assert.ok(Array.isArray(rows) && Array.isArray(columns) && columns.length > 0 && columns.every(column => identifier.test(column)), "ARTIFACT_STABLE_KEY_INVALID");
+  const values = rows.map(row => canonical(columns.map(column => row?.[column])));
+  assert.equal(new Set(values).size, values.length, "ARTIFACT_STABLE_KEY_DUPLICATE");
+  return values;
+}
+
+// This intentionally recognizes only three safe resumptions: an exact prior
+// source import, a strict source subset, or one of the two reviewed generated
+// anchor side effects.  Everything else fails closed before any cleanup.
+export function classifyArtifactResumeRelation({ relation, sourceRows, targetRows, stableColumns, generatedArtifactProven = false }) {
+  assert.ok(IMPORT_RELATIONS.includes(relation), "ARTIFACT_RELATION_NOT_IMPORTABLE");
+  assert.ok(Array.isArray(sourceRows) && Array.isArray(targetRows), "ARTIFACT_ROWS_INVALID");
+  if (targetRows.length === 0) return Object.freeze({ relation, strategy: "import-full", targetRowCount: 0 });
+  if (canonicalRowsHash(sourceRows) === canonicalRowsHash(targetRows)) return Object.freeze({ relation, strategy: "retain-exact-source-match", targetRowCount: targetRows.length });
+  const sourceCanonical = new Set(sourceRows.map(canonical));
+  const exactSourceSubset = targetRows.length < sourceRows.length && targetRows.every(row => sourceCanonical.has(canonical(row)));
+  if (exactSourceSubset) return Object.freeze({ relation, strategy: "cleanup-and-import-full", classification: "partial-source-subset", targetRowCount: targetRows.length });
+  const sourceKeys = stableRowKeys(sourceRows, stableColumns), targetKeys = stableRowKeys(targetRows, stableColumns);
+  const stableKeyParity = canonical([...sourceKeys].sort()) === canonical([...targetKeys].sort());
+  if (GENERATED_MIGRATION_ARTIFACT_RELATIONS.includes(relation) && generatedArtifactProven && stableKeyParity) return Object.freeze({ relation, strategy: "cleanup-and-import-full", classification: "generated-migration-side-effect", targetRowCount: targetRows.length });
+  throw new Error(`TARGET_UNEXPLAINED_ROWS:${relation}`);
 }
 
 export function verifyIdentitySequenceAdvance(relation, lastValue, maxImportedId) {
