@@ -46,7 +46,8 @@ export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconcilia
 export const FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE = "foreign-key-cycle-diagnosis";
 export const TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE = "target-generated-column-diagnostic";
 export const TARGET_PROVENANCE_SWEEP_MODE = "target-provenance-sweep";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE]);
+export const AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE = "audit-identity-collision-diagnostic";
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
