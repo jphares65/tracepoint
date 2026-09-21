@@ -13,6 +13,7 @@ const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 assert.ok(rawSource, "Dedicated source REST secret was not injected");
 const headers = sourceHeaders(JSON.parse(rawSource));
+function targetClient(target, ca, application_name) { return new pg.Client({ ...target, host: process.env.TARGET_PGHOST, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name }); }
 
 function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
 async function sourceSnapshot() {
@@ -65,14 +66,14 @@ async function profilesAreMigrationAnchors(client, sourceProfiles, targetProfile
   const anchors = (await client.query("select id::text as id,raw_user_meta_data->>'identity_provider' as identity_provider from auth.users")).rows;
   return anchors.length === sourceProfiles.length && anchors.every(row => sourceIds.has(row.id) && row.identity_provider === "migration_anchor");
 }
-async function runForeignKeyCycleDiagnosis(){const rawTarget=process.env.TARGET_DATABASE_SECRET_JSON;delete process.env.TARGET_DATABASE_SECRET_JSON;const target=validateTargetSecret(JSON.parse(rawTarget)),ca=await readFile('/app/rds-ca.pem','utf8'),client=new pg.Client({...target,ssl:{ca,rejectUnauthorized:true},application_name:'tracepoint-fk-cycle-diagnosis'});try{await client.connect();await client.query('begin transaction isolation level repeatable read read only');const keys=(await client.query("select c.conname as constraint_name,child.relname as child,parent.relname as parent,ca.attname as child_column,pa.attname as parent_column,ca.attnotnull as child_not_null,c.condeferrable,c.condeferred,c.confdeltype,c.confupdtype from pg_constraint c join pg_class child on child.oid=c.conrelid join pg_namespace n on n.oid=child.relnamespace join pg_class parent on parent.oid=c.confrelid join unnest(c.conkey) with ordinality ck(attnum,pos) on true join unnest(c.confkey) with ordinality pk(attnum,pos) on pk.pos=ck.pos join pg_attribute ca on ca.attrelid=child.oid and ca.attnum=ck.attnum join pg_attribute pa on pa.attrelid=parent.oid and pa.attnum=pk.attnum where c.contype='f' and n.nspname='public' and child.relname=any($1::text[]) and parent.relname=any($1::text[])",[IMPORT_RELATIONS])).rows;await client.query('commit');console.log(JSON.stringify({status:'PASSED',mode,sourceReadOnly:true,targetReadOnly:true,targetWriteClientsInitialized:false,cycles:foreignKeyCycles(IMPORT_RELATIONS,keys),foreignKeys:keys}));}finally{await client.end().catch(()=>undefined);}}
+async function runForeignKeyCycleDiagnosis(){const rawTarget=process.env.TARGET_DATABASE_SECRET_JSON;delete process.env.TARGET_DATABASE_SECRET_JSON;const target=validateTargetSecret(JSON.parse(rawTarget)),ca=await readFile('/app/rds-ca.pem','utf8'),client=targetClient(target,ca,'tracepoint-fk-cycle-diagnosis');try{await client.connect();await client.query('begin transaction isolation level repeatable read read only');const keys=(await client.query("select c.conname as constraint_name,child.relname as child,parent.relname as parent,ca.attname as child_column,pa.attname as parent_column,ca.attnotnull as child_not_null,c.condeferrable,c.condeferred,c.confdeltype,c.confupdtype from pg_constraint c join pg_class child on child.oid=c.conrelid join pg_namespace n on n.oid=child.relnamespace join pg_class parent on parent.oid=c.confrelid join unnest(c.conkey) with ordinality ck(attnum,pos) on true join unnest(c.confkey) with ordinality pk(attnum,pos) on pk.pos=ck.pos join pg_attribute ca on ca.attrelid=child.oid and ca.attnum=ck.attnum join pg_attribute pa on pa.attrelid=parent.oid and pa.attnum=pk.attnum where c.contype='f' and n.nspname='public' and child.relname=any($1::text[]) and parent.relname=any($1::text[])",[IMPORT_RELATIONS])).rows;await client.query('commit');console.log(JSON.stringify({status:'PASSED',mode,sourceReadOnly:true,targetReadOnly:true,targetWriteClientsInitialized:false,cycles:foreignKeyCycles(IMPORT_RELATIONS,keys),foreignKeys:keys}));}finally{await client.end().catch(()=>undefined);}}
 async function runTargetGeneratedColumnDiagnostic() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
   delete process.env.TARGET_DATABASE_SECRET_JSON;
   assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget));
   const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-target-generated-column-diagnostic" });
+  const client = targetClient(target, ca, "tracepoint-target-generated-column-diagnostic");
   let phase = "source contract snapshot";
   try {
     const snapshot = await sourceSnapshot();
@@ -284,7 +285,7 @@ async function verifyDatabase(client, snapshot, preflight) {
 }
 async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
-  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-rest-initial-import" });
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
   let phase = "source snapshot";
   try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const item of preflight.order) { phase = `relational import:${item}`; if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight)); else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.targetBefore.get(item) > 0)); } phase = "target sequence repair"; const identitySequences = await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", importedRelations: results, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
@@ -292,7 +293,7 @@ async function runDatabase() {
 async function runFeatureCatalogReconciliation() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-feature-catalog-reconciliation" });
+  const client = targetClient(target, ca, "tracepoint-feature-catalog-reconciliation");
   let phase = "source feature_catalog read";
   try {
     const sourceRows = await allRelationRows(fetch, headers, "feature_catalog");
@@ -309,7 +310,7 @@ async function runFeatureCatalogReconciliation() {
 async function runRolePermissionsReconciliation() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-role-permissions-reconciliation" });
+  const client = targetClient(target, ca, "tracepoint-role-permissions-reconciliation");
   let phase = "source role_permissions read";
   try {
     const [sourceRows, sourceRoles, sourcePermissions] = await Promise.all([allRelationRows(fetch, headers, "role_permissions"), allRelationRows(fetch, headers, "roles"), allRelationRows(fetch, headers, "permissions")]);
@@ -372,7 +373,7 @@ function targetProvenanceClassification(relation, sourceRows, targetRows, stable
 async function runTargetProvenanceSweep() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-target-provenance-sweep" });
+  const client = targetClient(target, ca, "tracepoint-target-provenance-sweep");
   let phase = "canonical REST source snapshot";
   try {
     const snapshot = await sourceSnapshot(); phase = "target repeatable-read provenance sweep"; await client.connect();
@@ -395,7 +396,7 @@ async function runTargetProvenanceSweep() {
 async function runTargetDataPreflight() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-target-data-preflight" });
+  const client = targetClient(target, ca, "tracepoint-target-data-preflight");
   let phase = "canonical REST source snapshot";
   try {
     const snapshot = await sourceSnapshot(); phase = "target repeatable-read data preflight"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
@@ -433,7 +434,7 @@ async function targetSchemaRepairPreflight(client) {
 async function runFirearmAssignmentsSchemaRepair() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-firearm-assignments-schema-repair" });
+  const client = targetClient(target, ca, "tracepoint-firearm-assignments-schema-repair");
   let phase = "schema repair preflight";
   try {
     await client.connect(); const before = await targetSchemaRepairPreflight(client);
@@ -451,7 +452,7 @@ function targetKindForRelation(kinds, relation) { return kinds.get(relation) ?? 
 async function runFullSchemaContractSweep() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-full-schema-contract-sweep" });
+  const client = targetClient(target, ca, "tracepoint-full-schema-contract-sweep");
   let phase = "canonical REST source contract";
   try {
     const snapshot = await sourceSnapshot(); phase = "target repeatable-read schema contract"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
@@ -484,7 +485,7 @@ async function runFullSchemaContractSweep() {
 async function runFirearmAssignmentsSchemaContract() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-firearm-assignments-schema-contract" });
+  const client = targetClient(target, ca, "tracepoint-firearm-assignments-schema-contract");
   let phase = "source firearm_assignments contract";
   try {
     const sourceRows = await allRelationRows(fetch, headers, "firearm_assignments"); const source = sourceColumns(sourceRows);
