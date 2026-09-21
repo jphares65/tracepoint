@@ -14,7 +14,7 @@ delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
 assert.ok(rawSource, "Dedicated source REST secret was not injected");
 const headers = sourceHeaders(JSON.parse(rawSource));
 
-function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail }; }
+function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
 async function sourceSnapshot() {
   const rows = new Map();
   for (const relation of MIGRATION_RELATIONS) rows.set(relation, await allRelationRows(fetch, headers, relation));
@@ -107,7 +107,18 @@ async function importRelation(client, relation, rows, mapping, alreadyPresent) {
   for (let start = 0; start < rows.length; start += 200) {
     await client.query("begin");
     try { for (const row of rows.slice(start, start + 200)) await client.query(sql, [JSON.stringify(row)]); await client.query("commit"); }
-    catch (error) { await client.query("rollback"); throw error; }
+    catch (error) {
+      await client.query("rollback");
+      if (error && typeof error === "object" && error.code === "428C9") {
+        const column = /column "([a-z0-9_]+)"/i.exec(String(error.message))?.[1];
+        const metadata = column ? (await client.query("select column_name,data_type,udt_name,is_identity,identity_generation,is_generated,generation_expression,column_default from information_schema.columns where table_schema='public' and table_name=$1 and column_name=$2", [relation, column])).rows[0] : null;
+        const sourceStatistics = column && rows.some(row => Object.hasOwn(row, column)) ? summarizeSourceColumn(rows, column) : null;
+        const diagnostic = { relation, column: column ?? null, targetGeneration: metadata ? { dataType: metadata.data_type, udtName: metadata.udt_name, isIdentity: metadata.is_identity, identityGeneration: metadata.identity_generation, isGenerated: metadata.is_generated, generationExpression: metadata.generation_expression, defaultExpression: metadata.column_default } : null, sourceStatistics, repositoryClassification: "requires-source-contract-and-target-catalog-review", classification: "UNKNOWN_CONFLICT" };
+        const wrapped = Object.assign(new Error(`TARGET_GENERATED_INPUT_REJECTED:${relation}`), { code: "428C9", safeDiagnostic: diagnostic });
+        throw wrapped;
+      }
+      throw error;
+    }
   }
   return { relation, imported: rows.length, resumed: 0 };
 }
@@ -184,7 +195,7 @@ async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = new pg.Client({ ...target, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name: "tracepoint-rest-initial-import" });
   let phase = "source snapshot";
-  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const item of preflight.order) { if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight)); else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.targetBefore.get(item) > 0)); } phase = "target sequence repair"; await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", importedRelations: results, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
+  try { const snapshot = await sourceSnapshot(); phase = "target TLS preflight"; await client.connect(); const preflight = await preflightTarget(client, snapshot); phase = "identity anchors"; await insertIdentityAnchors(client, snapshot.users); phase = "relational import"; const results = []; for (const item of preflight.order) { phase = `relational import:${item}`; if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight)); else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight)); else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.targetBefore.get(item) > 0)); } phase = "target sequence repair"; await repairSequences(client); phase = "target reconciliation"; const evidence = await verifyDatabase(client, snapshot, preflight); console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", importedRelations: results, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false })); }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
 }
 async function runFeatureCatalogReconciliation() {
