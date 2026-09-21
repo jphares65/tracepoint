@@ -107,8 +107,13 @@ function requireExpectedRelationNames(actual, expected, code) {
 }
 async function deriveAuditPrerequisites(client, preflight) {
   const initial = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS });
-  requireExpectedRelationNames(initial.prerequisiteRelations, ["departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
-  const parentTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), initial.prerequisiteRelations);
+  // Profiles are created by the reviewed migration-anchor transaction before
+  // departments.  Departments are the only prerequisite whose normal target
+  // bootstrap can emit audit/configuration artifacts.
+  requireExpectedRelationNames(initial.prerequisiteRelations, ["profiles", "departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  const profileTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), ["profiles"]);
+  assert.equal(profileTriggers.some(triggerWritesAuditEvents), false, "PROFILE_ANCHOR_CAN_GENERATE_AUDIT");
+  const parentTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), ["departments"]);
   const bootstrapRelations = [...new Set(parentTriggers.filter(trigger => trigger.relation === "departments" && triggerFiresOnInsert(trigger)).flatMap(insertedRelations))].sort();
   requireExpectedRelationNames(bootstrapRelations, ["department_role_permissions", "department_rules", "department_security_settings"], "DEPARTMENT_BOOTSTRAP_SIDE_EFFECT_CHANGED");
   const childTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), bootstrapRelations);
@@ -116,7 +121,21 @@ async function deriveAuditPrerequisites(client, preflight) {
   if (childTriggers.some(triggerWritesAuditEvents)) auditWriters.push("departments");
   const plan = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, auditWritingRelations: auditWriters, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS, approvedBootstrapAuditRelations: ["departments"] });
   const evidence = triggers => triggers.map(trigger => ({ relation: trigger.relation, trigger: trigger.trigger_name, function: `${trigger.function_schema}.${trigger.function_name}`, firesOnInsert: triggerFiresOnInsert(trigger), writesAuditEvents: triggerWritesAuditEvents(trigger), inserts: insertedRelations(trigger) }));
-  return { ...plan, bootstrapRelations, triggerEvidence: { parent: evidence(parentTriggers), bootstrapChildren: evidence(childTriggers) } };
+  return { ...plan, bootstrapRelations, triggerEvidence: { profiles: evidence(profileTriggers), parent: evidence(parentTriggers), bootstrapChildren: evidence(childTriggers) } };
+}
+function requireIdentityAnchorPrerequisites(snapshot) {
+  const identities = new Set(snapshot.users.map(user => String(user.id)));
+  assert.equal(identities.size, snapshot.users.length, "SOURCE_DUPLICATE_IDENTITIES");
+  const references = [
+    { relation: "audit_events", column: "actor_user_id" },
+    { relation: "audit_log", column: "changed_by_user_id" },
+    { relation: "departments", column: "created_by" },
+  ];
+  return references.map(({ relation, column }) => {
+    const values = (snapshot.rows.get(relation) ?? []).filter(row => row[column] !== null && row[column] !== undefined).map(row => String(row[column]));
+    for (const id of values) assert.ok(identities.has(id), `IDENTITY_ANCHOR_PREREQUISITE_UNKNOWN_REFERENCE:${relation}`);
+    return { relation, column, nonNullReferenceCount: values.length, distinctReferenceCount: new Set(values).size, allReferencesResolveToSourceIdentities: true };
+  });
 }
 async function profilesAreMigrationAnchors(client, sourceProfiles, targetProfiles) {
   if (!targetProfiles.length) return false;
@@ -229,7 +248,7 @@ async function cleanupProvenMigrationArtifacts(client, snapshot, preflight) {
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
 async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites) {
-  assert.deepEqual(auditPrerequisites.prerequisiteRelations, ["departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  assert.deepEqual(auditPrerequisites.prerequisiteRelations, ["profiles", "departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
   const sourceDepartments = snapshot.rows.get("departments") ?? [], sourceAudit = snapshot.rows.get("audit_events") ?? [];
   const departments = requiredAuditDepartmentParents(sourceDepartments, sourceAudit);
   // The audit history must cover every department before this controlled
@@ -277,23 +296,26 @@ async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, prefl
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
 async function insertIdentityAnchors(client, users) {
-  const profiles = new Set();
-  const result = await client.query("select id::text from public.profiles");
-  for (const row of result.rows) profiles.add(row.id);
+  const profiles = new Set((await client.query("select id::text from public.profiles order by id")).rows.map(row => row.id));
   const sourceIds = new Set(users.map(user => String(user.id)));
   assert.equal(sourceIds.size, users.length, "SOURCE_DUPLICATE_IDENTITIES");
-  for (const id of profiles) assert.ok(sourceIds.has(id), "TARGET_PROFILE_NOT_IN_SOURCE_IDENTITIES");
-  if ((await client.query("select count(*)::int as count from auth.users")).rows[0].count === 0) {
-    await client.query("begin");
-    try {
-      for (const user of users) {
-        assert.ok(typeof user.id === "string" && typeof user.email === "string" && user.email.length > 0, "SOURCE_IDENTITY_MAPPING_AMBIGUOUS");
-        await client.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3::jsonb)", [user.id, user.email, JSON.stringify({ identity_provider: "migration_anchor", source_user_metadata: user.user_metadata ?? {} })]);
-      }
-      await client.query("commit");
-    } catch (error) { await client.query("rollback"); throw error; }
-  }
-  assert.equal(Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count), users.length, "TARGET_IDENTITY_ANCHOR_COUNT_MISMATCH");
+  // A clean target must not contain a partial anchor set: those profiles are
+  // created only by this bounded transaction and must be exactly the source IDs.
+  assert.equal(profiles.size, 0, "TARGET_PROFILE_SHELL_PREEXISTS");
+  assert.equal(Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count), 0, "TARGET_IDENTITY_ANCHOR_PREEXISTS");
+  await client.query("begin");
+  try {
+    for (const user of users) {
+      assert.ok(typeof user.id === "string" && typeof user.email === "string" && user.email.length > 0, "SOURCE_IDENTITY_MAPPING_AMBIGUOUS");
+      await client.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3::jsonb)", [user.id, user.email, JSON.stringify({ identity_provider: "migration_anchor", source_user_metadata: user.user_metadata ?? {} })]);
+    }
+    const anchoredProfiles = new Set((await client.query("select id::text from public.profiles order by id")).rows.map(row => row.id));
+    assert.equal(anchoredProfiles.size, users.length, "TARGET_PROFILE_SHELL_COUNT_MISMATCH");
+    assert.deepEqual([...anchoredProfiles].sort(), [...sourceIds].sort(), "TARGET_PROFILE_SHELL_ID_SET_MISMATCH");
+    await assertAuditHistoryEmpty(client, "after_identity_anchor_creation");
+    await client.query("commit");
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+  return { identityAnchors: users.length, profileShells: users.length, auditNeutral: true };
 }
 async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
   const relation = "profiles", sourceRows = snapshot.rows.get(relation) ?? [];
@@ -435,22 +457,25 @@ async function runDatabase() {
     const preflight = await preflightTarget(client, snapshot);
     phase = "audit prerequisite dependency analysis";
     const auditPrerequisites = await deriveAuditPrerequisites(client, preflight);
+    const identityAnchorPrerequisites = requireIdentityAnchorPrerequisites(snapshot);
     phase = "audit history clean-state preflight";
-    const auditBefore = await assertAuditHistoryEmpty(client, "before_department_prerequisite_bootstrap");
+    const auditBefore = await assertAuditHistoryEmpty(client, "before_identity_anchor_creation");
+    phase = "identity anchors/profile shells";
+    const identityAnchors = await insertIdentityAnchors(client, snapshot.users);
+    phase = "audit history clean-state after identity anchors";
+    const auditAfterIdentityAnchors = await assertAuditHistoryEmpty(client, "before_department_prerequisite_bootstrap");
     phase = "department prerequisite bootstrap cleanup";
     const departmentPrerequisiteBootstrapCleanup = await runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites);
     phase = "audit history clean-state after bootstrap cleanup";
     const auditAfterPrerequisites = await assertAuditHistoryEmpty(client, "before_source_history");
-    const results = [{ relation: "departments", imported: departmentPrerequisiteBootstrapCleanup.departmentCount, strategy: departmentPrerequisiteBootstrapCleanup.rule }];
+    const results = [{ relation: "profiles", imported: 0, resumed: identityAnchors.profileShells, strategy: "migration-anchor-profile-shells" }, { relation: "departments", imported: departmentPrerequisiteBootstrapCleanup.departmentCount, strategy: departmentPrerequisiteBootstrapCleanup.rule }];
     phase = "source audit history";
     for (const relation of AUDIT_HISTORY_RELATIONS) results.push(await importRelation(client, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation)));
     phase = "audit identity sequence repair";
     const auditIdentitySequences = await repairSequences(client);
-    phase = "audit history complete: identity anchors";
-    await insertIdentityAnchors(client, snapshot.users);
     phase = "relational import";
     for (const item of preflight.order) {
-      if ([...auditPrerequisites.prerequisiteRelations, ...AUDIT_HISTORY_RELATIONS].includes(item)) continue;
+      if (["departments", ...AUDIT_HISTORY_RELATIONS].includes(item)) continue;
       phase = `relational import:${item}`;
       if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight));
       else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight));
@@ -460,7 +485,7 @@ async function runDatabase() {
     const identitySequences = await repairSequences(client);
     phase = "target reconciliation";
     const evidence = await verifyDatabase(client, snapshot, preflight);
-    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", sourceBaseline: snapshot.artifact ?? null, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, before: auditBefore, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", sourceBaseline: snapshot.artifact ?? null, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, identityAnchorPrerequisites, before: auditBefore, afterIdentityAnchors: auditAfterIdentityAnchors, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
   }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
 }
