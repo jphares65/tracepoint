@@ -22,15 +22,20 @@ const AUDIT_HISTORY_RELATIONS = Object.freeze(["audit_events", "retired_permissi
 function targetClient(target, ca, application_name) { return new pg.Client({ ...target, host: process.env.TARGET_PGHOST, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name }); }
 
 function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
-async function sourceSnapshot() {
+async function sourceSnapshot(onBoundary = () => undefined) {
   assert.ok(headers, "Source REST is unavailable in connection-probe mode");
   const sourceFetchLog = evidence => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...evidence }));
+  onBoundary({ event: "post-source-01", boundary: "source-relations-start" });
   const rows = new Map();
   for (const relation of MIGRATION_RELATIONS) rows.set(relation, await allRelationRows(fetch, headers, relation, sourceFetchLog));
+  onBoundary({ event: "post-source-02", boundary: "source-relations-complete", relationCount: rows.size });
   const users = await allAdminUsers(fetch, headers, sourceFetchLog);
+  onBoundary({ event: "post-source-03", boundary: "source-identities-complete", identityCount: users.length });
   const total = [...rows.values()].reduce((sum, relationRows) => sum + relationRows.length, 0);
   const memberships = rows.get("department_memberships") ?? [];
+  onBoundary({ event: "post-source-04", boundary: "source-validation-start" });
   assert.equal(total, 4723, "SOURCE_TOTAL_ROW_MISMATCH"); assert.equal(users.length, 96, "SOURCE_IDENTITY_COUNT_MISMATCH"); assert.equal(memberships.length, 95, "SOURCE_MEMBERSHIP_COUNT_MISMATCH");
+  onBoundary({ event: "post-source-05", boundary: "source-validation-complete", totalRows: total, membershipCount: memberships.length });
   return { rows, users };
 }
 function jsonRows(rows) { return rows.map(row => canonical(row)); }
@@ -439,13 +444,18 @@ async function runTargetProvenanceSweep() {
 async function runTargetDataPreflight() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const client = targetClient(target, ca, "tracepoint-target-data-preflight");
+  let client;
   let phase = "canonical REST source snapshot";
   const deadline = 15_000;
   const emit = event => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...event }));
   const targetQuery = (sql, values = [], relation = "catalog") => withRetainedDeadline({ phase: "audit-table-query", deadlineMs: deadline, operation: () => client.query(assertDiagnosticReadOnlySql(sql), values), onEvent: emit, eventPrefix: "audit-table-query", metadata: { relation } });
   try {
-    const snapshot = await sourceSnapshot(); phase = "target-dns";
+    emit({ event: "post-source-00", boundary: "before-source-snapshot" });
+    const snapshot = await withRetainedDeadline({ phase: "post-source-06-source-snapshot", deadlineMs: deadline, operation: () => sourceSnapshot(event => emit(event)), onEvent: emit, eventPrefix: "post-source-06" });
+    emit({ event: "post-source-07", boundary: "source-snapshot-resolved" });
+    await withRetainedDeadline({ phase: "post-source-08-source-result-validation", deadlineMs: deadline, operation: () => { assert.ok(snapshot.rows instanceof Map, "SOURCE_SNAPSHOT_ROWS_INVALID"); assert.ok(Array.isArray(snapshot.users), "SOURCE_SNAPSHOT_USERS_INVALID"); }, onEvent: emit, eventPrefix: "post-source-08" });
+    await withRetainedDeadline({ phase: "post-source-09-target-client-initialization", deadlineMs: deadline, operation: () => { client = targetClient(target, ca, "tracepoint-target-data-preflight"); }, onEvent: emit, eventPrefix: "post-source-09" });
+    emit({ event: "post-source-10", boundary: "before-target-dns" }); phase = "target-dns";
     const addresses = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => lookup(process.env.TARGET_PGHOST, { all: true, family: 4 }), onEvent: emit, eventPrefix: "target-dns" });
     assert.ok(addresses.length > 0, "TARGET_DNS_NO_IPV4_ADDRESS");
     phase = "target-connect"; await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.connect(), onEvent: emit, eventPrefix: "target-connect" }); assert.equal(client.connection.stream?.encrypted, true, "TARGET_TLS_NOT_ENCRYPTED");
@@ -467,7 +477,7 @@ async function runTargetDataPreflight() {
     }
     await targetQuery("commit", [], "transaction"); const blockers = nonempty.filter(item => !["TARGET_SEEDED_EXCLUDED", "TARGET_SEEDED_PARITY_REQUIRED", "TARGET_SYSTEM_INTERNAL"].includes(item.classification));
     console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, targetDns: { addresses: addresses.map(({ address }) => address) }, nonempty, blockers, targetWriteClientsInitialized: false }));
-  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify({ ...safeError(error, phase), classification: connectionProbeClassification(error, phase) })); process.exitCode = 1; }
+  } catch (error) { await client?.query("rollback").catch(() => undefined); console.error(JSON.stringify({ ...safeError(error, phase), classification: connectionProbeClassification(error, phase) })); process.exitCode = 1; }
   finally { await client.end().catch(() => undefined); }
 }
 async function querySchemaContract(client, relation) {
