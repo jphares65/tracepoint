@@ -8,7 +8,7 @@ import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORD
 import { validateImmutableArtifact } from "./immutable-source-artifact-validator.mjs";
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
 import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
-import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
+import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
 assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
@@ -23,6 +23,38 @@ if (!immutableArtifactMode && mode !== CONNECTION_PROBE_MODE) {
 }
 const AUDIT_HISTORY_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit", "audit_log"]);
 function targetClient(target, ca, application_name) { return new pg.Client({ ...target, host: process.env.TARGET_PGHOST, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name }); }
+function atomicTransactionClient(client) {
+  const scoped = Object.create(client);
+  scoped.query = async (sql, ...values) => {
+    const control = typeof sql === "string" ? sql.trim().toLowerCase() : "";
+    if (["begin", "commit", "rollback"].includes(control)) return { rows: [], rowCount: 0 };
+    return client.query(sql, ...values);
+  };
+  return scoped;
+}
+async function sequenceMetadata(client) {
+  const sequences = (await client.query("select c.relname as table_name,a.attname as column_name,pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) as sequence_name from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null order by c.relname,a.attname")).rows;
+  const state = [];
+  for (const item of sequences) {
+    assert.match(item.sequence_name, /^public\.[a-z][a-z0-9_]*$/u, "SEQUENCE_METADATA_NAME_INVALID");
+    const [, sequence] = item.sequence_name.split(".");
+    const value = (await client.query(`select last_value::text as last_value,is_called from public.${quote(sequence)}`)).rows[0];
+    state.push({ relation: item.table_name, column: item.column_name, sequence: item.sequence_name, lastValue: value.last_value, isCalled: value.is_called });
+  }
+  return state;
+}
+async function verifyAtomicRollback(client, preflight) {
+  const relations = [];
+  for (const mapping of preflight.mappings) {
+    const count = Number((await client.query(`select count(*)::int as count from public.${quote(mapping.relation)}`)).rows[0].count);
+    const expected = preflight.targetBefore.get(mapping.relation);
+    assert.equal(count, expected, `ATOMIC_ROLLBACK_RELATIONAL_RESIDUE:${mapping.relation}`);
+    relations.push({ relation: mapping.relation, expected, actual: count });
+  }
+  const authUsers = Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count);
+  assert.equal(authUsers, preflight.authUsers, "ATOMIC_ROLLBACK_IDENTITY_RESIDUE");
+  return { relationalRowsRestored: true, identityAnchorsRestored: true, relations };
+}
 
 function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
 async function sourceSnapshot(onBoundary = () => undefined) {
@@ -495,44 +527,60 @@ async function verifyDatabase(client, snapshot, preflight) {
 async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
-  let phase = "source snapshot";
+  let phase = "source snapshot", preflight = null, sequenceBefore = [], atomicTransactionStarted = false;
   try {
     const snapshot = await sourceSnapshot();
     phase = "target TLS preflight"; await client.connect();
-    const preflight = await preflightTarget(client, snapshot);
+    preflight = await preflightTarget(client, snapshot);
     phase = "audit prerequisite dependency analysis";
     const auditPrerequisites = await deriveAuditPrerequisites(client, preflight);
     const identityAnchorPrerequisites = requireIdentityAnchorPrerequisites(snapshot);
+    phase = "atomic sequence metadata preflight";
+    sequenceBefore = await sequenceMetadata(client);
+    phase = "atomic relational transaction begin";
+    await client.query("begin"); atomicTransactionStarted = true;
+    const atomicClient = atomicTransactionClient(client);
     phase = "audit history clean-state preflight";
-    const auditBefore = await assertAuditHistoryEmpty(client, "before_identity_anchor_creation");
+    const auditBefore = await assertAuditHistoryEmpty(atomicClient, "before_identity_anchor_creation");
     phase = "identity anchors/profile shells";
-    const identityAnchors = await insertIdentityAnchors(client, snapshot.users);
+    const identityAnchors = await insertIdentityAnchors(atomicClient, snapshot.users);
     phase = "audit history clean-state after identity anchors";
-    const auditAfterIdentityAnchors = await assertAuditHistoryEmpty(client, "before_department_prerequisite_bootstrap");
+    const auditAfterIdentityAnchors = await assertAuditHistoryEmpty(atomicClient, "before_department_prerequisite_bootstrap");
     phase = "department prerequisite bootstrap cleanup";
-    const departmentPrerequisiteBootstrapCleanup = await runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites);
+    const departmentPrerequisiteBootstrapCleanup = await runDepartmentPrerequisiteBootstrapCleanup(atomicClient, snapshot, preflight, auditPrerequisites);
     phase = "audit history clean-state after bootstrap cleanup";
-    const auditAfterPrerequisites = await assertAuditHistoryEmpty(client, "before_source_history");
+    const auditAfterPrerequisites = await assertAuditHistoryEmpty(atomicClient, "before_source_history");
     const results = [{ relation: "profiles", imported: 0, resumed: identityAnchors.profileShells, strategy: "migration-anchor-profile-shells" }, { relation: "departments", imported: departmentPrerequisiteBootstrapCleanup.departmentCount, strategy: departmentPrerequisiteBootstrapCleanup.rule }];
     phase = "source audit history";
-    for (const relation of AUDIT_HISTORY_RELATIONS) results.push(await importRelation(client, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation)));
+    for (const relation of AUDIT_HISTORY_RELATIONS) results.push(await importRelation(atomicClient, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation)));
     phase = "audit identity sequence repair";
-    const auditIdentitySequences = await repairSequences(client);
+    const auditIdentitySequences = await repairSequences(atomicClient);
     phase = "relational import";
     for (const item of preflight.order) {
       if (["departments", ...AUDIT_HISTORY_RELATIONS].includes(item)) continue;
       phase = `relational import:${item}`;
-      if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(client, snapshot, preflight));
-      else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(client, snapshot, preflight));
-      else results.push(await importRelation(client, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.resumePlan.get(item)));
+      if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(atomicClient, snapshot, preflight));
+      else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(atomicClient, snapshot, preflight));
+      else results.push(await importRelation(atomicClient, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.resumePlan.get(item)));
     }
     phase = "target sequence repair";
-    const identitySequences = await repairSequences(client);
-    phase = "target reconciliation";
-    const evidence = await verifyDatabase(client, snapshot, preflight);
-    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import", sourceBaseline: snapshot.artifact ?? null, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, identityAnchorPrerequisites, before: auditBefore, afterIdentityAnchors: auditAfterIdentityAnchors, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
+    const identitySequences = await repairSequences(atomicClient);
+    phase = "in-transaction target reconciliation";
+    const evidence = await verifyDatabase(atomicClient, snapshot, preflight);
+    phase = "atomic relational transaction commit";
+    await client.query("commit"); atomicTransactionStarted = false;
+    const sequenceAfter = await sequenceMetadata(client);
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import-atomic-relational", sourceBaseline: snapshot.artifact ?? null, atomicTransaction: { relationalWrites: "single-transaction", reconciliation: "before-commit", sequenceRollbackBehavior: "accepted-nontransactional", sequenceBefore, sequenceAfter }, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, identityAnchorPrerequisites, before: auditBefore, afterIdentityAnchors: auditAfterIdentityAnchors, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
   }
-  catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { await client.end().catch(() => undefined); }
+  catch (error) {
+    if (atomicTransactionStarted) {
+      await client.query("rollback").catch(() => undefined); atomicTransactionStarted = false;
+      const rollback = preflight ? await verifyAtomicRollback(client, preflight).catch(rollbackError => ({ relationalRowsRestored: false, rollbackVerificationError: safeError(rollbackError, "atomic rollback verification") })) : null;
+      const sequenceAfterRollback = await sequenceMetadata(client).catch(() => []);
+      console.error(JSON.stringify({ ...safeError(error, phase), atomicRollback: { relationalWritesRolledBack: rollback?.relationalRowsRestored === true, verification: rollback, sequenceBefore, sequenceAfterRollback, sequenceGapsAccepted: true } }));
+    } else console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally { await client.end().catch(() => undefined); }
 }
 async function runFeatureCatalogReconciliation() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");

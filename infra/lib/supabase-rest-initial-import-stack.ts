@@ -25,13 +25,14 @@ export class SupabaseRestInitialImportStack extends cdk.Stack {
     const originalRdsHost='tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
     const cleanRdsHost='tracepoint-production-migration-clean-4272874f.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
     const auditFirstCleanRdsHost='tracepoint-production-migration-clean-4272874f-auditfirst.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
+    const atomicCleanRdsHost='tracepoint-production-migration-clean-4272874f-atomic.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
     const bucket='tracepoint-production-private-193644343389';
     const artifactKey=`migration/source/${props.runId}/initial-canonical.json`;
     const artifactSha256='8b01ea2a57a650b10d126160c5d171fecf1e98f1e07a9fa720e97e600d8d6d57';
     const keyArn=`arn:aws:kms:${region}:${account}:key/4dc71990-3cfa-49d7-88c6-383bc1067f55`;
     if(this.account!==account||this.region!==region||props.runId!=='4272874f-bae4-49f4-a0b4-67a39cec2874'||props.authorizationReference!=='TP-FINAL-DB-20260920-4272874FBAE4') throw new Error('Exact approved production migration context is required');
     if(!/^[0-9a-f]{40}$/.test(props.databaseCommit)||!/^[0-9a-f]{40}$/.test(props.objectCommit)||!/^sha256:[0-9a-f]{64}$/.test(props.databaseImageDigest)||!/^sha256:[0-9a-f]{64}$/.test(props.objectImageDigest)||props.repositoryName!=='tracepoint-production'||props.clusterName!=='tracepoint-production') throw new Error('Exact immutable migration image context is required');
-    if(props.vpcId!=='vpc-04accb4047a914176'||props.publicSubnetIds.length!==2||new Set(props.publicSubnetIds).size!==2||!props.publicSubnetIds.every(value=>['subnet-0f4cbed3e60d90bfc','subnet-0a117bec5cb98607f'].includes(value))||props.databaseSecurityGroupId!=='sg-096e4787eae992cf4'||props.sourceSecretArn!==sourceSecretArn||props.targetSecretArn!==targetSecretArn||![originalRdsHost,cleanRdsHost,auditFirstCleanRdsHost].includes(props.targetHost)) throw new Error('Only reviewed migration network, source, and target are permitted');
+    if(props.vpcId!=='vpc-04accb4047a914176'||props.publicSubnetIds.length!==2||new Set(props.publicSubnetIds).size!==2||!props.publicSubnetIds.every(value=>['subnet-0f4cbed3e60d90bfc','subnet-0a117bec5cb98607f'].includes(value))||props.databaseSecurityGroupId!=='sg-096e4787eae992cf4'||props.sourceSecretArn!==sourceSecretArn||props.targetSecretArn!==targetSecretArn||![originalRdsHost,cleanRdsHost,auditFirstCleanRdsHost,atomicCleanRdsHost].includes(props.targetHost)) throw new Error('Only reviewed migration network, source, and target are permitted');
     cdk.Tags.of(this).add('Purpose','isolated-rest-initial-import'); cdk.Tags.of(this).add('MigrationRun',props.runId); cdk.Tags.of(this).add('AuthorizationReference',props.authorizationReference);
     const vpc=ec2.Vpc.fromVpcAttributes(this,'Vpc',{vpcId:props.vpcId,availabilityZones:['us-east-1a','us-east-1b'],publicSubnetIds:props.publicSubnetIds});
     const cluster=ecs.Cluster.fromClusterAttributes(this,'Cluster',{clusterName:props.clusterName,vpc});
