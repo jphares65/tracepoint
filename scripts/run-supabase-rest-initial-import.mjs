@@ -806,7 +806,10 @@ async function runMigrationModeSchemaRepair() {
     }
     const trigger = await client.query("select pg_get_triggerdef(t.oid,true) as definition from pg_trigger t where t.tgrelid='public.equipment_assets'::regclass and t.tgname=$1 and not t.tgisinternal", [EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.triggerName]);
     assert.equal(trigger.rowCount, 1, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_MISSING");
-    assert.match(trigger.rows[0].definition, /execute function (?:public\.)?sync_equipment_asset_assignment_history\(\)/u, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_BINDING_CHANGED");
+    // PostgreSQL canonicalizes pg_get_triggerdef() keywords to upper case.  Keep
+    // the relation/function binding exact while accepting that non-semantic
+    // formatter difference from the reviewed migration definition.
+    assert.match(trigger.rows[0].definition, /execute function (?:public\.)?sync_equipment_asset_assignment_history\(\)/iu, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_BINDING_CHANGED");
     phase = "transaction-local migration-mode contract repair";
     await client.query("begin");
     try { for (const item of MIGRATION_MODE_TARGET_FUNCTIONS) await client.query(item.statement); await client.query("commit"); }
