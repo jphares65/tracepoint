@@ -8,10 +8,10 @@ import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORD
 import { validateImmutableArtifact } from "./immutable-source-artifact-validator.mjs";
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
 import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
-import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
+import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
 let headers = null;
@@ -495,6 +495,20 @@ async function repairSequences(client) {
   }
   return identitySequences;
 }
+async function verifyEquipmentAssignmentHistory(client, snapshot, preflight) {
+  const assetMapping = preflight.mappings.find(mapping => mapping.relation === "equipment_assets");
+  const assignmentMapping = preflight.mappings.find(mapping => mapping.relation === "equipment_asset_assignments");
+  assert.ok(assetMapping && assignmentMapping, "EQUIPMENT_ASSIGNMENT_HISTORY_MAPPING_MISSING");
+  const sourceAssets = snapshot.rows.get("equipment_assets") ?? [], sourceAssignments = snapshot.rows.get("equipment_asset_assignments") ?? [];
+  const targetAssets = await targetRows(client, "equipment_assets", assetMapping.sourceColumns);
+  const targetAssignments = await targetRows(client, "equipment_asset_assignments", assignmentMapping.sourceColumns);
+  const evidence = verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceAssignments, targetAssets, targetAssignments });
+  assert.equal(evidence.assignments, 33, "EQUIPMENT_ASSIGNMENT_SOURCE_COUNT_CHANGED");
+  assert.equal(evidence.activeAssignments, 31, "EQUIPMENT_ASSIGNMENT_SOURCE_ACTIVE_COUNT_CHANGED");
+  assert.equal(evidence.distinctActiveAssets, 31, "EQUIPMENT_ASSIGNMENT_SOURCE_ACTIVE_ASSET_COUNT_CHANGED");
+  assert.equal(evidence.historicalAssignments, 2, "EQUIPMENT_ASSIGNMENT_SOURCE_HISTORY_COUNT_CHANGED");
+  return evidence;
+}
 async function verifyDatabase(client, snapshot, preflight) {
   const sourceTables = []; const targetTables = [];
   for (const relation of IMPORT_RELATIONS) {
@@ -540,6 +554,8 @@ async function runDatabase() {
     phase = "atomic relational transaction begin";
     await client.query("begin"); atomicTransactionStarted = true;
     const atomicClient = atomicTransactionClient(client);
+    phase = "transaction-local equipment assignment history guard";
+    await atomicClient.query(`set local ${EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.setting} = 'on'`);
     phase = "audit history clean-state preflight";
     const auditBefore = await assertAuditHistoryEmpty(atomicClient, "before_identity_anchor_creation");
     phase = "identity anchors/profile shells";
@@ -565,12 +581,14 @@ async function runDatabase() {
     }
     phase = "target sequence repair";
     const identitySequences = await repairSequences(atomicClient);
+    phase = "equipment assignment history reconciliation";
+    const equipmentAssignmentHistory = await verifyEquipmentAssignmentHistory(atomicClient, snapshot, preflight);
     phase = "in-transaction target reconciliation";
     const evidence = await verifyDatabase(atomicClient, snapshot, preflight);
     phase = "atomic relational transaction commit";
     await client.query("commit"); atomicTransactionStarted = false;
     const sequenceAfter = await sequenceMetadata(client);
-    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import-atomic-relational", sourceBaseline: snapshot.artifact ?? null, atomicTransaction: { relationalWrites: "single-transaction", reconciliation: "before-commit", sequenceRollbackBehavior: "accepted-nontransactional", sequenceBefore, sequenceAfter }, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, identityAnchorPrerequisites, before: auditBefore, afterIdentityAnchors: auditAfterIdentityAnchors, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import-atomic-relational", sourceBaseline: snapshot.artifact ?? null, atomicTransaction: { relationalWrites: "single-transaction", reconciliation: "before-commit", sequenceRollbackBehavior: "accepted-nontransactional", sequenceBefore, sequenceAfter, equipmentAssignmentHistoryGuard: EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.setting }, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, identityAnchorPrerequisites, before: auditBefore, afterIdentityAnchors: auditAfterIdentityAnchors, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, equipmentAssignmentHistory, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
   }
   catch (error) {
     if (atomicTransactionStarted) {
@@ -788,6 +806,47 @@ async function runEquipmentAssetsLifecycleSchemaRepair() {
   } catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
   finally { await client.end().catch(() => undefined); }
 }
+async function equipmentAssignmentHistoryFunctionContract(client) {
+  const functionResult = await client.query("select pg_get_functiondef(p.oid) as definition,p.prosecdef as security_definer from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1 and pg_get_function_identity_arguments(p.oid)=''", [EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.functionName]);
+  assert.equal(functionResult.rowCount, 1, "EQUIPMENT_ASSIGNMENT_HISTORY_FUNCTION_MISSING");
+  const trigger = await client.query("select tgname,pg_get_triggerdef(t.oid,true) as definition from pg_trigger t where t.tgrelid='public.equipment_assets'::regclass and t.tgname=$1 and not t.tgisinternal", [EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.triggerName]);
+  assert.equal(trigger.rowCount, 1, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_MISSING");
+  assert.match(trigger.rows[0].definition, /execute function (?:public\.)?sync_equipment_asset_assignment_history\(\)/u, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_BINDING_CHANGED");
+  return { definition: functionResult.rows[0].definition, securityDefiner: functionResult.rows[0].security_definer, trigger: trigger.rows[0].definition };
+}
+async function runEquipmentAssignmentHistoryGuardSchemaRepair() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-equipment-assignment-history-guard-schema-repair");
+  let phase = "equipment assignment history function preservation";
+  try {
+    await client.connect();
+    const before = await equipmentAssignmentHistoryFunctionContract(client);
+    assert.equal(before.securityDefiner, false, "EQUIPMENT_ASSIGNMENT_HISTORY_FUNCTION_SECURITY_CHANGED");
+    for (const fragment of EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.requiredExistingFragments) assert.ok(before.definition.includes(fragment), "EQUIPMENT_ASSIGNMENT_HISTORY_FUNCTION_UNEXPECTED");
+    const beforeDefinitionSha256 = createHash("sha256").update(before.definition).digest("hex");
+    phase = "transaction-local equipment assignment guard repair";
+    await client.query("begin");
+    try { await client.query(EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.statement); await client.query("commit"); }
+    catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+    phase = "equipment assignment history guard verification";
+    const after = await equipmentAssignmentHistoryFunctionContract(client);
+    assert.equal(after.securityDefiner, false, "EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SECURITY_CHANGED");
+    assert.match(after.definition, /current_setting\('tracepoint\.migration_equipment_assignment_import', true\) = 'on'/u, "EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_MISSING");
+    for (const fragment of EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.requiredExistingFragments) assert.ok(after.definition.includes(fragment), "EQUIPMENT_ASSIGNMENT_HISTORY_FUNCTION_BODY_CHANGED");
+    await client.query("begin");
+    try {
+      await client.query(`set local ${EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.setting} = 'on'`);
+      const inside = (await client.query(`select current_setting('${EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.setting}',true) as value`)).rows[0].value;
+      assert.equal(inside, "on", "EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_NOT_SET_LOCAL");
+      await client.query("commit");
+    } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+    const afterCommit = (await client.query(`select current_setting('${EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.setting}',true) as value`)).rows[0].value;
+    assert.notEqual(afterCommit, "on", "EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_NOT_TRANSACTION_LOCAL");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, target: { host: process.env.TARGET_PGHOST, database: target.database, tlsVerified: true }, function: EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.functionName, trigger: EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.triggerName, beforeDefinitionSha256, afterDefinitionSha256: createHash("sha256").update(after.definition).digest("hex"), securityDefiner: false, transactionLocalSetting: EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.setting, settingClearedAfterCommit: true, sourceClientsInitialized: false, targetWriteScope: "approved-equipment-assignment-history-function-guard", targetRowsUpdated: false }));
+  } catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
 function targetKindForRelation(kinds, relation) { return kinds.get(relation) ?? null; }
 async function runFullSchemaContractSweep() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
@@ -976,7 +1035,7 @@ async function runConnectionProbe() {
 
 async function runReviewedMode() {
   if (mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE) return runDepartmentRolePermissionsAuthorizationDiagnostic();
-  return mode === CONNECTION_PROBE_MODE ? runConnectionProbe() : mode === TARGET_SCHEMA_CONTRACT_MODE ? runTargetSchemaContract() : mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE ? runEquipmentAssetsLifecycleSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
+  return mode === CONNECTION_PROBE_MODE ? runConnectionProbe() : mode === TARGET_SCHEMA_CONTRACT_MODE ? runTargetSchemaContract() : mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE ? runEquipmentAssetsLifecycleSchemaRepair() : mode === EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE ? runEquipmentAssignmentHistoryGuardSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
 }
 
 // Node 24 can exit with code 13 when its only outstanding work is a top-level

@@ -57,6 +57,7 @@ export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, 
 
 export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
 export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE = "schema-repair-equipment-assets-lifecycle-status";
+export const EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE = "schema-repair-equipment-assignment-history-guard";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
 export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
@@ -68,7 +69,7 @@ export const AUDIT_ARTIFACT_CLEANUP_MODE = "audit-events-migration-artifact-clea
 export const CONNECTION_PROBE_MODE = "rds-connection-probe";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -496,6 +497,164 @@ export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR = Object.freeze({
     "ALTER TABLE public.equipment_assets ADD CONSTRAINT equipment_assets_lifecycle_status_check CHECK (lifecycle_status IN ('active', 'maintenance', 'expired', 'removed', 'out_of_service'))",
   ]),
 });
+
+// This is a deliberately transaction-local import escape hatch, not a
+// permanent behavior change.  The setting is checked exactly, so an absent,
+// empty, or differently-valued setting retains the production trigger's
+// current behavior.  It is used only while the isolated importer supplies
+// the canonical assignment history itself.
+export const EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD = Object.freeze({
+  setting: "tracepoint.migration_equipment_assignment_import",
+  functionName: "sync_equipment_asset_assignment_history",
+  triggerName: "trg_equipment_asset_assignment_history",
+  relation: "equipment_assets",
+  assignmentRelation: "equipment_asset_assignments",
+  requiredExistingFragments: Object.freeze([
+    "if tg_op = 'INSERT' then",
+    "insert into public.equipment_asset_assignments",
+    "where equipment_asset_id = new.id",
+    "and returned_at is null",
+    "return new",
+  ]),
+  statement: `create or replace function public.sync_equipment_asset_assignment_history()
+returns trigger
+language plpgsql
+security invoker
+as $$
+begin
+    if current_setting('tracepoint.migration_equipment_assignment_import', true) = 'on' then
+        return new;
+    end if;
+
+    -- New asset created already assigned to an officer.
+    if tg_op = 'INSERT' then
+        if new.assigned_user_id is not null then
+            insert into public.equipment_asset_assignments (
+                department_id,
+                equipment_asset_id,
+                assigned_user_id,
+                assigned_at,
+                assigned_by,
+                assignment_notes
+            )
+            values (
+                new.department_id,
+                new.id,
+                new.assigned_user_id,
+                coalesce(new.issue_date::timestamptz, now()),
+                coalesce(new.created_by, new.updated_by),
+                'Equipment issued at asset creation'
+            )
+            on conflict do nothing;
+        end if;
+
+        return new;
+    end if;
+
+    -- Nothing to do if custody did not change.
+    if old.assigned_user_id is not distinct from new.assigned_user_id then
+        return new;
+    end if;
+
+    -- Close the prior active custody record.
+    if old.assigned_user_id is not null then
+        update public.equipment_asset_assignments
+        set
+            returned_at = now(),
+            returned_by = new.updated_by,
+            return_notes =
+                case
+                    when new.lifecycle_status = 'removed'
+                        then 'Equipment removed from active inventory'
+                    when new.assigned_user_id is null
+                        then 'Equipment returned / unassigned'
+                    else
+                        'Equipment reassigned'
+                end
+        where equipment_asset_id = new.id
+          and department_id = new.department_id
+          and returned_at is null;
+    end if;
+
+    -- Open the new custody record.
+    if new.assigned_user_id is not null then
+        insert into public.equipment_asset_assignments (
+            department_id,
+            equipment_asset_id,
+            assigned_user_id,
+            assigned_at,
+            assigned_by,
+            assignment_notes
+        )
+        values (
+            new.department_id,
+            new.id,
+            new.assigned_user_id,
+            now(),
+            new.updated_by,
+            case
+                when old.assigned_user_id is null
+                    then 'Equipment issued'
+                else
+                    'Equipment reassigned'
+            end
+        );
+    end if;
+
+    return new;
+end;
+$$`,
+});
+
+export function equipmentAssignmentHistoryImportGuardEnabled(value) {
+  return value === "on";
+}
+
+export function verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceAssignments, targetAssets, targetAssignments }) {
+  for (const value of [sourceAssets, sourceAssignments, targetAssets, targetAssignments]) assert.ok(Array.isArray(value), "EQUIPMENT_ASSIGNMENT_HISTORY_ROWS_INVALID");
+  const byId = (rows, error) => {
+    const map = new Map();
+    for (const row of rows) {
+      const id = String(row?.id ?? "");
+      assert.ok(id.length > 0 && !map.has(id), error);
+      map.set(id, row);
+    }
+    return map;
+  };
+  const sourceById = byId(sourceAssignments, "SOURCE_EQUIPMENT_ASSIGNMENT_ID_DUPLICATE");
+  const targetById = byId(targetAssignments, "TARGET_EQUIPMENT_ASSIGNMENT_ID_DUPLICATE");
+  assert.deepEqual([...targetById.keys()].sort(), [...sourceById.keys()].sort(), "EQUIPMENT_ASSIGNMENT_SYNTHETIC_OR_MISSING_ROW");
+  assert.equal(canonicalRowsHash(targetAssignments), canonicalRowsHash(sourceAssignments), "EQUIPMENT_ASSIGNMENT_SOURCE_TARGET_MISMATCH");
+  const sourceAssetsById = byId(sourceAssets, "SOURCE_EQUIPMENT_ASSET_ID_DUPLICATE");
+  const targetAssetsById = byId(targetAssets, "TARGET_EQUIPMENT_ASSET_ID_DUPLICATE");
+  assert.deepEqual([...targetAssetsById.keys()].sort(), [...sourceAssetsById.keys()].sort(), "EQUIPMENT_ASSET_SOURCE_TARGET_ID_MISMATCH");
+  const active = sourceAssignments.filter(row => row.returned_at === null || row.returned_at === undefined);
+  const historical = sourceAssignments.filter(row => row.returned_at !== null && row.returned_at !== undefined);
+  const activeByAsset = new Map();
+  for (const row of active) {
+    const assetId = String(row.equipment_asset_id ?? "");
+    assert.ok(assetId.length > 0 && !activeByAsset.has(assetId), "EQUIPMENT_ASSIGNMENT_ACTIVE_DUPLICATE");
+    const asset = sourceAssetsById.get(assetId);
+    assert.ok(asset, "EQUIPMENT_ASSIGNMENT_ASSET_MISSING");
+    assert.equal(String(asset.department_id), String(row.department_id), "EQUIPMENT_ASSIGNMENT_CROSS_TENANT");
+    assert.equal(String(asset.assigned_user_id), String(row.assigned_user_id), "EQUIPMENT_ASSIGNMENT_CURRENT_ASSIGNEE_MISMATCH");
+    activeByAsset.set(assetId, row);
+  }
+  for (const row of historical) {
+    assert.ok(Date.parse(row.returned_at) >= Date.parse(row.assigned_at), "EQUIPMENT_ASSIGNMENT_RETURN_BEFORE_ASSIGNMENT");
+  }
+  for (const asset of sourceAssets) {
+    const activeAssignment = activeByAsset.get(String(asset.id));
+    if (asset.assigned_user_id === null || asset.assigned_user_id === undefined) assert.equal(activeAssignment, undefined, "EQUIPMENT_ASSIGNMENT_UNEXPECTED_ACTIVE_ASSIGNMENT");
+    else assert.ok(activeAssignment, "EQUIPMENT_ASSIGNMENT_ASSET_HISTORY_MISSING");
+  }
+  for (const row of targetAssignments) {
+    const asset = targetAssetsById.get(String(row.equipment_asset_id));
+    assert.ok(asset, "TARGET_EQUIPMENT_ASSIGNMENT_ASSET_MISSING");
+    assert.equal(String(asset.department_id), String(row.department_id), "TARGET_EQUIPMENT_ASSIGNMENT_CROSS_TENANT");
+  }
+  return Object.freeze({ assignments: sourceAssignments.length, activeAssignments: active.length, distinctActiveAssets: activeByAsset.size, historicalAssignments: historical.length, canonicalDataSha256: canonicalRowsHash(sourceAssignments), noSyntheticAssignments: true });
+}
 
 export function validateColumnMapping(relation, rows, targetColumns) {
   assert.ok(IMPORT_RELATIONS.includes(relation), "Unapproved import relation");
