@@ -26,3 +26,14 @@ test('shadow build is commit-immutable and has no Supabase URL or key dependency
   assert.doesNotMatch(build, /--build-arg NEXT_PUBLIC_SUPABASE|SUPABASE_SECRET_KEY/);
   assert.match(build, /docker run --rm --read-only --entrypoint \/nodejs\/bin\/node/);
 });
+
+test('Docker build context exposes only the shared production-target contract from infra', () => {
+  const ignore = read('.dockerignore');
+  const docker = read('Dockerfile.shadow');
+  assert.match(ignore, /^infra\/\*\*$/m);
+  assert.match(ignore, /^!infra\/lib\/$/m);
+  assert.match(ignore, /^!infra\/lib\/production-target\.ts$/m);
+  assert.doesNotMatch(ignore, /^!infra\/(?:\*|\*\*|lib\/\*|lib\/\*\*)\s*$/m);
+  assert.match(docker, /^COPY \. \.$/m);
+  assert.doesNotMatch(docker, /^COPY (?:--from=builder\s+)?(?:\/app\/)?infra\//m);
+});

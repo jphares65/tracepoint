@@ -2,7 +2,9 @@
 .github
 .next
 node_modules
-infra
+infra/**
+!infra/lib/
+!infra/lib/production-target.ts
 docs
 supabase
 *.txt
