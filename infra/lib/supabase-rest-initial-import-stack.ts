@@ -53,7 +53,7 @@ export class SupabaseRestInitialImportStack extends cdk.Stack {
     const dbRole=makeExecutionRole('DatabaseExecutionRole',`TracePoint-RestRdsImportExec-${runSuffix}`,[targetSecretArn],dbLogs.logGroupArn,true);
     const objectExecRole=makeExecutionRole('ObjectExecutionRole',`TracePoint-RestObjectCopyExec-${runSuffix}`,[sourceSecretArn],objectLogs.logGroupArn,false);
     const databaseRole=new iam.Role(this,'DatabaseTaskRole',{roleName:`TracePoint-RestRdsImportTask-${runSuffix}`,assumedBy:principal,description:'Temporary task role restricted to the adopted immutable source artifact'}); iam.PermissionsBoundary.of(databaseRole).apply(boundary);
-    databaseRole.addToPolicy(new iam.PolicyStatement({sid:'ReadOnlyAdoptedSourceArtifact',actions:['s3:GetObject'],resources:[`arn:aws:s3:::${bucket}/${artifactKey}`]}));
+    databaseRole.addToPolicy(new iam.PolicyStatement({sid:'ReadOnlyAdoptedSourceArtifact',actions:['s3:GetObject','s3:GetObjectVersion'],resources:[`arn:aws:s3:::${bucket}/${artifactKey}`]}));
     databaseRole.addToPolicy(new iam.PolicyStatement({sid:'DecryptOnlyAdoptedSourceArtifact',actions:['kms:Decrypt'],resources:[keyArn],conditions:{StringEquals:{'kms:ViaService':`s3.${region}.amazonaws.com`}}}));
     const objectRole=new iam.Role(this,'ObjectTaskRole',{roleName:`TracePoint-RestObjectCopyTask-${runSuffix}`,assumedBy:principal,description:'Temporary task role restricted to the two reviewed object keys'}); iam.PermissionsBoundary.of(objectRole).apply(boundary);
     const objectKeys=['department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg','department-assets/d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png'];
