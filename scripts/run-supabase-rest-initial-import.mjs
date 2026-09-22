@@ -1,0 +1,1057 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
+import { readFile } from "node:fs/promises";
+import pg from "pg";
+import { DescribeDBInstancesCommand, RDSClient } from "@aws-sdk/client-rds";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORDER_COLUMNS, RUN_ID, canonical, sha256 } from "./supabase-rest-ledger-core.mjs";
+import { validateImmutableArtifact } from "./immutable-source-artifact-validator.mjs";
+import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
+import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
+import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, attestFinalCleanTargetControlPlane, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
+
+const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+validateImportInvocation(process.env, mode);
+const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
+let headers = null;
+if (!immutableArtifactMode && mode !== CONNECTION_PROBE_MODE) {
+  const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
+  delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
+  assert.ok(rawSource, "Dedicated source REST secret was not injected");
+  headers = sourceHeaders(JSON.parse(rawSource));
+}
+const AUDIT_HISTORY_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit", "audit_log"]);
+function targetClient(target, ca, application_name) {
+  assert.equal(process.env.TARGET_PGHOST, FINAL_CLEAN_TARGET_HOST, "MIGRATION_TARGET_HOST_NOT_FINAL_QUARANTINE");
+  assert.equal(process.env.TARGET_PGDATABASE, "tracepoint", "MIGRATION_TARGET_DATABASE_NOT_FINAL_QUARANTINE");
+  assert.equal(process.env.TRACEPOINT_EXPECTED_RDS_INSTANCE_ID, FINAL_CLEAN_TARGET_INSTANCE_ID, "MIGRATION_TARGET_INSTANCE_CONTRACT_MISMATCH");
+  assert.equal(process.env.TRACEPOINT_EXPECTED_RDS_RESOURCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, "MIGRATION_TARGET_RESOURCE_CONTRACT_MISMATCH");
+  const client = new pg.Client({ ...target, host: FINAL_CLEAN_TARGET_HOST, ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 15_000, statement_timeout: 60_000, application_name });
+  const connect = client.connect.bind(client);
+  client.connect = async () => {
+    const rds = new RDSClient({ region: "us-east-1" });
+    const controlPlane = await rds.send(new DescribeDBInstancesCommand({ DBInstanceIdentifier: FINAL_CLEAN_TARGET_INSTANCE_ID }));
+    const rdsIdentity = attestFinalCleanTargetControlPlane(controlPlane.DBInstances?.[0]);
+    await connect();
+    assert.equal(client.connection.stream?.encrypted, true, "MIGRATION_TARGET_TLS_NOT_ENCRYPTED");
+    const identity = (await client.query("select current_database() as database, inet_server_port()::int as server_port")).rows[0];
+    assert.equal(identity.database, "tracepoint", "MIGRATION_TARGET_DATABASE_MISMATCH");
+    assert.equal(identity.server_port, 5432, "MIGRATION_TARGET_SERVER_PORT_MISMATCH");
+    client.migrationTargetAttestation = { ...rdsIdentity, database: identity.database, serverPort: identity.server_port, tlsVerified: true, legacyHostUsed: false };
+  };
+  return client;
+}
+function atomicTransactionClient(client) {
+  const scoped = Object.create(client);
+  scoped.query = async (sql, ...values) => {
+    const control = typeof sql === "string" ? sql.trim().toLowerCase() : "";
+    if (["begin", "commit", "rollback"].includes(control)) return { rows: [], rowCount: 0 };
+    return client.query(sql, ...values);
+  };
+  return scoped;
+}
+async function sequenceMetadata(client) {
+  const sequences = (await client.query("select c.relname as table_name,a.attname as column_name,pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) as sequence_name from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null order by c.relname,a.attname")).rows;
+  const state = [];
+  for (const item of sequences) {
+    assert.match(item.sequence_name, /^public\.[a-z][a-z0-9_]*$/u, "SEQUENCE_METADATA_NAME_INVALID");
+    const [, sequence] = item.sequence_name.split(".");
+    const value = (await client.query(`select last_value::text as last_value,is_called from public.${quote(sequence)}`)).rows[0];
+    state.push({ relation: item.table_name, column: item.column_name, sequence: item.sequence_name, lastValue: value.last_value, isCalled: value.is_called });
+  }
+  return state;
+}
+async function verifyAtomicRollback(client, preflight) {
+  const relations = [];
+  for (const mapping of preflight.mappings) {
+    const count = Number((await client.query(`select count(*)::int as count from public.${quote(mapping.relation)}`)).rows[0].count);
+    const expected = preflight.targetBefore.get(mapping.relation);
+    assert.equal(count, expected, `ATOMIC_ROLLBACK_RELATIONAL_RESIDUE:${mapping.relation}`);
+    relations.push({ relation: mapping.relation, expected, actual: count });
+  }
+  const authUsers = Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count);
+  assert.equal(authUsers, preflight.authUsers, "ATOMIC_ROLLBACK_IDENTITY_RESIDUE");
+  return { relationalRowsRestored: true, identityAnchorsRestored: true, relations };
+}
+
+function safeError(error, phase) { const message=error instanceof Error?error.message:""; const detail=/^[A-Z_]+(?::[a-z0-9_]+)?$/.test(message)?message:undefined; return { status: "FAILED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, phase, errorName: error instanceof Error ? error.name : "Error", errorCode: typeof error === "object" && error && "code" in error ? String(error.code) : undefined, detail, ...(typeof error === "object" && error && "safeDiagnostic" in error ? { diagnostic: error.safeDiagnostic } : {}) }; }
+async function sourceSnapshot(onBoundary = () => undefined) {
+  if (immutableArtifactMode) {
+    const bucket = process.env.TRACEPOINT_SOURCE_ARTIFACT_BUCKET, key = process.env.TRACEPOINT_SOURCE_ARTIFACT_KEY;
+    assert.equal(bucket, INITIAL_ARTIFACT_BUCKET, "ARTIFACT_BUCKET_NOT_APPROVED"); assert.equal(key, INITIAL_ARTIFACT_KEY, "ARTIFACT_KEY_NOT_APPROVED");
+    onBoundary({ event: "post-source-01", boundary: "immutable-artifact-read-start" });
+    const s3 = new S3Client({ region: "us-east-1", maxAttempts: 1 });
+    try {
+      const versionId = "E2D8RfEoImElsrFBqDDTE4Bqu6ANK6Xa", wholeFileSha256 = "010f0f403ee08c9ed894ee68473ef9d19f82b56ba05bfc1fa8204fda83a4bc20";
+      const response = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: versionId, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" }));
+      assert.equal(response.VersionId, versionId, "ARTIFACT_VERSION_MISMATCH");
+      const bytes = new Uint8Array(await response.Body.transformToByteArray());
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), wholeFileSha256, "ARTIFACT_BYTE_SHA256_MISMATCH");
+      const artifact = JSON.parse(new TextDecoder().decode(bytes));
+      assert.equal(artifact.masterSha256, INITIAL_ARTIFACT_SHA256, "ARTIFACT_MASTER_SHA256_MISMATCH");
+      const integrity = validateImmutableArtifact(artifact, { expectedSha256: INITIAL_ARTIFACT_SHA256, enforceCurrentDriftCounts: true });
+      onBoundary({ event: "post-source-02", boundary: "immutable-artifact-integrity-complete", relationCount: artifact.tables.length });
+      return { rows: new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]])), users: artifact.identities.rows, baseline: INITIAL_ARTIFACT_BASELINE, artifact: { bucket, key, versionId, wholeFileSha256, masterSha256: INITIAL_ARTIFACT_SHA256, integrity } };
+    } finally { s3.destroy(); }
+  }
+  assert.ok(headers, "Source REST is unavailable in connection-probe mode");
+  const sourceFetchLog = evidence => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...evidence }));
+  onBoundary({ event: "post-source-01", boundary: "source-relations-start" });
+  const rows = new Map();
+  for (const relation of MIGRATION_RELATIONS) rows.set(relation, await allRelationRows(fetch, headers, relation, sourceFetchLog));
+  onBoundary({ event: "post-source-02", boundary: "source-relations-complete", relationCount: rows.size });
+  const users = await allAdminUsers(fetch, headers, sourceFetchLog);
+  onBoundary({ event: "post-source-03", boundary: "source-identities-complete", identityCount: users.length });
+  const total = [...rows.values()].reduce((sum, relationRows) => sum + relationRows.length, 0);
+  const memberships = rows.get("department_memberships") ?? [];
+  onBoundary({ event: "post-source-04", boundary: "source-validation-start" });
+  assert.equal(total, 4723, "SOURCE_TOTAL_ROW_MISMATCH"); assert.equal(users.length, 96, "SOURCE_IDENTITY_COUNT_MISMATCH"); assert.equal(memberships.length, 95, "SOURCE_MEMBERSHIP_COUNT_MISMATCH");
+  onBoundary({ event: "post-source-05", boundary: "source-validation-complete", totalRows: total, membershipCount: memberships.length });
+  return { rows, users };
+}
+function jsonRows(rows) { return rows.map(row => canonical(row)); }
+async function queryColumns(client, relation) { return (await client.query("select column_name,is_nullable,column_default,(is_identity='YES') as is_identity from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position", [relation])).rows; }
+async function queryTargetGenerationColumns(query, relation) {
+  const sql = "select c.column_name,c.data_type,c.udt_name,c.is_nullable,c.is_identity,c.identity_generation,c.is_generated,c.generation_expression,c.column_default,pg_get_serial_sequence(format('%I.%I',c.table_schema,c.table_name),c.column_name) as sequence_name from information_schema.columns c where c.table_schema='public' and c.table_name=$1 order by c.ordinal_position";
+  return (await query(sql, [relation])).rows;
+}
+async function queryTargetTriggers(query, relations) {
+  const sql = "select rel.relname as relation,t.tgname as trigger_name,fnn.nspname as function_schema,fn.proname as function_name,pg_get_triggerdef(t.oid) as trigger_definition,pg_get_functiondef(t.tgfoid) as function_definition from pg_trigger t join pg_class rel on rel.oid=t.tgrelid join pg_namespace ns on ns.oid=rel.relnamespace join pg_proc fn on fn.oid=t.tgfoid join pg_namespace fnn on fnn.oid=fn.pronamespace where ns.nspname='public' and rel.relname=any($1::text[]) and not t.tgisinternal and t.tgenabled <> 'D' order by rel.relname,t.tgname";
+  return (await query(sql, [relations])).rows;
+}
+function triggerAssignments(triggers) {
+  const assignments = new Map();
+  for (const trigger of triggers) {
+    const columns = new Set();
+    for (const match of String(trigger.function_definition ?? "").matchAll(/new\.([a-z][a-z0-9_]*)\s*(?::=|=)/giu)) columns.add(match[1].toLowerCase());
+    for (const column of columns) {
+      const key = `${trigger.relation}\u0000${column}`;
+      const names = assignments.get(key) ?? [];
+      names.push(`${trigger.function_schema}.${trigger.function_name}:${trigger.trigger_name}`);
+      assignments.set(key, names);
+    }
+  }
+  return assignments;
+}
+function generatedColumnRepositoryProvenance(relation, column, triggerNames) {
+  if (relation === "profiles" && ["created_at", "updated_at"].includes(column) && triggerNames.length) return "supabase/migrations/202606220001_tracepoint_foundation.sql: public.handle_new_auth_user and public.profiles_set_updated_at; reviewed migration-anchor exception";
+  if (triggerNames.length) return "target PostgreSQL catalog trigger metadata; no reviewed importer exclusion";
+  return "target PostgreSQL catalog metadata; no reviewed importer exclusion";
+}
+function safeGenerationConflict(conflict, provenance) {
+  return { relation: conflict.relation, column: conflict.column, targetType: conflict.targetType, targetGeneration: conflict.targetGeneration, sourcePresence: conflict.sourceStatistics, repositoryProvenance: provenance, classification: conflict.classification, acceptsExplicitSourceValue: conflict.acceptsExplicitSourceValue };
+}
+async function targetRelationKinds(client) { return new Map((await client.query("select c.relname as name,c.relkind as kind from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname=any($1::text[])", [MIGRATION_RELATIONS])).rows.map(row => [row.name, row.kind])); }
+async function targetForeignKeys(client) { return (await client.query("select child.relname as child,parent.relname as parent from pg_constraint fk join pg_class child on child.oid=fk.conrelid join pg_namespace cn on cn.oid=child.relnamespace join pg_class parent on parent.oid=fk.confrelid join pg_namespace pn on pn.oid=parent.relnamespace where fk.contype='f' and cn.nspname='public' and pn.nspname='public'")).rows; }
+function triggerFiresOnInsert(trigger) { return /\b(?:before|after|instead\s+of)\s+insert\b/iu.test(String(trigger.trigger_definition ?? "")); }
+function triggerWritesAuditEvents(trigger) { return triggerFiresOnInsert(trigger) && /\binsert\s+into\s+(?:public\.)?"?audit_events"?\b/iu.test(String(trigger.function_definition ?? "")); }
+function insertedRelations(trigger) { return [...new Set([...String(trigger.function_definition ?? "").matchAll(/\binsert\s+into\s+(?:public\.)?"?([a-z][a-z0-9_]*)"?/giu)].map(match => match[1].toLowerCase()))].sort(); }
+async function assertAuditHistoryEmpty(client, phase) {
+  const counts = [];
+  for (const relation of AUDIT_HISTORY_RELATIONS) {
+    const count = Number((await client.query(`select count(*)::int as count from public.${relation}`)).rows[0].count);
+    assert.equal(count, 0, `AUDIT_NOT_EMPTY_${phase.toUpperCase()}:${relation}`);
+    counts.push({ relation, count });
+  }
+  return counts;
+}
+function requireExpectedRelationNames(actual, expected, code) {
+  if (canonical(actual) === canonical(expected)) return;
+  const error = new Error(code);
+  error.safeDiagnostic = { expected: [...expected], observed: [...actual] };
+  throw error;
+}
+async function deriveAuditPrerequisites(client, preflight) {
+  const initial = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS });
+  // Profiles are created by the reviewed migration-anchor transaction before
+  // departments.  Departments are the only prerequisite whose normal target
+  // bootstrap can emit audit/configuration artifacts.
+  requireExpectedRelationNames(initial.prerequisiteRelations, ["profiles", "departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  const profileTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), ["profiles"]);
+  assert.equal(profileTriggers.some(triggerWritesAuditEvents), false, "PROFILE_ANCHOR_CAN_GENERATE_AUDIT");
+  const parentTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), ["departments"]);
+  const bootstrapRelations = [...new Set(parentTriggers.filter(trigger => trigger.relation === "departments" && triggerFiresOnInsert(trigger)).flatMap(insertedRelations))].sort();
+  requireExpectedRelationNames(bootstrapRelations, ["department_role_permissions", "department_rules", "department_security_settings"], "DEPARTMENT_BOOTSTRAP_SIDE_EFFECT_CHANGED");
+  const childTriggers = await queryTargetTriggers((sql, values) => client.query(sql, values), bootstrapRelations);
+  const auditWriters = parentTriggers.filter(triggerWritesAuditEvents).map(trigger => trigger.relation);
+  if (childTriggers.some(triggerWritesAuditEvents)) auditWriters.push("departments");
+  const plan = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, auditWritingRelations: auditWriters, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS, approvedBootstrapAuditRelations: ["departments"] });
+  const evidence = triggers => triggers.map(trigger => ({ relation: trigger.relation, trigger: trigger.trigger_name, function: `${trigger.function_schema}.${trigger.function_name}`, firesOnInsert: triggerFiresOnInsert(trigger), writesAuditEvents: triggerWritesAuditEvents(trigger), inserts: insertedRelations(trigger) }));
+  return { ...plan, bootstrapRelations, triggerEvidence: { profiles: evidence(profileTriggers), parent: evidence(parentTriggers), bootstrapChildren: evidence(childTriggers) } };
+}
+function requireIdentityAnchorPrerequisites(snapshot) {
+  const identities = new Set(snapshot.users.map(user => String(user.id)));
+  assert.equal(identities.size, snapshot.users.length, "SOURCE_DUPLICATE_IDENTITIES");
+  const references = [
+    { relation: "audit_events", column: "actor_user_id" },
+    { relation: "audit_log", column: "changed_by_user_id" },
+    { relation: "departments", column: "created_by" },
+  ];
+  return references.map(({ relation, column }) => {
+    const values = (snapshot.rows.get(relation) ?? []).filter(row => row[column] !== null && row[column] !== undefined).map(row => String(row[column]));
+    for (const id of values) assert.ok(identities.has(id), `IDENTITY_ANCHOR_PREREQUISITE_UNKNOWN_REFERENCE:${relation}`);
+    return { relation, column, nonNullReferenceCount: values.length, distinctReferenceCount: new Set(values).size, allReferencesResolveToSourceIdentities: true };
+  });
+}
+async function profilesAreMigrationAnchors(client, sourceProfiles, targetProfiles) {
+  if (!targetProfiles.length) return false;
+  const sourceIds = new Set(sourceProfiles.map(row => String(row.id))), targetIds = new Set(targetProfiles.map(row => String(row.id)));
+  if (sourceIds.size !== sourceProfiles.length || targetIds.size !== targetProfiles.length || sourceIds.size !== targetIds.size || [...sourceIds].some(id => !targetIds.has(id))) return false;
+  const anchors = (await client.query("select id::text as id,raw_user_meta_data->>'identity_provider' as identity_provider from auth.users")).rows;
+  return anchors.length === sourceProfiles.length && anchors.every(row => sourceIds.has(row.id) && row.identity_provider === "migration_anchor");
+}
+async function runForeignKeyCycleDiagnosis(){const rawTarget=process.env.TARGET_DATABASE_SECRET_JSON;delete process.env.TARGET_DATABASE_SECRET_JSON;const target=validateTargetSecret(JSON.parse(rawTarget)),ca=await readFile('/app/rds-ca.pem','utf8'),client=targetClient(target,ca,'tracepoint-fk-cycle-diagnosis');try{await client.connect();await client.query('begin transaction isolation level repeatable read read only');const keys=(await client.query("select c.conname as constraint_name,child.relname as child,parent.relname as parent,ca.attname as child_column,pa.attname as parent_column,ca.attnotnull as child_not_null,c.condeferrable,c.condeferred,c.confdeltype,c.confupdtype from pg_constraint c join pg_class child on child.oid=c.conrelid join pg_namespace n on n.oid=child.relnamespace join pg_class parent on parent.oid=c.confrelid join unnest(c.conkey) with ordinality ck(attnum,pos) on true join unnest(c.confkey) with ordinality pk(attnum,pos) on pk.pos=ck.pos join pg_attribute ca on ca.attrelid=child.oid and ca.attnum=ck.attnum join pg_attribute pa on pa.attrelid=parent.oid and pa.attnum=pk.attnum where c.contype='f' and n.nspname='public' and child.relname=any($1::text[]) and parent.relname=any($1::text[])",[IMPORT_RELATIONS])).rows;await client.query('commit');console.log(JSON.stringify({status:'PASSED',mode,sourceReadOnly:true,targetReadOnly:true,targetWriteClientsInitialized:false,cycles:foreignKeyCycles(IMPORT_RELATIONS,keys),foreignKeys:keys}));}finally{await client.end().catch(()=>undefined);}}
+async function runDepartmentRolePermissionsAuthorizationDiagnostic() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)), ca = await readFile("/app/rds-ca.pem", "utf8"), client = targetClient(target, ca, "tracepoint-department-role-permissions-auth-diagnostic");
+  // This mode never accepts caller SQL. Its fixed catalog-query allowlist is
+  // intentionally separate from the generic text guard, which rejects the
+  // word INSERT even when it occurs only as a privilege-name literal.
+  const sql = Object.freeze({
+    begin: "begin transaction isolation level repeatable read read only",
+    commit: "commit",
+    session: "select current_user as current_user,session_user as session_user,current_setting('tracepoint.subject_id',true) as subject_id,current_setting('tracepoint.department_id',true) as department_id,current_setting('request.jwt.claim.sub',true) as jwt_subject",
+    privileges: "select has_schema_privilege(current_user,'public','USAGE') as schema_usage,has_table_privilege(current_user,'public.department_role_permissions','INSERT') as table_insert",
+    grants: "select privilege_type from information_schema.role_table_grants where table_schema='public' and table_name='department_role_permissions' and grantee=current_user order by privilege_type",
+    relation: "select c.relrowsecurity as rls_enabled,c.relforcerowsecurity as rls_forced,pg_get_userbyid(c.relowner) as owner from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='department_role_permissions'",
+    policies: "select policyname,roles,cmd,qual,with_check from pg_policies where schemaname='public' and tablename='department_role_permissions' order by policyname",
+    triggers: "select t.tgname as trigger_name,p.proname as function_name,p.prosecdef as security_definer,has_function_privilege(current_user,p.oid,'EXECUTE') as execute_privilege,pg_get_triggerdef(t.oid) as trigger_definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace join pg_proc p on p.oid=t.tgfoid where n.nspname='public' and c.relname='department_role_permissions' and not t.tgisinternal order by t.tgname",
+  });
+  const query = statement => { assert.ok(Object.values(sql).includes(statement), "AUTH_DIAGNOSTIC_SQL_NOT_APPROVED"); return client.query(statement); };
+  let phase = "target authorization metadata";
+  try {
+    await client.connect();
+    await query(sql.begin);
+    const session = (await query(sql.session)).rows[0];
+    const privileges = { ...(await query(sql.privileges)).rows[0], granted: (await query(sql.grants)).rows.map(row => row.privilege_type) };
+    const relation = (await query(sql.relation)).rows[0];
+    const policies = (await query(sql.policies)).rows;
+    const triggers = (await query(sql.triggers)).rows;
+    await query(sql.commit);
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceClientsInitialized: false, targetReadOnly: true, targetWriteClientsInitialized: false, session, privileges, relation, policies, triggers }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function runTargetGeneratedColumnDiagnostic() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-target-generated-column-diagnostic");
+  let phase = "source contract snapshot";
+  try {
+    const snapshot = await sourceSnapshot();
+    phase = "target read-only transaction";
+    await client.connect();
+    const query = (sql, values = []) => client.query(assertDiagnosticReadOnlySql(sql), values);
+    await query("begin transaction isolation level repeatable read read only");
+    const triggers = await queryTargetTriggers(query, MIGRATION_RELATIONS);
+    const assignments = triggerAssignments(triggers);
+    const relations = [];
+    const conflicts = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const rows = snapshot.rows.get(relation) ?? [];
+      const source = sourceColumns(rows);
+      const targetColumns = await queryTargetGenerationColumns(query, relation);
+      const targetByName = new Map(targetColumns.map(column => [column.column_name, column]));
+      const relationConflicts = [];
+      for (const column of source) {
+        const targetColumn = targetByName.get(column);
+        if (!targetColumn) continue;
+        const triggerNames = assignments.get(`${relation}\u0000${column}`) ?? [];
+        const assessment = classifyTargetGeneratedInput(relation, summarizeSourceColumn(rows, column), targetColumn, triggerNames);
+        const isCandidate = assessment.acceptsExplicitSourceValue === false || assessment.classification === "TARGET_GENERATED_EXCLUDE_FROM_IMPORT";
+        if (!isCandidate) continue;
+        const sanitized = safeGenerationConflict(assessment, generatedColumnRepositoryProvenance(relation, column, triggerNames));
+        relationConflicts.push(sanitized);
+        conflicts.push(sanitized);
+      }
+      relations.push({ relation, sourceColumnCount: source.length, targetColumnCount: targetColumns.length, candidateConflictCount: relationConflicts.length, candidateConflicts: relationConflicts });
+    }
+    await query("commit");
+    const blockers = conflicts.filter(conflict => conflict.classification !== "TARGET_GENERATED_EXCLUDE_FROM_IMPORT");
+    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, sourceClientsInitialized: true, targetClientsInitialized: true, targetWriteClientsInitialized: false, targetTransaction: { isolation: "repeatable read", readOnly: true }, sourceContract: { totalRelationalRows: [...snapshot.rows.values()].reduce((sum, rows) => sum + rows.length, 0), identities: snapshot.users.length, memberships: (snapshot.rows.get("department_memberships") ?? []).length }, relations, conflicts, blockers, importerCanResumeWithoutSemanticChange: blockers.length === 0 }));
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+async function targetRows(client, relation, columns) { const order = RELATION_ORDER_COLUMNS[relation] ?? ["id"]; return (await client.query(targetRowsSql(relation, columns, order))).rows.map(item => item.row); }
+const CLEAN_TARGET_RESTORE_TIME = Date.parse("2026-09-20T09:53:11.000Z");
+function hasProvenGeneratedArtifactProvenance(relation, targetRows) {
+  if (!targetRows.length || !["department_rules", "department_security_settings"].includes(relation)) return false;
+  return targetRows.every(row => typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at)) && Date.parse(row.created_at) > CLEAN_TARGET_RESTORE_TIME);
+}
+async function preflightTarget(client, snapshot) {
+  const kinds = await targetRelationKinds(client);
+  for (const relation of COPY_RELATIONS) assert.equal(kinds.get(relation), "r", `TARGET_TABLE_MISSING:${relation}`);
+  for (const relation of DERIVED_RELATIONS) assert.equal(kinds.get(relation), "v", `TARGET_VIEW_MISSING:${relation}`);
+  const mappings = []; const targetBefore = new Map(); const identityPreservation = new Map(); const resumePlan = new Map();
+  for (const relation of IMPORT_RELATIONS) {
+    const rows = snapshot.rows.get(relation) ?? []; const mapping = validateColumnMapping(relation, rows, await queryColumns(client, relation));
+    const existing = await targetRows(client, relation, mapping.sourceColumns);
+    if (IDENTITY_PRESERVATION_RELATIONS.includes(relation)) identityPreservation.set(relation, requireIdentityPreservationPreflight(relation, rows, existing, await queryTargetGenerationColumns((sql, values) => client.query(sql, values), relation)));
+    if (relation === "profiles" && existing.length) {
+      const approvedAnchorProfiles = await profilesAreMigrationAnchors(client, rows, existing);
+      if (!approvedAnchorProfiles) throw new Error("TARGET_PROFILES_NOT_MIGRATION_ANCHORS");
+      resumePlan.set(relation, { relation, strategy: "preserve-migration-anchor-profiles", targetRowCount: existing.length });
+    } else {
+      resumePlan.set(relation, classifyArtifactResumeRelation({ relation, sourceRows: rows, targetRows: existing, stableColumns: RELATION_ORDER_COLUMNS[relation] ?? ["id"], generatedArtifactProven: hasProvenGeneratedArtifactProvenance(relation, existing) }));
+    }
+    mappings.push(mapping); targetBefore.set(relation, existing.length);
+  }
+  const targetSeeded = await reconcileTargetSeededReferences(client, snapshot);
+  const authUsers = Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count);
+  if (authUsers !== 0 && authUsers !== snapshot.users.length) throw new Error("TARGET_UNEXPLAINED_IDENTITY_ANCHORS");
+  const lineage = Number((await client.query("select count(*)::int as count from tracepoint_migrations.applied_migrations")).rows[0].count);
+  assert.equal(lineage, 97, "TARGET_MIGRATION_LINEAGE_MISMATCH");
+  const foreignKeys = await targetForeignKeys(client);
+  const cyclePlan = nullableTrainingCertificationCyclePlan(IMPORT_RELATIONS, foreignKeys, snapshot.rows);
+  return { mappings, targetBefore, resumePlan, identityPreservation, authUsers, targetSeeded, foreignKeys, cyclePlan, order: cyclePlan.order };
+}
+async function cleanupProvenMigrationArtifacts(client, snapshot, preflight) {
+  const cleanup = [...preflight.resumePlan.values()].filter(item => item.strategy === "cleanup-and-import-full");
+  if (!cleanup.length) return [];
+  await client.query("begin");
+  try {
+    const deleted = [];
+    for (const item of cleanup.sort((left, right) => left.relation.localeCompare(right.relation))) {
+      const mapping = preflight.mappings.find(value => value.relation === item.relation);
+      const existing = await targetRows(client, item.relation, mapping.sourceColumns);
+      const current = classifyArtifactResumeRelation({ relation: item.relation, sourceRows: snapshot.rows.get(item.relation) ?? [], targetRows: existing, stableColumns: RELATION_ORDER_COLUMNS[item.relation] ?? ["id"], generatedArtifactProven: hasProvenGeneratedArtifactProvenance(item.relation, existing) });
+      assert.equal(current.strategy, "cleanup-and-import-full", `ARTIFACT_CLEANUP_PROVENANCE_CHANGED:${item.relation}`);
+      assert.equal(existing.length, item.targetRowCount, `ARTIFACT_CLEANUP_ROW_COUNT_CHANGED:${item.relation}`);
+      const result = await client.query(`delete from public.${item.relation}`);
+      assert.equal(result.rowCount, item.targetRowCount, `ARTIFACT_CLEANUP_DELETE_COUNT_MISMATCH:${item.relation}`);
+      const remaining = Number((await client.query(`select count(*)::int as count from public.${item.relation}`)).rows[0].count);
+      assert.equal(remaining, 0, `ARTIFACT_CLEANUP_REMAINING_ROWS:${item.relation}`);
+      deleted.push({ relation: item.relation, classification: item.classification, deleted: result.rowCount });
+    }
+    await client.query("commit"); return deleted;
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+}
+async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites) {
+  assert.deepEqual(auditPrerequisites.prerequisiteRelations, ["profiles", "departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
+  const sourceDepartments = snapshot.rows.get("departments") ?? [], sourceAudit = snapshot.rows.get("audit_events") ?? [];
+  const departments = requiredAuditDepartmentParents(sourceDepartments, sourceAudit);
+  // The audit history must cover every department before this controlled
+  // bootstrap can be the only department-insert phase before reconciliation.
+  assert.equal(departments.length, sourceDepartments.length, "AUDIT_PREREQUISITE_DEPARTMENTS_INCOMPLETE");
+  const affectedRelations = [...DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS];
+  for (const relation of ["departments", ...affectedRelations]) assert.equal(preflight.targetBefore.get(relation), 0, `PREREQUISITE_TARGET_NOT_CLEAN:${relation}`);
+  const departmentMapping = preflight.mappings.find(mapping => mapping.relation === "departments");
+  const departmentSql = insertSql("departments", departmentMapping.sourceColumns);
+  await client.query("begin");
+  try {
+    for (const row of departments) await client.query(departmentSql, [JSON.stringify(row)]);
+    for (const relation of affectedRelations) {
+      const mapping = preflight.mappings.find(item => item.relation === relation);
+      const rows = await targetRows(client, relation, mapping.sourceColumns);
+      assert.equal(rows.length, 0, `MIGRATION_MODE_BOOTSTRAP_SIDE_EFFECT:${relation}`);
+    }
+    assert.equal(Number((await client.query("select count(*)::int as count from public.audit_events")).rows[0].count), 0, "PREREQUISITE_AUDIT_NOT_EMPTY_AFTER_CLEANUP");
+    assert.equal(Number((await client.query("select count(*)::int as count from public.retired_permission_assignment_audit")).rows[0].count), 0, "PREREQUISITE_RETIRED_AUDIT_NOT_EMPTY_AFTER_CLEANUP");
+    const importedParents = await targetRows(client, "departments", departmentMapping.sourceColumns);
+    assert.equal(importedParents.length, departments.length, "PREREQUISITE_DEPARTMENT_COUNT_MISMATCH");
+    assert.equal(canonicalRowsHash(importedParents), canonicalRowsHash(departments), "PREREQUISITE_DEPARTMENT_SOURCE_MISMATCH");
+    await client.query("commit");
+    return { rule: "department-prerequisite-migration-mode", departmentCount: departments.length, bootstrapSideEffectsSuppressed: affectedRelations, auditHistoryEmptyBeforeSourceImport: true };
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+}
+async function insertIdentityAnchors(client, users) {
+  const profiles = new Set((await client.query("select id::text from public.profiles order by id")).rows.map(row => row.id));
+  const sourceIds = new Set(users.map(user => String(user.id)));
+  assert.equal(sourceIds.size, users.length, "SOURCE_DUPLICATE_IDENTITIES");
+  // A clean target must not contain a partial anchor set: those profiles are
+  // created only by this bounded transaction and must be exactly the source IDs.
+  assert.equal(profiles.size, 0, "TARGET_PROFILE_SHELL_PREEXISTS");
+  assert.equal(Number((await client.query("select count(*)::int as count from auth.users")).rows[0].count), 0, "TARGET_IDENTITY_ANCHOR_PREEXISTS");
+  await client.query("begin");
+  try {
+    for (const user of users) {
+      assert.ok(typeof user.id === "string" && typeof user.email === "string" && user.email.length > 0, "SOURCE_IDENTITY_MAPPING_AMBIGUOUS");
+      await client.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3::jsonb)", [user.id, user.email, JSON.stringify({ identity_provider: "migration_anchor", source_user_metadata: user.user_metadata ?? {} })]);
+    }
+    const anchoredProfiles = new Set((await client.query("select id::text from public.profiles order by id")).rows.map(row => row.id));
+    assert.equal(anchoredProfiles.size, users.length, "TARGET_PROFILE_SHELL_COUNT_MISMATCH");
+    assert.deepEqual([...anchoredProfiles].sort(), [...sourceIds].sort(), "TARGET_PROFILE_SHELL_ID_SET_MISMATCH");
+    await assertAuditHistoryEmpty(client, "after_identity_anchor_creation");
+    await client.query("commit");
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+  return { identityAnchors: users.length, profileShells: users.length, auditNeutral: true };
+}
+async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
+  const relation = "profiles", sourceRows = snapshot.rows.get(relation) ?? [];
+  const mapping = preflight.mappings.find(item => item.relation === relation);
+  const targetRowsBefore = await targetRows(client, relation, mapping.sourceColumns);
+  if (!targetRowsBefore.length) return { relation, imported: 0, resumed: 0, strategy: "no-anchor-profile-trigger" };
+  assert.equal(await profilesAreMigrationAnchors(client, sourceRows, targetRowsBefore), true, "TARGET_PROFILES_NOT_MIGRATION_ANCHORS");
+  const anchorsConfirmed = await profilesAreMigrationAnchors(client, sourceRows, targetRowsBefore);
+  if (canonicalRowsHash(targetRowsBefore) === canonicalRowsHash(sourceRows)) return { relation, imported: 0, resumed: sourceRows.length, strategy: "already-hydrated-migration-anchors", reconciliation: requireMigrationAnchorProfileParity(sourceRows, targetRowsBefore, anchorsConfirmed) };
+  const sql = updateByIdSql(relation, mapping.sourceColumns);
+  await client.query("begin");
+  try {
+    for (const row of sourceRows) {
+      const result = await client.query(sql, [JSON.stringify(row)]);
+      assert.equal(result.rowCount, 1, "MIGRATION_ANCHOR_PROFILE_UPDATE_MISMATCH");
+    }
+    const targetRowsAfter = await targetRows(client, relation, mapping.sourceColumns);
+    const reconciliation = requireMigrationAnchorProfileParity(sourceRows, targetRowsAfter, anchorsConfirmed);
+    await client.query("commit");
+    return { relation, imported: sourceRows.length, resumed: 0, strategy: "hydrate-proven-migration-anchor-profiles", reconciliation };
+  } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+}
+async function importRelation(client, relation, rows, mapping, resume) {
+  if (resume.strategy === "retain-exact-source-match") return { relation, imported: 0, resumed: rows.length, strategy: resume.strategy };
+  assert.ok(["import-full", "cleanup-and-import-full"].includes(resume.strategy), `UNEXPECTED_RESUME_STRATEGY:${relation}`);
+  let excluded = [];
+  if (relation === "department_role_permissions") {
+    excluded = rows.filter(row => row.role_code === "administrator" || row.permission_code === "administer_department");
+    for (const row of excluded) assert.equal(row.role_code, "administrator", "RESERVED_DEPARTMENT_PERMISSION_SEMANTIC_MISMATCH");
+    rows = rows.filter(row => !excluded.includes(row));
+  }
+  const excludedReservedAssignments = excluded.map(row => ({ departmentId: row.department_id, roleCode: row.role_code, permissionCode: row.permission_code, canonicalRowSha256: sha256(row), semanticEquivalence: "target-administrator-inheritance" }));
+  if (!rows.length) return { relation, imported: 0, resumed: 0, ...(excludedReservedAssignments.length ? { excludedReservedAssignments } : {}) };
+  const sql = IDENTITY_PRESERVATION_RELATIONS.includes(relation) ? identityPreservingInsertSql(relation, mapping.sourceColumns) : insertSql(relation, mapping.sourceColumns);
+  for (let start = 0; start < rows.length; start += 200) {
+    await client.query("begin");
+    try { for (const row of rows.slice(start, start + 200)) await client.query(sql, [JSON.stringify(row)]); await client.query("commit"); }
+    catch (error) {
+      await client.query("rollback");
+      if (error && typeof error === "object" && error.code === "428C9") {
+        const column = /column "([a-z0-9_]+)"/i.exec(String(error.message))?.[1];
+        const metadata = column ? (await client.query("select column_name,data_type,udt_name,is_identity,identity_generation,is_generated,generation_expression,column_default from information_schema.columns where table_schema='public' and table_name=$1 and column_name=$2", [relation, column])).rows[0] : null;
+        const sourceStatistics = column && rows.some(row => Object.hasOwn(row, column)) ? summarizeSourceColumn(rows, column) : null;
+        const diagnostic = { relation, column: column ?? null, targetGeneration: metadata ? { dataType: metadata.data_type, udtName: metadata.udt_name, isIdentity: metadata.is_identity, identityGeneration: metadata.identity_generation, isGenerated: metadata.is_generated, generationExpression: metadata.generation_expression, defaultExpression: metadata.column_default } : null, sourceStatistics, repositoryClassification: "requires-source-contract-and-target-catalog-review", classification: "UNKNOWN_CONFLICT" };
+        const wrapped = Object.assign(new Error(`TARGET_GENERATED_INPUT_REJECTED:${relation}`), { code: "428C9", safeDiagnostic: diagnostic });
+        throw wrapped;
+      }
+      throw error;
+    }
+  }
+  return { relation, imported: rows.length, resumed: 0, ...(excludedReservedAssignments.length ? { excludedReservedAssignments } : {}) };
+}
+async function importNullableTrainingCertificationCycle(client, snapshot, preflight) {
+  const cycle = preflight.cyclePlan;
+  const attendeeMapping = preflight.mappings.find(item => item.relation === cycle.attendees);
+  const certificationMapping = preflight.mappings.find(item => item.relation === cycle.certifications);
+  assert.equal(preflight.targetBefore.get(cycle.attendees), 0, "CYCLE_TARGET_ATTENDEES_NOT_EMPTY");
+  assert.equal(preflight.targetBefore.get(cycle.certifications), 0, "CYCLE_TARGET_CERTIFICATIONS_NOT_EMPTY");
+  const insert = async (relation, rows, mapping) => {
+    const sql = insertSql(relation, mapping.sourceColumns);
+    for (const row of rows) await client.query(sql, [JSON.stringify(row)]);
+  };
+  const restore = async (relation, column, links) => {
+    for (const link of links) {
+      if (link.value === null) continue;
+      const result = await client.query(`update public.${relation} set ${column}=$1 where id=$2 and department_id=$3`, [link.value, link.id, link.departmentId]);
+      assert.equal(result.rowCount, 1, `CYCLE_RESTORE_ROW_MISMATCH:${relation}`);
+    }
+  };
+  const validate = async () => {
+    const sourceAttendees = snapshot.rows.get(cycle.attendees) ?? [], sourceCertifications = snapshot.rows.get(cycle.certifications) ?? [];
+    const targetAttendees = await targetRows(client, cycle.attendees, attendeeMapping.sourceColumns);
+    const targetCertifications = await targetRows(client, cycle.certifications, certificationMapping.sourceColumns);
+    assert.equal(targetAttendees.length, sourceAttendees.length, "CYCLE_ATTENDEE_ROW_COUNT_MISMATCH");
+    assert.equal(targetCertifications.length, sourceCertifications.length, "CYCLE_CERTIFICATION_ROW_COUNT_MISMATCH");
+    assert.equal(canonicalRowsHash(targetAttendees), canonicalRowsHash(sourceAttendees), "CYCLE_ATTENDEE_SOURCE_TARGET_MISMATCH");
+    assert.equal(canonicalRowsHash(targetCertifications), canonicalRowsHash(sourceCertifications), "CYCLE_CERTIFICATION_SOURCE_TARGET_MISMATCH");
+    const attendeeIntegrity = Number((await client.query("select count(*)::int as count from public.agency_training_attendees a left join public.training_certifications c on c.id=a.certification_id where a.certification_id is not null and (c.id is null or c.department_id is distinct from a.department_id)")).rows[0].count);
+    const certificationIntegrity = Number((await client.query("select count(*)::int as count from public.training_certifications c left join public.agency_training_attendees a on a.id=c.source_training_attendee_id where c.source_training_attendee_id is not null and (a.id is null or a.department_id is distinct from c.department_id)")).rows[0].count);
+    assert.equal(attendeeIntegrity, 0, "CYCLE_ATTENDEE_FK_OR_TENANT_INTEGRITY_FAILURE");
+    assert.equal(certificationIntegrity, 0, "CYCLE_CERTIFICATION_FK_OR_TENANT_INTEGRITY_FAILURE");
+  };
+  await executeNullableTrainingCertificationCycle(cycle, {
+    begin: () => client.query("begin"),
+    insertAttendees: rows => insert(cycle.attendees, rows, attendeeMapping),
+    insertCertifications: rows => insert(cycle.certifications, rows, certificationMapping),
+    restoreAttendees: links => restore(cycle.attendees, cycle.attendeeColumn, links),
+    restoreCertifications: links => restore(cycle.certifications, cycle.certificationColumn, links),
+    validate,
+    commit: () => client.query("commit"),
+    rollback: () => client.query("rollback").catch(() => undefined),
+  });
+  return { relation: `${cycle.attendees}+${cycle.certifications}`, imported: (snapshot.rows.get(cycle.attendees) ?? []).length + (snapshot.rows.get(cycle.certifications) ?? []).length, resumed: 0, strategy: "two-phase-nullable-fk" };
+}
+async function repairSequences(client) {
+  await client.query("do $repair$ declare item record; begin for item in select n.nspname as schemaname,c.relname as tablename,a.attname as columnname from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null loop execute format('select setval(pg_get_serial_sequence(%L,%L),coalesce((select max(%I) from %I.%I),1),true)',item.schemaname||'.'||item.tablename,item.columnname,item.columnname,item.schemaname,item.tablename); end loop; end $repair$");
+  const identitySequences = [];
+  for (const relation of IDENTITY_PRESERVATION_RELATIONS) {
+    const idColumn = (await queryTargetGenerationColumns((sql, values) => client.query(sql, values), relation)).find(column => column.column_name === "id");
+    assert.ok(idColumn?.sequence_name && /^public\.[a-z][a-z0-9_]*$/u.test(idColumn.sequence_name), "IDENTITY_SEQUENCE_NAME_INVALID");
+    const [, sequence] = idColumn.sequence_name.split(".");
+    const maximum = (await client.query(`select max(${"\"id\""})::text as maximum from public.${relation}`)).rows[0].maximum;
+    assert.ok(maximum !== null, "IDENTITY_SEQUENCE_MAX_MISSING");
+    const state = (await client.query(`select last_value::text as last_value,is_called from public.${sequence}`)).rows[0];
+    assert.equal(state.is_called, true, "IDENTITY_SEQUENCE_NOT_CALLED");
+    identitySequences.push(verifyIdentitySequenceAdvance(relation, state.last_value, maximum));
+  }
+  return identitySequences;
+}
+async function verifyEquipmentAssignmentHistory(client, snapshot, preflight) {
+  const assetMapping = preflight.mappings.find(mapping => mapping.relation === "equipment_assets");
+  const assignmentMapping = preflight.mappings.find(mapping => mapping.relation === "equipment_asset_assignments");
+  assert.ok(assetMapping && assignmentMapping, "EQUIPMENT_ASSIGNMENT_HISTORY_MAPPING_MISSING");
+  const sourceAssets = snapshot.rows.get("equipment_assets") ?? [], sourceAssignments = snapshot.rows.get("equipment_asset_assignments") ?? [];
+  const targetAssets = await targetRows(client, "equipment_assets", assetMapping.sourceColumns);
+  const targetAssignments = await targetRows(client, "equipment_asset_assignments", assignmentMapping.sourceColumns);
+  const evidence = verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceAssignments, targetAssets, targetAssignments });
+  assert.equal(evidence.assignments, 33, "EQUIPMENT_ASSIGNMENT_SOURCE_COUNT_CHANGED");
+  assert.equal(evidence.activeAssignments, 31, "EQUIPMENT_ASSIGNMENT_SOURCE_ACTIVE_COUNT_CHANGED");
+  assert.equal(evidence.distinctActiveAssets, 31, "EQUIPMENT_ASSIGNMENT_SOURCE_ACTIVE_ASSET_COUNT_CHANGED");
+  assert.equal(evidence.historicalAssignments, 2, "EQUIPMENT_ASSIGNMENT_SOURCE_HISTORY_COUNT_CHANGED");
+  return evidence;
+}
+async function verifyDatabase(client, snapshot, preflight) {
+  const sourceTables = []; const targetTables = [];
+  for (const relation of IMPORT_RELATIONS) {
+    const mapping = preflight.mappings.find(item => item.relation === relation); const sourceRows = snapshot.rows.get(relation) ?? []; const target = await targetRows(client, relation, mapping.sourceColumns);
+    const auditOperationalRows = relation === "audit_events" ? target.filter(row => Number(row.id) > Math.max(...sourceRows.map(row => Number(row.id)))) : [];
+    if (relation === "audit_events") {
+      const sourceById = new Map(sourceRows.map(row => [String(row.id), row]));
+      assert.equal(target.length, sourceRows.length + auditOperationalRows.length, "TARGET_AUDIT_ROW_COUNT_MISMATCH");
+      for (const [id, source] of sourceById) assert.equal(canonical(target.find(row => String(row.id) === id)), canonical(source), "TARGET_AUDIT_SOURCE_LINEAGE_MISMATCH");
+    } else assert.equal(target.length, sourceRows.length, `TARGET_ROW_COUNT_MISMATCH:${relation}`);
+    const profileAnchors = relation === "profiles" ? await profilesAreMigrationAnchors(client, sourceRows, target) : false;
+    const profileReconciliation = relation === "profiles" ? requireMigrationAnchorProfileParity(sourceRows, target, profileAnchors) : null;
+    if (!profileReconciliation && relation !== "audit_events") assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_ROW_HASH_MISMATCH:${relation}`);
+    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, sourceTimestampEvidenceSha256: profileReconciliation.sourceCanonicalSha256, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, excludedColumns: profileReconciliation.excludedColumns, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}), ...(relation === "audit_events" ? { reconciliation: "source audit IDs/hash exact; post-source operational rows above source max only", sourceRows: sourceRows.length, postSourceOperationalRows: auditOperationalRows.length } : {}) });
+  }
+  for (const relation of TARGET_SEEDED_REFERENCE_RELATIONS) {
+    const sourceRows = snapshot.rows.get(relation) ?? [], reconciliation = preflight.targetSeeded.get(relation);
+    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows), reconciliation: relation === "feature_catalog" ? "target-seeded reference data — excluded by design" : "target-seeded reference data — exact security/catalog parity required" });
+    targetTables.push({ name: relation, rows: reconciliation.targetCount, canonicalDataSha256: reconciliation.targetCanonicalSha256, reconciliation: relation === "feature_catalog" ? "target-seeded reference data — excluded by design" : "target-seeded reference data — exact security/catalog parity required" });
+  }
+  for (const relation of DERIVED_RELATIONS) {
+    const sourceRows = snapshot.rows.get(relation) ?? []; const columns = sourceRows.length ? Object.keys(sourceRows[0]).sort() : (RELATION_ORDER_COLUMNS[relation] ?? ["id"]); const target = await targetRows(client, relation, columns);
+    assert.equal(target.length, sourceRows.length, `TARGET_VIEW_ROW_COUNT_MISMATCH:${relation}`); assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_VIEW_HASH_MISMATCH:${relation}`);
+    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target) });
+  }
+  const invalidForeignKeys = Number((await client.query("select count(*)::int as count from pg_constraint where contype='f' and not convalidated")).rows[0].count); assert.equal(invalidForeignKeys, 0, "TARGET_INVALID_FOREIGN_KEYS");
+  const memberships = snapshot.rows.get("department_memberships") ?? [];
+  return importEvidence({ mappings: preflight.mappings.map(({ relation, mapping }) => ({ relation, mapping })), sourceTables, targetTables, featureCatalog: preflight.featureCatalog, identities: { count: snapshot.users.length, canonicalDataSha256: canonicalRowsHash(snapshot.users) }, memberships: { count: memberships.length, canonicalDataSha256: canonicalRowsHash(memberships) }, baseline: snapshot.baseline });
+}
+async function runDatabase() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
+  let phase = "source snapshot", preflight = null, sequenceBefore = [], atomicTransactionStarted = false;
+  try {
+    const snapshot = await sourceSnapshot();
+    phase = "target TLS preflight"; await client.connect();
+    preflight = await preflightTarget(client, snapshot);
+    phase = "audit prerequisite dependency analysis";
+    const auditPrerequisites = await deriveAuditPrerequisites(client, preflight);
+    const identityAnchorPrerequisites = requireIdentityAnchorPrerequisites(snapshot);
+    phase = "atomic sequence metadata preflight";
+    sequenceBefore = await sequenceMetadata(client);
+    phase = "atomic relational transaction begin";
+    await client.query("begin"); atomicTransactionStarted = true;
+    const atomicClient = atomicTransactionClient(client);
+    phase = "transaction-local migration mode";
+    await atomicClient.query(`set local ${MIGRATION_MODE.setting} = '${MIGRATION_MODE.enabledValue}'`);
+    phase = "audit history clean-state preflight";
+    const auditBefore = await assertAuditHistoryEmpty(atomicClient, "before_identity_anchor_creation");
+    phase = "identity anchors/profile shells";
+    const identityAnchors = await insertIdentityAnchors(atomicClient, snapshot.users);
+    phase = "audit history clean-state after identity anchors";
+    const auditAfterIdentityAnchors = await assertAuditHistoryEmpty(atomicClient, "before_department_prerequisite_bootstrap");
+    phase = "department prerequisite bootstrap cleanup";
+    const departmentPrerequisiteBootstrapCleanup = await runDepartmentPrerequisiteBootstrapCleanup(atomicClient, snapshot, preflight, auditPrerequisites);
+    phase = "audit history clean-state after bootstrap cleanup";
+    const auditAfterPrerequisites = await assertAuditHistoryEmpty(atomicClient, "before_source_history");
+    const results = [{ relation: "profiles", imported: 0, resumed: identityAnchors.profileShells, strategy: "migration-anchor-profile-shells" }, { relation: "departments", imported: departmentPrerequisiteBootstrapCleanup.departmentCount, strategy: departmentPrerequisiteBootstrapCleanup.rule }];
+    phase = "source audit history";
+    for (const relation of AUDIT_HISTORY_RELATIONS) results.push(await importRelation(atomicClient, relation, snapshot.rows.get(relation) ?? [], preflight.mappings.find(mapping => mapping.relation === relation), preflight.resumePlan.get(relation)));
+    phase = "audit identity sequence repair";
+    const auditIdentitySequences = await repairSequences(atomicClient);
+    phase = "relational import";
+    for (const item of preflight.order) {
+      if (["departments", ...AUDIT_HISTORY_RELATIONS].includes(item)) continue;
+      phase = `relational import:${item}`;
+      if (item === "profiles") results.push(await hydrateMigrationAnchorProfiles(atomicClient, snapshot, preflight));
+      else if (item === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) results.push(await importNullableTrainingCertificationCycle(atomicClient, snapshot, preflight));
+      else results.push(await importRelation(atomicClient, item, snapshot.rows.get(item) ?? [], preflight.mappings.find(mapping => mapping.relation === item), preflight.resumePlan.get(item)));
+    }
+    phase = "target sequence repair";
+    const identitySequences = await repairSequences(atomicClient);
+    phase = "equipment assignment history reconciliation";
+    const equipmentAssignmentHistory = await verifyEquipmentAssignmentHistory(atomicClient, snapshot, preflight);
+    phase = "in-transaction target reconciliation";
+    const evidence = await verifyDatabase(atomicClient, snapshot, preflight);
+    phase = "atomic relational transaction commit";
+    await client.query("commit"); atomicTransactionStarted = false;
+    const sequenceAfter = await sequenceMetadata(client);
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetWriteScope: "approved-initial-import-atomic-relational", sourceBaseline: snapshot.artifact ?? null, atomicTransaction: { relationalWrites: "single-transaction", reconciliation: "before-commit", sequenceRollbackBehavior: "accepted-nontransactional", sequenceBefore, sequenceAfter, migrationMode: MIGRATION_MODE.setting }, departmentPrerequisiteBootstrapCleanup, auditPrerequisites: { ...auditPrerequisites, identityAnchorPrerequisites, before: auditBefore, afterIdentityAnchors: auditAfterIdentityAnchors, afterPrerequisites: auditAfterPrerequisites }, importedRelations: results, auditIdentitySequences, identityPreservation: [...preflight.identityPreservation.values()], identitySequences, equipmentAssignmentHistory, evidence, targetClientsInitialized: true, cognitoClientsInitialized: false }));
+  }
+  catch (error) {
+    if (atomicTransactionStarted) {
+      await client.query("rollback").catch(() => undefined); atomicTransactionStarted = false;
+      const rollback = preflight ? await verifyAtomicRollback(client, preflight).catch(rollbackError => ({ relationalRowsRestored: false, rollbackVerificationError: safeError(rollbackError, "atomic rollback verification") })) : null;
+      const sequenceAfterRollback = await sequenceMetadata(client).catch(() => []);
+      console.error(JSON.stringify({ ...safeError(error, phase), atomicRollback: { relationalWritesRolledBack: rollback?.relationalRowsRestored === true, verification: rollback, sequenceBefore, sequenceAfterRollback, sequenceGapsAccepted: true } }));
+    } else console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally { await client.end().catch(() => undefined); }
+}
+async function runFeatureCatalogReconciliation() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-feature-catalog-reconciliation");
+  let phase = "source feature_catalog read";
+  try {
+    const sourceRows = await allRelationRows(fetch, headers, "feature_catalog");
+    phase = "target read-only transaction"; await client.connect();
+    await client.query("begin transaction isolation level repeatable read read only");
+    const columns = (await queryColumns(client, "feature_catalog")).map(column => column.column_name);
+    const targetRows = await targetRowsForReconciliation(client, columns);
+    await client.query("commit");
+    const reconciliation = reconcileFeatureCatalog(sourceRows, targetRows, columns);
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, sourceClientsInitialized: true, targetClientsInitialized: true, targetWriteClientsInitialized: false, targetTransaction: { isolation: "repeatable read", readOnly: true }, reconciliation }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function runRolePermissionsReconciliation() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-role-permissions-reconciliation");
+  let phase = "source role_permissions read";
+  try {
+    const [sourceRows, sourceRoles, sourcePermissions] = await Promise.all([allRelationRows(fetch, headers, "role_permissions"), allRelationRows(fetch, headers, "roles"), allRelationRows(fetch, headers, "permissions")]);
+    phase = "target role_permissions read-only transaction"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
+    const targetRows = await targetRowsForRelation(client, "role_permissions", ["role_code", "permission_code"]);
+    const targetRoles = await targetRowsForRelation(client, "roles", ["code"]), targetPermissions = await targetRowsForRelation(client, "permissions", ["code"]);
+    await client.query("commit");
+    const reconciliation = reconcileRolePermissionDifferences(sourceRows, targetRows);
+    const known = { sourceRoles: new Set(sourceRoles.map(row => row.code)), sourcePermissions: new Set(sourcePermissions.map(row => row.code)), targetRoles: new Set(targetRoles.map(row => row.code)), targetPermissions: new Set(targetPermissions.map(row => row.code)) };
+    const annotate = row => ({ ...row, sourceRoleKnown: known.sourceRoles.has(row.roleCode), sourcePermissionKnown: known.sourcePermissions.has(row.permissionCode), targetRoleKnown: known.targetRoles.has(row.roleCode), targetPermissionKnown: known.targetPermissions.has(row.permissionCode) });
+    console.log(JSON.stringify({ status: reconciliation.stableKeyParity ? "PASSED" : "BLOCKED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, sourceClientsInitialized: true, targetClientsInitialized: true, targetWriteClientsInitialized: false, targetTransaction: { isolation: "repeatable read", readOnly: true }, reconciliation: { ...reconciliation, sourceOnly: reconciliation.sourceOnly.map(annotate), targetOnly: reconciliation.targetOnly.map(annotate) }, provenance: "supabase/migrations/202606220001_tracepoint_foundation.sql plus subsequent permission-matrix migrations" }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function targetRowsForReconciliation(client, columns) { return (await client.query(targetRowsSql("feature_catalog", columns, ["code"]))).rows.map(item => item.row); }
+const TARGET_SEEDED_STABLE_COLUMNS = Object.freeze({ roles: ["code"], permissions: ["code"], role_permissions: ["role_code", "permission_code"] });
+async function targetRowsForRelation(client, relation, columns) { return (await client.query(targetRowsSql(relation, columns, RELATION_ORDER_COLUMNS[relation] ?? ["id"]))).rows.map(item => item.row); }
+async function reconcileTargetSeededReferences(client, snapshot) {
+  const results = new Map();
+  for (const relation of TARGET_SEEDED_REFERENCE_RELATIONS) {
+    const columns = (await queryColumns(client, relation)).map(column => column.column_name), sourceRows = snapshot.rows.get(relation) ?? [], targetRows = await targetRowsForRelation(client, relation, columns);
+    if (relation === "feature_catalog") {
+      const reconciliation = requireTargetSeededFeatureCatalogParity(reconcileFeatureCatalog(sourceRows, targetRows, columns));
+      results.set(relation, { ...reconciliation, targetCanonicalSha256: reconciliation.targetCanonicalSha256 });
+    } else if (relation === "role_permissions") results.set(relation, requireTargetSeededRolePermissionRule(reconcileRolePermissionDifferences(sourceRows, targetRows)));
+    else results.set(relation, requireExactTargetSeededParity(reconcileExactTargetSeededRelation(relation, sourceRows, targetRows, TARGET_SEEDED_STABLE_COLUMNS[relation])));
+  }
+  return results;
+}
+function relationScope(columns) { return columns.includes("department_id") ? "tenant-scoped" : "global"; }
+function relationProvenance(relation) {
+  if (relation === "feature_catalog") return "target bootstrap catalog; reviewed target-owned reference rule";
+  if (["roles", "permissions", "role_permissions"].includes(relation)) return "supabase/migrations/202606220001_tracepoint_foundation.sql plus subsequent permission-matrix migrations";
+  return "none";
+}
+function securitySensitive(relation) { return relation === "roles" || relation === "permissions" || relation === "role_permissions" || relation === "department_role_permissions" || relation === "department_membership_roles"; }
+function timestampRange(rows, column) {
+  const values = rows.map(row => row[column]).filter(value => typeof value === "string" && Number.isFinite(Date.parse(value))).map(value => new Date(value).toISOString()).sort();
+  return values.length ? { populatedCount: values.length, earliest: values[0], latest: values.at(-1) } : null;
+}
+function targetProvenanceClassification(relation, sourceRows, targetRows, stableColumns) {
+  const sourceKeys = new Set(sourceRows.map(row => canonical(stableColumns.map(column => row[column]))));
+  const targetKeys = new Set(targetRows.map(row => canonical(stableColumns.map(column => row[column]))));
+  const intersectionCount = [...targetKeys].filter(key => sourceKeys.has(key)).length;
+  const sourceOnlyCount = [...sourceKeys].filter(key => !targetKeys.has(key)).length;
+  const targetOnlyCount = [...targetKeys].filter(key => !sourceKeys.has(key)).length;
+  const exact = canonicalRowsHash(sourceRows) === canonicalRowsHash(targetRows);
+  let classification = "UNKNOWN", evidence = "No approved bootstrap provenance or source-key relationship explains the target rows.";
+  if (TARGET_SEEDED_REFERENCE_RELATIONS.includes(relation)) {
+    classification = "BOOTSTRAP_REQUIRED"; evidence = relationProvenance(relation);
+  } else if (exact) {
+    classification = "MIGRATION_ARTIFACT"; evidence = "Target rows are an exact canonical match of the approved source snapshot and this relation has no target-bootstrap rule.";
+  } else if (targetOnlyCount === 0 && intersectionCount > 0) {
+    classification = "MIGRATION_ARTIFACT"; evidence = "Every target stable key is present in the approved source snapshot, with no target-only key; this is a partial source subset rather than a target bootstrap set.";
+  } else if (intersectionCount > 0) {
+    classification = "MIXED_BOOTSTRAP_AND_MIGRATION"; evidence = "Target and source share stable keys but differ canonically or have target-only keys; preserve bootstrap data only after reset bootstrap is reproduced.";
+  }
+  return { classification, evidence, exactCanonicalParity: exact, sourceStableKeyCount: sourceKeys.size, targetStableKeyCount: targetKeys.size, intersectionStableKeyCount: intersectionCount, sourceOnlyStableKeyCount: sourceOnlyCount, targetOnlyStableKeyCount: targetOnlyCount };
+}
+async function runTargetProvenanceSweep() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-target-provenance-sweep");
+  let phase = "canonical REST source snapshot";
+  try {
+    const snapshot = await sourceSnapshot(); phase = "target repeatable-read provenance sweep"; await client.connect();
+    const readOnlyQuery = (sql, params) => client.query(assertDiagnosticReadOnlySql(sql), params);
+    await readOnlyQuery("begin transaction isolation level repeatable read read only");
+    const kinds = await targetRelationKinds({ query: readOnlyQuery }), nonempty = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const expectedKind = DERIVED_RELATIONS.includes(relation) ? "v" : "r"; if (targetKindForRelation(kinds, relation) !== expectedKind) continue;
+      const targetColumns = (await queryColumns({ query: readOnlyQuery }, relation)).map(column => column.column_name);
+      const targetRows = await targetRowsForRelation({ query: readOnlyQuery }, relation, targetColumns); if (!targetRows.length) continue;
+      const sourceRows = snapshot.rows.get(relation) ?? [], stableColumns = RELATION_ORDER_COLUMNS[relation] ?? ["id"];
+      const provenance = targetProvenanceClassification(relation, sourceRows, targetRows, stableColumns);
+      nonempty.push({ relation, ...provenance, sourceCount: sourceRows.length, targetCount: targetRows.length, stableColumns, scope: relationScope(sourceColumns(sourceRows)), securitySensitive: securitySensitive(relation), sourceCanonicalSha256: canonicalRowsHash(sourceRows), targetCanonicalSha256: canonicalRowsHash(targetRows), timestamps: { createdAt: timestampRange(targetRows, "created_at"), updatedAt: timestampRange(targetRows, "updated_at") }, repositoryBootstrapProvenance: relationProvenance(relation) });
+    }
+    await readOnlyQuery("commit");
+    console.log(JSON.stringify({ status: nonempty.some(item => item.classification === "UNKNOWN") ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, nonempty, targetWriteClientsInitialized: false, targetMutationPathsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function runTargetDataPreflight() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  let client;
+  let phase = "canonical REST source snapshot";
+  const deadline = 15_000;
+  const emit = event => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...event }));
+  const targetQuery = (sql, values = [], relation = "catalog") => withRetainedDeadline({ phase: "audit-table-query", deadlineMs: deadline, operation: () => client.query(assertDiagnosticReadOnlySql(sql), values), onEvent: emit, eventPrefix: "audit-table-query", metadata: { relation } });
+  try {
+    emit({ event: "post-source-00", boundary: "before-source-snapshot" });
+    const snapshot = await withRetainedDeadline({ phase: "post-source-06-source-snapshot", deadlineMs: deadline, operation: () => sourceSnapshot(event => emit(event)), onEvent: emit, eventPrefix: "post-source-06" });
+    emit({ event: "post-source-07", boundary: "source-snapshot-resolved" });
+    await withRetainedDeadline({ phase: "post-source-08-source-result-validation", deadlineMs: deadline, operation: () => { assert.ok(snapshot.rows instanceof Map, "SOURCE_SNAPSHOT_ROWS_INVALID"); assert.ok(Array.isArray(snapshot.users), "SOURCE_SNAPSHOT_USERS_INVALID"); }, onEvent: emit, eventPrefix: "post-source-08" });
+    await withRetainedDeadline({ phase: "post-source-09-target-client-initialization", deadlineMs: deadline, operation: () => { client = targetClient(target, ca, "tracepoint-target-data-preflight"); }, onEvent: emit, eventPrefix: "post-source-09" });
+    emit({ event: "post-source-10", boundary: "before-target-dns" }); phase = "target-dns";
+    const addresses = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => lookup(process.env.TARGET_PGHOST, { all: true, family: 4 }), onEvent: emit, eventPrefix: "target-dns" });
+    assert.ok(addresses.length > 0, "TARGET_DNS_NO_IPV4_ADDRESS");
+    phase = "target-connect"; await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.connect(), onEvent: emit, eventPrefix: "target-connect" }); assert.equal(client.connection.stream?.encrypted, true, "TARGET_TLS_NOT_ENCRYPTED");
+    phase = "target-readonly"; await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => targetQuery("begin transaction isolation level repeatable read read only", [], "transaction"), onEvent: emit, eventPrefix: "target-readonly" });
+    const readOnlyClient = { query: (sql, values) => targetQuery(sql, values) };
+    const kinds = await targetRelationKinds(readOnlyClient), nonempty = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const expectedKind = DERIVED_RELATIONS.includes(relation) ? "v" : "r"; if (targetKindForRelation(kinds, relation) !== expectedKind) continue;
+      const relationClient = { query: (sql, values) => targetQuery(sql, values, relation) };
+      const targetColumns = (await queryColumns(relationClient, relation)).map(column => column.column_name), targetRows = await targetRowsForRelation(relationClient, relation, targetColumns); if (!targetRows.length) continue;
+      const sourceRows = snapshot.rows.get(relation) ?? [], stableColumns = RELATION_ORDER_COLUMNS[relation] ?? ["id"], sourceKeys = sourceRows.map(row => stableColumns.map(column => row[column])), targetKeys = targetRows.map(row => stableColumns.map(column => row[column]));
+      let classification = "UNKNOWN", authorizationSemanticParity = null;
+      if (relation === "feature_catalog") { const value = reconcileFeatureCatalog(sourceRows, targetRows, targetColumns); classification = value.hasInvariantFailure ? "UNKNOWN" : "TARGET_SEEDED_EXCLUDED"; }
+      else if (relation === "role_permissions") { const value = requireTargetSeededRolePermissionRule(reconcileRolePermissionDifferences(sourceRows, targetRows)); authorizationSemanticParity = true; classification = "TARGET_SEEDED_EXCLUDED"; }
+      else if (["roles", "permissions"].includes(relation)) { const value = reconcileExactTargetSeededRelation(relation, sourceRows, targetRows, TARGET_SEEDED_STABLE_COLUMNS[relation]); authorizationSemanticParity = value.canonicalParity; classification = value.stableKeyParity && value.canonicalParity ? "TARGET_SEEDED_PARITY_REQUIRED" : "UNKNOWN"; }
+      else if (canonicalRowsHash(sourceRows) === canonicalRowsHash(targetRows)) classification = "TARGET_SYSTEM_INTERNAL";
+      else if (relationScope(sourceColumns(sourceRows)) === "tenant-scoped") classification = "CUSTOMER_DATA_CONFLICT";
+      nonempty.push({ relation, classification, sourceCount: sourceRows.length, targetCount: targetRows.length, stableColumns, sourceStableKeySha256: sha256(sourceKeys), targetStableKeySha256: sha256(targetKeys), stableKeyParity: canonical(sourceKeys) === canonical(targetKeys), sourceCanonicalSha256: canonicalRowsHash(sourceRows), targetCanonicalSha256: canonicalRowsHash(targetRows), scope: relationScope(sourceColumns(sourceRows)), provenance: relationProvenance(relation), securitySensitive: securitySensitive(relation), authorizationSemanticParity });
+    }
+    await targetQuery("commit", [], "transaction"); const blockers = nonempty.filter(item => !["TARGET_SEEDED_EXCLUDED", "TARGET_SEEDED_PARITY_REQUIRED", "TARGET_SYSTEM_INTERNAL"].includes(item.classification));
+    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, targetDns: { addresses: addresses.map(({ address }) => address) }, nonempty, blockers, targetWriteClientsInitialized: false }));
+  } catch (error) { await client?.query("rollback").catch(() => undefined); console.error(JSON.stringify({ ...safeError(error, phase), classification: connectionProbeClassification(error, phase) })); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function querySchemaContract(client, relation) {
+  const columns = await client.query("select column_name,data_type,udt_name,is_nullable,column_default,(is_identity='YES') as is_identity from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position", [relation]);
+  const primary = await client.query("select a.attname as column_name from pg_index i join pg_class t on t.oid=i.indrelid join pg_namespace n on n.oid=t.relnamespace join unnest(i.indkey) with ordinality as k(attnum,position) on true join pg_attribute a on a.attrelid=t.oid and a.attnum=k.attnum where i.indisprimary and n.nspname='public' and t.relname=$1 order by k.position", [relation]);
+  const foreign = await client.query("select a.attname as column_name,rn.nspname||'.'||rt.relname as referenced_table,ra.attname as referenced_column from pg_constraint c join pg_class t on t.oid=c.conrelid join pg_namespace n on n.oid=t.relnamespace join pg_class rt on rt.oid=c.confrelid join pg_namespace rn on rn.oid=rt.relnamespace join unnest(c.conkey) with ordinality as ck(attnum,position) on true join unnest(c.confkey) with ordinality as fk(attnum,position) on fk.position=ck.position join pg_attribute a on a.attrelid=t.oid and a.attnum=ck.attnum join pg_attribute ra on ra.attrelid=rt.oid and ra.attnum=fk.attnum where c.contype='f' and n.nspname='public' and t.relname=$1 order by a.attname,rn.nspname,rt.relname,ra.attname", [relation]);
+  const primaryColumns = new Set(primary.rows.map(row => row.column_name)); const foreignByColumn = new Map();
+  for (const row of foreign.rows) foreignByColumn.set(row.column_name, [...(foreignByColumn.get(row.column_name) ?? []), { table: row.referenced_table, column: row.referenced_column }]);
+  return columns.rows.map(column => ({ ...column, primaryKey: primaryColumns.has(column.column_name), foreignKeys: foreignByColumn.get(column.column_name) ?? [] }));
+}
+async function targetSchemaRepairPreflight(client) {
+  const column = await client.query("select 1 from information_schema.columns where table_schema='public' and table_name=$1 and column_name=$2", [FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.relation, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.column]);
+  const constraint = await client.query("select 1 from pg_constraint where conrelid='public.firearm_assignments'::regclass and conname=$1", [FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.constraint]);
+  return { columnExists: column.rowCount > 0, constraintExists: constraint.rowCount > 0 };
+}
+async function runFirearmAssignmentsSchemaRepair() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-firearm-assignments-schema-repair");
+  let phase = "schema repair preflight";
+  try {
+    await client.connect(); const before = await targetSchemaRepairPreflight(client);
+    assert.equal(before.columnExists, false, "SCHEMA_REPAIR_COLUMN_ALREADY_EXISTS"); assert.equal(before.constraintExists, false, "SCHEMA_REPAIR_CONSTRAINT_ALREADY_EXISTS");
+    phase = "approved schema repair"; await client.query("begin");
+    try { for (const statement of FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.statements) await client.query(statement); await client.query("commit"); }
+    catch (error) { await client.query("rollback"); throw error; }
+    phase = "schema repair verification"; const after = await targetSchemaRepairPreflight(client);
+    assert.equal(after.columnExists, true, "SCHEMA_REPAIR_COLUMN_MISSING_AFTER_APPLY"); assert.equal(after.constraintExists, true, "SCHEMA_REPAIR_CONSTRAINT_MISSING_AFTER_APPLY");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, target: client.migrationTargetAttestation, before, after, appliedStatements: FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.statements, sourceClientsInitialized: false, targetWriteScope: "approved-firearm-assignments-schema-repair", targetRowsPopulated: false, checkConstraintValidated: false }));
+  } catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+function checkConstraintStatusValues(definition) {
+  assert.equal(typeof definition, "string", "LIFECYCLE_CONSTRAINT_DEFINITION_MISSING");
+  return [...definition.matchAll(/'([^']*)'/gu)].map(match => match[1]).sort();
+}
+async function equipmentAssetsLifecycleContract(client) {
+  const column = await client.query("select data_type,udt_name,is_nullable,column_default from information_schema.columns where table_schema='public' and table_name='equipment_assets' and column_name='lifecycle_status'");
+  const constraint = await client.query("select pg_get_constraintdef(oid,true) as definition,convalidated from pg_constraint where conrelid='public.equipment_assets'::regclass and conname=$1 and contype='c'", [EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.constraint]);
+  assert.equal(column.rowCount, 1, "LIFECYCLE_STATUS_COLUMN_MISSING");
+  assert.equal(constraint.rowCount, 1, "LIFECYCLE_STATUS_CONSTRAINT_MISSING");
+  return { column: column.rows[0], constraint: { definition: constraint.rows[0].definition, validated: constraint.rows[0].convalidated, allowedStatuses: checkConstraintStatusValues(constraint.rows[0].definition) } };
+}
+async function runEquipmentAssetsLifecycleSchemaRepair() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-equipment-assets-lifecycle-schema-repair");
+  let phase = "immutable artifact lifecycle contract";
+  try {
+    const snapshot = await sourceSnapshot();
+    const sourceStatuses = [...new Set((snapshot.rows.get(EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.relation) ?? []).map(row => row.lifecycle_status).filter(value => value !== null && value !== undefined))].sort();
+    assert.ok(sourceStatuses.every(value => EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.allowedStatuses.includes(value)), "SOURCE_LIFECYCLE_STATUS_NOT_APPROVED");
+    phase = "equipment lifecycle schema repair preflight"; await client.connect(); const before = await equipmentAssetsLifecycleContract(client);
+    assert.deepEqual(before.constraint.allowedStatuses, [...EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.priorAllowedStatuses].sort(), "LIFECYCLE_STATUS_CONSTRAINT_UNEXPECTED");
+    const existing = await client.query("select lifecycle_status,count(*)::int as count from public.equipment_assets group by lifecycle_status order by lifecycle_status");
+    assert.ok(existing.rows.every(row => row.lifecycle_status === null || EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.allowedStatuses.includes(row.lifecycle_status)), "TARGET_LIFECYCLE_STATUS_NOT_APPROVED");
+    phase = "approved equipment lifecycle schema repair"; await client.query("begin");
+    try { for (const statement of EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.statements) await client.query(statement); await client.query("commit"); }
+    catch (error) { await client.query("rollback"); throw error; }
+    phase = "equipment lifecycle schema repair verification"; const after = await equipmentAssetsLifecycleContract(client);
+    assert.deepEqual(after.column, before.column, "LIFECYCLE_STATUS_COLUMN_CONTRACT_CHANGED"); assert.equal(after.constraint.validated, true, "LIFECYCLE_STATUS_CONSTRAINT_NOT_VALIDATED");
+    assert.deepEqual(after.constraint.allowedStatuses, [...EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.allowedStatuses].sort(), "LIFECYCLE_STATUS_CONSTRAINT_NOT_APPROVED");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, target: { host: process.env.TARGET_PGHOST, database: target.database, tlsVerified: true }, sourceArtifact: snapshot.artifact, sourceLifecycleStatusCounts: Object.fromEntries(sourceStatuses.map(status => [status, (snapshot.rows.get(EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.relation) ?? []).filter(row => row.lifecycle_status === status).length])), targetExistingLifecycleStatusCounts: existing.rows, before, after, appliedStatements: EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR.statements, sourceClientsInitialized: false, targetWriteScope: "approved-equipment-assets-lifecycle-status-check-replacement", targetRowsUpdated: false }));
+  } catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function migrationModeFunctionContract(client, functionName) {
+  const functionResult = await client.query("select pg_get_functiondef(p.oid) as definition,p.prosecdef as security_definer from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1 and pg_get_function_identity_arguments(p.oid)=''", [functionName]);
+  assert.equal(functionResult.rowCount, 1, "EQUIPMENT_ASSIGNMENT_HISTORY_FUNCTION_MISSING");
+  return { definition: functionResult.rows[0].definition, securityDefiner: functionResult.rows[0].security_definer };
+}
+async function runMigrationModeSchemaRepair() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-migration-mode-schema-repair");
+  let phase = "migration-mode function preservation";
+  try {
+    await client.connect();
+    const before = [];
+    for (const item of MIGRATION_MODE_TARGET_FUNCTIONS) {
+      const name = item.name ?? item.functionName, contract = await migrationModeFunctionContract(client, name);
+      for (const fragment of item.requiredExistingFragments) assert.ok(contract.definition.includes(fragment), `MIGRATION_MODE_FUNCTION_UNEXPECTED:${name}`);
+      before.push({ name, securityDefiner: contract.securityDefiner, definitionSha256: createHash("sha256").update(contract.definition).digest("hex") });
+    }
+    const trigger = await client.query("select pg_get_triggerdef(t.oid,true) as definition from pg_trigger t where t.tgrelid='public.equipment_assets'::regclass and t.tgname=$1 and not t.tgisinternal", [EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD.triggerName]);
+    assert.equal(trigger.rowCount, 1, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_MISSING");
+    // PostgreSQL canonicalizes pg_get_triggerdef() keywords to upper case.  Keep
+    // the relation/function binding exact while accepting that non-semantic
+    // formatter difference from the reviewed migration definition.
+    assert.match(trigger.rows[0].definition, /execute function (?:public\.)?sync_equipment_asset_assignment_history\(\)/iu, "EQUIPMENT_ASSIGNMENT_HISTORY_TRIGGER_BINDING_CHANGED");
+    phase = "transaction-local migration-mode contract repair";
+    await client.query("begin");
+    try { for (const item of MIGRATION_MODE_TARGET_FUNCTIONS) await client.query(item.statement); await client.query("commit"); }
+    catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+    phase = "migration-mode contract verification";
+    const after = [];
+    for (const item of MIGRATION_MODE_TARGET_FUNCTIONS) {
+      const name = item.name ?? item.functionName, contract = await migrationModeFunctionContract(client, name);
+      assert.match(contract.definition, /current_setting\('tracepoint\.migration_mode', true\) = 'on'/u, `MIGRATION_MODE_GUARD_MISSING:${name}`);
+      after.push({ name, securityDefiner: contract.securityDefiner, definitionSha256: createHash("sha256").update(contract.definition).digest("hex") });
+    }
+    await client.query("begin");
+    try {
+      await client.query(`set local ${MIGRATION_MODE.setting} = '${MIGRATION_MODE.enabledValue}'`);
+      const inside = (await client.query(`select current_setting('${MIGRATION_MODE.setting}',true) as value`)).rows[0].value;
+      assert.equal(inside, MIGRATION_MODE.enabledValue, "MIGRATION_MODE_NOT_SET_LOCAL");
+      await client.query("commit");
+    } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+    const afterCommit = (await client.query(`select current_setting('${MIGRATION_MODE.setting}',true) as value`)).rows[0].value;
+    assert.notEqual(afterCommit, MIGRATION_MODE.enabledValue, "MIGRATION_MODE_NOT_TRANSACTION_LOCAL");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, target: { host: process.env.TARGET_PGHOST, database: target.database, tlsVerified: true }, functions: { before, after }, transactionLocalSetting: MIGRATION_MODE.setting, settingClearedAfterCommit: true, sourceClientsInitialized: false, targetWriteScope: "approved-migration-mode-function-contract", targetRowsUpdated: false }));
+  } catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+function targetKindForRelation(kinds, relation) { return kinds.get(relation) ?? null; }
+async function runFullSchemaContractSweep() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-full-schema-contract-sweep");
+  let phase = "canonical REST source contract";
+  try {
+    const snapshot = await sourceSnapshot(); phase = "target repeatable-read schema contract"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
+    const kinds = await targetRelationKinds(client), relations = [], blockers = [];
+    for (const relation of MIGRATION_RELATIONS) {
+      const sourceRows = snapshot.rows.get(relation) ?? [], source = sourceColumns(sourceRows), targetKind = targetKindForRelation(kinds, relation);
+      const expectedKind = DERIVED_RELATIONS.includes(relation) ? "v" : "r";
+      if (targetKind !== expectedKind) { const item={ relation, classification:"UNKNOWN_CONFLICT", expectedKind, targetKind, sourceColumns: source, targetColumns: [] }; relations.push(item); blockers.push(item); continue; }
+      const targetColumns = await querySchemaContract(client, relation), targetNames = new Set(targetColumns.map(column => column.column_name));
+      // PostgREST cannot reveal a typed source projection for an empty relation.
+      // It is safe to defer this shape check: no row can be imported now, and the
+      // final-delta sweep repeats this contract after the controlled write freeze.
+      if (sourceRows.length === 0) { relations.push({ relation, classification: "EXACT_MATCH", expectedKind, targetKind, sourceColumns: [], targetColumns, sourceSchemaEvidence: "empty-relation-rest-schema-unobservable" }); continue; }
+      if (relation === "feature_catalog") {
+        const feature = requireTargetSeededFeatureCatalogParity(reconcileFeatureCatalog(sourceRows, await targetRowsForReconciliation(client, targetColumns.map(column => column.column_name)), targetColumns.map(column => column.column_name)));
+        relations.push({ relation, classification: "TARGET_SEEDED_EXCLUDED", expectedKind, targetKind, sourceColumns: source, targetColumns, featureCatalog: { sourceCount: feature.sourceCount, targetCount: feature.targetCount, codeSetParity: !feature.hasSourceOnlyRows && !feature.hasTargetOnlyRows, activeStateParity: !feature.hasActiveStateMismatch } }); continue;
+      }
+      const sourceOnly = source.filter(column => !targetNames.has(column)).map(column => ({ sourceColumn: column, classification: classifySourceOnlyColumn(relation, column, summarizeSourceColumn(sourceRows, column)), statistics: summarizeSourceColumn(sourceRows, column) }));
+      const targetOnly = targetColumns.filter(column => !source.includes(column.column_name)).map(column => ({ targetColumn: column.column_name, classification: classifyTargetOnlyColumn(column), dataType: column.data_type, nullable: column.is_nullable, default: column.column_default, primaryKey: column.primaryKey, foreignKeys: column.foreignKeys }));
+      const classifications = [...sourceOnly, ...targetOnly].map(item => item.classification);
+      const classification = classifications.length === 0 ? "EXACT_MATCH" : classifications.includes("TARGET_SCHEMA_MISSING_COLUMN") ? "TARGET_SCHEMA_MISSING_COLUMN" : classifications.includes("UNKNOWN_CONFLICT") || classifications.includes("REQUIRED_IMPORT_VALUE") ? "UNKNOWN_CONFLICT" : classifications.every(value => value === "TARGET_ONLY_DEFAULTED") ? "TARGET_ONLY_DEFAULTED" : "TRANSFORM_REQUIRED";
+      const item = { relation, classification, expectedKind, targetKind, sourceColumns: source, sourceColumnStatistics: source.map(column => summarizeSourceColumn(sourceRows, column)), targetColumns, sourceOnly, targetOnly };
+      relations.push(item); if (classification !== "EXACT_MATCH" && classification !== "TARGET_ONLY_DEFAULTED") blockers.push(item);
+    }
+    await client.query("commit");
+    console.log(JSON.stringify({ status: blockers.length ? "BLOCKED" : "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, source: { totalRelationalRows: [...snapshot.rows.values()].reduce((sum, rows) => sum + rows.length, 0), identities: snapshot.users.length, memberships: (snapshot.rows.get("department_memberships") ?? []).length }, relations, blockers, targetClientsInitialized: true, targetWriteClientsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+async function runFirearmAssignmentsSchemaContract() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-firearm-assignments-schema-contract");
+  let phase = "source firearm_assignments contract";
+  try {
+    const sourceRows = await allRelationRows(fetch, headers, "firearm_assignments"); const source = sourceColumns(sourceRows);
+    phase = "target read-only schema transaction"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only");
+    const targetColumns = await querySchemaContract(client, "firearm_assignments"); await client.query("commit");
+    const targetNames = new Set(targetColumns.map(column => column.column_name)), sourceNames = new Set(source);
+    const expectedReturnComparison = sourceNames.has("magazines_expected_return") && sourceNames.has("magazines_issued") ? compareSourceColumns(sourceRows, "magazines_expected_return", "magazines_issued") : null;
+    const sourceOnly = source.filter(column => !targetNames.has(column)).map(column => ({ sourceColumn: column, classification: column === "magazines_expected_return" && expectedReturnComparison?.unequalRowCount === 0 ? "MAP_TO_EXISTING_TARGET_COLUMN" : "UNKNOWN_CONFLICT", targetEquivalent: column === "magazines_expected_return" && expectedReturnComparison?.unequalRowCount === 0 ? "magazines_issued" : null, statistics: summarizeSourceColumn(sourceRows, column) }));
+    const targetOnly = targetColumns.filter(column => !sourceNames.has(column.column_name)).map(column => ({ ...column, classification: classifyTargetOnlyColumn(column) }));
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, targetReadOnly: true, targetTransaction: { isolation: "repeatable read", readOnly: true }, relation: "firearm_assignments", sourceContract: { columns: source, statistics: source.map(column => summarizeSourceColumn(sourceRows, column)) }, targetContract: { columns: targetColumns }, sourceOnly, targetOnly, sourceEquivalenceChecks: expectedReturnComparison ? [expectedReturnComparison] : [], commonColumns: source.filter(column => targetNames.has(column)), sourceCanonicalSha256: canonicalRowsHash(sourceRows), targetClientsInitialized: true, targetWriteClientsInitialized: false }));
+  } catch (error) { await client.query("rollback").catch(() => undefined); console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; }
+  finally { await client.end().catch(() => undefined); }
+}
+const TARGET_SCHEMA_CONTRACT_SQL = Object.freeze({
+  columns: "select column_name,data_type,udt_name,is_nullable,column_default,is_identity,identity_generation,is_generated,generation_expression from information_schema.columns where table_schema='public' and table_name='firearm_assignments' order by ordinal_position",
+  constraints: "select con.conname as constraint_name,con.contype as constraint_type,con.convalidated as validated,pg_get_constraintdef(con.oid) as definition from pg_constraint con join pg_class rel on rel.oid=con.conrelid join pg_namespace ns on ns.oid=rel.relnamespace where ns.nspname='public' and rel.relname='firearm_assignments' order by con.conname",
+});
+const FIREARM_ASSIGNMENTS_ARTIFACT_COLUMN_CONTRACT = Object.freeze({
+  magazines_expected_return: Object.freeze({ dataType: "integer", nullable: true }),
+});
+function sourceArtifactColumnContract(rows) {
+  return sourceColumns(rows).map(column => ({
+    column,
+    ...(FIREARM_ASSIGNMENTS_ARTIFACT_COLUMN_CONTRACT[column] ?? {}),
+    sourcePresence: summarizeSourceColumn(rows, column),
+  }));
+}
+async function runTargetSchemaContract() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const deadline = 15_000;
+  const emit = event => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...event }));
+  let client;
+  let phase = "immutable-artifact-contract";
+  try {
+    const snapshot = await sourceSnapshot();
+    const sourceRows = snapshot.rows.get("firearm_assignments") ?? [];
+    const sourceContract = sourceArtifactColumnContract(sourceRows);
+    phase = "target-dns";
+    const addresses = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => lookup(process.env.TARGET_PGHOST, { all: true, family: 4 }), onEvent: emit });
+    assert.ok(addresses.length > 0, "TARGET_SCHEMA_CONTRACT_DNS_EMPTY");
+    phase = "target-connect";
+    client = targetClient(target, ca, "tracepoint-target-schema-contract");
+    await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.connect(), onEvent: emit });
+    assert.equal(client.connection.stream?.encrypted, true, "TARGET_SCHEMA_CONTRACT_TLS_REQUIRED");
+    phase = "target-readonly";
+    const begin = "begin transaction isolation level repeatable read read only";
+    assertDiagnosticReadOnlySql(begin);
+    await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query(begin), onEvent: emit });
+    phase = "firearm-assignments-column-catalog";
+    assertDiagnosticReadOnlySql(TARGET_SCHEMA_CONTRACT_SQL.columns);
+    const targetColumns = (await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query(TARGET_SCHEMA_CONTRACT_SQL.columns), onEvent: emit })).rows;
+    phase = "firearm-assignments-constraint-catalog";
+    assertDiagnosticReadOnlySql(TARGET_SCHEMA_CONTRACT_SQL.constraints);
+    const constraints = (await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query(TARGET_SCHEMA_CONTRACT_SQL.constraints), onEvent: emit })).rows;
+    assertDiagnosticReadOnlySql("commit");
+    await client.query("commit");
+    const targetByName = new Map(targetColumns.map(column => [column.column_name, column]));
+    const sourceOnly = sourceContract.filter(({ column }) => !targetByName.has(column));
+    const targetOnly = targetColumns.filter(({ column_name }) => !sourceContract.some(({ column }) => column === column_name));
+    const expectedOnly = sourceOnly.length === 1 && sourceOnly[0].column === FIREARM_ASSIGNMENTS_SCHEMA_REPAIR.column && sourceOnly[0].dataType === "integer" && sourceOnly[0].nullable === true;
+    const compatibleCommonColumns = sourceContract.filter(({ column }) => targetByName.has(column)).every(({ column }) => targetByName.get(column).is_nullable === "YES" || !sourceRows.some(row => row[column] === null || row[column] === undefined));
+    const soleApprovedMismatch = expectedOnly && targetOnly.length === 0 && compatibleCommonColumns;
+    console.log(JSON.stringify({ status: soleApprovedMismatch ? "PASSED" : "NO_GO", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, relation: "firearm_assignments", sourceArtifact: { bucket: snapshot.artifact.bucket, key: snapshot.artifact.key, sha256: snapshot.artifact.masterSha256 }, sourceContract: { columns: sourceContract }, targetContract: { columns: targetColumns.map(({ column_name, data_type, udt_name, is_nullable, column_default, is_identity, identity_generation, is_generated, generation_expression }) => ({ column: column_name, dataType: data_type, udtName: udt_name, nullable: is_nullable === "YES", default: column_default, identity: { enabled: is_identity === "YES", generation: identity_generation }, generated: { status: is_generated, expression: generation_expression } })), constraints: constraints.map(({ constraint_name, constraint_type, validated, definition }) => ({ name: constraint_name, type: constraint_type, validated, definition })) }, comparison: { sourceOnly: sourceOnly.map(({ column, dataType, nullable, sourcePresence }) => ({ column, dataType: dataType ?? null, nullable: nullable ?? null, sourcePresence })), targetOnly: targetOnly.map(({ column_name, data_type, is_nullable, column_default }) => ({ column: column_name, dataType: data_type, nullable: is_nullable === "YES", default: column_default })), compatibleCommonColumns, soleApprovedMismatch }, sourceClientsInitialized: false, sourceArtifactClientInitialized: true, targetClientsInitialized: true, targetWriteClientsInitialized: false, targetTransaction: { isolation: "repeatable read", readOnly: true }, targetDns: { addresses: addresses.map(({ address }) => address) } }));
+  } catch (error) {
+    await client?.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify({ ...safeError(error, phase), sourceClientsInitialized: false, targetWriteClientsInitialized: false }));
+    process.exitCode = 1;
+  } finally { await client?.end().catch(() => undefined); }
+}
+function assertSourceObjectUrl(url, object) { const parsed = new URL(url); assert.equal(parsed.origin, PROJECT_URL); assert.equal(parsed.protocol, "https:"); assert.equal(parsed.pathname, `/storage/v1/object/${object.sourceBucket}/${object.sourceKey}`); }
+async function fetchObject(object) { const url = sourceObjectUrl(object); assertSourceObjectUrl(url, object); const response = await fetch(url, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(30_000) }); if (!response.ok) throw new Error(`SOURCE_OBJECT_GET_FAILED:${response.status}`); const bytes = new Uint8Array(await response.arrayBuffer()); validateObjectBytes(object, bytes); return bytes; }
+async function getTargetObject(s3, object) { try { const response = await s3.send(new GetObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" })); const bytes = new Uint8Array(await response.Body.transformToByteArray()); return bytes; } catch (error) { if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return null; throw error; } }
+async function runObjects() {
+  const s3 = new S3Client({ region: "us-east-1", maxAttempts: 3 }); let phase = "object preflight";
+  try { const results=[]; for (const object of OBJECT_MANIFEST) { assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH"); let target = await getTargetObject(s3, object); if (target) { validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "verified-existing", bytes: object.bytes, sha256: object.sha256 }); continue; } phase = "source object read"; const bytes = await fetchObject(object); phase = "create-only target write"; try { await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } })); } catch (error) { if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error; } phase = "target object verification"; target = await getTargetObject(s3, object); assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE"); validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "created-and-verified", bytes: object.bytes, sha256: object.sha256 }); } console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false })); }
+  catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { s3.destroy(); }
+}
+function auditIdRange(rows) { const ids=rows.map(row=>BigInt(row.id)); return ids.length?{min:ids.reduce((a,b)=>a<b?a:b).toString(),max:ids.reduce((a,b)=>a>b?a:b).toString()}:null; }
+async function auditReferences(client, relation) { return (await client.query("select nr.nspname||'.'||cr.relname as relation,c.conname as constraint_name,a.attname as column_name from pg_constraint c join pg_class ct on ct.oid=c.confrelid join pg_class cr on cr.oid=c.conrelid join pg_namespace nr on nr.oid=cr.relnamespace join unnest(c.conkey) as k(attnum) on true join pg_attribute a on a.attrelid=cr.oid and a.attnum=k.attnum where c.contype='f' and ct.oid=('public.'||$1)::regclass order by 1,2,3",[relation])).rows; }
+async function auditIdentityDiagnostic() {
+  const rawTarget=process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget,"Target migrator secret was not injected");
+  const target=validateTargetSecret(JSON.parse(rawTarget)),ca=await readFile("/app/rds-ca.pem","utf8"),client=targetClient(target,ca,"tracepoint-audit-identity-collision-diagnostic"); let phase="audit source snapshot";
+  try { const snapshot=await sourceSnapshot(); phase="audit target repeatable-read diagnostic"; await client.connect(); await client.query("begin transaction isolation level repeatable read read only"); const results=[];
+    for(const relation of IDENTITY_PRESERVATION_RELATIONS) { const source=snapshot.rows.get(relation)??[], columns=(await queryColumns(client,relation)).map(x=>x.column_name), targetRows=await targetRowsForRelation(client,relation,columns), sourceById=new Map(source.map(row=>[String(row.id),row])),targetById=new Map(targetRows.map(row=>[String(row.id),row])), overlap=[...sourceById.keys()].filter(id=>targetById.has(id)), sourceOnly=[...sourceById.keys()].filter(id=>!targetById.has(id)), targetOnly=[...targetById.keys()].filter(id=>!sourceById.has(id)), exact=overlap.filter(id=>canonical(sourceById.get(id))===canonical(targetById.get(id))).length, generation=(await queryTargetGenerationColumns((sql,values)=>client.query(sql,values),relation)).find(x=>x.column_name==='id'), triggers=await queryTargetTriggers((sql,values)=>client.query(sql,values),[relation]), refs=await auditReferences(client,relation), created=timestampRange(targetRows,"created_at"), updated=timestampRange(targetRows,"updated_at"), sequence=generation?.sequence_name?(await client.query(`select last_value::text as last_value,is_called from ${generation.sequence_name}`)).rows[0]:null;
+      const targetGenerated=targetOnly.length>0&&exact===overlap.length, classification=targetOnly.length===0&&exact===overlap.length?"MATCHING_ROWS_CAN_BE_DEDUPLICATED":targetGenerated?"TARGET_TABLE_SHOULD_BE_CLEANED_BEFORE_IMPORT":"GENUINE_CONFLICT_REQUIRING_OWNER_DECISION";
+      results.push({relation,source:{count:source.length,idRange:auditIdRange(source),canonicalSha256:canonicalRowsHash(source)},target:{count:targetRows.length,idRange:auditIdRange(targetRows),canonicalSha256:canonicalRowsHash(targetRows),createdAtEvidence:created,updatedAtEvidence:updated,createdAfterCleanRestore:"unprovable-from-row-timestamps",predatesCleanSnapshot:"unprovable-from-row-timestamps"},idSets:{overlap:overlap.length,sourceOnly:sourceOnly.length,targetOnly:targetOnly.length},overlapClassification:{exactSemanticMatch:exact,targetGeneratedOperationalRecord:targetGenerated?targetOnly.length:0,sourceAuthoritativeRecord:sourceOnly.length,genuineConflict:overlap.length-exact},identity:{dataType:generation?.data_type,identity:generation?.identity_generation,sequence:generation?.sequence_name,sequenceState:sequence},foreignKeyReferences:refs,externallyMeaningful:"local surrogate bigint; source preservation is required only for migration hash/lineage",triggers:triggers.map(x=>({name:x.trigger_name,function:`${x.function_schema}.${x.function_name}`})),repositoryProvenance:relation==="audit_events"?"database/aws migrations and application audit writers produce operational audit events; no target bootstrap exclusion exists":"supabase/migrations/202609060001_retire_legacy_training_alert_permissions.sql seeds retirement audit history",classification}); }
+    await client.query("commit"); console.log(JSON.stringify({status:"PASSED",runId:RUN_ID,authorizationReference:AUTHORIZATION_REFERENCE,mode,sourceReadOnly:true,targetReadOnly:true,targetTransaction:{isolation:"repeatable read",readOnly:true},targetWriteClientsInitialized:false,results}));
+  } catch(error) { await client.query("rollback").catch(()=>undefined); console.error(JSON.stringify(safeError(error,phase))); process.exitCode=1; } finally { await client.end().catch(()=>undefined); }
+}
+async function cleanupAuditArtifacts() {
+  const rawTarget=process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget,"Target migrator secret was not injected");
+  const target=validateTargetSecret(JSON.parse(rawTarget)),ca=await readFile("/app/rds-ca.pem","utf8"),client=targetClient(target,ca,"tracepoint-audit-events-artifact-cleanup"); let phase="source audit identity set";
+  try { const source=await allRelationRows(fetch,headers,"audit_events"), sourceIds=new Set(source.map(row=>String(row.id))); phase="bounded audit artifact cleanup"; await client.connect(); await client.query("begin");
+    const targetRows=await targetRowsForRelation(client,"audit_events",(await queryColumns(client,"audit_events")).map(x=>x.column_name)),ids=targetRows.map(row=>Number(row.id)).sort((a,b)=>a-b),refs=await auditReferences(client,"audit_events"),anchors=Number((await client.query("select count(*)::int as count from public.profiles")).rows[0].count);
+    assert.equal(targetRows.length,111,"AUDIT_ARTIFACT_COUNT_MISMATCH"); assert.deepEqual(ids,Array.from({length:111},(_,index)=>165+index),"AUDIT_ARTIFACT_ID_SET_MISMATCH"); assert.ok(targetRows.every(row=>sourceIds.has(String(row.id))),"AUDIT_ARTIFACT_UNEXPECTED_TARGET_ONLY_ROW"); assert.ok(targetRows.every(row=>row.created_at&&Date.parse(row.created_at)>Date.parse("2026-09-20T09:53:11Z")),"AUDIT_ARTIFACT_PRE_RESTORE_ROW"); assert.equal(refs.length,0,"AUDIT_ARTIFACT_INBOUND_FK"); assert.equal(anchors,96,"AUDIT_ANCHOR_COUNT_MISMATCH");
+    const deleted=await client.query("delete from public.audit_events where id between 165 and 275"); assert.equal(deleted.rowCount,111,"AUDIT_ARTIFACT_DELETE_COUNT_MISMATCH"); const after=Number((await client.query("select count(*)::int as count from public.audit_events")).rows[0].count),anchorsAfter=Number((await client.query("select count(*)::int as count from public.profiles")).rows[0].count); assert.equal(after,0,"AUDIT_ARTIFACT_NOT_EMPTY_AFTER_DELETE"); assert.equal(anchorsAfter,96,"AUDIT_ANCHOR_CHANGED"); await client.query("commit"); console.log(JSON.stringify({status:"PASSED",runId:RUN_ID,authorizationReference:AUTHORIZATION_REFERENCE,mode,deletedAuditEvents:111,targetAuditEventsAfter:after,preservedProfileAnchors:anchorsAfter,targetWriteScope:"approved-clean-target-audit-events-artifact-cleanup",sourceClientsInitialized:true}));
+  } catch(error) { await client.query("rollback").catch(()=>undefined); console.error(JSON.stringify(safeError(error,phase))); process.exitCode=1; } finally { await client.end().catch(()=>undefined); }
+}
+function connectionProbeClassification(error, phase) {
+  const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+  if (code === "CONNECTION_PROBE_TIMEOUT") return `${phase.toUpperCase().replaceAll("-", "_")}_TIMEOUT`;
+  if (["ENOTFOUND", "EAI_AGAIN"].includes(code)) return "DNS_FAILURE";
+  if (["ETIMEDOUT", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH"].includes(code)) return "TCP_CONNECT_FAILURE";
+  if (code === "28P01") return "POSTGRESQL_AUTH_FAILURE";
+  if (code === "3D000") return "POSTGRESQL_DATABASE_SELECTION_FAILURE";
+  if (/certificate|tls|ssl/i.test(error instanceof Error ? error.message : "")) return "TLS_FAILURE";
+  return "CONNECTION_PROBE_FAILURE";
+}
+
+async function runConnectionProbe() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const emit = event => console.log(JSON.stringify({ runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, ...event }));
+  const deadline = 15_000;
+  let client;
+  let phase = "dns-resolution";
+  try {
+    const addresses = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => lookup(process.env.TARGET_PGHOST, { all: true, family: 4 }), onEvent: emit });
+    assert.ok(addresses.length > 0, "DNS_NO_IPV4_ADDRESS");
+    phase = "tcp-tls-postgresql-connect";
+    client = targetClient(target, ca, "tracepoint-rds-connection-probe");
+    await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.connect(), onEvent: emit });
+    assert.equal(client.connection.stream?.encrypted, true, "TLS_NOT_ENCRYPTED");
+    phase = "begin-read-only";
+    await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("begin transaction read only"), onEvent: emit });
+    phase = "query-select-1";
+    const selectOne = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("select 1 as ok"), onEvent: emit });
+    phase = "query-transaction-read-only";
+    const readOnly = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("show transaction_read_only"), onEvent: emit });
+    phase = "query-current-database-user";
+    const identity = await withRetainedDeadline({ phase, deadlineMs: deadline, operation: () => client.query("select current_database() as database, current_user as user"), onEvent: emit });
+    await client.query("rollback");
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceClientsInitialized: false, targetWriteClientsInitialized: false, dns: { status: "PASS", addresses: addresses.map(({ address }) => address) }, tcpTls: { status: "PASS" }, postgresqlAuth: { status: "PASS" }, query: { status: "PASS", selectOne: selectOne.rows[0]?.ok === 1, transactionReadOnly: readOnly.rows[0]?.transaction_read_only, database: identity.rows[0]?.database, user: identity.rows[0]?.user } }));
+  } catch (error) {
+    console.error(JSON.stringify({ ...safeError(error, phase), classification: connectionProbeClassification(error, phase), sourceClientsInitialized: false, targetWriteClientsInitialized: false }));
+    process.exitCode = 1;
+  } finally {
+    await client?.end().catch(() => undefined);
+  }
+}
+
+async function runReviewedMode() {
+  if (mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE) return runDepartmentRolePermissionsAuthorizationDiagnostic();
+  return mode === CONNECTION_PROBE_MODE ? runConnectionProbe() : mode === TARGET_SCHEMA_CONTRACT_MODE ? runTargetSchemaContract() : mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE ? runEquipmentAssetsLifecycleSchemaRepair() : mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE ? runMigrationModeSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
+}
+
+// Node 24 can exit with code 13 when its only outstanding work is a top-level
+// await whose timeout is unref'ed. Keep the event loop alive only while a
+// reviewed mode is running so request timeouts reach the existing fail-closed
+// handlers and emit sanitized evidence.
+const reviewedModeLiveness = setInterval(() => undefined, 1_000);
+try {
+  await runReviewedMode();
+} finally {
+  clearInterval(reviewedModeLiveness);
+}
