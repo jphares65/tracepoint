@@ -1,7 +1,7 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import type { JwksCache } from 'aws-jwt-verify/jwk';
 import type { AuthenticationProvider, IdentityMappingStore, TracePointIdentity } from './provider-core';
-export type CognitoVerificationConfig = { environment: 'staging' | 'production'; account: string; region: string; userPoolId: string; clientId: string };
+export type CognitoVerificationConfig = { environment: 'staging' | 'production'; account: string; region: string; userPoolId: string; clientId: string; trustedClientIds?: string[] };
 export type SessionActivityCheck = (input: { userId: string; issuer: string; subject: string; tokenId: string; issuedAt: number }) => Promise<boolean>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

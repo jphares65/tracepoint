@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,10 +9,8 @@ import {
   Save,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import {
   DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
-  mergeAnalyticsDashboardConfiguration,
   normalizeAnalyticsDashboardConfiguration,
   type AnalyticsDashboardConfiguration,
   type AnalyticsMetricKey,
@@ -181,7 +179,6 @@ export default function AnalyticsDashboardSettingsPanel({
   departmentId: string;
   canAdminister: boolean;
 }) {
-  const supabase = useMemo(() => createClient(), []);
   const [configuration, setConfiguration] =
     useState<AnalyticsDashboardConfiguration>(
       DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
@@ -206,18 +203,11 @@ export default function AnalyticsDashboardSettingsPanel({
       setNotice(null);
 
       try {
-        // Generated database types do not yet expose this existing JSON column.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data, error } = await (supabase as any)
-          .from("department_rules")
-          .select("range_qualification_rules")
-          .eq("department_id", departmentId)
-          .maybeSingle();
-
-        if (error) throw error;
+        const response = await fetch(`/api/settings/visual-configuration?departmentId=${encodeURIComponent(departmentId)}`, { cache: "no-store" });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Settings could not be loaded.");
         if (!active) return;
-
-        const rangeRules = objectValue(data?.range_qualification_rules);
+        const rangeRules = objectValue(result.rules?.range_qualification_rules);
         const normalized = normalizeAnalyticsDashboardConfiguration(
           rangeRules.analytics_dashboard,
         );
@@ -241,7 +231,7 @@ export default function AnalyticsDashboardSettingsPanel({
     return () => {
       active = false;
     };
-  }, [departmentId, supabase]);
+  }, [departmentId]);
 
   function patchConfiguration<K extends keyof AnalyticsDashboardConfiguration>(
     key: K,
@@ -256,32 +246,14 @@ export default function AnalyticsDashboardSettingsPanel({
     setNotice(null);
 
     try {
-      // Generated database types do not yet expose this existing JSON column.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: loadError } = await (supabase as any)
-        .from("department_rules")
-        .select("range_qualification_rules")
-        .eq("department_id", departmentId)
-        .maybeSingle();
-
-      if (loadError) throw loadError;
-
       const normalized = normalizeAnalyticsDashboardConfiguration(configuration);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: saveError } = await (supabase as any)
-        .from("department_rules")
-        .upsert(
-          {
-            department_id: departmentId,
-            range_qualification_rules: mergeAnalyticsDashboardConfiguration(
-              data?.range_qualification_rules,
-              normalized,
-            ),
-          },
-          { onConflict: "department_id" },
-        );
-
-      if (saveError) throw saveError;
+      const response = await fetch("/api/settings/visual-configuration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ departmentId, configuration: normalized }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Settings could not be saved.");
 
       setConfiguration(normalized);
       setOriginalConfiguration(normalized);

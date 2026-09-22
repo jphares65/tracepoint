@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
-
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { accessFailureResponse, hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type CertificationImportRequest = {
   departmentId?: string;
@@ -23,20 +21,6 @@ function cleanText(value: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  const server = await createServerClient();
-
-  const {
-    data: { user },
-    error: userError,
-  } = await server.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json(
-      { error: "Authentication is required." },
-      { status: 401 },
-    );
-  }
-
   const body = (await request
     .json()
     .catch(() => ({}))) as CertificationImportRequest;
@@ -55,45 +39,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const [manageResult, administerResult, platformAdminResult] =
-    await Promise.all([
-      server.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "manage_certifications",
-      }),
-      server.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "administer_department",
-      }),
-      server.rpc("is_platform_admin"),
-    ]);
-
-  if (manageResult.error) {
-    return NextResponse.json(
-      { error: manageResult.error.message },
-      { status: 500 },
-    );
+  const access = await resolveServerAccess();
+  if (!access.ok) return accessFailureResponse(access);
+  if (access.context.departmentId !== departmentId) {
+    return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
   }
-
-  if (administerResult.error) {
-    return NextResponse.json(
-      { error: administerResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (platformAdminResult.error) {
-    return NextResponse.json(
-      { error: platformAdminResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (
-    !manageResult.data &&
-    !administerResult.data &&
-    !platformAdminResult.data
-  ) {
+  if (!hasAnyServerPermission(access.context, ["manage_certifications", "administer_department"])) {
     return NextResponse.json(
       {
         error:
@@ -103,7 +54,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const admin = createAdminClient();
+  const { admin, user, isSuperAdmin } = access.context;
 
   try {
     const [
@@ -200,7 +151,14 @@ export async function POST(request: NextRequest) {
       throw new Error(existingError.message);
     }
 
-    const matches = (existingRows ?? []).filter((row) => {
+    const matches = (existingRows ?? []).filter((row: {
+      id: string;
+      credential_number?: string | null;
+      issue_date?: string | null;
+      expiration_date?: string | null;
+      issuing_organization?: string | null;
+      notes?: string | null;
+    }) => {
       if (credentialNumber) {
         return (
           row.credential_number?.trim().toLowerCase() ===
@@ -249,7 +207,7 @@ export async function POST(request: NextRequest) {
           .update({
             ...merge.updates,
             updated_by_user_id: user.id,
-          } as any)
+          })
           .eq("id", existing.id)
           .eq("department_id", departmentId);
 
@@ -302,7 +260,7 @@ export async function POST(request: NextRequest) {
       throw new Error(insertError.message);
     }
 
-    await admin.from("audit_events").insert({
+    const auditPayload = {
       department_id: departmentId,
       actor_user_id: user.id,
       action: "certification_imported_during_onboarding",
@@ -312,9 +270,19 @@ export async function POST(request: NextRequest) {
         user_id: userId,
         certification_type_id: certificationType.id,
         certification_title: certificationType.name,
-        platform_admin: Boolean(platformAdminResult.data),
+        platform_admin: isSuperAdmin,
       },
-    });
+    };
+    const auditResult = process.env.TRACEPOINT_DATA_PROVIDER === "postgres"
+      ? await admin.rpc("record_onboarding_import_audit", {
+          p_department_id: departmentId,
+          p_action: auditPayload.action,
+          p_entity_type: auditPayload.entity_type,
+          p_entity_id: inserted.id,
+          p_new_value: auditPayload.new_value,
+        })
+      : await admin.from("audit_events").insert(auditPayload);
+    if (auditResult.error) throw new Error(auditResult.error.message);
 
     return NextResponse.json(
       {

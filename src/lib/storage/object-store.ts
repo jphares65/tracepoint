@@ -7,7 +7,9 @@ export { departmentPatchPathFromMetadata } from "./s3-object-store-core";
 export type { AttachmentObjectPath, DepartmentAssetObjectPath, ObjectStore } from "./object-store-core";
 export function createObjectStore(client:SupabaseStorageClient,authorizedDepartmentId:string,environment:Record<string,string|undefined>=process.env):ObjectStore {
  const provider=environment.TRACEPOINT_STORAGE_PROVIDER?.trim().toLowerCase()||'supabase';
- if(provider!=='s3')return createSupabaseStore(client,environment);
+ if(environment.TRACEPOINT_RUNTIME_PROVIDER_MODE==='aws-native'&&provider!=='s3')throw new Error('AWS-native storage requires S3.');
+ if(provider==='supabase')return createSupabaseStore(client,environment);
+ if(provider!=='s3')throw new Error('Storage provider configuration is invalid.');
  const target=requireS3Configuration(environment);
  // Default SDK credential chain obtains temporary ECS task-role credentials.
  return new S3ObjectStore(new S3Client({region:target.region,maxAttempts:1}),target.bucket,target.account,authorizedDepartmentId);

@@ -1,50 +1,15 @@
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { resolvePlatformAdminAccess } from "@/lib/platform/admin-access";
 import CreateAgencyForm from "./CreateAgencyForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlatformAdminPage() {
-  const supabase = await createClient();
-
-  const { data: departments, error: departmentError } = await supabase
-    .from("departments")
-    .select(`
-      id,
-      name,
-      short_name,
-      slug,
-      state,
-      county,
-      agency_type,
-      timezone,
-      sworn_officers,
-      civilian_staff,
-      is_active,
-      created_at
-    `)
-    .order("name");
-
-  const { data: accounts, error: accountError } = await supabase
-    .from("platform_agency_accounts")
-    .select(`
-      department_id,
-      account_status,
-      plan_type,
-      onboarding_status,
-      pilot_start_date,
-      production_start_date
-    `);
-
-  const error = departmentError || accountError;
-
-  const accountMap = new Map(
-    (accounts ?? []).map((account) => [account.department_id, account])
-  );
-
-  const agencies = (departments ?? []).map((department) => ({
-    ...department,
-    platformAccount: accountMap.get(department.id) ?? null,
-  }));
+  const access = await resolvePlatformAdminAccess();
+  if (!access.ok) redirect(access.status === 401 ? "/login" : "/");
+  let agencies = [] as Awaited<ReturnType<typeof access.repository.listAgencies>>;
+  let error = false;
+  try { agencies = await access.repository.listAgencies(); } catch { error = true; }
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">

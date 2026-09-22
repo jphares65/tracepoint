@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { resolvePlatformAdminAccess } from "@/lib/platform/admin-access";
 import ActivationButton from "./ActivationButton";
 import AdministratorButton from "./AdministratorButton";
 import AccessAgencyButton from "./AccessAgencyButton";
@@ -15,44 +15,18 @@ type PageProps = {
 export default async function PlatformAgencyPage({ params }: PageProps) {
   const { departmentId } = await params;
 
-  const supabase = await createClient();
-  const { data: isPlatformAdmin } = await supabase.rpc("is_platform_admin");
-
-  if (!isPlatformAdmin) notFound();
-
-  const admin = createAdminClient();
-
-  const { data: department } = await admin
-    .from("departments")
-    .select("id,name")
-    .eq("id", departmentId)
-    .maybeSingle();
-
-  if (!department) notFound();
-
-  const { data: memberships, error } = await admin
-    .from("department_memberships")
-    .select(`
-      user_id,
-      badge_number,
-      rank_title,
-      is_active,
-      activation_status,
-      profiles (
-        full_name,
-        email
-      )
-    `)
-    .eq("department_id", departmentId);
-
-  if (error) throw new Error(error.message);
+  const access = await resolvePlatformAdminAccess();
+  if (!access.ok) notFound();
+  const detail = await access.repository.getAgency(departmentId);
+  if (!detail) notFound();
+  const { agency: department, members: memberships } = detail;
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto max-w-7xl px-6 py-8">
-        <a href="/platform" className="text-sm text-blue-400">
+        <Link href="/platform" className="text-sm text-blue-400">
           Back to Agencies
-        </a>
+        </Link>
 
         <h1 className="mt-6 text-3xl font-bold">
           {department.name}
@@ -81,15 +55,11 @@ export default async function PlatformAgencyPage({ params }: PageProps) {
             </thead>
 
             <tbody className="divide-y divide-slate-800">
-              {(memberships ?? []).map((membership) => {
-                const profile = Array.isArray(membership.profiles)
-                  ? membership.profiles[0]
-                  : membership.profiles;
-
+              {memberships.map((membership) => {
                 return (
                   <tr key={membership.user_id}>
                     <td className="px-5 py-4 font-medium">
-                      {profile?.full_name ?? "Unknown"}
+                      {membership.full_name ?? "Unknown"}
                     </td>
 
                     <td className="px-5 py-4">
@@ -101,7 +71,7 @@ export default async function PlatformAgencyPage({ params }: PageProps) {
                     </td>
 
                     <td className="px-5 py-4">
-                      {profile?.email ?? "-"}
+                      {membership.email ?? "-"}
                     </td>
 
                     <td className="px-5 py-4">

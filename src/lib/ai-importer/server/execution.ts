@@ -29,7 +29,8 @@ async function findAuthUser(admin: any, email: string) {
   return null;
 }
 
-async function persistPersonnel(admin: any, departmentId: string, actorId: string, row: PreviewRow) {
+async function persistPersonnel(admin: any, departmentId: string, actorId: string, row: PreviewRow, writer?: PersonnelImportWriter) {
+  if (writer) return writer({ admin, departmentId, actorId, row });
   const value = row.values;
   const fullName = String(value.fullName || [value.firstName, value.middleName, value.lastName].filter(Boolean).join(" "));
   if (row.action === "UPDATE" && row.matchId) {
@@ -131,8 +132,8 @@ async function persistEquipment(admin: any, departmentId: string, actorId: strin
   else if (row.matchId) await assertResult(await admin.from("equipment_assets").update(record).eq("department_id", departmentId).eq("id", row.matchId), "Equipment update failed.");
 }
 
-async function persistRow(admin: any, domain: ImportDomain, departmentId: string, actorId: string, row: PreviewRow) {
-  if (domain === "personnel") return persistPersonnel(admin, departmentId, actorId, row);
+async function persistRow(admin: any, domain: ImportDomain, departmentId: string, actorId: string, row: PreviewRow, services: ImportExecutionServices) {
+  if (domain === "personnel") return persistPersonnel(admin, departmentId, actorId, row, services.personnel);
   if (domain === "firearms") return persistFirearm(admin, departmentId, actorId, row);
   if (domain === "certifications") return persistCertification(admin, departmentId, actorId, row);
   if (domain === "vehicles") return persistVehicle(admin, departmentId, actorId, row);
@@ -147,11 +148,20 @@ type ExecutionAuditContext = {
   mergeRules?: Array<{ domain: string; strategy: string; groupKey?: string; field?: string; preferredSourceId?: string }>;
 };
 
+export type PersonnelImportWriter = (input: {
+  admin: any;
+  departmentId: string;
+  actorId: string;
+  row: PreviewRow;
+}) => Promise<void>;
+
+export type ImportExecutionServices = { personnel?: PersonnelImportWriter };
+
 function valueFingerprint(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export async function executeApprovedImport(admin: any, payload: ImportPayload, departmentId: string, actorId: string, rows: PreviewRow[], auditContext: ExecutionAuditContext = {}): Promise<ImportExecutionResult> {
+export async function executeApprovedImport(admin: any, payload: ImportPayload, departmentId: string, actorId: string, rows: PreviewRow[], auditContext: ExecutionAuditContext = {}, services: ImportExecutionServices = {}): Promise<ImportExecutionResult> {
   const jobId = randomUUID();
   const result: ImportExecutionResult = { jobId, created: 0, updated: 0, skipped: 0, failed: 0, warnings: rows.filter((row) => row.status === "warning").length, failures: [], rejectedRows: [] };
   const startAudit = await admin.from("audit_events").insert({
@@ -164,7 +174,7 @@ export async function executeApprovedImport(admin: any, payload: ImportPayload, 
     for (const row of rows.slice(offset, offset + BATCH_SIZE)) {
       if (row.action === "SKIP") { result.skipped += 1; continue; }
       try {
-        await persistRow(admin, payload.domain, departmentId, actorId, row);
+        await persistRow(admin, payload.domain, departmentId, actorId, row, services);
         if (row.action === "CREATE") result.created += 1;
         if (row.action === "UPDATE") result.updated += 1;
       } catch (error) {

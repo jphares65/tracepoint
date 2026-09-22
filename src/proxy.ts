@@ -1,6 +1,6 @@
 ﻿import { type NextRequest } from "next/server";
 
-import { updateSession } from "@/lib/supabase/proxy";
+import { updateAwsNativeSession } from "@/lib/authentication/request-proxy";
 
 export async function proxy(request: NextRequest) {
   const origin = request.headers.get("origin") ?? "";
@@ -12,7 +12,13 @@ export async function proxy(request: NextRequest) {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
-  const response = await updateSession(request);
+  const mode = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE;
+  if (mode && mode !== "bridge" && mode !== "aws-native") {
+    return Response.json({ error: "Runtime provider configuration is invalid." }, { status: 503 });
+  }
+  const response = mode === "aws-native"
+    ? await updateAwsNativeSession(request)
+    : await (await import("@/lib/supabase/proxy")).updateSession(request);
   if (isApiRequest && isLocalMobilePreview) {
     for (const [name, value] of Object.entries(corsHeaders(origin))) {
       response.headers.set(name, value);

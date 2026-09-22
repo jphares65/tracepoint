@@ -11,7 +11,9 @@ export interface CognitoTransportPorts {
  rotate(handle:string):Promise<SessionReceipt>;
  revoke(handle:string):Promise<void>;
 }
-const flowCookie='__Host-tracepoint-cognito-flow',sessionCookie='__Host-tracepoint-cognito-session';
+export const COGNITO_FLOW_COOKIE='__Host-tracepoint-cognito-flow';
+export const COGNITO_SESSION_COOKIE='__Host-tracepoint-cognito-session';
+const flowCookie=COGNITO_FLOW_COOKIE,sessionCookie=COGNITO_SESSION_COOKIE;
 const handlePattern=/^[A-Za-z0-9_-]{43}$/;
 function readCookie(request:Request,name:string){
  const matches=(request.headers.get('cookie')??'').split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));

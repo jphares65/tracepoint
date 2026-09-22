@@ -2,9 +2,7 @@
 
 import { buildEnrichOnlyUpdates } from "@/lib/onboarding/merge";
 import { getLookupLastName, matchesPersonnelName } from "@/lib/onboarding/personnel-name";
-
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { accessFailureResponse, hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 const VALID_FIREARM_TYPES = [
   "handgun",
@@ -44,20 +42,6 @@ function cleanText(value: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  const server = await createServerClient();
-
-  const {
-    data: { user },
-    error: userError,
-  } = await server.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json(
-      { error: "Authentication is required." },
-      { status: 401 },
-    );
-  }
-
   const body = (await request.json().catch(() => ({}))) as FirearmImportRequest;
 
   const departmentId = cleanText(body.departmentId);
@@ -69,45 +53,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const [manageResult, administerResult, platformAdminResult] =
-    await Promise.all([
-      server.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "manage_firearms",
-      }),
-      server.rpc("has_department_permission", {
-        p_department_id: departmentId,
-        p_permission_code: "administer_department",
-      }),
-      server.rpc("is_platform_admin"),
-    ]);
-
-  if (manageResult.error) {
-    return NextResponse.json(
-      { error: manageResult.error.message },
-      { status: 500 },
-    );
+  const access = await resolveServerAccess();
+  if (!access.ok) return accessFailureResponse(access);
+  if (access.context.departmentId !== departmentId) {
+    return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
   }
-
-  if (administerResult.error) {
-    return NextResponse.json(
-      { error: administerResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (platformAdminResult.error) {
-    return NextResponse.json(
-      { error: platformAdminResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (
-    !manageResult.data &&
-    !administerResult.data &&
-    !platformAdminResult.data
-  ) {
+  if (!hasAnyServerPermission(access.context, ["manage_firearms", "administer_department"])) {
     return NextResponse.json(
       {
         error:
@@ -158,21 +109,40 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!VALID_FIREARM_TYPES.includes(firearmType as any)) {
+  if (!(VALID_FIREARM_TYPES as readonly string[]).includes(firearmType)) {
     return NextResponse.json(
       { error: "Invalid firearm type." },
       { status: 400 },
     );
   }
 
-  if (!VALID_STATUSES.includes(conditionStatus as any)) {
+  if (!(VALID_STATUSES as readonly string[]).includes(conditionStatus)) {
     return NextResponse.json(
       { error: "Invalid firearm status." },
       { status: 400 },
     );
   }
 
-  const admin = createAdminClient();
+  const { admin, user, isSuperAdmin } = access.context;
+  const recordAudit = async (payload: {
+    department_id: string;
+    actor_user_id: string;
+    action: string;
+    entity_type: string;
+    entity_id: string;
+    new_value: Record<string, unknown>;
+  }) => {
+    const result = process.env.TRACEPOINT_DATA_PROVIDER === "postgres"
+      ? await admin.rpc("record_onboarding_import_audit", {
+          p_department_id: payload.department_id,
+          p_action: payload.action,
+          p_entity_type: payload.entity_type,
+          p_entity_id: payload.entity_id,
+          p_new_value: payload.new_value,
+        })
+      : await admin.from("audit_events").insert(payload);
+    if (result.error) throw new Error(result.error.message);
+  };
 
   try {
     if (!assignedToUserId && badgeNumber) {
@@ -213,11 +183,11 @@ export async function POST(request: NextRequest) {
         throw new Error(profileError.message);
       }
 
-      const matchingProfiles = (profileMatches ?? []).filter((profile) =>
-        matchesPersonnelName(profile.full_name, assignedOfficerName),
+      const matchingProfiles = (profileMatches ?? []).filter((profile: { id: string; full_name?: string | null }) =>
+        matchesPersonnelName(profile.full_name ?? null, assignedOfficerName),
       );
 
-      const candidateIds = matchingProfiles.map((profile) => profile.id);
+      const candidateIds = matchingProfiles.map((profile: { id: string }) => profile.id);
 
       if (candidateIds.length > 0) {
         const { data: membershipMatches, error: membershipError } =
@@ -363,7 +333,7 @@ export async function POST(request: NextRequest) {
             );
           }
 
-          await admin.from("audit_events").insert({
+          await recordAudit({
             department_id: departmentId,
             actor_user_id: user.id,
             action: "firearm_assignment_added_during_onboarding",
@@ -371,7 +341,7 @@ export async function POST(request: NextRequest) {
             entity_id: existing.id,
             new_value: {
               assigned_to_user_id: assignedToUserId,
-              platform_admin: Boolean(platformAdminResult.data),
+              platform_admin: isSuperAdmin,
             },
           });
         }
@@ -447,7 +417,7 @@ export async function POST(request: NextRequest) {
           throw new Error(updateError.message);
         }
 
-        await admin.from("audit_events").insert({
+        await recordAudit({
           department_id: departmentId,
           actor_user_id: user.id,
           action: "firearm_enriched_during_onboarding",
@@ -460,7 +430,7 @@ export async function POST(request: NextRequest) {
               existingValue: String(conflict.existingValue ?? ""),
               incomingValue: String(conflict.incomingValue ?? ""),
             })),
-            platform_admin: Boolean(platformAdminResult.data),
+            platform_admin: isSuperAdmin,
           },
         });
 
@@ -534,7 +504,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await admin.from("audit_events").insert({
+    await recordAudit({
       department_id: departmentId,
       actor_user_id: user.id,
       action: "firearm_imported_during_onboarding",
@@ -543,7 +513,7 @@ export async function POST(request: NextRequest) {
       new_value: {
         serial_number: serialNumber,
         assigned_to_user_id: assignedToUserId,
-        platform_admin: Boolean(platformAdminResult.data),
+        platform_admin: isSuperAdmin,
       },
     });
 

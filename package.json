@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/assert-aws-native-provider-reachability.mjs",
     "build": "next build",
+    "runtime:assert-native-boundary": "node scripts/assert-aws-native-provider-reachability.mjs",
     "start": "next start",
     "lint": "eslint",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
@@ -13,6 +15,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "3.1127.0",
+    "@aws-sdk/client-cognito-identity-provider": "3.1127.0",
     "@aws-sdk/client-rds": "3.1127.0",
     "@aws-sdk/client-s3": "3.1127.0",
     "@aws-sdk/client-sesv2": "^3.1127.0",
@@ -23,9 +26,11 @@
     "lucide-react": "^1.16.0",
     "next": "16.3.4",
     "pdf-lib": "^1.17.1",
+    "pg": "^8.16.3",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "0.0.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
@@ -39,7 +44,6 @@
     "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
-    "pg": "^8.16.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"

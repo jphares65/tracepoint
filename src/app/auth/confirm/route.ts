@@ -1,12 +1,11 @@
 import {internalAuthRedirect,configuredSiteOrigin} from '@/lib/authentication/redirects';
-import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
-import { createClient as createServerClient } from "@/lib/supabase/server";
+type BridgeEmailOtpType = "invite" | "recovery";
 
 function getSafeNextPath(value:string|null) {return internalAuthRedirect(value,'/auth/setup');}
 
-function isSupportedType(value: string | null): value is EmailOtpType {
+function isSupportedType(value: string | null): value is BridgeEmailOtpType {
   return value === "invite" || value === "recovery";
 }
 
@@ -23,6 +22,10 @@ export async function GET(request: NextRequest) {
   const type = requestUrl.searchParams.get("type");
   const nextPath = getSafeNextPath(requestUrl.searchParams.get("next"));
 
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+    return redirectToLogin(siteOrigin, "Complete account recovery through secure sign-in.");
+  }
+
   if (!tokenHash || !isSupportedType(type)) {
     return redirectToLogin(
       siteOrigin,
@@ -30,6 +33,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const { createClient: createServerClient } = await import("@/lib/supabase/server");
   const supabase = await createServerClient();
   const { error } = await supabase.auth.verifyOtp({
     token_hash: tokenHash,

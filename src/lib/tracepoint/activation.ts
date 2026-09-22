@@ -7,7 +7,6 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createEmailProvider,
   EmailProviderConfigurationError,
@@ -200,7 +199,8 @@ async function sendActivationEmail(input: {
 export async function issueActivationEmail(
   input: IssueActivationInput,
 ) {
-  const admin = createAdminClient() as any;
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") throw new Error("Legacy activation is unavailable in AWS-native mode.");
+  const admin = (await import("@/lib/supabase/admin")).createAdminClient() as any;
   const issuedAt = new Date();
   const expiresAt = new Date(
     issuedAt.getTime() +
@@ -265,7 +265,8 @@ export async function issueActivationEmail(
 
 export async function validateActivationToken(token: string) {
   const { tokenId, secret } = parseToken(token);
-  const admin = createAdminClient() as any;
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") throw new Error("Legacy activation is unavailable in AWS-native mode.");
+  const admin = (await import("@/lib/supabase/admin")).createAdminClient() as any;
 
   const { data, error } = await admin
     .from("user_activation_tokens")
@@ -347,7 +348,8 @@ export async function completeActivation(
   password: string,
 ) {
   const validation = await validateActivationToken(token);
-  const admin = createAdminClient() as any;
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") throw new Error("Legacy activation is unavailable in AWS-native mode.");
+  const admin = (await import("@/lib/supabase/admin")).createAdminClient() as any;
   const usedAt = new Date().toISOString();
 
   const { data: claimed, error: claimError } = await admin

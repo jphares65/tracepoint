@@ -1,7 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createPlatformReadRepository } from "@/lib/platform/read-repository";
-import { PlatformReadRepositoryError } from "@/lib/platform/read-repository-core";
+import { PlatformAdminOperationError, resolvePlatformAdminAccess } from "@/lib/platform/admin-access";
 
 type CreateAgencyRequest = {
   name: string;
@@ -18,86 +16,26 @@ type CreateAgencyRequest = {
   internalNotes?: string;
 };
 
-async function requirePlatformAdmin() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return {
-      authorized: false as const,
-      status: 401,
-      supabase,
-      user: null,
-    };
-  }
-
-  const { data: isPlatformAdmin, error: adminError } =
-    await supabase.rpc("is_platform_admin");
-
-  if (adminError || !isPlatformAdmin) {
-    return {
-      authorized: false as const,
-      status: 403,
-      supabase,
-      user,
-    };
-  }
-
-  return {
-    authorized: true as const,
-    status: 200,
-    supabase,
-    user,
-  };
-}
-
 export async function GET() {
-  const auth = await requirePlatformAdmin();
-
-  if (!auth.authorized) {
+  const access = await resolvePlatformAdminAccess();
+  if (!access.ok) {
     return NextResponse.json(
-      { error: auth.status === 401 ? "Unauthorized" : "Forbidden" },
-      { status: auth.status }
+      { error: access.status === 401 ? "Unauthorized" : "Forbidden" },
+      { status: access.status }
     );
   }
-
-  const { supabase } = auth;
-
-  let departments; let accounts;
-  try { ({ departments, accounts } = await createPlatformReadRepository(supabase, true).listAgencies()); }
-  catch (error) { console.error("Failed to load agencies:", error); return NextResponse.json({ error: error instanceof PlatformReadRepositoryError && error.domain === "accounts" ? "Unable to load agency account information." : "Unable to load agencies." }, { status: 500 }); }
-
-  const accountMap = new Map(
-    (accounts ?? []).map((account) => [
-      account.department_id,
-      account,
-    ])
-  );
-
-  const agencies = (departments ?? []).map((department) => ({
-    ...department,
-    platformAccount:
-      accountMap.get(department.id) ?? null,
-  }));
-
-  return NextResponse.json({ agencies });
+  try { return NextResponse.json({ agencies: await access.repository.listAgencies() }); }
+  catch { return NextResponse.json({ error: "Unable to load agencies." }, { status: 500 }); }
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requirePlatformAdmin();
-
-  if (!auth.authorized) {
+  const access = await resolvePlatformAdminAccess();
+  if (!access.ok) {
     return NextResponse.json(
-      { error: auth.status === 401 ? "Unauthorized" : "Forbidden" },
-      { status: auth.status }
+      { error: access.status === 401 ? "Unauthorized" : "Forbidden" },
+      { status: access.status }
     );
   }
-
-  const { supabase } = auth;
 
   let body: CreateAgencyRequest;
 
@@ -137,67 +75,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data: departmentId, error } =
-    await supabase.rpc("platform_create_agency", {
-      p_name: name,
-      p_short_name:
-        body.shortName?.trim() || name,
-      p_slug: slug,
-      p_state:
-        body.state?.trim() || undefined,
-      p_county:
-        body.county?.trim() || undefined,
-      p_agency_type:
-        body.agencyType?.trim() ||
-        "Municipal Police Department",
-      p_timezone:
-        body.timezone?.trim() ||
-        "America/New_York",
-      p_sworn_officers:
-        Math.max(0, Number(body.swornOfficers ?? 0)),
-      p_civilian_staff:
-        Math.max(0, Number(body.civilianStaff ?? 0)),
-      p_account_status:
-        body.accountStatus || "pilot",
-      p_plan_type:
-        body.planType || "pilot",
-      p_internal_notes:
-        body.internalNotes?.trim() || undefined,
+  try {
+    const departmentId = await access.repository.createAgency({
+      name,
+      shortName: body.shortName?.trim() || name,
+      slug,
+      state: body.state?.trim() || undefined,
+      county: body.county?.trim() || undefined,
+      agencyType: body.agencyType?.trim() || "Municipal Police Department",
+      timezone: body.timezone?.trim() || "America/New_York",
+      swornOfficers: Math.max(0, Number(body.swornOfficers ?? 0)),
+      civilianStaff: Math.max(0, Number(body.civilianStaff ?? 0)),
+      accountStatus: body.accountStatus || "pilot",
+      planType: body.planType || "pilot",
+      internalNotes: body.internalNotes?.trim() || undefined,
     });
-
-  if (error) {
-    console.error("Agency provisioning failed:", error);
-
-    if (
-      error.code === "23505" ||
-      error.message?.toLowerCase().includes("duplicate")
-    ) {
+    return NextResponse.json({ success: true, departmentId }, { status: 201 });
+  } catch (error) {
+    if (error instanceof PlatformAdminOperationError && error.code === "23505") {
       return NextResponse.json(
-        {
-          error:
-            "An agency with this identifier already exists.",
-        },
+        { error: "An agency with this identifier already exists." },
         { status: 409 }
       );
     }
-
-    return NextResponse.json(
-      {
-        error:
-          error.message ||
-          "Unable to provision the TracePoint agency.",
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Unable to provision the TracePoint agency." }, { status: 500 });
   }
-
-  return NextResponse.json(
-    {
-      success: true,
-      departmentId,
-    },
-    { status: 201 }
-  );
 }
 
 

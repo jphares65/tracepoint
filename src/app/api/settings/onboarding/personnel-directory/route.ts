@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createAdministrationReadRepository } from "@/lib/administration/read-repository";
+import { accessFailureResponse, hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,51 +15,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const server = await createServerClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await server.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: "Authentication is required." },
-        { status: 401 },
-      );
+    const access = await resolveServerAccess();
+    if (!access.ok) return accessFailureResponse(access);
+    if (access.context.departmentId !== departmentId) {
+      return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
     }
-
-    const [manageResult, administerResult, platformAdminResult] =
-      await Promise.all([
-        server.rpc("has_department_permission", {
-          p_department_id: departmentId,
-          p_permission_code: "manage_users",
-        }),
-        server.rpc("has_department_permission", {
-          p_department_id: departmentId,
-          p_permission_code: "administer_department",
-        }),
-        server.rpc("is_platform_admin"),
-      ]);
-
-    if (manageResult.error) throw manageResult.error;
-    if (administerResult.error) throw administerResult.error;
-    if (platformAdminResult.error) throw platformAdminResult.error;
-
-    if (
-      !manageResult.data &&
-      !administerResult.data &&
-      !platformAdminResult.data
-    ) {
+    if (!hasAnyServerPermission(access.context, ["manage_users", "administer_department"])) {
       return NextResponse.json(
         { error: "You do not have permission to view personnel." },
         { status: 403 },
       );
     }
 
-    const admin = createAdminClient();
+    const admin = access.context.admin;
 
-    const memberships = await createAdministrationReadRepository(admin as any, departmentId).listPersonnel(departmentId);
+    const memberships = await createAdministrationReadRepository(admin, departmentId).listPersonnel(departmentId);
 
     const personnel = (memberships ?? []).map((membership) => {
       const profile = Array.isArray(membership.profiles)

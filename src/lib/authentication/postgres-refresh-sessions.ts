@@ -81,5 +81,19 @@ export class PostgresCognitoRefreshStore {
   if(!uuid.test(familyId)||!uuid.test(owner.userId)||owner.issuer!==this.target.issuer)throw Error('Invalid refresh revocation boundary.');
   await this.pool.query("update public.authentication_refresh_sessions set state='revoked',sealed_payload=null,updated_at=clock_timestamp() where family_id=$1 and tracepoint_user_id=$2 and issuer=$3 and client_id=$4",[familyId,owner.userId,owner.issuer,this.target.clientId]).catch(()=>{throw Error('Refresh revocation could not be persisted.');});
  }
+ async resolveReady(handle:string):Promise<{userId:string;issuer:string;subject:string;expiresAt:number}|null>{
+  const handleHash=hash(handle);
+  try{
+   const result=await this.pool.query<{tracepoint_user_id:string;issuer:string;subject:string;expires_at:Date}>(`update public.authentication_refresh_sessions s
+    set last_seen_at=statement_timestamp(),idle_expires_at=least(s.expires_at,statement_timestamp()+interval '30 minutes'),updated_at=statement_timestamp()
+    where s.handle_hash=$1 and s.issuer=$2 and s.client_id=$3 and s.state='ready'
+      and s.expires_at>clock_timestamp() and s.idle_expires_at>clock_timestamp()
+      and exists(select 1 from public.authentication_identity_links l where l.provider='cognito' and l.issuer=s.issuer and l.subject=s.subject and l.tracepoint_user_id=s.tracepoint_user_id and l.state='active')
+      and not exists(select 1 from public.authentication_session_revocations r where r.tracepoint_user_id=s.tracepoint_user_id and r.issuer=s.issuer and r.revoked_before>=s.authenticated_at)
+    returning s.tracepoint_user_id,s.issuer,s.subject,s.expires_at`,[handleHash,this.target.issuer,this.target.clientId]);
+   const row=result.rows[0];
+   return result.rowCount===1&&row?{userId:row.tracepoint_user_id,issuer:row.issuer,subject:row.subject,expiresAt:Math.floor(new Date(row.expires_at).getTime()/1000)}:null;
+  }catch{throw Error('Application session could not be verified.');}
+ }
  async purgeExpired(){try{const result=await this.pool.query('delete from public.authentication_refresh_sessions where issuer=$1 and client_id=$2 and expires_at<=clock_timestamp()',[this.target.issuer,this.target.clientId]);return result.rowCount??0;}catch{throw Error('Refresh expiry cleanup failed.');}}
 }

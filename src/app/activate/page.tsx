@@ -7,7 +7,6 @@ import {
   completeActivation,
   validateActivationToken,
 } from "@/lib/tracepoint/activation";
-import { createClient } from "@/lib/supabase/server";
 
 type ActivatePageProps = {
   searchParams: Promise<{
@@ -31,6 +30,7 @@ function redirectWithError(token: string, message: string): never {
 
 async function activateAccount(formData: FormData) {
   "use server";
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") redirect("/login");
 
   const token = textValue(formData, "token");
   const password = textValue(formData, "password");
@@ -64,7 +64,7 @@ async function activateAccount(formData: FormData) {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = await (await import("@/lib/supabase/server")).createClient();
   const { error: signInError } =
     await supabase.auth.signInWithPassword({
       email: result.email,
@@ -85,6 +85,7 @@ async function activateAccount(formData: FormData) {
 export default async function ActivatePage({
   searchParams,
 }: ActivatePageProps) {
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") redirect("/login");
   const params = await searchParams;
   const token = params.token?.trim() ?? "";
 

@@ -10,7 +10,6 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import {
   DEFAULT_ANALYTICS_DASHBOARD_CONFIGURATION,
   normalizeAnalyticsDashboardConfiguration,
@@ -188,8 +187,6 @@ export default function RangeQualificationRulesPanel({
   departmentId: string;
   canAdminister: boolean;
 }) {
-  const supabase = createClient();
-
   const [rules, setRules] =
     useState<RangeQualificationRules>(DEFAULT_RULES);
 
@@ -211,15 +208,10 @@ export default function RangeQualificationRulesPanel({
     setNotice(null);
 
     try {
-      const { data, error } = await (supabase as any)
-        .from("department_rules")
-        .select(
-          "require_rifle_familiarization,range_qualification_rules",
-        )
-        .eq("department_id", departmentId)
-        .maybeSingle();
-
-      if (error) throw error;
+      const response = await fetch(`/api/settings/visual-configuration?departmentId=${encodeURIComponent(departmentId)}`, { cache: "no-store" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Rules could not be loaded.");
+      const data = result.rules;
 
       const normalized = normalizeRules(
         data?.range_qualification_rules,
@@ -244,6 +236,8 @@ export default function RangeQualificationRulesPanel({
   }
 
   useEffect(() => {
+    // Loading is an external request synchronized to the selected department.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadRules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [departmentId]);
@@ -296,24 +290,17 @@ export default function RangeQualificationRulesPanel({
         ),
       };
 
-      const { error } = await (supabase as any)
-        .from("department_rules")
-        .upsert(
-          {
-            department_id: departmentId,
-
-            // Keep legacy field synchronized while consumers migrate.
-            require_rifle_familiarization:
-              normalized.require_rifle_familiarization,
-
-            range_qualification_rules: normalized,
-          },
-          {
-            onConflict: "department_id",
-          },
-        );
-
-      if (error) throw error;
+      const response = await fetch("/api/settings/visual-configuration", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          departmentId,
+          requireRifleFamiliarization: normalized.require_rifle_familiarization,
+          rules: normalized,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Rules could not be saved.");
 
       setRules(normalized);
       setOriginalRules(normalized);

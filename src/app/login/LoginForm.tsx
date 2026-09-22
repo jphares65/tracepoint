@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
@@ -10,15 +10,13 @@ import {
   Mail,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
-
 type LoginFormProps = {
   nextPath: string;
+  providerMode: "bridge" | "aws-native";
 };
 
-export default function LoginForm({ nextPath }: LoginFormProps) {
+export default function LoginForm({ nextPath, providerMode }: LoginFormProps) {
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,7 +32,9 @@ export default function LoginForm({ nextPath }: LoginFormProps) {
     setMessage(null);
     setIsError(false);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    if (providerMode !== "bridge") return;
+    const { createClient } = await import("@/lib/supabase/client");
+    const { error } = await createClient().auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -65,7 +65,9 @@ export default function LoginForm({ nextPath }: LoginFormProps) {
       nextPath,
     )}`;
 
-    const { error } = await supabase.auth.signInWithOtp({
+    if (providerMode !== "bridge") return;
+    const { createClient } = await import("@/lib/supabase/client");
+    const { error } = await createClient().auth.signInWithOtp({
       email: email.trim(),
       options: {
         emailRedirectTo,
@@ -86,6 +88,18 @@ export default function LoginForm({ nextPath }: LoginFormProps) {
       "A secure sign-in link was sent. Check your email and return through that link.",
     );
   }
+
+  if (providerMode === "aws-native") return (
+    <div className="mt-7">
+      <form action="/api/auth/cognito/login" method="post">
+        <input type="hidden" name="next" value={nextPath} />
+        <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-blue-500">
+          <ArrowRight size={17} /> Continue with secure sign-in
+        </button>
+      </form>
+      <p className="mt-4 text-xs leading-5 text-slate-500">Authentication and MFA are completed by TracePoint&apos;s AWS Cognito identity service.</p>
+    </div>
+  );
 
   return (
     <div className="mt-7">

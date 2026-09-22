@@ -23,7 +23,6 @@ import {
   X,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/client";
 import IdleSessionGuard from "@/app/components/IdleSessionGuard";
 import {
   applyAppearanceToDocument,
@@ -64,11 +63,6 @@ type NavigationGroup = {
 };
 
 type NavigationEntry = NavigationLeaf | NavigationGroup;
-
-type DepartmentAppearanceRow = {
-  accent_color?: string | null;
-  login_theme?: string | null;
-};
 
 const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
@@ -732,6 +726,8 @@ export default function TracePointShell({
     departmentId,
     departmentShortName,
     departmentPatchUrl,
+    accentColor,
+    loginTheme,
     primaryRoleLabel,
     permissions,
     enabledFeatures,
@@ -768,42 +764,19 @@ export default function TracePointShell({
 
   useEffect(() => {
     if (!departmentId) return;
-
     let active = true;
-
-    async function loadDepartmentAppearance() {
-      const supabase = createClient();
-
-      const { data } = await supabase
-        .from("departments")
-        .select("accent_color,login_theme")
-        .eq("id", departmentId)
-        .maybeSingle();
-
-      if (!active || !data) return;
-
-      const departmentAppearance =
-        data as DepartmentAppearanceRow | null;
-
-      const next = buildAppearancePreferences(
-        departmentAppearance?.accent_color,
-        departmentAppearance?.login_theme,
-      );
-
+    const next = buildAppearancePreferences(accentColor, loginTheme);
+    queueMicrotask(() => {
+      if (!active) return;
       setAppearance(next);
       applyAppearanceToDocument(next);
       window.localStorage.setItem(
         "tracepoint.appearance.v1",
         JSON.stringify(next),
       );
-    }
-
-    void loadDepartmentAppearance();
-
-    return () => {
-      active = false;
-    };
-  }, [departmentId]);
+    });
+    return () => { active = false; };
+  }, [accentColor, departmentId, loginTheme]);
 
   async function selectDepartment(nextDepartmentId: string) {
     if (!nextDepartmentId || switchingDepartmentId) return;
