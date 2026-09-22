@@ -165,7 +165,7 @@ function equipmentAssignmentRows({ duplicateActive = false, crossTenant = false,
 test("migration mode is exact and changes only the three reviewed generated-side-effect functions", () => {
   assert.ok(DATABASE_MODES.includes(MIGRATION_MODE_SCHEMA_REPAIR_MODE));
   assert.equal(MIGRATION_MODE.setting, "tracepoint.migration_mode");
-  assert.deepEqual(MIGRATION_MODE_TARGET_FUNCTIONS.map(item => item.name ?? item.functionName).sort(), ["seed_department_configuration", "sync_equipment_asset_assignment_history", "write_audit_event"]);
+  assert.deepEqual(MIGRATION_MODE_TARGET_FUNCTIONS.map(item => item.name ?? item.functionName).sort(), ["seed_department_configuration", "sync_equipment_asset_assignment_history", "write_agency_training_audit_event", "write_audit_event"]);
   assert.equal(equipmentAssignmentHistoryImportGuardEnabled("on"), true);
   assert.equal(equipmentAssignmentHistoryImportGuardEnabled(undefined), false);
   assert.equal(equipmentAssignmentHistoryImportGuardEnabled("ON"), false);
