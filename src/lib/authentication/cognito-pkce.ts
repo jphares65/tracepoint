@@ -3,6 +3,7 @@ import {CognitoJwtVerifier} from 'aws-jwt-verify';
 import type {JwksCache} from 'aws-jwt-verify/jwk';
 import type {AuthenticationProvider} from './provider-core';
 import type {CognitoVerificationConfig} from './cognito-verifier';
+import {validatedCognitoOrigin,type CognitoRedirectConfig} from './cognito-redirect-origin';
 export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string};
 export interface AuthorizationTransactionStore {
  // Server-only encrypted storage. take must atomically delete/consume even if
@@ -16,10 +17,10 @@ export function assertCognitoConfiguration(config:CognitoVerificationConfig){
   (config.environment==='staging'?config.account!=='559054714699':config.environment!=='production'||['559054714699','111111111111'].includes(config.account))||
   !/^us-east-1_[A-Za-z0-9]+$/.test(config.userPoolId)||!/^[A-Za-z0-9]{1,128}$/.test(config.clientId))throw Error('Invalid Cognito PKCE boundary.');
 }
-export function createCognitoPkce(config:CognitoVerificationConfig,store:AuthorizationTransactionStore,fetchImpl:typeof fetch=fetch,now:()=>number=Date.now){
+export function createCognitoPkce(config:CognitoRedirectConfig,store:AuthorizationTransactionStore,fetchImpl:typeof fetch=fetch,now:()=>number=Date.now){
  assertCognitoConfiguration(config);if(typeof store?.put!=='function'||typeof store?.take!=='function')throw Error('Invalid transaction store.');
  const domain='https://tracepoint-'+config.environment+'-'+config.account+'.auth.us-east-1.amazoncognito.com';
- const callback=(config.environment==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback';
+ const callback=validatedCognitoOrigin(config)+'/api/auth/cognito/callback';
  const random=()=>randomBytes(32).toString('base64url');
  return {
   async begin(){

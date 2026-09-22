@@ -1,0 +1,19 @@
+import type { CognitoVerificationConfig } from "./cognito-verifier";
+
+export type CognitoRedirectConfig = CognitoVerificationConfig & {
+  siteOrigin: string;
+  notificationMode: "normal" | "shadow";
+};
+
+export function validatedCognitoOrigin(config: CognitoRedirectConfig): string {
+  const origin = config.siteOrigin;
+  const allowed = config.notificationMode === "shadow"
+    ? config.environment === "production" && /^https:\/\/shadow(?:-[a-z0-9-]+)?\.tracepointhq\.com$/.test(origin)
+    : config.notificationMode === "normal" && origin === (
+      config.environment === "staging"
+        ? "https://staging.tracepointhq.com"
+        : "https://tracepointhq.com"
+    );
+  if (!allowed) throw new Error("Invalid Cognito redirect origin.");
+  return origin;
+}

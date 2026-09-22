@@ -1,4 +1,5 @@
 import type { CognitoVerificationConfig } from "./cognito-verifier";
+import { validatedCognitoOrigin, type CognitoRedirectConfig } from "./cognito-redirect-origin";
 import { isCognitoPoolForRegion, isCognitoRegion } from "./cognito-endpoints";
 
 export type CognitoEncryptionKeyring = {
@@ -7,7 +8,7 @@ export type CognitoEncryptionKeyring = {
 };
 
 export type CognitoRuntimeConfiguration = {
-  verification: CognitoVerificationConfig;
+  verification: CognitoRedirectConfig;
   state: CognitoEncryptionKeyring;
   refresh: CognitoEncryptionKeyring;
 };
@@ -79,8 +80,14 @@ export function parseCognitoRuntimeConfiguration(
   environment: Record<string, string | undefined>,
 ): CognitoRuntimeConfiguration {
   const target = parseCognitoTargetConfiguration(environment);
+  const verification: CognitoRedirectConfig = {
+    ...target.verification,
+    siteOrigin: environment.NEXT_PUBLIC_SITE_URL ?? "",
+    notificationMode: environment.TRACEPOINT_NOTIFICATION_MODE as "normal" | "shadow",
+  };
+  validatedCognitoOrigin(verification);
   return {
-    ...target,
+    verification,
     state: parseKeyring(environment.TRACEPOINT_AUTH_STATE_KEYS, "TRACEPOINT_AUTH_STATE_KEYS"),
     refresh: parseKeyring(environment.TRACEPOINT_AUTH_REFRESH_KEYS, "TRACEPOINT_AUTH_REFRESH_KEYS"),
   };

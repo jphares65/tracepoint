@@ -4,7 +4,7 @@ import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {createCognitoAuthenticationProvider} from './cognito-verifier';
 import {SimpleJwksCache,type Jwk} from 'aws-jwt-verify/jwk';
 import {createCognitoPkce,createCognitoPkceTokenVerifier,type AuthorizationTransaction,type AuthorizationTransactionStore} from './cognito-pkce';
-const config={environment:'staging' as const,account:'559054714699',region:'us-east-1',userPoolId:'us-east-1_Synthetic',clientId:'syntheticclient'};
+const config={environment:'staging' as const,account:'559054714699',region:'us-east-1',userPoolId:'us-east-1_Synthetic',clientId:'syntheticclient',siteOrigin:'https://staging.tracepointhq.com',notificationMode:'normal' as const};
 const userId='11111111-1111-4111-8111-111111111111';
 function fixture(fetcher?:typeof fetch){
  const transactions=new Map<string,AuthorizationTransaction>();let clock=Date.now(),calls=0;
@@ -21,6 +21,13 @@ test('PKCE challenge, nonce and hardened cookie bind the fixed staging callback'
  assert.deepEqual({...begin.cookie,value:'hidden'},{name:'__Host-tracepoint-cognito-flow',value:'hidden',httpOnly:true,secure:true,sameSite:'lax',path:'/',maxAge:300});
  let verified=false;assert.deepEqual(await f.api.complete(callback,async(tokens,nonce)=>{assert.equal(nonce,tx.nonce);assert.equal(tokens.refreshToken,'synthetic-refresh');verified=true;return {userId}}),{userId});assert.equal(verified,true);
  await assert.rejects(f.api.complete(callback,async()=>({userId})),/new sign-in/);assert.equal(f.calls(),1);
+});
+test('production and shadow PKCE callbacks use only their validated exact origins',async()=>{
+ const store={async put(){},async take(){return null}};
+ for(const [siteOrigin,notificationMode] of [['https://tracepointhq.com','normal'],['https://shadow.tracepointhq.com','shadow']] as const){
+  const api=createCognitoPkce({...config,environment:'production',account:'193644343389',siteOrigin,notificationMode},store);
+  assert.equal(new URL((await api.begin()).url).searchParams.get('redirect_uri'),siteOrigin+'/api/auth/cognito/callback');
+ }
 });
 test('state mismatch, expired transaction and concurrent replay cannot exchange twice',async()=>{
  for(const mode of ['mismatch','expiry','replay']){const f=fixture();const {callback}=await input(f);if(mode==='mismatch')callback.state='A'.repeat(43);if(mode==='expiry')f.advance();

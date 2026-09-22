@@ -75,7 +75,7 @@ async function main() {
             results.sdkSrpMfaEnrollment = true;
             memory.clear();
             // Rehearsal-only transaction/mapping state. This is never an application fallback.
-            const transactions = new Map<string, AuthorizationTransaction>(), config = { environment: 'staging' as const, account: '559054714699', region: 'us-east-1', userPoolId: poolId, clientId };
+            const transactions = new Map<string, AuthorizationTransaction>(), config = { environment: 'staging' as const, account: '559054714699', region: 'us-east-1', userPoolId: poolId, clientId, siteOrigin: 'https://staging.tracepointhq.com', notificationMode: 'normal' as const };
             const pkce = createCognitoPkce(config, { async put(h, t) { transactions.set(h, t); }, async take(h) { const t = transactions.get(h); transactions.delete(h); return t ?? null; } });
             let active = true;
             const mapping = { async findActive(i: string, s: string) { return i === issuer && s === subject ? { userId: stableUserId } : null; } };
