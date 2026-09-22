@@ -56,6 +56,7 @@ export const quote = value => { assert.match(value, identifier, "Unsafe SQL iden
 export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, sourceKey, bytes, sha256: digest }) => ({ bucket: sourceBucket, sourceKey, size: bytes, sha256: digest })));
 
 export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
+export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE = "schema-repair-equipment-assets-lifecycle-status";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
 export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
@@ -67,7 +68,7 @@ export const AUDIT_ARTIFACT_CLEANUP_MODE = "audit-events-migration-artifact-clea
 export const CONNECTION_PROBE_MODE = "rds-connection-probe";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -481,6 +482,18 @@ export const FIREARM_ASSIGNMENTS_SCHEMA_REPAIR = Object.freeze({
   statements: Object.freeze([
     "ALTER TABLE public.firearm_assignments ADD COLUMN magazines_expected_return integer",
     "ALTER TABLE public.firearm_assignments ADD CONSTRAINT firearm_assignments_magazines_expected_return_nonnegative CHECK (magazines_expected_return IS NULL OR magazines_expected_return >= 0) NOT VALID",
+  ]),
+});
+
+export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR = Object.freeze({
+  relation: "equipment_assets",
+  column: "lifecycle_status",
+  constraint: "equipment_assets_lifecycle_status_check",
+  priorAllowedStatuses: Object.freeze(["active", "maintenance", "expired", "removed"]),
+  allowedStatuses: Object.freeze(["active", "maintenance", "expired", "removed", "out_of_service"]),
+  statements: Object.freeze([
+    "ALTER TABLE public.equipment_assets DROP CONSTRAINT equipment_assets_lifecycle_status_check",
+    "ALTER TABLE public.equipment_assets ADD CONSTRAINT equipment_assets_lifecycle_status_check CHECK (lifecycle_status IN ('active', 'maintenance', 'expired', 'removed', 'out_of_service'))",
   ]),
 });
 
