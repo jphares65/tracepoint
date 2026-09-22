@@ -32,11 +32,16 @@ async function sourceSnapshot(onBoundary = () => undefined) {
     onBoundary({ event: "post-source-01", boundary: "immutable-artifact-read-start" });
     const s3 = new S3Client({ region: "us-east-1", maxAttempts: 1 });
     try {
-      const response = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" }));
-      const artifact = JSON.parse(await response.Body.transformToString());
+      const versionId = "E2D8RfEoImElsrFBqDDTE4Bqu6ANK6Xa", wholeFileSha256 = "010f0f403ee08c9ed894ee68473ef9d19f82b56ba05bfc1fa8204fda83a4bc20";
+      const response = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: versionId, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" }));
+      assert.equal(response.VersionId, versionId, "ARTIFACT_VERSION_MISMATCH");
+      const bytes = new Uint8Array(await response.Body.transformToByteArray());
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), wholeFileSha256, "ARTIFACT_BYTE_SHA256_MISMATCH");
+      const artifact = JSON.parse(new TextDecoder().decode(bytes));
+      assert.equal(artifact.masterSha256, INITIAL_ARTIFACT_SHA256, "ARTIFACT_MASTER_SHA256_MISMATCH");
       const integrity = validateImmutableArtifact(artifact, { expectedSha256: INITIAL_ARTIFACT_SHA256, enforceCurrentDriftCounts: true });
       onBoundary({ event: "post-source-02", boundary: "immutable-artifact-integrity-complete", relationCount: artifact.tables.length });
-      return { rows: new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]])), users: artifact.identities.rows, baseline: INITIAL_ARTIFACT_BASELINE, artifact: { bucket, key, masterSha256: INITIAL_ARTIFACT_SHA256, integrity } };
+      return { rows: new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]])), users: artifact.identities.rows, baseline: INITIAL_ARTIFACT_BASELINE, artifact: { bucket, key, versionId, wholeFileSha256, masterSha256: INITIAL_ARTIFACT_SHA256, integrity } };
     } finally { s3.destroy(); }
   }
   assert.ok(headers, "Source REST is unavailable in connection-probe mode");
@@ -374,7 +379,14 @@ async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
 async function importRelation(client, relation, rows, mapping, resume) {
   if (resume.strategy === "retain-exact-source-match") return { relation, imported: 0, resumed: rows.length, strategy: resume.strategy };
   assert.ok(["import-full", "cleanup-and-import-full"].includes(resume.strategy), `UNEXPECTED_RESUME_STRATEGY:${relation}`);
-  if (!rows.length) return { relation, imported: 0, resumed: 0 };
+  let excluded = [];
+  if (relation === "department_role_permissions") {
+    excluded = rows.filter(row => row.role_code === "administrator" || row.permission_code === "administer_department");
+    for (const row of excluded) assert.equal(row.role_code, "administrator", "RESERVED_DEPARTMENT_PERMISSION_SEMANTIC_MISMATCH");
+    rows = rows.filter(row => !excluded.includes(row));
+  }
+  const excludedReservedAssignments = excluded.map(row => ({ departmentId: row.department_id, roleCode: row.role_code, permissionCode: row.permission_code, canonicalRowSha256: sha256(row), semanticEquivalence: "target-administrator-inheritance" }));
+  if (!rows.length) return { relation, imported: 0, resumed: 0, ...(excludedReservedAssignments.length ? { excludedReservedAssignments } : {}) };
   const sql = IDENTITY_PRESERVATION_RELATIONS.includes(relation) ? identityPreservingInsertSql(relation, mapping.sourceColumns) : insertSql(relation, mapping.sourceColumns);
   for (let start = 0; start < rows.length; start += 200) {
     await client.query("begin");
@@ -392,7 +404,7 @@ async function importRelation(client, relation, rows, mapping, resume) {
       throw error;
     }
   }
-  return { relation, imported: rows.length, resumed: 0 };
+  return { relation, imported: rows.length, resumed: 0, ...(excludedReservedAssignments.length ? { excludedReservedAssignments } : {}) };
 }
 async function importNullableTrainingCertificationCycle(client, snapshot, preflight) {
   const cycle = preflight.cyclePlan;
