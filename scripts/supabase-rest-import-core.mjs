@@ -57,7 +57,7 @@ export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, 
 
 export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
 export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE = "schema-repair-equipment-assets-lifecycle-status";
-export const EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE = "schema-repair-equipment-assignment-history-guard";
+export const MIGRATION_MODE_SCHEMA_REPAIR_MODE = "schema-repair-migration-mode-contract";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
 export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
@@ -69,7 +69,7 @@ export const AUDIT_ARTIFACT_CLEANUP_MODE = "audit-events-migration-artifact-clea
 export const CONNECTION_PROBE_MODE = "rds-connection-probe";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, EQUIPMENT_ASSIGNMENT_HISTORY_GUARD_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -503,8 +503,13 @@ export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR = Object.freeze({
 // empty, or differently-valued setting retains the production trigger's
 // current behavior.  It is used only while the isolated importer supplies
 // the canonical assignment history itself.
+export const MIGRATION_MODE = Object.freeze({
+  setting: "tracepoint.migration_mode",
+  enabledValue: "on",
+});
+
 export const EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD = Object.freeze({
-  setting: "tracepoint.migration_equipment_assignment_import",
+  setting: MIGRATION_MODE.setting,
   functionName: "sync_equipment_asset_assignment_history",
   triggerName: "trg_equipment_asset_assignment_history",
   relation: "equipment_assets",
@@ -522,7 +527,7 @@ language plpgsql
 security invoker
 as $$
 begin
-    if current_setting('tracepoint.migration_equipment_assignment_import', true) = 'on' then
+    if current_setting('tracepoint.migration_mode', true) = 'on' then
         return new;
     end if;
 
@@ -606,8 +611,77 @@ end;
 $$`,
 });
 
+export const MIGRATION_MODE_TARGET_FUNCTIONS = Object.freeze([
+  Object.freeze({
+    name: "write_audit_event",
+    requiredExistingFragments: Object.freeze(["insert into public.audit_events", "return new", "return old"]),
+    statement: `create or replace function public.write_audit_event()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  old_json jsonb;
+  new_json jsonb;
+  tenant_text text;
+  entity_text text;
+  actor_text text;
+  tenant_id uuid;
+  entity_uuid uuid;
+  actor_uuid uuid;
+begin
+  if current_setting('tracepoint.migration_mode', true) = 'on' then
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
+  end if;
+  old_json := case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) else null end;
+  new_json := case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) else null end;
+  tenant_text := coalesce(nullif(new_json ->> 'department_id', ''), nullif(old_json ->> 'department_id', ''));
+  if tenant_text is null or tenant_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
+  end if;
+  tenant_id := tenant_text::uuid;
+  if tg_op = 'DELETE' and not exists (select 1 from public.departments department where department.id = tenant_id) then return old; end if;
+  entity_text := coalesce(nullif(new_json ->> 'id', ''), nullif(old_json ->> 'id', ''));
+  if entity_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then entity_uuid := entity_text::uuid; else entity_uuid := null; end if;
+  actor_text := coalesce(nullif(auth.uid()::text, ''), nullif(new_json ->> 'actor_user_id', ''), nullif(new_json ->> 'inspected_by_user_id', ''), nullif(new_json ->> 'inspector_user_id', ''), nullif(new_json ->> 'performed_by_user_id', ''), nullif(new_json ->> 'completed_by_user_id', ''), nullif(new_json ->> 'updated_by_user_id', ''), nullif(new_json ->> 'updated_by', ''), nullif(new_json ->> 'assigned_by_user_id', ''), nullif(new_json ->> 'assigned_by', ''), nullif(new_json ->> 'created_by_user_id', ''), nullif(new_json ->> 'created_by', ''), nullif(old_json ->> 'actor_user_id', ''), nullif(old_json ->> 'inspected_by_user_id', ''), nullif(old_json ->> 'inspector_user_id', ''), nullif(old_json ->> 'performed_by_user_id', ''), nullif(old_json ->> 'completed_by_user_id', ''), nullif(old_json ->> 'updated_by_user_id', ''), nullif(old_json ->> 'updated_by', ''), nullif(old_json ->> 'assigned_by_user_id', ''), nullif(old_json ->> 'assigned_by', ''), nullif(old_json ->> 'created_by_user_id', ''), nullif(old_json ->> 'created_by', ''));
+  if actor_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then actor_uuid := actor_text::uuid; else actor_uuid := null; end if;
+  insert into public.audit_events (department_id,actor_user_id,action,entity_type,entity_id,summary,previous_value,new_value,details)
+  values (tenant_id,actor_uuid,lower(tg_op),tg_table_name,entity_uuid,initcap(replace(tg_table_name, '_', ' ')) || ' ' || lower(tg_op),old_json,new_json,jsonb_build_object('source','database_trigger','operation',lower(tg_op),'table',tg_table_name));
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$$`,
+  }),
+  Object.freeze({
+    name: "seed_department_configuration",
+    requiredExistingFragments: Object.freeze(["insert into public.department_rules", "insert into public.department_security_settings", "insert into public.department_role_permissions", "return new"]),
+    statement: `create or replace function public.seed_department_configuration()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if current_setting('tracepoint.migration_mode', true) = 'on' then return new; end if;
+  insert into public.department_rules (department_id) values (new.id) on conflict (department_id) do nothing;
+  insert into public.department_security_settings (department_id) values (new.id) on conflict (department_id) do nothing;
+  insert into public.department_role_permissions (department_id,role_code,permission_code,granted_by)
+  select new.id,role_permission.role_code,role_permission.permission_code,coalesce(new.created_by,auth.uid())
+  from public.role_permissions role_permission
+  where role_permission.role_code <> 'administrator' and role_permission.permission_code <> 'administer_department'
+  on conflict (department_id,role_code,permission_code) do nothing;
+  return new;
+end;
+$$`,
+  }),
+  EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD,
+]);
+
 export function equipmentAssignmentHistoryImportGuardEnabled(value) {
-  return value === "on";
+  return value === MIGRATION_MODE.enabledValue;
 }
 
 export function verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceAssignments, targetAssets, targetAssignments }) {
