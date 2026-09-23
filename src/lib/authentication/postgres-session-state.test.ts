@@ -1,7 +1,7 @@
 import {localPostgresPort} from '../../test-support/local-postgres-port.mjs';
 import assert from 'node:assert/strict';
 import {test,before,after} from 'node:test';
-import {randomBytes,randomUUID,generateKeyPairSync,sign} from 'node:crypto';
+import {createHash,randomBytes,randomUUID,generateKeyPairSync,sign} from 'node:crypto';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';import path from 'node:path';import pg from 'pg';import EmbeddedPostgres from 'embedded-postgres';
 import {AuthenticationStateSealer,PostgresAuthorizationTransactionStore} from './postgres-transactions';
@@ -14,10 +14,26 @@ let server:EmbeddedPostgres,pool:pg.Pool,directory:string;
 before(async()=>{directory=await mkdtemp(path.join(tmpdir(),'tracepoint-session-test-'));const port=await localPostgresPort();server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:true,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});
  await pool.query('create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key)');await pool.query('insert into profiles values($1),($2)',[user,other]);
  for(const f of ['202609050006_authentication_identity_links.sql','202609050010_authentication_session_state.sql'])await pool.query(await readFile('supabase/migrations/'+f,'utf8'));
+ const oldConstraint=(await pool.query("select pg_get_constraintdef(oid) as definition from pg_constraint where conrelid='authentication_flow_transactions'::regclass and conname='authentication_flow_transactions_check'")).rows[0].definition;
+ assert.equal(oldConstraint.toLowerCase().replace(/[()\s]/g,'').replace("'00:06:00'::interval","'6minutes'::interval"),"checkexpires_at>created_atandexpires_at<=created_at+'6minutes'::interval");
+ await pool.query(await readFile('database/aws/022_cognito_flow_window.sql','utf8'));
+ const newConstraint=(await pool.query("select pg_get_constraintdef(oid) as definition from pg_constraint where conrelid='authentication_flow_transactions'::regclass and conname='authentication_flow_transactions_check'")).rows[0].definition;
+ assert.equal(newConstraint.toLowerCase().replace(/[()\s]/g,'').replace("'00:10:00'::interval","'10minutes'::interval"),"checkexpires_at>created_atandexpires_at<=created_at+'10minutes'::interval");
  await pool.query("insert into authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state) values('cognito',$1,$2,$3,'active')",[issuer,subject,user]);
 });
 after(async()=>{await pool?.end();await server?.stop();if(directory)await rm(directory,{recursive:true,force:true,maxRetries:30,retryDelay:200});});
 function session(){const issuedAt=Math.floor(Date.now()/1000);return {userId:user,issuer,subject,tokenId:randomUUID(),issuedAt,expiresAt:issuedAt+300};}
+test('AWS flow schema permits exactly ten minutes, rejects longer flow, and expires closed',async()=>{
+ const store=new PostgresAuthorizationTransactionStore(pool,new AuthenticationStateSealer('current',new Map([['current',randomBytes(32)]])));
+ const api=createCognitoPkce({environment:'staging',account:'559054714699',region:'us-east-1',userPoolId:'us-east-1_Synthetic',clientId:'syntheticclient',siteOrigin:'https://staging.tracepointhq.com',notificationMode:'normal'},store);
+ const flow=await api.begin();assert.equal(flow.cookie.maxAge,600);
+ const row=(await pool.query('select extract(epoch from expires_at-created_at) as lifetime from authentication_flow_transactions where handle_hash=$1',[createHash('sha256').update(flow.cookie.value).digest('hex')])).rows[0];
+ assert.ok(Number(row.lifetime)>590&&Number(row.lifetime)<=600);
+ const handle=randomBytes(32).toString('base64url');
+ await assert.rejects(store.put(handle,{state:handle,verifier:handle,nonce:handle,expiresAt:Date.now()+660000,clientId:'syntheticclient',callback:'https://staging.tracepointhq.com/api/auth/cognito/callback'}),/could not be stored/);
+ await pool.query("update authentication_flow_transactions set created_at=now()-interval '11 minutes',expires_at=now()-interval '1 minute' where handle_hash=$1",[createHash('sha256').update(flow.cookie.value).digest('hex')]);
+ assert.equal(await store.take(flow.cookie.value),null);
+});
 test('durable encrypted flow survives process composition and is consumed once under concurrency',async()=>{
  const key=randomBytes(32),sealer=new AuthenticationStateSealer('current',new Map([['current',key]])),store=new PostgresAuthorizationTransactionStore(pool,sealer);
  const api=createCognitoPkce({environment:'staging',account:'559054714699',region:'us-east-1',userPoolId:'us-east-1_Synthetic',clientId:'syntheticclient',siteOrigin:'https://staging.tracepointhq.com',notificationMode:'normal'},store);const flow=await api.begin();const row=(await pool.query('select handle_hash,sealed_payload from authentication_flow_transactions')).rows[0];assert.notEqual(row.handle_hash,flow.cookie.value);assert.equal(row.sealed_payload.includes('verifier'),false);

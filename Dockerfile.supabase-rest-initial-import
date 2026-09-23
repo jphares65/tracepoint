@@ -8,6 +8,7 @@ RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY scripts/supabase-rest-ledger-core.mjs scripts/supabase-rest-import-core.mjs scripts/supabase-rest-import-core.test.mjs scripts/immutable-source-artifact-validator.mjs scripts/run-supabase-rest-initial-import.mjs ./scripts/
+COPY database/aws/022_cognito_flow_window.sql ./database/aws/022_cognito_flow_window.sql
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN chmod 444 /app/rds-ca.pem
 USER node

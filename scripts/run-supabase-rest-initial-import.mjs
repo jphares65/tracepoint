@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
 import pg from "pg";
@@ -9,10 +9,11 @@ import { AUTHORIZATION_REFERENCE, MIGRATION_RELATIONS, PROJECT_URL, RELATION_ORD
 import { validateImmutableArtifact } from "./immutable-source-artifact-validator.mjs";
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
 import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
+import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
 import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, attestFinalCleanTargetControlPlane, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
 let headers = null;
@@ -1040,7 +1041,96 @@ async function runConnectionProbe() {
   }
 }
 
+const authFlowConstraintName = "authentication_flow_transactions_check";
+function authFlowConstraintShape(definition) {
+  return definition.toLowerCase().replace(/[()\s]/gu, "")
+    .replace("'00:06:00'::interval", "'6minutes'::interval")
+    .replace("'00:10:00'::interval", "'10minutes'::interval");
+}
+async function authFlowContract(client) {
+  const constraints = (await client.query(`select conname as name, pg_get_constraintdef(oid) as definition, convalidated as validated
+    from pg_constraint where conrelid='public.authentication_flow_transactions'::regclass and contype='c' order by conname`)).rows;
+  const rows = (await client.query(`select count(*)::int as count,
+    count(*) filter (where expires_at<=now())::int as expired,
+    count(*) filter (where expires_at<=created_at or expires_at>created_at+interval '10 minutes')::int as violating_approved_window,
+    coalesce(max(extract(epoch from expires_at-created_at)),0) as max_lifetime_seconds
+    from public.authentication_flow_transactions`)).rows[0];
+  return { constraints, rows: { count: rows.count, expired: rows.expired,
+    violatingApprovedWindow: rows.violating_approved_window, maxLifetimeSeconds: Number(rows.max_lifetime_seconds) } };
+}
+function requireAuthFlowContract(contract, minutes) {
+  const expected = `checkexpires_at>created_atandexpires_at<=created_at+'${minutes}minutes'::interval`;
+  const named = contract.constraints.filter(item => item.name === authFlowConstraintName);
+  assert.equal(named.length, 1, "AUTH_FLOW_WINDOW_CONSTRAINT_MISSING");
+  assert.equal(named[0].validated, true, "AUTH_FLOW_WINDOW_CONSTRAINT_NOT_VALIDATED");
+  assert.equal(authFlowConstraintShape(named[0].definition), expected, "AUTH_FLOW_WINDOW_CONSTRAINT_UNEXPECTED");
+  assert.equal(contract.rows.violatingApprovedWindow, 0, "AUTH_FLOW_WINDOW_EXISTING_ROW_CONFLICT");
+  return named[0];
+}
+async function runAuthFlowWindowContract() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const client = targetClient(target, ca, "tracepoint-auth-flow-window-contract");
+  let phase = "target-attestation", inTransaction = false;
+  try {
+    await client.connect();
+    phase = "read-only-constraint-preflight";
+    await client.query("begin transaction isolation level repeatable read read only"); inTransaction = true;
+    const before = await authFlowContract(client);
+    const old = requireAuthFlowContract(before, 6);
+    await client.query("rollback"); inTransaction = false;
+    console.log(JSON.stringify({ status: "PREFLIGHT_PASS", mode, target: client.migrationTargetAttestation,
+      oldConstraint: old, rows: before.rows, sourceClientsInitialized: false, targetDataMutated: false }));
+    if (mode === AUTH_FLOW_WINDOW_INSPECT_MODE) return;
+
+    phase = "bounded-constraint-replacement";
+    await client.query("begin"); inTransaction = true;
+    await client.query("set local lock_timeout = '5s'");
+    await client.query("lock table public.authentication_flow_transactions in access exclusive mode");
+    const locked = await authFlowContract(client);
+    requireAuthFlowContract(locked, 6);
+    assert.deepEqual(locked, before, "AUTH_FLOW_WINDOW_CHANGED_AFTER_PREFLIGHT");
+    const sql = await readFile("/app/database/aws/022_cognito_flow_window.sql", "utf8");
+    assert.match(sql, /^-- Quarantined AWS-native target only\./u, "AUTH_FLOW_WINDOW_MIGRATION_NOT_REVIEWED");
+    await client.query(sql);
+    const after = await authFlowContract(client);
+    const replacement = requireAuthFlowContract(after, 10);
+    assert.deepEqual(after.constraints.filter(item => item.name !== authFlowConstraintName),
+      before.constraints.filter(item => item.name !== authFlowConstraintName), "AUTH_FLOW_OTHER_CONSTRAINT_CHANGED");
+    assert.equal(after.rows.count, before.rows.count, "AUTH_FLOW_ROW_COUNT_CHANGED");
+
+    phase = "transactional-window-tests";
+    const handle = randomBytes(32).toString("hex");
+    await client.query("savepoint auth_flow_test");
+    await client.query(`insert into public.authentication_flow_transactions(handle_hash,sealed_payload,created_at,expires_at)
+      values($1,'window-test',transaction_timestamp(),transaction_timestamp()+interval '10 minutes')`, [handle]);
+    await client.query("rollback to savepoint auth_flow_test");
+    await client.query("release savepoint auth_flow_test");
+    await client.query("savepoint auth_flow_test");
+    let beyondTenMinutesRejected = false;
+    try { await client.query(`insert into public.authentication_flow_transactions(handle_hash,sealed_payload,created_at,expires_at)
+      values($1,'window-test',transaction_timestamp(),transaction_timestamp()+interval '10 minutes 1 second')`, [handle]); }
+    catch (error) { beyondTenMinutesRejected = error?.code === "23514"; }
+    await client.query("rollback to savepoint auth_flow_test");
+    await client.query("release savepoint auth_flow_test");
+    assert.equal(beyondTenMinutesRejected, true, "AUTH_FLOW_OVER_TEN_MINUTES_ACCEPTED");
+    const final = await authFlowContract(client);
+    assert.equal(final.rows.count, before.rows.count, "AUTH_FLOW_TEST_ROW_REMAINED");
+    await client.query("commit"); inTransaction = false;
+    console.log(JSON.stringify({ status: "PASSED", mode, target: client.migrationTargetAttestation,
+      oldConstraint: old, newConstraint: replacement, rowsBefore: before.rows.count, rowsAfter: final.rows.count,
+      exactlyTenMinutesAccepted: true, beyondTenMinutesRejected, otherConstraintsUnchanged: true,
+      sourceClientsInitialized: false, targetWriteScope: "auth-flow-check-constraint-only" }));
+  } catch (error) {
+    if (inTransaction) await client.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1;
+  } finally { await client.end().catch(() => undefined); }
+}
+
 async function runReviewedMode() {
+  if (mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE) return runAuthFlowWindowContract();
   if (mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE) return runDepartmentRolePermissionsAuthorizationDiagnostic();
   return mode === CONNECTION_PROBE_MODE ? runConnectionProbe() : mode === TARGET_SCHEMA_CONTRACT_MODE ? runTargetSchemaContract() : mode === "database" ? runDatabase() : mode === "objects" ? runObjects() : mode === "reconcile" ? runFeatureCatalogReconciliation() : mode === ROLE_PERMISSIONS_RECONCILIATION_MODE ? runRolePermissionsReconciliation() : mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE ? runForeignKeyCycleDiagnosis() : mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE ? runTargetGeneratedColumnDiagnostic() : mode === TARGET_PROVENANCE_SWEEP_MODE ? runTargetProvenanceSweep() : mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE ? auditIdentityDiagnostic() : mode === AUDIT_ARTIFACT_CLEANUP_MODE ? cleanupAuditArtifacts() : mode === "schema-contract" ? runFirearmAssignmentsSchemaContract() : mode === SCHEMA_REPAIR_MODE ? runFirearmAssignmentsSchemaRepair() : mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE ? runEquipmentAssetsLifecycleSchemaRepair() : mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE ? runMigrationModeSchemaRepair() : mode === SCHEMA_SWEEP_MODE ? runFullSchemaContractSweep() : runTargetDataPreflight();
 }
