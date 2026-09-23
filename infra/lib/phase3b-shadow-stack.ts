@@ -101,6 +101,9 @@ export class Phase3bShadowStack extends cdk.Stack {
       logoutUrLs: [`${origin}/login`],
       supportedIdentityProviders: ['COGNITO'],
       preventUserExistenceErrors: 'ENABLED',
+      idTokenValidity: 15,
+      accessTokenValidity: 15,
+      tokenValidityUnits: { idToken: 'minutes', accessToken: 'minutes' },
     });
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', {
       family: 'tracepoint-production-phase3b-shadow', cpu: 512, memoryLimitMiB: 1024,
