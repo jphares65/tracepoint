@@ -202,6 +202,20 @@ async function internalJson(request: Request, path: string) {
     const payload = await response.json().catch(() => ({}));
     return { ok: response.ok, payload, error: text(payload?.error), status: response.status };
   } catch (error) {
+    if (process.env.TRACEPOINT_NOTIFICATION_MODE === "shadow") {
+      const cause = error instanceof Error && "cause" in error ? error.cause : null;
+      const causeCode = cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string"
+        ? cause.code : "none";
+      const origin = new URL(request.url);
+      console.warn(JSON.stringify({
+        event: "shadow_home_internal_fetch_failure",
+        source: path,
+        requestHost: origin.hostname,
+        requestProtocol: origin.protocol,
+        errorName: error instanceof Error ? error.name : "unknown",
+        causeCode,
+      }));
+    }
     return { ok: false, payload: null, error: error instanceof Error ? error.message : "Source failed.", status: 0 };
   }
 }
