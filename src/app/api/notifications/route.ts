@@ -200,9 +200,9 @@ async function internalJson(request: Request, path: string) {
         : undefined,
     });
     const payload = await response.json().catch(() => ({}));
-    return { ok: response.ok, payload, error: text(payload?.error) };
+    return { ok: response.ok, payload, error: text(payload?.error), status: response.status };
   } catch (error) {
-    return { ok: false, payload: null, error: error instanceof Error ? error.message : "Source failed." };
+    return { ok: false, payload: null, error: error instanceof Error ? error.message : "Source failed.", status: 0 };
   }
 }
 
@@ -1051,6 +1051,25 @@ export async function GET(request: NextRequest) {
         source: "Equipment",
         error: equipment.error || "Unavailable",
       });
+    }
+    if (process.env.TRACEPOINT_NOTIFICATION_MODE === "shadow" && sourceErrors.length) {
+      const responses = new Map([
+        ["Personal Rifle", rifles], ["Ammunition", ammunition],
+        ["Inspection", firearms], ["Range", range],
+        ["Personnel", personnel], ["Rules", rules],
+      ]);
+      console.warn(JSON.stringify({
+        event: "shadow_home_read_sources_unavailable",
+        sources: sourceErrors.map(({ source, error }) => ({
+          source,
+          status: responses.get(source)?.status ?? null,
+          category: /not enabled|feature disabled/i.test(error) ? "feature_disabled"
+            : /permission|forbidden|not authorized/i.test(error) ? "authorization"
+            : /PostgreSQL data operation failed/i.test(error) ? "postgres_operation"
+            : /Unsupported data provider/i.test(error) ? "provider_unsupported"
+            : "other",
+        })),
+      }));
     }
     const filtered = preferences.in_app_enabled
       ? generated.filter((item) => preferences.source_preferences[item.source] !== false)

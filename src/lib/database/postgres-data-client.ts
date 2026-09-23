@@ -288,6 +288,18 @@ class PostgresQueryBuilder implements PromiseLike<Result> {
       }
       return { data, error: null, count, status: 200, statusText: "OK" };
     } catch (error) {
+      if (this.operation === "select" && process.env.TRACEPOINT_NOTIFICATION_MODE === "shadow") {
+        const code = safeError(error).code ?? "none";
+        const message = error instanceof Error ? error.message : "";
+        console.warn(JSON.stringify({
+          event: "shadow_postgres_read_failure",
+          table: this.table,
+          code,
+          category: message.startsWith("Unsupported PostgreSQL relation") ? "unsupported_relation"
+            : message.startsWith("Unsupported PostgreSQL") ? "unsupported_query"
+            : code !== "none" ? "database_error" : "other",
+        }));
+      }
       return { data: null, error: safeError(error), count: null, status: 400, statusText: "Bad Request" };
     }
   }
