@@ -3,6 +3,7 @@
 import {
   getPersonalRifleAccess,
   getPersonalRifleDisplayName,
+  getPersonalRifleUsers,
   getPersonalRifleRequestContext,
   type SupabaseAuthUser,
 } from "@/lib/tracepoint/personal-rifle-server";
@@ -21,11 +22,11 @@ export async function GET() {
   try {
     const { admin, departmentId, user } = context;
     const repository = createPersonalRifleReadRepository(admin, departmentId, user.id);
-    const [access, riflesResult, usersResult] = await Promise.all([
+    const [access, riflesResult] = await Promise.all([
       getPersonalRifleAccess(admin, departmentId, user.id),
       repository.listInbox(departmentId, user.id),
-      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
+    const usersResult = await getPersonalRifleUsers(admin, departmentId, riflesResult.map((rifle) => rifle.owner_user_id));
 
     if (usersResult.error) throw new Error(usersResult.error.message);
 

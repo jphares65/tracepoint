@@ -5,6 +5,7 @@ import {
   getInitialPersonalRifleStatus,
   getPersonalRifleAccess,
   getPersonalRifleDisplayName,
+  getPersonalRifleUsers,
   getPersonalRifleExpirationDate,
   getPersonalRifleRequestContext,
   getPersonalRifleRules,
@@ -38,9 +39,10 @@ export async function GET() {
     const rifles = await repository.listRifles(departmentId, user.id, access.canViewAll);
 
     const rifleIds = (rifles ?? []).map((rifle: any) => rifle.id);
-    const [usersResult, history] = await Promise.all([
-      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      repository.listHistory(departmentId, user.id, rifleIds),
+    const history = await repository.listHistory(departmentId, user.id, rifleIds);
+    const usersResult = await getPersonalRifleUsers(admin, departmentId, [
+      ...rifles.map((rifle: any) => rifle.owner_user_id),
+      ...history.map((row: any) => row.actor_user_id),
     ]);
 
     if (usersResult.error) throw new Error(usersResult.error.message);

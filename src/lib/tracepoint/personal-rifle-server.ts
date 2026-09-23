@@ -58,6 +58,28 @@ export function getPersonalRifleDisplayName(
   );
 }
 
+export async function getPersonalRifleUsers(
+  admin: any,
+  departmentId: string,
+  candidateUserIds: string[],
+): Promise<{ data: { users: SupabaseAuthUser[] } | null; error: { message: string } | null }> {
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native") {
+    return admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  }
+  const ids = [...new Set(candidateUserIds.filter(Boolean))];
+  if (!ids.length) return { data: { users: [] }, error: null };
+  const memberships = await admin.from("department_memberships")
+    .select("user_id").eq("department_id", departmentId).in("user_id", ids);
+  if (memberships.error) return { data: null, error: memberships.error };
+  const scopedIds = [...new Set((memberships.data ?? []).map((row: { user_id: string }) => row.user_id))];
+  if (!scopedIds.length) return { data: { users: [] }, error: null };
+  const profiles = await admin.from("profiles").select("id,email,full_name").in("id", scopedIds);
+  if (profiles.error) return { data: null, error: profiles.error };
+  return { data: { users: (profiles.data ?? []).map((row: { id: string; email: string | null; full_name: string | null }) => ({
+    id: row.id, email: row.email, user_metadata: { full_name: row.full_name ?? "" },
+  })) }, error: null };
+}
+
 export async function getPersonalRifleRequestContext() {
   const access = await resolveServerAccess();
 

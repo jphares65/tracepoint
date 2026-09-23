@@ -7,7 +7,7 @@ export interface ArmoryReadDataSource {
   listFirearms(departmentId: string, input: { includeArchived: boolean; firearmIds?: string[] }): PromiseLike<ArmoryResult>;
   listActiveMembers(departmentId: string): PromiseLike<ArmoryResult>;
   listProfiles(userIds: string[]): PromiseLike<ArmoryResult>;
-  listAuthUsers(): PromiseLike<ArmoryUsersResult>;
+  listAuthUsers(userIds: string[]): PromiseLike<ArmoryUsersResult>;
   listInspections(departmentId: string): PromiseLike<ArmoryResult>;
 }
 
@@ -22,7 +22,7 @@ export class ArmoryReadConfigurationError extends Error {
 }
 export function requireArmoryReadProvider(provider: string | undefined) {
   const value = provider?.trim().toLowerCase() || "supabase";
-  if (value !== "supabase") throw new ArmoryReadConfigurationError(value);
+  if (value !== "supabase" && value !== "postgres") throw new ArmoryReadConfigurationError(value);
   return value;
 }
 
@@ -57,7 +57,7 @@ export class TenantBoundArmoryReadRepository {
     const memberships = rows(await this.source.listActiveMembers(input.departmentId));
     const userIds = memberships.map((row) => text(row.user_id)).filter(Boolean);
     const profiles = userIds.length ? rows(await this.source.listProfiles(userIds)) : [];
-    const usersResult = await this.source.listAuthUsers();
+    const usersResult = await this.source.listAuthUsers(userIds);
     if (usersResult.error) throw new ArmoryReadRepositoryError(usersResult.error.message);
     const profilesById = new Map(profiles.map((row) => [text(row.id), row]));
     const usersById = new Map((usersResult.data?.users ?? []).map((row) => [text(row.id), row]));
