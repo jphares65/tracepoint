@@ -1,5 +1,6 @@
 import type {CognitoRedirectConfig} from './cognito-redirect-origin';
 import {validatedCognitoOrigin} from './cognito-redirect-origin';
+import {shadowCognitoDiagnostic} from './cognito-shadow-diagnostic';
 import type {CognitoTokens,createCognitoPkce} from './cognito-pkce';
 
 type SessionReceipt={userId:string;handle:string;expiresAt:number};
@@ -72,14 +73,18 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   async callback(request:Request){
    const rejected=guard(request,'/api/auth/cognito/callback','GET',false);if(rejected)return rejected;
    const cleared=cookie(flowCookie,'',0);
+   let branch='callback_parameters';
    try{const url=new URL(request.url);if(url.searchParams.has('error')||url.searchParams.getAll('state').length!==1||url.searchParams.getAll('code').length!==1)throw Error();
     let established:SessionReceipt|undefined;
-    const identity=await ports.pkce.complete({handle:readCookie(request,flowCookie),state:url.searchParams.get('state')!,code:url.searchParams.get('code')!},async(tokens,nonce)=>{
-     const result=await ports.establish(tokens,nonce);session(result);established=result;return {userId:result.userId};
+    branch='flow_cookie';const handle=readCookie(request,flowCookie);
+    branch='pkce_completion';const identity=await ports.pkce.complete({handle,state:url.searchParams.get('state')!,code:url.searchParams.get('code')!},async(tokens,nonce)=>{
+     branch='session_establishment';const result=await ports.establish(tokens,nonce);
+     branch='session_receipt_validation';session(result);established=result;return {userId:result.userId};
     });
-    if(!established||identity.userId!==established.userId)throw Error();
+    branch='identity_receipt_match';if(!established||identity.userId!==established.userId)throw Error();
+    branch='session_cookie';shadowCognitoDiagnostic('callback_success');
     return response(303,'authenticated',{location:origin+'/',cookies:[cleared,session(established)]});
-   }catch{return response(401,'authorization_rejected',{cookies:[cleared]});}
+   }catch{shadowCognitoDiagnostic(branch);return response(401,'authorization_rejected',{cookies:[cleared]});}
   },
   async refresh(request:Request){
    const rejected=guard(request,'/api/auth/cognito/refresh','POST');if(rejected)return rejected;

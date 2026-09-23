@@ -2,6 +2,7 @@ import type { JwksCache } from 'aws-jwt-verify/jwk';
 import type { IdentityMappingStore } from './provider-core';
 import { createCognitoAuthenticationProvider, type CognitoVerificationConfig, type SessionActivityCheck } from './cognito-verifier';
 import { createCognitoPkceTokenVerifier, type CognitoTokens } from './cognito-pkce';
+import { shadowCognitoDiagnostic } from './cognito-shadow-diagnostic';
 
 type SessionKey = Parameters<SessionActivityCheck>[0];
 export interface InitialCognitoSessionStore {
@@ -25,6 +26,7 @@ export function createCognitoInitialSessionVerifier(
   // Validate the configuration before a callback or persistence operation.
   createCognitoAuthenticationProvider(config, mapping, sessions.isActive, options);
   return async (tokens: CognitoTokens, nonce: string): Promise<{ userId: string }> => {
+    let branch = 'initial_token_verification';
     try {
       const snapshot = Object.freeze({ ...tokens });
       // Each callback owns its verifier closure; concurrent sign-ins cannot
@@ -32,17 +34,21 @@ export function createCognitoInitialSessionVerifier(
       // PKCE verifier. Access signature/client/expiry and stable mapping are
       // checked before this session callback is invoked.
       const access = createCognitoAuthenticationProvider(config, mapping, async verified => {
+        branch = 'verified_claim_consistency';
         const claims = JSON.parse(Buffer.from(snapshot.accessToken.split('.')[1], 'base64url').toString('utf8'));
         const idClaims = JSON.parse(Buffer.from(snapshot.idToken.split('.')[1], 'base64url').toString('utf8'));
         if (idClaims.sub !== verified.subject || !Number.isInteger(claims.exp) || claims.sub !== verified.subject ||
             claims.jti !== verified.tokenId || claims.iat !== verified.issuedAt || claims.iss !== verified.issuer) {
           throw Error('Verified session claims mismatch.');
         }
+        branch = 'access_session_registration';
         await sessions.registerVerified({ ...verified, expiresAt: claims.exp });
+        branch = 'access_session_active_check';
         return sessions.isActive(verified);
       }, options);
       return await createCognitoPkceTokenVerifier(config, access, options)(snapshot, nonce);
     } catch {
+      shadowCognitoDiagnostic(branch);
       throw Error('Initial Cognito session could not be established. Start a new sign-in.');
     }
   };

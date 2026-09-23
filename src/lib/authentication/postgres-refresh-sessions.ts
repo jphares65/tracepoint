@@ -1,5 +1,6 @@
 import {createCipheriv,createDecipheriv,createHash,randomBytes,randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
+import {shadowCognitoDiagnostic} from './cognito-shadow-diagnostic';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const issuerPattern=/^https:\/\/cognito-idp\.us-east-1\.amazonaws\.com\/us-east-1_[A-Za-z0-9]+$/;
@@ -44,16 +45,17 @@ export class PostgresCognitoRefreshStore {
  private async connect(){try{return await this.pool.connect();}catch{throw Error('Refresh persistence unavailable.');}}
  private async activeMapping(client:PoolClient,value:RefreshIdentity){
   const mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[value.issuer,value.subject,value.userId]);
-  if(mapping.rowCount!==1)throw Error();
-  const revoked=await client.query('select 1 from public.authentication_session_revocations where tracepoint_user_id=$1 and issuer=$2 and revoked_before>=to_timestamp($3)',[value.userId,value.issuer,value.authenticatedAt]);if(revoked.rowCount)throw Error();
+  if(mapping.rowCount!==1){shadowCognitoDiagnostic('refresh_active_mapping',{matchCount:mapping.rowCount??0});throw Error();}
+  const revoked=await client.query('select 1 from public.authentication_session_revocations where tracepoint_user_id=$1 and issuer=$2 and revoked_before>=to_timestamp($3)',[value.userId,value.issuer,value.authenticatedAt]);if(revoked.rowCount){shadowCognitoDiagnostic('refresh_identity_revoked',{revoked:true});throw Error();}
  }
  async createVerified(value:RefreshIdentity,refreshToken:string){
-  if(!valid(value)||!this.matchesTarget(value)||!tokenValid(refreshToken))throw Error('Invalid verified refresh identity.');
+  if(!valid(value)||!this.matchesTarget(value)||!tokenValid(refreshToken)){shadowCognitoDiagnostic('refresh_identity_validation',{identityValid:valid(value),targetMatches:this.matchesTarget(value),tokenShapeValid:tokenValid(refreshToken)});throw Error('Invalid verified refresh identity.');}
   const handle=randomBytes(32).toString('base64url'),row:Row={family_id:randomUUID(),issuer:value.issuer,subject:value.subject,tracepoint_user_id:value.userId,client_id:value.clientId,handle_hash:hash(handle),generation:0,state:'ready',sealed_payload:null,authenticated_at:new Date(value.authenticatedAt*1000),expires_at:new Date(value.expiresAt*1000)};
-  const client=await this.connect();try{await client.query('begin');await this.activeMapping(client,value);
+  let branch='refresh_database_connect';const client=await this.connect();try{branch='refresh_transaction_begin';await client.query('begin');branch='refresh_mapping_or_revocation';await this.activeMapping(client,value);
+   branch='refresh_persistence_insert';
    await client.query(`insert into public.authentication_refresh_sessions(family_id,issuer,subject,tracepoint_user_id,client_id,handle_hash,sealed_payload,authenticated_at,expires_at) values($1,$2,$3,$4,$5,$6,$7,to_timestamp($8),to_timestamp($9))`,[row.family_id,value.issuer,value.subject,value.userId,value.clientId,row.handle_hash,this.sealer.seal(refreshToken,binding(row)),value.authenticatedAt,value.expiresAt]);await client.query('commit');
    return {familyId:row.family_id,handle,expiresAt:value.expiresAt};
-  }catch{await client.query('rollback').catch(()=>{});throw Error('Refresh session registration rejected.');}finally{client.release();}
+  }catch{shadowCognitoDiagnostic(branch);await client.query('rollback').catch(()=>{});throw Error('Refresh session registration rejected.');}finally{client.release();}
  }
  async consume(handle:string):Promise<ConsumedRefresh|null>{
   const handleHash=hash(handle),client=await this.connect();let row:Row|undefined;

@@ -1,6 +1,7 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import type { JwksCache } from 'aws-jwt-verify/jwk';
 import type { AuthenticationProvider, IdentityMappingStore, TracePointIdentity } from './provider-core';
+import { shadowCognitoDiagnostic } from './cognito-shadow-diagnostic';
 export type CognitoVerificationConfig = { environment: 'staging' | 'production'; account: string; region: string; userPoolId: string; clientId: string; trustedClientIds?: string[] };
 export type SessionActivityCheck = (input: { userId: string; issuer: string; subject: string; tokenId: string; issuedAt: number }) => Promise<boolean>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,19 +18,27 @@ export function createCognitoAuthenticationProvider(config: CognitoVerificationC
     includeRawJwtInErrors: false, graceSeconds: 0,
     customJwtCheck: ({ header, payload }) => {
       const now = Math.floor(Date.now() / 1000);
+      const duration=typeof payload.iat==='number'&&typeof payload.exp==='number'?payload.exp-payload.iat:null;
       if (header.alg !== 'RS256' || payload.iss !== issuer || typeof payload.iat !== 'number' || typeof payload.exp !== 'number' ||
         payload.iat > now + 30 || payload.exp - payload.iat > 900 || payload.exp <= payload.iat ||
-        typeof payload.jti !== 'string' || !uuid.test(payload.jti) || typeof payload.sub !== 'string' || !uuid.test(payload.sub)) throw new Error('Invalid access token claims.');
+        typeof payload.jti !== 'string' || !uuid.test(payload.jti) || typeof payload.sub !== 'string' || !uuid.test(payload.sub)) {
+        shadowCognitoDiagnostic('access_token_claim_policy',{algorithmMatches:header.alg==='RS256',issuerMatches:payload.iss===issuer,duration,issuedInFuture:typeof payload.iat==='number'&&payload.iat>now+30,jtiValid:typeof payload.jti==='string'&&uuid.test(payload.jti),subjectValid:typeof payload.sub==='string'&&uuid.test(payload.sub)});
+        throw new Error('Invalid access token claims.');
+      }
     },
   }, options.jwksCache ? { jwksCache: options.jwksCache } : undefined);
   return { async verifySession(token?: string): Promise<TracePointIdentity | null> {
-    if (!token || token.length > 16384) return null;
+    if (!token || token.length > 16384) { shadowCognitoDiagnostic('access_token_shape'); return null; }
+    let branch = 'access_token_signature_issuer_audience';
     try {
       const claims = await verifier.verify(token);
+      shadowCognitoDiagnostic('access_token_verified', { accessDuration: claims.exp - claims.iat });
+      branch = 'identity_link_lookup';
       const linked = await mapping.findActive(issuer, claims.sub);
-      if (!linked || !uuid.test(linked.userId)) return null;
-      if (await isSessionActive({ userId: linked.userId, issuer, subject: claims.sub, tokenId: String(claims.jti), issuedAt: claims.iat }) !== true) return null;
+      if (!linked || !uuid.test(linked.userId)) { shadowCognitoDiagnostic(branch, { mappingPresent: !!linked }); return null; }
+      branch = 'verified_access_session';
+      if (await isSessionActive({ userId: linked.userId, issuer, subject: claims.sub, tokenId: String(claims.jti), issuedAt: claims.iat }) !== true) { shadowCognitoDiagnostic(branch, { active: false }); return null; }
       return { userId: linked.userId, provider: 'cognito', issuer, subject: claims.sub };
-    } catch { return null; }
+    } catch { shadowCognitoDiagnostic(branch); return null; }
   } };
 }
