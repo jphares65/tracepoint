@@ -15,7 +15,7 @@ const account = '193644343389';
 const region = 'us-east-1';
 const origin = 'https://shadow.tracepointhq.com';
 const hostname = 'shadow.tracepointhq.com';
-const accessCidr = '76.116.100.225/32';
+const accessCidrs = ['76.116.100.225/32', '50.174.33.3/32'];
 const imageDigest = 'sha256:5c012d4727bd8c0283e6ed3d165e803046aa37f86991b39471d795c4fad582e3';
 const vpcId = 'vpc-04accb4047a914176';
 const subnetId = 'subnet-0f4cbed3e60d90bfc';
@@ -171,7 +171,7 @@ export class Phase3bShadowStack extends cdk.Stack {
       listenerArn, priority: 10,
       conditions: [
         { field: 'host-header', hostHeaderConfig: { values: [hostname] } },
-        { field: 'source-ip', sourceIpConfig: { values: [accessCidr] } },
+        { field: 'source-ip', sourceIpConfig: { values: accessCidrs } },
       ],
       actions: [{ type: 'forward', targetGroupArn: targetGroup.targetGroupArn }],
     });
@@ -194,7 +194,7 @@ export class Phase3bShadowStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ShadowServiceName', { value: service.serviceName });
     new cdk.CfnOutput(this, 'ShadowDatabaseSecretArn', { value: shadowDatabaseSecretArn });
     new cdk.CfnOutput(this, 'ShadowCognitoClientId', { value: userPoolClient.ref });
-    new cdk.CfnOutput(this, 'ShadowAccessCidr', { value: accessCidr });
+    new cdk.CfnOutput(this, 'ShadowAccessCidr', { value: accessCidrs.join(',') });
     new cdk.CfnOutput(this, 'ShadowTestDepartmentId', { value: testDepartmentId });
   }
 }
