@@ -7,31 +7,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
-
-type AmmunitionWorkspace = {
-  dutyLots?: unknown[];
-  trainingLots?: unknown[];
-  transactions?: unknown[];
-};
-
-function normalizeWorkspace(value: unknown): Required<AmmunitionWorkspace> {
-  const workspace =
-    value && typeof value === "object"
-      ? (value as AmmunitionWorkspace)
-      : {};
-
-  return {
-    dutyLots: Array.isArray(workspace.dutyLots)
-      ? workspace.dutyLots
-      : [],
-    trainingLots: Array.isArray(workspace.trainingLots)
-      ? workspace.trainingLots
-      : [],
-    transactions: Array.isArray(workspace.transactions)
-      ? workspace.transactions
-      : [],
-  };
-}
+import { ammunitionWorkspaceForStorage } from "@/lib/tracepoint/ammunition-persistence";
 
 export async function GET() {
   const access = await resolveServerAccess();
@@ -52,7 +28,7 @@ export async function GET() {
 
     return NextResponse.json({
       departmentId,
-      workspace: normalizeWorkspace(data?.workspace),
+      workspace: ammunitionWorkspaceForStorage(data?.workspace),
       updatedAt: data?.updated_at ?? null,
     });
   } catch (error) {
@@ -83,14 +59,14 @@ export async function PUT(request: Request) {
   const departmentId = context.departmentId;
   const userId = context.user.id;
 
-  let workspace: Required<AmmunitionWorkspace>;
+  let workspace: ReturnType<typeof ammunitionWorkspaceForStorage>;
 
   try {
     const payload = (await request.json()) as {
       workspace?: unknown;
     };
 
-    workspace = normalizeWorkspace(payload.workspace);
+    workspace = ammunitionWorkspaceForStorage(payload.workspace);
   } catch {
     return NextResponse.json(
       { error: "Invalid ammunition workspace payload." },
