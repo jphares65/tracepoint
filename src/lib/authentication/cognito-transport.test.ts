@@ -67,15 +67,25 @@ test('shadow accepts only its exact ALB-forwarded HTTPS origin when Next exposes
  const pkce=createCognitoPkce(shadowConfig,{async put(){},async take(){return null}});
  const api=createCognitoTransport(shadowConfig,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
  const internal='https://ip-10-40-0-90.ec2.internal:3000/api/auth/cognito/login';
+ const boundAddress='https://0.0.0.0:3000/api/auth/cognito/login';
  const headers={host:'shadow.tracepointhq.com','x-forwarded-host':'shadow.tracepointhq.com','x-forwarded-proto':'https',origin:shadow,'sec-fetch-site':'same-origin'};
  const begin=(url:string,overrides:Record<string,string>={})=>api.begin(new Request(url,{method:'POST',headers:{...headers,...overrides}}));
  const accepted=await begin(internal);assert.equal(accepted.status,303);
  assert.equal(new URL(accepted.headers.get('location')!).searchParams.get('redirect_uri'),shadow+'/api/auth/cognito/callback');
- for(const overrides of ([{'x-forwarded-host':'tracepointhq.com'},{'x-forwarded-proto':'http'},{host:'tracepointhq.com'}] as Record<string,string>[]))
-  assert.equal((await begin(internal,overrides)).status,400);
+ assert.equal((await begin(boundAddress)).status,303);
+ for(const target of [internal,boundAddress])
+  for(const overrides of ([{'x-forwarded-host':'tracepointhq.com'},{'x-forwarded-proto':'http'},{host:'tracepointhq.com'}] as Record<string,string>[]))
+   assert.equal((await begin(target,overrides)).status,400);
+ assert.equal((await begin('http://0.0.0.0:3000/api/auth/cognito/login')).status,400);
+ assert.equal((await begin('https://0.0.0.0:3001/api/auth/cognito/login')).status,400);
+ const callback=await api.callback(new Request('https://0.0.0.0:3000/api/auth/cognito/callback?state=a&code=b',{headers}));
+ assert.equal(callback.status,401); // Passed the origin guard; absent flow cookie fails closed.
  assert.equal((await begin(internal,{origin:'https://tracepointhq.com'})).status,403);
  assert.equal((await begin(internal,{'sec-fetch-site':'cross-site'})).status,403);
  assert.equal((await begin('https://evil.invalid:3000/api/auth/cognito/login')).status,400);
+ const productionConfig={...shadowConfig,siteOrigin:'https://tracepointhq.com',notificationMode:'normal' as const};
+ const production=createCognitoTransport(productionConfig,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
+ assert.equal((await production.begin(new Request(boundAddress,{method:'POST',headers:{...headers,origin:'https://tracepointhq.com'}}))).status,400);
 });
 test('receipt lifetime and target boundary cannot be widened by transport ports',async()=>{
  const f=fixture();f.ports.rotate=async()=>({userId,handle,expiresAt:Math.floor(Date.now()/1000)+86401});assert.equal((await f.api.refresh(post('refresh',{cookie:'__Host-tracepoint-cognito-session='+handle}))).status,401);assert.throws(()=>createCognitoTransport({...config,account:'265544358665'},f.ports),/target/);
