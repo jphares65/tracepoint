@@ -39,7 +39,13 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
  }
  function guard(request:Request,path:string,method:string,csrf=true){
   if(!enabled)return response(503,'provider_disabled');const url=new URL(request.url);
-  if(url.origin!==origin||url.pathname!==path)return response(400,'invalid_request');
+  if(url.origin!==origin||url.pathname!==path){
+   if(config.notificationMode==='shadow')console.warn(JSON.stringify({event:'shadow-cognito-request-mismatch',
+    actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
+    host:request.headers.get('host'),forwardedHost:request.headers.get('x-forwarded-host'),
+    forwardedProto:request.headers.get('x-forwarded-proto')}));
+   return response(400,'invalid_request');
+  }
   if(request.method!==method)return response(405,'method_not_allowed');
   if(csrf&&(request.headers.get('origin')!==origin||!['same-origin','none',null].includes(request.headers.get('sec-fetch-site'))||url.search))return response(403,'origin_rejected');
   return null;
