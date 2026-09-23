@@ -22,7 +22,7 @@ assert.equal(ofType('AWS::SecretsManager::Secret').length, 0);
 assert.equal(ofType('AWS::RDS::DBInstance').length, 0);
 assert.equal(ofType('AWS::ElasticLoadBalancingV2::LoadBalancer').length, 0);
 assert.match(serialized, /76\.116\.100\.225\/32/);
-assert.match(serialized, /d03ce98d13963aec82faa85ad89e7bcdf3b536a2bc351026d115334002ebf067/);
+assert.match(serialized, /112f40c6879e7ae6eb18a8cf3a5f143a2c2935ac99a16be36316a047916ab345/);
 assert.match(serialized, /tracepoint\/production\/shadow\/database-runtime-jNRvgT/);
 assert.doesNotMatch(serialized, /tracepoint\/production\/database\/runtime-K4C4HY/);
 assert.match(serialized, /TRACEPOINT_NOTIFICATION_MODE/);
