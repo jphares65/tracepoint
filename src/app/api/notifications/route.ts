@@ -17,6 +17,7 @@ import {
   type QualificationComponent,
 } from "@/lib/tracepoint/qualification-readiness";
 import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
+import { internalSourceUrl } from "@/lib/notifications/internal-source-url";
 import { createNotificationEventWriter } from "@/lib/notifications/event-writer";
 import {
   buildNotificationEventReconciliationRow,
@@ -193,7 +194,9 @@ async function getContext() {
 
 async function internalJson(request: Request, path: string) {
   try {
-    const response = await fetch(new URL(path, request.url), {
+    const response = await fetch(internalSourceUrl(
+      path, request.url, process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE, process.env.PORT,
+    ), {
       cache: "no-store",
       headers: request.headers.get("cookie")
         ? { cookie: request.headers.get("cookie") as string }
