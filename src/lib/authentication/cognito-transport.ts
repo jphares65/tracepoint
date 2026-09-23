@@ -1,7 +1,7 @@
 import type {CognitoRedirectConfig} from './cognito-redirect-origin';
 import {validatedCognitoOrigin} from './cognito-redirect-origin';
 import {shadowCognitoDiagnostic,shadowCognitoDiagnosticsEnabled} from './cognito-shadow-diagnostic';
-import type {CognitoTokens,createCognitoPkce} from './cognito-pkce';
+import {COGNITO_FLOW_LIFETIME_SECONDS,type CognitoTokens,type createCognitoPkce} from './cognito-pkce';
 
 type SessionReceipt={userId:string;handle:string;expiresAt:number};
 type Pkce=ReturnType<typeof createCognitoPkce>;
@@ -74,10 +74,10 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   async begin(request:Request){
    const rejected=guard(request,'/api/auth/cognito/login','POST');if(rejected)return rejected;
    try{const flow=await ports.pkce.begin(),url=new URL(flow.url);
-    if(url.origin!==providerOrigin||url.pathname!=='/oauth2/authorize'||url.searchParams.get('client_id')!==config.clientId||url.searchParams.get('redirect_uri')!==origin+'/api/auth/cognito/callback'||flow.cookie.name!==flowCookie||!handlePattern.test(flow.cookie.value))throw Error();
-    shadowCognitoDiagnostic('flow_cookie_set',{secure:true,httpOnly:true,sameSiteLax:true,pathRoot:true,hostOnly:true,maxAgeSeconds:300,setCookieCount:1,
+    if(url.origin!==providerOrigin||url.pathname!=='/oauth2/authorize'||url.searchParams.get('client_id')!==config.clientId||url.searchParams.get('redirect_uri')!==origin+'/api/auth/cognito/callback'||flow.cookie.name!==flowCookie||!handlePattern.test(flow.cookie.value)||flow.cookie.maxAge!==COGNITO_FLOW_LIFETIME_SECONDS)throw Error();
+    shadowCognitoDiagnostic('flow_cookie_set',{secure:true,httpOnly:true,sameSiteLax:true,pathRoot:true,hostOnly:true,maxAgeSeconds:COGNITO_FLOW_LIFETIME_SECONDS,setCookieCount:1,
      requestHostShadow:request.headers.get('host')===new URL(origin).host,forwardedHostShadow:request.headers.get('x-forwarded-host')===new URL(origin).host,forwardedProtoHttps:request.headers.get('x-forwarded-proto')==='https'});
-    return response(303,'authorization_started',{location:flow.url,cookies:[cookie(flowCookie,flow.cookie.value,300)]});
+    return response(303,'authorization_started',{location:flow.url,cookies:[cookie(flowCookie,flow.cookie.value,flow.cookie.maxAge)]});
    }catch{return response(503,'authorization_unavailable');}
   },
   async callback(request:Request){

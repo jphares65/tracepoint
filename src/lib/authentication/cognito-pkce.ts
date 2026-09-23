@@ -6,6 +6,7 @@ import type {CognitoVerificationConfig} from './cognito-verifier';
 import {validatedCognitoOrigin,type CognitoRedirectConfig} from './cognito-redirect-origin';
 import {shadowCognitoDiagnostic} from './cognito-shadow-diagnostic';
 export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string};
+export const COGNITO_FLOW_LIFETIME_SECONDS=600;
 export interface AuthorizationTransactionStore {
  // Server-only encrypted storage. take must atomically delete/consume even if
  // token exchange fails; TTL cleanup alone is not replay protection.
@@ -26,11 +27,11 @@ export function createCognitoPkce(config:CognitoRedirectConfig,store:Authorizati
  return {
   async begin(){
    const handle=random(),state=random(),verifier=random(),nonce=random();
-   try{await store.put(handle,{state,verifier,nonce,expiresAt:now()+300000,clientId:config.clientId,callback});}catch{throw Error('Cognito authorization could not be started.');}
+   try{await store.put(handle,{state,verifier,nonce,expiresAt:now()+COGNITO_FLOW_LIFETIME_SECONDS*1000,clientId:config.clientId,callback});}catch{throw Error('Cognito authorization could not be started.');}
    const url=new URL(domain+'/oauth2/authorize');url.search=new URLSearchParams({response_type:'code',client_id:config.clientId,redirect_uri:callback,scope:'openid email',state,nonce,code_challenge_method:'S256',code_challenge:createHash('sha256').update(verifier).digest('base64url')}).toString();
    // The handle must be installed only as a Secure, HttpOnly, SameSite=Lax,
    // Path=/ cookie with this __Host- name; never expose the verifier to a browser.
-   return {url:url.toString(),cookie:{name:'__Host-tracepoint-cognito-flow',value:handle,httpOnly:true as const,secure:true as const,sameSite:'lax' as const,path:'/',maxAge:300}};
+   return {url:url.toString(),cookie:{name:'__Host-tracepoint-cognito-flow',value:handle,httpOnly:true as const,secure:true as const,sameSite:'lax' as const,path:'/',maxAge:COGNITO_FLOW_LIFETIME_SECONDS}};
   },
   async complete(input:{handle:string;state:string;code:string},verifyTokens:(tokens:CognitoTokens,nonce:string)=>Promise<{userId:string}>){
    let branch='pkce_input';
@@ -39,7 +40,7 @@ export function createCognitoPkce(config:CognitoRedirectConfig,store:Authorizati
     branch='pkce_transaction_take';
     const transaction=await store.take(input.handle);
     branch='pkce_transaction_validation';
-    const present=!!transaction,expired=present&&transaction.expiresAt<=now(),future=present&&transaction.expiresAt>now()+300000;
+    const present=!!transaction,expired=present&&transaction.expiresAt<=now(),future=present&&transaction.expiresAt>now()+COGNITO_FLOW_LIFETIME_SECONDS*1000;
     const clientMatches=present&&transaction.clientId===config.clientId,callbackMatches=present&&transaction.callback===callback;
     const stateMatches=present&&/^[A-Za-z0-9_-]{43}$/.test(transaction.state)&&timingSafeEqual(Buffer.from(transaction.state),Buffer.from(input.state));
     if(!transaction||expired||future||!clientMatches||!callbackMatches||!/^[A-Za-z0-9_-]{43}$/.test(transaction.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(transaction.nonce)||!stateMatches){

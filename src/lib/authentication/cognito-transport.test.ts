@@ -14,7 +14,7 @@ test('disabled provider rejects before any port call',async()=>{const f=fixture(
 test('login requires same-origin POST and returns only hardened PKCE cookie',async()=>{
  const f=fixture();assert.equal((await f.api.begin(new Request(origin+'/api/auth/cognito/login'))).status,405);for(const foreign of ['https://evil.invalid','null',''])assert.equal((await f.api.begin(post('login',{origin:foreign}))).status,403);
  assert.equal((await f.api.begin(post('login',{'sec-fetch-site':'cross-site'}))).status,403);
- const response=await f.api.begin(post('login'));assert.equal(response.status,303);assert.equal(new URL(response.headers.get('location')!).origin,'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com');const cookie=response.headers.get('set-cookie')!;for(const required of ['__Host-tracepoint-cognito-flow=','HttpOnly','Secure','SameSite=Lax','Path=/','Max-Age=300'])assert.ok(cookie.includes(required));assert.equal(cookie.includes('Domain='),false);assert.ok(response.headers.get('cache-control')?.includes('no-store'));
+ const response=await f.api.begin(post('login'));assert.equal(response.status,303);assert.equal(new URL(response.headers.get('location')!).origin,'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com');const cookie=response.headers.get('set-cookie')!;for(const required of ['__Host-tracepoint-cognito-flow=','HttpOnly','Secure','SameSite=Lax','Path=/','Max-Age=600'])assert.ok(cookie.includes(required));assert.equal(cookie.includes('Domain='),false);assert.ok(response.headers.get('cache-control')?.includes('no-store'));
 });
 test('callback consumes PKCE and returns opaque session without provider tokens or redirect injection',async()=>{
  const f=fixture(),begin=await f.api.begin(post('login')),url=new URL(begin.headers.get('location')!);const flow=begin.headers.get('set-cookie')!.split(';')[0];
@@ -33,6 +33,11 @@ test('refresh rejects CSRF and malformed cookies; successful rotation issues a n
 test('logout persists revocation before hosted logout redirect and never claims success on failure',async()=>{
  const f=fixture(),request=post('logout',{cookie:'__Host-tracepoint-cognito-session='+handle});const response=await f.api.logout(request);assert.equal(f.calls.revoke,1);assert.equal(response.status,303);const location=new URL(response.headers.get('location')!);assert.equal(location.pathname,'/logout');assert.equal(location.searchParams.get('logout_uri'),origin+'/login');assert.equal(response.headers.getSetCookie().length,2);
  f.ports.revoke=async()=>{throw Error('private store failure');};const failed=await f.api.logout(request);assert.equal(failed.status,503);assert.equal(failed.headers.has('location'),false);assert.equal((await failed.text()).includes('private'),false);
+});
+test('transport refuses a PKCE cookie lifetime divergent from the server contract',async()=>{
+ const f=fixture(),begin=f.ports.pkce.begin;
+ f.ports.pkce.begin=async()=>{const flow=await begin();return {...flow,cookie:{...flow.cookie,maxAge:601}}};
+ assert.equal((await f.api.begin(post('login'))).status,503);
 });
 test('shadow cookie inspection distinguishes missing, duplicate, empty, malformed and valid without returning values to diagnostics',()=>{
  const callback=origin+'/api/auth/cognito/callback?state=hidden&code=hidden';
