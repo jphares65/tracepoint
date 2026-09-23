@@ -8,6 +8,10 @@ import {
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
 import { ammunitionWorkspaceForStorage } from "@/lib/tracepoint/ammunition-persistence";
+import {
+  AmmunitionWorkspaceBodyTooLarge,
+  readAmmunitionWorkspaceBody,
+} from "@/lib/tracepoint/ammunition-request-body";
 
 export async function GET() {
   const access = await resolveServerAccess();
@@ -62,12 +66,15 @@ export async function PUT(request: Request) {
   let workspace: ReturnType<typeof ammunitionWorkspaceForStorage>;
 
   try {
-    const payload = (await request.json()) as {
+    const payload = (await readAmmunitionWorkspaceBody(request)) as {
       workspace?: unknown;
     };
 
     workspace = ammunitionWorkspaceForStorage(payload.workspace);
-  } catch {
+  } catch (error) {
+    if (error instanceof AmmunitionWorkspaceBodyTooLarge) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
     return NextResponse.json(
       { error: "Invalid ammunition workspace payload." },
       { status: 400 },
