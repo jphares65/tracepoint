@@ -14,6 +14,7 @@ const store=()=>new PostgresCognitoRefreshStore(pool,sealer(),target);
 before(async()=>{directory=await mkdtemp(path.join(tmpdir(),'tracepoint-refresh-test-'));const port=await localPostgresPort();server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'local-test-only',port,persistent:true,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'local-test-only',database:'postgres'});
  await pool.query('create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key)');
  for(const f of ['202609050006_authentication_identity_links.sql','202609050010_authentication_session_state.sql','202609050011_authentication_refresh_state.sql'])await pool.query(await readFile('supabase/migrations/'+f,'utf8'));
+ await pool.query(await readFile('database/aws/002_cognito_application_session_idle.sql','utf8'));
 });
 after(async()=>{await pool?.end();await server?.stop();if(directory)await rm(directory,{recursive:true,force:true,maxRetries:30,retryDelay:200});});
 async function fixture(){const userId=randomUUID(),subject=randomUUID(),now=Math.floor(Date.now()/1000);await pool.query('insert into profiles values($1)',[userId]);await pool.query("insert into authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state) values('cognito',$1,$2,$3,'active')",[issuer,subject,userId]);const identity:RefreshIdentity={userId,subject,issuer,clientId:'syntheticclient',authenticatedAt:now-1,expiresAt:now+3600};const token=randomBytes(40).toString('base64url');const created=await store().createVerified(identity,token);return {identity,token,...created};}
@@ -21,6 +22,19 @@ test('refresh state is encrypted, handle-hashed and survives key rotation withou
  const f=await fixture(),row=(await pool.query('select * from authentication_refresh_sessions where family_id=$1',[f.familyId])).rows[0];assert.notEqual(row.handle_hash,f.handle);assert.equal(row.sealed_payload.includes(f.token),false);
  const rotatedStore=new PostgresCognitoRefreshStore(pool,new RefreshSessionSealer('next',new Map([['current',key],['next',randomBytes(32)]])),target);
  const consumed=(await rotatedStore.consume(f.handle))!;assert.equal(consumed.refreshToken,f.token);const next=await rotatedStore.completeVerified(consumed,'rotated-synthetic-token');assert.notEqual(next.handle,f.handle);assert.equal(next.expiresAt,f.expiresAt);assert.equal(await store().consume(f.handle),null);assert.equal((await rotatedStore.consume(next.handle))?.refreshToken,'rotated-synthetic-token');
+});
+test('initial persistence satisfies the AWS idle-session schema and advances only on use',async()=>{
+ const f=await fixture();
+ const initial=(await pool.query('select authenticated_at,expires_at,last_seen_at,idle_expires_at,created_at,state from authentication_refresh_sessions where family_id=$1',[f.familyId])).rows[0];
+ assert.equal(initial.state,'ready');assert.ok(initial.last_seen_at instanceof Date);assert.ok(initial.idle_expires_at instanceof Date);
+ assert.ok(initial.last_seen_at>=initial.authenticated_at);assert.ok(initial.last_seen_at>=initial.created_at);
+ assert.equal(initial.idle_expires_at.getTime(),Math.min(initial.expires_at.getTime(),initial.last_seen_at.getTime()+30*60*1000));
+ const resolved=await store().resolveReady(f.handle);assert.equal(resolved?.userId,f.identity.userId);
+ const later=(await pool.query('select last_seen_at,idle_expires_at,expires_at,state from authentication_refresh_sessions where family_id=$1',[f.familyId])).rows[0];
+ assert.ok(later.last_seen_at>=initial.last_seen_at);assert.ok(later.idle_expires_at>=initial.idle_expires_at);
+ assert.equal(later.idle_expires_at.getTime(),Math.min(later.expires_at.getTime(),later.last_seen_at.getTime()+30*60*1000));
+ assert.equal(later.state,'ready');assert.equal(later.expires_at.getTime(),initial.expires_at.getTime());
+ await store().revokeFamily(f.familyId,{userId:f.identity.userId,issuer});assert.equal(await store().resolveReady(f.handle),null);
 });
 test('concurrent consume releases a token once and ambiguous acceptance cannot retry',async()=>{
  const f=await fixture(),outcomes=await Promise.all([store().consume(f.handle),store().consume(f.handle)]);assert.equal(outcomes.filter(Boolean).length,1);assert.equal(await store().consume(f.handle),null);
@@ -56,7 +70,7 @@ test('another client cannot consume or revoke this client family',async()=>{
  assert.equal(await foreign.consume(f.handle),null);await foreign.revokeFamily(f.familyId,{userId:f.identity.userId,issuer});assert.equal((await store().consume(f.handle))?.refreshToken,f.token);
 });
 test('expired state is purged and connection failures expose no database detail',async()=>{
- const f=await fixture(),now=Math.floor(Date.now()/1000);await pool.query('update authentication_refresh_sessions set authenticated_at=to_timestamp($2),expires_at=to_timestamp($3) where family_id=$1',[f.familyId,now-3601,now-1]);assert.equal(await store().consume(f.handle),null);assert.equal(await store().purgeExpired(),1);
+ const f=await fixture(),now=Math.floor(Date.now()/1000);await pool.query('update authentication_refresh_sessions set authenticated_at=to_timestamp($2),last_seen_at=to_timestamp($2),idle_expires_at=to_timestamp($2)+interval \'30 minutes\',expires_at=to_timestamp($3) where family_id=$1',[f.familyId,now-3601,now-1]);assert.equal(await store().consume(f.handle),null);assert.equal(await store().purgeExpired(),1);
  const unavailable=new PostgresCognitoRefreshStore({connect:async()=>{throw Error('private connection detail');},query:pool.query.bind(pool)} as Pick<pg.Pool,'query'|'connect'>,sealer(),target);
  await assert.rejects(unavailable.consume(f.handle),{message:'Refresh persistence unavailable.'});
 });
