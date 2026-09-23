@@ -47,6 +47,22 @@ test('shadow transport never redirects login or logout to the production site',a
  assert.equal(new URL(logout.headers.get('location')!).searchParams.get('logout_uri'),shadow+'/login');
  assert.equal((await api.begin(new Request(origin+'/api/auth/cognito/login',{method:'POST',headers:{origin}}))).status,400);
 });
+test('shadow accepts only its exact ALB-forwarded HTTPS origin when Next exposes the internal ECS URL',async()=>{
+ const shadow='https://shadow.tracepointhq.com';
+ const shadowConfig={...config,environment:'production' as const,account:'193644343389',siteOrigin:shadow,notificationMode:'shadow' as const};
+ const pkce=createCognitoPkce(shadowConfig,{async put(){},async take(){return null}});
+ const api=createCognitoTransport(shadowConfig,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
+ const internal='https://ip-10-40-0-90.ec2.internal:3000/api/auth/cognito/login';
+ const headers={host:'shadow.tracepointhq.com','x-forwarded-host':'shadow.tracepointhq.com','x-forwarded-proto':'https',origin:shadow,'sec-fetch-site':'same-origin'};
+ const begin=(url:string,overrides:Record<string,string>={})=>api.begin(new Request(url,{method:'POST',headers:{...headers,...overrides}}));
+ const accepted=await begin(internal);assert.equal(accepted.status,303);
+ assert.equal(new URL(accepted.headers.get('location')!).searchParams.get('redirect_uri'),shadow+'/api/auth/cognito/callback');
+ for(const overrides of ([{'x-forwarded-host':'tracepointhq.com'},{'x-forwarded-proto':'http'},{host:'tracepointhq.com'}] as Record<string,string>[]))
+  assert.equal((await begin(internal,overrides)).status,400);
+ assert.equal((await begin(internal,{origin:'https://tracepointhq.com'})).status,403);
+ assert.equal((await begin(internal,{'sec-fetch-site':'cross-site'})).status,403);
+ assert.equal((await begin('https://evil.invalid:3000/api/auth/cognito/login')).status,400);
+});
 test('receipt lifetime and target boundary cannot be widened by transport ports',async()=>{
  const f=fixture();f.ports.rotate=async()=>({userId,handle,expiresAt:Math.floor(Date.now()/1000)+86401});assert.equal((await f.api.refresh(post('refresh',{cookie:'__Host-tracepoint-cognito-session='+handle}))).status,401);assert.throws(()=>createCognitoTransport({...config,account:'265544358665'},f.ports),/target/);
 });

@@ -39,7 +39,14 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
  }
  function guard(request:Request,path:string,method:string,csrf=true){
   if(!enabled)return response(503,'provider_disabled');const url=new URL(request.url);
-  if(url.origin!==origin||url.pathname!==path){
+  // Next may expose the ECS container origin in Request.url behind the shadow ALB.
+  // Accept it only with the exact external HTTPS host attested by both proxy headers.
+  const shadowProxyOrigin=config.notificationMode==='shadow'&&
+   /^ip-(?:\d{1,3}-){3}\d{1,3}\.ec2\.internal$/.test(url.hostname)&&url.protocol==='https:'&&url.port==='3000'&&
+   request.headers.get('host')===new URL(origin).host&&
+   request.headers.get('x-forwarded-host')===new URL(origin).host&&
+   request.headers.get('x-forwarded-proto')==='https';
+  if((url.origin!==origin&&!shadowProxyOrigin)||url.pathname!==path){
    if(config.notificationMode==='shadow')console.warn(JSON.stringify({event:'shadow-cognito-request-mismatch',
     actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
     host:request.headers.get('host'),forwardedHost:request.headers.get('x-forwarded-host'),
