@@ -115,7 +115,7 @@ export class Phase3bShadowStack extends cdk.Stack {
       ),
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'web' }),
       environment: {
-        NODE_ENV: 'production', PORT: '3000',
+        NODE_ENV: 'production', PORT: '3000', HOSTNAME: '0.0.0.0',
         NEXT_PUBLIC_SITE_URL: origin,
         TRACEPOINT_RUNTIME_PROVIDER_MODE: 'aws-native',
         TRACEPOINT_DATA_PROVIDER: 'postgres',
