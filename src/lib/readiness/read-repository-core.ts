@@ -17,7 +17,7 @@ export interface ReadinessDataSource {
 export class ReadinessAuthorizationError extends Error { constructor() { super("Authorized department context is required."); this.name = "ReadinessAuthorizationError"; } }
 export class ReadinessRepositoryError extends Error { constructor(message: string) { super(message); this.name = "ReadinessRepositoryError"; } }
 export class ReadinessRepositoryConfigurationError extends Error { constructor(provider: string) { super(`Unsupported data provider: ${provider}. Only supabase is implemented.`); this.name = "ReadinessRepositoryConfigurationError"; } }
-export function requireReadinessProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase") throw new ReadinessRepositoryConfigurationError(value); return value; }
+export function requireReadinessProvider(provider: string | undefined) { const value = provider?.trim().toLowerCase() || "supabase"; if (value !== "supabase" && value !== "postgres") throw new ReadinessRepositoryConfigurationError(value); return value; }
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nullableNumber = (value: unknown) => value === null || value === undefined ? null : Number(value);
 const nullableString = (value: unknown) => value === null || value === undefined ? null : String(value);
