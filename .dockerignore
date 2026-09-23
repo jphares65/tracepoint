@@ -18,3 +18,4 @@ npm-debug.log*
 **/*secret*.json
 **/*.dump
 **/*.sql
+!database/aws/022_cognito_flow_window.sql
