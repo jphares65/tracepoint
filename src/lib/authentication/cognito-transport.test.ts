@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import {test} from 'node:test';
-import {createCognitoTransport,type CognitoTransportPorts} from './cognito-transport';
+import {createCognitoTransport,inspectFlowCookie,type CognitoTransportPorts} from './cognito-transport';
 import {createCognitoPkce,type AuthorizationTransaction} from './cognito-pkce';
 const config={environment:'staging' as const,account:'559054714699',region:'us-east-1',userPoolId:'us-east-1_Synthetic',clientId:'syntheticclient',siteOrigin:'https://staging.tracepointhq.com',notificationMode:'normal' as const},origin='https://staging.tracepointhq.com';
 const userId='11111111-1111-4111-8111-111111111111',handle='H'.repeat(43),nextHandle='J'.repeat(43);
@@ -33,6 +33,15 @@ test('refresh rejects CSRF and malformed cookies; successful rotation issues a n
 test('logout persists revocation before hosted logout redirect and never claims success on failure',async()=>{
  const f=fixture(),request=post('logout',{cookie:'__Host-tracepoint-cognito-session='+handle});const response=await f.api.logout(request);assert.equal(f.calls.revoke,1);assert.equal(response.status,303);const location=new URL(response.headers.get('location')!);assert.equal(location.pathname,'/logout');assert.equal(location.searchParams.get('logout_uri'),origin+'/login');assert.equal(response.headers.getSetCookie().length,2);
  f.ports.revoke=async()=>{throw Error('private store failure');};const failed=await f.api.logout(request);assert.equal(failed.status,503);assert.equal(failed.headers.has('location'),false);assert.equal((await failed.text()).includes('private'),false);
+});
+test('shadow cookie inspection distinguishes missing, duplicate, empty, malformed and valid without returning values to diagnostics',()=>{
+ const callback=origin+'/api/auth/cognito/callback?state=hidden&code=hidden';
+ const inspect=(cookie?:string)=>inspectFlowCookie(new Request(callback,{headers:cookie?{cookie}:{}}));
+ assert.deepEqual(inspect(),{present:false,count:0,empty:false,malformed:false,valid:false,handle:null});
+ assert.equal(inspect('__Host-tracepoint-cognito-flow=').empty,true);
+ assert.equal(inspect('__Host-tracepoint-cognito-flow=bad').malformed,true);
+ assert.equal(inspect('__Host-tracepoint-cognito-flow='+handle).valid,true);
+ assert.equal(inspect('__Host-tracepoint-cognito-flow='+handle+'; __Host-tracepoint-cognito-flow='+nextHandle).count,2);
 });
 test('shadow transport never redirects login or logout to the production site',async()=>{
  const shadow='https://shadow.tracepointhq.com';

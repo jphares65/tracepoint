@@ -1,6 +1,6 @@
 import type {CognitoRedirectConfig} from './cognito-redirect-origin';
 import {validatedCognitoOrigin} from './cognito-redirect-origin';
-import {shadowCognitoDiagnostic} from './cognito-shadow-diagnostic';
+import {shadowCognitoDiagnostic,shadowCognitoDiagnosticsEnabled} from './cognito-shadow-diagnostic';
 import type {CognitoTokens,createCognitoPkce} from './cognito-pkce';
 
 type SessionReceipt={userId:string;handle:string;expiresAt:number};
@@ -12,11 +12,19 @@ export interface CognitoTransportPorts {
  establish(tokens:CognitoTokens,nonce:string):Promise<SessionReceipt>;
  rotate(handle:string):Promise<SessionReceipt>;
  revoke(handle:string):Promise<void>;
+ inspectFlowForShadow?: (handle:string)=>Promise<{found:boolean;expired:boolean|null}>;
 }
 export const COGNITO_FLOW_COOKIE='__Host-tracepoint-cognito-flow';
 export const COGNITO_SESSION_COOKIE='__Host-tracepoint-cognito-session';
 const flowCookie=COGNITO_FLOW_COOKIE,sessionCookie=COGNITO_SESSION_COOKIE;
 const handlePattern=/^[A-Za-z0-9_-]{43}$/;
+export function inspectFlowCookie(request:Request,name=COGNITO_FLOW_COOKIE){
+ const matches=(request.headers.get('cookie')??'').split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));
+ const value=matches.length===1?matches[0].slice(name.length+1):'';
+ return {present:matches.length>0,count:matches.length,empty:matches.length===1&&value.length===0,
+  malformed:matches.length===1&&value.length>0&&!handlePattern.test(value),valid:matches.length===1&&handlePattern.test(value),
+  handle:matches.length===1&&handlePattern.test(value)?value:null};
+}
 function readCookie(request:Request,name:string){
  const matches=(request.headers.get('cookie')??'').split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));
  if(matches.length!==1)throw Error();const value=matches[0].slice(name.length+1);if(!handlePattern.test(value))throw Error();return value;
@@ -67,6 +75,8 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
    const rejected=guard(request,'/api/auth/cognito/login','POST');if(rejected)return rejected;
    try{const flow=await ports.pkce.begin(),url=new URL(flow.url);
     if(url.origin!==providerOrigin||url.pathname!=='/oauth2/authorize'||url.searchParams.get('client_id')!==config.clientId||url.searchParams.get('redirect_uri')!==origin+'/api/auth/cognito/callback'||flow.cookie.name!==flowCookie||!handlePattern.test(flow.cookie.value))throw Error();
+    shadowCognitoDiagnostic('flow_cookie_set',{secure:true,httpOnly:true,sameSiteLax:true,pathRoot:true,hostOnly:true,maxAgeSeconds:300,setCookieCount:1,
+     requestHostShadow:request.headers.get('host')===new URL(origin).host,forwardedHostShadow:request.headers.get('x-forwarded-host')===new URL(origin).host,forwardedProtoHttps:request.headers.get('x-forwarded-proto')==='https'});
     return response(303,'authorization_started',{location:flow.url,cookies:[cookie(flowCookie,flow.cookie.value,300)]});
    }catch{return response(503,'authorization_unavailable');}
   },
@@ -76,7 +86,22 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
    let branch='callback_parameters';
    try{const url=new URL(request.url);if(url.searchParams.has('error')||url.searchParams.getAll('state').length!==1||url.searchParams.getAll('code').length!==1)throw Error();
     let established:SessionReceipt|undefined;
-    branch='flow_cookie';const handle=readCookie(request,flowCookie);
+    branch='flow_cookie';
+    if(shadowCognitoDiagnosticsEnabled()){
+     const inspection=inspectFlowCookie(request,flowCookie);
+     let transactionFound:boolean|null=null,transactionExpired:boolean|null=null;
+     if(inspection.handle&&ports.inspectFlowForShadow){
+      try{const status=await ports.inspectFlowForShadow(inspection.handle);transactionFound=status.found;transactionExpired=status.expired;}catch{/* Diagnostics must not change authentication behavior. */}
+     }
+     shadowCognitoDiagnostic('flow_cookie_observed',{cookiePresent:inspection.present,matchingCount:inspection.count,
+      valueEmpty:inspection.empty,valueMalformed:inspection.malformed,validHandle:inspection.valid,
+      transactionFound,transactionExpired,
+      requestHostShadow:request.headers.get('host')===new URL(origin).host,
+      forwardedHostShadow:request.headers.get('x-forwarded-host')===new URL(origin).host,
+      forwardedProtoHttps:request.headers.get('x-forwarded-proto')==='https',
+      requestUrlShadow:new URL(request.url).origin===origin});
+    }
+    const handle=readCookie(request,flowCookie);
     branch='pkce_completion';const identity=await ports.pkce.complete({handle,state:url.searchParams.get('state')!,code:url.searchParams.get('code')!},async(tokens,nonce)=>{
      branch='session_establishment';const result=await ports.establish(tokens,nonce);
      branch='session_receipt_validation';session(result);established=result;return {userId:result.userId};

@@ -24,6 +24,11 @@ export class AuthenticationStateSealer {
 }
 export class PostgresAuthorizationTransactionStore implements AuthorizationTransactionStore {
  constructor(private readonly pool:Pick<Pool,'query'>,private readonly sealer:AuthenticationStateSealer){}
+ async inspectForShadow(handle:string):Promise<{found:boolean;expired:boolean|null}>{
+  const binding=hash(handle);
+  const result=await this.pool.query('select expires_at <= now() as expired from public.authentication_flow_transactions where handle_hash=$1',[binding]);
+  return {found:result.rowCount===1,expired:result.rowCount===1?result.rows[0].expired===true:null};
+ }
  async put(handle:string,transaction:AuthorizationTransaction){
   try{const binding=hash(handle);await this.pool.query('insert into public.authentication_flow_transactions(handle_hash,sealed_payload,expires_at) values($1,$2,$3)',[binding,this.sealer.seal(transaction,binding),new Date(transaction.expiresAt)]);}catch{throw Error('Authentication transaction could not be stored.');}
  }

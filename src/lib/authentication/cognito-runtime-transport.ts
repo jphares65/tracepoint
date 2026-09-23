@@ -11,6 +11,7 @@ import { PostgresCognitoRefreshStore, RefreshSessionSealer } from "./postgres-re
 import { PostgresCognitoSessionStore } from "./postgres-sessions";
 import { AuthenticationStateSealer, PostgresAuthorizationTransactionStore } from "./postgres-transactions";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
+import { shadowCognitoDiagnosticsEnabled } from "./cognito-shadow-diagnostic";
 
 export function createRuntimeCognitoTransport(environment = process.env) {
   const configuration = parseCognitoRuntimeConfiguration(environment);
@@ -55,6 +56,7 @@ export function createRuntimeCognitoTransport(environment = process.env) {
     establish,
     rotate,
     revoke,
+    ...(shadowCognitoDiagnosticsEnabled() ? { inspectFlowForShadow: (handle: string) => transactions.inspectForShadow(handle) } : {}),
   }, { enabled: true });
 }
 
