@@ -27,7 +27,7 @@ assert.equal(ofType('AWS::RDS::DBInstance').length, 0);
 assert.equal(ofType('AWS::ElasticLoadBalancingV2::LoadBalancer').length, 0);
 assert.match(serialized, /76\.116\.100\.225\/32/);
 assert.match(serialized, /50\.174\.33\.3\/32/);
-assert.match(serialized, /0ca886fa22d77f79ecd247c564f11df33d160ffd3bbee64ce0fd4a7094bc836f/);
+assert.match(serialized, /9c4921a44d46e5381a3251487b4e2b2a7ff1dba5f52a73c26f93c7465db34fb0/);
 assert.match(serialized, /tracepoint\/production\/shadow\/database-runtime-jNRvgT/);
 assert.doesNotMatch(serialized, /tracepoint\/production\/database\/runtime-K4C4HY/);
 assert.match(serialized, /TRACEPOINT_NOTIFICATION_MODE/);
