@@ -66,6 +66,7 @@ export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE = "schema-repair-equi
 export const MIGRATION_MODE_SCHEMA_REPAIR_MODE = "schema-repair-migration-mode-contract";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
 export const TARGET_DATA_PREFLIGHT_MODE = "target-data-preflight";
+export const EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE = "equipment-assets-parity-diagnostic";
 export const ROLE_PERMISSIONS_RECONCILIATION_MODE = "role-permissions-reconciliation";
 export const FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE = "foreign-key-cycle-diagnosis";
 export const TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE = "target-generated-column-diagnostic";
@@ -77,7 +78,7 @@ export const AUTH_FLOW_WINDOW_INSPECT_MODE = "auth-flow-window-inspect";
 export const AUTH_FLOW_WINDOW_REPAIR_MODE = "auth-flow-window-repair";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");
@@ -1054,6 +1055,23 @@ export function targetRowsSql(relation, columns, orderColumns) {
 }
 
 export function canonicalRowsHash(rows) { return sha256(rows); }
+export function equipmentAssetProjectionSummary(sourceRows, projectedRows, columnMetadata) {
+  assert.ok(Array.isArray(sourceRows) && Array.isArray(projectedRows) && Array.isArray(columnMetadata), "EQUIPMENT_PROJECTION_INPUT_INVALID");
+  assert.equal(projectedRows.length, sourceRows.length, "EQUIPMENT_PROJECTION_ROW_COUNT_MISMATCH");
+  const columns = [...new Set([...sourceRows.flatMap(row => Object.keys(row)), ...columnMetadata.map(column => column.column_name)])].sort();
+  const metadata = new Map(columnMetadata.map(column => [column.column_name, column]));
+  const present = value => value !== null && value !== undefined;
+  const fields = columns.map(name => {
+    const sourceValues = sourceRows.map(row => row[name]);
+    const projectedValues = projectedRows.map(row => row[name]);
+    const mismatchCount = sourceValues.filter((value, index) => canonical(value) !== canonical(projectedValues[index])).length;
+    const sourceMissingCount = sourceRows.filter((row, index) => !Object.hasOwn(row, name) && Object.hasOwn(projectedRows[index], name)).length;
+    const projectionMissingCount = projectedRows.filter((row, index) => !Object.hasOwn(row, name) && Object.hasOwn(sourceRows[index], name)).length;
+    const type = metadata.get(name)?.data_type ?? null;
+    return { field: name, sourceNonNullCount: sourceValues.filter(present).length, projectedNonNullCount: projectedValues.filter(present).length, sourceDistinctCount: new Set(sourceValues.filter(present).map(canonical)).size, projectedDistinctCount: new Set(projectedValues.filter(present).map(canonical)).size, differingRows: mismatchCount, sourceMissingCount, projectionMissingCount, expectedTypeNormalization: ["timestamp with time zone", "timestamp without time zone", "date", "numeric", "uuid"].includes(type), parity: mismatchCount === 0 ? "PASS" : "FAIL" };
+  });
+  return { sourceRows: sourceRows.length, projectedRows: projectedRows.length, fields, sourceCanonicalSha256: canonicalRowsHash(sourceRows), projectionCanonicalSha256: canonicalRowsHash(projectedRows), differingFields: fields.filter(field => field.parity === "FAIL").map(field => field.field) };
+}
 export function importEvidence({ mappings, sourceTables, targetTables, identities, memberships, baseline = null }) {
   const total = sourceTables.reduce((sum, table) => sum + table.rows, 0);
   const expected = baseline ?? { relationalRows: PRIOR_TOTAL_ROWS, identities: PRIOR_IDENTITIES, memberships: PRIOR_MEMBERSHIPS, objects: PRIOR_OBJECTS, objectBytes: PRIOR_OBJECT_BYTES };

@@ -10,10 +10,11 @@ import { validateImmutableArtifact } from "./immutable-source-artifact-validator
 import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
 import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
+import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary } from "./supabase-rest-import-core.mjs";
 import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, REHEARSAL_SCHEMA_LINEAGE_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, attestFinalCleanTargetControlPlane, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, nullableTrainingCertificationCyclePlan, quote, reconcileDerivedAdministratorAssignments, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
 let headers = null;
@@ -1218,7 +1219,48 @@ async function runRehearsalSchemaLineage() {
   } finally { await client.end().catch(() => undefined); }
 }
 
+async function runEquipmentAssetsParityDiagnostic() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const snapshot = await sourceSnapshot();
+  const sourceRows = snapshot.rows.get("equipment_assets") ?? [];
+  const client = targetClient(target, ca, "tracepoint-equipment-assets-parity-diagnostic");
+  let phase = "target TLS attestation", inReadOnlyTransaction = false;
+  try {
+    await client.connect();
+    await client.query("begin transaction isolation level repeatable read read only");
+    inReadOnlyTransaction = true;
+    phase = "equipment-assets target catalog";
+    const persistedRows = Number((await client.query("select count(*)::int as count from public.equipment_assets")).rows[0].count);
+    assert.equal(persistedRows, 0, "EQUIPMENT_DIAGNOSTIC_TARGET_NOT_CLEAN");
+    const columns = (await client.query("select column_name,data_type,udt_name,is_nullable,column_default,is_identity,is_generated from information_schema.columns where table_schema='public' and table_name='equipment_assets' order by ordinal_position")).rows;
+    const triggers = (await client.query("select t.tgname as trigger_name,pg_get_triggerdef(t.oid) as trigger_definition,pg_get_functiondef(t.tgfoid) as function_definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='equipment_assets' and not t.tgisinternal and t.tgenabled <> 'D' order by t.tgname")).rows;
+    phase = "read-only equipment-assets typed projection";
+    const projectedRows = [];
+    for (const row of sourceRows) {
+      const projected = await client.query("select to_jsonb(projected) as row from json_populate_record(null::public.equipment_assets,$1::json) as projected", [JSON.stringify(row)]);
+      assert.equal(projected.rowCount, 1, "EQUIPMENT_PROJECTION_UNEXPECTED_ROW_COUNT");
+      projectedRows.push(projected.rows[0].row);
+    }
+    const summary = equipmentAssetProjectionSummary(sourceRows, projectedRows, columns);
+    const normalize = triggers.find(trigger => trigger.trigger_name === "trg_equipment_asset_normalize_assignment");
+    const normalizeRemovedAssignment = typeof normalize?.function_definition === "string" && /new\.lifecycle_status\s*=\s*'removed'/iu.test(normalize.function_definition) && /new\.assigned_user_id\s*:=\s*null/iu.test(normalize.function_definition);
+    const removedAssignedSourceRows = sourceRows.filter(row => row.lifecycle_status === "removed" && row.assigned_user_id !== null && row.assigned_user_id !== undefined).length;
+    await client.query("commit");
+    inReadOnlyTransaction = false;
+    console.log(JSON.stringify({ status: "PASSED", mode, sourceArtifact: snapshot.artifact ? { versionId: snapshot.artifact.versionId, wholeFileSha256: snapshot.artifact.wholeFileSha256, masterSha256: snapshot.artifact.masterSha256 } : null, target: client.migrationTargetAttestation, sourceReadOnly: true, targetReadOnly: true, persistedTargetRows: persistedRows, comparison: "source artifact versus read-only PostgreSQL typed projection; actual imported target rows unavailable after rollback", canonicalFields: columns.map(column => column.column_name), columns: columns.map(column => ({ name: column.column_name, type: column.data_type, nullable: column.is_nullable === "YES", hasDefault: column.column_default !== null, generated: column.is_generated !== "NEVER" })), triggers: triggers.map(trigger => ({ name: trigger.trigger_name, definitionSha256: sha256(trigger.trigger_definition), functionSha256: sha256(trigger.function_definition), assignmentMutationFields: [...new Set([...trigger.function_definition.matchAll(/new\.([a-z_]+)\s*:=/giu)].map(match => match[1]))].sort() })), normalizeRemovedAssignment, removedAssignedSourceRows, summary, actualImportedFieldDiffAvailable: false, writesPerformed: false }));
+  } catch (error) {
+    if (inReadOnlyTransaction) await client.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally { await client.end().catch(() => undefined); }
+}
+
 async function runReviewedMode() {
+  if (mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE) return runEquipmentAssetsParityDiagnostic();
   if (mode === REHEARSAL_SCHEMA_LINEAGE_MODE) return runRehearsalSchemaLineage();
   if (mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE) return runAuthFlowWindowContract();
   if (mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE) return runDepartmentRolePermissionsAuthorizationDiagnostic();

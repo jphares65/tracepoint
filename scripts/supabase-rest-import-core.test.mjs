@@ -3,6 +3,26 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, REHEARSAL_SCHEMA_LINEAGE_MODE, attestFinalCleanTargetControlPlane } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
+import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary } from "./supabase-rest-import-core.mjs";
+test("equipment parity diagnostic emits only aggregate field counts and has no import path", () => {
+  const rows = [{ id: "synthetic-1", lifecycle_status: "removed", assigned_user_id: null, assigned_location: "" }, { id: "synthetic-2", lifecycle_status: "active", assigned_user_id: "synthetic-user", assigned_location: null }];
+  const projection = [{ ...rows[0], assigned_location: null }, rows[1]];
+  const metadata = Object.keys(rows[0]).map(column_name => ({ column_name, data_type: "text" }));
+  const result = equipmentAssetProjectionSummary(rows, projection, metadata);
+  assert.equal(result.sourceRows, 2);
+  assert.deepEqual(result.differingFields, ["assigned_location"]);
+  assert.equal(result.fields.find(field => field.field === "assigned_location").differingRows, 1);
+  assert.equal(result.fields.find(field => field.field === "assigned_user_id").sourceNonNullCount, 1);
+  assert.doesNotMatch(JSON.stringify(result), /synthetic-user|synthetic-1|synthetic-2/);
+  assert.ok(DATABASE_MODES.includes(EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE));
+  const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
+  const body = runner.slice(runner.indexOf("async function runEquipmentAssetsParityDiagnostic()"), runner.indexOf("async function runReviewedMode()"));
+  assert.match(body, /repeatable read read only/);
+  assert.match(body, /json_populate_record\(null::public\.equipment_assets/);
+  assert.doesNotMatch(body, /importRelation\(|runDatabase\(|\binsert into\b|\bupdate public\b|\bdelete from\b|\balter table\b/iu);
+  assert.match(body, /snapshot\.rows\.get\("equipment_assets"\)/);
+  assert.match(body, /persistedRows, 0/);
+});
 import { reconcileDerivedAdministratorAssignments } from "./supabase-rest-import-core.mjs";
 test("reserved Administrator rows reconcile as derived authorization without losing ordinary assignments", () => {
   const sourceDepartments = [{ id: "department-a" }, { id: "department-b" }, { id: "department-c" }];
@@ -29,7 +49,7 @@ test("rehearsal importer rejects the validated shadow RDS and pins the new resou
 test("rehearsal lineage mode is limited to two versioned AWS migrations and an empty restored target", () => {
   assert.ok(DATABASE_MODES.includes(REHEARSAL_SCHEMA_LINEAGE_MODE));
   const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
-  const start = runner.indexOf("async function runRehearsalSchemaLineage()"), end = runner.indexOf("async function runReviewedMode()", start);
+  const start = runner.indexOf("async function runRehearsalSchemaLineage()"), end = runner.indexOf("async function runEquipmentAssetsParityDiagnostic()", start);
   const body = runner.slice(start, end);
   assert.ok(start >= 0 && end > start);
   assert.match(body, /targetClient\(target, ca/u);
