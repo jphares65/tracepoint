@@ -3,6 +3,20 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, REHEARSAL_SCHEMA_LINEAGE_MODE, attestFinalCleanTargetControlPlane } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
+import { reconcileDerivedAdministratorAssignments } from "./supabase-rest-import-core.mjs";
+test("reserved Administrator rows reconcile as derived authorization without losing ordinary assignments", () => {
+  const sourceDepartments = [{ id: "department-a" }, { id: "department-b" }, { id: "department-c" }];
+  const reserved = Array.from({ length: 42 }, (_, index) => ({ department_id: sourceDepartments[index % 3].id, role_code: "administrator", permission_code: index < 3 ? "administer_department" : `permission_${index}`, granted_at: "2026-01-01" }));
+  const ordinary = { department_id: "department-a", role_code: "supervisor", permission_code: "manage_training", granted_at: "2026-01-01" };
+  const options = { sourceRows: [...reserved, ordinary], targetRows: [ordinary], sourceDepartments, targetDepartments: sourceDepartments, targetPermissions: [...new Set([...reserved, ordinary].map(row => row.permission_code))].map(code => ({ code })), administratorInheritanceProven: true };
+  const result = reconcileDerivedAdministratorAssignments(options);
+  assert.equal(result.derivedAdministratorRows, 42); assert.equal(result.physicalRows, 1); assert.equal(result.excludedRows.length, 42);
+  assert.ok(result.excludedRows.every(row => /^[0-9a-f]{64}$/.test(row.canonicalRowSha256)));
+  assert.throws(() => reconcileDerivedAdministratorAssignments({ ...options, administratorInheritanceProven: false }), /TARGET_ADMINISTRATOR_INHERITANCE_UNPROVEN/);
+  assert.throws(() => reconcileDerivedAdministratorAssignments({ ...options, sourceRows: [{ ...reserved[0], role_code: "supervisor" }, ...reserved.slice(1), ordinary] }), /RESERVED_DEPARTMENT_PERMISSION_SEMANTIC_MISMATCH/);
+  assert.throws(() => reconcileDerivedAdministratorAssignments({ ...options, targetDepartments: [{ id: "department-a" }] }), /TARGET_DEPARTMENT_SCOPE_MISMATCH/);
+  assert.throws(() => reconcileDerivedAdministratorAssignments({ ...options, targetRows: [ordinary, { ...ordinary, permission_code: "other" }] }), /TARGET_DEPARTMENT_PERMISSION_PHYSICAL_COUNT_MISMATCH/);
+});
 test("rehearsal importer rejects the validated shadow RDS and pins the new resource", () => {
   assert.equal(FINAL_CLEAN_TARGET_INSTANCE_ID, "tracepoint-production-migration-rehearsal-4272874f-20260923");
   assert.equal(FINAL_CLEAN_TARGET_RESOURCE_ID, "db-WX6GX35AIJ546ZRCZIRQ545B3E");

@@ -400,6 +400,27 @@ export function requireTargetSeededRolePermissionRule(reconciliation) {
   return Object.freeze({ ...reconciliation, classification: "target-seeded reference data — excluded by design", sourceOnlyRule: "reviewed legacy/global defaults; department_role_permissions remains source-authoritative" });
 }
 
+export function reconcileDerivedAdministratorAssignments({ sourceRows, targetRows, sourceDepartments, targetDepartments, targetPermissions, administratorInheritanceProven }) {
+  assert.equal(administratorInheritanceProven, true, "TARGET_ADMINISTRATOR_INHERITANCE_UNPROVEN");
+  const sourceDepartmentIds = new Set(sourceDepartments.map(row => String(row.id)));
+  const targetDepartmentIds = new Set(targetDepartments.map(row => String(row.id)));
+  assert.deepEqual([...targetDepartmentIds].sort(), [...sourceDepartmentIds].sort(), "TARGET_DEPARTMENT_SCOPE_MISMATCH");
+  const permissionCodes = new Set(targetPermissions.map(row => row.code));
+  const excluded = sourceRows.filter(row => row.role_code === "administrator" || row.permission_code === "administer_department");
+  assert.equal(excluded.length, 42, "RESERVED_DEPARTMENT_PERMISSION_BASELINE_CHANGED");
+  assert.equal(excluded.filter(row => row.permission_code === "administer_department").length, 3, "RESERVED_ADMINISTER_DEPARTMENT_BASELINE_CHANGED");
+  for (const row of excluded) {
+    assert.equal(row.role_code, "administrator", "RESERVED_DEPARTMENT_PERMISSION_SEMANTIC_MISMATCH");
+    assert.ok(sourceDepartmentIds.has(String(row.department_id)) && targetDepartmentIds.has(String(row.department_id)), "RESERVED_DEPARTMENT_PERMISSION_SCOPE_MISMATCH");
+    assert.ok(permissionCodes.has(row.permission_code), "RESERVED_DEPARTMENT_PERMISSION_CATALOG_MISMATCH");
+  }
+  const physicalSourceRows = sourceRows.filter(row => !excluded.includes(row));
+  assert.ok(targetRows.every(row => row.role_code !== "administrator" && row.permission_code !== "administer_department"), "TARGET_RESERVED_PERMISSION_STORED");
+  assert.equal(targetRows.length, physicalSourceRows.length, "TARGET_DEPARTMENT_PERMISSION_PHYSICAL_COUNT_MISMATCH");
+  assert.equal(canonicalRowsHash(targetRows), canonicalRowsHash(physicalSourceRows), "TARGET_DEPARTMENT_PERMISSION_PHYSICAL_HASH_MISMATCH");
+  return Object.freeze({ sourceRows: sourceRows.length, physicalRows: targetRows.length, derivedAdministratorRows: excluded.length, administerDepartmentRows: 3, excludedRows: excluded.map(row => ({ departmentId: row.department_id, roleCode: row.role_code, permissionCode: row.permission_code, canonicalRowSha256: sha256(row), semanticEquivalence: "target-administrator-inheritance" })) });
+}
+
 export function validateTargetSecret(value) {
   assert.ok(value && typeof value === "object" && !Array.isArray(value), "Target secret must be an object");
   for (const key of ["host", "port", "dbname", "username", "password"]) assert.ok(value[key] !== undefined && value[key] !== "", `Target secret missing ${key}`);
