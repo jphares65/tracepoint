@@ -51,6 +51,7 @@ function assertCounts(counts, expected) {
   for (const [name, count] of Object.entries(expected)) if (counts[name] !== count) throw Error(`Fixture ${name} count mismatch.`);
 }
 
+async function main() {
 try {
   await client.connect();
   await identityChecks();
@@ -97,3 +98,5 @@ try {
   console.error(JSON.stringify({ event: 'phase3c-rehearsal-auth-fixture', mode, result: 'FAIL', errorClass: typeof error?.code === 'string' ? error.code : 'FAIL_CLOSED' }));
   process.exitCode = 1;
 } finally { await client.end().catch(() => {}); }
+}
+void main();
