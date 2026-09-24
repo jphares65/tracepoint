@@ -8,4 +8,5 @@ new Phase3cRehearsalAppStack(app, 'tracepoint-production-phase3c-rehearsal-app',
   terminationProtection: true,
   description: 'Isolated non-authoritative Phase 3C object-delivery rehearsal; no public or Phase 3B service ownership',
   imageDigest: app.node.tryGetContext('imageDigest'),
+  activate: app.node.tryGetContext('activate') === 'true',
 });

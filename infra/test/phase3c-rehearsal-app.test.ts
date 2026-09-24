@@ -16,6 +16,7 @@ test('rehearsal deployment owns only a new service, host, client, and pinned dat
   const resources = Object.values(template().Resources) as Array<{ Type: string; Properties: Record<string, unknown> }>;
   const ofType = (type: string) => resources.filter(resource => resource.Type === type);
   assert.equal(ofType('AWS::ECS::Service').length, 1);
+  assert.equal(ofType('AWS::ECS::Service')[0].Properties.DesiredCount, 0);
   assert.equal(ofType('AWS::Cognito::UserPoolClient').length, 1);
   assert.equal(ofType('AWS::Route53::RecordSet').length, 1);
   assert.equal(ofType('AWS::SecretsManager::Secret').length, 2);

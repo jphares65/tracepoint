@@ -27,7 +27,7 @@ const patchKeys = [
 ];
 const accessCidrs = ['76.116.100.225/32', '50.174.33.3/32'];
 
-export interface Phase3cRehearsalAppProps extends cdk.StackProps { imageDigest: string }
+export interface Phase3cRehearsalAppProps extends cdk.StackProps { imageDigest: string; activate?: boolean }
 
 export class Phase3cRehearsalAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: Phase3cRehearsalAppProps) {
@@ -167,7 +167,9 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
     });
     const service = new ecs.FargateService(this, 'Service', {
       cluster, serviceName: 'tracepoint-production-phase3c-rehearsal-app', taskDefinition: task,
-      desiredCount: 1, assignPublicIp: true, minHealthyPercent: 100,
+      // The first deployment only provisions infrastructure and independent secrets.
+      // Activate one task only after control-plane and secret attestation.
+      desiredCount: props.activate === true ? 1 : 0, assignPublicIp: true, minHealthyPercent: 100,
       vpcSubnets: { subnets: [ec2.Subnet.fromSubnetId(this, 'TaskSubnet', 'subnet-0f4cbed3e60d90bfc')] },
       securityGroups: [taskSg], circuitBreaker: { rollback: true },
     });
