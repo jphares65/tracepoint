@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parsePostgresPoolConfiguration } from "./postgres-pool-core.ts";
+import { parsePostgresPoolConfiguration, shadowDatabaseHost } from "./postgres-pool-core.ts";
 
 const secret = { host: "tracepoint.cluster-abc123.us-east-1.rds.amazonaws.com", port: 5432, username: "tracepoint_app", password: "synthetic-password-at-least-twenty", dbname: "tracepoint" };
 const valid = { TRACEPOINT_DATA_PROVIDER: "postgres", AWS_REGION: "us-east-1", TRACEPOINT_DATABASE_CA_PATH: "/app/rds-ca.pem", TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify(secret) };
@@ -31,4 +31,22 @@ test("shadow mode pins the quarantined database host", () => {
     TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({ ...secret, host: shadowHost }),
   }).secret.host, shadowHost);
   assert.throws(() => parsePostgresPoolConfiguration({ ...valid, TRACEPOINT_NOTIFICATION_MODE: "shadow" }));
+});
+
+test("rehearsal object smoke pins its own origin and RDS host without relaxing Phase 3B", () => {
+  const rehearsalHost = "tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
+  const rehearsal = {
+    ...valid,
+    TRACEPOINT_NOTIFICATION_MODE: "shadow",
+    TRACEPOINT_REHEARSAL_APP_MODE: "object-smoke",
+    NEXT_PUBLIC_SITE_URL: "https://shadow-rehearsal.tracepointhq.com",
+    TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({ ...secret, host: rehearsalHost }),
+  };
+  assert.equal(parsePostgresPoolConfiguration(rehearsal).secret.host, rehearsalHost);
+  for (const change of [
+    { NEXT_PUBLIC_SITE_URL: "https://shadow.tracepointhq.com" },
+    { TRACEPOINT_NOTIFICATION_MODE: "normal" },
+    { TRACEPOINT_REHEARSAL_APP_MODE: "off" },
+    { TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({ ...secret, host: shadowDatabaseHost }) },
+  ]) assert.throws(() => parsePostgresPoolConfiguration({ ...rehearsal, ...change }));
 });

@@ -27,6 +27,7 @@ phases:
       - docker build --pull -f Dockerfile.shadow --secret id=next_server_actions_encryption_key,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY --build-arg NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" --build-arg DEPLOYMENT_VERSION="$SOURCE_COMMIT" --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.runtime=aws-native-shadow -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker inspect "$ECR_REPOSITORY_URI:$IMAGE_TAG" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' | grep -Fx "$SOURCE_COMMIT"
       - docker run --rm --read-only --entrypoint /nodejs/bin/node "$ECR_REPOSITORY_URI:$IMAGE_TAG" -e 'const fs=require("node:fs");const path="/app/rds-ca.pem";fs.accessSync(path,fs.constants.R_OK);if(!fs.readFileSync(path,"utf8").includes("BEGIN CERTIFICATE"))throw Error("RDS CA missing");console.log("RDS CA readable by non-root runtime")'
+      - docker run --rm --read-only --entrypoint /nodejs/bin/node "$ECR_REPOSITORY_URI:$IMAGE_TAG" -e 'const fs=require("node:fs");fs.accessSync("/app/phase3c-rehearsal-auth-fixture.cjs",fs.constants.R_OK);console.log("Fixed rehearsal fixture readable by non-root runtime")'
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
   post_build:
     commands:
