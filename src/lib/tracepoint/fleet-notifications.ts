@@ -1,10 +1,7 @@
 import "server-only";
+import { notificationDateValue } from "@/lib/notifications/date-value";
 
-function dateValue(value?: string | null) {
-  if (!value) return 0;
-  const parsed = new Date(value.includes("T") ? value : `${value}T00:00:00`).getTime();
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
+const dateValue = notificationDateValue;
 
 export async function collectFleetNotifications(context: any) {
   const roles = Array.isArray(context.roleCodes) ? context.roleCodes : [];
