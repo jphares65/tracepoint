@@ -1182,12 +1182,16 @@ async function runRehearsalSchemaLineage() {
     await client.query("insert into tracepoint_migrations.applied_migrations(kind,name,sha256) values('aws',$1,$2)", [migrations[0].name, migrations[0].sha256]);
     await client.query(auditSql);
     await client.query("insert into tracepoint_migrations.applied_migrations(kind,name,sha256) values('aws',$1,$2)", [migrations[1].name, migrations[1].sha256]);
+    phase = "versioned schema postconditions";
     const newFlow = await client.query("select pg_get_constraintdef(oid) as definition,convalidated from pg_constraint where conrelid='public.authentication_flow_transactions'::regclass and conname='authentication_flow_transactions_check'");
     assert.equal(newFlow.rowCount, 1, "REHEARSAL_NEW_FLOW_CONSTRAINT_MISSING");
     assert.equal(newFlow.rows[0].convalidated, true, "REHEARSAL_NEW_FLOW_CONSTRAINT_NOT_VALIDATED");
     assert.match(newFlow.rows[0].definition, /00:10:00|10 minutes/u, "REHEARSAL_NEW_FLOW_WINDOW_MISMATCH");
-    const newPolicy = await client.query("select policyname,cmd,roles from pg_policies where schemaname='public' and tablename='audit_log'");
-    assert.deepEqual(newPolicy.rows, [{ policyname: "audit_log_select_authorized", cmd: "SELECT", roles: ["authenticated"] }], "REHEARSAL_AUDIT_LOG_POLICY_MISMATCH");
+    // pg exposes pg_policies.roles as name[]; node-postgres returns that type
+    // as a PostgreSQL array literal, not a JavaScript array. Compare the
+    // database-side boolean instead of depending on driver array decoding.
+    const newPolicy = await client.query("select policyname,cmd,roles @> array['authenticated']::name[] as authenticated from pg_policies where schemaname='public' and tablename='audit_log'");
+    assert.deepEqual(newPolicy.rows, [{ policyname: "audit_log_select_authorized", cmd: "SELECT", authenticated: true }], "REHEARSAL_AUDIT_LOG_POLICY_MISMATCH");
     const grant = await client.query("select has_table_privilege('authenticated','public.audit_log','SELECT') as allowed");
     assert.equal(grant.rows[0].allowed, true, "REHEARSAL_AUDIT_LOG_READ_GRANT_MISSING");
     const newLineage = await client.query("select count(*)::int as count from tracepoint_migrations.applied_migrations");
