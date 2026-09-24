@@ -2,6 +2,7 @@
 // The fixed synthetic user can be removed with the cleanup mode after smoke testing.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
+import { isRehearsalCognitoSubject } from './phase3c-rehearsal-subject.mjs';
 
 const targetHost = 'tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
 const userId = 'c38e1b61-551b-4519-ae3e-6b0f76a1ac01';
@@ -15,8 +16,7 @@ const patches = Object.freeze([
 ]);
 const mode = process.argv[2];
 const subject = process.env.TRACEPOINT_REHEARSAL_COGNITO_SUB ?? '';
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-if (!['create', 'verify', 'cleanup'].includes(mode) || !uuid.test(subject)) throw Error('Fixture mode or subject invalid.');
+if (!['create', 'verify', 'cleanup'].includes(mode) || !isRehearsalCognitoSubject(subject)) throw Error('Fixture mode or subject invalid.');
 const secret = JSON.parse(process.env.TRACEPOINT_DATABASE_SECRET_JSON ?? 'null');
 if (secret?.host !== targetHost || secret?.dbname !== 'tracepoint' || secret?.port !== 5432 || secret?.username !== 'tracepoint_migrator' || typeof secret?.password !== 'string' || secret.password.length < 20) {
   throw Error('Rehearsal fixture target identity mismatch.');
