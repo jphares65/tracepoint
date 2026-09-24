@@ -27,7 +27,7 @@ const patchKeys = [
 ];
 const accessCidrs = ['76.116.100.225/32', '50.174.33.3/32'];
 
-export interface Phase3cRehearsalAppProps extends cdk.StackProps { imageDigest: string; activate?: boolean }
+export interface Phase3cRehearsalAppProps extends cdk.StackProps { imageDigest: string; activate?: boolean; enforceTotp?: boolean }
 
 export class Phase3cRehearsalAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: Phase3cRehearsalAppProps) {
@@ -125,8 +125,11 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
       accountRecoverySetting: { recoveryMechanisms: [{ name: 'verified_email', priority: 1 }] },
       policies: { passwordPolicy: { minimumLength: 14, requireLowercase: true, requireUppercase: true,
         requireNumbers: true, requireSymbols: true, temporaryPasswordValidityDays: 1 } },
-      mfaConfiguration: 'ON',
-      enabledMfas: ['SOFTWARE_TOKEN_MFA'],
+      // CreateUserPool cannot create a TOTP-only pool with MFA ON. The first
+      // stack update leaves the service stopped and creates this pool OFF;
+      // the second update enables required TOTP before any user or task starts.
+      mfaConfiguration: props.enforceTotp === true ? 'ON' : 'OFF',
+      ...(props.enforceTotp === true ? { enabledMfas: ['SOFTWARE_TOKEN_MFA'] } : {}),
     });
     rehearsalPool.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
     new cognito.CfnUserPoolDomain(this, 'DedicatedRehearsalUserPoolDomain', {
@@ -202,7 +205,8 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
       cluster, serviceName: 'tracepoint-production-phase3c-rehearsal-app', taskDefinition: task,
       // The first deployment only provisions infrastructure and independent secrets.
       // Activate one task only after control-plane and secret attestation.
-      desiredCount: props.activate === true ? 1 : 0, assignPublicIp: true, minHealthyPercent: 100,
+      desiredCount: props.activate === true && props.enforceTotp === true ? 1 : 0,
+      assignPublicIp: true, minHealthyPercent: 100,
       vpcSubnets: { subnets: [ec2.Subnet.fromSubnetId(this, 'TaskSubnet', 'subnet-0f4cbed3e60d90bfc')] },
       securityGroups: [taskSg], circuitBreaker: { rollback: true },
     });

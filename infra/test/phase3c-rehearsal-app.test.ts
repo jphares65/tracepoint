@@ -8,7 +8,7 @@ const digest = `sha256:${'a'.repeat(64)}`;
 function template() {
   const app = new cdk.App();
   return Template.fromStack(new Phase3cRehearsalAppStack(app, 'Rehearsal', {
-    env: { account: '193644343389', region: 'us-east-1' }, imageDigest: digest,
+    env: { account: '193644343389', region: 'us-east-1' }, imageDigest: digest, enforceTotp: true,
   })).toJSON();
 }
 
@@ -51,6 +51,19 @@ test('rehearsal deployment owns a dedicated pool/client and retains the old shar
   assert.match(JSON.stringify(fixture), /DedicatedRehearsalUserPool/);
   assert.match(JSON.stringify(web), /DedicatedRehearsalUserPool/);
   assert.doesNotMatch(JSON.stringify(web), /phase3c-rehearsal-auth-fixture\.cjs|RehearsalFixtureDatabaseSecret/);
+});
+
+test('initial dedicated-pool creation keeps rehearsal stopped until TOTP is enforced', () => {
+  const app = new cdk.App();
+  const initial = Template.fromStack(new Phase3cRehearsalAppStack(app, 'Initial', {
+    env: { account: '193644343389', region: 'us-east-1' }, imageDigest: digest, activate: true,
+    enforceTotp: false,
+  })).toJSON();
+  const pool = Object.values(initial.Resources).find((resource: any) => resource.Type === 'AWS::Cognito::UserPool') as any;
+  const service = Object.values(initial.Resources).find((resource: any) => resource.Type === 'AWS::ECS::Service') as any;
+  assert.equal(pool.Properties.MfaConfiguration, 'OFF');
+  assert.equal(pool.Properties.EnabledMfas, undefined);
+  assert.equal(service.Properties.DesiredCount, 0);
 });
 
 test('rehearsal ingress and task permissions are constrained', () => {
