@@ -299,6 +299,18 @@ test("two-phase nullable cycle rolls back if a second-phase restoration fails", 
   assert.deepEqual(calls,["begin","insert-attendees","insert-certifications","restore-attendees","restore-certifications","rollback"]);
 });
 test("the object manifest is fixed, checksum complete, and tenant scoped", () => { assert.equal(OBJECT_MANIFEST.length,2); assert.match(objectManifestSha256,/^[0-9a-f]{64}$/); for(const object of OBJECT_MANIFEST){assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`)); assert.throws(()=>validateObjectBytes(object,new Uint8Array(0)),/SIZE/);} assert.notEqual(canonicalRowsHash([{a:1}]),canonicalRowsHash([{a:2}])); });
+test("object copy verifies source bytes before create-only writes and never probes absent keys first", () => {
+  const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
+  const start = runner.indexOf("async function runObjects()");
+  const end = runner.indexOf("function auditIdRange", start);
+  const body = runner.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.ok(body.indexOf("await fetchObject(object)") < body.indexOf("new PutObjectCommand"));
+  assert.ok(body.indexOf("new PutObjectCommand") < body.indexOf("await getTargetObject(s3, object)"));
+  assert.match(body, /IfNoneMatch: "\*"/);
+  assert.match(body, /httpStatusCode !== 412/);
+  assert.match(body, /validateObjectBytes\(object, target\)/);
+});
 
 function equipmentAssignmentRows({ duplicateActive = false, crossTenant = false, synthetic = false } = {}) {
   const assets = [{ id: "asset-active", department_id: "dept-a", assigned_user_id: "user-a" }, { id: "asset-returned", department_id: "dept-a", assigned_user_id: null }];

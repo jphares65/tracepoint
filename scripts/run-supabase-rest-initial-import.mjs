@@ -1034,7 +1034,32 @@ async function fetchObject(object) { const url = sourceObjectUrl(object); assert
 async function getTargetObject(s3, object) { try { const response = await s3.send(new GetObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" })); const bytes = new Uint8Array(await response.Body.transformToByteArray()); return bytes; } catch (error) { if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return null; throw error; } }
 async function runObjects() {
   const s3 = new S3Client({ region: "us-east-1", maxAttempts: 3 }); let phase = "object preflight";
-  try { const results=[]; for (const object of OBJECT_MANIFEST) { assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH"); let target = await getTargetObject(s3, object); if (target) { validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "verified-existing", bytes: object.bytes, sha256: object.sha256 }); continue; } phase = "source object read"; const bytes = await fetchObject(object); phase = "create-only target write"; try { await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } })); } catch (error) { if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error; } phase = "target object verification"; target = await getTargetObject(s3, object); assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE"); validateObjectBytes(object, target); results.push({ keySha256: sha256(object.destinationKey), status: "created-and-verified", bytes: object.bytes, sha256: object.sha256 }); } console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false })); }
+  try {
+    const sourceBytes = new Map();
+    for (const object of OBJECT_MANIFEST) {
+      assert.ok(object.destinationKey.startsWith(`department-assets/${object.departmentId}/`), "OBJECT_TENANT_SCOPE_MISMATCH");
+      phase = "source object read";
+      sourceBytes.set(object.destinationKey, await fetchObject(object));
+    }
+    const results = [];
+    for (const object of OBJECT_MANIFEST) {
+      const bytes = sourceBytes.get(object.destinationKey);
+      phase = "create-only target write";
+      let created = true;
+      try {
+        await s3.send(new PutObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, Body: bytes, ContentLength: bytes.byteLength, ContentType: object.contentType, ChecksumSHA256: createHash("sha256").update(bytes).digest("base64"), IfNoneMatch: "*", Metadata: { "tracepoint-department-id": object.departmentId, "tracepoint-domain": "department-patch" } }));
+      } catch (error) {
+        if (error?.name !== "PreconditionFailed" && error?.$metadata?.httpStatusCode !== 412) throw error;
+        created = false;
+      }
+      phase = "target object verification";
+      const target = await getTargetObject(s3, object);
+      assert.ok(target, "TARGET_OBJECT_MISSING_AFTER_CREATE");
+      validateObjectBytes(object, target);
+      results.push({ keySha256: sha256(object.destinationKey), status: created ? "created-and-verified" : "verified-existing", bytes: object.bytes, sha256: object.sha256 });
+    }
+    console.log(JSON.stringify({ status: "PASSED", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mode, sourceReadOnly: true, objects: results, objectCount: OBJECT_MANIFEST.length, totalBytes: OBJECT_MANIFEST.reduce((total, object) => total + object.bytes, 0), targetBucket: TARGET_BUCKET, targetVersioningRequired: true, targetClientsInitialized: true, databaseClientsInitialized: false }));
+  }
   catch (error) { console.error(JSON.stringify(safeError(error, phase))); process.exitCode = 1; } finally { s3.destroy(); }
 }
 function auditIdRange(rows) { const ids=rows.map(row=>BigInt(row.id)); return ids.length?{min:ids.reduce((a,b)=>a<b?a:b).toString(),max:ids.reduce((a,b)=>a>b?a:b).toString()}:null; }
