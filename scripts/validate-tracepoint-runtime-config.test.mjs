@@ -75,4 +75,10 @@ test('AWS-native shadow requires isolated site, quarantined RDS, and no legacy c
  assert.throws(()=>validateTracePointRuntimeConfig({...native,NEXT_PUBLIC_SITE_URL:'https://tracepointhq.com'}),/NEXT_PUBLIC_SITE_URL/);
  assert.throws(()=>validateTracePointRuntimeConfig({...native,TRACEPOINT_DATABASE_SECRET_JSON:JSON.stringify({...JSON.parse(native.TRACEPOINT_DATABASE_SECRET_JSON),host:'other.c8r4sgs089tu.us-east-1.rds.amazonaws.com'})}),/TRACEPOINT_DATABASE_SECRET_JSON/);
  assert.throws(()=>validateTracePointRuntimeConfig({...native,NEXT_PUBLIC_SUPABASE_URL:'https://example.supabase.co'}),/NEXT_PUBLIC_SUPABASE_URL/);
+ const rehearsal={...native,TRACEPOINT_REHEARSAL_APP_MODE:'object-smoke',NEXT_PUBLIC_SITE_URL:'https://shadow-rehearsal.tracepointhq.com',TRACEPOINT_DATABASE_SECRET_JSON:JSON.stringify({...JSON.parse(native.TRACEPOINT_DATABASE_SECRET_JSON),host:'tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com'})};
+ assert.doesNotThrow(()=>validateTracePointRuntimeConfig(rehearsal));
+ assert.throws(()=>validateTracePointRuntimeConfig({...rehearsal,TRACEPOINT_DATABASE_SECRET_JSON:native.TRACEPOINT_DATABASE_SECRET_JSON}),/TRACEPOINT_DATABASE_SECRET_JSON/);
+ assert.throws(()=>validateTracePointRuntimeConfig({...rehearsal,NEXT_PUBLIC_SITE_URL:native.NEXT_PUBLIC_SITE_URL}),/TRACEPOINT_REHEARSAL_APP_MODE/);
+ assert.throws(()=>validateTracePointRuntimeConfig({...native,TRACEPOINT_REHEARSAL_APP_MODE:'object-smoke'}),/TRACEPOINT_REHEARSAL_APP_MODE/);
+ assert.throws(()=>validateTracePointRuntimeConfig({...rehearsal,TRACEPOINT_NOTIFICATION_MODE:'normal'}),/TRACEPOINT_REHEARSAL_APP_MODE/);
 });

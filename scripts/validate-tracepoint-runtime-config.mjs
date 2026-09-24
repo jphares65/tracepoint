@@ -8,6 +8,8 @@ const targets = {
 const legacyRuntimeName = /(^|_)(SUPABASE|BREVO|VERCEL)(_|$)/i;
 const legacyRuntimeEndpoint = /\.supabase\.(?:co|net)|\.vercel\.app|(?:brevo|sendinblue)\.com/i;
 const shadowDatabaseHost = 'tracepoint-production-migration-clean-4272874f-final.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
+const rehearsalDatabaseHost = 'tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
+const rehearsalOrigin = 'https://shadow-rehearsal.tracepointhq.com';
 
 function validateAwsNative(environment) {
   const invalid = [];
@@ -28,6 +30,7 @@ function validateAwsNative(environment) {
   const stage = environment.CONFIGURATION_ENVIRONMENT;
   const account = environment.TRACEPOINT_AWS_ACCOUNT_ID;
   const shadow = environment.TRACEPOINT_NOTIFICATION_MODE === 'shadow';
+  const rehearsal = environment.TRACEPOINT_REHEARSAL_APP_MODE === 'object-smoke';
   if (!targets[stage] || (shadow
     ? stage !== 'production' || !/^https:\/\/shadow(?:-[a-z0-9-]+)?\.tracepointhq\.com$/.test(environment.NEXT_PUBLIC_SITE_URL ?? '')
     : environment.NEXT_PUBLIC_SITE_URL !== targets[stage]?.site)) invalid.push('NEXT_PUBLIC_SITE_URL');
@@ -44,7 +47,8 @@ function validateAwsNative(environment) {
       secret.port !== 5432 || secret.dbname !== 'tracepoint' ||
       !/^[a-z][a-z0-9_]{2,62}$/.test(secret.username ?? '') ||
       typeof secret.password !== 'string' || secret.password.length < 20) invalid.push('TRACEPOINT_DATABASE_SECRET_JSON');
-  if (shadow && secret?.host !== shadowDatabaseHost) invalid.push('TRACEPOINT_DATABASE_SECRET_JSON');
+  if (rehearsal && (!shadow || environment.NEXT_PUBLIC_SITE_URL !== rehearsalOrigin)) invalid.push('TRACEPOINT_REHEARSAL_APP_MODE');
+  if (shadow && secret?.host !== (rehearsal ? rehearsalDatabaseHost : shadowDatabaseHost)) invalid.push('TRACEPOINT_DATABASE_SECRET_JSON');
   if (!new RegExp(`^${environment.AWS_REGION ?? 'invalid'}_[A-Za-z0-9]+$`).test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? '') ||
       !/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? '')) invalid.push('TRACEPOINT_COGNITO_USER_POOL_ID');
   for (const name of ['TRACEPOINT_AUTH_STATE_KEYS','TRACEPOINT_AUTH_REFRESH_KEYS']) {
