@@ -4,6 +4,19 @@ import test from "node:test";
 import { FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, REHEARSAL_SCHEMA_LINEAGE_MODE, attestFinalCleanTargetControlPlane } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
 import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary, normalizeRemovedEquipmentCustody } from "./supabase-rest-import-core.mjs";
+import { POST_COMMIT_RECONCILIATION_MODE } from "./supabase-rest-import-core.mjs";
+test("post-commit rehearsal reconciliation is target-attested and read-only", () => {
+  assert.ok(DATABASE_MODES.includes(POST_COMMIT_RECONCILIATION_MODE));
+  const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
+  const body = runner.slice(runner.indexOf("async function runPostCommitReconciliation()"), runner.indexOf("async function runDatabase()"));
+  assert.match(body, /sourceSnapshot\(\)/);
+  assert.match(body, /targetClient\(target, ca/);
+  assert.match(body, /repeatable read read only/);
+  assert.match(body, /assertDiagnosticReadOnlySql\(sql\)/);
+  assert.match(body, /verifyEquipmentAssignmentHistory\(readOnlyClient/);
+  assert.match(body, /verifyDatabase\(readOnlyClient/);
+  assert.doesNotMatch(body, /importRelation\(|insertIdentityAnchors\(|\binsert into\b|\bupdate public\b|\bdelete from\b|\balter table\b/iu);
+});
 test("removed equipment normalization closes only supported stale custody and preserves all other history", () => {
   const assets = [
     { id: "active-assigned", department_id: "tenant-a", lifecycle_status: "active", assigned_user_id: "user-a", notes: "unchanged" },
