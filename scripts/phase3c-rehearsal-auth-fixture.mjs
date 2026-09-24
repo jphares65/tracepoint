@@ -11,8 +11,8 @@ const poolId = process.env.TRACEPOINT_COGNITO_USER_POOL_ID ?? '';
 if (!/^us-east-1_[A-Za-z0-9]+$/.test(poolId) || poolId === 'us-east-1_diFmWDMe9') throw Error('Dedicated rehearsal Cognito pool is required.');
 const issuer = `https://cognito-idp.us-east-1.amazonaws.com/${poolId}`;
 const patches = Object.freeze([
-  { departmentId: '1d0e2994-4224-4237-8328-71020ba20027', path: 'department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg' },
-  { departmentId: 'd01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0', path: 'department-assets/d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png' },
+  { departmentId: '1d0e2994-4224-4237-8328-71020ba20027', path: '1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg' },
+  { departmentId: 'd01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0', path: 'd01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png' },
 ]);
 const mode = process.argv[2];
 const subject = process.env.TRACEPOINT_REHEARSAL_COGNITO_SUB ?? '';
