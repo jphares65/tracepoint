@@ -510,10 +510,12 @@ async function verifyEquipmentAssignmentHistory(client, snapshot, preflight) {
   assert.equal(evidence.historicalAssignments, 2, "EQUIPMENT_ASSIGNMENT_SOURCE_HISTORY_COUNT_CHANGED");
   return evidence;
 }
-async function verifyDatabase(client, snapshot, preflight) {
+async function verifyDatabase(client, snapshot, preflight, onStep = () => undefined) {
   const sourceTables = []; const targetTables = [];
   for (const relation of IMPORT_RELATIONS) {
+    onStep(`relation:${relation}:target-read`);
     const mapping = preflight.mappings.find(item => item.relation === relation); const sourceRows = snapshot.rows.get(relation) ?? []; const target = await targetRows(client, relation, mapping.sourceColumns);
+    onStep(`relation:${relation}:parity`);
     const auditOperationalRows = relation === "audit_events" ? target.filter(row => Number(row.id) > Math.max(...sourceRows.map(row => Number(row.id)))) : [];
     if (relation === "audit_events") {
       const sourceById = new Map(sourceRows.map(row => [String(row.id), row]));
@@ -526,23 +528,27 @@ async function verifyDatabase(client, snapshot, preflight) {
     sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, sourceTimestampEvidenceSha256: profileReconciliation.sourceCanonicalSha256, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, excludedColumns: profileReconciliation.excludedColumns, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}), ...(relation === "audit_events" ? { reconciliation: "source audit IDs/hash exact; post-source operational rows above source max only", sourceRows: sourceRows.length, postSourceOperationalRows: auditOperationalRows.length } : {}) });
   }
   for (const relation of TARGET_SEEDED_REFERENCE_RELATIONS) {
+    onStep(`reference:${relation}`);
     const sourceRows = snapshot.rows.get(relation) ?? [], reconciliation = preflight.targetSeeded.get(relation);
     sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows), reconciliation: relation === "feature_catalog" ? "target-seeded reference data — excluded by design" : "target-seeded reference data — exact security/catalog parity required" });
     targetTables.push({ name: relation, rows: reconciliation.targetCount, canonicalDataSha256: reconciliation.targetCanonicalSha256, reconciliation: relation === "feature_catalog" ? "target-seeded reference data — excluded by design" : "target-seeded reference data — exact security/catalog parity required" });
   }
   for (const relation of DERIVED_RELATIONS) {
+    onStep(`view:${relation}`);
     const sourceRows = snapshot.rows.get(relation) ?? []; const columns = sourceRows.length ? Object.keys(sourceRows[0]).sort() : (RELATION_ORDER_COLUMNS[relation] ?? ["id"]); const target = await targetRows(client, relation, columns);
     assert.equal(target.length, sourceRows.length, `TARGET_VIEW_ROW_COUNT_MISMATCH:${relation}`); assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_VIEW_HASH_MISMATCH:${relation}`);
     sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(sourceRows) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target) });
   }
+  onStep("foreign-key-validation");
   const invalidForeignKeys = Number((await client.query("select count(*)::int as count from pg_constraint where contype='f' and not convalidated")).rows[0].count); assert.equal(invalidForeignKeys, 0, "TARGET_INVALID_FOREIGN_KEYS");
   const memberships = snapshot.rows.get("department_memberships") ?? [];
+  onStep("evidence-summary");
   return importEvidence({ mappings: preflight.mappings.map(({ relation, mapping }) => ({ relation, mapping })), sourceTables, targetTables, featureCatalog: preflight.featureCatalog, identities: { count: snapshot.users.length, canonicalDataSha256: canonicalRowsHash(snapshot.users) }, memberships: { count: memberships.length, canonicalDataSha256: canonicalRowsHash(memberships) }, baseline: snapshot.baseline });
 }
 async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
-  let phase = "source snapshot", preflight = null, sequenceBefore = [], atomicTransactionStarted = false;
+  let phase = "source snapshot", reconciliationStep = null, preflight = null, sequenceBefore = [], atomicTransactionStarted = false;
   try {
     const snapshot = await sourceSnapshot();
     phase = "target TLS preflight"; await client.connect();
@@ -585,7 +591,7 @@ async function runDatabase() {
     phase = "equipment assignment history reconciliation";
     const equipmentAssignmentHistory = await verifyEquipmentAssignmentHistory(atomicClient, snapshot, preflight);
     phase = "in-transaction target reconciliation";
-    const evidence = await verifyDatabase(atomicClient, snapshot, preflight);
+    const evidence = await verifyDatabase(atomicClient, snapshot, preflight, step => { reconciliationStep = step; });
     phase = "atomic relational transaction commit";
     await client.query("commit"); atomicTransactionStarted = false;
     const sequenceAfter = await sequenceMetadata(client);
@@ -596,7 +602,7 @@ async function runDatabase() {
       await client.query("rollback").catch(() => undefined); atomicTransactionStarted = false;
       const rollback = preflight ? await verifyAtomicRollback(client, preflight).catch(rollbackError => ({ relationalRowsRestored: false, rollbackVerificationError: safeError(rollbackError, "atomic rollback verification") })) : null;
       const sequenceAfterRollback = await sequenceMetadata(client).catch(() => []);
-      console.error(JSON.stringify({ ...safeError(error, phase), atomicRollback: { relationalWritesRolledBack: rollback?.relationalRowsRestored === true, verification: rollback, sequenceBefore, sequenceAfterRollback, sequenceGapsAccepted: true } }));
+      console.error(JSON.stringify({ ...safeError(error, phase), ...(phase === "in-transaction target reconciliation" ? { reconciliationStep } : {}), atomicRollback: { relationalWritesRolledBack: rollback?.relationalRowsRestored === true, verification: rollback, sequenceBefore, sequenceAfterRollback, sequenceGapsAccepted: true } }));
     } else console.error(JSON.stringify(safeError(error, phase)));
     process.exitCode = 1;
   } finally { await client.end().catch(() => undefined); }
