@@ -104,13 +104,46 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
       logGroupName: '/ecs/tracepoint-production-phase3c-rehearsal-app',
       retention: logs.RetentionDays.ONE_MONTH, removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    const client = new cognito.CfnUserPoolClient(this, 'RehearsalCognitoClient', {
+    // Retain the earlier client on the shared pool unchanged. The rehearsal
+    // runtime below uses only the dedicated pool/client and cannot accept
+    // tokens issued by the shared pool.
+    new cognito.CfnUserPoolClient(this, 'RehearsalCognitoClient', {
       userPoolId: 'us-east-1_diFmWDMe9', clientName: 'tracepoint-phase3c-rehearsal-only', generateSecret: false,
       allowedOAuthFlowsUserPoolClient: true, allowedOAuthFlows: ['code'], allowedOAuthScopes: ['openid', 'email', 'profile'],
       callbackUrLs: [`${origin}/api/auth/cognito/callback`], logoutUrLs: [`${origin}/login`],
       supportedIdentityProviders: ['COGNITO'], preventUserExistenceErrors: 'ENABLED',
       idTokenValidity: 15, accessTokenValidity: 15,
       tokenValidityUnits: { idToken: 'minutes', accessToken: 'minutes' },
+    });
+    const rehearsalPool = new cognito.CfnUserPool(this, 'DedicatedRehearsalUserPool', {
+      userPoolName: 'tracepoint-phase3c-rehearsal-only',
+      userPoolTier: 'ESSENTIALS',
+      deletionProtection: 'ACTIVE',
+      usernameAttributes: ['email'],
+      autoVerifiedAttributes: ['email'],
+      adminCreateUserConfig: { allowAdminCreateUserOnly: true },
+      accountRecoverySetting: { recoveryMechanisms: [{ name: 'verified_email', priority: 1 }] },
+      policies: { passwordPolicy: { minimumLength: 14, requireLowercase: true, requireUppercase: true,
+        requireNumbers: true, requireSymbols: true, temporaryPasswordValidityDays: 1 } },
+      mfaConfiguration: 'ON',
+      enabledMfas: ['SOFTWARE_TOKEN_MFA'],
+    });
+    rehearsalPool.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+    new cognito.CfnUserPoolDomain(this, 'DedicatedRehearsalUserPoolDomain', {
+      domain: 'tracepoint-phase3c-rehearsal-193644343389',
+      userPoolId: rehearsalPool.ref,
+      managedLoginVersion: 1,
+    });
+    const client = new cognito.CfnUserPoolClient(this, 'DedicatedRehearsalCognitoClient', {
+      userPoolId: rehearsalPool.ref, clientName: 'tracepoint-phase3c-dedicated-rehearsal', generateSecret: false,
+      allowedOAuthFlowsUserPoolClient: true, allowedOAuthFlows: ['code'],
+      allowedOAuthScopes: ['openid', 'email', 'profile'],
+      callbackUrLs: [`${origin}/api/auth/cognito/callback`], logoutUrLs: [`${origin}/login`],
+      supportedIdentityProviders: ['COGNITO'], preventUserExistenceErrors: 'ENABLED',
+      idTokenValidity: 15, accessTokenValidity: 15, refreshTokenValidity: 1,
+      tokenValidityUnits: { idToken: 'minutes', accessToken: 'minutes', refreshToken: 'days' },
+      refreshTokenRotation: { feature: 'ENABLED', retryGracePeriodSeconds: 0 },
+      enableTokenRevocation: true,
     });
     const appSecret = secretsmanager.Secret.fromSecretCompleteArn(this, 'ApplicationSecret', applicationSecretArn);
     const runtimeDbSecret = secretsmanager.Secret.fromSecretCompleteArn(this, 'DatabaseSecret', dbSecret.ref);
@@ -126,7 +159,7 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
         TRACEPOINT_RUNTIME_PROVIDER_MODE: 'aws-native', TRACEPOINT_DATA_PROVIDER: 'postgres',
         TRACEPOINT_AUTH_PROVIDER: 'cognito', TRACEPOINT_EMAIL_PROVIDER: 'ses', TRACEPOINT_STORAGE_PROVIDER: 's3',
         TRACEPOINT_NOTIFICATION_MODE: 'shadow', TRACEPOINT_REHEARSAL_APP_MODE: 'object-smoke',
-        TRACEPOINT_DATABASE_CA_PATH: '/app/rds-ca.pem', TRACEPOINT_COGNITO_USER_POOL_ID: 'us-east-1_diFmWDMe9',
+        TRACEPOINT_DATABASE_CA_PATH: '/app/rds-ca.pem', TRACEPOINT_COGNITO_USER_POOL_ID: rehearsalPool.ref,
         TRACEPOINT_COGNITO_CLIENT_ID: client.ref, TRACEPOINT_S3_BUCKET: bucketName,
         TRACEPOINT_S3_EXPECTED_OWNER: account, TRACEPOINT_AWS_ACCOUNT_ID: account, AWS_REGION: region,
       },
@@ -156,7 +189,7 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
       image: ecs.ContainerImage.fromEcrRepository(ecr.Repository.fromRepositoryName(this, 'FixtureImageRepository', 'tracepoint-production'), props.imageDigest),
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'fixture' }),
       command: ['/app/phase3c-rehearsal-auth-fixture.cjs', 'create'],
-      environment: { TRACEPOINT_DATABASE_CA_PATH: '/app/rds-ca.pem' },
+      environment: { TRACEPOINT_DATABASE_CA_PATH: '/app/rds-ca.pem', TRACEPOINT_COGNITO_USER_POOL_ID: rehearsalPool.ref },
       secrets: { TRACEPOINT_DATABASE_SECRET_JSON: ecs.Secret.fromSecretsManager(
         secretsmanager.Secret.fromSecretCompleteArn(this, 'FixtureDatabaseSecret', fixtureSecret.ref)) },
       readonlyRootFilesystem: true, user: '65532:65532',
@@ -205,6 +238,7 @@ export class Phase3cRehearsalAppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'FixtureTaskDefinitionArn', { value: fixtureTask.taskDefinitionArn });
     new cdk.CfnOutput(this, 'RehearsalDatabaseSecretArn', { value: dbSecret.ref });
     new cdk.CfnOutput(this, 'RehearsalCognitoClientId', { value: client.ref });
+    new cdk.CfnOutput(this, 'DedicatedRehearsalUserPoolId', { value: rehearsalPool.ref });
     new cdk.CfnOutput(this, 'RehearsalOrigin', { value: origin });
   }
 }

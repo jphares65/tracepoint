@@ -6,7 +6,9 @@ import pg from 'pg';
 const targetHost = 'tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
 const userId = 'c38e1b61-551b-4519-ae3e-6b0f76a1ac01';
 const email = 'jphares+rehearsal@tracepointhq.com';
-const issuer = 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_diFmWDMe9';
+const poolId = process.env.TRACEPOINT_COGNITO_USER_POOL_ID ?? '';
+if (!/^us-east-1_[A-Za-z0-9]+$/.test(poolId) || poolId === 'us-east-1_diFmWDMe9') throw Error('Dedicated rehearsal Cognito pool is required.');
+const issuer = `https://cognito-idp.us-east-1.amazonaws.com/${poolId}`;
 const patches = Object.freeze([
   { departmentId: '1d0e2994-4224-4237-8328-71020ba20027', path: 'department-assets/1d0e2994-4224-4237-8328-71020ba20027/patch-1787431778595.jpg' },
   { departmentId: 'd01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0', path: 'department-assets/d01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0/patch-1782439034425.png' },

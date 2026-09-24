@@ -48,6 +48,8 @@ function validateAwsNative(environment) {
       !/^[a-z][a-z0-9_]{2,62}$/.test(secret.username ?? '') ||
       typeof secret.password !== 'string' || secret.password.length < 20) invalid.push('TRACEPOINT_DATABASE_SECRET_JSON');
   if (rehearsal && (!shadow || environment.NEXT_PUBLIC_SITE_URL !== rehearsalOrigin)) invalid.push('TRACEPOINT_REHEARSAL_APP_MODE');
+  if (rehearsal && environment.TRACEPOINT_COGNITO_USER_POOL_ID === 'us-east-1_diFmWDMe9')
+    invalid.push('TRACEPOINT_COGNITO_USER_POOL_ID');
   if (shadow && secret?.host !== (rehearsal ? rehearsalDatabaseHost : shadowDatabaseHost)) invalid.push('TRACEPOINT_DATABASE_SECRET_JSON');
   if (!new RegExp(`^${environment.AWS_REGION ?? 'invalid'}_[A-Za-z0-9]+$`).test(environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? '') ||
       !/^[A-Za-z0-9]{1,128}$/.test(environment.TRACEPOINT_COGNITO_CLIENT_ID ?? '')) invalid.push('TRACEPOINT_COGNITO_USER_POOL_ID');

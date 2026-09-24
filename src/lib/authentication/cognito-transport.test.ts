@@ -16,6 +16,19 @@ test('login requires same-origin POST and returns only hardened PKCE cookie',asy
  assert.equal((await f.api.begin(post('login',{'sec-fetch-site':'cross-site'}))).status,403);
  const response=await f.api.begin(post('login'));assert.equal(response.status,303);assert.equal(new URL(response.headers.get('location')!).origin,'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com');const cookie=response.headers.get('set-cookie')!;for(const required of ['__Host-tracepoint-cognito-flow=','HttpOnly','Secure','SameSite=Lax','Path=/','Max-Age=600'])assert.ok(cookie.includes(required));assert.equal(cookie.includes('Domain='),false);assert.ok(response.headers.get('cache-control')?.includes('no-store'));
 });
+test('dedicated rehearsal login redirects only to its hosted pool',async()=>{
+ const rehearsal={...config,environment:'production' as const,account:'193644343389',
+  userPoolId:'us-east-1_Dedicated',siteOrigin:'https://shadow-rehearsal.tracepointhq.com',
+  notificationMode:'shadow' as const,rehearsalMode:'object-smoke' as const};
+ const pkce=createCognitoPkce(rehearsal,{async put(){},async take(){return null}});
+ const api=createCognitoTransport(rehearsal,{pkce,async establish(){throw Error('not reached')},
+  async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
+ const response=await api.begin(new Request(rehearsal.siteOrigin+'/api/auth/cognito/login',
+  {method:'POST',headers:{origin:rehearsal.siteOrigin,'sec-fetch-site':'same-origin'}}));
+ assert.equal(response.status,303);
+ assert.equal(new URL(response.headers.get('location')!).origin,
+  'https://tracepoint-phase3c-rehearsal-193644343389.auth.us-east-1.amazoncognito.com');
+});
 test('callback consumes PKCE and returns opaque session without provider tokens or redirect injection',async()=>{
  const f=fixture(),begin=await f.api.begin(post('login')),url=new URL(begin.headers.get('location')!);const flow=begin.headers.get('set-cookie')!.split(';')[0];
  const request=new Request(origin+'/api/auth/cognito/callback?'+new URLSearchParams({state:url.searchParams.get('state')!,code:'synthetic-code',returnTo:'https://evil.invalid'}),{headers:{cookie:flow}});

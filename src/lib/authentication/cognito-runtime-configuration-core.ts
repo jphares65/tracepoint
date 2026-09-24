@@ -67,12 +67,17 @@ export function parseCognitoTargetConfiguration(
   const userPoolId = environment.TRACEPOINT_COGNITO_USER_POOL_ID ?? "";
   const clientId = environment.TRACEPOINT_COGNITO_CLIENT_ID ?? "";
   const mobileClientId = environment.TRACEPOINT_COGNITO_MOBILE_CLIENT_ID?.trim();
+  const rehearsalMode = environment.TRACEPOINT_REHEARSAL_APP_MODE;
   const clientIds = mobileClientId ? [clientId, mobileClientId] : [clientId];
   if (!isCognitoRegion(region) || (stage === "staging" && region !== "us-east-1") || !isCognitoPoolForRegion(userPoolId, region) ||
       clientIds.some(value => !/^[A-Za-z0-9]{1,128}$/.test(value)) || new Set(clientIds).size !== clientIds.length) {
     throw new Error("Invalid Cognito provider target.");
   }
+  if (rehearsalMode !== undefined && (rehearsalMode !== 'object-smoke' || stage !== 'production' ||
+      account !== '193644343389' || region !== 'us-east-1' || userPoolId === 'us-east-1_diFmWDMe9' || mobileClientId))
+    throw new Error('Invalid rehearsal Cognito provider target.');
   return { verification: { environment: stage, account, region, userPoolId, clientId,
+    ...(rehearsalMode === 'object-smoke' ? { rehearsalMode } : {}),
     ...(mobileClientId ? { trustedClientIds: clientIds } : {}) } };
 }
 

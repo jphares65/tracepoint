@@ -5,6 +5,7 @@ import type {AuthenticationProvider} from './provider-core';
 import type {CognitoVerificationConfig} from './cognito-verifier';
 import {validatedCognitoOrigin,type CognitoRedirectConfig} from './cognito-redirect-origin';
 import {shadowCognitoDiagnostic} from './cognito-shadow-diagnostic';
+import {cognitoManagedLoginOrigin} from './cognito-endpoints';
 export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string};
 export const COGNITO_FLOW_LIFETIME_SECONDS=600;
 export interface AuthorizationTransactionStore {
@@ -18,10 +19,13 @@ export function assertCognitoConfiguration(config:CognitoVerificationConfig){
  if(config.region!=='us-east-1'||!/^\d{12}$/.test(config.account)||config.account==='265544358665'||
   (config.environment==='staging'?config.account!=='559054714699':config.environment!=='production'||['559054714699','111111111111'].includes(config.account))||
   !/^us-east-1_[A-Za-z0-9]+$/.test(config.userPoolId)||!/^[A-Za-z0-9]{1,128}$/.test(config.clientId))throw Error('Invalid Cognito PKCE boundary.');
+ if(config.rehearsalMode && (config.rehearsalMode!=='object-smoke'||config.environment!=='production'||
+  config.account!=='193644343389'||config.userPoolId==='us-east-1_diFmWDMe9'))
+  throw Error('Invalid rehearsal Cognito PKCE boundary.');
 }
 export function createCognitoPkce(config:CognitoRedirectConfig,store:AuthorizationTransactionStore,fetchImpl:typeof fetch=fetch,now:()=>number=Date.now){
  assertCognitoConfiguration(config);if(typeof store?.put!=='function'||typeof store?.take!=='function')throw Error('Invalid transaction store.');
- const domain='https://tracepoint-'+config.environment+'-'+config.account+'.auth.us-east-1.amazoncognito.com';
+ const domain=cognitoManagedLoginOrigin(config.environment,config.account,config.region,config.rehearsalMode);
  const callback=validatedCognitoOrigin(config)+'/api/auth/cognito/callback';
  const random=()=>randomBytes(32).toString('base64url');
  return {

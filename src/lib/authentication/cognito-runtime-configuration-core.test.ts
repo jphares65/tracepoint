@@ -54,6 +54,20 @@ test("production normal and shadow origins are exact and fail closed", () => {
     assert.throws(()=>parseCognitoRuntimeConfiguration({...production,TRACEPOINT_NOTIFICATION_MODE:"shadow",NEXT_PUBLIC_SITE_URL:siteOrigin}),/redirect origin/);
 });
 
+test("dedicated rehearsal mode cannot use the shared pool or a different origin", () => {
+  const rehearsal = { ...valid, CONFIGURATION_ENVIRONMENT: "production",
+    TRACEPOINT_AWS_ACCOUNT_ID: "193644343389",
+    TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_Dedicated",
+    TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: undefined,
+    TRACEPOINT_REHEARSAL_APP_MODE: "object-smoke",
+    TRACEPOINT_NOTIFICATION_MODE: "shadow",
+    NEXT_PUBLIC_SITE_URL: "https://shadow-rehearsal.tracepointhq.com" };
+  assert.equal(parseCognitoRuntimeConfiguration(rehearsal).verification.rehearsalMode, "object-smoke");
+  assert.throws(() => parseCognitoRuntimeConfiguration({ ...rehearsal, TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_diFmWDMe9" }));
+  assert.throws(() => parseCognitoRuntimeConfiguration({ ...rehearsal, NEXT_PUBLIC_SITE_URL: "https://shadow.tracepointhq.com" }));
+  assert.throws(() => parseCognitoRuntimeConfiguration({ ...rehearsal, TRACEPOINT_NOTIFICATION_MODE: "normal" }));
+});
+
 test("accepts a bounded rotation window and rejects more than three keys", () => {
   const rotated = { current: key(), previous: key(), oldest: key() };
   assert.doesNotThrow(() => parseCognitoRuntimeConfiguration({

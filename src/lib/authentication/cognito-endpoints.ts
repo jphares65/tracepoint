@@ -31,8 +31,13 @@ export function isCognitoIssuer(value: string) {
   }
 }
 
-export function cognitoManagedLoginOrigin(environment: "staging" | "production", account: string, region: string) {
+export function cognitoManagedLoginOrigin(environment: "staging" | "production", account: string, region: string, rehearsalMode?: 'object-smoke') {
   if (!isCognitoRegion(region) || !/^\d{12}$/.test(account)) throw new Error("Invalid Cognito managed-login target.");
+  if (rehearsalMode) {
+    if (rehearsalMode !== 'object-smoke' || environment !== 'production' || account !== '193644343389' || region !== 'us-east-1')
+      throw new Error('Invalid rehearsal Cognito managed-login target.');
+    return 'https://tracepoint-phase3c-rehearsal-193644343389.auth.us-east-1.amazoncognito.com';
+  }
   const label = isGovCloudCognitoRegion(region) ? "auth-fips" : "auth";
   return `https://tracepoint-${environment}-${account}.${label}.${region}.amazoncognito.com`;
 }

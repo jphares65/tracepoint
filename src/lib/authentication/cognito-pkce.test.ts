@@ -29,6 +29,15 @@ test('production and shadow PKCE callbacks use only their validated exact origin
   assert.equal(new URL((await api.begin()).url).searchParams.get('redirect_uri'),siteOrigin+'/api/auth/cognito/callback');
  }
 });
+test('dedicated rehearsal authorization uses only its pool domain and exact callback',async()=>{
+ const rehearsalConfig={...config,environment:'production' as const,account:'193644343389',userPoolId:'us-east-1_Dedicated',
+  siteOrigin:'https://shadow-rehearsal.tracepointhq.com',notificationMode:'shadow' as const,rehearsalMode:'object-smoke' as const};
+ const api=createCognitoPkce(rehearsalConfig,{async put(){},async take(){return null}});
+ const url=new URL((await api.begin()).url);
+ assert.equal(url.origin,'https://tracepoint-phase3c-rehearsal-193644343389.auth.us-east-1.amazoncognito.com');
+ assert.equal(url.searchParams.get('redirect_uri'),'https://shadow-rehearsal.tracepointhq.com/api/auth/cognito/callback');
+ assert.throws(()=>createCognitoPkce({...rehearsalConfig,userPoolId:'us-east-1_diFmWDMe9'},{async put(){},async take(){return null}}));
+});
 test('callback succeeds inside ten minutes and fails closed at expiry',async()=>{
  const inside=fixture(),accepted=await input(inside);inside.advance(599999);
  assert.deepEqual(await inside.api.complete(accepted.callback,async()=>({userId})),{userId});

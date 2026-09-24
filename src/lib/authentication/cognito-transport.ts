@@ -2,6 +2,7 @@ import type {CognitoRedirectConfig} from './cognito-redirect-origin';
 import {validatedCognitoOrigin} from './cognito-redirect-origin';
 import {shadowCognitoDiagnostic,shadowCognitoDiagnosticsEnabled} from './cognito-shadow-diagnostic';
 import {COGNITO_FLOW_LIFETIME_SECONDS,type CognitoTokens,type createCognitoPkce} from './cognito-pkce';
+import {cognitoManagedLoginOrigin} from './cognito-endpoints';
 
 type SessionReceipt={userId:string;handle:string;expiresAt:number};
 type Pkce=ReturnType<typeof createCognitoPkce>;
@@ -40,7 +41,7 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
    !/^[A-Za-z0-9]{1,128}$/.test(config.clientId)||!/^us-east-1_[A-Za-z0-9]+$/.test(config.userPoolId))throw Error('Invalid Cognito transport target.');
  if(!ports?.pkce||typeof ports.establish!=='function'||typeof ports.rotate!=='function'||typeof ports.revoke!=='function')throw Error('Durable Cognito transport ports required.');
  const origin=validatedCognitoOrigin(config);
- const providerOrigin=`https://tracepoint-${config.environment}-${config.account}.auth.us-east-1.amazoncognito.com`;
+ const providerOrigin=cognitoManagedLoginOrigin(config.environment,config.account,config.region,config.rehearsalMode);
  function response(status:number,code:string,options:{location?:string;cookies?:string[]}={}){
   const headers=new Headers({'Cache-Control':'no-store, private','Pragma':'no-cache','Content-Type':'application/json','Referrer-Policy':'no-referrer'});
   if(options.location)headers.set('Location',options.location);for(const value of options.cookies??[])headers.append('Set-Cookie',value);

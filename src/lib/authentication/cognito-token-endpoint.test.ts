@@ -12,6 +12,15 @@ test('refresh posts once to the fixed client and domain with redirects and cachi
  });
  assert.deepEqual(await endpoint.refresh('synthetic-original'),{accessToken:response.access_token,idToken:response.id_token,refreshToken:response.refresh_token,expiresIn:300});assert.equal(calls,1);
 });
+test('dedicated rehearsal refresh never calls the shared hosted domain',async()=>{
+ const rehearsal={...config,environment:'production' as const,account:'193644343389',
+  userPoolId:'us-east-1_Dedicated',rehearsalMode:'object-smoke' as const};
+ const endpoint=createCognitoTokenEndpoint(rehearsal,async(url)=>{
+  assert.equal(new URL(String(url)).origin,'https://tracepoint-phase3c-rehearsal-193644343389.auth.us-east-1.amazoncognito.com');
+  return Response.json(response);
+ });
+ await endpoint.refresh('synthetic-original');
+});
 test('transport errors and non-success statuses are sanitized and never retried',async()=>{
  for(const status of [0,302,400,429,500]){let calls=0;const endpoint=createCognitoTokenEndpoint(config,async()=>{calls++;if(!status)throw Error('private provider detail');return new Response('private provider detail',{status});});
   await assert.rejects(endpoint.refresh('synthetic-original'),{message:'Cognito token exchange failed. Do not retry; start a new sign-in.'});assert.equal(calls,1);
