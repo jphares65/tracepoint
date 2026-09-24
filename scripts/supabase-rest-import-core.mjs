@@ -78,8 +78,63 @@ export const CONNECTION_PROBE_MODE = "rds-connection-probe";
 export const AUTH_FLOW_WINDOW_INSPECT_MODE = "auth-flow-window-inspect";
 export const AUTH_FLOW_WINDOW_REPAIR_MODE = "auth-flow-window-repair";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
+export const OBJECT_REFERENCE_RECONCILIATION_MODE = "object-reference-reconciliation";
+export const OBJECT_REFERENCE_COLUMNS = Object.freeze([
+  { relation: "departments", column: "patch_url" },
+  { relation: "profiles", column: "avatar_url" },
+  { relation: "equipment_assets", column: "document_url" },
+  { relation: "training_certifications", column: "document_url" },
+  { relation: "fleet_vehicle_documents", column: "document_url" },
+  { relation: "attachments", column: "storage_path" },
+  { relation: "drill_documents", column: "storage_path" },
+]);
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, POST_COMMIT_RECONCILIATION_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, POST_COMMIT_RECONCILIATION_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE]);
+
+export function reconcileObjectReferences(sourceRows, targetRows, column, manifest = OBJECT_MANIFEST) {
+  const expected = new Map(manifest.map(item => [item.destinationKey, item]));
+  const targetById = new Map(targetRows.map(row => [String(row.id), row]));
+  assert.equal(targetById.size, targetRows.length, "OBJECT_REFERENCE_DUPLICATE_TARGET_ID");
+  const summary = { sourceNonNull: 0, targetNonNull: 0, sourceTargetValueMismatches: 0, sourceOnlyRows: 0, targetOnlyRows: 0, copiedReferences: 0, missingCopiedObjects: 0, externalReferences: 0, invalidReferences: 0, sourceHostedTargetLinks: 0, targetDeliveryLinks: 0, referencedObjectKeys: [] };
+  const keys = new Set();
+  const classify = value => {
+    if (typeof value !== "string" || !value.trim()) return { kind: "empty" };
+    if (value.startsWith("/api/settings/department-patch?path=")) {
+      const path = new URL(value, "https://shadow.tracepointhq.com").searchParams.get("path");
+      return { kind: "delivery", key: path ? `department-assets/${path}` : null };
+    }
+    if (value.startsWith("/")) return { kind: "invalid" };
+    if (!/^https?:\/\//iu.test(value)) return { kind: "object", key: column === "storage_path" ? `attachments/${value}` : null };
+    let parsed;
+    try { parsed = new URL(value); } catch { return { kind: "invalid" }; }
+    if (parsed.origin !== PROJECT_URL) return { kind: "external" };
+    const match = /^\/storage\/v1\/object\/(?:public\/)?(department-assets|tracepoint-attachments)\/(.+)$/u.exec(decodeURIComponent(parsed.pathname));
+    return match ? { kind: "source-object", key: `${match[1] === "tracepoint-attachments" ? "attachments" : match[1]}/${match[2]}` } : { kind: "invalid" };
+  };
+  for (const row of sourceRows) {
+    const target = targetById.get(String(row.id));
+    if (!target) { summary.sourceOnlyRows++; continue; }
+    targetById.delete(String(row.id));
+    const sourceValue = row[column], targetValue = target[column];
+    if (sourceValue != null && sourceValue !== "") summary.sourceNonNull++;
+    if (targetValue != null && targetValue !== "") summary.targetNonNull++;
+    if (sourceValue !== targetValue) summary.sourceTargetValueMismatches++;
+    const ref = classify(sourceValue);
+    if (ref.kind === "empty") continue;
+    if (ref.kind === "external") { summary.externalReferences++; continue; }
+    if (!ref.key) { summary.invalidReferences++; continue; }
+    const object = expected.get(ref.key);
+    if (!object) { summary.missingCopiedObjects++; continue; }
+    if (row.department_id && row.department_id !== object.departmentId || column === "patch_url" && row.id !== object.departmentId) { summary.invalidReferences++; continue; }
+    summary.copiedReferences++; keys.add(ref.key);
+    const targetRef = classify(targetValue);
+    if (targetRef.kind === "source-object" && targetRef.key === ref.key) summary.sourceHostedTargetLinks++;
+    if (targetRef.kind === "delivery" && targetRef.key === ref.key) summary.targetDeliveryLinks++;
+  }
+  summary.targetOnlyRows = targetById.size;
+  summary.referencedObjectKeys = [...keys].map(key => sha256(key)).sort();
+  return summary;
+}
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");

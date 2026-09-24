@@ -11,11 +11,11 @@ import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
 import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
 import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary } from "./supabase-rest-import-core.mjs";
-import { POST_COMMIT_RECONCILIATION_MODE } from "./supabase-rest-import-core.mjs";
+import { POST_COMMIT_RECONCILIATION_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, OBJECT_REFERENCE_COLUMNS, reconcileObjectReferences } from "./supabase-rest-import-core.mjs";
 import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, REHEARSAL_SCHEMA_LINEAGE_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, attestFinalCleanTargetControlPlane, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, normalizeRemovedEquipmentCustody, nullableTrainingCertificationCyclePlan, quote, reconcileDerivedAdministratorAssignments, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === POST_COMMIT_RECONCILIATION_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === POST_COMMIT_RECONCILIATION_MODE || mode === OBJECT_REFERENCE_RECONCILIATION_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
 let headers = null;
@@ -595,6 +595,42 @@ async function runPostCommitReconciliation() {
     await client.query("commit");
     inReadOnlyTransaction = false;
     console.log(JSON.stringify({ status: "PASSED", mode, sourceArtifact: snapshot.artifact, target: client.migrationTargetAttestation, sourceReadOnly: true, targetReadOnly: true, writesPerformed: false, lineage, identities: authUsers, equipmentAssignmentHistory, identitySequences, evidence }));
+  } catch (error) {
+    if (inReadOnlyTransaction) await client.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally { await client.end().catch(() => undefined); }
+}
+async function runObjectReferenceReconciliation() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const snapshot = await sourceSnapshot();
+  const client = targetClient(target, ca, "tracepoint-object-reference-reconciliation");
+  let phase = "target TLS attestation", inReadOnlyTransaction = false;
+  try {
+    await client.connect();
+    await client.query("begin transaction isolation level repeatable read read only");
+    inReadOnlyTransaction = true;
+    const summaries = [];
+    for (const { relation, column } of OBJECT_REFERENCE_COLUMNS) {
+      phase = `object reference metadata:${relation}`;
+      const columns = await queryColumns(client, relation);
+      assert.ok(columns.some(item => item.column_name === column), `OBJECT_REFERENCE_COLUMN_MISSING:${relation}`);
+      const sql = `select id,department_id,${quote(column)} from public.${quote(relation)}`;
+      const hasDepartment = columns.some(item => item.column_name === "department_id");
+      const result = await client.query(assertDiagnosticReadOnlySql(hasDepartment ? sql : `select id,${quote(column)} from public.${quote(relation)}`));
+      const summary = reconcileObjectReferences(snapshot.rows.get(relation) ?? [], result.rows, column);
+      summaries.push({ relation, column, ...summary });
+    }
+    await client.query("commit");
+    inReadOnlyTransaction = false;
+    const unmatched = summaries.reduce((n, item) => n + item.missingCopiedObjects + item.invalidReferences + item.sourceOnlyRows + item.targetOnlyRows, 0);
+    const sourceHostedTargetLinks = summaries.reduce((n, item) => n + item.sourceHostedTargetLinks, 0);
+    console.log(JSON.stringify({ status: unmatched === 0 ? "PASSED" : "BLOCKED", mode, sourceArtifact: { versionId: snapshot.artifact.versionId, wholeFileSha256: snapshot.artifact.wholeFileSha256, masterSha256: snapshot.artifact.masterSha256 }, target: client.migrationTargetAttestation, sourceReadOnly: true, targetReadOnly: true, writesPerformed: false, manifestObjectCount: OBJECT_MANIFEST.length, summaries, unmatchedReferences: unmatched, sourceHostedTargetLinks, applicationDeliveryReady: unmatched === 0 && sourceHostedTargetLinks === 0 }));
+    if (unmatched) process.exitCode = 1;
   } catch (error) {
     if (inReadOnlyTransaction) await client.query("rollback").catch(() => undefined);
     console.error(JSON.stringify(safeError(error, phase)));
@@ -1385,6 +1421,7 @@ async function runEquipmentAssetsParityDiagnostic() {
 
 async function runReviewedMode() {
   if (mode === POST_COMMIT_RECONCILIATION_MODE) return runPostCommitReconciliation();
+  if (mode === OBJECT_REFERENCE_RECONCILIATION_MODE) return runObjectReferenceReconciliation();
   if (mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE) return runEquipmentAssetsParityDiagnostic();
   if (mode === REHEARSAL_SCHEMA_LINEAGE_MODE) return runRehearsalSchemaLineage();
   if (mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE) return runAuthFlowWindowContract();
