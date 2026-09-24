@@ -8,7 +8,7 @@ import { POST_COMMIT_RECONCILIATION_MODE } from "./supabase-rest-import-core.mjs
 test("post-commit rehearsal reconciliation is target-attested and read-only", () => {
   assert.ok(DATABASE_MODES.includes(POST_COMMIT_RECONCILIATION_MODE));
   const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
-  const body = runner.slice(runner.indexOf("async function runPostCommitReconciliation()"), runner.indexOf("async function runDatabase()"));
+  const body = runner.slice(runner.indexOf("async function runPostCommitReconciliation()"), runner.indexOf("async function runObjectReferenceReconciliation()"));
   assert.match(body, /sourceSnapshot\(\)/);
   assert.match(body, /targetClient\(target, ca/);
   assert.match(body, /repeatable read read only/);
@@ -142,7 +142,47 @@ test("AWS auth-flow window migration is narrow and the runner attests before the
   assert.match(body, /beyondTenMinutesRejected/u);
   assert.match(body, /AUTH_FLOW_OTHER_CONSTRAINT_CHANGED/u);
 });
-import { CLEAN_TARGET_HOST, CONNECTION_PROBE_MODE, COPY_RELATIONS, DATABASE_MODES, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, OBJECT_REFERENCE_RECONCILIATION_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_SEEDED_REFERENCE_RELATIONS, TARGET_HOST, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, equipmentAssignmentHistoryImportGuardEnabled, executeNullableTrainingCertificationCycle, identityPreservingInsertSql, insertSql, migrationAnchorProfileSemanticHash, nullableTrainingCertificationCyclePlan, objectManifestSha256, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileObjectReferences, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, summarizeSourceColumn, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
+import { CLEAN_TARGET_HOST, CONNECTION_PROBE_MODE, COPY_RELATIONS, DATABASE_MODES, DEPARTMENT_PATCH_NORMALIZATION_MODE, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, OBJECT_REFERENCE_RECONCILIATION_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_SEEDED_REFERENCE_RELATIONS, TARGET_HOST, assertDiagnosticReadOnlySql, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, equipmentAssignmentHistoryImportGuardEnabled, executeNullableTrainingCertificationCycle, identityPreservingInsertSql, insertSql, migrationAnchorProfileSemanticHash, normalizeDepartmentPatchReference, normalizeDepartmentPatchRows, nullableTrainingCertificationCyclePlan, objectManifestSha256, quote, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileNormalizedDepartmentRows, reconcileObjectReferences, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, summarizeSourceColumn, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
+
+test("department patch normalization is exact, tenant-scoped, idempotent, and preserves unrelated fields", () => {
+  const object = OBJECT_MANIFEST[0];
+  const legacy = `https://izlkwggluhlhzlumtzes.supabase.co/storage/v1/object/public/department-assets/${object.sourceKey}`;
+  const canonical = `/api/settings/department-patch?path=${encodeURIComponent(object.sourceKey)}`;
+  const original = [{ id: object.departmentId, patch_url: legacy, name: "unchanged" }];
+  const first = normalizeDepartmentPatchRows(original);
+  assert.equal(first.rows[0].patch_url, canonical);
+  assert.equal(first.rows[0].name, "unchanged");
+  assert.equal(original[0].patch_url, legacy);
+  assert.equal(first.evidence.changed, 1);
+  assert.equal(normalizeDepartmentPatchRows(first.rows).evidence.changed, 0);
+  assert.equal(normalizeDepartmentPatchReference(canonical, object.departmentId), canonical);
+  assert.throws(() => normalizeDepartmentPatchReference(legacy, OBJECT_MANIFEST[1].departmentId), /TENANT_MISMATCH/);
+  assert.throws(() => normalizeDepartmentPatchReference(legacy, object.departmentId, []), /OBJECT_NOT_IN_MANIFEST/);
+  assert.throws(() => normalizeDepartmentPatchReference("https://other.example/" + object.sourceKey, object.departmentId), /ORIGIN_INVALID/);
+  assert.throws(() => normalizeDepartmentPatchReference("not-a-url", object.departmentId), /URL_INVALID/);
+  assert.ok(DATABASE_MODES.includes(DEPARTMENT_PATCH_NORMALIZATION_MODE));
+});
+
+test("normalized department parity excludes only trigger-generated updated_at and detects other drift", () => {
+  const object = OBJECT_MANIFEST[0], source = [{ id: object.departmentId, patch_url: `https://izlkwggluhlhzlumtzes.supabase.co/storage/v1/object/public/department-assets/${object.sourceKey}`, updated_at: "2026-01-01T00:00:00.000Z", name: "same" }];
+  const normalized = normalizeDepartmentPatchRows(source).rows;
+  const target = [{ ...normalized[0], updated_at: "2026-01-02T00:00:00.000Z" }];
+  assert.equal(reconcileNormalizedDepartmentRows(source, normalized, target, Date.parse("2026-01-03T00:00:00Z")).normalizedCount, 1);
+  assert.throws(() => reconcileNormalizedDepartmentRows(source, normalized, [{ ...target[0], name: "changed" }], Date.parse("2026-01-03T00:00:00Z")), /SEMANTIC_PARITY_MISMATCH/);
+  assert.throws(() => reconcileNormalizedDepartmentRows(source, normalized, [{ ...target[0], updated_at: "2025-12-31T00:00:00Z" }], Date.parse("2026-01-03T00:00:00Z")), /UPDATED_AT_UNEXPLAINED/);
+});
+
+test("department patch repair mode is artifact-pinned, target-attested, and updates only exact department references", () => {
+  const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
+  const body = runner.slice(runner.indexOf("async function runDepartmentPatchNormalization()"), runner.indexOf("async function runDatabase()"));
+  assert.match(body, /normalizedPatchSnapshot\(await sourceSnapshot\(\)\)/);
+  assert.match(body, /targetClient\(target, ca/);
+  assert.match(body, /validateObjectBytes\(object, bytes\)/);
+  assert.match(body, /begin transaction isolation level serializable/);
+  assert.match(body, /update public\.departments set patch_url=\$1 where id=\$2 and patch_url=\$3 returning id/);
+  assert.match(body, /verifyDatabase\(client, snapshot/);
+  assert.doesNotMatch(body, /\b(insert into|delete from|alter table|drop table|grant|revoke)\b/iu);
+});
 
 test("read-only object reference reconciliation detects source-hosted imported patch links", () => {
   const object = OBJECT_MANIFEST[0];

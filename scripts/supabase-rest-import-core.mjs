@@ -79,6 +79,7 @@ export const AUTH_FLOW_WINDOW_INSPECT_MODE = "auth-flow-window-inspect";
 export const AUTH_FLOW_WINDOW_REPAIR_MODE = "auth-flow-window-repair";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
 export const OBJECT_REFERENCE_RECONCILIATION_MODE = "object-reference-reconciliation";
+export const DEPARTMENT_PATCH_NORMALIZATION_MODE = "normalize-department-patch-references";
 export const OBJECT_REFERENCE_COLUMNS = Object.freeze([
   { relation: "departments", column: "patch_url" },
   { relation: "profiles", column: "avatar_url" },
@@ -89,7 +90,61 @@ export const OBJECT_REFERENCE_COLUMNS = Object.freeze([
   { relation: "drill_documents", column: "storage_path" },
 ]);
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, POST_COMMIT_RECONCILIATION_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, POST_COMMIT_RECONCILIATION_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, DEPARTMENT_PATCH_NORMALIZATION_MODE]);
+
+export function normalizeDepartmentPatchReference(value, departmentId, manifest = OBJECT_MANIFEST) {
+  if (value === null || value === undefined || value === "") return value;
+  assert.equal(typeof value, "string", "DEPARTMENT_PATCH_REFERENCE_INVALID");
+  let path;
+  if (value.startsWith("/api/settings/department-patch?")) {
+    const url = new URL(value, "https://shadow.tracepointhq.com");
+    assert.equal(url.pathname, "/api/settings/department-patch", "DEPARTMENT_PATCH_REFERENCE_INVALID");
+    assert.equal([...url.searchParams.keys()].join(), "path", "DEPARTMENT_PATCH_REFERENCE_INVALID");
+    path = url.searchParams.get("path");
+    assert.equal(value, `/api/settings/department-patch?path=${encodeURIComponent(path)}`, "DEPARTMENT_PATCH_REFERENCE_NOT_CANONICAL");
+  } else {
+    let url;
+    try { url = new URL(value); } catch { throw new Error("DEPARTMENT_PATCH_LEGACY_URL_INVALID"); }
+    assert.equal(url.origin, PROJECT_URL, "DEPARTMENT_PATCH_LEGACY_ORIGIN_INVALID");
+    assert.equal(url.search, "", "DEPARTMENT_PATCH_LEGACY_QUERY_INVALID");
+    assert.equal(url.hash, "", "DEPARTMENT_PATCH_LEGACY_FRAGMENT_INVALID");
+    const prefix = "/storage/v1/object/public/department-assets/";
+    assert.ok(url.pathname.startsWith(prefix), "DEPARTMENT_PATCH_LEGACY_PATH_INVALID");
+    path = url.pathname.slice(prefix.length);
+    assert.equal(url.pathname, `${prefix}${path}`, "DEPARTMENT_PATCH_LEGACY_PATH_INVALID");
+  }
+  assert.match(path ?? "", /^[0-9a-f-]{36}\/patch-[0-9]+\.(?:png|jpg|webp)$/u, "DEPARTMENT_PATCH_OBJECT_PATH_INVALID");
+  assert.equal(path.split("/")[0], departmentId, "DEPARTMENT_PATCH_TENANT_MISMATCH");
+  const object = manifest.find(item => item.sourceBucket === "department-assets" && item.sourceKey === path);
+  assert.ok(object, "DEPARTMENT_PATCH_OBJECT_NOT_IN_MANIFEST");
+  assert.equal(object.departmentId, departmentId, "DEPARTMENT_PATCH_OBJECT_TENANT_MISMATCH");
+  return `/api/settings/department-patch?path=${encodeURIComponent(path)}`;
+}
+
+export function normalizeDepartmentPatchRows(rows, manifest = OBJECT_MANIFEST) {
+  const normalized = rows.map(row => ({ ...row, patch_url: normalizeDepartmentPatchReference(row.patch_url, row.id, manifest) }));
+  const changed = normalized.filter((row, index) => row.patch_url !== rows[index].patch_url);
+  return { rows: normalized, evidence: { rule: "department-patch-s3-delivery-v1", changed: changed.length, sourceCanonicalSha256: canonicalRowsHash(rows), normalizedCanonicalSha256: canonicalRowsHash(normalized), stableDepartmentIdHashes: changed.map(row => sha256(row.id)).sort() } };
+}
+
+export function reconcileNormalizedDepartmentRows(originalRows, normalizedRows, targetRows, now = Date.now()) {
+  assert.equal(originalRows.length, normalizedRows.length, "DEPARTMENT_PATCH_SOURCE_COUNT_MISMATCH");
+  assert.equal(targetRows.length, normalizedRows.length, "DEPARTMENT_PATCH_TARGET_COUNT_MISMATCH");
+  const originalById = new Map(originalRows.map(row => [String(row.id), row]));
+  const normalizedById = new Map(normalizedRows.map(row => [String(row.id), row]));
+  assert.equal(originalById.size, originalRows.length, "DEPARTMENT_PATCH_SOURCE_ID_DUPLICATE");
+  assert.equal(normalizedById.size, normalizedRows.length, "DEPARTMENT_PATCH_NORMALIZED_ID_DUPLICATE");
+  const projected = targetRows.map(target => {
+    const original = originalById.get(String(target.id)), expected = normalizedById.get(String(target.id));
+    assert.ok(original && expected, "DEPARTMENT_PATCH_TARGET_ID_UNEXPECTED");
+    if (original.patch_url === expected.patch_url || target.updated_at === expected.updated_at) return target;
+    const actualTime = Date.parse(target.updated_at), sourceTime = Date.parse(expected.updated_at);
+    assert.ok(Number.isFinite(actualTime) && Number.isFinite(sourceTime) && actualTime >= sourceTime && actualTime <= now + 60_000, "DEPARTMENT_PATCH_UPDATED_AT_UNEXPLAINED");
+    return { ...target, updated_at: expected.updated_at };
+  });
+  assert.equal(canonicalRowsHash(projected), canonicalRowsHash(normalizedRows), "DEPARTMENT_PATCH_SEMANTIC_PARITY_MISMATCH");
+  return { normalizedCount: normalizedRows.filter(row => originalById.get(String(row.id))?.patch_url !== row.patch_url).length, sourceCanonicalSha256: canonicalRowsHash(originalRows), normalizedCanonicalSha256: canonicalRowsHash(normalizedRows), targetCanonicalSha256: canonicalRowsHash(targetRows), semanticCanonicalSha256: canonicalRowsHash(projected) };
+}
 
 export function reconcileObjectReferences(sourceRows, targetRows, column, manifest = OBJECT_MANIFEST) {
   const expected = new Map(manifest.map(item => [item.destinationKey, item]));

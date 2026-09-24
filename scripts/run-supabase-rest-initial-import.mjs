@@ -11,11 +11,11 @@ import { AUDIT_ARTIFACT_CLEANUP_MODE } from "./supabase-rest-import-core.mjs";
 import { DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
 import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary } from "./supabase-rest-import-core.mjs";
-import { POST_COMMIT_RECONCILIATION_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, OBJECT_REFERENCE_COLUMNS, reconcileObjectReferences } from "./supabase-rest-import-core.mjs";
+import { POST_COMMIT_RECONCILIATION_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, OBJECT_REFERENCE_COLUMNS, DEPARTMENT_PATCH_NORMALIZATION_MODE, normalizeDepartmentPatchRows, reconcileNormalizedDepartmentRows, reconcileObjectReferences } from "./supabase-rest-import-core.mjs";
 import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, REHEARSAL_SCHEMA_LINEAGE_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, attestFinalCleanTargetControlPlane, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, normalizeRemovedEquipmentCustody, nullableTrainingCertificationCyclePlan, quote, reconcileDerivedAdministratorAssignments, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === POST_COMMIT_RECONCILIATION_MODE || mode === OBJECT_REFERENCE_RECONCILIATION_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === POST_COMMIT_RECONCILIATION_MODE || mode === OBJECT_REFERENCE_RECONCILIATION_MODE || mode === DEPARTMENT_PATCH_NORMALIZATION_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
 validateImportInvocation(process.env, mode);
 const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
 let headers = null;
@@ -113,6 +113,15 @@ async function sourceSnapshot(onBoundary = () => undefined) {
   assert.equal(total, 4723, "SOURCE_TOTAL_ROW_MISMATCH"); assert.equal(users.length, 96, "SOURCE_IDENTITY_COUNT_MISMATCH"); assert.equal(memberships.length, 95, "SOURCE_MEMBERSHIP_COUNT_MISMATCH");
   onBoundary({ event: "post-source-05", boundary: "source-validation-complete", totalRows: total, membershipCount: memberships.length });
   return { rows, users };
+}
+function normalizedPatchSnapshot(snapshot) {
+  assert.ok(snapshot.artifact, "DEPARTMENT_PATCH_NORMALIZATION_REQUIRES_PINNED_ARTIFACT");
+  const originalDepartmentRows = snapshot.rows.get("departments") ?? [];
+  const normalized = normalizeDepartmentPatchRows(originalDepartmentRows);
+  assert.equal(normalized.evidence.changed, 2, "DEPARTMENT_PATCH_SOURCE_REFERENCE_COUNT_CHANGED");
+  snapshot.rows.set("departments", normalized.rows);
+  snapshot.departmentPatchNormalization = { originalDepartmentRows, evidence: normalized.evidence };
+  return snapshot;
 }
 function jsonRows(rows) { return rows.map(row => canonical(row)); }
 async function queryColumns(client, relation) { return (await client.query("select column_name,is_nullable,column_default,(is_identity='YES') as is_identity from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position", [relation])).rows; }
@@ -516,7 +525,7 @@ async function verifyDatabase(client, snapshot, preflight, normalizedEquipment, 
   const sourceTables = []; const targetTables = [];
   for (const relation of IMPORT_RELATIONS) {
     onStep(`relation:${relation}:target-read`);
-    const mapping = preflight.mappings.find(item => item.relation === relation); const originalSourceRows = snapshot.rows.get(relation) ?? []; const sourceRows = relation === "equipment_assets" ? normalizedEquipment.assets : relation === "equipment_asset_assignments" ? normalizedEquipment.assignments : originalSourceRows; const target = await targetRows(client, relation, mapping.sourceColumns);
+    const mapping = preflight.mappings.find(item => item.relation === relation); const originalSourceRows = relation === "departments" && snapshot.departmentPatchNormalization ? snapshot.departmentPatchNormalization.originalDepartmentRows : snapshot.rows.get(relation) ?? []; const sourceRows = relation === "equipment_assets" ? normalizedEquipment.assets : relation === "equipment_asset_assignments" ? normalizedEquipment.assignments : snapshot.rows.get(relation) ?? []; const target = await targetRows(client, relation, mapping.sourceColumns);
     onStep(`relation:${relation}:parity`);
     const auditOperationalRows = relation === "audit_events" ? target.filter(row => Number(row.id) > Math.max(...sourceRows.map(row => Number(row.id)))) : [];
     if (relation === "audit_events") {
@@ -534,8 +543,9 @@ async function verifyDatabase(client, snapshot, preflight, normalizedEquipment, 
     }
     const profileAnchors = relation === "profiles" ? await profilesAreMigrationAnchors(client, sourceRows, target) : false;
     const profileReconciliation = relation === "profiles" ? requireMigrationAnchorProfileParity(sourceRows, target, profileAnchors) : null;
-    if (!profileReconciliation && !derivedAdministratorReconciliation && relation !== "audit_events") assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_ROW_HASH_MISMATCH:${relation}`);
-    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(originalSourceRows), ...(sourceRows !== originalSourceRows ? { normalizedCanonicalSha256: canonicalRowsHash(sourceRows), reconciliation: normalizedEquipment.evidence.rule } : {}), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, sourceTimestampEvidenceSha256: profileReconciliation.sourceCanonicalSha256, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}), ...(derivedAdministratorReconciliation ? { reconciliation: "reserved Administrator assignments target-derived", excludedRows: derivedAdministratorReconciliation.excludedRows } : {}) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, excludedColumns: profileReconciliation.excludedColumns, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}), ...(derivedAdministratorReconciliation ? { reconciliation: "physical ordinary assignments exact; reserved Administrator derived", derivedAdministratorRows: derivedAdministratorReconciliation.derivedAdministratorRows } : {}), ...(relation === "audit_events" ? { reconciliation: "source audit IDs/hash exact; post-source operational rows above source max only", sourceRows: sourceRows.length, postSourceOperationalRows: auditOperationalRows.length } : {}) });
+    const patchReconciliation = relation === "departments" && snapshot.departmentPatchNormalization ? reconcileNormalizedDepartmentRows(originalSourceRows, sourceRows, target) : null;
+    if (!profileReconciliation && !derivedAdministratorReconciliation && !patchReconciliation && relation !== "audit_events") assert.equal(canonicalRowsHash(target), canonicalRowsHash(sourceRows), `TARGET_ROW_HASH_MISMATCH:${relation}`);
+    sourceTables.push({ name: relation, rows: sourceRows.length, canonicalDataSha256: canonicalRowsHash(originalSourceRows), ...(sourceRows !== originalSourceRows ? { normalizedCanonicalSha256: canonicalRowsHash(sourceRows), reconciliation: relation === "departments" ? snapshot.departmentPatchNormalization.evidence.rule : normalizedEquipment.evidence.rule } : {}), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, sourceTimestampEvidenceSha256: profileReconciliation.sourceCanonicalSha256, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}), ...(derivedAdministratorReconciliation ? { reconciliation: "reserved Administrator assignments target-derived", excludedRows: derivedAdministratorReconciliation.excludedRows } : {}) }); targetTables.push({ name: relation, rows: target.length, canonicalDataSha256: canonicalRowsHash(target), ...(patchReconciliation ? { reconciliation: "exact legacy-to-S3 patch mapping; timestamp trigger proven", semanticCanonicalSha256: patchReconciliation.semanticCanonicalSha256, normalizedRows: patchReconciliation.normalizedCount } : {}), ...(profileReconciliation ? { reconciliation: profileReconciliation.classification, excludedColumns: profileReconciliation.excludedColumns, semanticCanonicalSha256: profileReconciliation.semanticCanonicalSha256 } : {}), ...(derivedAdministratorReconciliation ? { reconciliation: "physical ordinary assignments exact; reserved Administrator derived", derivedAdministratorRows: derivedAdministratorReconciliation.derivedAdministratorRows } : {}), ...(relation === "audit_events" ? { reconciliation: "source audit IDs/hash exact; post-source operational rows above source max only", sourceRows: sourceRows.length, postSourceOperationalRows: auditOperationalRows.length } : {}) });
   }
   for (const relation of TARGET_SEEDED_REFERENCE_RELATIONS) {
     onStep(`reference:${relation}`);
@@ -561,7 +571,7 @@ async function runPostCommitReconciliation() {
   assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget));
   const ca = await readFile("/app/rds-ca.pem", "utf8");
-  const snapshot = await sourceSnapshot();
+  const snapshot = normalizedPatchSnapshot(await sourceSnapshot());
   const normalizedEquipment = normalizeRemovedEquipmentCustody(snapshot.rows.get("equipment_assets") ?? [], snapshot.rows.get("equipment_asset_assignments") ?? []);
   const client = targetClient(target, ca, "tracepoint-post-commit-reconciliation");
   let phase = "target TLS attestation", inReadOnlyTransaction = false;
@@ -637,12 +647,84 @@ async function runObjectReferenceReconciliation() {
     process.exitCode = 1;
   } finally { await client.end().catch(() => undefined); }
 }
+async function runDepartmentPatchNormalization() {
+  const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
+  delete process.env.TARGET_DATABASE_SECRET_JSON;
+  assert.ok(rawTarget, "Target migrator secret was not injected");
+  const target = validateTargetSecret(JSON.parse(rawTarget));
+  const ca = await readFile("/app/rds-ca.pem", "utf8");
+  const snapshot = normalizedPatchSnapshot(await sourceSnapshot());
+  const { originalDepartmentRows, evidence: normalization } = snapshot.departmentPatchNormalization;
+  const s3 = new S3Client({ region: "us-east-1", maxAttempts: 1 });
+  let phase = "approved S3 object verification";
+  try {
+    for (const object of OBJECT_MANIFEST) {
+      const response = await s3.send(new GetObjectCommand({ Bucket: TARGET_BUCKET, Key: object.destinationKey, ExpectedBucketOwner: TARGET_ACCOUNT, ChecksumMode: "ENABLED" }));
+      const bytes = new Uint8Array(await response.Body.transformToByteArray());
+      validateObjectBytes(object, bytes);
+      assert.equal(response.ContentType, object.contentType, "DEPARTMENT_PATCH_S3_CONTENT_TYPE_MISMATCH");
+      assert.equal(response.Metadata?.["tracepoint-department-id"], object.departmentId, "DEPARTMENT_PATCH_S3_TENANT_MISMATCH");
+    }
+  } catch (error) {
+    console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+    return;
+  } finally { s3.destroy(); }
+  const client = targetClient(target, ca, "tracepoint-department-patch-normalization");
+  let inTransaction = false;
+  try {
+    phase = "target TLS attestation";
+    await client.connect();
+    await client.query("begin transaction isolation level serializable");
+    inTransaction = true;
+    phase = "exact source-owned department precondition";
+    await client.query("select id from public.departments for update");
+    const columns = sourceColumns(originalDepartmentRows);
+    const before = await targetRows(client, "departments", columns);
+    const expected = snapshot.rows.get("departments");
+    const beforeIsLegacy = canonicalRowsHash(before) === canonicalRowsHash(originalDepartmentRows);
+    if (!beforeIsLegacy) reconcileNormalizedDepartmentRows(originalDepartmentRows, expected, before);
+    const initialAuditMax = Number((await client.query("select coalesce(max(id),0)::bigint as maximum from public.audit_events")).rows[0].maximum);
+    let updated = 0;
+    if (beforeIsLegacy) {
+      for (const original of originalDepartmentRows) {
+        const canonicalRow = expected.find(row => String(row.id) === String(original.id));
+        if (original.patch_url === canonicalRow.patch_url) continue;
+        phase = "exact department patch reference update";
+        const result = await client.query("update public.departments set patch_url=$1 where id=$2 and patch_url=$3 returning id", [canonicalRow.patch_url, original.id, original.patch_url]);
+        assert.equal(result.rowCount, 1, "DEPARTMENT_PATCH_UPDATE_PRECONDITION_FAILED");
+        updated++;
+      }
+      assert.equal(updated, 2, "DEPARTMENT_PATCH_UPDATED_ROW_COUNT_MISMATCH");
+    }
+    phase = "in-transaction canonical reconciliation";
+    const after = await targetRows(client, "departments", columns);
+    const departmentParity = reconcileNormalizedDepartmentRows(originalDepartmentRows, expected, after);
+    const postUpdateAudits = (await client.query("select department_id,entity_type,action from public.audit_events where id>$1 order by id", [initialAuditMax])).rows;
+    assert.ok(postUpdateAudits.length === 0 || postUpdateAudits.length === updated, "DEPARTMENT_PATCH_AUDIT_SIDE_EFFECT_UNEXPECTED");
+    const approvedDepartmentIds = new Set(originalDepartmentRows.filter(row => row.patch_url).map(row => String(row.id)));
+    for (const audit of postUpdateAudits) assert.ok(approvedDepartmentIds.has(String(audit.department_id)) && audit.entity_type === "departments" && audit.action === "update", "DEPARTMENT_PATCH_AUDIT_PROVENANCE_UNEXPECTED");
+    const mappings = [];
+    for (const relation of IMPORT_RELATIONS) mappings.push(validateColumnMapping(relation, snapshot.rows.get(relation) ?? [], await queryColumns(client, relation)));
+    const targetSeeded = await reconcileTargetSeededReferences(client, snapshot);
+    const normalizedEquipment = normalizeRemovedEquipmentCustody(snapshot.rows.get("equipment_assets") ?? [], snapshot.rows.get("equipment_asset_assignments") ?? []);
+    await verifyEquipmentAssignmentHistory(client, snapshot, { mappings }, normalizedEquipment);
+    const reconciliation = await verifyDatabase(client, snapshot, { mappings, targetSeeded }, normalizedEquipment);
+    await client.query("commit");
+    inTransaction = false;
+    console.log(JSON.stringify({ status: "PASSED", mode, sourceArtifact: { versionId: snapshot.artifact.versionId, wholeFileSha256: snapshot.artifact.wholeFileSha256, masterSha256: snapshot.artifact.masterSha256 }, target: client.migrationTargetAttestation, normalization, updated, alreadyNormalized: !beforeIsLegacy, departmentParity, matchedObjects: OBJECT_MANIFEST.length, auditSideEffects: postUpdateAudits.length, fullRelationalReconciliation: { totalSourceRows: reconciliation.totalRelationalRows, relationCount: reconciliation.sourceTables.length, passed: true } }));
+  } catch (error) {
+    if (inTransaction) await client.query("rollback").catch(() => undefined);
+    console.error(JSON.stringify(safeError(error, phase)));
+    process.exitCode = 1;
+  } finally { await client.end().catch(() => undefined); }
+}
 async function runDatabase() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON; delete process.env.TARGET_DATABASE_SECRET_JSON; assert.ok(rawTarget, "Target migrator secret was not injected");
   const target = validateTargetSecret(JSON.parse(rawTarget)); const ca = await readFile("/app/rds-ca.pem", "utf8"); const client = targetClient(target, ca, "tracepoint-rest-initial-import");
   let phase = "source snapshot", reconciliationStep = null, preflight = null, sequenceBefore = [], atomicTransactionStarted = false;
   try {
-    const snapshot = await sourceSnapshot();
+    const snapshot = normalizedPatchSnapshot(await sourceSnapshot());
     const normalizedEquipment = normalizeRemovedEquipmentCustody(snapshot.rows.get("equipment_assets") ?? [], snapshot.rows.get("equipment_asset_assignments") ?? []);
     phase = "target TLS preflight"; await client.connect();
     preflight = await preflightTarget(client, snapshot);
@@ -1422,6 +1504,7 @@ async function runEquipmentAssetsParityDiagnostic() {
 async function runReviewedMode() {
   if (mode === POST_COMMIT_RECONCILIATION_MODE) return runPostCommitReconciliation();
   if (mode === OBJECT_REFERENCE_RECONCILIATION_MODE) return runObjectReferenceReconciliation();
+  if (mode === DEPARTMENT_PATCH_NORMALIZATION_MODE) return runDepartmentPatchNormalization();
   if (mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE) return runEquipmentAssetsParityDiagnostic();
   if (mode === REHEARSAL_SCHEMA_LINEAGE_MODE) return runRehearsalSchemaLineage();
   if (mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE) return runAuthFlowWindowContract();
