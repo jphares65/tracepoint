@@ -12,9 +12,11 @@ export const TARGET_HOST = "tracepoint-production.c8r4sgs089tu.us-east-1.rds.ama
 export const CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
 export const AUDIT_FIRST_CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f-auditfirst.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
 export const ATOMIC_CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f-atomic.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
-export const FINAL_CLEAN_TARGET_HOST = "tracepoint-production-migration-clean-4272874f-final.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
-export const FINAL_CLEAN_TARGET_INSTANCE_ID = "tracepoint-production-migration-clean-4272874f-final";
-export const FINAL_CLEAN_TARGET_RESOURCE_ID = "db-IMK2TUIIRWRFMHQF5LLZWUKPXE";
+// This isolated importer build is bound to the new, disposable rehearsal RDS.
+// The validated Phase 3B shadow RDS retains its separate deployed image/task.
+export const FINAL_CLEAN_TARGET_HOST = "tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
+export const FINAL_CLEAN_TARGET_INSTANCE_ID = "tracepoint-production-migration-rehearsal-4272874f-20260923";
+export const FINAL_CLEAN_TARGET_RESOURCE_ID = "db-WX6GX35AIJ546ZRCZIRQ545B3E";
 export const APPROVED_TARGET_HOSTS = Object.freeze([TARGET_HOST, CLEAN_TARGET_HOST, AUDIT_FIRST_CLEAN_TARGET_HOST, ATOMIC_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_HOST]);
 export const TARGET_DATABASE = "tracepoint";
 export const TARGET_BUCKET = "tracepoint-production-private-193644343389";
@@ -59,6 +61,7 @@ export const quote = value => { assert.match(value, identifier, "Unsafe SQL iden
 export const objectManifestSha256 = sha256(OBJECT_MANIFEST.map(({ sourceBucket, sourceKey, bytes, sha256: digest }) => ({ bucket: sourceBucket, sourceKey, size: bytes, sha256: digest })));
 
 export const SCHEMA_REPAIR_MODE = "schema-repair-firearm-assignments";
+export const REHEARSAL_SCHEMA_LINEAGE_MODE = "schema-repair-rehearsal-aws-lineage";
 export const EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE = "schema-repair-equipment-assets-lifecycle-status";
 export const MIGRATION_MODE_SCHEMA_REPAIR_MODE = "schema-repair-migration-mode-contract";
 export const SCHEMA_SWEEP_MODE = "schema-contract-sweep";
@@ -74,7 +77,7 @@ export const AUTH_FLOW_WINDOW_INSPECT_MODE = "auth-flow-window-inspect";
 export const AUTH_FLOW_WINDOW_REPAIR_MODE = "auth-flow-window-repair";
 export const DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE = "department-role-permissions-auth-diagnostic";
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
-export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
+export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE]);
 
 export function validateImportInvocation(env, mode) {
   assert.equal(env.TRACEPOINT_MIGRATION_RUN_ID, RUN_ID, "Approved migration run ID is required");

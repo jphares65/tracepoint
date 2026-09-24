@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {validateTracePointRuntimeConfig} from './validate-tracepoint-runtime-config.mjs';
 export const productionArchivePaths=['.dockerignore','buildspec.production-image.yml','Dockerfile','eslint.config.mjs','next.config.ts','package.json','package-lock.json','postcss.config.mjs','tsconfig.json','public','src','scripts/start-tracepoint-container.mjs','scripts/validate-tracepoint-runtime-config.mjs'];
 export const productionRestLedgerArchivePaths=['.dockerignore','buildspec.supabase-rest-ledger.yml','Dockerfile.supabase-rest-ledger','package.json','package-lock.json','scripts/run-supabase-rest-ledger.mjs','scripts/supabase-rest-ledger-core.mjs','scripts/supabase-rest-ledger-core.test.mjs','scripts/immutable-source-artifact-validator.mjs','scripts/immutable-source-artifact-validator.test.mjs'];
-export const productionRestInitialImportArchivePaths=['.dockerignore','buildspec.supabase-rest-initial-import.yml','Dockerfile.supabase-rest-initial-import','package.json','package-lock.json','scripts/supabase-rest-ledger-core.mjs','scripts/supabase-rest-import-core.mjs','scripts/supabase-rest-import-core.test.mjs','scripts/immutable-source-artifact-validator.mjs','scripts/run-supabase-rest-initial-import.mjs'];
+export const productionRestInitialImportArchivePaths=['.dockerignore','buildspec.supabase-rest-initial-import.yml','Dockerfile.supabase-rest-initial-import','package.json','package-lock.json','database/aws/022_cognito_flow_window.sql','database/aws/023_audit_log_read_authorization.sql','scripts/supabase-rest-ledger-core.mjs','scripts/supabase-rest-import-core.mjs','scripts/supabase-rest-import-core.test.mjs','scripts/immutable-source-artifact-validator.mjs','scripts/run-supabase-rest-initial-import.mjs'];
 export const productionBuildSecretKeys=['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY'];
 export const productionRuntimeSecretKeys=['SUPABASE_SECRET_KEY','BREVO_API_KEY','NOTIFICATION_DISPATCH_SECRET','NEXT_SERVER_ACTIONS_ENCRYPTION_KEY','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SITE_URL','CONFIGURATION_ENVIRONMENT'];
 export function validateProductionArchive(entries,tracked){
@@ -20,7 +20,8 @@ export function validateProductionRestLedgerArchive(entries,tracked){
 export function validateProductionRestInitialImportArchive(entries,tracked){
  assert.ok(entries.length>0);for(const entry of entries){
   assert.ok(tracked.has(entry),'Untracked REST initial-import archive path');
-  assert.ok(!/(^|\/)\.env($|\.)|(^|\/)\.aws\/|(^|\/)\.git\/|(^|\/)node_modules\/|(^|\/)\.next\/|(^|\/)(coverage|build|out)\/|\.tsbuildinfo$|\.(dump|sql)$|(^|\/)[^/]*(credential|secret)[^/]*$|API KEYS|integration-demo|seed-demo-fleet-equipment|\.(backup|encoding-backup)-|\.before-|\.bak($|-)/i.test(entry),'Prohibited REST initial-import archive path');
+  assert.ok(!/(^|\/)\.env($|\.)|(^|\/)\.aws\/|(^|\/)\.git\/|(^|\/)node_modules\/|(^|\/)\.next\/|(^|\/)(coverage|build|out)\/|\.tsbuildinfo$|\.dump$|(^|\/)[^/]*(credential|secret)[^/]*$|API KEYS|integration-demo|seed-demo-fleet-equipment|\.(backup|encoding-backup)-|\.before-|\.bak($|-)/i.test(entry),'Prohibited REST initial-import archive path');
+  assert.ok(!entry.endsWith('.sql') || ['database/aws/022_cognito_flow_window.sql','database/aws/023_audit_log_read_authorization.sql'].includes(entry),'Only two reviewed AWS migration SQL files may enter the importer archive');
  }
  assert.deepEqual([...entries].sort(),[...productionRestInitialImportArchivePaths].sort(),'REST initial-import archive must contain only isolated migration files');
  return entries.length;

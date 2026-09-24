@@ -1,8 +1,33 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, attestFinalCleanTargetControlPlane } from "./supabase-rest-import-core.mjs";
+import { FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, REHEARSAL_SCHEMA_LINEAGE_MODE, attestFinalCleanTargetControlPlane } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
+test("rehearsal importer rejects the validated shadow RDS and pins the new resource", () => {
+  assert.equal(FINAL_CLEAN_TARGET_INSTANCE_ID, "tracepoint-production-migration-rehearsal-4272874f-20260923");
+  assert.equal(FINAL_CLEAN_TARGET_RESOURCE_ID, "db-WX6GX35AIJ546ZRCZIRQ545B3E");
+  assert.match(FINAL_CLEAN_TARGET_HOST, /^tracepoint-production-migration-rehearsal-4272874f-20260923\./u);
+  const valid = { DBInstanceIdentifier: FINAL_CLEAN_TARGET_INSTANCE_ID, DbiResourceId: FINAL_CLEAN_TARGET_RESOURCE_ID, Endpoint: { Address: FINAL_CLEAN_TARGET_HOST, Port: 5432 }, DBName: "tracepoint", DBInstanceStatus: "available" };
+  assert.doesNotThrow(() => attestFinalCleanTargetControlPlane(valid));
+  assert.throws(() => attestFinalCleanTargetControlPlane({ ...valid, DbiResourceId: "db-IMK2TUIIRWRFMHQF5LLZWUKPXE" }), /MIGRATION_TARGET_RESOURCE_ID_MISMATCH/u);
+  assert.throws(() => attestFinalCleanTargetControlPlane({ ...valid, Endpoint: { Address: "tracepoint-production-migration-clean-4272874f-final.c8r4sgs089tu.us-east-1.rds.amazonaws.com", Port: 5432 } }), /MIGRATION_TARGET_ENDPOINT_MISMATCH/u);
+});
+test("rehearsal lineage mode is limited to two versioned AWS migrations and an empty restored target", () => {
+  assert.ok(DATABASE_MODES.includes(REHEARSAL_SCHEMA_LINEAGE_MODE));
+  const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
+  const start = runner.indexOf("async function runRehearsalSchemaLineage()"), end = runner.indexOf("async function runReviewedMode()", start);
+  const body = runner.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(body, /targetClient\(target, ca/u);
+  assert.match(body, /REHEARSAL_TARGET_NOT_EMPTY/u);
+  assert.match(body, /REHEARSAL_BASELINE_LINEAGE_COUNT_CHANGED/u);
+  assert.match(body, /022_cognito_flow_window\.sql/u);
+  assert.match(body, /023_audit_log_read_authorization\.sql/u);
+  assert.match(body, /REHEARSAL_MIGRATION_HASH_MISMATCH/u);
+  assert.match(body, /REHEARSAL_LINEAGE_NOT_COMPLETE/u);
+  assert.match(body, /await client\.query\("rollback"\)/u);
+  assert.doesNotMatch(body, /sourceSnapshot|SOURCE_SUPABASE_REST_SECRET_JSON|DELETE FROM|TRUNCATE/u);
+});
 test("AWS auth-flow window migration is narrow and the runner attests before the only DDL", () => {
   const migration = readFileSync(new URL("../database/aws/022_cognito_flow_window.sql", import.meta.url), "utf8");
   const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
