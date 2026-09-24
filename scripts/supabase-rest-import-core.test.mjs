@@ -3,7 +3,54 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, REHEARSAL_SCHEMA_LINEAGE_MODE, attestFinalCleanTargetControlPlane } from "./supabase-rest-import-core.mjs";
 import { AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE } from "./supabase-rest-import-core.mjs";
-import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary } from "./supabase-rest-import-core.mjs";
+import { EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, equipmentAssetProjectionSummary, normalizeRemovedEquipmentCustody } from "./supabase-rest-import-core.mjs";
+test("removed equipment normalization closes only supported stale custody and preserves all other history", () => {
+  const assets = [
+    { id: "active-assigned", department_id: "tenant-a", lifecycle_status: "active", assigned_user_id: "user-a", notes: "unchanged" },
+    { id: "active-unassigned", department_id: "tenant-a", lifecycle_status: "active", assigned_user_id: null },
+    { id: "removed-closed", department_id: "tenant-a", lifecycle_status: "removed", assigned_user_id: null, removed_at: "2026-09-03T12:00:00Z", removed_by: "actor-a" },
+    { id: "removed-stale", department_id: "tenant-a", lifecycle_status: "removed", assigned_user_id: "user-b", removed_at: "2026-09-04T12:00:00Z", removed_by: "actor-b" },
+  ];
+  const assignments = [
+    { id: "current", department_id: "tenant-a", equipment_asset_id: "active-assigned", assigned_user_id: "user-a", assigned_at: "2026-09-01T12:00:00Z", returned_at: null },
+    { id: "closed", department_id: "tenant-a", equipment_asset_id: "removed-closed", assigned_user_id: "user-c", assigned_at: "2026-09-01T12:00:00Z", returned_at: "2026-09-02T12:00:00Z" },
+    { id: "stale", department_id: "tenant-a", equipment_asset_id: "removed-stale", assigned_user_id: "user-b", assigned_at: "2026-09-01T12:00:00Z", returned_at: null, returned_by: null, return_notes: null },
+  ];
+  const result = normalizeRemovedEquipmentCustody(assets, assignments);
+  assert.equal(result.assets.find(row => row.id === "removed-stale").assigned_user_id, null);
+  assert.equal(result.assignments.find(row => row.id === "stale").returned_at, assets[3].removed_at);
+  assert.equal(result.assignments.find(row => row.id === "stale").returned_by, assets[3].removed_by);
+  assert.equal(result.assignments.find(row => row.id === "stale").return_notes, "Equipment removed from active inventory");
+  assert.equal(result.assets[0], assets[0]);
+  assert.equal(result.assets[1], assets[1]);
+  assert.equal(result.assets[2], assets[2]);
+  assert.equal(result.assignments[0], assignments[0]);
+  assert.equal(result.assignments[1], assignments[1]);
+  assert.equal(assignments[2].returned_at, null, "immutable source input must not be changed");
+  const evidence = verifyEquipmentAssignmentHistoryContract({ sourceAssets: result.assets, sourceAssignments: result.assignments, targetAssets: structuredClone(result.assets), targetAssignments: structuredClone(result.assignments) });
+  assert.equal(evidence.assignments, 3);
+  assert.equal(evidence.activeAssignments, 1);
+  assert.equal(evidence.historicalAssignments, 2);
+  assert.throws(() => verifyEquipmentAssignmentHistoryContract({ sourceAssets: result.assets, sourceAssignments: result.assignments, targetAssets: result.assets.map(row => row.id === "active-assigned" ? { ...row, notes: "different" } : row), targetAssignments: result.assignments }), /EQUIPMENT_ASSET_SOURCE_TARGET_MISMATCH/);
+  assert.equal(result.evidence.normalizedAssets, 1);
+  assert.equal(result.evidence.closedCustody, 1);
+  assert.doesNotMatch(JSON.stringify(result.evidence), /user-a|user-b|actor-a|actor-b/);
+  const runner = readFileSync(new URL("./run-supabase-rest-initial-import.mjs", import.meta.url), "utf8");
+  assert.match(runner, /normalizeRemovedEquipmentCustody\(snapshot\.rows\.get\("equipment_assets"\)/);
+  assert.match(runner, /normalizedEquipment\.assignments/);
+});
+test("removed equipment normalization fails closed on missing or conflicting custody evidence", () => {
+  const asset = { id: "removed-stale", department_id: "tenant-a", lifecycle_status: "removed", assigned_user_id: "user-a", removed_at: "2026-09-04T12:00:00Z", removed_by: "actor-a" };
+  const assignment = { id: "stale", department_id: "tenant-a", equipment_asset_id: asset.id, assigned_user_id: "user-a", assigned_at: "2026-09-01T12:00:00Z", returned_at: null, return_notes: null };
+  assert.throws(() => normalizeRemovedEquipmentCustody([{ ...asset, removed_at: null }], [assignment]), /CLOSE_TIME_MISSING/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([{ ...asset, removed_by: null }], [assignment]), /CLOSE_ACTOR_MISSING/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([asset], [{ ...assignment, department_id: "tenant-b" }]), /CROSS_TENANT/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([asset], [{ ...assignment, assigned_user_id: "other" }]), /CUSTODIAN_MISMATCH/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([asset], [{ ...assignment, assigned_at: "2026-09-05T12:00:00Z" }]), /CLOSE_BEFORE_ASSIGNMENT/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([asset], [assignment, { ...assignment, id: "duplicate" }]), /CUSTODY_NOT_UNIQUE/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([asset], [{ ...assignment, return_notes: "unexplained" }]), /RETURN_NOTE_AMBIGUOUS/);
+  assert.throws(() => normalizeRemovedEquipmentCustody([{ ...asset, assigned_user_id: null }], [assignment]), /UNEXPECTED_OPEN_CUSTODY/);
+});
 test("equipment parity diagnostic emits only aggregate field counts and has no import path", () => {
   const rows = [{ id: "synthetic-1", lifecycle_status: "removed", assigned_user_id: null, assigned_location: "" }, { id: "synthetic-2", lifecycle_status: "active", assigned_user_id: "synthetic-user", assigned_location: null }];
   const projection = [{ ...rows[0], assigned_location: null }, rows[1]];
@@ -183,7 +230,7 @@ test("department prerequisite bootstrap classification is relation-scoped and fa
 test("audit-first runner requires migration mode to suppress bootstrap artifacts before source history", () => { const runner=readFileSync(new URL("./run-supabase-rest-initial-import.mjs",import.meta.url),"utf8"), start=runner.indexOf("async function runDatabase()"), body=runner.slice(start,runner.indexOf("async function runFeatureCatalogReconciliation()",start)); assert.match(body,/requireIdentityAnchorPrerequisites/); assert.match(body,/insertIdentityAnchors\(atomicClient, snapshot\.users\)/); assert.match(body,/set local \$\{MIGRATION_MODE\.setting\}/); assert.match(body,/assertAuditHistoryEmpty\(atomicClient, "before_identity_anchor_creation"\)/); assert.match(body,/assertAuditHistoryEmpty\(atomicClient, "before_department_prerequisite_bootstrap"\)/); assert.match(body,/assertAuditHistoryEmpty\(atomicClient, "before_source_history"\)/); assert.ok(body.indexOf('"identity anchors\/profile shells"') < body.indexOf('"department prerequisite bootstrap cleanup"')); assert.ok(body.indexOf('"department prerequisite bootstrap cleanup"') < body.indexOf('"source audit history"')); const anchors=runner.slice(runner.indexOf("async function insertIdentityAnchors"),runner.indexOf("async function hydrateMigrationAnchorProfiles")); assert.match(anchors,/TARGET_PROFILE_SHELL_PREEXISTS/); assert.match(anchors,/TARGET_PROFILE_SHELL_ID_SET_MISMATCH/); assert.match(anchors,/assertAuditHistoryEmpty\(client, "after_identity_anchor_creation"\)/); const cleanup=runner.slice(runner.indexOf("async function runDepartmentPrerequisiteBootstrapCleanup"),runner.indexOf("async function insertIdentityAnchors")); assert.match(cleanup,/MIGRATION_MODE_BOOTSTRAP_SIDE_EFFECT/); assert.doesNotMatch(cleanup,/delete from public\.department_rules/); });
 test("initial relational import is one transaction with rollback residue verification and accepted sequence gaps", () => {
   const runner=readFileSync(new URL("./run-supabase-rest-initial-import.mjs",import.meta.url),"utf8"), start=runner.indexOf("async function runDatabase()"), body=runner.slice(start,runner.indexOf("async function runFeatureCatalogReconciliation()",start));
-  assert.match(body,/await client\.query\("begin"\); atomicTransactionStarted = true/); assert.match(body,/const atomicClient = atomicTransactionClient\(client\)/); assert.match(body,/verifyDatabase\(atomicClient, snapshot, preflight, step => \{ reconciliationStep = step; \}\)/); assert.match(body,/await client\.query\("commit"\)/); assert.ok(body.indexOf("verifyDatabase(atomicClient, snapshot, preflight") < body.indexOf('await client.query("commit")')); assert.match(body,/relationalWritesRolledBack/); assert.match(body,/reconciliationStep/);
+  assert.match(body,/await client\.query\("begin"\); atomicTransactionStarted = true/); assert.match(body,/const atomicClient = atomicTransactionClient\(client\)/); assert.match(body,/verifyDatabase\(atomicClient, snapshot, preflight, normalizedEquipment, step => \{ reconciliationStep = step; \}\)/); assert.match(body,/await client\.query\("commit"\)/); assert.ok(body.indexOf("verifyDatabase(atomicClient, snapshot, preflight") < body.indexOf('await client.query("commit")')); assert.match(body,/relationalWritesRolledBack/); assert.match(body,/reconciliationStep/);
   assert.match(body,/await client\.query\("rollback"\)/); assert.match(body,/verifyAtomicRollback\(client, preflight\)/); assert.match(body,/sequenceGapsAccepted: true/); assert.match(body,/sequenceBefore/); assert.match(body,/sequenceAfterRollback/);
 });
 test("target-seeded feature catalog permits only reviewed bootstrap metadata differences", () => { const source=[{code:"analytics",display_name:"Analytics source",description:"source",sort_order:2,is_active:true,created_at:"2026-01-01T00:00:00Z"}]; const target=[{code:"analytics",display_name:"Analytics target",description:null,sort_order:20,is_active:true,created_at:"2026-02-01T00:00:00Z"}]; const result=requireTargetSeededFeatureCatalogParity(reconcileFeatureCatalog(source,target,["code","display_name","description","sort_order","is_active","created_at"])); assert.deepEqual(FEATURE_CATALOG_NON_AUTHORITATIVE_COLUMNS,["created_at"]); assert.equal(result.rows[0].classification,"target-seeded reference data — excluded by design"); assert.equal(result.rows[0].isActiveParity,true); assert.throws(()=>insertSql("feature_catalog",["code"])); });

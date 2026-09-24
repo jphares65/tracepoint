@@ -759,6 +759,62 @@ export function equipmentAssignmentHistoryImportGuardEnabled(value) {
   return value === MIGRATION_MODE.enabledValue;
 }
 
+// The application removal workflow clears the current custodian and closes the
+// existing custody row. Legacy source data can predate that invariant; preserve
+// the source rows unchanged and apply only this bounded import-time projection.
+export function normalizeRemovedEquipmentCustody(sourceAssets, sourceAssignments) {
+  assert.ok(Array.isArray(sourceAssets) && Array.isArray(sourceAssignments), "EQUIPMENT_NORMALIZATION_SOURCE_INVALID");
+  const assignmentsByAsset = new Map();
+  for (const row of sourceAssignments) {
+    const key = String(row.equipment_asset_id ?? "");
+    const list = assignmentsByAsset.get(key) ?? [];
+    list.push(row);
+    assignmentsByAsset.set(key, list);
+  }
+  let normalizedAssets = 0, closedCustody = 0;
+  const normalizedAssignmentIds = new Set();
+  const assets = sourceAssets.map(asset => {
+    if (asset.lifecycle_status !== "removed") return asset;
+    const open = (assignmentsByAsset.get(String(asset.id)) ?? []).filter(row => row.returned_at == null);
+    if (asset.assigned_user_id == null) {
+      assert.equal(open.length, 0, "REMOVED_EQUIPMENT_UNEXPECTED_OPEN_CUSTODY");
+      return asset;
+    }
+    assert.equal(open.length, 1, "REMOVED_EQUIPMENT_CUSTODY_NOT_UNIQUE");
+    const assignment = open[0];
+    assert.equal(String(assignment.department_id), String(asset.department_id), "REMOVED_EQUIPMENT_CROSS_TENANT_CUSTODY");
+    assert.equal(String(assignment.assigned_user_id), String(asset.assigned_user_id), "REMOVED_EQUIPMENT_CUSTODIAN_MISMATCH");
+    assert.ok(asset.removed_at != null && Number.isFinite(Date.parse(asset.removed_at)), "REMOVED_EQUIPMENT_CLOSE_TIME_MISSING");
+    assert.ok(typeof asset.removed_by === "string" && asset.removed_by.length > 0, "REMOVED_EQUIPMENT_CLOSE_ACTOR_MISSING");
+    assert.ok(Date.parse(asset.removed_at) >= Date.parse(assignment.assigned_at), "REMOVED_EQUIPMENT_CLOSE_BEFORE_ASSIGNMENT");
+    assert.ok(assignment.return_notes == null, "REMOVED_EQUIPMENT_OPEN_CUSTODY_RETURN_NOTE_AMBIGUOUS");
+    normalizedAssignmentIds.add(String(assignment.id));
+    normalizedAssets++;
+    return { ...asset, assigned_user_id: null };
+  });
+  assert.equal(normalizedAssets, 1, "REMOVED_EQUIPMENT_NORMALIZATION_SCOPE_CHANGED");
+  const assignments = sourceAssignments.map(row => {
+    if (!normalizedAssignmentIds.has(String(row.id))) return row;
+    const asset = sourceAssets.find(candidate => String(candidate.id) === String(row.equipment_asset_id));
+    closedCustody++;
+    return { ...row, returned_at: asset.removed_at, returned_by: asset.removed_by, return_notes: "Equipment removed from active inventory" };
+  });
+  assert.equal(closedCustody, normalizedAssets, "REMOVED_EQUIPMENT_HISTORY_LOSS");
+  return {
+    assets,
+    assignments,
+    evidence: Object.freeze({
+      normalizedAssets,
+      closedCustody,
+      sourceAssetSha256: canonicalRowsHash(sourceAssets),
+      normalizedAssetSha256: canonicalRowsHash(assets),
+      sourceCustodySha256: canonicalRowsHash(sourceAssignments),
+      normalizedCustodySha256: canonicalRowsHash(assignments),
+      rule: "removed-asset-current-custodian-cleared; matching-open-custody-closed-at-source-removal-time-by-source-removal-actor",
+    }),
+  };
+}
+
 export function verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceAssignments, targetAssets, targetAssignments }) {
   for (const value of [sourceAssets, sourceAssignments, targetAssets, targetAssignments]) assert.ok(Array.isArray(value), "EQUIPMENT_ASSIGNMENT_HISTORY_ROWS_INVALID");
   const byId = (rows, error) => {
@@ -777,6 +833,7 @@ export function verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceA
   const sourceAssetsById = byId(sourceAssets, "SOURCE_EQUIPMENT_ASSET_ID_DUPLICATE");
   const targetAssetsById = byId(targetAssets, "TARGET_EQUIPMENT_ASSET_ID_DUPLICATE");
   assert.deepEqual([...targetAssetsById.keys()].sort(), [...sourceAssetsById.keys()].sort(), "EQUIPMENT_ASSET_SOURCE_TARGET_ID_MISMATCH");
+  assert.equal(canonicalRowsHash(targetAssets), canonicalRowsHash(sourceAssets), "EQUIPMENT_ASSET_SOURCE_TARGET_MISMATCH");
   const active = sourceAssignments.filter(row => row.returned_at === null || row.returned_at === undefined);
   const historical = sourceAssignments.filter(row => row.returned_at !== null && row.returned_at !== undefined);
   const activeByAsset = new Map();
@@ -801,7 +858,9 @@ export function verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceA
     const asset = targetAssetsById.get(String(row.equipment_asset_id));
     assert.ok(asset, "TARGET_EQUIPMENT_ASSIGNMENT_ASSET_MISSING");
     assert.equal(String(asset.department_id), String(row.department_id), "TARGET_EQUIPMENT_ASSIGNMENT_CROSS_TENANT");
+    if (asset.lifecycle_status === "removed") assert.ok(row.returned_at != null, "TARGET_REMOVED_EQUIPMENT_OPEN_CUSTODY");
   }
+  for (const asset of targetAssets) if (asset.lifecycle_status === "removed") assert.equal(asset.assigned_user_id, null, "TARGET_REMOVED_EQUIPMENT_CURRENT_ASSIGNEE");
   return Object.freeze({ assignments: sourceAssignments.length, activeAssignments: active.length, distinctActiveAssets: activeByAsset.size, historicalAssignments: historical.length, canonicalDataSha256: canonicalRowsHash(sourceAssignments), noSyntheticAssignments: true });
 }
 
