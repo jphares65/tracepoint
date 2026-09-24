@@ -19,6 +19,7 @@ import {
 import { createNotificationReadRepository } from "@/lib/notifications/read-repository";
 import { internalSourceUrl } from "@/lib/notifications/internal-source-url";
 import { createNotificationEventWriter } from "@/lib/notifications/event-writer";
+import { notificationDateValue } from "@/lib/notifications/date-value";
 import {
   buildNotificationEventReconciliationRow,
   notificationEventShouldResolve,
@@ -102,13 +103,7 @@ function list(record: any, ...keys: string[]) {
   return Array.isArray(candidate) ? candidate : [];
 }
 
-function dateValue(value?: string | null) {
-  if (!value) return 0;
-  const parsed = value.includes("T")
-    ? new Date(value).getTime()
-    : new Date(`${value}T00:00:00`).getTime();
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
+const dateValue = notificationDateValue;
 
 function getDigestSchedule(mode: unknown, now: Date) {
   const normalizedMode = text(mode);
