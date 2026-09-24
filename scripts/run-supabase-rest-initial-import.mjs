@@ -1227,6 +1227,7 @@ async function runEquipmentAssetsParityDiagnostic() {
   const ca = await readFile("/app/rds-ca.pem", "utf8");
   const snapshot = await sourceSnapshot();
   const sourceRows = snapshot.rows.get("equipment_assets") ?? [];
+  const sourceAssignments = snapshot.rows.get("equipment_asset_assignments") ?? [];
   const client = targetClient(target, ca, "tracepoint-equipment-assets-parity-diagnostic");
   let phase = "target TLS attestation", inReadOnlyTransaction = false;
   try {
@@ -1249,9 +1250,59 @@ async function runEquipmentAssetsParityDiagnostic() {
     const normalize = triggers.find(trigger => trigger.trigger_name === "trg_equipment_asset_normalize_assignment");
     const normalizeRemovedAssignment = typeof normalize?.function_definition === "string" && /new\.lifecycle_status\s*=\s*'removed'/iu.test(normalize.function_definition) && /new\.assigned_user_id\s*:=\s*null/iu.test(normalize.function_definition);
     const removedAssignedSourceRows = sourceRows.filter(row => row.lifecycle_status === "removed" && row.assigned_user_id !== null && row.assigned_user_id !== undefined).length;
+    const removedAssets = sourceRows.filter(row => row.lifecycle_status === "removed");
+    const assignmentsByAsset = new Map();
+    for (const assignment of sourceAssignments) {
+      const key = String(assignment.equipment_asset_id ?? "");
+      const list = assignmentsByAsset.get(key) ?? [];
+      list.push(assignment);
+      assignmentsByAsset.set(key, list);
+    }
+    const removedCustody = {
+      total: removedAssets.length,
+      assignedUserPresent: removedAssignedSourceRows,
+      assignedUserAbsent: removedAssets.length - removedAssignedSourceRows,
+      withOpenCustody: 0,
+      withOnlyClosedCustody: 0,
+      withAssignedUserAndOpenCustody: 0,
+      withRemovedAt: 0,
+      withRemovedBy: 0,
+      withRemovalReason: 0,
+      openCustodyWithDefensibleCloseTimestamp: 0,
+      openCustodyMissingCloseTimestamp: 0,
+      openCustodyWithRemovalActor: 0,
+      openCustodyMissingRemovalActor: 0,
+      openCustodyRemovalBeforeAssignment: 0,
+      openCustodyAssigneeMatchesAsset: 0,
+      openCustodyAssigneeMismatch: 0,
+      openCustodyDepartmentMismatch: 0,
+      multipleOpenCustody: 0,
+    };
+    for (const asset of removedAssets) {
+      const assignments = assignmentsByAsset.get(String(asset.id)) ?? [];
+      const open = assignments.filter(row => row.returned_at === null || row.returned_at === undefined);
+      const hasAssignee = asset.assigned_user_id !== null && asset.assigned_user_id !== undefined;
+      if (open.length) removedCustody.withOpenCustody++;
+      if (assignments.length && !open.length) removedCustody.withOnlyClosedCustody++;
+      if (hasAssignee && open.length) removedCustody.withAssignedUserAndOpenCustody++;
+      if (asset.removed_at != null) removedCustody.withRemovedAt++;
+      if (asset.removed_by != null) removedCustody.withRemovedBy++;
+      if (asset.removal_reason != null && String(asset.removal_reason).trim()) removedCustody.withRemovalReason++;
+      if (open.length > 1) removedCustody.multipleOpenCustody++;
+      for (const row of open) {
+        if (asset.removed_at != null && Number.isFinite(Date.parse(asset.removed_at))) removedCustody.openCustodyWithDefensibleCloseTimestamp++;
+        else removedCustody.openCustodyMissingCloseTimestamp++;
+        if (asset.removed_by != null) removedCustody.openCustodyWithRemovalActor++;
+        else removedCustody.openCustodyMissingRemovalActor++;
+        if (asset.removed_at != null && Date.parse(asset.removed_at) < Date.parse(row.assigned_at)) removedCustody.openCustodyRemovalBeforeAssignment++;
+        if (String(row.assigned_user_id) === String(asset.assigned_user_id)) removedCustody.openCustodyAssigneeMatchesAsset++;
+        else removedCustody.openCustodyAssigneeMismatch++;
+        if (String(row.department_id) !== String(asset.department_id)) removedCustody.openCustodyDepartmentMismatch++;
+      }
+    }
     await client.query("commit");
     inReadOnlyTransaction = false;
-    console.log(JSON.stringify({ status: "PASSED", mode, sourceArtifact: snapshot.artifact ? { versionId: snapshot.artifact.versionId, wholeFileSha256: snapshot.artifact.wholeFileSha256, masterSha256: snapshot.artifact.masterSha256 } : null, target: client.migrationTargetAttestation, sourceReadOnly: true, targetReadOnly: true, persistedTargetRows: persistedRows, comparison: "source artifact versus read-only PostgreSQL typed projection; actual imported target rows unavailable after rollback", canonicalFields: columns.map(column => column.column_name), columns: columns.map(column => ({ name: column.column_name, type: column.data_type, nullable: column.is_nullable === "YES", hasDefault: column.column_default !== null, generated: column.is_generated !== "NEVER" })), triggers: triggers.map(trigger => ({ name: trigger.trigger_name, definitionSha256: sha256(trigger.trigger_definition), functionSha256: sha256(trigger.function_definition), assignmentMutationFields: [...new Set([...trigger.function_definition.matchAll(/new\.([a-z_]+)\s*:=/giu)].map(match => match[1]))].sort() })), normalizeRemovedAssignment, removedAssignedSourceRows, summary, actualImportedFieldDiffAvailable: false, writesPerformed: false }));
+    console.log(JSON.stringify({ status: "PASSED", mode, sourceArtifact: snapshot.artifact ? { versionId: snapshot.artifact.versionId, wholeFileSha256: snapshot.artifact.wholeFileSha256, masterSha256: snapshot.artifact.masterSha256 } : null, target: client.migrationTargetAttestation, sourceReadOnly: true, targetReadOnly: true, persistedTargetRows: persistedRows, comparison: "source artifact versus read-only PostgreSQL typed projection; actual imported target rows unavailable after rollback", canonicalFields: columns.map(column => column.column_name), columns: columns.map(column => ({ name: column.column_name, type: column.data_type, nullable: column.is_nullable === "YES", hasDefault: column.column_default !== null, generated: column.is_generated !== "NEVER" })), triggers: triggers.map(trigger => ({ name: trigger.trigger_name, definitionSha256: sha256(trigger.trigger_definition), functionSha256: sha256(trigger.function_definition), assignmentMutationFields: [...new Set([...trigger.function_definition.matchAll(/new\.([a-z_]+)\s*:=/giu)].map(match => match[1]))].sort() })), normalizeRemovedAssignment, removedAssignedSourceRows, removedCustody, summary, actualImportedFieldDiffAvailable: false, writesPerformed: false }));
   } catch (error) {
     if (inReadOnlyTransaction) await client.query("rollback").catch(() => undefined);
     console.error(JSON.stringify(safeError(error, phase)));
