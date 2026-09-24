@@ -20,3 +20,4 @@ npm-debug.log*
 **/*.sql
 !database/aws/022_cognito_flow_window.sql
 !database/aws/023_audit_log_read_authorization.sql
+!database/aws/024_notification_email_server_enqueue.sql
