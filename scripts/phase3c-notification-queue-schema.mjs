@@ -15,6 +15,7 @@ const sql = readFileSync('/app/database/aws/024_notification_email_server_enqueu
 const client = new pg.Client({ host, port: 5432, user: secret.username, password: secret.password,
   database: 'tracepoint', ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 10_000,
   statement_timeout: 20_000, application_name: 'tracepoint-phase3c-notification-schema' });
+async function main() {
 let phase = 'connect';
 try {
   await client.connect();
@@ -46,3 +47,5 @@ try {
 } finally {
   await client.end().catch(() => {});
 }
+}
+main().catch(() => { process.exitCode = 1; });
