@@ -1,0 +1,57 @@
+{
+  "family": "tracepoint-production-phase3c-rehearsal-app",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::193644343389:role/TracePoint-Phase3cRehearsalAppExec",
+  "taskRoleArn": "arn:aws:iam::193644343389:role/TracePoint-Phase3cRehearsalAppTask",
+  "volumes": [{"name":"temporary-files"},{"name":"runtime-cache"}],
+  "containerDefinitions": [{
+    "name": "tracepoint",
+    "image": "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:ca23239c4fc29795830cdf4c7d60c81392a80d5c91cd053925ea90089d804a80",
+    "essential": true,
+    "portMappings": [{"containerPort":3000,"hostPort":3000,"protocol":"tcp"}],
+    "environment": [
+      {"name":"TRACEPOINT_REHEARSAL_APP_MODE","value":"object-smoke"},
+      {"name":"TRACEPOINT_AUTH_PROVIDER","value":"cognito"},
+      {"name":"AWS_REGION","value":"us-east-1"},
+      {"name":"TRACEPOINT_S3_EXPECTED_OWNER","value":"193644343389"},
+      {"name":"TRACEPOINT_RUNTIME_PROVIDER_MODE","value":"aws-native"},
+      {"name":"PORT","value":"3000"},
+      {"name":"TRACEPOINT_STORAGE_PROVIDER","value":"s3"},
+      {"name":"TRACEPOINT_DATABASE_CA_PATH","value":"/app/rds-ca.pem"},
+      {"name":"NEXT_PUBLIC_SITE_URL","value":"https://shadow-rehearsal.tracepointhq.com"},
+      {"name":"TRACEPOINT_S3_BUCKET","value":"tracepoint-production-private-193644343389"},
+      {"name":"TRACEPOINT_DATA_PROVIDER","value":"postgres"},
+      {"name":"TRACEPOINT_COGNITO_CLIENT_ID","value":"1sahn9hhhpp0elvi66m4jinrk4"},
+      {"name":"TRACEPOINT_COGNITO_USER_POOL_ID","value":"us-east-1_wZwXHpznS"},
+      {"name":"TRACEPOINT_AWS_ACCOUNT_ID","value":"193644343389"},
+      {"name":"HOSTNAME","value":"0.0.0.0"},
+      {"name":"TRACEPOINT_NOTIFICATION_MODE","value":"shadow"},
+      {"name":"NODE_ENV","value":"production"},
+      {"name":"TRACEPOINT_EMAIL_PROVIDER","value":"ses"}
+    ],
+    "mountPoints": [
+      {"sourceVolume":"runtime-cache","containerPath":"/app/.next/cache","readOnly":false},
+      {"sourceVolume":"temporary-files","containerPath":"/tmp","readOnly":false}
+    ],
+    "secrets": [
+      {"name":"CONFIGURATION_ENVIRONMENT","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/application/aws-native-rIikku:CONFIGURATION_ENVIRONMENT::"},
+      {"name":"NEXT_SERVER_ACTIONS_ENCRYPTION_KEY","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/application/aws-native-rIikku:NEXT_SERVER_ACTIONS_ENCRYPTION_KEY::"},
+      {"name":"TRACEPOINT_AUTH_STATE_KEYS","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/application/aws-native-rIikku:TRACEPOINT_AUTH_STATE_KEYS::"},
+      {"name":"TRACEPOINT_AUTH_REFRESH_KEYS","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/application/aws-native-rIikku:TRACEPOINT_AUTH_REFRESH_KEYS::"},
+      {"name":"TRACEPOINT_IMPORT_APPROVAL_SECRET","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/application/aws-native-rIikku:TRACEPOINT_IMPORT_APPROVAL_SECRET::"},
+      {"name":"NOTIFICATION_DISPATCH_SECRET","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/application/aws-native-rIikku:NOTIFICATION_DISPATCH_SECRET::"},
+      {"name":"TRACEPOINT_DATABASE_SECRET_JSON","valueFrom":"arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/rehearsal/database-runtime-4272874f-uDq389"}
+    ],
+    "stopTimeout":30,
+    "user":"65532:65532",
+    "readonlyRootFilesystem":true,
+    "logConfiguration":{"logDriver":"awslogs","options":{
+      "awslogs-group":"/ecs/tracepoint-production-phase3c-rehearsal-app",
+      "awslogs-region":"us-east-1",
+      "awslogs-stream-prefix":"web"
+    }}
+  }]
+}
