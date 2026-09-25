@@ -23,3 +23,4 @@ npm-debug.log*
 !database/aws/024_notification_email_server_enqueue.sql
 !database/aws/025_cognito_provider_username_reconciliation.sql
 !database/aws/026_cognito_invite_profile_trigger_reconciliation.sql
+!database/aws/027_cognito_invite_retry_claim.sql

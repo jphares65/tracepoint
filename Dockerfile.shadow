@@ -20,6 +20,7 @@ RUN ./node_modules/.bin/esbuild scripts/phase3c-rehearsal-auth-fixture.mjs --bun
 RUN ./node_modules/.bin/esbuild scripts/phase3c-notification-queue-schema.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-notification-queue-schema.cjs
 RUN ./node_modules/.bin/esbuild scripts/phase3c-cognito-provider-schema.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-cognito-provider-schema.cjs
 RUN ./node_modules/.bin/esbuild scripts/phase3c-invite-profile-schema.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-invite-profile-schema.cjs
+RUN ./node_modules/.bin/esbuild scripts/phase3c-invite-retry-schema.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-invite-retry-schema.cjs
 RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/next_server_actions_encryption_key)" \
     npm run build
@@ -41,9 +42,11 @@ COPY --from=builder --chown=nonroot:nonroot /app/phase3c-rehearsal-auth-fixture.
 COPY --from=builder --chown=nonroot:nonroot /app/phase3c-notification-queue-schema.cjs /app/phase3c-notification-queue-schema.cjs
 COPY --from=builder --chown=nonroot:nonroot /app/phase3c-cognito-provider-schema.cjs /app/phase3c-cognito-provider-schema.cjs
 COPY --from=builder --chown=nonroot:nonroot /app/phase3c-invite-profile-schema.cjs /app/phase3c-invite-profile-schema.cjs
+COPY --from=builder --chown=nonroot:nonroot /app/phase3c-invite-retry-schema.cjs /app/phase3c-invite-retry-schema.cjs
 COPY --from=builder --chown=nonroot:nonroot /app/database/aws/024_notification_email_server_enqueue.sql /app/database/aws/024_notification_email_server_enqueue.sql
 COPY --from=builder --chown=nonroot:nonroot /app/database/aws/025_cognito_provider_username_reconciliation.sql /app/database/aws/025_cognito_provider_username_reconciliation.sql
 COPY --from=builder --chown=nonroot:nonroot /app/database/aws/026_cognito_invite_profile_trigger_reconciliation.sql /app/database/aws/026_cognito_invite_profile_trigger_reconciliation.sql
+COPY --from=builder --chown=nonroot:nonroot /app/database/aws/027_cognito_invite_retry_claim.sql /app/database/aws/027_cognito_invite_retry_claim.sql
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
 COPY --from=builder --chown=nonroot:nonroot /runtime-volumes/cache /app/.next/cache

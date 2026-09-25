@@ -6,16 +6,34 @@ import { getCognitoAdminDirectory } from "./cognito-admin";
 import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { isApprovedRehearsalInvite } from "./cognito-rehearsal-invite-guard";
+import { assertPendingInviteAbsentInCognito, parsePendingInviteRetry } from "./cognito-invite-retry-core";
 
 export type CognitoInviteInput={actorUserId:string;departmentId:string;email:string;fullName:string;badgeNumber:string;rankTitle:string;unitName:string;employeeNumber:string;roleCodes:string[];groupIds:string[];siteUrl:string;active?:boolean};
 
 export async function inviteCognitoUser(input:CognitoInviteInput){
- if(!isApprovedRehearsalInvite(process.env,input)) assertIdentityMutationAllowed();
- const pool=getPostgresPool(),userId=randomUUID(),operationId=randomUUID(),providerUsername=randomUUID();
- await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
-  await client.query("select tracepoint_auth.prepare_cognito_invite($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text[],$12::uuid[],$13)",[userId,operationId,providerUsername,input.departmentId,input.email,input.fullName,input.badgeNumber,input.rankTitle,input.unitName,input.employeeNumber,input.roleCodes,input.groupIds,input.active!==false]);
- });
- const directory=getCognitoAdminDirectory(process.env,input);
+ const rehearsalRetry=isApprovedRehearsalInvite(process.env,input);
+ if(!rehearsalRetry) assertIdentityMutationAllowed();
+ const pool=getPostgresPool(),directory=getCognitoAdminDirectory(process.env,input);
+ let userId:string=randomUUID(),operationId:string=randomUUID(),providerUsername:string=randomUUID();
+ const retryArguments=[input.departmentId,input.email,input.fullName,input.badgeNumber,input.rankTitle,input.unitName,input.employeeNumber,input.roleCodes,input.groupIds];
+ const pending=rehearsalRetry?await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
+  const result=await client.query("select * from tracepoint_auth.inspect_cognito_invite_retry($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::uuid[])",retryArguments) as {rows:unknown[]};
+  return parsePendingInviteRetry(result.rows);
+ }):null;
+ if(pending){
+  await assertPendingInviteAbsentInCognito(directory,input.email,pending);
+  const claimed=await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
+   const result=await client.query("select * from tracepoint_auth.claim_cognito_invite_retry($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::uuid[],$10)",[...retryArguments,pending.operation_id]) as {rows:unknown[]};
+   return parsePendingInviteRetry(result.rows);
+  });
+  if(!claimed||claimed.user_id!==pending.user_id||claimed.operation_id!==pending.operation_id||claimed.provider_username!==pending.provider_username)
+   throw new Error("Pending invitation claim changed.");
+  userId=claimed.user_id;operationId=claimed.operation_id;providerUsername=claimed.provider_username;
+ }else{
+  await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
+   await client.query("select tracepoint_auth.prepare_cognito_invite($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text[],$12::uuid[],$13)",[userId,operationId,providerUsername,input.departmentId,input.email,input.fullName,input.badgeNumber,input.rankTitle,input.unitName,input.employeeNumber,input.roleCodes,input.groupIds,input.active!==false]);
+  });
+ }
  let created;
  try{created=await directory.createPending({username:providerUsername,email:input.email,fullName:input.fullName});}
  catch(error){await pool.query("update public.authentication_lifecycle_operations set state='compensation_required',attempts=attempts+1,safe_error_code='provider_create_failed',updated_at=now() where id=$1 and state='prepared'",[operationId]).catch(()=>undefined);throw error;}
