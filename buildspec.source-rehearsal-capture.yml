@@ -1,0 +1,26 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "193644343389"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$TRACEPOINT_EXPECTED_AWS_ACCOUNT" = "193644343389"
+      - test "$TRACEPOINT_SOURCE_REHEARSAL_PROJECT_REF" = "reukdouvpshshvqnzsgw"
+      - echo "$TRACEPOINT_SOURCE_REHEARSAL_RUN_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      - test -n "$SOURCE_REHEARSAL_SECRET_KEY"
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - node scripts/run-source-rehearsal-final-capture.mjs

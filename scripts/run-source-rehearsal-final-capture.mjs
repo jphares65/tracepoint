@@ -1,0 +1,115 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { MIGRATION_RELATIONS } from './supabase-rest-ledger-core.mjs';
+import {
+  ARTIFACT_BUCKET, ARTIFACT_KMS_KEY_ARN, SOURCE_ORIGIN, STORAGE_BUCKETS,
+  attestFrozen, buildArtifact, classifyStorageEntry, objectPath, relationUrl,
+  sourceRequest, validateCaptureEnvironment,
+} from './source-rehearsal-final-capture-core.mjs';
+
+const { runId, key } = validateCaptureEnvironment(process.env);
+const secret = process.env.SOURCE_REHEARSAL_SECRET_KEY;
+delete process.env.SOURCE_REHEARSAL_SECRET_KEY;
+const headers = Object.freeze({ apikey: secret, Accept: 'application/json' });
+
+async function request(method, url, label, body) {
+  sourceRequest(method, url);
+  const response = await fetch(url, {
+    method, headers: body === undefined ? headers : { ...headers, 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`SOURCE_REHEARSAL_READ_FAILED:${label}:${response.status}`);
+  return response;
+}
+
+async function frozenState() {
+  const response = await request('POST', `${SOURCE_ORIGIN}/rest/v1/rpc/tracepoint_source_rehearsal_fence_status`, 'fence-attestation', {});
+  return response.json();
+}
+
+async function relationRows(relation) {
+  const rows = [];
+  for (let offset = 0; ; offset += 500) {
+    const page = await (await request('GET', relationUrl(relation, offset), relation)).json();
+    assert.ok(Array.isArray(page), `Invalid ${relation} response`);
+    rows.push(...page);
+    assert.ok(rows.length <= 1_000_000, 'Source relation exceeds safe bound');
+    if (page.length < 500) return rows;
+  }
+}
+
+async function allIdentities() {
+  const users = [];
+  for (let page = 1; ; page += 1) {
+    const url = `${SOURCE_ORIGIN}/auth/v1/admin/users?page=${page}&per_page=200`;
+    const result = await (await request('GET', url, 'auth-identities')).json();
+    assert.ok(Array.isArray(result.users), 'Invalid Auth identity response');
+    users.push(...result.users);
+    assert.ok(users.length <= 1_000_000, 'Identity set exceeds safe bound');
+    if (result.users.length < 200 || (result.last_page && page >= result.last_page)) return users;
+  }
+}
+
+async function storageEntries(bucket, prefix, offset) {
+  const url = `${SOURCE_ORIGIN}/storage/v1/object/list/${bucket}`;
+  const response = await request('POST', url, `storage-list:${bucket}`, { prefix, limit: 100, offset, sortBy: { column: 'name', order: 'asc' } });
+  const entries = await response.json();
+  assert.ok(Array.isArray(entries), 'Invalid Storage list response');
+  return entries;
+}
+
+async function allObjects(departmentIds) {
+  const objects = [];
+  for (const bucket of STORAGE_BUCKETS) {
+    const queue = [''];
+    const seenPrefixes = new Set();
+    while (queue.length) {
+      const prefix = queue.shift();
+      assert.ok(!seenPrefixes.has(prefix), 'Duplicate Storage folder');
+      seenPrefixes.add(prefix);
+      assert.ok(seenPrefixes.size <= 10_000, 'Storage folder bound exceeded');
+      for (let offset = 0; ; offset += 100) {
+        const entries = await storageEntries(bucket, prefix, offset);
+        for (const entry of entries) {
+          const item = classifyStorageEntry(prefix, entry);
+          if (item.kind === 'folder') { queue.push(item.prefix); continue; }
+          const response = await request('GET', objectPath(bucket, item.key), `storage-object:${bucket}`);
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          const departmentId = bucket === 'department-assets' ? item.key.split('/')[0] : null;
+          if (departmentId !== null) assert.ok(departmentIds.has(departmentId), 'Storage object has no matching source department');
+          objects.push({ sourceBucket: bucket, sourceKey: item.key, destinationKey: `${bucket}/${item.key}`, bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'), contentType: response.headers.get('content-type')?.split(';')[0] ?? 'application/octet-stream', departmentId });
+          assert.ok(objects.length <= 100_000, 'Storage object bound exceeded');
+        }
+        if (entries.length < 100) break;
+      }
+    }
+  }
+  return objects.sort((a, b) => a.destinationKey.localeCompare(b.destinationKey));
+}
+
+const firstFreeze = attestFrozen(await frozenState());
+const rowsByRelation = new Map();
+for (const relation of MIGRATION_RELATIONS) rowsByRelation.set(relation, await relationRows(relation));
+const identities = await allIdentities();
+const departmentIds = new Set(rowsByRelation.get('departments').map(row => row.id));
+const objects = await allObjects(departmentIds);
+const secondFreeze = attestFrozen(await frozenState());
+assert.equal(secondFreeze, firstFreeze, 'Source fence changed during capture');
+const artifact = buildArtifact({ runId, capturedAtUtc: new Date().toISOString(), fenceChangedAt: firstFreeze, rowsByRelation, identities, objects });
+const s3 = new S3Client({ region: 'us-east-1', maxAttempts: 1 });
+try {
+  const put = await s3.send(new PutObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key, ExpectedBucketOwner: '193644343389', Body: artifact.payload,
+    ContentType: 'application/json', ServerSideEncryption: 'aws:kms', SSEKMSKeyId: ARTIFACT_KMS_KEY_ARN,
+    ChecksumSHA256: createHash('sha256').update(artifact.payload).digest('base64'), IfNoneMatch: '*' }));
+  assert.ok(put.VersionId, 'S3 artifact VersionId is required');
+  const readback = await s3.send(new GetObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key, VersionId: put.VersionId, ExpectedBucketOwner: '193644343389' }));
+  const readbackBytes = await readback.Body.transformToByteArray();
+  assert.equal(createHash('sha256').update(readbackBytes).digest('hex'), artifact.byteSha256, 'S3 readback hash mismatch');
+  console.log(JSON.stringify({ status: 'SOURCE_REHEARSAL_FINAL_ARTIFACT_CREATED', bucket: ARTIFACT_BUCKET, key, versionId: put.VersionId,
+    byteSha256: artifact.byteSha256, masterSha256: artifact.masterSha256, relationContracts: artifact.body.tables.length,
+    totalRelationalRows: artifact.body.totalRelationalRows, identities: artifact.body.identities.count,
+    memberships: artifact.body.memberships.count, objects: artifact.body.objects.count, objectBytes: artifact.body.objects.totalBytes,
+    sourceProjectRef: 'reukdouvpshshvqnzsgw', fenceStable: true, rowPayloadsLogged: false }));
+} finally { s3.destroy(); }
