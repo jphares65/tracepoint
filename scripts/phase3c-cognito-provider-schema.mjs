@@ -33,9 +33,12 @@ try {
     to_regprocedure('tracepoint_auth.commit_existing_cognito_migration(uuid,text,text)') is not null as existing_migration,
     to_regprocedure('tracepoint_auth.commit_cognito_invite(uuid,text,text)') is not null as existing_invite,
     (select count(*)::int from public.authentication_identity_links where provider='cognito') as link_count,
-    (select count(*)::int from public.authentication_identity_links where provider='cognito' and provider_username=subject) as normalized_links`)).rows[0];
+    (select count(*)::int from public.authentication_identity_links where provider='cognito' and provider_username=subject) as normalized_links,
+    (select count(*)::int from public.authentication_identity_links
+      where provider='cognito' and provider_username is null and state='active') as active_fixture_links`)).rows[0];
   if (!before.not_applied || !before.existing_migration || !before.existing_invite ||
-      before.link_count !== 97 || before.normalized_links !== 97) throw Error('Unexpected rehearsal identity contract.');
+      before.link_count !== 97 || before.normalized_links !== 96 || before.active_fixture_links !== 1)
+    throw Error('Unexpected rehearsal identity contract.');
   phase = 'fixed-schema-migration';
   await client.query('begin'); started = true;
   await client.query("set local lock_timeout='5s'");
@@ -51,7 +54,8 @@ try {
       !after.runtime_finish || after.subject_finish) throw Error('Cognito provider schema authorization mismatch.');
   await client.query('commit'); started = false;
   console.log(JSON.stringify({ status: 'PASS', phase, target: host, database: 'tracepoint', tlsVerified: true,
-    identityLinks: before.link_count, reconciledUsernames: before.normalized_links, runtimeOnlyFunctions: 3,
+    identityLinks: before.link_count, reconciledUsernames: before.normalized_links,
+    activeSyntheticLinkWithoutUsername: before.active_fixture_links, runtimeOnlyFunctions: 3,
     migrationSha256: migrationHash }));
 } catch (error) {
   if (started) await client.query('rollback').catch(() => {});
