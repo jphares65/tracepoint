@@ -1,11 +1,17 @@
 export type CognitoDirectoryUser={username:string;subject:string;email:string;emailVerified?:boolean;enabled:boolean;status:string};
 export type CreatePendingCognitoUser={username:string;email:string;fullName:string};
+// Email-username Cognito pools return provider-generated UUID Usernames that are
+// not necessarily version 4. Keep the format boundary without assuming a UUID version.
+export function isCognitoDirectoryUsername(value:string){
+ return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 export class CognitoDirectoryError extends Error{
  constructor(readonly code:"conflict"|"not_found"|"invalid_password"|"invalid_code"|"expired_code"|"throttled"|"unavailable"){super("The AWS identity operation could not be completed.");this.name="CognitoDirectoryError";}
 }
 export interface CognitoAdminDirectory{
  createPending(input:CreatePendingCognitoUser):Promise<CognitoDirectoryUser>;
  get(username:string):Promise<CognitoDirectoryUser>;
+ resendInvitation(email:string,expectedSubject:string):Promise<void>;
  setPermanentPassword(username:string,password:string):Promise<void>;
  markEmailVerified(username:string):Promise<void>;
  beginPasswordReset(username:string):Promise<void>;

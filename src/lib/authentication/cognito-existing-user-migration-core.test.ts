@@ -11,22 +11,29 @@ const input = {
   operationId: "operation",
   providerUsername: "provider-user",
 };
+const subject = "742824e8-60d1-7081-93a3-722b79de50c6";
 
-function dependencies(failAt?: "create" | "commit" | "send") {
+function dependencies(failAt?: "create" | "commit" | "send" | "identity") {
   const calls: string[] = [];
   const value: ExistingCognitoMigrationDependencies = {
     issuer: "https://issuer.example.test/pool",
     directory: {
-      async createPending() { calls.push("create"); if (failAt === "create") throw new Error("provider"); return { username: input.providerUsername, subject: "subject", email: "user@example.test", enabled: true, status: "FORCE_CHANGE_PASSWORD" }; },
+      async createPending() { calls.push("create"); if (failAt === "create") throw new Error("provider"); return { username: failAt === "identity" ? input.providerUsername : subject, subject, email: "user@example.test", enabled: true, status: "FORCE_CHANGE_PASSWORD" }; },
       async deleteCompensation() { calls.push("delete"); },
-      async get() { throw new Error("unused"); }, async setPermanentPassword() {}, async markEmailVerified() {}, async beginPasswordReset() {}, async completePasswordReset() {}, async disable() {}, async enable() {}, async globalSignOut() {},
+      async get() { throw new Error("unused"); }, async resendInvitation() {}, async setPermanentPassword() {}, async markEmailVerified() {}, async beginPasswordReset() {}, async completePasswordReset() {}, async disable() {}, async enable() {}, async globalSignOut() {},
     },
     store: {
       async prepare() { calls.push("prepare"); return { email: "user@example.test", fullName: "Synthetic User" }; },
-      async commit() { calls.push("commit"); if (failAt === "commit") throw new Error("database"); },
+      async commit(value) {
+        calls.push("commit");
+        assert.equal(value.requestedUsername, input.providerUsername);
+        assert.equal(value.actualUsername, subject);
+        assert.equal(value.subject, subject);
+        if (failAt === "commit") throw new Error("database");
+      },
       async finish(value) { calls.push(`finish:${value.sent}:${value.errorCode ?? "none"}`); },
     },
-    async sendActivation() { calls.push("send"); if (failAt === "send") throw new Error("email"); return { tokenId: "token", expiresAt: "2026-09-24T00:00:00.000Z" }; },
+    async sendActivation() { calls.push("send"); if (failAt === "send") throw new Error("email"); },
   };
   return { value, calls };
 }
@@ -54,4 +61,10 @@ test("preserves the pending identity and records an unconfirmed delivery", async
   const fixture = dependencies("send");
   await assert.rejects(() => migrateExistingUserToCognito(input, fixture.value));
   assert.deepEqual(fixture.calls, ["prepare", "create", "commit", "send", "finish:false:activation_delivery_unconfirmed"]);
+});
+
+test("rejects a provider username that differs from the verified Cognito subject", async () => {
+  const fixture = dependencies("identity");
+  await assert.rejects(() => migrateExistingUserToCognito(input, fixture.value), /reconciliation failed/);
+  assert.deepEqual(fixture.calls, ["prepare", "create", "finish:false:provider_identity_mismatch"]);
 });

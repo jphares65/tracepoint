@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
-import { issueActivationEmail } from "@/lib/tracepoint/activation";
 import { getCognitoAdminDirectory } from "./cognito-admin";
 import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
@@ -20,16 +19,33 @@ export async function inviteCognitoUser(input:CognitoInviteInput){
  try{created=await directory.createPending({username:providerUsername,email:input.email,fullName:input.fullName});}
  catch(error){await pool.query("update public.authentication_lifecycle_operations set state='compensation_required',attempts=attempts+1,safe_error_code='provider_create_failed',updated_at=now() where id=$1 and state='prepared'",[operationId]).catch(()=>undefined);throw error;}
  const config=parseCognitoRuntimeConfiguration(process.env),issuer=`https://cognito-idp.${config.verification.region}.amazonaws.com/${config.verification.userPoolId}`;
- try{await pool.query("select tracepoint_auth.commit_cognito_invite($1,$2,$3)",[operationId,created.subject,issuer]);}
- catch(error){await directory.deleteCompensation(providerUsername).catch(()=>undefined);throw error;}
+ if(created.username!==created.subject||created.email!==input.email.trim().toLowerCase()||!created.enabled||created.status!=="FORCE_CHANGE_PASSWORD"){
+  await pool.query("select tracepoint_auth.finish_cognito_invite($1,false,$2)",[operationId,"provider_identity_mismatch"]).catch(()=>undefined);
+  throw new Error("Cognito identity reconciliation failed.");
+ }
+ const client=await pool.connect();
+ try{
+  await client.query("begin");
+  await client.query("select tracepoint_auth.confirm_cognito_provider_username($1,$2,$3,$4)",[operationId,providerUsername,created.username,created.subject]);
+  await client.query("select tracepoint_auth.commit_cognito_invite($1,$2,$3)",[operationId,created.subject,issuer]);
+  await client.query("commit");
+ }catch(error){
+  await client.query("rollback").catch(()=>undefined);
+  // A database response can be ambiguous. Preserve the provider identity for
+  // reconciliation instead of risking deletion after a successful commit.
+  await pool.query("select tracepoint_auth.finish_cognito_invite($1,false,$2)",
+    [operationId,"identity_commit_unconfirmed"]).catch(()=>undefined);
+  throw error;
+ }
+ finally{client.release();}
  try{
   if(input.active===false){
-   await directory.disable(providerUsername);
+   await directory.disable(created.username);
    await pool.query("select tracepoint_auth.finish_cognito_invite($1,true,null)",[operationId]);
    return{userId,operationId,invitationSent:false,activation:null};
   }
-  const activation=await issueActivationEmail({...input,userId,actorUserId:input.actorUserId});
+  await directory.resendInvitation(input.email,created.subject);
   await pool.query("select tracepoint_auth.finish_cognito_invite($1,true,null)",[operationId]);
-  return{userId,operationId,invitationSent:true,activation};
+  return{userId,operationId,invitationSent:true,activation:null};
  }catch(error){await pool.query("select tracepoint_auth.finish_cognito_invite($1,false,$2)",[operationId,"email_unconfirmed"]).catch(()=>undefined);throw error;}
 }

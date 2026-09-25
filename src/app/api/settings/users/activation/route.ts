@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
 import { provisionExistingCognitoUser } from "@/lib/authentication/cognito-existing-user-migration";
+import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type ActivationRequest = {
@@ -62,14 +63,7 @@ export async function POST(request: NextRequest) {
       if (identityState !== "pending") {
         return NextResponse.json({ error: "This account does not require activation." }, { status: 400 });
       }
-      const activation = await issueActivationEmail({ departmentId, userId, email, fullName: cleanText(profileResult.data?.full_name) || email, siteUrl, actorUserId: access.context.userId });
-      const deliveryResult = await access.context.admin.rpc("record_cognito_activation_delivery", {
-        p_department_id: departmentId,
-        p_target_user_id: userId,
-        p_token_id: activation.tokenId,
-        p_expires_at: activation.expiresAt,
-      });
-      if (deliveryResult.error) throw new Error("Activation delivery persistence failed.");
+      await resendPendingCognitoActivation({actorUserId:access.context.userId,departmentId,targetUserId:userId});
       return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
     }
 

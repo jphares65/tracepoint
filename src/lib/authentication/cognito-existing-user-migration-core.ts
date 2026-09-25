@@ -11,7 +11,7 @@ export type ExistingCognitoMigrationInput = {
 
 export type ExistingCognitoMigrationStore = {
   prepare(input: ExistingCognitoMigrationInput): Promise<{ email: string; fullName: string }>;
-  commit(input: { operationId: string; subject: string; issuer: string }): Promise<void>;
+  commit(input: { operationId: string; requestedUsername: string; actualUsername: string; subject: string; issuer: string }): Promise<void>;
   finish(input: { operationId: string; sent: boolean; errorCode: string | null }): Promise<void>;
 };
 
@@ -26,7 +26,8 @@ export type ExistingCognitoMigrationDependencies = {
     email: string;
     fullName: string;
     siteUrl: string;
-  }): Promise<{ tokenId: string; expiresAt: string }>;
+    providerSubject: string;
+  }): Promise<void>;
 };
 
 export async function migrateExistingUserToCognito(
@@ -42,13 +43,13 @@ export async function migrateExistingUserToCognito(
       fullName: prepared.fullName,
     });
   } catch (error) {
-    try { created = await dependencies.directory.get(input.providerUsername); }
+    try { created = await dependencies.directory.get(prepared.email); }
     catch {
       await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "provider_create_unconfirmed" }).catch(() => undefined);
       throw error;
     }
   }
-  if (created.username !== input.providerUsername || created.email.trim().toLowerCase() !== prepared.email.trim().toLowerCase() ||
+  if (created.username !== created.subject || created.email.trim().toLowerCase() !== prepared.email.trim().toLowerCase() ||
       !created.enabled || created.status !== "FORCE_CHANGE_PASSWORD") {
     await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "provider_identity_mismatch" }).catch(() => undefined);
     throw new Error("Cognito identity reconciliation failed.");
@@ -57,6 +58,8 @@ export async function migrateExistingUserToCognito(
   try {
     await dependencies.store.commit({
       operationId: input.operationId,
+      requestedUsername: input.providerUsername,
+      actualUsername: created.username,
       subject: created.subject,
       issuer: dependencies.issuer,
     });
@@ -65,15 +68,15 @@ export async function migrateExistingUserToCognito(
     throw error;
   }
 
-  let activation;
   try {
-    activation = await dependencies.sendActivation({
+    await dependencies.sendActivation({
       actorUserId: input.actorUserId,
       departmentId: input.departmentId,
       userId: input.targetUserId,
       email: prepared.email,
       fullName: prepared.fullName,
       siteUrl: input.siteUrl,
+      providerSubject: created.subject,
     });
   } catch (error) {
     await dependencies.store.finish({ operationId: input.operationId, sent: false, errorCode: "activation_delivery_unconfirmed" }).catch(() => undefined);
@@ -81,5 +84,5 @@ export async function migrateExistingUserToCognito(
   }
 
   await dependencies.store.finish({ operationId: input.operationId, sent: true, errorCode: null });
-  return { userId: input.targetUserId, operationId: input.operationId, activation };
+  return { userId: input.targetUserId, operationId: input.operationId };
 }
