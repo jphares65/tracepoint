@@ -107,3 +107,23 @@ test('a conflicting preexisting profile is not silently accepted', async () => {
   );
   assert.equal(rows[0].matches, false);
 });
+
+test('PostgreSQL accepts the parameterized function privilege metadata check', async () => {
+  const { rows } = await pool.query(
+    "select has_function_privilege('postgres',$1,'EXECUTE') as allowed",
+    ['pg_catalog.now()'],
+  );
+  assert.equal(rows[0].allowed, true);
+});
+
+test('versioned function replacement and grants compile on PostgreSQL', async () => {
+  await pool.query('create schema tracepoint_auth; create role anon; create role authenticated; create role service_role');
+  const sql = await readFile(migrationPath, 'utf8');
+  await pool.query(sql);
+  const { rows } = await pool.query(`
+    select to_regprocedure(
+      'tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text[],uuid[],boolean)'
+    ) is not null as installed
+  `);
+  assert.equal(rows[0].installed, true);
+});

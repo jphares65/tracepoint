@@ -66,7 +66,7 @@ $$;
 
 revoke all on function tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text[],uuid[],boolean)
   from public,anon,service_role;
-grant execute on function tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text,text[],uuid[],boolean)
+grant execute on function tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text[],uuid[],boolean)
   to authenticated;
 
 commit;

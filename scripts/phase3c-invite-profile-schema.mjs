@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 
 const host = 'tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com';
-const expectedHash = 'e35793f8ad3770460c15ac29c1843015981b54a35b3605349214e160077e4aa9';
+const expectedHash = 'bc6fca6e5693cfad40ae9ce104a8bf5ec9cd0eda5750177737ecf167a840a612';
 const migrationPath = '/app/database/aws/026_cognito_invite_profile_trigger_reconciliation.sql';
 const inviteSignature = 'tracepoint_auth.prepare_cognito_invite(uuid,uuid,text,uuid,text,text,text,text,text,text,text[],uuid[],boolean)';
 if (process.argv[2] !== 'apply') throw Error('FIXED_REHEARSAL_SCHEMA_MODE_REQUIRED');
