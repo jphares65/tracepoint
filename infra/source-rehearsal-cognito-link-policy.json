@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadExactPinnedIdentityArtifact",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+      "Resource": "arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/4272874f-bae4-49f4-a0b4-67a39cec2874/initial-canonical.json"
+    },
+    {
+      "Sid": "DecryptExactArtifactViaS3",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55",
+      "Condition": {"StringEquals": {"kms:ViaService": "s3.us-east-1.amazonaws.com"}}
+    },
+    {
+      "Sid": "ReadExactRehearsalPoolOnly",
+      "Effect": "Allow",
+      "Action": ["cognito-idp:DescribeUserPool", "cognito-idp:ListUsers"],
+      "Resource": "arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_wZwXHpznS"
+    }
+  ]
+}
