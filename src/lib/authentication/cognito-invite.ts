@@ -5,16 +5,17 @@ import { withPostgresAuthorization } from "@/lib/database/postgres-authorization
 import { getCognitoAdminDirectory } from "./cognito-admin";
 import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
+import { isApprovedRehearsalInvite } from "./cognito-rehearsal-invite-guard";
 
 export type CognitoInviteInput={actorUserId:string;departmentId:string;email:string;fullName:string;badgeNumber:string;rankTitle:string;unitName:string;employeeNumber:string;roleCodes:string[];groupIds:string[];siteUrl:string;active?:boolean};
 
 export async function inviteCognitoUser(input:CognitoInviteInput){
- assertIdentityMutationAllowed();
+ if(!isApprovedRehearsalInvite(process.env,input)) assertIdentityMutationAllowed();
  const pool=getPostgresPool(),userId=randomUUID(),operationId=randomUUID(),providerUsername=randomUUID();
  await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
   await client.query("select tracepoint_auth.prepare_cognito_invite($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text[],$12::uuid[],$13)",[userId,operationId,providerUsername,input.departmentId,input.email,input.fullName,input.badgeNumber,input.rankTitle,input.unitName,input.employeeNumber,input.roleCodes,input.groupIds,input.active!==false]);
  });
- const directory=getCognitoAdminDirectory();
+ const directory=getCognitoAdminDirectory(process.env,input);
  let created;
  try{created=await directory.createPending({username:providerUsername,email:input.email,fullName:input.fullName});}
  catch(error){await pool.query("update public.authentication_lifecycle_operations set state='compensation_required',attempts=attempts+1,safe_error_code='provider_create_failed',updated_at=now() where id=$1 and state='prepared'",[operationId]).catch(()=>undefined);throw error;}

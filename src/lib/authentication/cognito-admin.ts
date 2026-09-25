@@ -9,6 +9,7 @@ import { parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } fro
 import { CognitoDirectoryError,isCognitoDirectoryUsername,mapCognitoDirectoryError,type CognitoAdminDirectory,type CognitoDirectoryUser,type CreatePendingCognitoUser } from "./cognito-admin-core";
 import { cognitoSdkClientConfiguration, isCognitoPoolForRegion } from "./cognito-endpoints";
 import { notificationMode } from "@/lib/email/notification-mode";
+import { isApprovedRehearsalInvite } from "./cognito-rehearsal-invite-guard";
 
 type CognitoSender={send(command:unknown):Promise<unknown>};
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -54,8 +55,8 @@ export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
 }
 
 let directory:CognitoAdminDirectory|undefined;
-export function getCognitoAdminDirectory(environment=process.env){
- if(notificationMode(environment)==="shadow")throw new Error("Shadow identity mutation is disabled.");
+export function getCognitoAdminDirectory(environment=process.env,rehearsalInvite?:Parameters<typeof isApprovedRehearsalInvite>[1]){
+ if(notificationMode(environment)==="shadow"&&!isApprovedRehearsalInvite(environment,rehearsalInvite))throw new Error("Shadow identity mutation is disabled.");
  if(directory)return directory;const config=parseCognitoRuntimeConfiguration(environment);
  directory=new AwsCognitoAdminDirectory(new CognitoIdentityProviderClient(cognitoSdkClientConfiguration(config.verification.region)),config.verification.userPoolId,config.verification.clientId);
  return directory;
