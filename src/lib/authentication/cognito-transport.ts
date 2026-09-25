@@ -120,7 +120,10 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   },
   async logout(request:Request){
    const rejected=guard(request,'/api/auth/cognito/logout','POST');if(rejected)return rejected;
-   const cleared=[cookie(sessionCookie,'',0),cookie(flowCookie,'',0)];
+   // Match the bridge sign-out contract: a new multi-agency login must choose
+   // its agency instead of inheriting the previous session's tenant selection.
+   const cleared=[cookie(sessionCookie,'',0),cookie(flowCookie,'',0),
+    cookie('tracepoint_department_id','',0),cookie('tracepoint_support_department_id','',0)];
    try{await ports.revoke(readCookie(request,sessionCookie));const url=new URL(providerOrigin+'/logout');url.search=new URLSearchParams({client_id:config.clientId,logout_uri:origin+'/login'}).toString();return response(303,'signed_out',{location:url.toString(),cookies:cleared});}
    catch{return response(503,'logout_unconfirmed',{cookies:cleared});}
   },

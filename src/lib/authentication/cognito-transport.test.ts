@@ -44,8 +44,12 @@ test('refresh rejects CSRF and malformed cookies; successful rotation issues a n
  f.ports.rotate=async()=>{throw Error('private provider response');};const denied=await f.api.refresh(post('refresh',{cookie}));assert.equal(denied.status,401);assert.ok(denied.headers.get('set-cookie')?.includes('Max-Age=0'));assert.equal((await denied.text()).includes('private'),false);
 });
 test('logout persists revocation before hosted logout redirect and never claims success on failure',async()=>{
- const f=fixture(),request=post('logout',{cookie:'__Host-tracepoint-cognito-session='+handle});const response=await f.api.logout(request);assert.equal(f.calls.revoke,1);assert.equal(response.status,303);const location=new URL(response.headers.get('location')!);assert.equal(location.pathname,'/logout');assert.equal(location.searchParams.get('logout_uri'),origin+'/login');assert.equal(response.headers.getSetCookie().length,2);
+ const f=fixture(),request=post('logout',{cookie:'__Host-tracepoint-cognito-session='+handle});const response=await f.api.logout(request);assert.equal(f.calls.revoke,1);assert.equal(response.status,303);const location=new URL(response.headers.get('location')!);assert.equal(location.pathname,'/logout');assert.equal(location.searchParams.get('logout_uri'),origin+'/login');
+ const cookies=response.headers.getSetCookie();assert.equal(cookies.length,4);
+ for(const name of ['tracepoint_department_id','tracepoint_support_department_id'])
+  assert.ok(cookies.some(value=>value.startsWith(name+'=;')&&value.includes('Max-Age=0')&&value.includes('HttpOnly')&&value.includes('Secure')));
  f.ports.revoke=async()=>{throw Error('private store failure');};const failed=await f.api.logout(request);assert.equal(failed.status,503);assert.equal(failed.headers.has('location'),false);assert.equal((await failed.text()).includes('private'),false);
+ assert.equal(failed.headers.getSetCookie().length,4);
 });
 test('transport refuses a PKCE cookie lifetime divergent from the server contract',async()=>{
  const f=fixture(),begin=f.ports.pkce.begin;
