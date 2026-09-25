@@ -58,6 +58,12 @@ test('bad nonce or inconsistent original authentication cannot issue a durable r
   const f=await fixture();await assert.rejects(f.establish(f.tokens(idPatch,accessPatch),suppliedNonce),{message:'Cognito session establishment failed. Start a new sign-in.'});assert.equal((await pool.query('select count(*)::int as count from authentication_refresh_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
  }
 });
+test('different signed ID and access subjects fail before any session is registered',async()=>{
+ const f=await fixture();
+ await assert.rejects(f.establish(f.tokens({}, {sub:randomUUID()}),nonce),{message:'Cognito session establishment failed. Start a new sign-in.'});
+ assert.equal((await pool.query('select count(*)::int as count from authentication_access_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
+ assert.equal((await pool.query('select count(*)::int as count from authentication_refresh_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
+});
 test('global logout during token exchange prevents rotation commit in the real store',async()=>{
  const f=await fixture(),receipt=await f.establish(f.tokens(),nonce);
  const rotate=createCognitoRefreshRotator(config,f.mapping,f.sessions,f.refresh,async()=>{await f.sessions.revokeAll({userId:f.userId,issuer});return f.tokens();},{jwksCache:cache});

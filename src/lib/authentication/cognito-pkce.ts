@@ -88,6 +88,11 @@ export function createCognitoPkceTokenVerifier(config:CognitoVerificationConfig,
    const claims=await verifier.verify(tokens.idToken);
    branch='id_token_nonce';if(!/^[A-Za-z0-9_-]{43}$/.test(nonce)||claims.nonce!==nonce)throw Error();
    shadowCognitoDiagnostic('id_token_verified',{idDuration:typeof claims.exp==='number'&&typeof claims.iat==='number'?claims.exp-claims.iat:null});
+   // This precheck cannot authorize anything: the access token is still
+   // verified cryptographically below before mapping or first-login promotion.
+   branch='id_access_subject_precheck';
+   const accessPayload=JSON.parse(Buffer.from(tokens.accessToken.split('.')[1],'base64url').toString('utf8'));
+   if(accessPayload.sub!==claims.sub)throw Error();
    branch='access_token_verification';
    const identity=await access.verifySession(tokens.accessToken);
    branch='id_access_identity_consistency';if(!identity||identity.provider!=='cognito'||identity.issuer!==issuer||identity.subject!==claims.sub){

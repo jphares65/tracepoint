@@ -1,0 +1,36 @@
+{
+  "family": "tracepoint-production-phase3c-rehearsal-first-login-schema",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::193644343389:role/TracePoint-Phase3cRehearsalFixtureExec",
+  "taskRoleArn": "arn:aws:iam::193644343389:role/TracePoint-Phase3cRehearsalFixtureTask",
+  "containerDefinitions": [
+    {
+      "name": "schema",
+      "image": "REPLACE_WITH_VERIFIED_IMAGE_DIGEST",
+      "essential": true,
+      "command": ["/app/phase3c-first-login-schema.cjs"],
+      "environment": [
+        {"name": "TRACEPOINT_DATABASE_CA_PATH", "value": "/app/rds-ca.pem"}
+      ],
+      "secrets": [
+        {
+          "name": "TRACEPOINT_DATABASE_SECRET_JSON",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/rehearsal/database-fixture-4272874f-KnwdBw"
+        }
+      ],
+      "user": "65532:65532",
+      "readonlyRootFilesystem": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/tracepoint-production-phase3c-rehearsal-app",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "first-login-schema"
+        }
+      }
+    }
+  ]
+}

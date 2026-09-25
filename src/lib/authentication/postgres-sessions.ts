@@ -7,7 +7,7 @@ function valid(input:SessionKey){return uuid.test(input.userId)&&uuid.test(input
 // Construct only from the trusted server pool. Registration accepts claims only
 // after signature/client/nonce verification; it is not an authentication API.
 export class PostgresCognitoSessionStore {
- constructor(private readonly pool:Pick<Pool,'query'|'connect'>){}
+ constructor(private readonly pool:Pick<Pool,'query'|'connect'>,private readonly rehearsalFirstLogin=false){}
  readonly isActive:SessionActivityCheck=async input=>{
   if(!valid(input)){shadowCognitoDiagnostic('access_session_key_shape');return false;}
   try{const result=await this.pool.query(`select 1 from public.authentication_access_sessions s
@@ -21,7 +21,13 @@ export class PostgresCognitoSessionStore {
  async registerVerified(input:SessionKey & {expiresAt:number}){
   const now=Math.floor(Date.now()/1000);if(!valid(input)||!Number.isInteger(input.expiresAt)||input.expiresAt<=now||input.issuedAt>now+30||input.expiresAt<=input.issuedAt||input.expiresAt-input.issuedAt>900){shadowCognitoDiagnostic('access_session_claims',{duration:input.expiresAt-input.issuedAt});throw Error('Invalid verified session claims.');}
   const client=await this.pool.connect();try{await client.query('begin');
-   const mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);if(mapping.rowCount!==1){shadowCognitoDiagnostic('access_session_mapping_lock',{matchCount:mapping.rowCount??0});throw Error();}
+   let mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
+   if(mapping.rowCount!==1&&this.rehearsalFirstLogin){
+    const promoted=await client.query<{user_id:string}>("select tracepoint_auth.promote_rehearsal_readington_officer_first_login($1,$2,$3) as user_id",[input.issuer,input.subject,input.userId]);
+    if(promoted.rowCount!==1||promoted.rows[0].user_id!==input.userId)throw Error();
+    mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
+   }
+   if(mapping.rowCount!==1){shadowCognitoDiagnostic('access_session_mapping_lock',{matchCount:mapping.rowCount??0});throw Error();}
    const result=await client.query(`insert into public.authentication_access_sessions(issuer,subject,tracepoint_user_id,token_id,issued_at,expires_at)
     select $1,$2,$3,$4,to_timestamp($5),to_timestamp($6)
     where not exists(select 1 from public.authentication_session_revocations where tracepoint_user_id=$3 and issuer=$1 and revoked_before>=to_timestamp($5))`,[input.issuer,input.subject,input.userId,input.tokenId,input.issuedAt,input.expiresAt]);if(result.rowCount!==1){shadowCognitoDiagnostic('access_session_insert_or_revocation',{inserted:result.rowCount===1});throw Error();}
