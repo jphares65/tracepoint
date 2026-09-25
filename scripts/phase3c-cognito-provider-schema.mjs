@@ -19,6 +19,7 @@ if (sql === raw) throw Error('Migration transaction envelope missing.');
 const client = new pg.Client({ host, port: 5432, user: secret.username, password: secret.password,
   database: 'tracepoint', ssl: { ca, rejectUnauthorized: true }, connectionTimeoutMillis: 10_000,
   statement_timeout: 20_000, application_name: 'tracepoint-phase3c-cognito-provider-schema' });
+async function main() {
 let phase = 'connect', started = false;
 try {
   await client.connect();
@@ -57,3 +58,5 @@ try {
   console.error(JSON.stringify({ status: 'FAIL', phase, sqlState: error?.code ?? null }));
   process.exitCode = 1;
 } finally { await client.end().catch(() => {}); }
+}
+main().catch(() => { process.exitCode = 1; });
