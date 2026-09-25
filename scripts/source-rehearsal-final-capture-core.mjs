@@ -24,7 +24,7 @@ export function sourceRequest(method, url) {
   const parsed = new URL(url);
   assert.equal(parsed.origin, SOURCE_ORIGIN, 'Only the paid source-rehearsal project is permitted');
   assert.equal(parsed.protocol, 'https:', 'Source access requires HTTPS');
-  const readPath = parsed.pathname.startsWith('/rest/v1/') || parsed.pathname === '/auth/v1/admin/users' || parsed.pathname.startsWith('/storage/v1/object/');
+  const readPath = parsed.pathname.startsWith('/rest/v1/') || parsed.pathname === '/auth/v1/admin/users' || STORAGE_BUCKETS.some(bucket => parsed.pathname.startsWith(`/storage/v1/object/authenticated/${bucket}/`));
   const postReadPath = parsed.pathname === '/rest/v1/rpc/tracepoint_source_rehearsal_fence_status' || STORAGE_BUCKETS.some(bucket => parsed.pathname === `/storage/v1/object/list/${bucket}`);
   assert.ok((method === 'GET' && readPath) || (method === 'POST' && postReadPath), 'Source capture is read-only and path-limited');
   return parsed;
@@ -43,7 +43,7 @@ export function objectPath(bucket, key) {
   assert.ok(typeof key === 'string' && key.length > 0 && key.length < 1024, 'Invalid object key');
   const parts = key.split('/');
   assert.ok(parts.every(part => part && part !== '.' && part !== '..'), 'Unsafe object key');
-  return `${SOURCE_ORIGIN}/storage/v1/object/${bucket}/${parts.map(encodeURIComponent).join('/')}`;
+  return `${SOURCE_ORIGIN}/storage/v1/object/authenticated/${bucket}/${parts.map(encodeURIComponent).join('/')}`;
 }
 
 export function classifyStorageEntry(prefix, entry) {

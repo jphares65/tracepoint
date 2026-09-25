@@ -17,7 +17,9 @@ test('capture is pinned to the paid source, exact AWS account, and one immutable
 
 test('only hardcoded source read paths are permitted', () => {
   assert.equal(sourceRequest('GET', relationUrl('departments', 0)).origin, SOURCE_ORIGIN);
+  assert.equal(objectPath('department-assets', 'tenant/patch.png'), `${SOURCE_ORIGIN}/storage/v1/object/authenticated/department-assets/tenant/patch.png`);
   assert.equal(sourceRequest('GET', objectPath('department-assets', 'tenant/patch.png')).origin, SOURCE_ORIGIN);
+  assert.throws(() => sourceRequest('GET', `${SOURCE_ORIGIN}/storage/v1/object/public/department-assets/tenant/patch.png`));
   assert.doesNotThrow(() => sourceRequest('POST', `${SOURCE_ORIGIN}/rest/v1/rpc/tracepoint_source_rehearsal_fence_status`));
   assert.doesNotThrow(() => sourceRequest('POST', `${SOURCE_ORIGIN}/storage/v1/object/list/department-assets`));
   assert.throws(() => sourceRequest('POST', `${SOURCE_ORIGIN}/rest/v1/departments`));
