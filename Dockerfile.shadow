@@ -18,6 +18,7 @@ ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app
 RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 RUN ./node_modules/.bin/esbuild scripts/phase3c-rehearsal-auth-fixture.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-rehearsal-auth-fixture.cjs
 RUN ./node_modules/.bin/esbuild scripts/phase3c-notification-queue-schema.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-notification-queue-schema.cjs
+RUN ./node_modules/.bin/esbuild scripts/phase3c-cognito-provider-schema.mjs --bundle --platform=node --format=cjs --target=node24 --outfile=/app/phase3c-cognito-provider-schema.cjs
 RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/next_server_actions_encryption_key)" \
     npm run build
@@ -37,7 +38,9 @@ COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
 COPY --from=builder --chown=nonroot:nonroot /app/rds-ca.pem /app/rds-ca.pem
 COPY --from=builder --chown=nonroot:nonroot /app/phase3c-rehearsal-auth-fixture.cjs /app/phase3c-rehearsal-auth-fixture.cjs
 COPY --from=builder --chown=nonroot:nonroot /app/phase3c-notification-queue-schema.cjs /app/phase3c-notification-queue-schema.cjs
+COPY --from=builder --chown=nonroot:nonroot /app/phase3c-cognito-provider-schema.cjs /app/phase3c-cognito-provider-schema.cjs
 COPY --from=builder --chown=nonroot:nonroot /app/database/aws/024_notification_email_server_enqueue.sql /app/database/aws/024_notification_email_server_enqueue.sql
+COPY --from=builder --chown=nonroot:nonroot /app/database/aws/025_cognito_provider_username_reconciliation.sql /app/database/aws/025_cognito_provider_username_reconciliation.sql
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
 COPY --from=builder --chown=nonroot:nonroot /runtime-volumes/cache /app/.next/cache
