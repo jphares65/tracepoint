@@ -10,6 +10,7 @@ import { CognitoDirectoryError,isCognitoDirectoryUsername,mapCognitoDirectoryErr
 import { cognitoSdkClientConfiguration, isCognitoPoolForRegion } from "./cognito-endpoints";
 import { notificationMode } from "@/lib/email/notification-mode";
 import { isApprovedRehearsalInvite } from "./cognito-rehearsal-invite-guard";
+import { pendingUserCreateInput } from "./cognito-pending-user-core";
 
 type CognitoSender={send(command:unknown):Promise<unknown>};
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -29,10 +30,9 @@ export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
   return{username,subject,email,emailVerified:attrs.get("email_verified")==="true",enabled:value.Enabled!==false,status:clean(value.UserStatus)};
  }
  async createPending(input:CreatePendingCognitoUser){
-  const username=this.username(input.username),email=clean(input.email).toLowerCase(),fullName=clean(input.fullName);
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!fullName)throw new CognitoDirectoryError("unavailable");
   const temporaryPassword=`Aa1!${randomBytes(24).toString("base64url")}`;
-  const result=await this.send(new AdminCreateUserCommand({UserPoolId:this.userPoolId,Username:username,TemporaryPassword:temporaryPassword,MessageAction:"SUPPRESS",ForceAliasCreation:false,UserAttributes:[{Name:"email",Value:email},{Name:"name",Value:fullName}]})) as {User?:{Username?:string;Attributes?:AttributeType[];Enabled?:boolean;UserStatus?:string}};
+  const createInput=pendingUserCreateInput(input.username,input.email,input.fullName,temporaryPassword);
+  const result=await this.send(new AdminCreateUserCommand({UserPoolId:this.userPoolId,...createInput})) as {User?:{Username?:string;Attributes?:AttributeType[];Enabled?:boolean;UserStatus?:string}};
   return this.map({Username:result.User?.Username,UserAttributes:result.User?.Attributes,Enabled:result.User?.Enabled,UserStatus:result.User?.UserStatus});
  }
  async get(username:string){const lookup=isCognitoDirectoryUsername(username)?username:this.email(username);const result=await this.send(new AdminGetUserCommand({UserPoolId:this.userPoolId,Username:lookup})) as {Username?:string;UserAttributes?:AttributeType[];Enabled?:boolean;UserStatus?:string};return this.map(result);}
