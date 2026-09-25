@@ -17,6 +17,12 @@ test('callback diagnostics are emitted only in exact shadow mode with fixed sani
     shadowCognitoDiagnostic('identity_link_lookup',{mappingPresent:false});
     assert.deepEqual(JSON.parse(lines[0]),{event:'shadow-cognito-callback-diagnostic',branch:'identity_link_lookup',mappingPresent:false});
     assert.equal(lines.length,1);
+    process.env.NEXT_PUBLIC_SITE_URL='https://shadow-rehearsal.tracepointhq.com';
+    shadowCognitoDiagnostic('flow_cookie',{matchingCount:0});
+    assert.deepEqual(JSON.parse(lines[1]),{event:'shadow-cognito-callback-diagnostic',branch:'flow_cookie',matchingCount:0});
+    process.env.NEXT_PUBLIC_SITE_URL='https://tracepointhq.com';
+    shadowCognitoDiagnostic('identity_link_lookup',{mappingPresent:false});
+    assert.equal(lines.length,2);
   }finally{
     console.warn=original;
     if(mode===undefined)delete process.env.TRACEPOINT_NOTIFICATION_MODE;else process.env.TRACEPOINT_NOTIFICATION_MODE=mode;
