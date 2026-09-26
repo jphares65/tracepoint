@@ -157,6 +157,7 @@ async function getContext() {
       "view_command_dashboard",
     ],
   );
+  const canViewAmmunition = hasAnyServerPermission(accessContext, ["manage_firearms"]);
 
   const canManageRange = hasAnyServerPermission(
     accessContext,
@@ -182,6 +183,7 @@ async function getContext() {
   return {
     ...accessContext,
     canManageArmory,
+    canViewAmmunition,
     canManageRange,
     canViewDepartmentReadiness,
   } as const;
@@ -944,7 +946,9 @@ export async function GET(request: NextRequest) {
       qualificationHistory,
     ] = await Promise.all([
       internalJson(request, "/api/armory/personal-rifles/inbox"),
-      internalJson(request, "/api/pilot/ammunition"),
+      context.canViewAmmunition
+        ? internalJson(request, "/api/pilot/ammunition")
+        : Promise.resolve(null),
       internalJson(request, "/api/armory/firearms"),
       internalJson(request, "/api/pilot/range-workspace"),
       collectCertificationReadiness(context)
@@ -1001,7 +1005,8 @@ export async function GET(request: NextRequest) {
     if (rifles.ok) { successful.add("Personal Rifle"); generated.push(...collectPersonalRifles(rifles.payload)); }
     else sourceErrors.push({ source: "Personal Rifle", error: rifles.error || "Unavailable" });
 
-    if (ammunition.ok) { successful.add("Ammunition"); generated.push(...collectAmmunition(ammunition.payload)); }
+    if (ammunition === null) { successful.add("Ammunition"); }
+    else if (ammunition.ok) { successful.add("Ammunition"); generated.push(...collectAmmunition(ammunition.payload)); }
     else sourceErrors.push({ source: "Ammunition", error: ammunition.error || "Unavailable" });
 
     if (firearms.ok) { successful.add("Inspection"); generated.push(...collectInspections(firearms.payload, context)); }
