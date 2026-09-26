@@ -1,0 +1,669 @@
+{
+  "Description": "TracePoint staging AWS foundation",
+  "Resources": {
+    "DeliveryConfigurationE6C74ADD": {
+      "Type": "AWS::SES::ConfigurationSet",
+      "Properties": {
+        "DeliveryOptions": {
+          "TlsPolicy": "REQUIRE"
+        },
+        "Name": "tracepoint-staging",
+        "ReputationOptions": {
+          "ReputationMetricsEnabled": true
+        },
+        "SuppressionOptions": {
+          "SuppressedReasons": [
+            "BOUNCE",
+            "COMPLAINT"
+          ]
+        }
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/DeliveryConfiguration/Resource"
+      }
+    },
+    "DeliveryConfigurationFeedbackEvents6D02B69B": {
+      "Type": "AWS::SES::ConfigurationSetEventDestination",
+      "Properties": {
+        "ConfigurationSetName": {
+          "Ref": "DeliveryConfigurationE6C74ADD"
+        },
+        "EventDestination": {
+          "Enabled": true,
+          "MatchingEventTypes": [
+            "bounce",
+            "complaint",
+            "delivery"
+          ],
+          "SnsDestination": {
+            "TopicARN": {
+              "Ref": "Feedback2A073F76"
+            }
+          }
+        }
+      },
+      "DependsOn": [
+        "FeedbackPolicy4EDFC066"
+      ],
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/DeliveryConfiguration/FeedbackEvents/Resource"
+      }
+    },
+    "CognitoDeliveryConfiguration8831A346": {
+      "Type": "AWS::SES::ConfigurationSet",
+      "Properties": {
+        "DeliveryOptions": {
+          "TlsPolicy": "REQUIRE"
+        },
+        "Name": "tracepoint-staging-cognito",
+        "ReputationOptions": {
+          "ReputationMetricsEnabled": true
+        },
+        "SuppressionOptions": {
+          "SuppressedReasons": [
+            "BOUNCE",
+            "COMPLAINT"
+          ]
+        }
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/CognitoDeliveryConfiguration/Resource"
+      }
+    },
+    "SenderDomain86451910": {
+      "Type": "AWS::SES::EmailIdentity",
+      "Properties": {
+        "ConfigurationSetAttributes": {
+          "ConfigurationSetName": {
+            "Ref": "DeliveryConfigurationE6C74ADD"
+          }
+        },
+        "DkimAttributes": {
+          "SigningEnabled": true
+        },
+        "DkimSigningAttributes": {
+          "NextSigningKeyLength": "RSA_2048_BIT"
+        },
+        "EmailIdentity": "staging.tracepointhq.com",
+        "FeedbackAttributes": {
+          "EmailForwardingEnabled": true
+        },
+        "MailFromAttributes": {
+          "BehaviorOnMxFailure": "REJECT_MESSAGE",
+          "MailFromDomain": "bounce.staging.tracepointhq.com"
+        }
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/SenderDomain/Resource"
+      }
+    },
+    "FeedbackKey7C80F64A": {
+      "Type": "AWS::KMS::Key",
+      "Properties": {
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Statement": [
+            {
+              "Action": "kms:*",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":iam::559054714699:root"
+                    ]
+                  ]
+                }
+              },
+              "Resource": "*"
+            },
+            {
+              "Action": [
+                "kms:Decrypt",
+                "kms:GenerateDataKey*"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": "559054714699",
+                  "aws:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":ses:us-east-1:559054714699:configuration-set/",
+                        {
+                          "Ref": "DeliveryConfigurationE6C74ADD"
+                        }
+                      ]
+                    ]
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ses.amazonaws.com"
+              },
+              "Resource": "*"
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/FeedbackKey/Resource"
+      }
+    },
+    "Feedback2A073F76": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "KmsMasterKeyId": {
+          "Fn::GetAtt": [
+            "FeedbackKey7C80F64A",
+            "Arn"
+          ]
+        },
+        "TopicName": "tracepoint-staging-ses-feedback"
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/Feedback/Resource"
+      }
+    },
+    "FeedbackPolicy4EDFC066": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sns:Publish",
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceAccount": "559054714699",
+                  "AWS:SourceArn": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":ses:us-east-1:559054714699:configuration-set/",
+                        {
+                          "Ref": "DeliveryConfigurationE6C74ADD"
+                        }
+                      ]
+                    ]
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ses.amazonaws.com"
+              },
+              "Resource": {
+                "Ref": "Feedback2A073F76"
+              },
+              "Sid": "0"
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Topics": [
+          {
+            "Ref": "Feedback2A073F76"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/Feedback/Policy/Resource"
+      }
+    },
+    "FeedbackDeadLetters07994F3B": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "SqsManagedSseEnabled": true
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/FeedbackDeadLetters/Resource"
+      }
+    },
+    "FeedbackDeadLettersPolicyFD1D53BE": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "FeedbackDeadLetters07994F3B",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": "sqs:SendMessage",
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Ref": "Feedback2A073F76"
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "sns.amazonaws.com"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "FeedbackDeadLetters07994F3B",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "FeedbackDeadLetters07994F3B"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/FeedbackDeadLetters/Policy/Resource"
+      }
+    },
+    "FeedbackQueueC15639F7": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "FeedbackDeadLetters07994F3B",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        },
+        "SqsManagedSseEnabled": true,
+        "VisibilityTimeout": 180
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/FeedbackQueue/Resource"
+      }
+    },
+    "FeedbackQueuePolicy7603536F": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "FeedbackQueueC15639F7",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": "sqs:SendMessage",
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Ref": "Feedback2A073F76"
+                  }
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "sns.amazonaws.com"
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "FeedbackQueueC15639F7",
+                  "Arn"
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Queues": [
+          {
+            "Ref": "FeedbackQueueC15639F7"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/FeedbackQueue/Policy/Resource"
+      }
+    },
+    "FeedbackQueuetracepointstagingsesfoundationFeedback31262DFD686B1A0C": {
+      "Type": "AWS::SNS::Subscription",
+      "Properties": {
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "FeedbackQueueC15639F7",
+            "Arn"
+          ]
+        },
+        "Protocol": "sqs",
+        "RawMessageDelivery": false,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "FeedbackDeadLetters07994F3B",
+              "Arn"
+            ]
+          }
+        },
+        "TopicArn": {
+          "Ref": "Feedback2A073F76"
+        }
+      },
+      "DependsOn": [
+        "FeedbackQueuePolicy7603536F"
+      ],
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/FeedbackQueue/tracepointstagingsesfoundationFeedback31262DFD/Resource"
+      }
+    },
+    "PreparedRuntimeSendPolicyF9F41CDA": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "ses:SendEmail",
+              "Condition": {
+                "StringEquals": {
+                  "ses:FromAddress": "notifications@staging.tracepointhq.com"
+                }
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":ses:us-east-1:559054714699:identity/",
+                    {
+                      "Ref": "SenderDomain86451910"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "Action": "ses:SendEmail",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":ses:us-east-1:559054714699:configuration-set/",
+                    {
+                      "Ref": "DeliveryConfigurationE6C74ADD"
+                    }
+                  ]
+                ]
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "PreparedRuntimeSendPolicyF9F41CDA",
+        "Roles": [
+          {
+            "Fn::ImportValue": "tracepoint-staging-compute:ExportsOutputRefAwsNativeTaskRoleF99DC6D0883D1D26"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/PreparedRuntimeSendPolicy/Resource",
+        "com.aws.cloudformation.Context": {
+          "why": "SES v2 checks sender identity and selected configuration set separately; preserve both exact-resource allows without wildcard",
+          "must": [
+            "SendEmail only for the staging sender identity and its staging configuration set",
+            "Keep exact FromAddress on identity permission; no customer or production sender scope"
+          ],
+          "mutable": "change-with-constraints"
+        }
+      }
+    },
+    "CDKMetadata": {
+      "Type": "AWS::CDK::Metadata",
+      "Properties": {
+        "Analytics": "v2:deflate64:H4sIAAAAAAAA/22OQU7DQAxFz9L9xJSowAFKF6gLCmGPphMXuUk8Ifa0ikZzd5Sk0ELZ2P+/b1vOIb9/gPnMHiVzZZXVtIVYqHWVsUd5j4ICcel5Rx+hs0qeC1Sz3PE1+wNWB2R9RFHiEf23dDWzaizVTyWykvbDxi+QTNUIxDWO0Rr7ZIQF4ptvyQ1oEmPd+Jpc/wNPtghbcR213w9d+mTkUyC+BAw4ZJMY6/nYhU2GbAPxnJ1wGvRz0DZoMuxLhL3cHPIF3N7BfLYXoqwLrNQgvE79C7uA75WFAQAA"
+      },
+      "Metadata": {
+        "aws:cdk:path": "tracepoint-staging-ses-foundation/CDKMetadata/Default"
+      }
+    }
+  },
+  "Outputs": {
+    "DnsRecords": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "[{\"type\":\"CNAME\",\"name\":\"",
+            {
+              "Fn::GetAtt": [
+                "SenderDomain86451910",
+                "DkimDNSTokenName1"
+              ]
+            },
+            "\",\"value\":\"",
+            {
+              "Fn::GetAtt": [
+                "SenderDomain86451910",
+                "DkimDNSTokenValue1"
+              ]
+            },
+            "\"},{\"type\":\"CNAME\",\"name\":\"",
+            {
+              "Fn::GetAtt": [
+                "SenderDomain86451910",
+                "DkimDNSTokenName2"
+              ]
+            },
+            "\",\"value\":\"",
+            {
+              "Fn::GetAtt": [
+                "SenderDomain86451910",
+                "DkimDNSTokenValue2"
+              ]
+            },
+            "\"},{\"type\":\"CNAME\",\"name\":\"",
+            {
+              "Fn::GetAtt": [
+                "SenderDomain86451910",
+                "DkimDNSTokenName3"
+              ]
+            },
+            "\",\"value\":\"",
+            {
+              "Fn::GetAtt": [
+                "SenderDomain86451910",
+                "DkimDNSTokenValue3"
+              ]
+            },
+            "\"},{\"type\":\"MX\",\"name\":\"bounce.staging.tracepointhq.com\",\"value\":\"10 feedback-smtp.us-east-1.amazonses.com\"},{\"type\":\"TXT\",\"name\":\"bounce.staging.tracepointhq.com\",\"value\":\"v=spf1 include:amazonses.com -all\"},{\"type\":\"TXT\",\"name\":\"_dmarc.staging.tracepointhq.com\",\"value\":\"v=DMARC1; p=none;\"}]"
+          ]
+        ]
+      }
+    },
+    "ConfigurationSet": {
+      "Value": {
+        "Ref": "DeliveryConfigurationE6C74ADD"
+      }
+    },
+    "FromAddress": {
+      "Value": "notifications@staging.tracepointhq.com"
+    },
+    "FeedbackTopicArn": {
+      "Value": {
+        "Ref": "Feedback2A073F76"
+      }
+    },
+    "CognitoConfigurationSet": {
+      "Value": {
+        "Ref": "CognitoDeliveryConfiguration8831A346"
+      }
+    },
+    "FeedbackQueueArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "FeedbackQueueC15639F7",
+          "Arn"
+        ]
+      }
+    },
+    "ActivationGate": {
+      "Value": "DISABLED: durable queue and batch consumer prepared; require explicit runtime send permission and worker deployment with trusted database connection, DNS verification, sandbox readiness, suppression import and real delivery before activation."
+    },
+    "ExportsOutputRefCognitoDeliveryConfiguration8831A346D05EAA1B": {
+      "Value": {
+        "Ref": "CognitoDeliveryConfiguration8831A346"
+      },
+      "Export": {
+        "Name": "tracepoint-staging-ses-foundation:ExportsOutputRefCognitoDeliveryConfiguration8831A346D05EAA1B"
+      }
+    },
+    "ExportsOutputFnGetAttFeedbackQueueC15639F7ArnAB411EA9": {
+      "Value": {
+        "Fn::GetAtt": [
+          "FeedbackQueueC15639F7",
+          "Arn"
+        ]
+      },
+      "Export": {
+        "Name": "tracepoint-staging-ses-foundation:ExportsOutputFnGetAttFeedbackQueueC15639F7ArnAB411EA9"
+      }
+    },
+    "ExportsOutputRefFeedback2A073F762F3D380F": {
+      "Value": {
+        "Ref": "Feedback2A073F76"
+      },
+      "Export": {
+        "Name": "tracepoint-staging-ses-foundation:ExportsOutputRefFeedback2A073F762F3D380F"
+      }
+    },
+    "ExportsOutputFnGetAttFeedbackQueueC15639F7QueueNameAB8FA741": {
+      "Value": {
+        "Fn::GetAtt": [
+          "FeedbackQueueC15639F7",
+          "QueueName"
+        ]
+      },
+      "Export": {
+        "Name": "tracepoint-staging-ses-foundation:ExportsOutputFnGetAttFeedbackQueueC15639F7QueueNameAB8FA741"
+      }
+    },
+    "ExportsOutputFnGetAttFeedbackDeadLetters07994F3BQueueNameE2175500": {
+      "Value": {
+        "Fn::GetAtt": [
+          "FeedbackDeadLetters07994F3B",
+          "QueueName"
+        ]
+      },
+      "Export": {
+        "Name": "tracepoint-staging-ses-foundation:ExportsOutputFnGetAttFeedbackDeadLetters07994F3BQueueNameE2175500"
+      }
+    },
+    "ExportsOutputRefDeliveryConfigurationE6C74ADDD7068640": {
+      "Value": {
+        "Ref": "DeliveryConfigurationE6C74ADD"
+      },
+      "Export": {
+        "Name": "tracepoint-staging-ses-foundation:ExportsOutputRefDeliveryConfigurationE6C74ADDD7068640"
+      }
+    }
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Type": "AWS::SSM::Parameter::Value<String>",
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+    }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5"
+                  ],
+                  {
+                    "Ref": "BootstrapVersion"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+        }
+      ]
+    }
+  },
+  "Metadata": {
+    "AWSToolsMetrics": {
+      "AWSAgentToolkit": "aws-cloudformation@2"
+    }
+  }
+}

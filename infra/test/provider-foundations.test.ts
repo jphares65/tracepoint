@@ -21,8 +21,14 @@ for(const environmentName of ['staging','production'] as const){
   template.hasResourceProperties('AWS::SNS::Topic',{KmsMasterKeyId:Match.anyValue()});template.hasResourceProperties('AWS::KMS::Key',{EnableKeyRotation:true});
   template.hasResourceProperties('AWS::SES::ConfigurationSet',{SuppressionOptions:{SuppressedReasons:['BOUNCE','COMPLAINT']},DeliveryOptions:{TlsPolicy:'REQUIRE'}});
   template.resourceCountIs('AWS::Route53::RecordSet',0);template.resourceCountIs('AWS::SNS::Subscription',1);template.resourceCountIs('AWS::SQS::Queue',2);template.hasResourceProperties('AWS::SQS::Queue',{SqsManagedSseEnabled:true,MessageRetentionPeriod:1209600,RedrivePolicy:{deadLetterTargetArn:Match.anyValue(),maxReceiveCount:5}});template.hasResourceProperties('AWS::SNS::Subscription',{RawMessageDelivery:false,Protocol:'sqs'});
-  const policy=Object.values(template.findResources('AWS::IAM::Policy'))[0] as {Properties:{PolicyDocument:{Statement:Array<{Action:string;Condition:unknown}>}}};
+  const policy=Object.values(template.findResources('AWS::IAM::Policy'))[0] as {Properties:{PolicyDocument:{Statement:Array<{Action:string;Condition?:unknown;Resource:unknown}>}}};
+  assert.equal(policy.Properties.PolicyDocument.Statement.length,2);
   assert.equal(policy.Properties.PolicyDocument.Statement[0].Action,'ses:SendEmail');assert.ok(policy.Properties.PolicyDocument.Statement[0].Condition);
+  assert.equal(policy.Properties.PolicyDocument.Statement[1].Action,'ses:SendEmail');
+  const configurationResource=JSON.stringify(policy.Properties.PolicyDocument.Statement[1].Resource);
+  assert.match(configurationResource,new RegExp(`:ses:us-east-1:${account}:configuration-set/`));
+  assert.match(configurationResource,/DeliveryConfigurationE6C74ADD/);
+  assert.doesNotMatch(configurationResource,/\*/);
  });
 }
 test('provider stacks reject management and mismatched staging accounts',()=>{

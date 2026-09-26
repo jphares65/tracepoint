@@ -32,7 +32,11 @@ export class SesFoundationStack extends cdk.Stack {
   // Preserve the signed SNS envelope; the consumer verifies it before persistence.
   topic.addSubscription(new subscriptions.SqsSubscription(queue,{rawMessageDelivery:false,deadLetterQueue}));
   configuration.addEventDestination('FeedbackEvents',{destination:ses.EventDestination.snsTopic(topic),events:[ses.EmailSendingEvent.BOUNCE,ses.EmailSendingEvent.COMPLAINT,ses.EmailSendingEvent.DELIVERY]});
-  if(props.taskRole)new iam.Policy(this,'PreparedRuntimeSendPolicy',{roles:[props.taskRole],statements:[new iam.PolicyStatement({actions:['ses:SendEmail'],resources:[identity.emailIdentityArn],conditions:{StringEquals:{'ses:FromAddress':from}}})]});
+  if(props.taskRole)new iam.Policy(this,'PreparedRuntimeSendPolicy',{roles:[props.taskRole],statements:[
+   new iam.PolicyStatement({actions:['ses:SendEmail'],resources:[identity.emailIdentityArn],conditions:{StringEquals:{'ses:FromAddress':from}}}),
+   // SES v2 authorizes the selected configuration set separately from the sender identity.
+   new iam.PolicyStatement({actions:['ses:SendEmail'],resources:[configArn]}),
+  ]});
   const records=[...identity.dkimRecords.map(x=>({type:'CNAME',name:x.name,value:x.value})),
    {type:'MX',name:mailFrom,value:'10 feedback-smtp.us-east-1.amazonses.com'},
    {type:'TXT',name:mailFrom,value:'v=spf1 include:amazonses.com -all'},
