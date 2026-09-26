@@ -5,6 +5,13 @@ const base = ['--profile', 'tracepoint-production', '--region', 'us-east-1', '--
 const aws = args => JSON.parse(execFileSync('aws', [...args, ...base], { encoding: 'utf8', maxBuffer: 5_000_000 }));
 const role = 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-task-v1';
 const execution = 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-execution-v1';
+// The shared production configuration set currently routes feedback to a worker
+// pinned to the older runtime DB. Never repeat an uncorrelated simulator send.
+const worker = aws(['lambda', 'get-function-configuration', '--function-name',
+  'tracepoint-production-full-aws-ses--Worker11F36D0F-jKRMunYkq4Md']);
+assert.equal(worker.Environment?.Variables?.TRACEPOINT_DATABASE_SECRET_ARN,
+  'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb',
+  'SES feedback worker is not pinned to the final RDS; no simulator send allowed');
 const task = {
   family: 'tracepoint-production-aws-native-ses-simulator-proof',
   taskRoleArn: role, executionRoleArn: execution, networkMode: 'awsvpc',
