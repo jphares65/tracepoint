@@ -9,6 +9,16 @@ const EXPECTED_SHA256 = '6a46b39803c5874227449b840ab1962c00d6b63ffde5d6b5f5f8da1
 const PROOF_ROLE = 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-task-v1';
 const OPERATOR_ROLE = 'arn:aws:iam::193644343389:role/TracePointMigrationProduction';
 const CFN_ROLE = 'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1';
+// SES v1/v2 send actions other than SendEmail, per the AWS Service Authorization Reference.
+// The proof role's identity policy and permissions boundary also allow only SendEmail.
+const OTHER_SES_SEND_ACTIONS = [
+  'ses:SendBounce',
+  'ses:SendBulkEmail',
+  'ses:SendBulkTemplatedEmail',
+  'ses:SendCustomVerificationEmail',
+  'ses:SendRawEmail',
+  'ses:SendTemplatedEmail',
+];
 const sha = text => createHash('sha256').update(text).digest('hex');
 const same = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected);
 
@@ -26,8 +36,9 @@ export function narrowProductionSesDeny(content, expectedSha256 = EXPECTED_SHA25
       send.Effect !== 'Deny' || send.Action !== 'ses:Send*' || send.Resource !== '*' || send.Condition !== undefined) {
     throw new Error('SES deny contract differs; no change allowed');
   }
-  // Preserve every non-send restriction exactly. A separate SES send deny still
-  // covers all other principals; only the exact proof role is exempted.
+  // Preserve every non-send restriction exactly. All other principals retain the
+  // wildcard send denial. For the exact proof role, every other documented SES
+  // send operation remains explicitly denied by this SCP.
   foundation.Action = ['ses:Create*', 'ses:Put*', 'ses:Update*', 'ses:Delete*'];
   const sendOutsideProof = {
     Sid: 'KeepSesSendingDisabledOutsideFoundationOrExactProofRole', Effect: 'Deny',
@@ -36,10 +47,16 @@ export function narrowProductionSesDeny(content, expectedSha256 = EXPECTED_SHA25
   };
   result.Statement.splice(result.Statement.indexOf(foundation) + 1, 0, sendOutsideProof);
   send.Condition = { ArnNotEquals: { 'aws:PrincipalArn': PROOF_ROLE } };
+  result.Statement.splice(result.Statement.indexOf(send) + 1, 0, {
+    Sid: 'DenyAllOtherSesSendActionsForExactProofRole', Effect: 'Deny',
+    Action: OTHER_SES_SEND_ACTIONS, Resource: '*',
+    Condition: { ArnEquals: { 'aws:PrincipalArn': PROOF_ROLE } },
+  });
   if (!same(result.Statement.filter(statement => ![
     'KeepSesDisabledOutsideAuthorizedFoundationRoles',
     'KeepSesSendingDisabledOutsideFoundationOrExactProofRole',
     'DenySesSendingUntilSeparateAuthorization',
+    'DenyAllOtherSesSendActionsForExactProofRole',
   ].includes(statement.Sid)), original.Statement.filter(statement => ![
     'KeepSesDisabledOutsideAuthorizedFoundationRoles',
     'DenySesSendingUntilSeparateAuthorization',

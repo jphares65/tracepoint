@@ -5,6 +5,9 @@ import { requiredProductionCutoverGates, validateAwsNativeProductionReview } fro
 const valid = () => ({
   account: '193644343389', region: 'us-east-1', hostname: 'tracepointhq.com',
   roleArn: 'arn:aws:iam::193644343389:role/TracePointMigrationProduction',
+  taskRoleArn: 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-task-v1',
+  permissionsBoundaryArn: 'arn:aws:iam::193644343389:policy/TracePointProductionNativeProofBoundary-v1',
+  permissionsBoundaryVersionId: 'v1',
   imageDigest: 'sha256:cf19c9887eee2c79eac2abf2e0337f5a2bb95beefc5e20d0f1ffc0453a2f7b46',
   sourceCommit: '2a92bccd04060785c95b18fdc6bfa90505c26c7a',
   imageScanStatus: 'COMPLETE', imageScanFindings: 0, rollbackImageDigest: `sha256:${'a'.repeat(64)}`,
@@ -19,7 +22,7 @@ const valid = () => ({
   cognito: { poolId: 'us-east-1_diFmWDMe9', clientId: '9tfp383dgjuvanhnh94bstafr',
     issuer: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_diFmWDMe9',
     callbackUrl: 'https://tracepointhq.com/api/auth/cognito/callback', logoutUrl: 'https://tracepointhq.com/login',
-    pkceS256: true, mfaRequired: true, accessTokenMinutes: 15, idTokenMinutes: 15 },
+    pkceS256: true, mfaRequired: true, accessTokenMinutes: 5, idTokenMinutes: 5 },
   ses: { fromAddress: 'notifications@tracepointhq.com', configurationSet: 'tracepoint-production',
     feedbackToFinalDatabase: true, customerDeliveryApproved: true },
   routing: { publicAuthorityChanged: false, publicDnsChanged: false, publicEcsChanged: false },
@@ -34,6 +37,9 @@ test('review-only validator requires every exact AWS-native authority boundary',
   });
   for (const change of [
     { imageScanFindings: 1 }, { imageDigest: `sha256:${'b'.repeat(64)}` },
+    { taskRoleArn: 'arn:aws:iam::193644343389:role/tracepoint-production-ecs-task' },
+    { permissionsBoundaryArn: 'arn:aws:iam::193644343389:policy/TracePointProductionBoundary' },
+    { permissionsBoundaryVersionId: 'v2' },
     { providers: { ...valid().providers, supabaseApplicationAccess: true } },
     { database: { ...valid().database, resourceId: 'db-WRONG' } },
     { cognito: { ...valid().cognito, poolId: 'us-east-1_wZwXHpznS' } },

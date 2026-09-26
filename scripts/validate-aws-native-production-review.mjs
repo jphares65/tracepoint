@@ -10,6 +10,9 @@ const exact = Object.freeze({
   databaseHost: 'tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com',
   databaseSecretArn: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb',
   bucket: 'tracepoint-production-private-193644343389',
+  taskRoleArn: 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-task-v1',
+  permissionsBoundaryArn: 'arn:aws:iam::193644343389:policy/TracePointProductionNativeProofBoundary-v1',
+  permissionsBoundaryVersionId: 'v1',
   poolId: 'us-east-1_diFmWDMe9',
   clientId: '9tfp383dgjuvanhnh94bstafr',
 });
@@ -29,6 +32,9 @@ export function validateAwsNativeProductionReview(input) {
     if (input[key] !== exact[key]) fail(`Exact AWS-native production ${key} is required`);
   }
   if (input.roleArn !== `arn:aws:iam::${exact.account}:role/TracePointMigrationProduction` ||
+      input.taskRoleArn !== exact.taskRoleArn ||
+      input.permissionsBoundaryArn !== exact.permissionsBoundaryArn ||
+      input.permissionsBoundaryVersionId !== exact.permissionsBoundaryVersionId ||
       input.imageScanStatus !== 'COMPLETE' || input.imageScanFindings !== 0 ||
       !/^sha256:[0-9a-f]{64}$/.test(input.rollbackImageDigest) ||
       input.rollbackImageDigest === input.imageDigest) fail('Reviewed role, clean image, and distinct rollback image required');
@@ -58,7 +64,7 @@ export function validateAwsNativeProductionReview(input) {
       auth.callbackUrl !== 'https://tracepointhq.com/api/auth/cognito/callback' ||
       auth.logoutUrl !== 'https://tracepointhq.com/login' ||
       auth.pkceS256 !== true || auth.mfaRequired !== true ||
-      auth.accessTokenMinutes !== 15 || auth.idTokenMinutes !== 15) {
+      auth.accessTokenMinutes !== 5 || auth.idTokenMinutes !== 5) {
     fail('Exact production Cognito authority mismatch');
   }
   const ses = input.ses ?? {};

@@ -10,6 +10,14 @@ Rollback image caveat: public task revision 4 is still running its original brid
 
 Stop before any write freeze if authentication/recovery, cross-tenant negatives, SES application delivery and feedback, final-source capture/apply, AWS-native isolated authority-switch, rollback-after-AWS-write, operational alerting, backup restore, or customer acceptance is unproved. Stop on source/target mismatch, ambiguous identity or tenant mapping, lost audit/rollback evidence, exposed secret, or unexplained customer-facing error. Do not accept sequence gaps or scan status as substitutes for relational/semantic reconciliation.
 
+### AWS-native production IAM and image preflight
+
+The reviewed isolated no-traffic task definition is `tracepoint-production-aws-native-no-traffic-proof:1`, pinned to image digest `sha256:cf19c9887eee2c79eac2abf2e0337f5a2bb95beefc5e20d0f1ffc0453a2f7b46`. Its task role must be exactly `arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-task-v1`, with managed permissions boundary `arn:aws:iam::193644343389:policy/TracePointProductionNativeProofBoundary-v1` at default version `v1`. The public bridge role and boundary v16 must remain unchanged until a separately approved authority switch. The review-only `scripts/validate-aws-native-production-review.mjs` must reject any task-role, boundary ARN/version, image, RDS, bucket/KMS, Cognito, SES, or provider drift; it never authorizes execution itself.
+
+The Production OU SCP keeps `ses:Send*` denied for every other principal. The exact proof role has only `ses:SendEmail` available, with other documented SES send actions explicitly denied by SCP and with the role policy/boundary limited to the approved identity and configuration set. Before a cutover decision, rerun effective IAM simulation for the approved sender and `SendRawEmail`/bulk/template negatives, confirm the exact SCP policy and proof-role boundary version, and verify the public bridge role is still denied. The one-shot simulator proof establishes role-level `SendEmail` and feedback wiring, but is not a substitute for an authenticated application-origin invite/recovery/notification delivery test.
+
+The production Cognito client `9tfp383dgjuvanhnh94bstafr` currently has 5-minute ID/access tokens, minute units, authorization-code flow, exact callback/logout URLs, token rotation/revocation, and required MFA. The validator pins these observed 5-minute values; do not silently substitute the 15-minute shadow-client values or change the production client as part of a review.
+
 ## 1. Pre-freeze snapshot and authority record
 
 1. Confirm the public bridge ECS service/task, target group, DNS records, Cognito client, Supabase project, and live email dispatcher are in the approved baseline. Export their configuration and immutable identifiers without secret values. Capture final RDS and S3 inventory, backup/PITR timestamp, alerts and confirmed human recipient, and rollback image/task definition.
