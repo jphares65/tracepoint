@@ -23,7 +23,13 @@ export class PostgresCognitoSessionStore {
   const client=await this.pool.connect();try{await client.query('begin');
    let mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
    if(mapping.rowCount!==1&&this.rehearsalFirstLogin){
-    const promoted=await client.query<{user_id:string}>("select tracepoint_auth.promote_rehearsal_readington_officer_first_login($1,$2,$3) as user_id",[input.issuer,input.subject,input.userId]);
+    const montville=input.issuer==='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_wZwXHpznS'&&
+      input.subject==='04a874b8-c0b1-700d-e816-26758473bde3'&&
+      input.userId==='64b72eb8-1e89-4683-9798-501fa1bfe8b4';
+    const functionName=montville
+      ? 'tracepoint_auth.promote_rehearsal_montville_officer_first_login'
+      : 'tracepoint_auth.promote_rehearsal_readington_officer_first_login';
+    const promoted=await client.query<{user_id:string}>(`select ${functionName}($1,$2,$3) as user_id`,[input.issuer,input.subject,input.userId]);
     if(promoted.rowCount!==1||promoted.rows[0].user_id!==input.userId)throw Error();
     mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
    }

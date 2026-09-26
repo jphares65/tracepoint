@@ -25,3 +25,4 @@ npm-debug.log*
 !database/aws/026_cognito_invite_profile_trigger_reconciliation.sql
 !database/aws/027_cognito_invite_retry_claim.sql
 !database/rehearsal/001_readington_officer_first_login.sql
+!database/rehearsal/002_montville_officer_first_login.sql

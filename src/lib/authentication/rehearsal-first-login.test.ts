@@ -16,6 +16,11 @@ const operation='d6965d2e-1c0c-4c1f-9e47-57dc08a5e02c';
 const subject='445834f8-2071-7015-690e-20674d04f5c3';
 const issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_wZwXHpznS';
 const email='jphares@tracepointhq.com';
+const montville={department:'1d0e2994-4224-4237-8328-71020ba20027',
+  user:'64b72eb8-1e89-4683-9798-501fa1bfe8b4',
+  operation:'0ee6a36b-ffc8-4a0c-885b-eefb7b8999ef',
+  subject:'04a874b8-c0b1-700d-e816-26758473bde3',
+  email:'jphares+montville-rehearsal@tracepointhq.com'};
 let server:EmbeddedPostgres,admin:pg.Pool,runtime:pg.Pool,directory:string;
 
 before(async()=>{
@@ -45,6 +50,7 @@ before(async()=>{
     grant insert on public.authentication_access_sessions to tracepoint_runtime;
   `);
   await admin.query(await readFile('database/rehearsal/001_readington_officer_first_login.sql','utf8'));
+  await admin.query(await readFile('database/rehearsal/002_montville_officer_first_login.sql','utf8'));
   runtime=new pg.Pool({host:'127.0.0.1',port,user:'tracepoint_runtime',password:'synthetic-runtime-only',database:'postgres'});
 });
 after(async()=>{await runtime?.end();await admin?.end();await server?.stop();if(directory)await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
@@ -74,6 +80,22 @@ async function rejectPromotion(){
   assert.deepEqual(await state(),{link:'pending',membership:'activation_sent',audit:0,activated:0,sessions:0});
 }
 function verifiedInput(){const now=Math.floor(Date.now()/1000);return {userId:user,issuer,subject,tokenId:randomUUID(),issuedAt:now,expiresAt:now+300};}
+async function montvilleFixture(){
+  await admin.query('truncate public.authentication_access_sessions,public.authentication_session_revocations,public.audit_events,public.authentication_identity_events,public.user_activation_tokens,public.authentication_lifecycle_operations,public.department_membership_roles,public.department_memberships,public.authentication_identity_links,public.profiles,auth.users');
+  await admin.query('insert into public.profiles values($1,$2)',[montville.user,montville.email]);
+  await admin.query('insert into auth.users values($1,$2)',[montville.user,montville.email]);
+  await admin.query("insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username) values('cognito',$1,$2,$3,'pending',$2)",[issuer,montville.subject,montville.user]);
+  await admin.query("insert into public.department_memberships(department_id,user_id,is_active,activation_status) values($1,$2,true,'activation_sent')",[montville.department,montville.user]);
+  await admin.query("insert into public.department_membership_roles values($1,$2,'officer')",[montville.department,montville.user]);
+  await admin.query("insert into public.authentication_lifecycle_operations values($1,$2,$3,'invite','committed',$4,$4,null)",[montville.operation,montville.user,montville.department,montville.subject]);
+  await admin.query("insert into public.authentication_identity_events(tracepoint_user_id,provider,issuer,subject,provider_username,event_type,actor_user_id,operation_id) values($1,'cognito',$2,$3,$3,'linked',$1,$4)",[montville.user,issuer,montville.subject,montville.operation]);
+}
+function montvilleInput(){const now=Math.floor(Date.now()/1000);return {userId:montville.user,issuer,subject:montville.subject,tokenId:randomUUID(),issuedAt:now,expiresAt:now+300};}
+async function montvilleState(){const link=(await admin.query('select state from public.authentication_identity_links where subject=$1',[montville.subject])).rows[0]?.state;
+  const membership=(await admin.query('select activation_status from public.department_memberships')).rows[0]?.activation_status;
+  const audit=(await admin.query("select count(*)::int n from public.audit_events where action='account_activated'")).rows[0].n;
+  const sessions=(await admin.query('select count(*)::int n from public.authentication_access_sessions')).rows[0].n;
+  return {link,membership,audit,sessions};}
 
 test('verified initial mapping promotes atomically with session and writes one audit/event',async()=>{
   const initial=new RehearsalInitialIdentityMappingStore(new PostgresIdentityMappingStore(runtime),runtime);
@@ -100,4 +122,32 @@ test('audit insertion failure rolls back link, membership and session',async()=>
   await admin.query('create trigger rehearsal_audit_failure before insert on public.audit_events for each row execute function public.reject_rehearsal_audit()');
   await assert.rejects(new PostgresCognitoSessionStore(runtime,true).registerVerified(verifiedInput()),/rejected/);
   assert.deepEqual(await state(),{link:'pending',membership:'activation_sent',audit:0,activated:0,sessions:0});
+});
+test('exact Montville Officer first login commits one link, membership, audit and session',async()=>{
+  await montvilleFixture();
+  const initial=new RehearsalInitialIdentityMappingStore(new PostgresIdentityMappingStore(runtime),runtime);
+  assert.deepEqual(await initial.findActive(issuer,montville.subject),{userId:montville.user});
+  await new PostgresCognitoSessionStore(runtime,true).registerVerified(montvilleInput());
+  assert.deepEqual(await montvilleState(),{link:'active',membership:'activated',audit:1,sessions:1});
+});
+test('Montville promotion rejects a wrong subject, tenant, role and extra link',async()=>{
+  await montvilleFixture();
+  const call=()=>runtime.query('select tracepoint_auth.promote_rehearsal_montville_officer_first_login($1,$2,$3)',[issuer,montville.subject,montville.user]);
+  await assert.rejects(runtime.query('select tracepoint_auth.promote_rehearsal_montville_officer_first_login($1,$2,$3)',[issuer,subject,montville.user]),{code:'42501'});
+  await admin.query('update public.department_memberships set department_id=$1',[department]);
+  await assert.rejects(call(),{code:'42501'});
+  await admin.query('update public.department_memberships set department_id=$1',[montville.department]);
+  await admin.query("update public.department_membership_roles set role_code='administrator'");
+  await assert.rejects(call(),{code:'42501'});
+  await admin.query("update public.department_membership_roles set role_code='officer'");
+  await admin.query("insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username) values('cognito',$1,$2,$3,'active',$2)",[issuer,randomUUID(),montville.user]);
+  await assert.rejects(call(),{code:'42501'});
+  assert.deepEqual(await montvilleState(),{link:'pending',membership:'activation_sent',audit:0,sessions:0});
+});
+test('Montville audit failure rolls back activation and session',async()=>{
+  await montvilleFixture();
+  await admin.query("create function public.reject_rehearsal_audit() returns trigger language plpgsql as $$begin raise exception 'audit failed'; end$$");
+  await admin.query('create trigger rehearsal_audit_failure before insert on public.audit_events for each row execute function public.reject_rehearsal_audit()');
+  await assert.rejects(new PostgresCognitoSessionStore(runtime,true).registerVerified(montvilleInput()),/rejected/);
+  assert.deepEqual(await montvilleState(),{link:'pending',membership:'activation_sent',audit:0,sessions:0});
 });

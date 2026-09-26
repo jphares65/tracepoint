@@ -17,11 +17,16 @@ export class RehearsalInitialIdentityMappingStore implements IdentityMappingStor
   async findActive(issuer: string, subject: string): Promise<{ userId: string } | null> {
     const existing = await this.active.findActive(issuer, subject);
     if (existing) return existing;
-    if (issuer !== 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_wZwXHpznS' ||
-        subject !== '445834f8-2071-7015-690e-20674d04f5c3') return null;
+    if (issuer !== 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_wZwXHpznS') return null;
+    const rehearsalUser = subject === '445834f8-2071-7015-690e-20674d04f5c3'
+      ? 'b3848045-a73a-4f81-8a0e-cbd92abcd1be'
+      : subject === '04a874b8-c0b1-700d-e816-26758473bde3'
+        ? '64b72eb8-1e89-4683-9798-501fa1bfe8b4'
+        : null;
+    if (!rehearsalUser) return null;
     const pending = await this.pool.query(`select tracepoint_user_id from public.authentication_identity_links
       where provider='cognito' and issuer=$1 and subject=$2 and state='pending'
-        and tracepoint_user_id='b3848045-a73a-4f81-8a0e-cbd92abcd1be'`, [issuer, subject]);
+        and tracepoint_user_id=$3`, [issuer, subject, rehearsalUser]);
     return pending.rowCount === 1 ? { userId: pending.rows[0].tracepoint_user_id } : null;
   }
 }
