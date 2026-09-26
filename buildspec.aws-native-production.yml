@@ -13,7 +13,7 @@ phases:
       - test "$AWS_DEFAULT_REGION" = "us-east-1"
       - test "$CONFIGURATION_ENVIRONMENT" = "production"
       - test "$TRACEPOINT_BUILD_PROVIDER_MODE" = "aws-native-production"
-      - test "$IMAGE_TAG" = "$SOURCE_COMMIT"
+      - test "$IMAGE_TAG" = "${SOURCE_COMMIT}-aws-native-production"
       - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
       - test "$NEXT_PUBLIC_SITE_URL" = "https://tracepointhq.com"
       - test -z "${NEXT_PUBLIC_SUPABASE_URL:-}"

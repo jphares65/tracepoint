@@ -11,7 +11,7 @@ test('production-native build requires exact account, production origin, and no 
   assert.match(buildspec, /NEXT_PUBLIC_SITE_URL\" = \"https:\/\/tracepointhq\.com/);
   assert.match(buildspec, /test -z \"\$\{NEXT_PUBLIC_SUPABASE_URL:-\}\"/);
   assert.match(buildspec, /test -z \"\$\{NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-\}\"/);
-  assert.match(buildspec, /IMAGE_TAG\" = \"\$SOURCE_COMMIT/);
+  assert.match(buildspec, /IMAGE_TAG\" = \"\$\{SOURCE_COMMIT\}-aws-native-production/);
   assert.match(buildspec, /Dockerfile\.aws-native-production/);
   assert.doesNotMatch(buildspec, /Dockerfile\.shadow/);
 });
