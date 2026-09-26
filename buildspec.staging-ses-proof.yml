@@ -1,0 +1,24 @@
+version: 0.2
+env:
+  shell: bash
+phases:
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$AWS_ACCOUNT_ID" = "559054714699"
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$IMAGE_TAG" = "ses-proof-$SOURCE_COMMIT"
+      - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+      - unset NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY BREVO_API_KEY
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+  build:
+    on-failure: ABORT
+    commands:
+      - docker build --pull -f Dockerfile.staging-ses-proof --label org.opencontainers.image.revision="$SOURCE_COMMIT" -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
+      - docker run --rm --read-only --entrypoint /nodejs/bin/node "$ECR_REPOSITORY_URI:$IMAGE_TAG" -e 'const fs=require("node:fs");if(process.getuid()!==65532||!fs.readFileSync("/app/rds-ca.pem","utf8").includes("BEGIN CERTIFICATE"))throw Error("SES proof runtime gate failed")'
+      - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
+  post_build:
+    commands:
+      - if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then aws ecr describe-images --repository-name tracepoint-staging --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text; fi
