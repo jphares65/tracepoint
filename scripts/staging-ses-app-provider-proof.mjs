@@ -9,6 +9,8 @@ const host = "tracepoint-staging-full-aws.ck1qg8mekjg4.us-east-1.rds.amazonaws.c
 const departmentId = "a2280768-d6c4-4433-90b6-2399c514ed63";
 const recipient = "success@simulator.amazonses.com";
 let stage = "environment";
+let awsFailureName;
+let awsFailureStatus;
 
 async function main() {
   if (process.env.TRACEPOINT_STAGING_SES_PROOF !== "20260926" ||
@@ -57,7 +59,13 @@ async function main() {
       configurationSet: "tracepoint-staging",
       transport: { send: async command => {
         stage = "ses_api";
-        const result = await ses.send(command);
+        let result;
+        try { result = await ses.send(command); }
+        catch (error) {
+          awsFailureName = error?.name;
+          awsFailureStatus = error?.$metadata?.httpStatusCode;
+          throw error;
+        }
         stage = "ses_accepted";
         return result;
       } },
@@ -85,6 +93,7 @@ async function main() {
 main().catch(error => {
   console.error(JSON.stringify({ event: "STAGING_APP_SES_PROVIDER_FAIL",
     stage, code: error?.code ?? error?.name ?? "ERROR",
+    awsFailureName, awsFailureStatus,
     guard: /^STAGING_|^SIMULATOR_|^APP_ACCEPTANCE_|^PRIOR_ACCEPTANCE_/.test(error?.message ?? "") ? error.message : undefined }));
   process.exitCode = 1;
 });
