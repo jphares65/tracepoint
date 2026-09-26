@@ -1,0 +1,62 @@
+{
+  "family": "tracepoint-production-source-proof-post-replay-target-verify-20260926",
+  "taskRoleArn": "arn:aws:iam::193644343389:role/TracePoint-RestRdsImportTask-4272874f",
+  "executionRoleArn": "arn:aws:iam::193644343389:role/TracePoint-RestRdsImportExec-4272874f",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "rest-rds-import",
+      "image": "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b12998dd28866891308d7a8ba7329979c2465ec0da3c11d94d1ddd3969ecb7ae",
+      "cpu": 0,
+      "links": [],
+      "portMappings": [],
+      "essential": true,
+      "entryPoint": [
+        "/nodejs/bin/node",
+        "-e"
+      ],
+      "command": [
+        "// Fixed read-only check of the isolated AWS-only marker after source rehearsal replay.\nconst assert = require('node:assert/strict');\nconst fs = require('node:fs');\nconst { Client } = require('pg');\n\nconst HOST = 'tracepoint-production-source-proof-20260925.c8r4sgs089tu.us-east-1.rds.amazonaws.com';\nconst DEPARTMENT = 'acb5b501-2309-4a9e-a504-f36c08728fa9';\nconst USER = '3698d462-6367-4a3b-98ba-27d9279fe457';\nconst VEHICLE = '4fe22291-4da8-4e98-acbe-e12be4a943ad';\nconst secretText = process.env.TARGET_DATABASE_SECRET_JSON;\ndelete process.env.TARGET_DATABASE_SECRET_JSON;\nassert.ok(secretText, 'TARGET_SECRET_MISSING');\nconst secret = JSON.parse(secretText);\nassert.equal(secret.dbname, 'tracepoint', 'TARGET_DATABASE_MISMATCH');\nassert.equal(process.env.TARGET_PGHOST, HOST, 'TARGET_HOST_MISMATCH');\nconst ca = fs.readFileSync('/app/rds-ca.pem', 'utf8');\nassert.ok(ca.includes('BEGIN CERTIFICATE'), 'RDS_CA_MISSING');\nconst client = new Client({ host: HOST, port: 5432, database: 'tracepoint',\n  user: secret.username, password: secret.password,\n  ssl: { ca, rejectUnauthorized: true, servername: HOST },\n  connectionTimeoutMillis: 15000, statement_timeout: 30000,\n  application_name: 'tracepoint-source-proof-post-replay-readonly' });\nasync function count(sql, values = []) {\n  const result = await client.query(sql, values);\n  return Number(result.rows[0].n);\n}\n\n(async () => {\n  await client.connect();\n  await client.query('begin read only');\n  assert.equal((await client.query('select current_database() as name')).rows[0].name, 'tracepoint', 'DATABASE_MISMATCH');\n  assert.equal(await count('select count(*)::int as n from pg_stat_ssl where pid = pg_backend_pid() and ssl = true'), 1, 'TLS_NOT_ACTIVE');\n  assert.equal(await count(\"select count(*)::int as n from public.departments where id = $1 and slug = 'tracepoint-source-rehearsal-20260925'\", [DEPARTMENT]), 1, 'SYNTHETIC_TENANT_MISMATCH');\n  assert.equal(await count('select count(*)::int as n from public.profiles where id = $1', [USER]), 1, 'SYNTHETIC_USER_MISMATCH');\n  assert.equal(await count('select count(*)::int as n from public.department_memberships where department_id = $1 and user_id = $2 and is_active = true', [DEPARTMENT, USER]), 1, 'SYNTHETIC_MEMBERSHIP_MISMATCH');\n  assert.equal(await count(\"select count(*)::int as n from public.fleet_vehicles where id = $1 and department_id = $2 and unit_number = 'TP-AUTH-ROLLBACK-20260925' and status = 'Retired' and assignment_type = 'Pool' and current_mileage = 0 and current_hours = 0 and open_issue_count = 0 and created_by_user_id = $3 and updated_by_user_id = $3 and created_at = '2026-09-26T00:55:00.000Z'::timestamptz and updated_at = '2026-09-26T00:55:00.000Z'::timestamptz and retired_at = '2026-09-26T00:55:00.000Z'::timestamptz\", [VEHICLE, DEPARTMENT, USER]), 1, 'AWS_MARKER_CHANGED');\n  assert.equal(await count(\"select count(*)::int as n from public.audit_events where department_id = $1 and entity_type = 'fleet_vehicles' and entity_id = $2 and action = 'insert' and actor_user_id = $3 and details->>'source' = 'database_trigger'\", [DEPARTMENT, VEHICLE, USER]), 1, 'AWS_AUDIT_CHANGED');\n  assert.equal(await count('select count(*)::int as n from public.fleet_vehicles'), 1, 'AWS_FLEET_COUNT_CHANGED');\n  assert.equal(await count('select count(*)::int as n from public.audit_events'), 40, 'AWS_AUDIT_COUNT_CHANGED');\n  await client.query('commit');\n  console.log(JSON.stringify({ status: 'AWS_PROOF_TARGET_INTACT', targetHost: HOST,\n    tlsVerified: true, syntheticTenantOnly: true, markerRows: 1, markerAuditRows: 1,\n    fleetRows: 1, auditRows: 40, writesPerformed: false }));\n})().catch(async error => {\n  await client.query('rollback').catch(() => {});\n  console.error(JSON.stringify({ status: 'FAILED', code: /^[A-Z_]+$/.test(String(error.message)) ? error.message : 'TARGET_READONLY_VERIFY_FAILED' }));\n  process.exitCode = 1;\n}).finally(() => client.end().catch(() => {}));\n\r\n"
+      ],
+      "environment": [
+        {
+          "name": "TARGET_PGHOST",
+          "value": "tracepoint-production-source-proof-20260925.c8r4sgs089tu.us-east-1.rds.amazonaws.com"
+        }
+      ],
+      "environmentFiles": [],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "TARGET_DATABASE_SECRET_JSON",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT"
+        }
+      ],
+      "user": "65532",
+      "readonlyRootFilesystem": true,
+      "dnsServers": [],
+      "dnsSearchDomains": [],
+      "extraHosts": [],
+      "dockerSecurityOptions": [],
+      "dockerLabels": {},
+      "ulimits": [],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/tracepoint/production/rest-rds-import/4272874f-bae4-49f4-a0b4-67a39cec2874",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "database"
+        },
+        "secretOptions": []
+      },
+      "systemControls": [],
+      "credentialSpecs": []
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024"
+}
