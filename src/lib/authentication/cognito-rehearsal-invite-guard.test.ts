@@ -32,7 +32,7 @@ const input = {
   siteUrl: "https://shadow-rehearsal.tracepointhq.com",
 };
 
-test("permits only the one bounded rehearsal invitation", () => {
+test("permits only the bounded Readington rehearsal invitation", () => {
   assert.equal(isApprovedRehearsalInvite(environment, input), true);
   assert.equal(isApprovedRehearsalInvite(environment, undefined), false);
   for (const change of [
@@ -45,6 +45,28 @@ test("permits only the one bounded rehearsal invitation", () => {
     { badgeNumber: "1" },
     { active: false },
   ]) assert.equal(isApprovedRehearsalInvite(environment, { ...input, ...change }), false);
+});
+
+test("permits only the approved Montville synthetic Officer invitation", () => {
+  const montville = {
+    ...input,
+    departmentId: "1d0e2994-4224-4237-8328-71020ba20027",
+    email: "jphares+montville-rehearsal@tracepointhq.com",
+    fullName: "TracePoint Montville Rehearsal Officer",
+  };
+  const montvilleEnvironment = {
+    ...environment,
+    TRACEPOINT_REHEARSAL_INVITE_EMAIL: montville.email,
+  };
+  assert.equal(isApprovedRehearsalInvite(montvilleEnvironment, montville), true);
+  assert.equal(isApprovedRehearsalInvite(environment, montville), false);
+  for (const change of [
+    { departmentId: input.departmentId },
+    { fullName: input.fullName },
+    { roleCodes: ["administrator"] },
+    { actorUserId: "00000000-0000-4000-8000-000000000001" },
+    { groupIds: ["00000000-0000-4000-8000-000000000001"] },
+  ]) assert.equal(isApprovedRehearsalInvite(montvilleEnvironment, { ...montville, ...change }), false);
 });
 
 test("never grants the exception to public, Phase 3B shadow, other pools, or other addresses", () => {
