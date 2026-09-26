@@ -5,8 +5,8 @@ import { requiredProductionCutoverGates, validateAwsNativeProductionReview } fro
 const valid = () => ({
   account: '193644343389', region: 'us-east-1', hostname: 'tracepointhq.com',
   roleArn: 'arn:aws:iam::193644343389:role/TracePointMigrationProduction',
-  imageDigest: 'sha256:d74a23996551a08fca92d46a12e9d9fab2b5651c439aa6e7c4ce861c2d0145db',
-  sourceCommit: '830856c61f8686df39669d647bb388b739496e9d',
+  imageDigest: 'sha256:cf19c9887eee2c79eac2abf2e0337f5a2bb95beefc5e20d0f1ffc0453a2f7b46',
+  sourceCommit: '2a92bccd04060785c95b18fdc6bfa90505c26c7a',
   imageScanStatus: 'COMPLETE', imageScanFindings: 0, rollbackImageDigest: `sha256:${'a'.repeat(64)}`,
   database: { identifier: 'tracepoint-production-final-cutover-20260926', resourceId: 'db-X4DYNS3TMVSAP7Z3RISDWEYDVE',
     host: 'tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com',
@@ -30,7 +30,7 @@ test('review-only validator requires every exact AWS-native authority boundary',
   assert.deepEqual(validateAwsNativeProductionReview(valid()), {
     readyForGoNoGoReview: true, executionAuthorized: false,
     account: '193644343389', hostname: 'tracepointhq.com',
-    sourceCommit: '830856c61f8686df39669d647bb388b739496e9d',
+    sourceCommit: '2a92bccd04060785c95b18fdc6bfa90505c26c7a',
   });
   for (const change of [
     { imageScanFindings: 1 }, { imageDigest: `sha256:${'b'.repeat(64)}` },
