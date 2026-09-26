@@ -82,6 +82,11 @@ export class Phase3bShadowStack extends cdk.Stack {
         `arn:aws:s3:::${bucketName}/department-assets/${testDepartmentId}/*`,
       ],
     }));
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['kms:Decrypt', 'kms:GenerateDataKey'],
+      resources: [kmsKeyArn],
+      conditions: { StringEquals: { 'kms:ViaService': `s3.${region}.amazonaws.com` } },
+    }));
 
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: '/ecs/tracepoint-production-phase3b-shadow',

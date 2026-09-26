@@ -32,6 +32,8 @@ assert.match(serialized, /"Name":"HOSTNAME","Value":"0\.0\.0\.0"/);
 assert.match(serialized, /tracepoint\/production\/shadow\/database-runtime-jNRvgT/);
 assert.doesNotMatch(serialized, /tracepoint\/production\/database\/runtime-K4C4HY/);
 assert.match(serialized, /TRACEPOINT_NOTIFICATION_MODE/);
+assert.match(serialized, /kms:GenerateDataKey/);
+assert.match(serialized, /kms:ViaService/);
 assert.match(serialized, /shadow/);
 assert.doesNotMatch(serialized, /NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY/);
 assert.doesNotMatch(serialized, /cognito-idp:AdminCreateUser|ses:SendEmail|ses:SendRawEmail/);
