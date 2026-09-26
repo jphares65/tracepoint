@@ -1,6 +1,7 @@
 ﻿import { type NextRequest } from "next/server";
 
 import { updateAwsNativeSession } from "@/lib/authentication/request-proxy";
+import { bridgeWriteFenceResponse } from "@/lib/cutover/bridge-maintenance";
 
 export async function proxy(request: NextRequest) {
   const origin = request.headers.get("origin") ?? "";
@@ -16,6 +17,8 @@ export async function proxy(request: NextRequest) {
   if (mode && mode !== "bridge" && mode !== "aws-native") {
     return Response.json({ error: "Runtime provider configuration is invalid." }, { status: 503 });
   }
+  const maintenance = bridgeWriteFenceResponse(process.env, request.method);
+  if (maintenance) return maintenance;
   const response = mode === "aws-native"
     ? await updateAwsNativeSession(request)
     : await (await import("@/lib/supabase/proxy")).updateSession(request);
