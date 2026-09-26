@@ -27,7 +27,7 @@ assert.equal(ofType('AWS::RDS::DBInstance').length, 0);
 assert.equal(ofType('AWS::ElasticLoadBalancingV2::LoadBalancer').length, 0);
 assert.match(serialized, /76\.116\.100\.225\/32/);
 assert.match(serialized, /50\.174\.33\.3\/32/);
-assert.match(serialized, /48a1cc7dd84b89a10bd3df45b16ae2d7604916ca2adf4ad9f4371d40824db376/);
+assert.match(serialized, /c9c65145196573ae8a007d4b5a3db4835df09c519b683d3a03fa384ad9c3b644/);
 assert.match(serialized, /"Name":"HOSTNAME","Value":"0\.0\.0\.0"/);
 assert.match(serialized, /tracepoint\/production\/shadow\/database-runtime-jNRvgT/);
 assert.doesNotMatch(serialized, /tracepoint\/production\/database\/runtime-K4C4HY/);
