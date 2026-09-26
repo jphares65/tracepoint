@@ -10,6 +10,9 @@ const exact = Object.freeze({
   databaseHost: 'tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com',
   databaseSecretArn: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb',
   bucket: 'tracepoint-production-private-193644343389',
+  storageKeyArn: 'arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55',
+  feedbackWorkerSecretArn: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb',
+  feedbackTopicArn: 'arn:aws:sns:us-east-1:193644343389:tracepoint-production-ses-feedback',
   taskRoleArn: 'arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-task-v1',
   permissionsBoundaryArn: 'arn:aws:iam::193644343389:policy/TracePointProductionNativeProofBoundary-v1',
   permissionsBoundaryVersionId: 'v1',
@@ -55,6 +58,7 @@ export function validateAwsNativeProductionReview(input) {
   }
   const storage = input.storage ?? {};
   if (storage.bucket !== exact.bucket || storage.expectedOwner !== exact.account ||
+      storage.kmsKeyArn !== exact.storageKeyArn ||
       storage.private !== true || storage.kmsEncrypted !== true || storage.versioned !== true) {
     fail('Production object storage boundary mismatch');
   }
@@ -70,6 +74,11 @@ export function validateAwsNativeProductionReview(input) {
   const ses = input.ses ?? {};
   if (ses.fromAddress !== 'notifications@tracepointhq.com' ||
       ses.configurationSet !== 'tracepoint-production' ||
+      ses.feedbackTopicArn !== exact.feedbackTopicArn ||
+      ses.feedbackWorkerSecretArn !== exact.feedbackWorkerSecretArn ||
+      ses.feedbackWorkerAuthority !== 'final' ||
+      ses.feedbackWorkerTlsVerified !== true ||
+      ses.feedbackWorkerSingleWriter !== true ||
       ses.feedbackToFinalDatabase !== true || ses.customerDeliveryApproved !== true) {
     fail('Production SES sender or feedback boundary mismatch');
   }

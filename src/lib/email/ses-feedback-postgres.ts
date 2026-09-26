@@ -4,7 +4,9 @@ import { recipientHash, type SesFeedback, type SesFeedbackStore } from './ses-fe
 // Server-only construction belongs at the deployment composition boundary.
 // Uses the supplied trusted pool, never a connection string from a request.
 export class PostgresSesFeedbackStore implements SesFeedbackStore {
-  constructor(private readonly pool: Pick<Pool, 'connect' | 'query'>) {}
+  constructor(private readonly pool: Pick<Pool, 'connect' | 'query'>, private readonly cognitoConfigurationSet?: string) {
+    if (cognitoConfigurationSet !== undefined && !/^[A-Za-z0-9_-]{1,64}$/.test(cognitoConfigurationSet)) throw new Error('Invalid Cognito SES configuration set.');
+  }
   async isSuppressed(email: string): Promise<boolean> {
     const result = await this.pool.query('select 1 from public.email_suppressions where recipient_hash=$1', [recipientHash(email)]);
     return result.rowCount !== 0;
@@ -24,7 +26,26 @@ export class PostgresSesFeedbackStore implements SesFeedbackStore {
       await client.query('begin');
       const acceptance = await client.query('select department_id,recipient_hashes from public.email_provider_acceptances where message_id=$1 for update', [event.messageId]);
       const record = acceptance.rows[0];
-      if (!record || event.recipientHashes.some(hash => !record.recipient_hashes.includes(hash))) throw new Error('Uncorrelated feedback');
+      if (!record) {
+        if (!this.cognitoConfigurationSet || event.configurationSet !== this.cognitoConfigurationSet) throw new Error('Uncorrelated feedback');
+        if (event.kind === 'Delivery') { await client.query('commit'); return 'applied'; }
+        let changed = false;
+        for (const hash of event.recipientHashes) {
+          const prior = await client.query('select reason,source_event_id from public.email_suppressions where recipient_hash=$1 for update', [hash]);
+          const existing = prior.rows[0];
+          if (existing?.source_event_id === event.eventId) continue;
+          await client.query(`insert into public.email_suppressions(recipient_hash,reason,source_event_id)
+            values($1,$2,$3) on conflict(recipient_hash) do update set reason=case
+            when email_suppressions.reason in ('OptOut','Complaint') then email_suppressions.reason else excluded.reason end,
+            source_event_id=case when email_suppressions.reason='OptOut'
+            or (email_suppressions.reason='Complaint' and excluded.reason='Bounce')
+            then email_suppressions.source_event_id else excluded.source_event_id end,
+            updated_at=now()`, [hash, event.kind, event.eventId]);
+          changed = true;
+        }
+        await client.query('commit'); return changed ? 'applied' : 'duplicate';
+      }
+      if (event.recipientHashes.some(hash => !record.recipient_hashes.includes(hash))) throw new Error('Uncorrelated feedback');
       const inserted = await client.query(`insert into public.email_provider_events(event_id,message_id,department_id,event_kind)
         values($1,$2,$3,$4) on conflict(event_id) do nothing returning event_id`, [event.eventId, event.messageId, record.department_id, event.kind]);
       if (inserted.rowCount === 0) { await client.query('commit'); return 'duplicate'; }

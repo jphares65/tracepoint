@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { VerifiedNotification } from './sns-notification';
 
-export type SesFeedback = { eventId: string; messageId: string; kind: 'Delivery' | 'Bounce' | 'Complaint'; recipientHashes: string[] };
+export type SesFeedback = { eventId: string; messageId: string; kind: 'Delivery' | 'Bounce' | 'Complaint'; recipientHashes: string[]; configurationSet?: string };
 export function recipientHash(email: string): string {
   if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(email.trim())) throw new Error('Invalid feedback recipient.');
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
@@ -15,6 +15,10 @@ export function parseSesFeedback(notification: VerifiedNotification, expectedAcc
     const kind = event.eventType ?? event.notificationType;
     if (!['Delivery', 'Bounce', 'Complaint'].includes(kind) || event.mail?.sendingAccountId !== expectedAccount ||
       typeof event.mail.messageId !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(event.mail.messageId)) throw new Error();
+    const configurationSetValues = event.mail?.tags?.['ses:configuration-set'];
+    const configurationSet = configurationSetValues === undefined ? undefined :
+      Array.isArray(configurationSetValues) && configurationSetValues.length === 1 && /^[A-Za-z0-9_-]{1,64}$/.test(configurationSetValues[0])
+        ? configurationSetValues[0] : invalidConfigurationSet();
     const recipients = kind === 'Delivery' ? event.delivery?.recipients :
       kind === 'Bounce' ? event.bounce?.bouncedRecipients?.map((entry: { emailAddress: string }) => entry.emailAddress) :
       event.complaint?.complainedRecipients?.map((entry: { emailAddress: string }) => entry.emailAddress);
@@ -22,9 +26,11 @@ export function parseSesFeedback(notification: VerifiedNotification, expectedAcc
     const recipientHashes = [...new Set<string>(recipients.map(recipientHash))].sort();
     // Semantic ID also deduplicates the same provider event arriving under another SNS ID.
     const eventId = createHash('sha256').update(JSON.stringify([event.mail.messageId, kind, recipientHashes])).digest('hex');
-    return { eventId, messageId: event.mail.messageId, kind, recipientHashes };
+    return { eventId, messageId: event.mail.messageId, kind, recipientHashes, ...(configurationSet ? { configurationSet } : {}) };
   } catch { throw new Error('Malformed SES feedback; contents suppressed.'); }
 }
+
+function invalidConfigurationSet(): never { throw new Error('Invalid SES configuration set.'); }
 
 export interface SesFeedbackStore {
   // Must atomically validate the registered recipients, insert the event once,

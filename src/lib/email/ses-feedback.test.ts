@@ -77,3 +77,21 @@ test('a late bounce cannot relabel the event that caused complaint suppression',
  const row=(await pool.query('select reason,source_event_id from email_suppressions where recipient_hash=$1',[recipientHash(recipient)])).rows[0];
  assert.deepEqual(row,{reason:'Complaint',source_event_id:complaint.eventId});
 });
+
+test('isolated worker accepts only matching Cognito configuration-set feedback without a tenant acceptance',async()=>{
+ const cognitoStore=new PostgresSesFeedbackStore(pool,'tracepoint-production-cognito');
+ const event=feedback('Bounce','cognito-only@example.invalid','cognito-only-message');
+ await assert.rejects(cognitoStore.apply(event),/persistence failed/);
+ const tagged={...event,configurationSet:'tracepoint-production-cognito'};
+ assert.equal(await cognitoStore.apply(tagged),'applied');
+ assert.equal(await cognitoStore.apply(tagged),'duplicate');
+ assert.equal(await cognitoStore.isSuppressed('cognito-only@example.invalid'),true);
+ await assert.rejects(cognitoStore.apply({...feedback('Bounce','wrong-set@example.invalid','wrong-set-message'),configurationSet:'unrelated'}),/persistence failed/);
+});
+
+test('Cognito configuration-set tag is strictly parsed and does not change tenant acceptance validation',()=>{
+ const message=JSON.stringify({eventType:'Delivery',mail:{sendingAccountId:'559054714699',messageId:'tagged-delivery',tags:{'ses:configuration-set':['tracepoint-production-cognito']}},delivery:{recipients:['tagged@example.invalid']}});
+ assert.equal(parseSesFeedback({notificationId:'tagged',topicArn:'x',message},'559054714699').configurationSet,'tracepoint-production-cognito');
+ const invalid=message.replace('tracepoint-production-cognito','wrong value');
+ assert.throws(()=>parseSesFeedback({notificationId:'invalid',topicArn:'x',message:invalid},'559054714699'),/Malformed SES feedback/);
+});
