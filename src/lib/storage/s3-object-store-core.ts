@@ -33,7 +33,9 @@ export class S3ObjectStore implements ObjectStore {
     if(input.departmentId!==this.departmentId)throw new Error("Department mismatch");
     const name=input.fileName.replace(/[^a-zA-Z0-9._-]+/g,'-').slice(-120)||'file';
     const path=this.attachment(input.departmentId+'/'+domain+'/'+encodeURIComponent(input.recordId)+'/'+input.objectId+'-'+name);
-    try {await this.client.send(new PutObjectCommand({...this.object('attachments/'+path),Body:input.bytes,ContentType:input.contentType,ServerSideEncryption:'AES256',IfNoneMatch:'*'}));return {path,error:null};}
+    // The private bucket's attested default is SSE-KMS. An explicit AES256
+    // request would override that default and silently downgrade new objects.
+    try {await this.client.send(new PutObjectCommand({...this.object('attachments/'+path),Body:input.bytes,ContentType:input.contentType,IfNoneMatch:'*'}));return {path,error:null};}
     catch{return {path,error:failure()};}
   }
   uploadQualificationEvidence(input:AttachmentUploadInput){return this.upload('qualification',input);}
@@ -45,7 +47,7 @@ export class S3ObjectStore implements ObjectStore {
   private async signed(key:string,disposition?:string){try{return {signedUrl:await this.sign(this.client,new GetObjectCommand({...this.object(key),ResponseContentDisposition:disposition}),{expiresIn:60}),error:null};}catch{return {signedUrl:null,error:failure()};}}
   createAttachmentDownload(path:AttachmentObjectPath,fileName:string){const safeName=fileName.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)||'download';return this.signed('attachments/'+this.attachment(path),'attachment; filename="'+safeName+'"');}
   createAttachmentView(path:AttachmentObjectPath){return this.signed('attachments/'+this.attachment(path),'inline');}
-  async uploadDepartmentPatch(input:DepartmentPatchUploadInput){if(input.departmentId!==this.departmentId)throw new Error("Department mismatch");const path=this.patch(input.departmentId+'/patch-'+input.timestamp+'.'+input.extension);try{await this.client.send(new PutObjectCommand({...this.object('department-assets/'+path),Body:input.bytes,ContentType:input.contentType,ServerSideEncryption:'AES256',IfNoneMatch:'*'}));return {path,error:null};}catch{return {path,error:failure()};}}
+  async uploadDepartmentPatch(input:DepartmentPatchUploadInput){if(input.departmentId!==this.departmentId)throw new Error("Department mismatch");const path=this.patch(input.departmentId+'/patch-'+input.timestamp+'.'+input.extension);try{await this.client.send(new PutObjectCommand({...this.object('department-assets/'+path),Body:input.bytes,ContentType:input.contentType,IfNoneMatch:'*'}));return {path,error:null};}catch{return {path,error:failure()};}}
   async createDepartmentPatchDelivery(path:DepartmentAssetObjectPath){return {signedUrl:'/api/settings/department-patch?path='+encodeURIComponent(this.patch(path)),error:null};}
   createDepartmentPatchView(path:DepartmentAssetObjectPath){return this.signed('department-assets/'+this.patch(path),'inline');}
   async removeDepartmentPatch(path:DepartmentAssetObjectPath){const key='department-assets/'+this.patch(path);try{await this.client.send(new DeleteObjectCommand(this.object(key)));return {error:null};}catch{return {error:failure()};}}
