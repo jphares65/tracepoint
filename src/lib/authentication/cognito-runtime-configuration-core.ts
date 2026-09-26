@@ -76,6 +76,12 @@ export function parseCognitoTargetConfiguration(
   if (rehearsalMode !== undefined && (rehearsalMode !== 'object-smoke' || stage !== 'production' ||
       account !== '193644343389' || region !== 'us-east-1' || userPoolId === 'us-east-1_diFmWDMe9' || mobileClientId))
     throw new Error('Invalid rehearsal Cognito provider target.');
+  if (stage === 'production' && account === '193644343389' && rehearsalMode === undefined &&
+      environment.TRACEPOINT_NOTIFICATION_MODE === 'normal' &&
+      (region !== 'us-east-1' || userPoolId !== 'us-east-1_diFmWDMe9' ||
+        clientId !== '9tfp383dgjuvanhnh94bstafr')) {
+    throw new Error('Production Cognito pool or client does not match the reviewed authority.');
+  }
   return { verification: { environment: stage, account, region, userPoolId, clientId,
     ...(rehearsalMode === 'object-smoke' ? { rehearsalMode } : {}),
     ...(mobileClientId ? { trustedClientIds: clientIds } : {}) } };

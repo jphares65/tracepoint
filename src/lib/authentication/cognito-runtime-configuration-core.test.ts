@@ -47,8 +47,10 @@ test("rejects bridge, mixed-account and malformed key configurations", () => {
   ]) assert.throws(() => parseCognitoRuntimeConfiguration(environment));
 });
 test("production normal and shadow origins are exact and fail closed", () => {
-  const production={...valid,CONFIGURATION_ENVIRONMENT:"production",TRACEPOINT_AWS_ACCOUNT_ID:"193644343389",TRACEPOINT_COGNITO_USER_POOL_ID:"us-east-1_Production"};
+  const production={...valid,CONFIGURATION_ENVIRONMENT:"production",TRACEPOINT_AWS_ACCOUNT_ID:"193644343389",TRACEPOINT_COGNITO_USER_POOL_ID:"us-east-1_diFmWDMe9",TRACEPOINT_COGNITO_CLIENT_ID:"9tfp383dgjuvanhnh94bstafr"};
   assert.equal(parseCognitoRuntimeConfiguration({...production,NEXT_PUBLIC_SITE_URL:"https://tracepointhq.com"}).verification.siteOrigin,"https://tracepointhq.com");
+  assert.throws(() => parseCognitoRuntimeConfiguration({...production,TRACEPOINT_COGNITO_USER_POOL_ID:"us-east-1_Other",NEXT_PUBLIC_SITE_URL:"https://tracepointhq.com"}), /reviewed authority/);
+  assert.throws(() => parseCognitoRuntimeConfiguration({...production,TRACEPOINT_COGNITO_CLIENT_ID:"otherclient",NEXT_PUBLIC_SITE_URL:"https://tracepointhq.com"}), /reviewed authority/);
   assert.equal(parseCognitoRuntimeConfiguration({...production,TRACEPOINT_NOTIFICATION_MODE:"shadow",NEXT_PUBLIC_SITE_URL:"https://shadow.tracepointhq.com"}).verification.siteOrigin,"https://shadow.tracepointhq.com");
   for(const siteOrigin of ["https://tracepointhq.com","http://shadow.tracepointhq.com","https://shadow.tracepointhq.com.evil.invalid","https://shadow.tracepointhq.com/"])
     assert.throws(()=>parseCognitoRuntimeConfiguration({...production,TRACEPOINT_NOTIFICATION_MODE:"shadow",NEXT_PUBLIC_SITE_URL:siteOrigin}),/redirect origin/);
