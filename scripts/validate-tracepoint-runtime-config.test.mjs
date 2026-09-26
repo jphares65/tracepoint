@@ -82,3 +82,23 @@ test('AWS-native shadow requires isolated site, quarantined RDS, and no legacy c
  assert.throws(()=>validateTracePointRuntimeConfig({...native,TRACEPOINT_REHEARSAL_APP_MODE:'object-smoke'}),/TRACEPOINT_REHEARSAL_APP_MODE/);
  assert.throws(()=>validateTracePointRuntimeConfig({...rehearsal,TRACEPOINT_NOTIFICATION_MODE:'normal'}),/TRACEPOINT_REHEARSAL_APP_MODE/);
 });
+
+test('AWS-native production origin requires SES delivery configuration and no legacy credentials',()=>{
+ const ring=JSON.stringify({active:'v1',keys:{v1:Buffer.alloc(32,2).toString('base64url')}});
+ const native={
+  CONFIGURATION_ENVIRONMENT:'production',NEXT_PUBLIC_SITE_URL:'https://tracepointhq.com',
+  NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:'synthetic',TRACEPOINT_RUNTIME_PROVIDER_MODE:'aws-native',
+  TRACEPOINT_DATA_PROVIDER:'postgres',TRACEPOINT_AUTH_PROVIDER:'cognito',TRACEPOINT_EMAIL_PROVIDER:'ses',
+  TRACEPOINT_STORAGE_PROVIDER:'s3',TRACEPOINT_NOTIFICATION_MODE:'normal',AWS_REGION:'us-east-1',
+  TRACEPOINT_AWS_ACCOUNT_ID:'193644343389',TRACEPOINT_DATABASE_CA_PATH:'/app/rds-ca.pem',
+  TRACEPOINT_DATABASE_SECRET_JSON:JSON.stringify({host:'tracepoint-production-migration-rehearsal-4272874f-20260923.c8r4sgs089tu.us-east-1.rds.amazonaws.com',port:5432,dbname:'tracepoint',username:'tracepoint_app',password:'synthetic-password-at-least-twenty'}),
+  TRACEPOINT_AUTH_STATE_KEYS:ring,TRACEPOINT_AUTH_REFRESH_KEYS:ring,
+  TRACEPOINT_COGNITO_USER_POOL_ID:'us-east-1_synthetic',TRACEPOINT_COGNITO_CLIENT_ID:'synthetic',
+  TRACEPOINT_S3_BUCKET:'tracepoint-production-private-193644343389',TRACEPOINT_S3_EXPECTED_OWNER:'193644343389',
+  TRACEPOINT_SES_CONFIGURATION_SET:'tracepoint-production',TRACEPOINT_FROM_EMAIL:'contact@tracepointhq.com',
+ };
+ assert.doesNotThrow(()=>validateTracePointRuntimeConfig(native));
+ assert.throws(()=>validateTracePointRuntimeConfig({...native,NEXT_PUBLIC_SITE_URL:'https://shadow.tracepointhq.com'}),/NEXT_PUBLIC_SITE_URL/);
+ assert.throws(()=>validateTracePointRuntimeConfig({...native,TRACEPOINT_SES_CONFIGURATION_SET:''}),/TRACEPOINT_SES_CONFIGURATION_SET/);
+ assert.throws(()=>validateTracePointRuntimeConfig({...native,NEXT_PUBLIC_SUPABASE_URL:'https://izlkwggluhlhzlumtzes.supabase.co'}),/NEXT_PUBLIC_SUPABASE_URL/);
+});
