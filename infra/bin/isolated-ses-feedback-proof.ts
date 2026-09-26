@@ -5,11 +5,15 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNode from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 const account = '193644343389';
 const region = 'us-east-1';
 const secretArn = 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/rehearsal/database-runtime-4272874f-uDq389';
-const topicArn = 'arn:aws:sns:us-east-1:193644343389:tracepoint-production-ses-feedback';
+const configurationSetName = 'tracepoint-production-isolated-ses-proof-20260926';
+const configurationSetArn = `arn:aws:ses:${region}:${account}:configuration-set/${configurationSetName}`;
 const dataKeyArn = 'arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55';
 
 const app = new cdk.App();
@@ -18,6 +22,24 @@ const stack = new cdk.Stack(app, 'tracepoint-production-isolated-ses-feedback-pr
   description: 'Direct-invoke-only SES feedback proof; no SNS subscription, SQS mapping, or public traffic',
   terminationProtection: true,
 });
+
+const feedbackTopic = new sns.Topic(stack, 'ProofFeedbackTopic', {
+  topicName: 'tracepoint-production-isolated-ses-proof-feedback',
+  displayName: 'TracePoint isolated SES proof feedback only',
+});
+feedbackTopic.addToResourcePolicy(new iam.PolicyStatement({
+  principals: [new iam.ServicePrincipal('ses.amazonaws.com')],
+  actions: ['sns:Publish'], resources: [feedbackTopic.topicArn],
+  conditions: { StringEquals: { 'aws:SourceAccount': account, 'aws:SourceArn': configurationSetArn } },
+}));
+const feedbackQueue = new sqs.Queue(stack, 'ProofFeedbackQueue', {
+  queueName: 'tracepoint-production-isolated-ses-proof-feedback',
+  encryption: sqs.QueueEncryption.SQS_MANAGED,
+  enforceSSL: true,
+  retentionPeriod: cdk.Duration.days(4),
+  visibilityTimeout: cdk.Duration.seconds(45),
+});
+feedbackTopic.addSubscription(new snsSubscriptions.SqsSubscription(feedbackQueue));
 
 const role = new iam.Role(stack, 'WorkerRole', {
   assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -64,10 +86,13 @@ const worker = new lambdaNode.NodejsFunction(stack, 'Worker', {
     TRACEPOINT_FEEDBACK_DATABASE_AUTHORITY: 'rehearsal',
     TRACEPOINT_DATABASE_SECRET_ARN: secretArn,
     TRACEPOINT_RDS_CA_PATH: '/opt/us-east-1-bundle.pem',
-    TRACEPOINT_SES_FEEDBACK_TOPIC_ARN: topicArn,
+    TRACEPOINT_SES_FEEDBACK_TOPIC_ARN: feedbackTopic.topicArn,
     TRACEPOINT_COGNITO_SES_CONFIGURATION_SET: 'tracepoint-production-cognito',
   },
 });
 
 new cdk.CfnOutput(stack, 'WorkerArn', { value: worker.functionArn });
+new cdk.CfnOutput(stack, 'ConfigurationSetName', { value: configurationSetName });
+new cdk.CfnOutput(stack, 'FeedbackTopicArn', { value: feedbackTopic.topicArn });
+new cdk.CfnOutput(stack, 'FeedbackQueueUrl', { value: feedbackQueue.queueUrl });
 new cdk.CfnOutput(stack, 'Authority', { value: 'rehearsal-only-direct-invoke' });
