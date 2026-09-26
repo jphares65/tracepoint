@@ -60,6 +60,26 @@ test("foundation retains encrypted immutable assets and an idle cluster", () => 
   template.resourceCountIs("AWS::ECS::Service", 0);
 });
 
+test("production ECR retains exact active bridge and reviewed native images", () => {
+  const { app, network, security } = foundations();
+  const compute = new ComputeFoundationStack(app, "production-compute", {
+    env,
+    environmentName: "production",
+    vpc: network.vpc,
+    dataKey: security.dataKey,
+  });
+  const repositories = Template.fromStack(compute).findResources("AWS::ECR::Repository");
+  const repository = Object.values(repositories)[0] as {
+    Properties: { LifecyclePolicy: { LifecyclePolicyText: string } };
+  };
+  const rules = JSON.parse(repository.Properties.LifecyclePolicy.LifecyclePolicyText).rules;
+  assert.deepEqual(rules.map((rule: { selection: { tagPrefixList?: string[] } }) => rule.selection.tagPrefixList), [
+    ["ae3d2a4ce87b2085e251b1995f51a7b07058ec4d"],
+    ["2a92bccd04060785c95b18fdc6bfa90505c26c7a-aws-native-production"],
+    undefined,
+  ]);
+});
+
 test("execution IAM is resource-scoped and task IAM has no permissions", () => {
   const { compute } = foundations();
   const template = Template.fromStack(compute);

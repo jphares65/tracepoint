@@ -37,7 +37,21 @@ export class ComputeFoundationStack extends cdk.Stack {
       encryptionKey: dataKey,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       lifecycleRules: [
-        { description: "Keep the latest 30 images", maxImageCount: 30 },
+        ...(props.environmentName === "production"
+          ? [
+              {
+                description: "Retain the active public bridge rollback image",
+                tagPrefixList: ["ae3d2a4ce87b2085e251b1995f51a7b07058ec4d"],
+                maxImageCount: 1,
+              },
+              {
+                description: "Retain the reviewed AWS-native production candidate",
+                tagPrefixList: ["2a92bccd04060785c95b18fdc6bfa90505c26c7a-aws-native-production"],
+                maxImageCount: 1,
+              },
+            ]
+          : []),
+        { description: "Keep the latest 30 other images", maxImageCount: 30 },
       ],
     });
 
