@@ -4,6 +4,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import pg from 'pg';
 import { ManagedSesProvider } from '../src/lib/email/ses-managed-provider.ts';
 import { PostgresSesFeedbackStore } from '../src/lib/email/ses-feedback-postgres.ts';
+import { recipientHash } from '../src/lib/email/ses-feedback.ts';
 
 const account = '193644343389';
 const region = 'us-east-1';
@@ -45,8 +46,20 @@ async function main() {
     if (db.database !== 'tracepoint' || db.role !== 'tracepoint_runtime') {
       throw new Error('REHEARSAL_DATABASE_ROLE_FAIL');
     }
-    const department = await pool.query('select count(*)::int as count from public.departments where id=$1', [departmentId]);
-    if (department.rows[0].count !== 1) throw new Error('REHEARSAL_TENANT_PIN_FAIL');
+    // Runtime intentionally cannot SELECT departments. Prove the exact tenant
+    // FK and acceptance INSERT contract in a transaction rolled back before send.
+    stage = 'tenant_fk_preflight';
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`insert into public.email_provider_acceptances
+        (message_id,department_id,recipient_hashes) values($1,$2,$3)`,
+      [`preflight_${Date.now()}`, departmentId, [recipientHash(destinations[mode])]]);
+      await client.query('rollback');
+    } catch (error) {
+      await client.query('rollback').catch(() => {});
+      throw error;
+    } finally { client.release(); }
     stage = 'suppression_read';
     const store = new PostgresSesFeedbackStore(pool);
     const recipient = destinations[mode];
