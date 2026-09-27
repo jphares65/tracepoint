@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { assertIngressTemplate, assertIngressRules, assertChangeSet, assertExternalIngress } from './check-production-maintenance-ingress.mjs';
+import { assertIngressTemplate, assertIngressRules, assertChangeSet, assertExternalIngress,
+  assertEcsIngress } from './check-production-maintenance-ingress.mjs';
 
 const template = JSON.parse(readFileSync(resolve('infra/changesets/production-maintenance-response-20260927/maintenance.json')));
 const baseline = JSON.parse(readFileSync(resolve('infra/changesets/production-maintenance-response-20260926/baseline.json')));
@@ -62,4 +63,21 @@ test('external verifier requires both public and unmatched hosts to receive exac
   assert.doesNotThrow(() => assertExternalIngress(maintenance, maintenance, 'active'));
   assert.throws(() => assertExternalIngress(maintenance, { status: 200, body: 'ok' }, 'active'));
   assert.doesNotThrow(() => assertExternalIngress({ status: 200, body: 'ok' }, { status: 200, body: 'ok' }, 'restored'));
+});
+
+test('public task ingress must be limited to the exact ALB security group', () => {
+  const sample = {
+    service: { serviceName: 'tracepoint-production', desiredCount: 1, runningCount: 1,
+      networkConfiguration: { awsvpcConfiguration: { securityGroups: ['sg-0ccc72ae99581cdfd'] } } },
+    task: { lastStatus: 'RUNNING' },
+    networkInterface: { Groups: [{ GroupId: 'sg-0ccc72ae99581cdfd' }] },
+    loadBalancer: { SecurityGroups: ['sg-0a7ba07ccc254d6b6'] },
+    securityGroup: { IpPermissions: [{ IpProtocol: 'tcp', FromPort: 3000, ToPort: 3000,
+      UserIdGroupPairs: [{ GroupId: 'sg-0a7ba07ccc254d6b6' }],
+      IpRanges: [], Ipv6Ranges: [], PrefixListIds: [] }] },
+  };
+  assert.doesNotThrow(() => assertEcsIngress(sample));
+  const drift = copy(sample);
+  drift.securityGroup.IpPermissions[0].IpRanges.push({ CidrIp: '0.0.0.0/0' });
+  assert.throws(() => assertEcsIngress(drift));
 });

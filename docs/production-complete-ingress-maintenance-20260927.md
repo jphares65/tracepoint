@@ -4,6 +4,8 @@ This supersedes the host-only 2026-09-26 procedure. It is **prepared but not act
 
 The CloudFormation template [maintenance.json](../infra/changesets/production-maintenance-response-20260927/maintenance.json) has SHA-256 `8CB9F3DE77D1099F6F254F7EC83D0B4970DA1A7C9217262681F9704B390A7BA8`. It adds exactly two fixed-503 rules to the pinned HTTPS listener: priority 5 for exact `www.tracepointhq.com`, and priority 20 with path `/*` for otherwise-unmatched hosts. The pre-existing shadow and rehearsal allow/deny rules at priorities 10–13 take precedence over priority 20. The listener default forward and public target group remain unchanged for health visibility. The maintenance stack owns only these two rules and is deleted to reverse them. This ALB barrier does **not** cover the separate legacy Vercel deployment or non-HTTP source writers.
 
+Read-only ECS ingress attestation also confirmed that the running public task's port 3000 security group `sg-0ccc72ae99581cdfd` admits only the exact ALB security group `sg-0a7ba07ccc254d6b6`, with no CIDR ingress. A direct probe of its then-current public task IP timed out. The verifier checks the live task/ALB security-group relationship every time; the public task IP itself is ephemeral and is not pinned.
+
 Review-only change set, not executed:
 
 - Stack: `arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/f41bc7e0-ba99-11f1-b90b-0e0ebc68fca1`

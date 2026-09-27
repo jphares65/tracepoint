@@ -120,6 +120,28 @@ export function assertExternalIngress(www, unmatched, mode, pinned = baseline) {
   }
 }
 
+export function assertEcsIngress({ service, task, networkInterface, securityGroup, loadBalancer }) {
+  const albGroup = 'sg-0a7ba07ccc254d6b6';
+  const taskGroup = 'sg-0ccc72ae99581cdfd';
+  assert.equal(service.serviceName, 'tracepoint-production');
+  assert.equal(service.desiredCount, 1);
+  assert.equal(service.runningCount, 1);
+  assert.deepEqual(service.networkConfiguration.awsvpcConfiguration.securityGroups, [taskGroup]);
+  assert.equal(task.lastStatus, 'RUNNING');
+  assert.equal(networkInterface.Groups.length, 1);
+  assert.equal(networkInterface.Groups[0].GroupId, taskGroup);
+  assert.deepEqual(loadBalancer.SecurityGroups, [albGroup]);
+  const ingress = securityGroup.IpPermissions;
+  assert.equal(ingress.length, 1, 'UNREVIEWED_TASK_INGRESS');
+  assert.equal(ingress[0].IpProtocol, 'tcp');
+  assert.equal(ingress[0].FromPort, 3000);
+  assert.equal(ingress[0].ToPort, 3000);
+  assert.deepEqual(ingress[0].UserIdGroupPairs.map(pair => pair.GroupId), [albGroup]);
+  assert.deepEqual(ingress[0].IpRanges, []);
+  assert.deepEqual(ingress[0].Ipv6Ranges, []);
+  assert.deepEqual(ingress[0].PrefixListIds, []);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   assertIngressTemplate();
   const mode = process.argv[2];
@@ -136,6 +158,22 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     assert.deepEqual(listener.DefaultActions, baseline.defaultActions);
     const rules = aws('elbv2', 'describe-rules', '--listener-arn', baseline.runtimeListenerArn).Rules;
     assertIngressRules(rules, mode === 'pending' ? 'baseline' : mode);
+    const service = aws('ecs', 'describe-services', '--cluster', 'tracepoint-production',
+      '--services', 'tracepoint-production').services[0];
+    const tasks = aws('ecs', 'list-tasks', '--cluster', 'tracepoint-production',
+      '--service-name', 'tracepoint-production').taskArns;
+    assert.equal(tasks.length, 1, 'UNEXPECTED_PUBLIC_TASK_COUNT');
+    const task = aws('ecs', 'describe-tasks', '--cluster', 'tracepoint-production',
+      '--tasks', tasks[0]).tasks[0];
+    const eni = task.attachments.flatMap(attachment => attachment.details)
+      .find(detail => detail.name === 'networkInterfaceId')?.value;
+    assert.match(eni ?? '', /^eni-[0-9a-f]+$/);
+    const networkInterface = aws('ec2', 'describe-network-interfaces', '--network-interface-ids', eni).NetworkInterfaces[0];
+    const securityGroup = aws('ec2', 'describe-security-groups', '--group-ids',
+      'sg-0ccc72ae99581cdfd').SecurityGroups[0];
+    const loadBalancer = aws('elbv2', 'describe-load-balancers', '--load-balancer-arns',
+      'arn:aws:elasticloadbalancing:us-east-1:193644343389:loadbalancer/app/tracep-Servi-HFH2HwVNXfys/95b1a0c4cb1f514d').LoadBalancers[0];
+    assertEcsIngress({ service, task, networkInterface, securityGroup, loadBalancer });
     if (mode === 'pending') {
       const stackName = 'tracepoint-production-maintenance-response-20260927';
       const changeSetArn = 'arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260927/d1ae3fda-1505-4d28-b77c-16a55fb7c6ec';
@@ -153,6 +191,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const unmatched = probe('unmatched.tracepointhq.com');
     assertExternalIngress(www, unmatched, mode === 'pending' ? 'baseline' : mode);
     console.log(JSON.stringify({ mode, listener: baseline.runtimeListenerArn,
-      defaultForwardUnchanged: true, wwwStatus: www.status, unmatchedHostStatus: unmatched.status }));
+      defaultForwardUnchanged: true, ecsIngressAlbOnly: true,
+      wwwStatus: www.status, unmatchedHostStatus: unmatched.status }));
   }
 }
