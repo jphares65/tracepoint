@@ -1,0 +1,30 @@
+version: 0.2
+
+env:
+  shell: bash
+  secrets-manager:
+    SOURCE_PRODUCTION_PROJECT_URL: "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi:projectUrl"
+    SOURCE_PRODUCTION_SERVICE_KEY: "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi:serviceRoleKey"
+
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "193644343389"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$TRACEPOINT_EXPECTED_AWS_ACCOUNT" = "193644343389"
+      - test "$TRACEPOINT_SOURCE_PRODUCTION_PROJECT_REF" = "izlkwggluhlhzlumtzes"
+      - test "$SOURCE_PRODUCTION_PROJECT_URL" = "https://izlkwggluhlhzlumtzes.supabase.co"
+      - echo "$TRACEPOINT_SOURCE_PRODUCTION_RUN_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      - test -n "$SOURCE_PRODUCTION_SERVICE_KEY"
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - node scripts/run-source-production-final-capture.mjs

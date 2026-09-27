@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Production frozen-source capture executor — isolated CodeBuild job with exact secret, source package, and immutable artifact scope
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    ref:
+      - at: docs/production-source-freeze-capture-package-20260927.md
+        has: exact source guards and abort sequence
+        scope: production cutover preparation
+Parameters:
+  SourceZipKey:
+    Type: String
+    AllowedPattern: 'source/tracepoint-production-final-capture-[0-9a-f]{64}\.zip'
+    Description: Content-addressed, versioned source archive containing the reviewed commit
+Resources:
+  CaptureLogKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: isolate sensitive capture execution logs from shared logging keys
+        must:
+          - CloudWatch use limited to this exact log group encryption context
+          - retain until cutover evidence retention ends
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::193644343389:root
+            Action: 'kms:*'
+            Resource: '*'
+          - Effect: Allow
+            Principal:
+              Service: logs.us-east-1.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:ReEncrypt*
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: arn:aws:logs:us-east-1:193644343389:log-group:/aws/codebuild/tracepoint-production-final-source-capture-20260927
+  CaptureLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: retain sanitized run metrics without storing source rows or credentials
+        must:
+          - KMS encryption required
+          - never log customer row payloads or server key
+    Properties:
+      LogGroupName: /aws/codebuild/tracepoint-production-final-source-capture-20260927
+      KmsKeyId: !GetAtt CaptureLogKey.Arn
+      RetentionInDays: 30
+  CaptureRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: distinct from rehearsal role so no project or artifact crossover is possible
+        must:
+          - only exact production REST secret
+          - only one immutable source package and one final artifact key
+          - no source mutation permissions
+    Properties:
+      RoleName: TracePoint-ProductionFinalSourceCapture-20260927
+      PermissionsBoundary: arn:aws:iam::193644343389:policy/TracePointProductionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: '193644343389'
+              ArnEquals:
+                aws:SourceArn: arn:aws:codebuild:us-east-1:193644343389:project/tracepoint-production-final-source-capture-20260927
+      Policies:
+        - PolicyName: ExactProductionFinalSourceCapture
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadExactImmutableBuildSource
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub 'arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389/${SourceZipKey}'
+              - Sid: ReadOnlyExactProductionSourceCredential
+                Effect: Allow
+                Action: [secretsmanager:GetSecretValue, secretsmanager:DescribeSecret]
+                Resource: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi
+              - Sid: WriteAndVerifyOneFinalArtifact
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:GetObjectVersion]
+                Resource: arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/0762cf3d-5f8e-4e89-afa0-051a39e4dce7/final-canonical.json
+              - Sid: ReadBuildSourceKms
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: arn:aws:kms:us-east-1:193644343389:key/6880c1ac-f131-4077-9075-8d063ec43cba
+                Condition:
+                  StringEquals:
+                    kms:ViaService: s3.us-east-1.amazonaws.com
+              - Sid: EncryptAndReadFinalArtifact
+                Effect: Allow
+                Action: [kms:GenerateDataKey, kms:Decrypt]
+                Resource: arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55
+                Condition:
+                  StringEquals:
+                    kms:ViaService: s3.us-east-1.amazonaws.com
+              - Sid: WriteSanitizedBuildLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: arn:aws:logs:us-east-1:193644343389:log-group:/aws/codebuild/tracepoint-production-final-source-capture-20260927:*
+              - Sid: AttestExactBuckets
+                Effect: Allow
+                Action: [s3:GetBucketAcl, s3:GetBucketLocation]
+                Resource:
+                  - arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389
+                  - arn:aws:s3:::tracepoint-production-private-193644343389
+  CaptureProject:
+    Type: AWS::CodeBuild::Project
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: run final capture inside AWS; a separate job prevents reusing paid-rehearsal authority
+        must:
+          - exact production project ref and server key only
+          - no webhook or automatic execution
+          - start only after verified source fence
+    Properties:
+      Name: tracepoint-production-final-source-capture-20260927
+      ServiceRole: !GetAtt CaptureRole.Arn
+      TimeoutInMinutes: 120
+      Source:
+        Type: S3
+        Location: !Sub 'tracepoint-production-aws-native-build-source-193644343389/${SourceZipKey}'
+        BuildSpec: buildspec.source-production-final-capture.yml
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/standard:7.0
+        ComputeType: BUILD_GENERAL1_SMALL
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: TRACEPOINT_EXPECTED_AWS_ACCOUNT
+            Type: PLAINTEXT
+            Value: '193644343389'
+          - Name: TRACEPOINT_SOURCE_PRODUCTION_PROJECT_REF
+            Type: PLAINTEXT
+            Value: izlkwggluhlhzlumtzes
+          - Name: TRACEPOINT_SOURCE_PRODUCTION_RUN_ID
+            Type: PLAINTEXT
+            Value: 0762cf3d-5f8e-4e89-afa0-051a39e4dce7
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref CaptureLogs
+          StreamName: capture
+Outputs:
+  CaptureProjectName:
+    Description: Exact production-only capture job to start after the source fence gate
+    Value: !Ref CaptureProject
