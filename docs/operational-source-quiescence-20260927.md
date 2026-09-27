@@ -97,6 +97,14 @@ processes. These are point-in-time observations, not proof that a dormant
 external writer cannot reconnect or that the queue will remain empty. The
 cutover fence must pause the exact job and verify drain again at freeze time.
 
+A read-only `pg_proc` scan found 30 `SECURITY DEFINER` functions in `public`
+and 26 public function bodies with DML-looking text. Nine of those also
+mention `auth.` or `storage.`; a narrower direct-managed-table DML text check
+matched **zero** of the nine, while all nine use `auth.uid` for identity
+checks. This narrows the public RPC surface but is not a semantic call-graph
+proof: dynamic SQL, nested functions, triggers, and external Auth/Storage APIs
+still require the separate real-interface negatives at cutover.
+
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than
 temporarily disabled. Deletion cannot restore the same value. A live plan that
