@@ -112,7 +112,8 @@ try {
       has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_can_execute,
       has_function_privilege('service_role', p.oid, 'EXECUTE') AS service_role_can_execute,
       pg_get_functiondef(p.oid) ~* '(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+|DELETE[[:space:]]+FROM|TRUNCATE[[:space:]]+)' AS dml_text_present,
-      pg_get_functiondef(p.oid) ~* '(auth\\.|storage\\.)' AS auth_or_storage_reference
+      pg_get_functiondef(p.oid) ~* '(auth\\.|storage\\.)' AS auth_or_storage_reference,
+      pg_get_functiondef(p.oid) ~* '(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+|DELETE[[:space:]]+FROM|TRUNCATE[[:space:]]+)([[:space:]]+ONLY)?[[:space:]]+(auth|storage)\\.' AS direct_managed_schema_dml_text
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.prosecdef AND p.prokind = 'f'
     ORDER BY p.proname, pg_get_function_identity_arguments(p.oid)`)).rows;

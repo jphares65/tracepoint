@@ -25,7 +25,7 @@ controlled; `unproven` is not a synonym for `ephemeral`.
 | Storage elevated API | Service/modern secret key; elevated role bypasses RLS | Same object authority | Stop all elevated-key holders; direct object-write negative; restore exact holders | Paid synthetic upload negative passed; production holder completeness pending |
 | S3-compatible Storage | No separate production S3 access key in dashboard inventory; protocol may be enabled | Object keys, bytes and metadata if a key appears | Recheck exact project immediately before freeze; if any key appears, reversible S3 protocol/key control and negative required | Currently `NO_SEPARATE_S3_WRITER_CREDENTIALS`; recheck required |
 | PostgREST direct browser/API | Public/legacy key and user token | RLS-protected public rows | 174 proposed public `ENABLE ALWAYS` trigger actions on 87 tables plus ingress controls; exact abort SQL removes only these | Paid service-role REST 55000 negative passed; production trigger package remains fail-closed |
-| RPC/SECURITY DEFINER | PostgREST caller; live catalog has 30 public definer functions, 18 with direct DML text, seven of those executable by `anon`; 13 refer to Auth/Storage (often `auth.uid()`) | Public rows; possible Auth/Storage effects require call-graph classification | Public triggers for public mutations; separate Auth/Storage control for any bypass | TLS-pinned catalog scan done; function call graph and real-interface negatives pending |
+| RPC/SECURITY DEFINER | PostgREST caller; live catalog has 30 public definer functions, 18 with direct DML text, seven of those executable by `anon`; 13 refer to Auth/Storage (often `auth.uid()`), zero with direct Auth/Storage-qualified DML text | Public rows; indirect Auth/Storage effects still require call-graph classification | Public triggers for public mutations; separate Auth/Storage control for any bypass | TLS-pinned catalog scan done; function call graph and real-interface negatives pending |
 | Supabase scheduled cron/pg_net | One active `tracepoint-notification-email-dispatch` job every 15 min calling legacy Vercel | Notification queue and email/send side effects | Guarded `cron.alter_job(... active := false)`, drain `cron.job_run_details` and `net.http_request_queue`; restore pinned job snapshot | Exact job read-only attested previously; live pause/inverse only at cutover |
 | Background/notification writers | Legacy Vercel dispatch; AWS SES feedback workers target their respective RDS paths, not Supabase source | Queue state, external delivery, feedback history | Pause source dispatcher and legacy Vercel; preserve separate AWS worker authority sequence | Source notification path identified; no proof yet that all external background invocations are drained |
 | Admin/import tooling | Manual migration scripts, CodeBuild import/capture roles; no active import job approved | Public/Auth/Storage depending tool invocation | No starts during freeze; exact job/build inventory, active-run drain, operator audit; restore only reviewed jobs | AWS CodeBuild projects inventoried; all active executions and external schedulers need fresh check |
@@ -40,3 +40,19 @@ an elevated key, SQL operator access, or an external integration. The final
 production composite preflight must remain blocked until every row is either
 proven absent or has a rehearsed reversible control, a direct negative or
 appropriate immutable absence evidence, and a deterministic restore path.
+
+Capture executor preparation remains non-operative. Commit `b2276b5` was
+packaged as source SHA-256
+`aeb8e7e6cae97b4cfb41cdc11c3de300d1e17f16143d9d814415d8516ed39076`
+and uploaded create-only to the exact versioned, KMS-encrypted build-source
+bucket as S3 VersionId `mIOCDtUM5HRWUrILGP3rIfoMssc49SdP`. The deployed
+CodeBuild project still references the old `d09407...` source archive; no
+capture build has started. A local-template change set exposed unrelated
+project/role changes and was deleted unexecuted. The safer
+`source-capture-param-only-b2276b5-20260927` change set uses the deployed
+template and is **unexecuted**. It plans only the source-parameter-dependent
+CodeBuild Source and exact-key role policy update; CloudFormation reports a
+conditional project replacement possibility, so the stack must be reattested
+before execution. No validation-error events were returned. Do not execute
+it or start capture merely because the package exists; the full source-writer
+preflight is still blocked.
