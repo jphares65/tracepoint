@@ -30,8 +30,11 @@ receives `SUPABASE_SECRET_KEY`. The separately pinned final-capture task reads
 the production REST source secret through an AWS role and makes only reviewed
 GET and fixed read-only POST requests. The live pg_cron dispatcher invokes a
 legacy Vercel notification endpoint every 15 minutes; that specific job must
-be paused and drained. The public ALB 503 covers `www.tracepointhq.com`, not
-direct Supabase APIs or the legacy Vercel host. The legacy Vercel project is
+be paused and drained. The previously exercised ALB 503 covered only
+`www.tracepointhq.com`; the reviewed but unexecuted two-rule replacement adds
+the unmatched-Host fallback (see
+`docs/production-complete-ingress-maintenance-20260927.md`). Neither version
+covers direct Supabase APIs or the legacy Vercel host. The legacy Vercel project is
 still an independent writer surface with a Production-scoped server-key
 variable: project
 `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`, Production origin
@@ -47,6 +50,22 @@ other dormant holder exists. A read-only `pg_stat_activity` snapshot showed
 two idle PostgREST sessions, one dashboard query, and platform admin/cron/net/
 exporter sessions; no independent application database client appeared in
 that snapshot. Transient/pooler clients remain a cutover-time drain check.
+
+Additional read-only AWS inventory on 2026-09-27 found four ECS services in
+the production cluster: the public bridge (`desired/running=1/1`), Phase 3B
+shadow (`1/1`), Phase 3C rehearsal (`1/1`), and the no-public-route native
+authority rehearsal (`0/0`). The public bridge task revision `:4` receives
+both `SUPABASE_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY`; the Phase 3C
+rehearsal revision `:23` receives AWS-native database/auth secrets and no
+Supabase source key. A reversible ECS desired-count `1 -> 0 -> 1` on **only**
+that isolated rehearsal service passed with one healthy replacement target;
+see `docs/ecs-writer-pause-proof-20260927.md`. The live bridge has not been
+scaled or changed. Production EventBridge Scheduler had zero schedules; its
+one enabled EventBridge rule targets the runtime-alert SNS topic rather than
+the source. Three Lambda functions were present: isolated SES feedback,
+full AWS SES feedback, and a VPC custom-resource function. This inventory
+narrows AWS autonomous writers but does not cover external clients or dormant
+manual jobs.
 
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than
