@@ -38,6 +38,15 @@ variable: project
 `https://tracepoint-amber.vercel.app`. Its reversible Production pause must
 be verified separately (and Preview source binding excluded) before either
 final capture; see `docs/production-legacy-vercel-writer-control-20260927.md`.
+Read-only CloudTrail lookup by the exact production application-secret ARN
+for September 20–27 showed successful `GetSecretValue` callers in only three
+role families: the production ECS execution role (18 events), the dormant
+AWS-native CodeBuild image role (5), and the migration operator (7). This
+does not inventory the separate Vercel environment secret or prove that no
+other dormant holder exists. A read-only `pg_stat_activity` snapshot showed
+two idle PostgREST sessions, one dashboard query, and platform admin/cron/net/
+exporter sessions; no independent application database client appeared in
+that snapshot. Transient/pooler clients remain a cutover-time drain check.
 
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than

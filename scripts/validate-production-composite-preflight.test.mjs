@@ -34,6 +34,7 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   }
   assert.equal(evaluateProductionCompositeReadiness(ready).status, 'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
   for (const change of [
+    copy => { copy.maintenance.unmatchedHostFallbackIncluded = false; },
     copy => { copy.s3WriterCredentials.productionProjectVerified = false; },
     copy => { copy.writers.authApi.realInterfaceNegativeRehearsed = false; },
     copy => { copy.writers.authApi.authoritativeMutationCapable = false; },

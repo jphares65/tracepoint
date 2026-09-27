@@ -23,7 +23,10 @@ export function evaluateProductionCompositeReadiness(evidence) {
   const blockers = [];
   const requireProof = (ok, code) => { if (!ok) blockers.push(code); };
   requireProof(evidence.maintenance?.activationReviewed === true &&
-    evidence.maintenance?.reversalReviewed === true, 'MAINTENANCE_INVERSE_UNPROVEN');
+    evidence.maintenance?.reversalReviewed === true &&
+    evidence.maintenance?.completeIngressChangeSetReviewed === true &&
+    evidence.maintenance?.unmatchedHostFallbackIncluded === true,
+  'MAINTENANCE_INVERSE_UNPROVEN');
   requireProof(evidence.publicTables?.count === 87 &&
     evidence.publicTables?.ownerControlVerified === true &&
     evidence.publicTables?.triggerInstallAndAbortReviewed === true, 'PUBLIC_TRIGGER_LAYER_UNPROVEN');

@@ -1,0 +1,26 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Temporary public ingress maintenance; deletion restores the unchanged listener default forward.",
+  "Resources": {
+    "PublicAppMaintenanceResponse": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "ListenerArn": "arn:aws:elasticloadbalancing:us-east-1:193644343389:listener/app/tracep-Servi-HFH2HwVNXfys/95b1a0c4cb1f514d/068663ecd22df15a",
+        "Priority": 5,
+        "Conditions": [{ "Field": "host-header", "HostHeaderConfig": { "Values": ["www.tracepointhq.com"] } }],
+        "Actions": [{ "Type": "fixed-response", "FixedResponseConfig": { "StatusCode": "503", "ContentType": "text/plain", "MessageBody": "TracePoint is temporarily unavailable for scheduled maintenance. Please try again shortly." } }]
+      }
+    },
+    "UnmatchedHostMaintenanceResponse": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "ListenerArn": "arn:aws:elasticloadbalancing:us-east-1:193644343389:listener/app/tracep-Servi-HFH2HwVNXfys/95b1a0c4cb1f514d/068663ecd22df15a",
+        "Priority": 20,
+        "Conditions": [{ "Field": "path-pattern", "PathPatternConfig": { "Values": ["/*"] } }],
+        "Actions": [{ "Type": "fixed-response", "FixedResponseConfig": { "StatusCode": "503", "ContentType": "text/plain", "MessageBody": "TracePoint is temporarily unavailable for scheduled maintenance. Please try again shortly." } }]
+      }
+    }
+  }
+}

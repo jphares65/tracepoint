@@ -3,7 +3,8 @@
   "accountId": "193644343389",
   "region": "us-east-1",
   "relationFingerprint": "36558b0730e3e96cad6426f38088a5b0",
-  "maintenance": { "activationReviewed": true, "reversalReviewed": true },
+  "maintenance": { "activationReviewed": true, "reversalReviewed": true,
+    "completeIngressChangeSetReviewed": true, "unmatchedHostFallbackIncluded": true },
   "publicTables": { "count": 87, "ownerControlVerified": true, "triggerInstallAndAbortReviewed": false },
   "capture": {
     "slots": { "A": "1d761bd7-04dd-43f3-b77a-2c41130e18c2", "B": "c7448ea9-4645-4e99-b988-3a05de12ac70" },
