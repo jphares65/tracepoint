@@ -1,0 +1,44 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageOnlyProofSet",
+      "Effect": "Allow",
+      "Action": [
+        "ses:CreateConfigurationSet",
+        "ses:CreateConfigurationSetEventDestination",
+        "ses:DeleteConfigurationSet",
+        "ses:DeleteConfigurationSetEventDestination",
+        "ses:GetConfigurationSet",
+        "ses:GetConfigurationSetEventDestinations",
+        "ses:TagResource"
+      ],
+      "Resource": "arn:aws:ses:us-east-1:193644343389:configuration-set/tracepoint-production-isolated-ses-proof-20260926"
+    },
+    {
+      "Sid": "ReadOnlyRehearsalDatabaseSecret",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/rehearsal/database-runtime-4272874f-uDq389"
+    },
+    {
+      "Sid": "DecryptOnlyRehearsalSecret",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55",
+      "Condition": { "StringEquals": { "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com" } }
+    },
+    {
+      "Sid": "ConsumeOnlyProofFeedback",
+      "Effect": "Allow",
+      "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"],
+      "Resource": "arn:aws:sqs:us-east-1:193644343389:tracepoint-production-isolated-ses-proof-feedback"
+    },
+    {
+      "Sid": "InspectOnlyProofTopic",
+      "Effect": "Allow",
+      "Action": "sns:GetTopicAttributes",
+      "Resource": "arn:aws:sns:us-east-1:193644343389:tracepoint-production-isolated-ses-proof-feedback"
+    }
+  ]
+}
