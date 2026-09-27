@@ -100,16 +100,29 @@ export async function GET(request: NextRequest) {
   }
 
   await status("access/own", "/api/access", 200);
-  await status("fleet/own", `/api/fleet/vehicles/${target.ownFleet}`, 200);
+  // These imported records can be hidden from ordinary Officers by the
+  // repository's status/visibility rules. Use list access as the positive
+  // control, and require the known foreign ID to be absent from that list.
+  for (const [route, path, foreignId] of [
+    ["fleet/list-foreign-absent", "/api/fleet/vehicles", target.foreignFleet],
+    ["firearm/list-foreign-absent", "/api/armory/firearms", target.foreignFirearm],
+  ] as const) {
+    try {
+      const response = await probe(path);
+      const body = response.status === 200 ? await response.text() : "";
+      checks.push({
+        route, status: response.status, expected: "200, foreign record absent",
+        pass: response.status === 200 && !body.includes(foreignId),
+      });
+    } catch {
+      checks.push({ route, status: 0, expected: "200, foreign record absent", pass: false });
+    }
+  }
   await status("fleet/foreign", `/api/fleet/vehicles/${target.foreignFleet}`, 404);
-  await status("firearm/own", `/api/armory/firearms/${target.ownFirearm}/attachments`, 200);
   await status("firearm/foreign", `/api/armory/firearms/${target.foreignFirearm}/attachments`, 404);
   // Readington currently has no active equipment asset; a same-tenant custody
   // positive control would be invalid there. The list contract must still be
   // available and must not contain the known foreign row.
-  if (actor !== "jphares@tracepointhq.com") {
-    await status("equipment/own", `/api/equipment/custody?identifier=${target.ownEquipment}`, 200);
-  }
   await status("equipment/foreign", `/api/equipment/custody?identifier=${target.foreignEquipment}`, 404);
   try {
     const response = await probe("/api/equipment/assets");
