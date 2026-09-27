@@ -41,6 +41,35 @@ historical Preview deployment, so `previewProductionSourceExcluded` remains
 false until the deployed artifacts or another exact deployment inventory
 closes that gap. Project pause only blocks Production, not Preview.
 
+The Vercel Activity log then exposed the historical risk directly:
+`NEXT_PUBLIC_SUPABASE_URL` was originally added June 22 and edited June 23
+with **Production and Preview** scope; a separate Preview-scoped URL was not
+added until September 17. The same period has Ready Preview deployments and
+a preexisting project automation-bypass secret. The old shared URL's exact
+value and each historical deployment's immutable environment snapshot were
+not exposed in this read-only view, so older Preview deployments must be
+treated as **potential live-source writers**, not excluded based on the
+current staging Preview setting. The Activity log separately confirms
+`SUPABASE_SECRET_KEY` was added June 25 with **Production and Preview** scope.
+Thus a pre-split Preview could have both the live source URL and an elevated
+source credential. No project setting or deployment was changed.
+
+Read-only live Firewall inventory showed **zero custom rules**. Vercel's
+[WAF rule configuration](https://vercel.com/docs/vercel-firewall/vercel-waf/rule-configuration)
+can match the request's deployment **Environment** and Deny
+requests before they reach the application, even when a client passes
+Deployment Protection; a rule can be disabled or deleted without a redeploy.
+The proposed bounded cutover control is a temporary rule on exact project
+`prj_V03LJyQIc231luvZ9u0gcOAt4xK4`:
+`Environment Equals Preview` → `Deny`, paired with the already-proven
+Production pause. This covers historical Preview URLs without reading or
+rotating server credentials. The rule is **not yet approved/proven on the
+disposable project**, and was not added to the live project. A disposable
+`Environment Equals Production` Deny/inverse proof was prepared but the
+browser safety reviewer blocked creation pending explicit user approval;
+the unsaved editor was canceled and no rule was created. Do not mark this
+writer controlled until its real-interface negative and inverse pass.
+
 Vercel documents that pausing a project stops its **Production Deployment**
 with `503 DEPLOYMENT_PAUSED` and leaves Preview deployments, settings, and
 data unaffected. It can be resumed from the same project's Settings page or
