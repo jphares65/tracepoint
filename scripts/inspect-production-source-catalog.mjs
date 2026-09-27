@@ -74,6 +74,36 @@ try {
     ORDER BY 1, 2, 3`)).rows;
   const cutoverSchema = (await client.query(`SELECT EXISTS (
     SELECT 1 FROM pg_namespace WHERE nspname = 'tracepoint_cutover') AS present`)).rows[0].present;
+  const storagePolicies = (await client.query(`SELECT tablename AS table_name, policyname AS policy_name,
+      cmd, roles, qual AS using_expression, with_check AS check_expression
+    FROM pg_policies WHERE schemaname = 'storage'
+    ORDER BY tablename, policyname`)).rows;
+  const storageRolePrivileges = (await client.query(`SELECT table_name, grantee, privilege_type
+    FROM information_schema.table_privileges
+    WHERE table_schema = 'storage' AND table_name IN ('objects', 'buckets')
+      AND grantee IN ('anon', 'authenticated', 'service_role')
+    ORDER BY table_name, grantee, privilege_type`)).rows;
+  const storageEffectivePrivileges = (await client.query(`SELECT role_name,
+      has_table_privilege(role_name, 'storage.objects', 'SELECT') AS can_select_objects,
+      has_table_privilege(role_name, 'storage.objects', 'INSERT') AS can_insert_objects,
+      has_table_privilege(role_name, 'storage.objects', 'UPDATE') AS can_update_objects,
+      has_table_privilege(role_name, 'storage.objects', 'DELETE') AS can_delete_objects
+    FROM unnest(ARRAY['anon', 'authenticated', 'service_role']) AS role_name
+    ORDER BY role_name`)).rows;
+  const storageOwnerDelegation = (await client.query(`SELECT
+      pg_has_role('postgres', 'supabase_storage_admin', 'MEMBER') AS postgres_member_of_storage_owner,
+      pg_has_role('postgres', 'supabase_storage_admin', 'USAGE') AS postgres_can_use_storage_owner`)).rows[0];
+  const storageGrantors = (await client.query(`SELECT grantor::regrole::text AS grantor,
+      grantee::regrole::text AS grantee, privilege_type
+    FROM pg_class c, LATERAL aclexplode(c.relacl) acl
+    WHERE c.oid = 'storage.objects'::regclass
+      AND grantee IN ('anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole)
+      AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE')
+    ORDER BY grantor, grantee, privilege_type`)).rows;
+  const permissionFunction = (await client.query(`SELECT pg_get_userbyid(p.proowner) AS owner,
+      md5(pg_get_functiondef(p.oid)) AS definition_md5,
+      pg_get_functiondef(p.oid) AS definition
+    FROM pg_proc p WHERE p.oid = 'public.has_department_permission(uuid,text)'::regprocedure`)).rows[0];
   let dispatcher = { readable: false };
   await client.query('SAVEPOINT dispatcher_probe');
   try {
@@ -102,7 +132,10 @@ try {
       .map(owner => [owner, tables.filter(row => row.owner === owner).length])),
     relationCatalogSha256: digest, relationCatalogSqlMd5: sqlDigest,
     existingFenceTriggerCount: fences.length,
-    cutoverSchemaPresent: cutoverSchema, dispatcher, noCustomerRowsRead: true }, null, 2));
+    cutoverSchemaPresent: cutoverSchema, dispatcher,
+    storagePolicies, storageRolePrivileges, storageEffectivePrivileges,
+    storageOwnerDelegation, storageGrantors, permissionFunction,
+    noCustomerRowsRead: true }, null, 2));
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch { /* connection may be unavailable */ }
   console.error(JSON.stringify({ status: 'READ_ONLY_PRODUCTION_CATALOG_FAILED', code: error.code ?? 'CONTRACT_MISMATCH',
