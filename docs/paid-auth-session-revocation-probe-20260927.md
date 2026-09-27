@@ -39,10 +39,21 @@ disposable user. A later repeat probe timed out **before** any deletion and
 also deleted its user. Final paid-project checks found zero exact probe users
 and Email provider **Enabled**.
 
+After separate approval, the same exact-user SQL was run once more with a
+live probe waiting. With Email disabled and that one session deleted, a new
+password sign-in returned HTTP 422, old refresh returned HTTP 400, and an
+old-JWT `PUT /auth/v1/user` returned HTTP 403. Admin read remained HTTP 200
+and confirmed authoritative probe metadata was unchanged. Email was then
+re-enabled; new sign-in and Auth user write both returned HTTP 200. The
+disposable user cleanup returned HTTP 200. The paid Email provider was
+visibly confirmed **Enabled** afterward. No customer identity was touched.
+
 Supabase Auth's own `Logout` implementation deletes from `auth.sessions` by
 user ID, matching the SQL table-level operation. This supports the proposed
-cutover-session control, but the SQL-delete-plus-old-JWT HTTP path has **not**
-yet been directly demonstrated end to end. The wider composite fence remains
+cutover-session control, and the SQL-delete-plus-old-JWT Auth write path is
+now directly demonstrated for one disposable user. This does **not** establish
+that deleting sessions invalidates stateless JWTs for PostgREST or Storage,
+or that service/admin Auth writers are blocked. The wider composite fence remains
 unproven until the other Auth, Storage, service/admin, and autonomous writer
 controls and two immutable authoritative captures pass.
 

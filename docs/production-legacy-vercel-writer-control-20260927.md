@@ -16,6 +16,31 @@ secret's project binding remains unverified**, so preview URLs must not yet be
 declared irrelevant to the production source. No credential value was read or
 recorded.
 
+The later read-only Vercel settings inspection reconfirmed that Preview's
+`NEXT_PUBLIC_SUPABASE_URL` is the staging project
+`wztqqqashilusoppddxi`, but the Preview `SUPABASE_SECRET_KEY` is a
+write-only Vercel Secret and its value cannot be revealed after saving. The
+project's Cron Jobs page showed no configured jobs. Deployment Protection
+has Vercel Authentication, **and one automation-bypass secret exists**;
+therefore an unauthenticated 302 is not proof that every Preview writer is
+blocked. The bypass holder and the Preview server-key project binding remain
+unclassified. Neither Vercel secret nor deployment setting was changed.
+Vercel documents that its [automation-bypass secret](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
+can bypass project deployment protection until revoked.
+
+The project environment inventory shows the Preview-scoped Supabase URL,
+publishable key, and server secret were added on September 17; the older
+production values remain Production-scoped. Repository inspection found that
+`createAdminClient()` and the ordinary browser/server clients all use
+`NEXT_PUBLIC_SUPABASE_URL` as their destination, and the server secret is a
+credential for that same destination. The admin client has used this
+coupling since its June 25 introduction. This strongly indicates current
+Preview builds target staging even if their concealed server key were wrong.
+It does not yet attest the immutable environment snapshot of **every** Ready
+historical Preview deployment, so `previewProductionSourceExcluded` remains
+false until the deployed artifacts or another exact deployment inventory
+closes that gap. Project pause only blocks Production, not Preview.
+
 Vercel documents that pausing a project stops its **Production Deployment**
 with `503 DEPLOYMENT_PAUSED` and leaves Preview deployments, settings, and
 data unaffected. It can be resumed from the same project's Settings page or
