@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../src/app/api/internal/rehearsal-tenant-negative/route.ts', import.meta.url), 'utf8');
+const pageRoute = readFileSync(new URL('../src/app/rehearsal-tenant-negative/route.ts', import.meta.url), 'utf8');
 
 test('isolated authenticated proof cannot run on a production origin or pool', () => {
   assert.match(source, /shadow-rehearsal\.tracepointhq\.com/);
@@ -30,4 +31,9 @@ test('proof forwards the browser session only to the same container and makes no
   assert.match(source, /operation: "select"/);
   assert.doesNotMatch(source, /method: "(?:PUT|PATCH|DELETE)"/);
   assert.doesNotMatch(source, /console\.(?:log|info|error)\([^\n]*sessionCookie/);
+});
+
+test('the HTML result has a non-API browser path while retaining the guarded runner', () => {
+  assert.match(pageRoute, /runTenantNegativeProof\(request\)/);
+  assert.doesNotMatch(pageRoute, /fetch\(/);
 });
