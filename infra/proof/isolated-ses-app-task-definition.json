@@ -1,0 +1,32 @@
+{
+  "family": "tracepoint-production-isolated-ses-app-proof",
+  "taskRoleArn": "arn:aws:iam::193644343389:role/tracepoint-production-ses-feedback-proof-v1",
+  "executionRoleArn": "arn:aws:iam::193644343389:role/tracepoint-production-aws-native-proof-execution-v1",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [
+    {
+      "name": "isolated-ses-app-proof",
+      "image": "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:0c05c6bb9992e0f6af9b56fbdee1d10d0f475dc43e015acf395c93ec0e969d37",
+      "essential": true,
+      "readonlyRootFilesystem": true,
+      "user": "65532:65532",
+      "environment": [
+        {"name": "TRACEPOINT_ISOLATED_SES_APP_PROOF", "value": "20260926"},
+        {"name": "TRACEPOINT_AWS_ACCOUNT_ID", "value": "193644343389"},
+        {"name": "AWS_REGION", "value": "us-east-1"},
+        {"name": "TRACEPOINT_ISOLATED_SES_PROOF_MODE", "value": "success"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/tracepoint/production/application",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "isolated-ses-app-proof"
+        }
+      }
+    }
+  ]
+}

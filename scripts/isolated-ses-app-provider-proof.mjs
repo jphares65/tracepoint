@@ -78,7 +78,8 @@ async function main() {
 
 main().catch(error => {
   console.error(JSON.stringify({ event: 'ISOLATED_APP_SES_PROVIDER_FAILED', stage,
-    errorType: error?.name ?? 'Error', status: error?.$metadata?.httpStatusCode,
+    errorType: error?.name ?? 'Error', errorCode: error?.code,
+    severity: error?.severity, status: error?.$metadata?.httpStatusCode,
     guard: /^(?:ISOLATED_|RDS_|REHEARSAL_|SIMULATOR_|ACCEPTANCE_)/.test(error?.message ?? '')
       ? error.message : undefined }));
   process.exitCode = 1;
