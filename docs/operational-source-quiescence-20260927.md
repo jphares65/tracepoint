@@ -75,6 +75,16 @@ invokes the production Supabase source secret or mutates the source. This is
 static repository evidence only: it does not exclude external CI projects,
 manual jobs, or copies of older workflows outside this checkout.
 
+A read-only September 27 inspection of the exact live Supabase project's
+24-hour unified log view reported 557 rows; 556 event rows were parseable in
+the connected view. The visible HTTP route-family aggregate included 96
+`GET /rest/v1/notification_email_queue` requests, matching the known
+15-minute dispatcher, and 12 `POST /admin/v1/network-bans` platform requests.
+No `POST`/`PATCH`/`PUT`/`DELETE` to the Auth, Storage, or PostgREST application
+route families appeared in that bounded view. This is observation, **not**
+proof that dormant or external writers lack credentials or cannot run during
+cutover; it cannot close the service/Admin or Preview writer gates.
+
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than
 temporarily disabled. Deletion cannot restore the same value. A live plan that
