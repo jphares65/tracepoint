@@ -85,6 +85,18 @@ route families appeared in that bounded view. This is observation, **not**
 proof that dormant or external writers lack credentials or cannot run during
 cutover; it cannot close the service/Admin or Preview writer gates.
 
+A separate read-only production catalog query on September 27 found exactly
+one `cron.job` row: job ID `1`,
+`tracepoint-notification-email-dispatch`, active on `*/15 * * * *`. Its command
+was classified as an HTTP dispatch without printing the command or embedded
+configuration. `net.http_request_queue` contained zero pending requests at
+that instant. A grouped `pg_stat_activity` snapshot showed two idle
+PostgREST sessions and one idle Supabase Storage API session, plus one idle
+pooler session and the expected Supabase admin, cron, pg_net, and exporter
+processes. These are point-in-time observations, not proof that a dormant
+external writer cannot reconnect or that the queue will remain empty. The
+cutover fence must pause the exact job and verify drain again at freeze time.
+
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than
 temporarily disabled. Deletion cannot restore the same value. A live plan that
