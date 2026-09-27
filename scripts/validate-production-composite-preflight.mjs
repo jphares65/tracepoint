@@ -37,13 +37,19 @@ export function evaluateProductionCompositeReadiness(evidence) {
   requireProof(evidence.s3WriterCredentials?.state === 'NO_SEPARATE_S3_WRITER_CREDENTIALS' &&
     evidence.s3WriterCredentials?.productionProjectVerified === true,
   'S3_WRITER_INVENTORY_OPEN');
+  const previewSafe = evidence.legacyVercel?.previewProductionSourceExcluded === true ||
+    (evidence.legacyVercel?.previewProjectWideDenyReviewed === true &&
+      evidence.legacyVercel?.previewProjectWideDenyRehearsed === true &&
+      evidence.legacyVercel?.previewHistoricalNegativeRehearsed === true &&
+      evidence.legacyVercel?.previewControlReversible === true &&
+      /^[0-9a-f]{64}$/.test(evidence.legacyVercel?.previewNegativeEvidenceSha256 ?? ''));
   requireProof(evidence.legacyVercel?.projectId === 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4' &&
     evidence.legacyVercel?.productionOrigin === 'https://tracepoint-amber.vercel.app' &&
     evidence.legacyVercel?.previewSourceProject === 'wztqqqashilusoppddxi' &&
     evidence.legacyVercel?.productionPauseAndResumeReviewed === true &&
     evidence.legacyVercel?.pauseAndResumeRehearsed === true &&
     evidence.legacyVercel?.pause503NegativeRehearsed === true &&
-    evidence.legacyVercel?.previewProductionSourceExcluded === true,
+    previewSafe,
   'LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN');
   requireProof(evidence.unfence?.exactInverseReviewed === true &&
     evidence.unfence?.restoreVerificationDefined === true, 'UNFENCE_UNPROVEN');

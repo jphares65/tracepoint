@@ -35,6 +35,20 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   }
   ready.writers.authApi.controls.serviceAdminWritersControlled = true;
   assert.equal(evaluateProductionCompositeReadiness(ready).status, 'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
+  const blockedHistoricalPreview = structuredClone(ready);
+  Object.assign(blockedHistoricalPreview.legacyVercel, {
+    previewProductionSourceExcluded: false,
+    previewProjectWideDenyReviewed: true,
+    previewProjectWideDenyRehearsed: true,
+    previewHistoricalNegativeRehearsed: true,
+    previewControlReversible: true,
+    previewNegativeEvidenceSha256: 'c'.repeat(64),
+  });
+  assert.equal(evaluateProductionCompositeReadiness(blockedHistoricalPreview).status,
+    'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
+  blockedHistoricalPreview.legacyVercel.previewHistoricalNegativeRehearsed = false;
+  assert.ok(evaluateProductionCompositeReadiness(blockedHistoricalPreview).blockers.includes(
+    'LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
   for (const change of [
     copy => { copy.maintenance.unmatchedHostFallbackIncluded = false; },
     copy => { copy.s3WriterCredentials.productionProjectVerified = false; },

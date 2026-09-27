@@ -62,6 +62,16 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
       negativeEvidenceSha256: 'a'.repeat(64), restoreProcedureSha256: 'b'.repeat(64) }])) };
   const now = Date.parse('2026-09-27T12:02:00Z');
   assert.equal(attestCompositeEvidence(evidence, fenceChangedAt, now), true);
+  const controlledPreview = structuredClone(evidence);
+  Object.assign(controlledPreview.legacyVercel, {
+    previewProductionSourceExcluded: false,
+    previewAllDeploymentsBlocked: true,
+    previewProjectWideDenyActive: true,
+    previewNegativeEvidenceSha256: 'c'.repeat(64),
+  });
+  assert.equal(attestCompositeEvidence(controlledPreview, fenceChangedAt, now), true);
+  controlledPreview.legacyVercel.previewNegativeEvidenceSha256 = 'missing';
+  assert.throws(() => attestCompositeEvidence(controlledPreview, fenceChangedAt, now));
   for (const patch of [{ projectRef: 'reukdouvpshshvqnzsgw' }, { publicTriggers: 244 },
     { maintenance503: false }, { observedAtUtc: '2026-09-27T11:50:00Z' },
     { legacyVercel: { ...evidence.legacyVercel, paused503: false } },

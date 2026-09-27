@@ -88,8 +88,11 @@ export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now())
   assert.equal(value?.legacyVercel?.productionOrigin, 'https://tracepoint-amber.vercel.app',
     'LEGACY_VERCEL_ORIGIN_MISMATCH');
   assert.equal(value?.legacyVercel?.paused503, true, 'LEGACY_VERCEL_PRODUCTION_NOT_PAUSED');
-  assert.equal(value?.legacyVercel?.previewProductionSourceExcluded, true,
-    'LEGACY_VERCEL_PREVIEW_SOURCE_UNPROVEN');
+  const previewSafe = value?.legacyVercel?.previewProductionSourceExcluded === true ||
+    (value?.legacyVercel?.previewAllDeploymentsBlocked === true &&
+      value?.legacyVercel?.previewProjectWideDenyActive === true &&
+      /^[0-9a-f]{64}$/.test(value?.legacyVercel?.previewNegativeEvidenceSha256 ?? ''));
+  assert.equal(previewSafe, true, 'LEGACY_VERCEL_PREVIEW_SOURCE_UNPROVEN');
   const families = ['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background',
     'scheduledImportAdmin', 'legacyVercel'];
   assert.deepEqual(Object.keys(value?.writers ?? {}).sort(), families.sort(), 'WRITER_INVENTORY_INCOMPLETE');

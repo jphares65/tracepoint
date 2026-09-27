@@ -75,10 +75,19 @@ The proposed bounded cutover control is a temporary rule on exact project
 Production pause. This covers historical Preview URLs without reading or
 rotating server credentials. The rule is **not yet approved/proven on the
 disposable project**, and was not added to the live project. A disposable
-`Environment Equals Production` Deny/inverse proof was prepared but the
-browser safety reviewer blocked creation pending explicit user approval;
-the unsaved editor was canceled and no rule was created. Do not mark this
-writer controlled until its real-interface negative and inverse pass.
+`Environment Equals Production` Deny/inverse proof was prepared; its rule is
+staged in Vercel's Review Change dialog but **not published/live**. The browser
+safety reviewer rejected Publish pending approval for that exact disposable
+rule. Do not mark this writer controlled until its real-interface negative
+and inverse pass.
+
+The production preflight and final-capture attestation now accept two distinct
+safe Preview proofs: either every historical Preview is demonstrated unable
+to reach the production source, or an exact-project, project-wide Preview deny
+is reviewed, rehearsed, active during capture, supported by a negative-test
+evidence hash, and reversible. This corrects the former impossible requirement
+that pre-September-17 Preview deployments be declared production-source-free.
+No evidence field has been marked passed merely by changing the validator.
 
 Vercel documents that pausing a project stops its **Production Deployment**
 with `503 DEPLOYMENT_PAUSED` and leaves Preview deployments, settings, and
