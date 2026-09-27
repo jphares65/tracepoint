@@ -1,6 +1,6 @@
 # Legacy Vercel source writer: production cutover control
 
-Status: **identified, not yet rehearsed or activated**. This is a required
+Status: **isolated pause inverse rehearsed; live control not activated**. This is a required
 component of the production composite fence, not a replacement for it.
 
 The signed-in Vercel dashboard identifies project `tracepoint` under
@@ -39,12 +39,28 @@ Before cutover maintenance, complete these checks without mutation:
    project-scoped API token). Do not create or disclose a broad token merely
    to satisfy this document.
 
-An empty, disposable project `prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw`
+Disposable project `prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw`
 (`project-q7s6a` in the same Hobby team) was created with explicit approval to
-rehearse the pause inverse. It has no deployment, environment variables, or
-source connection at creation. A synthetic static page and exact-origin
-read-only verifier are prepared, but **no pause/503/resume evidence exists yet**.
-Do not mark the Vercel writer gate passed merely because this project exists.
+rehearse the pause inverse. It had no deployment, environment variables, or
+source connection at creation. Vercel initially refused to pause the empty
+project with `Active production deployment does not exist`; no state changed.
+With explicit approval, one 201-byte synthetic `index.html` was uploaded to
+**that exact project only** as its first Production deployment
+`dpl_Ew7sdctcCDr2pqHgZZf3RARFAR29`. No secrets or customer data were
+included. The exact-origin, read-only external verifier
+`scripts/verify-disposable-vercel-pause.mjs` recorded:
+
+| State | UTC | External result |
+| --- | --- | --- |
+| Active before pause | 2026-09-27 18:41:40 | HTTP 200, exact synthetic marker |
+| Paused | 2026-09-27 18:42:19 | HTTP 503, `DEPLOYMENT_PAUSED` |
+| Resumed | 2026-09-27 18:42:49 | HTTP 200, exact synthetic marker |
+
+The same Vercel Settings > General control performed pause and inverse resume;
+no redeployment was required. This proves the **disposable project's**
+reversible Production-deployment barrier. It does **not** resolve the live
+project's Preview-secret binding or prove that every production-source writer
+is fenced. The disposable project is left active with only its synthetic page.
 
 During the controlled cutover window, after public maintenance is externally
 verified and before the source fence/captures:
