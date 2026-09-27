@@ -1,0 +1,28 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$AWS_ACCOUNT_ID" = "193644343389"
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$SOURCE_COMMIT" = "$IMAGE_TAG"
+      - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+      - test "$ECR_REPOSITORY_URI" = "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production"
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - docker build --pull -f Dockerfile.ses-feedback-proof --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.purpose=isolated-ses-feedback-proof -t "$ECR_REPOSITORY_URI:ses-feedback-proof-$SOURCE_COMMIT" .
+      - docker run --rm --read-only --entrypoint /nodejs/bin/node "$ECR_REPOSITORY_URI:ses-feedback-proof-$SOURCE_COMMIT" -e 'const fs=require("node:fs");if(process.getuid()!==65532)throw Error("non-root required");for(const p of ["/app/rds-ca.pem","/app/isolated-ses-app-provider-proof.cjs"]){fs.accessSync(p,fs.constants.R_OK)};if(!fs.readFileSync("/app/rds-ca.pem","utf8").includes("BEGIN CERTIFICATE"))throw Error("RDS CA missing");console.log("Proof script and RDS CA readable by non-root")'
+      - docker push "$ECR_REPOSITORY_URI:ses-feedback-proof-$SOURCE_COMMIT"
+  post_build:
+    commands:
+      - set +x
+      - if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then aws ecr describe-images --repository-name tracepoint-production --image-ids imageTag="ses-feedback-proof-$SOURCE_COMMIT" --query 'imageDetails[0].imageDigest' --output text; fi
