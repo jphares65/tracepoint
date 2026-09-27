@@ -20,7 +20,12 @@
     "productionPauseAndResumeReviewed": true,
     "pauseAndResumeRehearsed": true,
     "pause503NegativeRehearsed": true,
-    "previewProductionSourceExcluded": false
+    "previewProductionSourceExcluded": false,
+    "previewProjectWideDenyReviewed": true,
+    "previewEnvironmentScopedDenyRehearsed": true,
+    "previewHistoricalNegativeTestDefined": true,
+    "previewControlReversible": true,
+    "previewNegativeEvidenceSha256": "86a461aa264395a9c477b26bcbf8f35e8d2ae1fd3cef0f73cd05005dd8a397cf"
   },
   "unfence": { "exactInverseReviewed": false, "restoreVerificationDefined": false },
   "unknownAutonomousWriters": true,

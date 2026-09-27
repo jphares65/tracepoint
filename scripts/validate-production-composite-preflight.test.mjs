@@ -12,7 +12,8 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
   assert.ok(result.blockers.includes('UNKNOWN_AUTONOMOUS_WRITERS'));
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
-  assert.ok(result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
+  assert.ok(!result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
+  assert.ok(result.blockers.includes('WRITER_INVENTORY_OPEN:legacyVercel'));
   assert.ok(!result.blockers.includes('S3_WRITER_INVENTORY_OPEN'));
 });
 
@@ -39,14 +40,14 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   Object.assign(blockedHistoricalPreview.legacyVercel, {
     previewProductionSourceExcluded: false,
     previewProjectWideDenyReviewed: true,
-    previewProjectWideDenyRehearsed: true,
-    previewHistoricalNegativeRehearsed: true,
+    previewEnvironmentScopedDenyRehearsed: true,
+    previewHistoricalNegativeTestDefined: true,
     previewControlReversible: true,
     previewNegativeEvidenceSha256: 'c'.repeat(64),
   });
   assert.equal(evaluateProductionCompositeReadiness(blockedHistoricalPreview).status,
     'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
-  blockedHistoricalPreview.legacyVercel.previewHistoricalNegativeRehearsed = false;
+  blockedHistoricalPreview.legacyVercel.previewHistoricalNegativeTestDefined = false;
   assert.ok(evaluateProductionCompositeReadiness(blockedHistoricalPreview).blockers.includes(
     'LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
   for (const change of [

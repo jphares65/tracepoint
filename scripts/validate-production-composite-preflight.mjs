@@ -39,8 +39,8 @@ export function evaluateProductionCompositeReadiness(evidence) {
   'S3_WRITER_INVENTORY_OPEN');
   const previewSafe = evidence.legacyVercel?.previewProductionSourceExcluded === true ||
     (evidence.legacyVercel?.previewProjectWideDenyReviewed === true &&
-      evidence.legacyVercel?.previewProjectWideDenyRehearsed === true &&
-      evidence.legacyVercel?.previewHistoricalNegativeRehearsed === true &&
+      evidence.legacyVercel?.previewEnvironmentScopedDenyRehearsed === true &&
+      evidence.legacyVercel?.previewHistoricalNegativeTestDefined === true &&
       evidence.legacyVercel?.previewControlReversible === true &&
       /^[0-9a-f]{64}$/.test(evidence.legacyVercel?.previewNegativeEvidenceSha256 ?? ''));
   requireProof(evidence.legacyVercel?.projectId === 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4' &&

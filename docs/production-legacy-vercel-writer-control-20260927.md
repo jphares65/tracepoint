@@ -92,13 +92,26 @@ The sanitized proof record is
 `docs/vercel-disposable-firewall-proof-20260927.json` (SHA-256
 `86a461aa264395a9c477b26bcbf8f35e8d2ae1fd3cef0f73cd05005dd8a397cf`).
 
-The production preflight and final-capture attestation now accept two distinct
-safe Preview proofs: either every historical Preview is demonstrated unable
-to reach the production source, or an exact-project, project-wide Preview deny
-is reviewed, rehearsed, active during capture, supported by a negative-test
-evidence hash, and reversible. This corrects the former impossible requirement
-that pre-September-17 Preview deployments be declared production-source-free.
-No evidence field has been marked passed merely by changing the validator.
+The production **preflight** accepts two distinct Preview plans: either every
+historical Preview is demonstrated unable to reach the production source, or
+the exact-project, project-wide Preview deny is reviewed, its environment
+predicate and inverse are rehearsed on the disposable project, and the live
+negative test is specified. The **capture-time attestation separately
+requires** the live Preview deny to be active, all deployments blocked, and a
+negative-test evidence hash. This corrects the former requirement that
+pre-September-17 Preview deployments be declared production-source-free while
+preventing a non-production rehearsal from being mistaken for a live fence.
+
+The live negative test is fixed to at least these two Ready, pre-September-17
+Preview deployments, plus the current Preview alias:
+`https://tracepoint-395zd6rqj-jphares65s-projects.vercel.app/` and
+`https://tracepoint-bj8yef6op-jphares65s-projects.vercel.app/`.
+Both historical URLs returned HTTP 302 through existing deployment protection
+before any live rule was added. Once the exact live `Environment Equals Preview`
+Deny is active, each must return a WAF denial rather than a 302 or an
+application response; any other reachable Preview URL sampled from the
+inventory must also deny. If not, abort before capture. This is a test
+definition, **not** a claim that the live rule has been applied.
 
 Vercel documents that pausing a project stops its **Production Deployment**
 with `503 DEPLOYMENT_PAUSED` and leaves Preview deployments, settings, and
