@@ -27,7 +27,11 @@
   "writers": {
     "applicationApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
     "serviceRole": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
-    "authApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "authApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false,
+      "controls": { "newSignInBlockedRehearsed": true, "refreshBlockedRehearsed": true,
+        "existingTokenAuthWriteBlockedRehearsed": true, "captureReadsPreserved": true,
+        "restoreProven": true, "productionSessionDrainReviewed": true,
+        "serviceAdminWritersControlled": false } },
     "storageApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
     "background": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
     "scheduledImportAdmin": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },

@@ -48,6 +48,16 @@ export function evaluateProductionCompositeReadiness(evidence) {
   requireProof(evidence.unfence?.exactInverseReviewed === true &&
     evidence.unfence?.restoreVerificationDefined === true, 'UNFENCE_UNPROVEN');
   requireProof(evidence.unknownAutonomousWriters === false, 'UNKNOWN_AUTONOMOUS_WRITERS');
+  const authControls = evidence.writers?.authApi?.controls;
+  requireProof(authControls?.newSignInBlockedRehearsed === true &&
+    authControls?.refreshBlockedRehearsed === true &&
+    authControls?.existingTokenAuthWriteBlockedRehearsed === true &&
+    authControls?.captureReadsPreserved === true &&
+    authControls?.restoreProven === true &&
+    authControls?.productionSessionDrainReviewed === true,
+  'AUTH_SESSION_FENCE_CONTRACT_UNPROVEN');
+  requireProof(authControls?.serviceAdminWritersControlled === true,
+    'AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED');
   const actual = Object.keys(evidence.writers ?? {}).sort();
   assert.deepEqual(actual, [...WRITER_FAMILIES].sort(), 'WRITER_FAMILY_INVENTORY_INCOMPLETE');
   for (const family of WRITER_FAMILIES) {

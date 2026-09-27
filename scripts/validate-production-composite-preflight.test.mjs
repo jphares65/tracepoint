@@ -11,6 +11,7 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:authApi'));
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
   assert.ok(result.blockers.includes('UNKNOWN_AUTONOMOUS_WRITERS'));
+  assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
   assert.ok(result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
   assert.ok(!result.blockers.includes('S3_WRITER_INVENTORY_OPEN'));
 });
@@ -32,11 +33,14 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     writer.inverseReviewed = true;
     writer.realInterfaceNegativeRehearsed = true;
   }
+  ready.writers.authApi.controls.serviceAdminWritersControlled = true;
   assert.equal(evaluateProductionCompositeReadiness(ready).status, 'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
   for (const change of [
     copy => { copy.maintenance.unmatchedHostFallbackIncluded = false; },
     copy => { copy.s3WriterCredentials.productionProjectVerified = false; },
     copy => { copy.writers.authApi.realInterfaceNegativeRehearsed = false; },
+    copy => { copy.writers.authApi.controls.serviceAdminWritersControlled = false; },
+    copy => { copy.writers.authApi.controls.existingTokenAuthWriteBlockedRehearsed = false; },
     copy => { copy.writers.authApi.authoritativeMutationCapable = false; },
     copy => { copy.capture.slots.B = copy.capture.slots.A; },
     copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
@@ -63,6 +67,7 @@ test('an ephemeral-only writer requires positive field and comparator proof, not
     inventoryComplete: true, authoritativeMutationCapable: true,
     reversibleControlAvailable: true, inverseReviewed: true, realInterfaceNegativeRehearsed: true,
   });
+  ready.writers.authApi.controls.serviceAdminWritersControlled = true;
   const auth = ready.writers.authApi;
   auth.authoritativeMutationCapable = false;
   assert.ok(evaluateProductionCompositeReadiness(ready).blockers.includes('AUTHORITATIVE_WRITER_MISCLASSIFIED:authApi'));

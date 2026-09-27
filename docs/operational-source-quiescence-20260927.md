@@ -115,6 +115,13 @@ The production final-capture runner now expects the 122-relation catalog,
 attestation with every writer-family negative. It has fixed A/B run IDs;
 the AWS-local comparator selects B only after an unchanged >=60-second
 window. These source changes are not yet deployed to the CodeBuild executor.
+Read-only CodeBuild inspection confirmed the still-deployed project
+`tracepoint-production-final-source-capture-20260927` points to the earlier
+S3 source archive ending `d09407a9fd2b511ee6e87377cf72bbb4802306813cc8ced20eb0a9fbffde68e1.zip`
+(VersionId `g7V5dZnXMP3__xolGAwHva84.D20wxGb`, last modified 2026-09-27
+04:58 UTC). No build was started or project configuration changed. A new,
+reviewed immutable archive and exact CodeBuild source update remain necessary
+after the composite package and preflight are complete.
 The production preflight remains BLOCKED because direct production Auth/Storage
 and other external writer controls/inverses are not yet verified. Do not run
 either capture or reopen maintenance while it is blocked.
