@@ -54,6 +54,16 @@ current staging Preview setting. The Activity log separately confirms
 Thus a pre-split Preview could have both the live source URL and an elevated
 source credential. No project setting or deployment was changed.
 
+A further read-only deployment-list inspection on September 27 loaded 200
+entries: 194 Preview, six Production, and 102 marked Ready. The oldest loaded
+entry was September 8, before the Preview-specific variables were introduced.
+The UI still offered `Load More`, and deployment retention is enabled, so these
+are **lower bounds**, not a complete per-deployment credential inventory.
+The project-wide Preview-environment deny is intended to cover every retained
+Preview deployment regardless of its immutable build-time variables; until
+that exact rule and its inverse are proven, none of these historical entries
+can be declared unable to write the production source.
+
 Read-only live Firewall inventory showed **zero custom rules**. Vercel's
 [WAF rule configuration](https://vercel.com/docs/vercel-firewall/vercel-waf/rule-configuration)
 can match the request's deployment **Environment** and Deny
