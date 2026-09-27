@@ -1,0 +1,52 @@
+{
+  "account": "193644343389",
+  "region": "us-east-1",
+  "stack": "tracepoint-production-full-aws-ses-feedback-worker",
+  "worker": "tracepoint-production-full-aws-ses--Worker11F36D0F-jKRMunYkq4Md",
+  "originalTemplateSha256": "40bcfe28a7720f4f12accfb611e0f586389f2f03c9d4cc55b82c8807d2342e1c",
+  "oldCodeSha256": "1BFMH2HTsUxClWIPZ5ZjBb1ehZeY0yLdK+U7jv4zC2w=",
+  "oldCodeBucket": "cdk-hnb659fds-assets-193644343389-us-east-1",
+  "oldCodeKey": "0171243c1c2eeecf4a286774523c9cbe017b4cca30dd689612d9200f9a6cf66b.zip",
+  "oldCodeVersion": "oySUk5G55PmFyhSlBCkouMG2Q7YX_iNy",
+  "finalCodeSha256": "EcwBLsLTL73JRC0i7CCyhx5VkS90qplYrt+571qiu+k=",
+  "finalCodeBucket": "cdk-hnb659fds-assets-193644343389-us-east-1",
+  "finalCodeKey": "976f390e806fd918a4ffde7d635417076250ff87af737ef0d522a3e5dabf05a8.zip",
+  "finalCodeVersion": "fr.zqjy0vM3.bEtxKOmGMBw1dgpLwe1w",
+  "oldSecret": "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/runtime-K4C4HY",
+  "finalSecret": "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb",
+  "finalDb": "tracepoint-production-final-cutover-20260926",
+  "finalDbResourceId": "db-X4DYNS3TMVSAP7Z3RISDWEYDVE",
+  "stages": {
+    "oldPaused": {
+      "file": "oldPaused.json",
+      "sha256": "ff7e0039d23824970417bd018716b4ececed5294f5d33333d4fdfd0a6e5f9c5e"
+    },
+    "finalPaused": {
+      "file": "finalPaused.json",
+      "sha256": "542677d222152165f54f9e8bb6ff3cb1ec80f9afbb0313bde2e100412c15db78"
+    },
+    "finalActive": {
+      "file": "finalActive.json",
+      "sha256": "b4b0aae2ca9e56b1d6e38fcd506ffcedde5cfcdf651ae286719ab16fef8f47aa"
+    },
+    "oldPinnedPaused": {
+      "file": "oldPinnedPaused.json",
+      "sha256": "230859682f6eb13db39bf7931d1ed536ccedba5aa7ea79a8cdfc592dc944756b"
+    },
+    "oldActive": {
+      "file": "oldActive.json",
+      "sha256": "c293d71a1d2884e5597a5bf972e23f2b447249dff00fe9342f0fa0464763c278"
+    }
+  },
+  "order": [
+    "oldPaused",
+    "finalPaused",
+    "finalActive"
+  ],
+  "rollbackOrder": [
+    "finalPaused",
+    "oldPinnedPaused",
+    "oldActive"
+  ],
+  "note": "Review and execute only during an approved cutover window; generated with read-only AWS calls."
+}
