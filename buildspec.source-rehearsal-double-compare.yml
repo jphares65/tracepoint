@@ -1,0 +1,22 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "193644343389"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - node scripts/compare-frozen-source-captures.mjs --project reukdouvpshshvqnzsgw --first-key migration/source-rehearsal/7043af9d-4d3b-40ce-a9d6-c9534129f876/final-canonical.json --first-version fqtRR9_4EXaKYdQAJOSA3WrObNhxO61q --first-sha256 6bac090ec09adef58d8caf53155e1480c2b1cfafd02c89ba282ead5228c21378 --second-key migration/source-rehearsal/b1d2e179-53cf-4a7d-98fa-bad17f468e3d/final-canonical.json --second-version cn1Aq3I8mvkhLG0WRD0JRhp05Qus69mn --second-sha256 4790d4006871264a53af45c856ec7cb65cf2efb29e818b3b0f1f70633fd78a8a --minimum-quiet-seconds 60
