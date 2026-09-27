@@ -18,12 +18,17 @@ const destinations = {
   complaint: 'complaint@simulator.amazonses.com',
 };
 const mode = process.env.TRACEPOINT_ISOLATED_SES_PROOF_MODE;
+const auditIds = (process.env.TRACEPOINT_ISOLATED_SES_AUDIT_IDS ?? '').split(',');
 let stage = 'environment';
 
 async function main() {
   if (process.env.TRACEPOINT_ISOLATED_SES_APP_PROOF !== '20260926' ||
       process.env.TRACEPOINT_AWS_ACCOUNT_ID !== account ||
-      process.env.AWS_REGION !== region || !Object.hasOwn(destinations, mode)) {
+      process.env.AWS_REGION !== region ||
+      !(Object.hasOwn(destinations, mode) ||
+        (mode === 'audit' && auditIds.length === 3 &&
+          auditIds.every(id => /^[A-Za-z0-9_-]{1,256}$/.test(id)) &&
+          new Set(auditIds).size === 3))) {
     throw new Error('ISOLATED_PROOF_GUARD_FAIL');
   }
   stage = 'ca';
@@ -45,6 +50,33 @@ async function main() {
     const db = (await pool.query('select current_database() as database, current_user as role')).rows[0];
     if (db.database !== 'tracepoint' || db.role !== 'tracepoint_runtime') {
       throw new Error('REHEARSAL_DATABASE_ROLE_FAIL');
+    }
+    if (mode === 'audit') {
+      stage = 'feedback_audit';
+      const expectedKinds = ['Delivery', 'Bounce', 'Complaint'];
+      for (let i = 0; i < auditIds.length; i += 1) {
+        const rows = await pool.query(`select a.department_id, e.event_kind
+          from public.email_provider_acceptances a
+          left join public.email_provider_events e on e.message_id=a.message_id
+          where a.message_id=$1`, [auditIds[i]]);
+        if (rows.rowCount !== 1 || rows.rows[0].department_id !== departmentId ||
+            rows.rows[0].event_kind !== expectedKinds[i]) {
+          throw new Error(`FEEDBACK_AUDIT_MISMATCH_${i}`);
+        }
+      }
+      for (const kind of ['bounce', 'complaint']) {
+        const result = await pool.query(`select reason from public.email_suppressions
+          where recipient_hash=$1`, [recipientHash(destinations[kind])]);
+        if (result.rowCount !== 1 || result.rows[0].reason !==
+            (kind === 'bounce' ? 'Bounce' : 'Complaint')) {
+          throw new Error(`FEEDBACK_SUPPRESSION_MISMATCH_${kind}`);
+        }
+      }
+      console.log(JSON.stringify({ event: 'ISOLATED_SES_REHEARSAL_RDS_AUDIT_PASS',
+        acceptanceCount: 3, feedbackEventCount: 3, tenantPinned: true,
+        delivery: true, bounce: true, complaint: true, suppressionCount: 2,
+        tlsVerified: true }));
+      return;
     }
     // Runtime intentionally cannot SELECT departments. Prove the exact tenant
     // FK and acceptance INSERT contract in a transaction rolled back before send.
