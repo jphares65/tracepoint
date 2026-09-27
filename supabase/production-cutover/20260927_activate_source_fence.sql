@@ -1,7 +1,15 @@
 -- CUTOVER EXECUTION ONLY. Never run as a preparation or rehearsal command.
+-- BLOCKED: the 2026-09-27 owner inventory proved that the postgres SQL Editor
+-- role cannot ENABLE ALWAYS triggers on 27 auth and 8 storage relations. The
+-- attempted activation failed at auth.audit_log_entries and rolled back.
+-- Do not retry this SQL or reopen maintenance until a separately reviewed,
+-- owner-safe replacement passes the paid rehearsal and production preflight.
 -- Submit only through the SQL Editor for project izlkwggluhlhzlumtzes after
 -- the external project-identity preflight and public maintenance 503 pass.
 BEGIN;
+DO $blocked$ BEGIN
+  RAISE EXCEPTION 'OWNER_CONTROLLED_FENCE_NOT_PROVEN';
+END $blocked$;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
 

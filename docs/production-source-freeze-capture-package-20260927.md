@@ -1,3 +1,16 @@
+# BLOCKED — DO NOT RESUME CUTOVER
+
+The 2026-09-27 activation attempt failed transactionally at
+`auth.audit_log_entries` with PostgreSQL 42501. The pinned production catalog
+still has 122 relations and zero TracePoint fence triggers. The `postgres` SQL
+Editor role owns all 87 public relations but none of the 27 Auth or 8 Storage
+relations; it cannot `ENABLE ALWAYS` on those 35 tables. Four of them also lack
+`TRIGGER` privilege. The reviewed activation SQL below is retained as evidence,
+not an executable cutover step. Run the read-only
+`scripts/inspect-production-fence-ownership.mjs --readiness` preflight before
+any future maintenance attempt; its nonzero result is a hard stop. See
+`docs/source-fence-owner-control-20260927.md` for the complete unresolved set.
+
 # Production source fence and frozen-capture package (not activated)
 
 Scope is only Supabase project `izlkwggluhlhzlumtzes`, AWS account `193644343389`, Region `us-east-1`. This package does **not** authorize source freeze by itself. Use it only after the reviewed public maintenance response is externally 503 and the runbook's pre-freeze authority record passes. Do not run the SQL in the paid rehearsal or staging SQL Editor.
@@ -55,7 +68,7 @@ This operation is only valid **before** customer traffic or any AWS-only write. 
 
 ## Boundaries and stop conditions
 
-- No SQL in this package has been executed against production during preparation. No maintenance, source freeze, capture, SES repoint, DNS or authority switch has occurred.
+- The activation SQL was attempted against production during the prior cutover window, failed at owner-controlled Auth DDL, and rolled back. Maintenance was activated and reversed. No source freeze committed, capture, SES repoint, DNS, or authority switch occurred.
 - Production owner SQL Editor access must be explicitly reverified immediately before activation; the AWS migration-reader credential is intentionally insufficient for DDL or cron management.
 - Catalog drift, unexpected scheduler state, failed trigger installation, writer bypass, changed fence timestamp, missing artifact VersionId, S3 hash mismatch, or project/secret mismatch is a stop/abort gate, not a reason to relax assertions.
 - The existing importer is pinned to the earlier initial artifact. Final target apply remains a **separate runbook gate** and must validate this new final artifact's exact VersionId/hash; this package does not run or alter target apply.
