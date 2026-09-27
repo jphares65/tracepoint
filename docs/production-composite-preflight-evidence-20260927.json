@@ -17,9 +17,9 @@
     "projectId": "prj_V03LJyQIc231luvZ9u0gcOAt4xK4",
     "productionOrigin": "https://tracepoint-amber.vercel.app",
     "previewSourceProject": "wztqqqashilusoppddxi",
-    "productionPauseAndResumeReviewed": false,
-    "pauseAndResumeRehearsed": false,
-    "pause503NegativeRehearsed": false,
+    "productionPauseAndResumeReviewed": true,
+    "pauseAndResumeRehearsed": true,
+    "pause503NegativeRehearsed": true,
     "previewProductionSourceExcluded": false
   },
   "unfence": { "exactInverseReviewed": false, "restoreVerificationDefined": false },
