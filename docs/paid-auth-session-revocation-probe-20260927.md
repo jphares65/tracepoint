@@ -57,6 +57,16 @@ or that service/admin Auth writers are blocked. The wider composite fence remain
 unproven until the other Auth, Storage, service/admin, and autonomous writer
 controls and two immutable authoritative captures pass.
 
+The versioned live-source preparation
+`supabase/production-cutover/20260927_drain_auth_sessions.sql` now encodes
+this as a cutover-only, count-checked session/refresh drain. Its guards
+require the exact catalog fingerprint, active public-table fence, and paused
+dispatcher; it does not change users, passwords, MFA factors, or membership.
+It has **not** been run on production. It is not a standalone writer fence:
+Email sign-in and all autonomous service/Admin Auth writers must already be
+blocked, and PostgREST/Storage need their own controls. Pre-authority abort
+restores sign-in, not the revoked sessions; users would sign in again.
+
 Primary behavior references:
 
 - https://supabase.com/docs/guides/auth/signout

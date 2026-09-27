@@ -119,6 +119,17 @@ The production preflight remains BLOCKED because direct production Auth/Storage
 and other external writer controls/inverses are not yet verified. Do not run
 either capture or reopen maintenance while it is blocked.
 
+An additional paid-project Auth probe subsequently proved the narrower
+existing-session control: with Email disabled and exactly one disposable
+`auth.sessions` row deleted in a count-guarded transaction, new sign-in was
+HTTP 422, old refresh HTTP 400, and old-JWT Auth user mutation HTTP 403;
+authoritative user metadata was unchanged. Re-enabling Email restored
+sign-in and Auth user writes (HTTP 200), and the synthetic user was removed.
+The production-targeted, guarded session drain is versioned in
+`supabase/production-cutover/20260927_drain_auth_sessions.sql` but has not
+run. This does not close service/Admin Auth, PostgREST, or Storage writer
+controls; the production composite preflight remains blocked.
+
 No live source key, schema, data, maintenance, DNS, or authority was changed
 for this inventory. The live Supabase bridge remains the sole production data
 authority.
