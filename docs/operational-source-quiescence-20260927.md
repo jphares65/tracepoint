@@ -105,6 +105,11 @@ checks. This narrows the public RPC surface but is not a semantic call-graph
 proof: dynamic SQL, nested functions, triggers, and external Auth/Storage APIs
 still require the separate real-interface negatives at cutover.
 
+The same signed-in production SQL catalog session recomputed the pinned
+schema identity as 122 `public`/`auth`/`storage` relations and fingerprint
+`36558b0730e3e96cad6426f38088a5b0`, matching the versioned preflight
+expectation. This verifies catalog identity, not source data quiescence.
+
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than
 temporarily disabled. Deletion cannot restore the same value. A live plan that
