@@ -67,6 +67,14 @@ full AWS SES feedback, and a VPC custom-resource function. This inventory
 narrows AWS autonomous writers but does not cover external clients or dormant
 manual jobs.
 
+Repository CI inventory found four AWS staging workflows under
+`.github/workflows/`. Only the operations workflow mentions the production
+account, and that step runs read-only evidence collectors under the pinned
+staging-account role. No repository workflow was found that automatically
+invokes the production Supabase source secret or mutates the source. This is
+static repository evidence only: it does not exclude external CI projects,
+manual jobs, or copies of older workflows outside this checkout.
+
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than
 temporarily disabled. Deletion cannot restore the same value. A live plan that
