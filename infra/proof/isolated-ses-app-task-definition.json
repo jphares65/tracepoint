@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "isolated-ses-app-proof",
-      "image": "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:ddb830639f67b67d527d01b55a49459e4dd3443683bd803acc3678e10e1a36cf",
+      "image": "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:45a42e1a4dbb5753e1d0122c98178e71761c3cba35986d7749c9e50c592c8cab",
       "essential": true,
       "readonlyRootFilesystem": true,
       "user": "65532:65532",
