@@ -1,21 +1,22 @@
 #!/usr/bin/env node
-// Isolated synthetic user only. Test whether disabling Email also blocks an
-// already-issued user token from changing authoritative user metadata.
+// Paid Supabase rehearsal only. Probe global sign-out with one disposable user.
+// Never print access/refresh tokens, passwords, API keys, user IDs, or row data.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { createInterface } from 'node:readline';
 
 const PROJECT = 'reukdouvpshshvqnzsgw';
 const ORIGIN = `https://${PROJECT}.supabase.co`;
 const SECRET = 'tracepoint/production/migration/source-rehearsal-only-20260925';
 const PUBLIC_KEY = process.env.TRACEPOINT_SOURCE_REHEARSAL_PUBLISHABLE_KEY;
-const EMAIL = 'jphares+auth-existing-session-fence-20260927@tracepointhq.com';
+const EMAIL = 'jphares+auth-revocation-fence-20260927@tracepointhq.com';
+
 function aws(args) {
   return execFileSync(process.platform === 'win32' ? 'aws.exe' : 'aws',
     [...args, '--profile', 'tracepoint-production', '--region', 'us-east-1', '--output', 'text'],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20_000 }).trim();
 }
+
 async function call(key, method, path, body, bearer = key) {
   const url = new URL(path, ORIGIN);
   assert.equal(url.origin, ORIGIN);
@@ -24,13 +25,6 @@ async function call(key, method, path, body, bearer = key) {
       ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body) });
 }
-async function waitForOperator() {
-  const input = createInterface({ input: process.stdin, terminal: false });
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { input.close(); reject(new Error('PROVIDER_TOGGLE_TIMEOUT')); }, 180_000);
-    input.once('line', () => { clearTimeout(timer); input.close(); resolve(); });
-  });
-}
 
 let key, userId;
 try {
@@ -38,45 +32,50 @@ try {
   assert.equal(aws(['sts', 'get-caller-identity', '--query', 'Account']), '193644343389');
   key = aws(['secretsmanager', 'get-secret-value', '--secret-id', SECRET, '--query', 'SecretString']);
   assert.match(key, /^sb_secret_[A-Za-z0-9_-]{20,}$/);
-  const pre = await call(key, 'GET', '/auth/v1/admin/users?page=1&per_page=200');
-  assert.equal(pre.status, 200);
-  assert.equal((await pre.json()).users.filter(user => user.email?.toLowerCase() === EMAIL).length, 0);
+  const before = await call(key, 'GET', '/auth/v1/admin/users?page=1&per_page=200');
+  assert.equal(before.status, 200);
+  assert.equal((await before.json()).users.filter(user => user.email?.toLowerCase() === EMAIL).length, 0);
+
   const password = `Tp!${randomBytes(32).toString('base64url')}9`;
   const created = await call(key, 'POST', '/auth/v1/admin/users',
-    { email: EMAIL, password, email_confirm: true, user_metadata: { fence_probe: 'before' } });
-  assert.ok(created.ok, `CREATE_FAILED:${created.status}`);
+    { email: EMAIL, password, email_confirm: true, user_metadata: { revocation_probe: 'before' } });
+  assert.equal(created.status, 200, 'SYNTHETIC_CREATE_FAILED');
   const newUser = await created.json();
   userId = newUser.id ?? newUser.user?.id;
   assert.match(userId ?? '', /^[0-9a-f-]{36}$/i);
-  const signedIn = await call(PUBLIC_KEY, 'POST', '/auth/v1/token?grant_type=password', { email: EMAIL, password });
-  assert.equal(signedIn.status, 200, 'SYNTHETIC_SIGNIN_FAILED');
-  const session = await signedIn.json();
-  const token = session.access_token;
-  assert.ok(typeof token === 'string' && token.length > 50);
-  assert.ok(typeof session.refresh_token === 'string' && session.refresh_token.length > 10);
-  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
-  assert.equal(claims.role, 'authenticated', 'USER_TOKEN_REQUIRED');
-  console.log('PAID_AUTH_EXISTING_SESSION_READY_FOR_EMAIL_PROVIDER_DISABLE');
-  await waitForOperator();
+
+  const signIn = await call(PUBLIC_KEY, 'POST', '/auth/v1/token?grant_type=password', { email: EMAIL, password });
+  assert.equal(signIn.status, 200, 'SYNTHETIC_SIGNIN_FAILED');
+  const session = await signIn.json();
+  assert.ok(typeof session.access_token === 'string' && typeof session.refresh_token === 'string');
+  const claims = JSON.parse(Buffer.from(session.access_token.split('.')[1], 'base64url').toString('utf8'));
+  assert.equal(claims.role, 'authenticated');
+  assert.equal(claims.sub, userId);
+
+  const signOut = await call(PUBLIC_KEY, 'POST', '/auth/v1/logout?scope=global', undefined, session.access_token);
+  const signOutStatus = signOut.status;
+  await signOut.arrayBuffer();
+  assert.equal(signOutStatus, 204, 'GLOBAL_SIGNOUT_FAILED');
   const refresh = await call(PUBLIC_KEY, 'POST', '/auth/v1/token?grant_type=refresh_token',
     { refresh_token: session.refresh_token });
   const refreshStatus = refresh.status;
   await refresh.arrayBuffer();
-  const attempt = await call(PUBLIC_KEY, 'PUT', '/auth/v1/user',
-    { data: { fence_probe: 'after' } }, token);
-  const status = attempt.status;
-  await attempt.arrayBuffer();
+
+  const update = await call(PUBLIC_KEY, 'PUT', '/auth/v1/user',
+    { data: { revocation_probe: 'after' } }, session.access_token);
+  const oldAccessTokenUpdateStatus = update.status;
+  await update.arrayBuffer();
   const inspect = await call(key, 'GET', `/auth/v1/admin/users/${userId}`);
   assert.equal(inspect.status, 200);
   const inspected = await inspect.json();
   const metadata = inspected.user_metadata ?? inspected.user?.user_metadata;
-  console.log(JSON.stringify({ projectRef: PROJECT, userTokenRole: 'authenticated',
-    requestApiKeyClass: 'publishable',
-    emailProviderDisabledByOperator: true, refreshStatus, updateUserStatus: status,
-    authoritativeUserMetadataChanged: metadata?.fence_probe === 'after',
-    syntheticUserOnly: true, credentialValuesEmitted: false }));
+  console.log(JSON.stringify({ projectRef: PROJECT, syntheticUserOnly: true,
+    globalSignOutStatus: signOutStatus, refreshStatus,
+    oldAccessTokenUpdateStatus,
+    authoritativeMetadataChangedAfterSignOut: metadata?.revocation_probe === 'after',
+    credentialValuesEmitted: false }));
 } catch (error) {
-  console.error(/^\w+(?::\d{3})?$/.test(error?.message ?? '') ? error.message : 'PAID_AUTH_USER_FENCE_PROBE_FAILED');
+  console.error(/^[A-Z_]+(?::\d{3})?$/.test(error?.message ?? '') ? error.message : 'PAID_AUTH_REVOCATION_PROBE_FAILED');
   process.exitCode = 2;
 } finally {
   if (key && userId) {

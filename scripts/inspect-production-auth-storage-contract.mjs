@@ -41,10 +41,27 @@ try {
       c.relforcerowsecurity AS rls_forced, pg_get_userbyid(c.relowner) AS owner
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='storage' AND c.relkind IN ('r','p') ORDER BY c.relname`)).rows;
+  const authControlGrants = (await client.query(`SELECT c.relname AS relation,
+      pg_get_userbyid(c.relowner) AS owner, c.relacl::text AS acl
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='auth' AND c.relname IN ('sessions','refresh_tokens')
+    ORDER BY c.relname`)).rows;
+  let authSessionInventory;
+  try {
+    authSessionInventory = (await client.query(`SELECT
+      (SELECT count(*)::int FROM auth.sessions) AS sessions,
+      (SELECT count(*)::int FROM auth.refresh_tokens) AS refresh_tokens,
+      (SELECT count(*)::int FROM auth.refresh_tokens WHERE session_id IS NULL)
+        AS legacy_refresh_tokens_without_session`)).rows[0];
+  } catch (error) {
+    if (error.code !== '42501') throw error;
+    authSessionInventory = { readable: false, reason: 'READER_ROLE_PERMISSION_DENIED' };
+  }
   await client.query('ROLLBACK');
   console.log(JSON.stringify({ projectRef: 'izlkwggluhlhzlumtzes',
     tlsVerified: true, transactionReadOnly: true, authColumns,
-    storagePolicies, storageGrants, storageRls, customerRowsRead: false }));
+    storagePolicies, storageGrants, storageRls, authControlGrants, authSessionInventory,
+    customerRowsRead: false }));
 } catch (error) {
   await client.query('ROLLBACK').catch(() => undefined);
   console.error(JSON.stringify({ status: 'PRODUCTION_AUTH_STORAGE_CATALOG_FAILED',
