@@ -76,7 +76,7 @@ export function attestFrozen(value) {
 }
 
 export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now()) {
-  assert.equal(value?.format, 'tracepoint-production-composite-fence/v1', 'COMPOSITE_EVIDENCE_FORMAT');
+  assert.equal(value?.format, 'tracepoint-production-composite-fence/v2', 'COMPOSITE_EVIDENCE_FORMAT');
   assert.equal(value?.projectRef, SOURCE_PROJECT_REF, 'COMPOSITE_SOURCE_MISMATCH');
   assert.equal(value?.relationFingerprint, '36558b0730e3e96cad6426f38088a5b0', 'COMPOSITE_CATALOG_MISMATCH');
   assert.equal(value?.fenceChangedAt, fenceChangedAt, 'COMPOSITE_FENCE_TIMESTAMP_MISMATCH');
@@ -87,14 +87,25 @@ export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now())
   assert.deepEqual(Object.keys(value?.writers ?? {}).sort(), families.sort(), 'WRITER_INVENTORY_INCOMPLETE');
   for (const family of families) {
     const entry = value.writers[family];
-    assert.equal(entry?.blocked, true, `WRITER_NOT_BLOCKED:${family}`);
-    assert.equal(entry?.directNegativePassed, true, `WRITER_NEGATIVE_MISSING:${family}`);
-    assert.ok(typeof entry?.reversibleControl === 'string' && entry.reversibleControl.length > 0,
-      `WRITER_RESTORE_CONTROL_MISSING:${family}`);
-    assert.match(entry?.negativeEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
-      `WRITER_NEGATIVE_EVIDENCE_UNPINNED:${family}`);
-    assert.match(entry?.restoreProcedureSha256 ?? '', /^[0-9a-f]{64}$/,
-      `WRITER_RESTORE_PROCEDURE_UNPINNED:${family}`);
+    assert.equal(typeof entry?.authoritativeMutationCapable, 'boolean', `WRITER_STATE_UNCLASSIFIED:${family}`);
+    if (['applicationApi', 'serviceRole', 'authApi', 'storageApi'].includes(family))
+      assert.equal(entry.authoritativeMutationCapable, true, `AUTHORITATIVE_WRITER_MISCLASSIFIED:${family}`);
+    if (entry.authoritativeMutationCapable) {
+      assert.equal(entry.blocked, true, `WRITER_NOT_BLOCKED:${family}`);
+      assert.equal(entry.directNegativePassed, true, `WRITER_NEGATIVE_MISSING:${family}`);
+      assert.ok(typeof entry.reversibleControl === 'string' && entry.reversibleControl.length > 0,
+        `WRITER_RESTORE_CONTROL_MISSING:${family}`);
+      assert.match(entry.negativeEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
+        `WRITER_NEGATIVE_EVIDENCE_UNPINNED:${family}`);
+      assert.match(entry.restoreProcedureSha256 ?? '', /^[0-9a-f]{64}$/,
+        `WRITER_RESTORE_PROCEDURE_UNPINNED:${family}`);
+    } else {
+      assert.equal(entry.ephemeralOnlyProven, true, `WRITER_EPHEMERAL_PROOF_MISSING:${family}`);
+      assert.equal(entry.authoritativeFieldsUnaffected, true, `WRITER_AUTHORITY_EFFECT_UNPROVEN:${family}`);
+      assert.equal(entry.canonicalComparatorExclusionTested, true, `WRITER_COMPARATOR_EXCLUSION_UNPROVEN:${family}`);
+      assert.match(entry.ephemeralEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
+        `WRITER_EPHEMERAL_EVIDENCE_UNPINNED:${family}`);
+    }
   }
   const observed = Date.parse(value?.observedAtUtc);
   assert.ok(Number.isFinite(observed) && observed <= now && now - observed <= 300_000,

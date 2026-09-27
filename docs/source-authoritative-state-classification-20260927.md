@@ -1,0 +1,36 @@
+# Source-state classification checkpoint (2026-09-27)
+
+This is a **fail-closed inventory**, not permission to reopen production maintenance. Source project: `izlkwggluhlhzlumtzes`; paid rehearsal: `reukdouvpshshvqnzsgw`. Production inspection was read-only over the pinned TLS PostgreSQL reader and the pinned Auth admin endpoint. It observed 87 `public`, 27 `auth`, and eight `storage` base relations, the expected catalog fingerprint `36558b0730e3e96cad6426f38088a5b0`, and 96 Auth users. No customer row values or credentials were emitted.
+
+## Authoritative migration state — must remain identical between captures
+
+* Every field in all 90 versioned relational relation contracts, including tenant configuration, user profiles, memberships, identity links, roles, audit/history, business data, and file references. The comparator hashes every complete relation, not a selected subset.
+* Auth identity existence, immutable subject, email/phone, confirmation and invitation state, banned/deleted/anonymous state, role, application/user metadata, linked identities/providers, and MFA enrollment/recovery state. `auth.users` password/recovery fields are not returned by the admin-users REST capture; consequently password changes and recovery must be independently prevented during the frozen interval, not silently omitted from parity.
+* Storage object existence, bucket/key, bytes/SHA-256, content type, tenant/department ownership and relational references. Bucket policies and access semantics cannot be dismissed as ephemeral; they require stable configuration attestation. Incomplete S3 multipart uploads are not copied as objects, but completing one could change authoritative object state, so an active multipart writer requires a reversible control.
+* Auth and Storage schema/configuration, identities, OAuth/SSO/SCIM configuration, MFA factors and recovery-code sets, one-time recovery state, bucket definitions/policies, and audit history remain **authoritative or unclassified** until their non-migration and non-rollback effect is demonstrated. A field absent from the current REST artifact is not thereby proven ephemeral.
+
+## Candidate ephemeral platform state — **not yet excluded**
+
+`auth.sessions`, `auth.refresh_tokens`, transient challenge/flow rows, and `auth.users.last_sign_in_at` are plausible session-only state. The live admin response includes `last_sign_in_at`; the current immutable artifact and canonical comparator hash it in full. The response also includes `updated_at`, which may reflect both session activity and authoritative edits, so it must never be ignored wholesale. A bounded paid-project probe with the fence **off** created one disposable no-email Auth user, signed in once, compared the Admin API user object before/after, then deleted and verified the fixture. Only `last_sign_in_at` and `updated_at` changed in that Admin API response; no values or credentials were logged. This does **not** prove that password/recovery hashes, Auth audit, session, or MFA tables were unaffected, nor does it prove fenced behavior. The paid rehearsal has **not yet** shown a normal existing-user sign-in under the composite fence or a double capture with only proven session changes. These fields are therefore still compared/controlled. Auth audit entries and MFA challenge/recovery data are not classified ephemeral merely because they are platform-managed.
+
+No Storage object metadata is excluded yet. Storage listing timestamps and internal maintenance rows could be candidates only after proving that they cannot alter object identity, content, access, ownership, references, reconciliation, or rollback. The copied-object manifest still compares exact key, SHA-256, byte count, content type, and department mapping.
+
+## Writer classification and required evidence
+
+| Writer family | Can change authoritative state? | Reversible cutover control still required |
+| --- | --- | --- |
+| Application/API/PostgREST/RPC | Yes — public business and relationship tables | Reviewed maintenance barrier plus public trigger fence and direct negative probe |
+| Service-role/server/background | Yes — public rows, Auth admin, Storage objects | Exact writer inventory; public trigger layer and separate Auth/Storage controls or per-writer negative proof |
+| Auth API | Yes — signup, admin updates, password/recovery, MFA and identity changes | A control for those operations. Existing-user sign-in may be exempted **only** after a paid fenced-session experiment proves its changes are exclusively non-migrated, non-authoritative fields and the versioned comparator excludes only those fields. |
+| Storage API / S3 session-token path | Yes — keys, bytes, metadata and ownership | Direct write negatives and reversible API/credential control; RLS alone does not cover separate S3 keys. Production dashboard inventory found no separate S3 access keys. |
+| Scheduled/import/admin automation | Potentially yes | Exact job inventory, pause/inverse, and negative or absence evidence |
+| Privileged SQL operator | Theoretical yes | Human-controlled exception only; no manual writes during freeze, audited access and stable double capture |
+
+The production readiness gate and capture attestation now accept either (a) an inventoried, controlled authoritative writer with direct negative evidence and an inverse, or (b) an inventoried writer proven to touch **only** ephemeral state, with a pinned before/after evidence hash and tested comparator exclusion. An unclassified writer fails closed. No current production writer has been marked ephemeral; the current evidence remains blocked. The capture attestation format is `tracepoint-production-composite-fence/v2`, so the previous v1 evidence cannot accidentally authorize a capture.
+
+## Remaining proof before maintenance
+
+1. In the paid rehearsal, inventory the exact Auth/Storage columns and produce aggregate pre/post evidence for an existing-user sign-in, token refresh and logout while the approved composite fence is on. Prove no identity, credential/recovery, MFA, membership, or object-authority changes. No credential values or customer rows may be logged.
+2. Version an explicit, field-level Auth comparator exclusion **only** for the fields proven ephemeral. Keep the complete raw artifact, its byte/master hash, and every unclassified field intact; test authoritative and unknown-field mutations fail.
+3. Produce two immutable paid captures separated by the bounded quiet interval, with a representative allowed platform operation between them. Require zero authoritative delta and prove the inverse/unfence.
+4. Complete exact production writer/control inventory and read-only effective-action checks. Pin v2 composite evidence and re-run the production preflight. Until it passes, do not reopen maintenance or start live capture.

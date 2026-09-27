@@ -49,19 +49,29 @@ test('capture requires stable public trigger and dispatcher state', () => {
 test('capture rejects incomplete, stale, or cross-project composite attestations', () => {
   const fenceChangedAt = '2026-09-27T12:00:00Z';
   const families = ['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background', 'scheduledImportAdmin'];
-  const evidence = { format: 'tracepoint-production-composite-fence/v1', projectRef: 'izlkwggluhlhzlumtzes',
+  const evidence = { format: 'tracepoint-production-composite-fence/v2', projectRef: 'izlkwggluhlhzlumtzes',
     relationFingerprint: '36558b0730e3e96cad6426f38088a5b0', fenceChangedAt,
     maintenance503: true, publicTriggers: 174,
     s3WriterCredentials: 'NO_SEPARATE_S3_WRITER_CREDENTIALS', observedAtUtc: '2026-09-27T12:01:00Z',
-    writers: Object.fromEntries(families.map(name => [name, { blocked: true,
+    writers: Object.fromEntries(families.map(name => [name, { authoritativeMutationCapable: true, blocked: true,
       directNegativePassed: true, reversibleControl: 'reviewed inverse',
       negativeEvidenceSha256: 'a'.repeat(64), restoreProcedureSha256: 'b'.repeat(64) }])) };
   const now = Date.parse('2026-09-27T12:02:00Z');
   assert.equal(attestCompositeEvidence(evidence, fenceChangedAt, now), true);
   for (const patch of [{ projectRef: 'reukdouvpshshvqnzsgw' }, { publicTriggers: 244 },
     { maintenance503: false }, { observedAtUtc: '2026-09-27T11:50:00Z' },
+    { format: 'tracepoint-production-composite-fence/v1' },
     { writers: { ...evidence.writers, authApi: { ...evidence.writers.authApi, directNegativePassed: false } } }])
     assert.throws(() => attestCompositeEvidence({ ...evidence, ...patch }, fenceChangedAt, now));
+  const ephemeral = structuredClone(evidence);
+  ephemeral.writers.scheduledImportAdmin = { authoritativeMutationCapable: false, ephemeralOnlyProven: true,
+    authoritativeFieldsUnaffected: true, canonicalComparatorExclusionTested: true,
+    ephemeralEvidenceSha256: 'c'.repeat(64) };
+  assert.equal(attestCompositeEvidence(ephemeral, fenceChangedAt, now), true);
+  ephemeral.writers.scheduledImportAdmin.authoritativeFieldsUnaffected = false;
+  assert.throws(() => attestCompositeEvidence(ephemeral, fenceChangedAt, now), /WRITER_AUTHORITY_EFFECT_UNPROVEN/);
+  ephemeral.writers.authApi.authoritativeMutationCapable = false;
+  assert.throws(() => attestCompositeEvidence(ephemeral, fenceChangedAt, now), /AUTHORITATIVE_WRITER_MISCLASSIFIED/);
 });
 
 test('artifact is production-labelled and includes all reviewed relation contracts', () => {

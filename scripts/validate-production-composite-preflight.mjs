@@ -10,6 +10,9 @@ export const SOURCE_FINGERPRINT = '36558b0730e3e96cad6426f38088a5b0';
 export const WRITER_FAMILIES = Object.freeze([
   'applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background', 'scheduledImportAdmin',
 ]);
+export const ALWAYS_AUTHORITATIVE_CAPABLE = Object.freeze([
+  'applicationApi', 'serviceRole', 'authApi', 'storageApi',
+]);
 
 export function evaluateProductionCompositeReadiness(evidence) {
   assert.equal(evidence?.projectRef, SOURCE_PROJECT, 'PRODUCTION_PROJECT_REQUIRED');
@@ -38,9 +41,20 @@ export function evaluateProductionCompositeReadiness(evidence) {
   for (const family of WRITER_FAMILIES) {
     const writer = evidence.writers[family];
     requireProof(writer?.inventoryComplete === true, `WRITER_INVENTORY_OPEN:${family}`);
-    requireProof(writer?.reversibleControlAvailable === true && writer?.inverseReviewed === true,
-      `WRITER_CONTROL_UNPROVEN:${family}`);
-    requireProof(writer?.realInterfaceNegativeRehearsed === true, `WRITER_NEGATIVE_UNPROVEN:${family}`);
+    requireProof(typeof writer?.authoritativeMutationCapable === 'boolean', `WRITER_STATE_UNCLASSIFIED:${family}`);
+    if (ALWAYS_AUTHORITATIVE_CAPABLE.includes(family))
+      requireProof(writer?.authoritativeMutationCapable === true, `AUTHORITATIVE_WRITER_MISCLASSIFIED:${family}`);
+    if (writer?.authoritativeMutationCapable === true) {
+      requireProof(writer?.reversibleControlAvailable === true && writer?.inverseReviewed === true,
+        `WRITER_CONTROL_UNPROVEN:${family}`);
+      requireProof(writer?.realInterfaceNegativeRehearsed === true,
+        `WRITER_NEGATIVE_UNPROVEN:${family}`);
+    } else if (writer?.authoritativeMutationCapable === false) {
+      requireProof(writer?.ephemeralOnlyProven === true && writer?.authoritativeFieldsUnaffected === true &&
+        writer?.canonicalComparatorExclusionTested === true &&
+        /^[0-9a-f]{64}$/.test(writer?.ephemeralEvidenceSha256 ?? ''),
+      `WRITER_EPHEMERAL_PROOF_MISSING:${family}`);
+    }
   }
   return { status: blockers.length ? 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED' :
     'PRODUCTION_COMPOSITE_PREFLIGHT_PASS', projectRef: SOURCE_PROJECT,
