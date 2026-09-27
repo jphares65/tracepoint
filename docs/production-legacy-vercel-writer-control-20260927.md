@@ -62,6 +62,15 @@ reversible Production-deployment barrier. It does **not** resolve the live
 project's Preview-secret binding or prove that every production-source writer
 is fenced. The disposable project is left active with only its synthetic page.
 
+Read-only inspection of the live project's deployment protection showed
+project-level **Vercel Authentication / Require Log In** selected. Two Ready
+Preview deployment URLs tested from an unauthenticated external client
+redirected to Vercel login (HTTP 302), not to the application. This is a
+useful unauthenticated negative but is not a complete writer exclusion:
+signed-in team members, bypass mechanisms, and the separate Preview server
+secret still require classification. The live project and Preview deployments
+were not modified during this check.
+
 During the controlled cutover window, after public maintenance is externally
 verified and before the source fence/captures:
 
