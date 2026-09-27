@@ -1,5 +1,14 @@
 # BLOCKED — DO NOT RESUME CUTOVER
 
+The proposed database-default read-only replacement was tested in the paid
+source rehearsal and **did not satisfy complete writer coverage**: a new
+`postgres` SQL Editor transaction explicitly started `READ WRITE` while the
+database default was `on`. The original default and unchanged rehearsal
+triggers were verified after reversal. See
+`docs/source-fence-database-default-rehearsal-20260927.md`. Neither the old
+trigger activation nor the database-default replacement is approved for live
+production.
+
 The 2026-09-27 activation attempt failed transactionally at
 `auth.audit_log_entries` with PostgreSQL 42501. The pinned production catalog
 still has 122 relations and zero TracePoint fence triggers. The `postgres` SQL
