@@ -1,9 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { evaluateProductionCompositeReadiness } from './validate-production-composite-preflight.mjs';
+import { evaluateProductionCompositeReadiness, REQUIRED_WRITER_PATHS } from './validate-production-composite-preflight.mjs';
+import { REQUIRED_WRITER_PATHS as CAPTURE_WRITER_PATHS } from './source-production-final-capture-core.mjs';
 
 const inventory = JSON.parse(readFileSync(new URL('../docs/production-composite-preflight-evidence-20260927.json', import.meta.url)));
+
+test('preflight and final capture require the same exact writer paths', () => {
+  assert.deepEqual(REQUIRED_WRITER_PATHS, CAPTURE_WRITER_PATHS);
+});
+
+function withSyntheticWriterPathProof(ready) {
+  for (const name of REQUIRED_WRITER_PATHS) Object.assign(ready.writerPaths[name], {
+    status: 'controlled', productionBindingVerified: true, rehearsalNegativePassed: true,
+    restoreReviewed: true, control: `synthetic control for ${name}`,
+    restore: `synthetic inverse for ${name}`, rehearsalEvidenceSha256: 'a'.repeat(64),
+  });
+}
 
 test('current production inventory blocks uncovered autonomous writers', () => {
   const result = evaluateProductionCompositeReadiness(inventory);
@@ -14,6 +27,7 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
   assert.ok(!result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
   assert.ok(result.blockers.includes('WRITER_INVENTORY_OPEN:legacyVercel'));
+  assert.ok(result.blockers.includes('WRITER_PATH_CONTROL_UNPROVEN:externalCredentialHolders'));
   assert.ok(!result.blockers.includes('S3_WRITER_INVENTORY_OPEN'));
 });
 
@@ -24,6 +38,7 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.unknownAutonomousWriters = false;
+  withSyntheticWriterPathProof(ready);
   Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
     pauseAndResumeRehearsed: true, pause503NegativeRehearsed: true,
     previewProductionSourceExcluded: true });
@@ -57,6 +72,8 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     copy => { copy.writers.authApi.controls.serviceAdminWritersControlled = false; },
     copy => { copy.writers.authApi.controls.existingTokenAuthWriteBlockedRehearsed = false; },
     copy => { copy.writers.authApi.authoritativeMutationCapable = false; },
+    copy => { delete copy.writerPaths.externalCredentialHolders; },
+    copy => { copy.writerPaths.storageElevated.rehearsalNegativePassed = false; },
     copy => { copy.capture.slots.B = copy.capture.slots.A; },
     copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
     copy => { copy.relationFingerprint = 'wrong'; },
@@ -75,6 +92,7 @@ test('an ephemeral-only writer requires positive field and comparator proof, not
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.unknownAutonomousWriters = false;
+  withSyntheticWriterPathProof(ready);
   Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
     pauseAndResumeRehearsed: true, pause503NegativeRehearsed: true,
     previewProductionSourceExcluded: true });

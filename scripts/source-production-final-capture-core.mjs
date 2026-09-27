@@ -14,6 +14,13 @@ export const APPROVED_RUN_IDS = Object.freeze({
   A: '1d761bd7-04dd-43f3-b77a-2c41130e18c2',
   B: 'c7448ea9-4645-4e99-b988-3a05de12ac70',
 });
+export const REQUIRED_WRITER_PATHS = Object.freeze([
+  'publicAwsBridge', 'vercelProduction', 'vercelPreview', 'authExistingSession',
+  'authNewSession', 'authServiceAdmin', 'storageAuthenticated', 'storageElevated',
+  'storageS3', 'postgrestDirect', 'rpcFunctions', 'pgCron',
+  'notificationBackground', 'adminImport', 'awsSourceRestHolders',
+  'awsAppSecretReaders', 'externalCredentialHolders',
+]);
 
 export function validateCaptureEnvironment(env) {
   assert.equal(env.TRACEPOINT_SOURCE_PRODUCTION_PROJECT_REF, SOURCE_PROJECT_REF, 'PRODUCTION_PROJECT_REF_REQUIRED');
@@ -117,6 +124,22 @@ export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now())
       assert.match(entry.ephemeralEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
         `WRITER_EPHEMERAL_EVIDENCE_UNPINNED:${family}`);
     }
+  }
+  assert.deepEqual(Object.keys(value?.writerPaths ?? {}).sort(), [...REQUIRED_WRITER_PATHS].sort(),
+    'WRITER_PATH_INVENTORY_INCOMPLETE');
+  for (const name of REQUIRED_WRITER_PATHS) {
+    const path = value.writerPaths[name];
+    if (name === 'storageS3' && path?.status === 'absent') {
+      assert.equal(path.recheckedAtFreeze, true, 'S3_WRITER_ABSENCE_NOT_RECHECKED');
+      assert.match(path.absenceEvidenceSha256 ?? '', /^[0-9a-f]{64}$/, 'S3_WRITER_ABSENCE_UNPINNED');
+      continue;
+    }
+    assert.equal(path?.status, 'blocked', `WRITER_PATH_NOT_BLOCKED:${name}`);
+    assert.equal(path.directNegativePassed, true, `WRITER_PATH_NEGATIVE_MISSING:${name}`);
+    assert.match(path.negativeEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
+      `WRITER_PATH_NEGATIVE_UNPINNED:${name}`);
+    assert.match(path.restoreProcedureSha256 ?? '', /^[0-9a-f]{64}$/,
+      `WRITER_PATH_RESTORE_UNPINNED:${name}`);
   }
   const observed = Date.parse(value?.observedAtUtc);
   assert.ok(Number.isFinite(observed) && observed <= now && now - observed <= 300_000,

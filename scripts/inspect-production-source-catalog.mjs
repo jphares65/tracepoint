@@ -104,6 +104,18 @@ try {
       md5(pg_get_functiondef(p.oid)) AS definition_md5,
       pg_get_functiondef(p.oid) AS definition
     FROM pg_proc p WHERE p.oid = 'public.has_department_permission(uuid,text)'::regprocedure`)).rows[0];
+  const publicDefinerFunctions = (await client.query(`SELECT p.proname AS function_name,
+      pg_get_function_identity_arguments(p.oid) AS argument_types,
+      pg_get_userbyid(p.proowner) AS owner,
+      md5(pg_get_functiondef(p.oid)) AS definition_md5,
+      has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_can_execute,
+      has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_can_execute,
+      has_function_privilege('service_role', p.oid, 'EXECUTE') AS service_role_can_execute,
+      pg_get_functiondef(p.oid) ~* '(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+|DELETE[[:space:]]+FROM|TRUNCATE[[:space:]]+)' AS dml_text_present,
+      pg_get_functiondef(p.oid) ~* '(auth\\.|storage\\.)' AS auth_or_storage_reference
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prosecdef AND p.prokind = 'f'
+    ORDER BY p.proname, pg_get_function_identity_arguments(p.oid)`)).rows;
   let dispatcher = { readable: false };
   await client.query('SAVEPOINT dispatcher_probe');
   try {
@@ -135,6 +147,7 @@ try {
     cutoverSchemaPresent: cutoverSchema, dispatcher,
     storagePolicies, storageRolePrivileges, storageEffectivePrivileges,
     storageOwnerDelegation, storageGrantors, permissionFunction,
+    publicDefinerFunctions,
     noCustomerRowsRead: true }, null, 2));
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch { /* connection may be unavailable */ }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { MIGRATION_RELATIONS } from './supabase-rest-ledger-core.mjs';
 import { SOURCE_ORIGIN, attestCompositeEvidence, attestFrozen, buildArtifact, relationUrl, sourceRequest,
-  validateCaptureEnvironment } from './source-production-final-capture-core.mjs';
+  validateCaptureEnvironment, REQUIRED_WRITER_PATHS } from './source-production-final-capture-core.mjs';
 
 const runId = '1d761bd7-04dd-43f3-b77a-2c41130e18c2';
 const valid = { TRACEPOINT_SOURCE_PRODUCTION_PROJECT_REF: 'izlkwggluhlhzlumtzes',
@@ -59,7 +59,11 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
       previewProductionSourceExcluded: true },
     writers: Object.fromEntries(families.map(name => [name, { authoritativeMutationCapable: true, blocked: true,
       directNegativePassed: true, reversibleControl: 'reviewed inverse',
-      negativeEvidenceSha256: 'a'.repeat(64), restoreProcedureSha256: 'b'.repeat(64) }])) };
+      negativeEvidenceSha256: 'a'.repeat(64), restoreProcedureSha256: 'b'.repeat(64) }])),
+    writerPaths: Object.fromEntries(REQUIRED_WRITER_PATHS.map(name => [name, {
+      status: 'blocked', directNegativePassed: true, negativeEvidenceSha256: 'a'.repeat(64),
+      restoreProcedureSha256: 'b'.repeat(64),
+    }])) };
   const now = Date.parse('2026-09-27T12:02:00Z');
   assert.equal(attestCompositeEvidence(evidence, fenceChangedAt, now), true);
   const controlledPreview = structuredClone(evidence);
@@ -77,6 +81,8 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
     { legacyVercel: { ...evidence.legacyVercel, paused503: false } },
     { legacyVercel: { ...evidence.legacyVercel, previewProductionSourceExcluded: false } },
     { format: 'tracepoint-production-composite-fence/v1' },
+    { writerPaths: { ...evidence.writerPaths, storageElevated: {
+      ...evidence.writerPaths.storageElevated, directNegativePassed: false } } },
     { writers: { ...evidence.writers, authApi: { ...evidence.writers.authApi, directNegativePassed: false } } }])
     assert.throws(() => attestCompositeEvidence({ ...evidence, ...patch }, fenceChangedAt, now));
   const ephemeral = structuredClone(evidence);

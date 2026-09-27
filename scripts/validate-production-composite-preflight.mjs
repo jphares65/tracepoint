@@ -14,6 +14,13 @@ export const WRITER_FAMILIES = Object.freeze([
 export const ALWAYS_AUTHORITATIVE_CAPABLE = Object.freeze([
   'applicationApi', 'serviceRole', 'authApi', 'storageApi', 'legacyVercel',
 ]);
+export const REQUIRED_WRITER_PATHS = Object.freeze([
+  'publicAwsBridge', 'vercelProduction', 'vercelPreview', 'authExistingSession',
+  'authNewSession', 'authServiceAdmin', 'storageAuthenticated', 'storageElevated',
+  'storageS3', 'postgrestDirect', 'rpcFunctions', 'pgCron',
+  'notificationBackground', 'adminImport', 'awsSourceRestHolders',
+  'awsAppSecretReaders', 'externalCredentialHolders',
+]);
 
 export function evaluateProductionCompositeReadiness(evidence) {
   assert.equal(evidence?.projectRef, SOURCE_PROJECT, 'PRODUCTION_PROJECT_REQUIRED');
@@ -54,6 +61,27 @@ export function evaluateProductionCompositeReadiness(evidence) {
   requireProof(evidence.unfence?.exactInverseReviewed === true &&
     evidence.unfence?.restoreVerificationDefined === true, 'UNFENCE_UNPROVEN');
   requireProof(evidence.unknownAutonomousWriters === false, 'UNKNOWN_AUTONOMOUS_WRITERS');
+  const paths = evidence.writerPaths ?? {};
+  requireProof(JSON.stringify(Object.keys(paths).sort()) ===
+    JSON.stringify([...REQUIRED_WRITER_PATHS].sort()), 'WRITER_PATH_INVENTORY_INCOMPLETE');
+  for (const name of REQUIRED_WRITER_PATHS) {
+    const path = paths[name];
+    requireProof(typeof path?.identity === 'string' && path.identity.length > 0 &&
+      typeof path?.authoritativeState === 'string' && path.authoritativeState.length > 0,
+    `WRITER_PATH_UNCLASSIFIED:${name}`);
+    if (path?.status === 'absent') {
+      requireProof(name === 'storageS3' && path.recheckAtFreeze === true &&
+        /^[0-9a-f]{64}$/.test(path.absenceEvidenceSha256 ?? ''),
+      `WRITER_PATH_ABSENCE_UNPROVEN:${name}`);
+    } else {
+      requireProof(path?.status === 'controlled' && path.productionBindingVerified === true &&
+        path.rehearsalNegativePassed === true && path.restoreReviewed === true &&
+        typeof path.control === 'string' && path.control.length > 0 &&
+        typeof path.restore === 'string' && path.restore.length > 0 &&
+        /^[0-9a-f]{64}$/.test(path.rehearsalEvidenceSha256 ?? ''),
+      `WRITER_PATH_CONTROL_UNPROVEN:${name}`);
+    }
+  }
   const authControls = evidence.writers?.authApi?.controls;
   requireProof(authControls?.newSignInBlockedRehearsed === true &&
     authControls?.refreshBlockedRehearsed === true &&

@@ -34,6 +34,14 @@ real-interface negative in the inventory. The public ALB 503 is not an Auth or
 Storage API fence. The activation SQL therefore retains an explicit
 `PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED` exception. Do not reopen maintenance
 or remove that exception until these gaps close in a subsequent reviewed commit.
+The [path-level writer inventory](production-authoritative-writer-inventory-20260927.md)
+now lists 17 distinct non-operator routes, including historical Vercel Preview,
+already-issued Auth sessions, direct RPC, import jobs, and source-secret
+readers. Both the preflight and the capture-time composite attestation require
+an exact entry for every route; broad family-level PASS flags are insufficient.
+Each route requires pinned negative evidence and an inverse, or (for the
+currently absent separate S3-key class) fresh exact-project absence evidence
+at freeze time. No route has been declared controlled by this inventory alone.
 
 ## Cutover execution sequence (only after preflight PASS)
 
