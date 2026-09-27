@@ -11,6 +11,7 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:authApi'));
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
   assert.ok(result.blockers.includes('UNKNOWN_AUTONOMOUS_WRITERS'));
+  assert.ok(result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
   assert.ok(!result.blockers.includes('S3_WRITER_INVENTORY_OPEN'));
 });
 
@@ -21,6 +22,9 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.unknownAutonomousWriters = false;
+  Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
+    pauseAndResumeRehearsed: true, pause503NegativeRehearsed: true,
+    previewProductionSourceExcluded: true });
   for (const writer of Object.values(ready.writers)) {
     writer.inventoryComplete = true;
     writer.authoritativeMutationCapable = true;
@@ -34,6 +38,7 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     copy => { copy.writers.authApi.realInterfaceNegativeRehearsed = false; },
     copy => { copy.writers.authApi.authoritativeMutationCapable = false; },
     copy => { copy.capture.slots.B = copy.capture.slots.A; },
+    copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
     copy => { copy.relationFingerprint = 'wrong'; },
   ]) {
     const copy = structuredClone(ready);
@@ -50,6 +55,9 @@ test('an ephemeral-only writer requires positive field and comparator proof, not
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.unknownAutonomousWriters = false;
+  Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
+    pauseAndResumeRehearsed: true, pause503NegativeRehearsed: true,
+    previewProductionSourceExcluded: true });
   for (const writer of Object.values(ready.writers)) Object.assign(writer, {
     inventoryComplete: true, authoritativeMutationCapable: true,
     reversibleControlAvailable: true, inverseReviewed: true, realInterfaceNegativeRehearsed: true,

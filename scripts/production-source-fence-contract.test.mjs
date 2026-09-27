@@ -40,3 +40,19 @@ test('abort checks exact frozen state and job hash, removes only owned objects, 
   assert.match(abort, /DROP FUNCTION public\.tracepoint_source_production_fence_status/);
   assert.doesNotMatch(abort, /CASCADE|DROP SCHEMA public|DROP SCHEMA auth|DROP SCHEMA storage/);
 });
+
+test('authenticated Storage guard is reversible without mutating managed Storage schema', () => {
+  for (const sql of [activation, abort]) {
+    assert.match(sql, /5537f428cb4f1fac15320843cb213faa/);
+    assert.match(sql, /storage_permission_function_backup/);
+    assert.match(sql, /has_department_permission\(uuid,text\)/);
+    assert.doesNotMatch(sql, /ALTER TABLE storage\.|CREATE POLICY|DROP POLICY|REVOKE .* ON storage\./i);
+  }
+  assert.match(activation, /CREATE OR REPLACE FUNCTION public\.has_department_permission/);
+  assert.match(activation, /write_fence_state WHERE id=1\) IS FALSE/);
+  assert.match(activation, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(abort, /EXECUTE \(SELECT original_definition/);
+  assert.match(abort, /DROP TABLE tracepoint_cutover\.storage_permission_function_backup/);
+  assert.ok(abort.indexOf('EXECUTE (SELECT original_definition') <
+    abort.indexOf('DROP TABLE tracepoint_cutover.storage_permission_function_backup'));
+});

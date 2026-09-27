@@ -12,6 +12,15 @@
     "minimumQuietSeconds": 60
   },
   "s3WriterCredentials": { "state": "NO_SEPARATE_S3_WRITER_CREDENTIALS", "productionProjectVerified": true },
+  "legacyVercel": {
+    "projectId": "prj_V03LJyQIc231luvZ9u0gcOAt4xK4",
+    "productionOrigin": "https://tracepoint-amber.vercel.app",
+    "previewSourceProject": "wztqqqashilusoppddxi",
+    "productionPauseAndResumeReviewed": false,
+    "pauseAndResumeRehearsed": false,
+    "pause503NegativeRehearsed": false,
+    "previewProductionSourceExcluded": false
+  },
   "unfence": { "exactInverseReviewed": false, "restoreVerificationDefined": false },
   "unknownAutonomousWriters": true,
   "writers": {
@@ -20,6 +29,7 @@
     "authApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
     "storageApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
     "background": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
-    "scheduledImportAdmin": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false }
+    "scheduledImportAdmin": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "legacyVercel": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false }
   }
 }

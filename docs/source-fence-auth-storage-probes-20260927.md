@@ -54,6 +54,34 @@ member of the Supabase Storage owner role, so a production Storage policy or
 grant edit is not a reviewed available action. No separate S3-compatible key
 was found in the earlier inventory.
 
+## Independent controls tested after the trigger-layer probe
+
+The paid project's Email provider was temporarily disabled in the dashboard
+and then restored. A disposable existing user's password sign-in passed with
+HTTP 200 before the switch and was rejected with HTTP 422 while Email was
+disabled; no token was issued and the existing user's administrative fields
+did not change. This is a reversible direct customer-sign-in control, not a
+complete Auth fence: an administrative create with the exact paid-project
+modern secret key still succeeded while Email was disabled. That test user
+was deleted. Thus every autonomous holder of a modern secret key must be
+stopped independently; disabling Email alone cannot satisfy the source fence.
+
+Separately, with the paid project's Storage trigger state set to
+`frozen=false`, the versioned `20260927_storage_policy_guard_probe_on.sql`
+temporarily added a fence check to the existing operator-owned public
+permission function, without editing a Supabase-managed Storage table or
+policy. A same-tenant authenticated direct upload then failed with HTTP 400
+and created no object. With the guard off, the same path returned HTTP 200.
+An elevated paid-project service-key upload still returned HTTP 200 while
+the guard was active, confirming the RLS bypass and need for a separate
+server-key writer stop. The exact inverse SQL restored the original function
+definition. A final read-only paid-project census showed `frozen=false`,
+original function MD5 `11f7fb50c985589515faa758fb30b058`, guard table
+absent, zero disposable Auth users, and zero probe Storage objects. The
+production function is owned by `postgres` with pinned MD5
+`5537f428cb4f1fac15320843cb213faa`; the production activation/abort SQL
+contains a separately pinned adaptation, but has not been executed.
+
 The production composite preflight remains **BLOCKED**. In particular, the
 public trigger install/abort, double-capture binding, exact unfence, and
 complete autonomous-writer inventory are not proven. The direct Storage and

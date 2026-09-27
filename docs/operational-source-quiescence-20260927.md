@@ -31,7 +31,13 @@ the production REST source secret through an AWS role and makes only reviewed
 GET and fixed read-only POST requests. The live pg_cron dispatcher invokes a
 legacy Vercel notification endpoint every 15 minutes; that specific job must
 be paused and drained. The public ALB 503 covers `www.tracepointhq.com`, not
-direct Supabase APIs or the legacy Vercel host.
+direct Supabase APIs or the legacy Vercel host. The legacy Vercel project is
+still an independent writer surface with a Production-scoped server-key
+variable: project
+`prj_V03LJyQIc231luvZ9u0gcOAt4xK4`, Production origin
+`https://tracepoint-amber.vercel.app`. Its reversible Production pause must
+be verified separately (and Preview source binding excluded) before either
+final capture; see `docs/production-legacy-vercel-writer-control-20260927.md`.
 
 Supabase's current key model matters for reversal: legacy JWT-based keys can
 be disabled and re-enabled, but a modern key is deleted rather than

@@ -63,9 +63,27 @@ async function remove(department) {
 }
 
 async function run() {
+  const mode = process.argv[2];
+  assert.ok(['--database-fence-interactive', '--policy-guard-interactive',
+    '--service-role-guard-bypass'].includes(mode),
+    'EXPECTED_EXACT_REHEARSAL_PROBE_MODE');
   await fenceIs(false);
   assert.equal(await objectExists(departmentId), false, 'PROBE_OBJECT_PREEXISTS');
   assert.equal(await objectExists(otherDepartmentId), false, 'CROSS_TENANT_PROBE_PREEXISTS');
+  if (mode === '--service-role-guard-bypass') {
+    const status = await upload(departmentId, key);
+    try {
+      assert.ok(status >= 200 && status < 300,
+        `SERVICE_ROLE_UPLOAD_STATUS_${status}`);
+      assert.equal(await objectExists(departmentId), true,
+        'SERVICE_ROLE_OBJECT_MISSING');
+      console.log(JSON.stringify({ result: 'PAID_STORAGE_POLICY_GUARD_SERVICE_ROLE_BYPASS',
+        status, valuesLogged: false }));
+    } finally {
+      if (await objectExists(departmentId)) await remove(departmentId);
+    }
+    return;
+  }
   const generated = await json('POST', '/auth/v1/admin/generate_link', { type: 'magiclink', email });
   assert.equal(generated.status, 200, 'MAGIC_LINK_GENERATION_FAILED');
   const tokenHash = generated.body?.hashed_token;
@@ -98,11 +116,12 @@ async function run() {
   let fenced = false;
   for await (const line of input) {
     if (line.trim() === 'on' && !fenced) {
-      await fenceIs(true);
+      await fenceIs(mode === '--database-fence-interactive');
       const status = await upload(departmentId, token);
       assert.ok(status >= 400, 'FENCED_STORAGE_WRITE_ALLOWED');
       assert.equal(await objectExists(departmentId), false, 'FENCED_STORAGE_OBJECT_CREATED');
-      console.log(JSON.stringify({ result: 'PAID_DIRECT_STORAGE_FENCE_PASS',
+      console.log(JSON.stringify({ result: mode === '--database-fence-interactive' ?
+        'PAID_DIRECT_STORAGE_FENCE_PASS' : 'PAID_DIRECT_STORAGE_POLICY_GUARD_PASS',
         status, objectAbsent: true, valuesLogged: false }));
       fenced = true;
     } else if (line.trim() === 'off' && fenced) {

@@ -21,7 +21,11 @@ BEGIN
         JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal
         AND n.nspname='public'
         AND t.tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')
-        AND t.tgenabled='A') <> 174 THEN
+        AND t.tgenabled='A') <> 174
+     OR (SELECT count(*) FROM tracepoint_cutover.storage_permission_function_backup
+       WHERE id=1 AND original_md5='5537f428cb4f1fac15320843cb213faa') <> 1
+     OR position('tracepoint_cutover.write_fence_state' IN pg_get_functiondef(
+       'public.has_department_permission(uuid,text)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'PRODUCTION_SOURCE_FENCE_STATE_DRIFT';
   END IF;
   IF (SELECT count(*) FROM cron.job j JOIN tracepoint_cutover.dispatcher_snapshot s
@@ -52,6 +56,12 @@ END $remove$;
 SELECT cron.alter_job(j.jobid, active := true)
   FROM cron.job j JOIN tracepoint_cutover.dispatcher_snapshot s ON s.jobid=j.jobid
   WHERE s.id=1 AND j.jobname='tracepoint-notification-email-dispatch';
+DO $restore_storage_permission$
+BEGIN
+  EXECUTE (SELECT original_definition
+    FROM tracepoint_cutover.storage_permission_function_backup WHERE id=1);
+END $restore_storage_permission$;
+DROP TABLE tracepoint_cutover.storage_permission_function_backup;
 DROP FUNCTION public.tracepoint_source_production_fence_status();
 DROP FUNCTION tracepoint_cutover.reject_source_dml();
 DROP TABLE tracepoint_cutover.dispatcher_snapshot;
@@ -64,7 +74,9 @@ BEGIN
       AND active) <> 1
      OR EXISTS (SELECT 1 FROM pg_trigger WHERE NOT tgisinternal
        AND tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate'))
-     OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspname='tracepoint_cutover') THEN
+     OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspname='tracepoint_cutover')
+     OR md5(pg_get_functiondef('public.has_department_permission(uuid,text)'::regprocedure))
+       <> '5537f428cb4f1fac15320843cb213faa' THEN
     RAISE EXCEPTION 'PRODUCTION_SOURCE_ABORT_INCOMPLETE';
   END IF;
 END $verify$;

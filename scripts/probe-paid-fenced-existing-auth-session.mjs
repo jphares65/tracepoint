@@ -70,7 +70,36 @@ async function cleanup() {
 
 async function run() {
   if (process.argv[2] === '--cleanup') return cleanup();
-  assert.equal(process.argv[2], '--interactive', 'EXPECTED_INTERACTIVE_OR_CLEANUP');
+  if (process.argv[2] === '--provider-admin-bypass') {
+    await fenceIs(false);
+    const adminEmail = 'source-provider-admin-probe-20260927@example.invalid';
+    const inventory = await call('GET', '/auth/v1/admin/users?page=1&per_page=200');
+    assert.equal(inventory.status, 200, 'ADMIN_INVENTORY_UNAVAILABLE');
+    assert.ok(!inventory.body?.users?.some(user => user.email === adminEmail),
+      'ADMIN_PROBE_IDENTITY_PREEXISTS');
+    const created = await call('POST', '/auth/v1/admin/users', {
+      email: adminEmail, password: `Tp!${randomBytes(36).toString('base64url')}9a`,
+      email_confirm: true,
+    });
+    const id = created.body?.id ?? created.body?.user?.id;
+    try {
+      assert.ok(created.status >= 200 && created.status < 300,
+        `ADMIN_CREATE_STATUS_${created.status}`);
+      assert.match(id ?? '', /^[0-9a-f-]{36}$/i, 'ADMIN_PROBE_ID_MISSING');
+      console.log(JSON.stringify({ result: 'PAID_DISABLED_PROVIDER_ADMIN_CREATE',
+        status: created.status, created: true, valuesLogged: false }));
+    } finally {
+      if (id) {
+        const removed = await call('DELETE', `/auth/v1/admin/users/${id}`);
+        assert.ok(removed.status >= 200 && removed.status < 300,
+          'ADMIN_PROBE_CLEANUP_FAILED');
+      }
+    }
+    return;
+  }
+  const mode = process.argv[2];
+  assert.ok(['--interactive', '--provider-interactive'].includes(mode),
+    'EXPECTED_INTERACTIVE_OR_CLEANUP');
   await fenceIs(false);
   assert.equal(await lookup(), undefined, 'PROBE_IDENTITY_PREEXISTS');
   const password = `Tp!${randomBytes(36).toString('base64url')}9a`;
@@ -83,13 +112,21 @@ async function run() {
   const input = createInterface({ input: process.stdin, terminal: false });
   let probed = false;
   for await (const line of input) {
-    if (line.trim() === 'login' && !probed) {
-      await fenceIs(true);
+    if (line.trim() === 'baseline' && mode === '--provider-interactive' && !probed) {
+      await fenceIs(false);
+      const login = await call('POST', '/auth/v1/token?grant_type=password', { email, password });
+      assert.equal(login.status, 200, 'BASELINE_LOGIN_FAILED');
+      assert.ok(typeof login.body?.access_token === 'string', 'BASELINE_TOKEN_MISSING');
+      console.log(JSON.stringify({ result: 'PAID_EMAIL_PROVIDER_BASELINE_PASS',
+        status: login.status, tokenIssued: true, valuesLogged: false }));
+    } else if (line.trim() === 'login' && !probed) {
+      await fenceIs(mode === '--interactive');
       assert.equal(await lookup(), id, 'PROBE_IDENTITY_CHANGED');
       const before = await readUser(id);
       const login = await call('POST', '/auth/v1/token?grant_type=password', { email, password });
       const after = await readUser(id);
-      console.log(JSON.stringify({ result: 'PAID_FENCED_EXISTING_USER_SIGNIN',
+      console.log(JSON.stringify({ result: mode === '--interactive' ?
+        'PAID_FENCED_EXISTING_USER_SIGNIN' : 'PAID_DISABLED_PROVIDER_EXISTING_USER_SIGNIN',
         project: 'reukdouvpshshvqnzsgw', status: login.status,
         tokenIssued: login.status === 200 && typeof login.body?.access_token === 'string',
         changedAdminFieldPaths: changedPaths(before, after), valuesLogged: false }));

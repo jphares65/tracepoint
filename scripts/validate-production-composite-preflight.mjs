@@ -9,9 +9,10 @@ export const SOURCE_PROJECT = 'izlkwggluhlhzlumtzes';
 export const SOURCE_FINGERPRINT = '36558b0730e3e96cad6426f38088a5b0';
 export const WRITER_FAMILIES = Object.freeze([
   'applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background', 'scheduledImportAdmin',
+  'legacyVercel',
 ]);
 export const ALWAYS_AUTHORITATIVE_CAPABLE = Object.freeze([
-  'applicationApi', 'serviceRole', 'authApi', 'storageApi',
+  'applicationApi', 'serviceRole', 'authApi', 'storageApi', 'legacyVercel',
 ]);
 
 export function evaluateProductionCompositeReadiness(evidence) {
@@ -33,6 +34,14 @@ export function evaluateProductionCompositeReadiness(evidence) {
   requireProof(evidence.s3WriterCredentials?.state === 'NO_SEPARATE_S3_WRITER_CREDENTIALS' &&
     evidence.s3WriterCredentials?.productionProjectVerified === true,
   'S3_WRITER_INVENTORY_OPEN');
+  requireProof(evidence.legacyVercel?.projectId === 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4' &&
+    evidence.legacyVercel?.productionOrigin === 'https://tracepoint-amber.vercel.app' &&
+    evidence.legacyVercel?.previewSourceProject === 'wztqqqashilusoppddxi' &&
+    evidence.legacyVercel?.productionPauseAndResumeReviewed === true &&
+    evidence.legacyVercel?.pauseAndResumeRehearsed === true &&
+    evidence.legacyVercel?.pause503NegativeRehearsed === true &&
+    evidence.legacyVercel?.previewProductionSourceExcluded === true,
+  'LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN');
   requireProof(evidence.unfence?.exactInverseReviewed === true &&
     evidence.unfence?.restoreVerificationDefined === true, 'UNFENCE_UNPROVEN');
   requireProof(evidence.unknownAutonomousWriters === false, 'UNKNOWN_AUTONOMOUS_WRITERS');

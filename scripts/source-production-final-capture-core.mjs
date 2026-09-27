@@ -83,12 +83,20 @@ export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now())
   assert.equal(value?.maintenance503, true, 'MAINTENANCE_BARRIER_NOT_ATTESTED');
   assert.equal(value?.publicTriggers, 174, 'PUBLIC_FENCE_NOT_ATTESTED');
   assert.equal(value?.s3WriterCredentials, 'NO_SEPARATE_S3_WRITER_CREDENTIALS', 'S3_WRITER_GATE_OPEN');
-  const families = ['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background', 'scheduledImportAdmin'];
+  assert.equal(value?.legacyVercel?.projectId, 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',
+    'LEGACY_VERCEL_PROJECT_MISMATCH');
+  assert.equal(value?.legacyVercel?.productionOrigin, 'https://tracepoint-amber.vercel.app',
+    'LEGACY_VERCEL_ORIGIN_MISMATCH');
+  assert.equal(value?.legacyVercel?.paused503, true, 'LEGACY_VERCEL_PRODUCTION_NOT_PAUSED');
+  assert.equal(value?.legacyVercel?.previewProductionSourceExcluded, true,
+    'LEGACY_VERCEL_PREVIEW_SOURCE_UNPROVEN');
+  const families = ['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background',
+    'scheduledImportAdmin', 'legacyVercel'];
   assert.deepEqual(Object.keys(value?.writers ?? {}).sort(), families.sort(), 'WRITER_INVENTORY_INCOMPLETE');
   for (const family of families) {
     const entry = value.writers[family];
     assert.equal(typeof entry?.authoritativeMutationCapable, 'boolean', `WRITER_STATE_UNCLASSIFIED:${family}`);
-    if (['applicationApi', 'serviceRole', 'authApi', 'storageApi'].includes(family))
+    if (['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'legacyVercel'].includes(family))
       assert.equal(entry.authoritativeMutationCapable, true, `AUTHORITATIVE_WRITER_MISCLASSIFIED:${family}`);
     if (entry.authoritativeMutationCapable) {
       assert.equal(entry.blocked, true, `WRITER_NOT_BLOCKED:${family}`);

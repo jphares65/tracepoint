@@ -37,6 +37,12 @@ BEGIN
         AND tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')) THEN
     RAISE EXCEPTION 'PRODUCTION_SOURCE_FENCE_ALREADY_PRESENT';
   END IF;
+  IF pg_get_userbyid((SELECT proowner FROM pg_proc WHERE oid =
+       'public.has_department_permission(uuid,text)'::regprocedure)) <> 'postgres'
+     OR md5(pg_get_functiondef('public.has_department_permission(uuid,text)'::regprocedure))
+       <> '5537f428cb4f1fac15320843cb213faa' THEN
+    RAISE EXCEPTION 'PRODUCTION_STORAGE_PERMISSION_FUNCTION_DRIFT';
+  END IF;
   IF (SELECT count(*) FROM cron.job WHERE jobname='tracepoint-notification-email-dispatch'
         AND active AND schedule='*/15 * * * *'
         AND command LIKE '%net.http_post%'
@@ -118,6 +124,48 @@ SELECT cron.alter_job(jobid, active := false)
   FROM cron.job WHERE jobname='tracepoint-notification-email-dispatch';
 INSERT INTO tracepoint_cutover.write_fence_state VALUES (1, true, clock_timestamp());
 
+-- Authenticated Storage policies call this operator-owned public function.
+-- Deny their tenant permission while frozen without changing managed Storage
+-- policies or grants. The elevated service role bypasses RLS and requires its
+-- separate operational writer stop and direct negative proof.
+CREATE TABLE tracepoint_cutover.storage_permission_function_backup (
+  id integer PRIMARY KEY CHECK (id=1),
+  original_definition text NOT NULL,
+  original_md5 text NOT NULL
+);
+ALTER TABLE tracepoint_cutover.storage_permission_function_backup ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON tracepoint_cutover.storage_permission_function_backup
+  FROM PUBLIC, anon, authenticated, service_role;
+INSERT INTO tracepoint_cutover.storage_permission_function_backup
+SELECT 1,
+  pg_get_functiondef('public.has_department_permission(uuid,text)'::regprocedure),
+  md5(pg_get_functiondef('public.has_department_permission(uuid,text)'::regprocedure));
+
+CREATE OR REPLACE FUNCTION public.has_department_permission(
+  p_department_id uuid, p_permission_code text
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'auth'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.department_memberships membership
+    JOIN public.department_membership_roles membership_role
+      ON membership_role.department_id = membership.department_id
+     AND membership_role.user_id = membership.user_id
+    WHERE membership.department_id = p_department_id
+      AND membership.user_id = auth.uid()
+      AND membership.is_active = true
+      AND (SELECT frozen FROM tracepoint_cutover.write_fence_state WHERE id=1) IS FALSE
+      AND EXISTS (SELECT 1 FROM public.permissions permission
+        WHERE permission.code = p_permission_code)
+      AND (membership_role.role_code = 'administrator' OR EXISTS (
+        SELECT 1 FROM public.department_role_permissions role_permission
+        WHERE role_permission.department_id = membership_role.department_id
+          AND role_permission.role_code = membership_role.role_code
+          AND role_permission.permission_code = p_permission_code
+      ))
+  );
+$function$;
+
 DO $verify$
 BEGIN
   IF (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
@@ -127,7 +175,11 @@ BEGIN
       AND t.tgenabled='A') <> 174
      OR (SELECT count(*) FROM cron.job WHERE jobname='tracepoint-notification-email-dispatch'
          AND NOT active) <> 1
-     OR (SELECT frozen FROM tracepoint_cutover.write_fence_state WHERE id=1) IS DISTINCT FROM true THEN
+     OR (SELECT frozen FROM tracepoint_cutover.write_fence_state WHERE id=1) IS DISTINCT FROM true
+     OR (SELECT count(*) FROM tracepoint_cutover.storage_permission_function_backup
+         WHERE id=1 AND original_md5='5537f428cb4f1fac15320843cb213faa') <> 1
+     OR position('tracepoint_cutover.write_fence_state' IN pg_get_functiondef(
+          'public.has_department_permission(uuid,text)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'PRODUCTION_SOURCE_FENCE_INSTALL_INCOMPLETE';
   END IF;
 END $verify$;
