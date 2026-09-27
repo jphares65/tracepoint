@@ -73,13 +73,24 @@ The proposed bounded cutover control is a temporary rule on exact project
 `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`:
 `Environment Equals Preview` → `Deny`, paired with the already-proven
 Production pause. This covers historical Preview URLs without reading or
-rotating server credentials. The rule is **not yet approved/proven on the
-disposable project**, and was not added to the live project. A disposable
-`Environment Equals Production` Deny/inverse proof was prepared; its rule is
-staged in Vercel's Review Change dialog but **not published/live**. The browser
-safety reviewer rejected Publish pending approval for that exact disposable
-rule. Do not mark this writer controlled until its real-interface negative
-and inverse pass.
+rotating server credentials. The live rule was **not** added to TracePoint.
+The equivalent `Environment Equals Production` Deny/inverse was proven on
+the approved disposable project `prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw`:
+
+| Step | Exact disposable resource | External result |
+| --- | --- | --- |
+| Before rule | `https://project-q7s6a.vercel.app/` | HTTP 200 |
+| Publish `rule_tracepoint_disposable_production_deny_proof_i0V05b` | `Environment Equals Production` → `Deny` | HTTP 403 |
+| Publish deletion of that rule | same project and URL | HTTP 200 |
+
+The disposable Firewall page then showed `No Custom Rules Yet`. A separate
+read-only inspection of the live `tracepoint` Firewall page also showed
+`No Custom Rules Yet`; no live Vercel firewall change occurred. This proves
+the reversible rule mechanism in non-production, **not** that a live Preview
+rule is active or that historical Preview URLs are currently fenced.
+The sanitized proof record is
+`docs/vercel-disposable-firewall-proof-20260927.json` (SHA-256
+`86a461aa264395a9c477b26bcbf8f35e8d2ae1fd3cef0f73cd05005dd8a397cf`).
 
 The production preflight and final-capture attestation now accept two distinct
 safe Preview proofs: either every historical Preview is demonstrated unable
@@ -101,10 +112,12 @@ Before cutover maintenance, complete these checks without mutation:
 1. Confirm the project ID, team, Production domain and active deployment in
    Vercel. Confirm the Production environment's Supabase project reference is
    exactly `izlkwggluhlhzlumtzes` without disclosing either server key.
-2. Establish, without printing either value, whether the Preview
-   `SUPABASE_SECRET_KEY` is bound to staging or production. If production,
-   enumerate and independently block every reachable Preview deployment; do
-   **not** treat the project pause as sufficient.
+2. Treat pre-September-17 Preview deployments as production-source-capable
+   unless exact binding is proven otherwise. At freeze, publish the reviewed
+   exact-project `Environment Equals Preview` Deny, verify representative
+   historical Preview URLs are denied, and retain the rule until the source
+   authority is retired or a reviewed abort restores it. Do **not** treat the
+   Production pause as sufficient.
 3. Prove pause and resume on an isolated non-production Vercel project. Require
    external `503 DEPLOYMENT_PAUSED` during pause and a healthy response after
    resume. Record the project ID, timings and exact inverse.

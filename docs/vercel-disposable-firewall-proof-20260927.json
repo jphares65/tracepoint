@@ -1,0 +1,16 @@
+{
+  "observedDateUtc": "2026-09-27",
+  "projectId": "prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw",
+  "projectSlug": "project-q7s6a",
+  "syntheticUrl": "https://project-q7s6a.vercel.app/",
+  "ruleId": "rule_tracepoint_disposable_production_deny_proof_i0V05b",
+  "condition": "Environment Equals Production",
+  "action": "Deny",
+  "beforeStatus": 200,
+  "activeStatus": 403,
+  "restoredStatus": 200,
+  "ruleRemovedAfterProof": true,
+  "disposableCustomRulesAfterProof": 0,
+  "liveTracepointCustomRulesAfterProof": 0,
+  "liveTracepointModified": false
+}
