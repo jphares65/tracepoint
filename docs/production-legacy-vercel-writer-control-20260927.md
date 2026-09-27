@@ -10,7 +10,8 @@ variable; the exact production deployment is reachable at
 `https://tracepoint-amber.vercel.app`. The live Supabase pg_cron dispatcher
 posts to this host every 15 minutes. The project has ready Preview
 deployments, but its configured Preview `NEXT_PUBLIC_SUPABASE_URL` is
-`https://wztqqqashilusoppddxi.supabase.co` (staging). **The Preview server
+`https://wztqqqashilusoppddxi.supabase.co` (staging). The project has a
+**separate Preview-scoped `SUPABASE_SECRET_KEY`** entry. **The Preview server
 secret's project binding remains unverified**, so preview URLs must not yet be
 declared irrelevant to the production source. No credential value was read or
 recorded.
@@ -37,6 +38,13 @@ Before cutover maintenance, complete these checks without mutation:
 4. Ensure an operator access path exists for the live project (dashboard or
    project-scoped API token). Do not create or disclose a broad token merely
    to satisfy this document.
+
+An empty, disposable project `prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw`
+(`project-q7s6a` in the same Hobby team) was created with explicit approval to
+rehearse the pause inverse. It has no deployment, environment variables, or
+source connection at creation. A synthetic static page and exact-origin
+read-only verifier are prepared, but **no pause/503/resume evidence exists yet**.
+Do not mark the Vercel writer gate passed merely because this project exists.
 
 During the controlled cutover window, after public maintenance is externally
 verified and before the source fence/captures:
