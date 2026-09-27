@@ -65,6 +65,13 @@ or remove that exception until these gaps close in a subsequent reviewed commit.
    content-addressed build source, one attestation key, and two fixed output
    keys. Do not update the deployed stack or start capture while preflight is
    BLOCKED. Recheck IAM boundary and effective permissions before use.
+   `pwsh -NoProfile -File scripts/package-production-final-capture.ps1`
+   creates a local content-addressed source ZIP from nine explicit code/build
+   files, rejects dirty capture sources, and verifies the archive entry list.
+   The local package is **not** a deployed executor: upload it to the exact
+   reviewed build-source bucket with versioning, record its VersionId and
+   SHA-256, and update only the capture stack's `SourceZipKey` through a
+   reviewed change set after the composite preflight is complete.
 6. Start capture slot A with run ID
    `1d761bd7-04dd-43f3-b77a-2c41130e18c2`, attestation VersionId and SHA-256.
    Record the CodeBuild ID, immutable S3 VersionId, byte SHA-256 and canonical
