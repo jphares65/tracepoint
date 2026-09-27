@@ -1,0 +1,33 @@
+{
+  "account": "193644343389",
+  "region": "us-east-1",
+  "profile": "tracepoint-production",
+  "runtimeStack": "tracepoint-production-runtime",
+  "runtimeListenerLogicalId": "ServiceLBPublicListener46709EAA",
+  "runtimeListenerArn": "arn:aws:elasticloadbalancing:us-east-1:193644343389:listener/app/tracep-Servi-HFH2HwVNXfys/95b1a0c4cb1f514d/068663ecd22df15a",
+  "publicTargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:193644343389:targetgroup/tracep-Servi-HOJCXFWUTKCY/81b48286a38164ed",
+  "publicHost": "www.tracepointhq.com",
+  "publicHostedZoneId": "Z06725946QWMQBKB1JT8",
+  "publicAliasDnsName": "tracep-servi-hfh2hwvnxfys-2100776525.us-east-1.elb.amazonaws.com.",
+  "maintenanceStack": "tracepoint-production-maintenance-response-20260926",
+  "maintenanceChangeSet": "activate-www-503-20260926",
+  "maintenancePriority": "5",
+  "maintenanceMessage": "TracePoint is temporarily unavailable for scheduled maintenance. Please try again shortly.",
+  "defaultActions": [
+    {
+      "Type": "forward",
+      "TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:193644343389:targetgroup/tracep-Servi-HOJCXFWUTKCY/81b48286a38164ed",
+      "ForwardConfig": {
+        "TargetGroups": [
+          {
+            "TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:193644343389:targetgroup/tracep-Servi-HOJCXFWUTKCY/81b48286a38164ed",
+            "Weight": 1
+          }
+        ],
+        "TargetGroupStickinessConfig": {
+          "Enabled": false
+        }
+      }
+    }
+  ]
+}
