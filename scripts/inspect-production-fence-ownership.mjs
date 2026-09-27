@@ -59,15 +59,16 @@ try {
     postgresCanAlterTriggerState: rows.filter(r => r.schema_name===schema)
       .every(r => r.postgres_member_of_owner),
   }]));
-  const uncovered = rows.filter(r => !r.postgres_member_of_owner).map(r =>
+  const uncovered = rows.filter(r => r.schema_name === 'public' && !r.postgres_member_of_owner).map(r =>
     `${r.schema_name}.${r.table_name}`);
   const report = { projectRef: 'izlkwggluhlhzlumtzes', clientTlsVerified: true,
     transactionReadOnly: true, relationCount: rows.length, relationFingerprint: fingerprint,
-    ownerGroups, uncoveredOwnerControlledRelations: uncovered,
+    ownerGroups, uncoveredPublicTriggerRelations: uncovered,
+    managedAuthStorageTriggerOwnershipRequired: false,
     noCustomerRowsRead: true };
   if (mode === '--full') report.relations = rows;
   if (mode === '--readiness') {
-    report.status = uncovered.length === 0 ? 'OWNER_TRIGGER_PREFLIGHT_PASS' : 'OWNER_TRIGGER_PREFLIGHT_BLOCKED';
+    report.status = uncovered.length === 0 ? 'PUBLIC_TRIGGER_PREFLIGHT_PASS' : 'PUBLIC_TRIGGER_PREFLIGHT_BLOCKED';
     console.log(JSON.stringify(report, null, 2));
     if (uncovered.length > 0) process.exitCode = 2;
   } else console.log(JSON.stringify(report, null, 2));

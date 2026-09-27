@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Production frozen-source capture executor — isolated CodeBuild job with exact secret, source package, and immutable artifact scope
+Description: Production double frozen-source capture executor — isolated CodeBuild job with exact secret, source package, composite attestation, and two immutable artifacts
 Metadata:
   AWSToolsMetrics:
     AWSAgentToolkit: aws-cloudformation@2
@@ -68,7 +68,7 @@ Resources:
         why: distinct from rehearsal role so no project or artifact crossover is possible
         must:
           - only exact production REST secret
-          - only one immutable source package and one final artifact key
+          - only one immutable source package, one attestation key, and two exact capture keys
           - no source mutation permissions
     Properties:
       RoleName: TracePoint-ProductionFinalSourceCapture-20260927
@@ -98,10 +98,16 @@ Resources:
                 Effect: Allow
                 Action: [secretsmanager:GetSecretValue, secretsmanager:DescribeSecret]
                 Resource: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi
-              - Sid: WriteAndVerifyOneFinalArtifact
+              - Sid: WriteAndVerifyTwoPinnedCaptures
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject, s3:GetObjectVersion]
-                Resource: arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/0762cf3d-5f8e-4e89-afa0-051a39e4dce7/final-canonical.json
+                Resource:
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/final-canonical.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/final-canonical.json
+              - Sid: ReadPinnedCompositeAttestation
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/composite-fence-20260927/attestation.json
               - Sid: ReadBuildSourceKms
                 Effect: Allow
                 Action: kms:Decrypt
@@ -159,7 +165,10 @@ Resources:
             Value: izlkwggluhlhzlumtzes
           - Name: TRACEPOINT_SOURCE_PRODUCTION_RUN_ID
             Type: PLAINTEXT
-            Value: 0762cf3d-5f8e-4e89-afa0-051a39e4dce7
+            Value: 1d761bd7-04dd-43f3-b77a-2c41130e18c2
+          - Name: TRACEPOINT_SOURCE_PRODUCTION_CAPTURE_SLOT
+            Type: PLAINTEXT
+            Value: A
       LogsConfig:
         CloudWatchLogs:
           Status: ENABLED

@@ -1,15 +1,16 @@
 -- CUTOVER EXECUTION ONLY. Never run as a preparation or rehearsal command.
--- BLOCKED: the 2026-09-27 owner inventory proved that the postgres SQL Editor
--- role cannot ENABLE ALWAYS triggers on 27 auth and 8 storage relations. The
--- attempted activation failed at auth.audit_log_entries and rolled back.
--- Do not retry this SQL or reopen maintenance until a separately reviewed,
--- owner-safe replacement passes the paid rehearsal and production preflight.
+-- PUBLIC-TABLE LAYER ONLY. This does not fence Auth or Storage. Execute only
+-- after independently attested reversible controls block every non-operator
+-- Auth, Storage, service-role, background, and S3-compatible writer.
 -- Submit only through the SQL Editor for project izlkwggluhlhzlumtzes after
 -- the external project-identity preflight and public maintenance 503 pass.
 BEGIN;
-DO $blocked$ BEGIN
-  RAISE EXCEPTION 'OWNER_CONTROLLED_FENCE_NOT_PROVEN';
-END $blocked$;
+DO $preflight_block$ BEGIN
+  RAISE EXCEPTION 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED';
+END $preflight_block$;
+-- The guard above remains until the versioned production writer inventory,
+-- real-interface negatives, and exact inverse controls all pass review.
+-- Remove it only in a subsequent reviewed cutover package, never ad hoc.
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
 
@@ -87,11 +88,13 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, tracepoint_cu
     'changed_at', (SELECT changed_at FROM tracepoint_cutover.write_fence_state WHERE id=1),
     'relation_count', (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname IN ('public','auth','storage') AND c.relkind IN ('r','p')),
-    'trigger_count', (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+    'public_trigger_count', (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal
-      AND n.nspname IN ('public','auth','storage')
+      AND n.nspname='public'
       AND t.tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')
-      AND t.tgenabled='A'));
+      AND t.tgenabled='A'),
+    'dispatcher_paused', (SELECT count(*)=1 FROM cron.job
+      WHERE jobname='tracepoint-notification-email-dispatch' AND NOT active));
 $fn$;
 REVOKE ALL ON FUNCTION public.tracepoint_source_production_fence_status() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.tracepoint_source_production_fence_status() TO service_role;
@@ -101,7 +104,7 @@ DECLARE r record;
 BEGIN
   FOR r IN SELECT n.nspname AS schema_name, c.relname AS table_name
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE n.nspname IN ('public','auth','storage') AND c.relkind IN ('r','p')
+    WHERE n.nspname='public' AND c.relkind IN ('r','p')
     ORDER BY n.nspname,c.relname
   LOOP
     EXECUTE format('CREATE TRIGGER tracepoint_write_fence_dml BEFORE INSERT OR UPDATE OR DELETE ON %I.%I FOR EACH STATEMENT EXECUTE FUNCTION tracepoint_cutover.reject_source_dml()',r.schema_name,r.table_name);
@@ -119,9 +122,9 @@ DO $verify$
 BEGIN
   IF (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal
-      AND n.nspname IN ('public','auth','storage')
+      AND n.nspname='public'
       AND t.tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')
-      AND t.tgenabled='A') <> 244
+      AND t.tgenabled='A') <> 174
      OR (SELECT count(*) FROM cron.job WHERE jobname='tracepoint-notification-email-dispatch'
          AND NOT active) <> 1
      OR (SELECT frozen FROM tracepoint_cutover.write_fence_state WHERE id=1) IS DISTINCT FROM true THEN
@@ -130,5 +133,6 @@ BEGIN
 END $verify$;
 COMMIT;
 
--- External post-commit writer-family negatives and stable status RPC are mandatory
--- before capture. Any failure invokes the reviewed pre-authority abort procedure.
+-- External writer-family negatives (including direct Auth/Storage and every
+-- modern-key holder) and a stable composite attestation are mandatory before
+-- either immutable capture. This SQL alone is never a complete source fence.

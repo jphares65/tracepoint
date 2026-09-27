@@ -7,18 +7,24 @@ export const SOURCE_ORIGIN = `https://${SOURCE_PROJECT_REF}.supabase.co`;
 export const SOURCE_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi';
 export const ARTIFACT_BUCKET = 'tracepoint-production-private-193644343389';
 export const ARTIFACT_KMS_KEY_ARN = 'arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55';
+export const FENCE_ATTESTATION_KEY = 'migration/source/composite-fence-20260927/attestation.json';
 export const STORAGE_BUCKETS = Object.freeze(['department-assets', 'tracepoint-attachments']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const APPROVED_RUN_ID = '0762cf3d-5f8e-4e89-afa0-051a39e4dce7';
+export const APPROVED_RUN_IDS = Object.freeze({
+  A: '1d761bd7-04dd-43f3-b77a-2c41130e18c2',
+  B: 'c7448ea9-4645-4e99-b988-3a05de12ac70',
+});
 
 export function validateCaptureEnvironment(env) {
   assert.equal(env.TRACEPOINT_SOURCE_PRODUCTION_PROJECT_REF, SOURCE_PROJECT_REF, 'PRODUCTION_PROJECT_REF_REQUIRED');
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_ACCOUNT, '193644343389', 'EXACT_AWS_ACCOUNT_REQUIRED');
   assert.equal(env.SOURCE_PRODUCTION_PROJECT_URL, SOURCE_ORIGIN, 'PRODUCTION_SOURCE_URL_REQUIRED');
+  const slot = env.TRACEPOINT_SOURCE_PRODUCTION_CAPTURE_SLOT;
+  assert.ok(slot === 'A' || slot === 'B', 'CAPTURE_SLOT_REQUIRED');
   assert.match(env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID ?? '', UUID, 'RUN_UUID_REQUIRED');
-  assert.equal(env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID, APPROVED_RUN_ID, 'EXACT_FINAL_CAPTURE_RUN_REQUIRED');
+  assert.equal(env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID, APPROVED_RUN_IDS[slot], 'EXACT_FINAL_CAPTURE_RUN_REQUIRED');
   assert.match(env.SOURCE_PRODUCTION_SERVICE_KEY ?? '', /^(sb_secret_[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_.-]{40,})$/, 'PRODUCTION_SERVER_KEY_REQUIRED');
-  return Object.freeze({ runId: env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID,
+  return Object.freeze({ slot, runId: env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID,
     key: `migration/source/${env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID}/final-canonical.json` });
 }
 
@@ -63,9 +69,37 @@ export function attestFrozen(value) {
   assert.equal(value?.frozen, true, 'PRODUCTION_FENCE_NOT_ACTIVE');
   assert.equal(value?.database, 'postgres', 'SOURCE_DATABASE_MISMATCH');
   assert.equal(Number(value?.relation_count), 122, 'SOURCE_RELATION_COUNT_DRIFT');
-  assert.equal(Number(value?.trigger_count), 244, 'SOURCE_FENCE_TRIGGER_COUNT_DRIFT');
+  assert.equal(Number(value?.public_trigger_count), 174, 'PUBLIC_FENCE_TRIGGER_COUNT_DRIFT');
+  assert.equal(value?.dispatcher_paused, true, 'SOURCE_DISPATCHER_NOT_PAUSED');
   assert.ok(Number.isFinite(Date.parse(value?.changed_at)), 'FENCE_TIMESTAMP_MISSING');
   return value.changed_at;
+}
+
+export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now()) {
+  assert.equal(value?.format, 'tracepoint-production-composite-fence/v1', 'COMPOSITE_EVIDENCE_FORMAT');
+  assert.equal(value?.projectRef, SOURCE_PROJECT_REF, 'COMPOSITE_SOURCE_MISMATCH');
+  assert.equal(value?.relationFingerprint, '36558b0730e3e96cad6426f38088a5b0', 'COMPOSITE_CATALOG_MISMATCH');
+  assert.equal(value?.fenceChangedAt, fenceChangedAt, 'COMPOSITE_FENCE_TIMESTAMP_MISMATCH');
+  assert.equal(value?.maintenance503, true, 'MAINTENANCE_BARRIER_NOT_ATTESTED');
+  assert.equal(value?.publicTriggers, 174, 'PUBLIC_FENCE_NOT_ATTESTED');
+  assert.equal(value?.s3WriterCredentials, 'NO_SEPARATE_S3_WRITER_CREDENTIALS', 'S3_WRITER_GATE_OPEN');
+  const families = ['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background', 'scheduledImportAdmin'];
+  assert.deepEqual(Object.keys(value?.writers ?? {}).sort(), families.sort(), 'WRITER_INVENTORY_INCOMPLETE');
+  for (const family of families) {
+    const entry = value.writers[family];
+    assert.equal(entry?.blocked, true, `WRITER_NOT_BLOCKED:${family}`);
+    assert.equal(entry?.directNegativePassed, true, `WRITER_NEGATIVE_MISSING:${family}`);
+    assert.ok(typeof entry?.reversibleControl === 'string' && entry.reversibleControl.length > 0,
+      `WRITER_RESTORE_CONTROL_MISSING:${family}`);
+    assert.match(entry?.negativeEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
+      `WRITER_NEGATIVE_EVIDENCE_UNPINNED:${family}`);
+    assert.match(entry?.restoreProcedureSha256 ?? '', /^[0-9a-f]{64}$/,
+      `WRITER_RESTORE_PROCEDURE_UNPINNED:${family}`);
+  }
+  const observed = Date.parse(value?.observedAtUtc);
+  assert.ok(Number.isFinite(observed) && observed <= now && now - observed <= 300_000,
+    'COMPOSITE_EVIDENCE_STALE');
+  return true;
 }
 
 export function buildArtifact({ runId, capturedAtUtc, fenceChangedAt, rowsByRelation, identities, objects }) {

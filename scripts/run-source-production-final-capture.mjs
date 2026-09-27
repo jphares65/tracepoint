@@ -3,13 +3,17 @@ import { createHash } from 'node:crypto';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { MIGRATION_RELATIONS } from './supabase-rest-ledger-core.mjs';
 import {
-  ARTIFACT_BUCKET, ARTIFACT_KMS_KEY_ARN, SOURCE_ORIGIN, STORAGE_BUCKETS,
-  attestFrozen, buildArtifact, classifyStorageEntry, objectPath, relationUrl,
+  ARTIFACT_BUCKET, ARTIFACT_KMS_KEY_ARN, FENCE_ATTESTATION_KEY, SOURCE_ORIGIN, STORAGE_BUCKETS,
+  attestCompositeEvidence, attestFrozen, buildArtifact, classifyStorageEntry, objectPath, relationUrl,
   sourceRequest, validateCaptureEnvironment,
 } from './source-production-final-capture-core.mjs';
 
 // Execute only from the production-pinned capture job after the source fence gate.
-const { runId, key } = validateCaptureEnvironment(process.env);
+const { slot, runId, key } = validateCaptureEnvironment(process.env);
+const evidenceVersion = process.env.TRACEPOINT_COMPOSITE_FENCE_VERSION_ID;
+const evidenceSha256 = process.env.TRACEPOINT_COMPOSITE_FENCE_SHA256;
+assert.match(evidenceVersion ?? '', /^[A-Za-z0-9._-]+$/, 'COMPOSITE_EVIDENCE_VERSION_REQUIRED');
+assert.match(evidenceSha256 ?? '', /^[0-9a-f]{64}$/, 'COMPOSITE_EVIDENCE_HASH_REQUIRED');
 const secret = process.env.SOURCE_PRODUCTION_SERVICE_KEY;
 delete process.env.SOURCE_PRODUCTION_SERVICE_KEY;
 delete process.env.SOURCE_PRODUCTION_PROJECT_URL;
@@ -92,7 +96,18 @@ async function allObjects(departmentIds) {
   return objects.sort((a, b) => a.destinationKey.localeCompare(b.destinationKey));
 }
 
+const s3 = new S3Client({ region: 'us-east-1', maxAttempts: 1 });
+async function compositeEvidence(fenceChangedAt) {
+  const result = await s3.send(new GetObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: FENCE_ATTESTATION_KEY,
+    VersionId: evidenceVersion, ExpectedBucketOwner: '193644343389' }));
+  assert.equal(result.VersionId, evidenceVersion, 'COMPOSITE_EVIDENCE_VERSION_MISMATCH');
+  const bytes = await result.Body.transformToByteArray();
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), evidenceSha256, 'COMPOSITE_EVIDENCE_HASH_MISMATCH');
+  attestCompositeEvidence(JSON.parse(Buffer.from(bytes).toString('utf8')), fenceChangedAt);
+}
+
 const firstFreeze = attestFrozen(await frozenState());
+await compositeEvidence(firstFreeze);
 const rowsByRelation = new Map();
 for (const relation of MIGRATION_RELATIONS) rowsByRelation.set(relation, await relationRows(relation));
 const identities = await allIdentities();
@@ -100,9 +115,9 @@ const departmentIds = new Set(rowsByRelation.get('departments').map(row => row.i
 const objects = await allObjects(departmentIds);
 const secondFreeze = attestFrozen(await frozenState());
 assert.equal(secondFreeze, firstFreeze, 'PRODUCTION_FENCE_CHANGED_DURING_CAPTURE');
+await compositeEvidence(secondFreeze);
 const artifact = buildArtifact({ runId, capturedAtUtc: new Date().toISOString(),
   fenceChangedAt: firstFreeze, rowsByRelation, identities, objects });
-const s3 = new S3Client({ region: 'us-east-1', maxAttempts: 1 });
 try {
   const put = await s3.send(new PutObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key,
     ExpectedBucketOwner: '193644343389', Body: artifact.payload,
@@ -113,10 +128,12 @@ try {
     VersionId: put.VersionId, ExpectedBucketOwner: '193644343389' }));
   const bytes = await readback.Body.transformToByteArray();
   assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.byteSha256, 'ARTIFACT_READBACK_HASH_MISMATCH');
-  console.log(JSON.stringify({ status: 'PRODUCTION_FINAL_SOURCE_ARTIFACT_CREATED', bucket: ARTIFACT_BUCKET,
+  console.log(JSON.stringify({ status: 'PRODUCTION_FROZEN_SOURCE_CAPTURE_CREATED', slot, bucket: ARTIFACT_BUCKET,
     key, versionId: put.VersionId, byteSha256: artifact.byteSha256, masterSha256: artifact.masterSha256,
     relationContracts: artifact.body.tables.length, totalRelationalRows: artifact.body.totalRelationalRows,
     identities: artifact.body.identities.count, memberships: artifact.body.memberships.count,
     objects: artifact.body.objects.count, objectBytes: artifact.body.objects.totalBytes,
-    sourceProjectRef: 'izlkwggluhlhzlumtzes', fenceStable: true, rowPayloadsLogged: false }));
+    sourceProjectRef: 'izlkwggluhlhzlumtzes', fenceStable: true,
+    compositeEvidenceKey: FENCE_ATTESTATION_KEY, compositeEvidenceVersion: evidenceVersion,
+    compositeEvidenceSha256: evidenceSha256, rowPayloadsLogged: false }));
 } finally { s3.destroy(); }

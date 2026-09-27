@@ -1,0 +1,25 @@
+{
+  "projectRef": "izlkwggluhlhzlumtzes",
+  "accountId": "193644343389",
+  "region": "us-east-1",
+  "relationFingerprint": "36558b0730e3e96cad6426f38088a5b0",
+  "maintenance": { "activationReviewed": true, "reversalReviewed": true },
+  "publicTables": { "count": 87, "ownerControlVerified": true, "triggerInstallAndAbortReviewed": false },
+  "capture": {
+    "slots": { "A": "1d761bd7-04dd-43f3-b77a-2c41130e18c2", "B": "c7448ea9-4645-4e99-b988-3a05de12ac70" },
+    "immutableVersioned": false,
+    "canonicalComparatorTested": true,
+    "minimumQuietSeconds": 60
+  },
+  "s3WriterCredentials": { "state": "NO_SEPARATE_S3_WRITER_CREDENTIALS", "productionProjectVerified": true },
+  "unfence": { "exactInverseReviewed": false, "restoreVerificationDefined": false },
+  "unknownAutonomousWriters": true,
+  "writers": {
+    "applicationApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "serviceRole": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "authApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "storageApi": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "background": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false },
+    "scheduledImportAdmin": { "inventoryComplete": false, "reversibleControlAvailable": false, "inverseReviewed": false, "realInterfaceNegativeRehearsed": false }
+  }
+}

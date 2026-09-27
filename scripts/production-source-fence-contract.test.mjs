@@ -5,18 +5,22 @@ import { readFileSync } from 'node:fs';
 const activation = readFileSync(new URL('../supabase/production-cutover/20260927_activate_source_fence.sql', import.meta.url), 'utf8');
 const abort = readFileSync(new URL('../supabase/production-cutover/20260927_abort_source_fence.sql', import.meta.url), 'utf8');
 
-test('production fence and abort pin the attested live catalog and reject partial trigger state', () => {
+test('production public-table fence and abort pin the full catalog but never alter managed Auth/Storage tables', () => {
   for (const sql of [activation, abort]) {
     assert.match(sql, /36558b0730e3e96cad6426f38088a5b0/);
     assert.match(sql, /public','auth','storage/);
-    assert.match(sql, /244/);
+    assert.match(sql, /174/);
     assert.match(sql, /PRODUCTION_SOURCE_.*DRIFT|PRODUCTION_SOURCE_FENCE_INSTALL_INCOMPLETE/);
     assert.doesNotMatch(sql, /reukdouvpshshvqnzsgw|wztqqqashilusoppddxi/);
   }
   assert.match(activation, /izlkwggluhlhzlumtzes/);
+  assert.match(activation, /PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED/);
+  assert.match(activation, /WHERE n\.nspname='public' AND c\.relkind IN/);
+  assert.match(abort, /WHERE n\.nspname='public' AND c\.relkind IN/);
+  assert.doesNotMatch(activation, /FOR r IN[\s\S]*?WHERE n\.nspname IN \('public','auth','storage'\) AND c\.relkind/);
 });
 
-test('activation protects DML and truncate before commit, and pauses only pinned dispatcher', () => {
+test('activation protects public DML and truncate before commit, and pauses only pinned dispatcher', () => {
   assert.match(activation, /BEFORE INSERT OR UPDATE OR DELETE/);
   assert.match(activation, /BEFORE TRUNCATE/);
   assert.match(activation, /ENABLE ALWAYS TRIGGER tracepoint_write_fence_dml/);

@@ -1,13 +1,14 @@
 # Operational source quiescence: cutover correction (2026-09-27)
 
-Status: **NOT YET REHEARSED OR AUTHORIZED FOR LIVE ACTIVATION**. The earlier
+Status: **PAID-REHEARSAL PROVEN; LIVE PRODUCTION PREFLIGHT BLOCKED**. The earlier
 owner-lockout requirement is superseded. A trusted SQL/capture operator can
 retain administrative ability, but must perform no source DDL/DML during the
 frozen interval. An observed operator write is a hard stop. Every actual
 customer, application, service, Auth, Storage, scheduled, and automated writer
 must be technically blocked; two immutable captures must show zero unexplained
-authoritative delta. The old 244-trigger production activation and abort SQL
-remain blocked and must not be run.
+authoritative delta. The production SQL now targets only the 87 public tables,
+but its activation retains an explicit fail-closed preflight exception until
+all production-specific autonomous-writer controls are proved.
 
 ## Read-only project inventory
 
@@ -75,12 +76,14 @@ Storage RLS alone are insufficient for those credentials.
    remains. The live-production abort must additionally prove zero AWS-only
    writes and a single source authority before opening the bridge.
 
-The production final-capture runner currently expects the old 122-relation /
-244-trigger status RPC. It must not be run under a replacement composite fence
-until its status attestation and the versioned production activation/abort
-procedure have been updated and tested. The existing production capture run
-is single-run pinned; a reviewed second-run binding and AWS-local comparator
-invocation are required before live double capture.
+The production final-capture runner now expects the 122-relation catalog,
+174 public-table triggers, paused dispatcher, and a pinned composite
+attestation with every writer-family negative. It has fixed A/B run IDs;
+the AWS-local comparator selects B only after an unchanged >=60-second
+window. These source changes are not yet deployed to the CodeBuild executor.
+The production preflight remains BLOCKED because direct production Auth/Storage
+and other external writer controls/inverses are not yet verified. Do not run
+either capture or reopen maintenance while it is blocked.
 
 No live source key, schema, data, maintenance, DNS, or authority was changed
 for this inventory. The live Supabase bridge remains the sole production data

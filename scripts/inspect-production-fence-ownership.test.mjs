@@ -15,10 +15,10 @@ test('owner inventory is pinned, TLS-verified, and read-only', () => {
   assert.doesNotMatch(probe, /INSERT INTO|UPDATE auth\.|DELETE FROM|ALTER TABLE/);
 });
 
-test('readiness fails closed on every owner-controlled relation', () => {
-  assert.match(probe, /rows\.filter\(r => !r\.postgres_member_of_owner\)/);
-  assert.match(probe, /OWNER_TRIGGER_PREFLIGHT_BLOCKED/);
+test('readiness requires public ownership, not managed Auth/Storage ownership', () => {
+  assert.match(probe, /r\.schema_name === 'public' && !r\.postgres_member_of_owner/);
+  assert.match(probe, /PUBLIC_TRIGGER_PREFLIGHT_BLOCKED/);
   assert.match(probe, /process\.exitCode = 2/);
-  assert.match(activation, /BLOCKED: the 2026-09-27 owner inventory/);
-  assert.match(activation, /RAISE EXCEPTION 'OWNER_CONTROLLED_FENCE_NOT_PROVEN'/);
+  assert.match(activation, /PUBLIC-TABLE LAYER ONLY/);
+  assert.doesNotMatch(activation, /OWNER_CONTROLLED_FENCE_NOT_PROVEN/);
 });

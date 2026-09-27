@@ -19,9 +19,9 @@ BEGIN
      OR (SELECT count(*) FROM tracepoint_cutover.write_fence_state WHERE id=1 AND frozen) <> 1
      OR (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
         JOIN pg_namespace n ON n.oid=c.relnamespace WHERE NOT t.tgisinternal
-        AND n.nspname IN ('public','auth','storage')
+        AND n.nspname='public'
         AND t.tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')
-        AND t.tgenabled='A') <> 244 THEN
+        AND t.tgenabled='A') <> 174 THEN
     RAISE EXCEPTION 'PRODUCTION_SOURCE_FENCE_STATE_DRIFT';
   END IF;
   IF (SELECT count(*) FROM cron.job j JOIN tracepoint_cutover.dispatcher_snapshot s
@@ -41,7 +41,7 @@ DECLARE r record;
 BEGIN
   FOR r IN SELECT n.nspname AS schema_name,c.relname AS table_name
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE n.nspname IN ('public','auth','storage') AND c.relkind IN ('r','p')
+    WHERE n.nspname='public' AND c.relkind IN ('r','p')
     ORDER BY n.nspname,c.relname
   LOOP
     EXECUTE format('DROP TRIGGER tracepoint_write_fence_dml ON %I.%I',r.schema_name,r.table_name);

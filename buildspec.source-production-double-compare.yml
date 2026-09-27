@@ -1,0 +1,27 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "193644343389"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$TRACEPOINT_SOURCE_PRODUCTION_PROJECT_REF" = "izlkwggluhlhzlumtzes"
+      - test -n "$TRACEPOINT_CAPTURE_A_VERSION_ID"
+      - test -n "$TRACEPOINT_CAPTURE_B_VERSION_ID"
+      - echo "$TRACEPOINT_CAPTURE_A_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+      - echo "$TRACEPOINT_CAPTURE_B_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - node scripts/compare-frozen-source-captures.mjs --project izlkwggluhlhzlumtzes --first-key migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/final-canonical.json --first-version "$TRACEPOINT_CAPTURE_A_VERSION_ID" --first-sha256 "$TRACEPOINT_CAPTURE_A_SHA256" --second-key migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/final-canonical.json --second-version "$TRACEPOINT_CAPTURE_B_VERSION_ID" --second-sha256 "$TRACEPOINT_CAPTURE_B_SHA256" --minimum-quiet-seconds 60

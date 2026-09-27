@@ -35,6 +35,12 @@ function argumentsFrom(argv) {
   const first = capture('first');
   const second = capture('second');
   assert.notEqual(first.key, second.key, 'CAPTURE_KEYS_NOT_DISTINCT');
+  if (project === 'izlkwggluhlhzlumtzes') {
+    assert.equal(first.key, 'migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/final-canonical.json',
+      'PRODUCTION_CAPTURE_A_KEY_MISMATCH');
+    assert.equal(second.key, 'migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/final-canonical.json',
+      'PRODUCTION_CAPTURE_B_KEY_MISMATCH');
+  }
   const minimumQuietSeconds = Number(values.get('--minimum-quiet-seconds') ?? '60');
   assert.ok(Number.isSafeInteger(minimumQuietSeconds) && minimumQuietSeconds >= 60 && minimumQuietSeconds <= 3600,
     'INVALID_QUIET_WINDOW');
@@ -55,9 +61,12 @@ async function main() {
     const earlier = await readPinned(s3, first, project);
     const later = await readPinned(s3, second, project);
     const result = compareFrozenCaptures(earlier, later, project, minimumQuietMs);
-    console.log(JSON.stringify({ ...result, firstVersionId: first.versionId, secondVersionId: second.versionId,
-      rowPayloadsLogged: false }));
     assert.equal(result.status, 'FROZEN_SOURCE_QUIESCENT', 'AUTHORITATIVE_DELTA_DETECTED');
+    console.log(JSON.stringify({ ...result, firstKey: first.key, firstVersionId: first.versionId,
+      firstByteSha256: first.byteSha256, secondKey: second.key, secondVersionId: second.versionId,
+      secondByteSha256: second.byteSha256,
+      selectedFinalArtifact: project === 'izlkwggluhlhzlumtzes' ? second : null,
+      rowPayloadsLogged: false }));
   } finally {
     s3.destroy();
   }

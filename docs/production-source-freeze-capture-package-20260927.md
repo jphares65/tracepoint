@@ -1,83 +1,120 @@
-# BLOCKED — DO NOT RESUME CUTOVER
+# Production composite source-fence and double-capture package
 
-The proposed database-default read-only replacement was tested in the paid
-source rehearsal and **did not satisfy complete writer coverage**: a new
-`postgres` SQL Editor transaction explicitly started `READ WRITE` while the
-database default was `on`. The original default and unchanged rehearsal
-triggers were verified after reversal. See
-`docs/source-fence-database-default-rehearsal-20260927.md`. Neither the old
-trigger activation nor the database-default replacement is approved for live
-production.
+Status: **BLOCKED BEFORE MAINTENANCE**. This revision replaces the impossible
+244-trigger Auth/Storage owner-control requirement. The paid Supabase rehearsal
+proved composite quiescence, two immutable captures, zero canonical delta, and
+restoration. It did **not** prove that the same reversible controls are
+available for every live production writer. Never substitute this document or
+an operator-signed attestation for a real-interface negative test.
 
-The 2026-09-27 activation attempt failed transactionally at
-`auth.audit_log_entries` with PostgreSQL 42501. The pinned production catalog
-still has 122 relations and zero TracePoint fence triggers. The `postgres` SQL
-Editor role owns all 87 public relations but none of the 27 Auth or 8 Storage
-relations; it cannot `ENABLE ALWAYS` on those 35 tables. Four of them also lack
-`TRIGGER` privilege. The reviewed activation SQL below is retained as evidence,
-not an executable cutover step. Run the read-only
-`scripts/inspect-production-fence-ownership.mjs --readiness` preflight before
-any future maintenance attempt; its nonzero result is a hard stop. See
-`docs/source-fence-owner-control-20260927.md` for the complete unresolved set.
+## Exact source and read-only preflight
 
-# Production source fence and frozen-capture package (not activated)
+- Supabase project: `izlkwggluhlhzlumtzes`; REST origin:
+  `https://izlkwggluhlhzlumtzes.supabase.co`.
+- Pinned read-only PostgreSQL endpoint: `aws-1-us-east-1.pooler.supabase.com:5432/postgres`;
+  read-only reader secret: `tracepoint/production/migration/source-postgres` in
+  AWS account `193644343389`, `us-east-1`. TLS CA and hostname validation stay on.
+- Catalog: 122 relations (87 `public`, 27 `auth`, eight `storage`), fingerprint
+  `36558b0730e3e96cad6426f38088a5b0`. Only `public` requires trigger
+  ownership. The SQL Editor `postgres` role owns all 87 public relations and
+  does not own the 35 managed Auth/Storage relations.
+- Production Storage S3 protocol is enabled; the signed-in production project
+  showed **no separate S3 access keys** at the 2026-09-27 read-only inspection.
+  Recheck immediately before maintenance. If a key appears, inventory its
+  holder and prove reversible disable/restore in paid rehearsal before use.
+- `scripts/inspect-production-fence-ownership.mjs --readiness` checks the exact
+  catalog/TLS/public ownership. `scripts/validate-production-composite-preflight.mjs`
+  checks writer coverage, reversible controls, capture A/B, maintenance,
+  S3-key state and unfence. Both must pass on fresh, reviewed evidence.
 
-Scope is only Supabase project `izlkwggluhlhzlumtzes`, AWS account `193644343389`, Region `us-east-1`. This package does **not** authorize source freeze by itself. Use it only after the reviewed public maintenance response is externally 503 and the runbook's pre-freeze authority record passes. Do not run the SQL in the paid rehearsal or staging SQL Editor.
+Current preflight evidence is intentionally incomplete. In particular the
+production Auth API, Storage API, modern-key/service-role holders, and direct
+external API callers have no verified production-specific reversible block and
+real-interface negative in the inventory. The public ALB 503 is not an Auth or
+Storage API fence. The activation SQL therefore retains an explicit
+`PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED` exception. Do not reopen maintenance
+or remove that exception until these gaps close in a subsequent reviewed commit.
 
-## Pinned identities and current read-only evidence
+## Cutover execution sequence (only after preflight PASS)
 
-| Item | Exact value |
-| --- | --- |
-| Production source project | `izlkwggluhlhzlumtzes` |
-| Read-only source PG endpoint | `aws-1-us-east-1.pooler.supabase.com:5432/postgres` |
-| Read-only PG secret | `arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-postgres-KOMJRk` |
-| Production REST service secret | `arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi` |
-| Source REST origin | `https://izlkwggluhlhzlumtzes.supabase.co` |
-| Final artifact | `s3://tracepoint-production-private-193644343389/migration/source/0762cf3d-5f8e-4e89-afa0-051a39e4dce7/final-canonical.json` |
-| Artifact KMS key | `arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55` |
-| Production relation contract | 122 base relations (87 public, 27 auth, 8 storage); SQL MD5 `36558b0730e3e96cad6426f38088a5b0` |
-| Protected write operations | INSERT, UPDATE, DELETE, TRUNCATE; 244 ALWAYS triggers expected |
-| Dispatcher | exactly one active `tracepoint-notification-email-dispatch`, expected `*/15 * * * *`, legacy endpoint `tracepoint-amber.vercel.app`; its command hash/job ID are recorded transactionally without outputting the command |
+1. Activate the reviewed host-scoped public maintenance 503 and verify it
+   externally; retain the exact listener reversal. Verify no application task
+   or independent worker can continue source writes.
+2. Apply each reviewed reversible operational control to the exact source:
+   application/API, service-role/server/background, Auth, Storage, scheduled
+   import/admin automation, and any separate S3 writer. Drain in-flight work.
+   Do not delete/rotate modern Supabase keys as a fence. The trusted operator
+   may retain theoretical write capability but must make no manual source write
+   while frozen.
+3. In the production-project SQL Editor only, run
+   `supabase/production-cutover/20260927_activate_source_fence.sql`. It guards
+   the full catalog, installs 174 `ENABLE ALWAYS` triggers on the 87 public
+   tables, and pauses the one pinned notification pg_cron dispatcher. It does
+   not alter Supabase-managed Auth/Storage tables. Verify the fixed status RPC.
+4. Run direct writer negatives through each real interface and check unchanged
+   authoritative before/after state, no delayed write, and no unexpected
+   operator activity. Only after all pass, create the reviewed composite
+   attestation at exact private S3 key
+   `migration/source/composite-fence-20260927/attestation.json`. Record its
+   S3 VersionId and whole-file SHA-256. Include each writer family's sanitized
+   direct-negative evidence SHA-256 and exact inverse-procedure SHA-256, not
+   just a PASS assertion. The capture runner fails closed without those values
+   or if its timestamp/controls/project mismatch.
+5. Deploy the reviewed update to the isolated CodeBuild capture-executor stack
+   by change set. Its role must read only the exact production REST secret,
+   content-addressed build source, one attestation key, and two fixed output
+   keys. Do not update the deployed stack or start capture while preflight is
+   BLOCKED. Recheck IAM boundary and effective permissions before use.
+6. Start capture slot A with run ID
+   `1d761bd7-04dd-43f3-b77a-2c41130e18c2`, attestation VersionId and SHA-256.
+   Record the CodeBuild ID, immutable S3 VersionId, byte SHA-256 and canonical
+   master hash. Wait at least 60 seconds, verify every control still active,
+   then start separate slot B with run ID
+   `c7448ea9-4645-4e99-b988-3a05de12ac70` and the **same** attestation
+   version/hash. Both runs are create-only and source-read-only.
+7. Run `scripts/compare-frozen-source-captures.mjs` in AWS with exact A/B
+   keys, VersionIds, byte SHA-256 values and `--minimum-quiet-seconds 60`.
+   Require `FROZEN_SOURCE_QUIESCENT`, zero relation/identity/membership/object
+   delta, unchanged fence timestamp and source project. Designate B as the
+   final artifact **only** after this result. Then continue the separately
+   guarded final target apply/reconciliation gate.
 
-Read-only 2026-09-27 probe used `BEGIN READ ONLY`, client TLS with the bundled Supabase Root 2021 CA fingerprint `80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA`, verified the endpoint/secret username suffix and account, saw zero existing fence triggers and no cutover schema, and read no customer rows. `pg_stat_ssl` on the pooled backend reports false because the client TLS terminates at Supavisor; the Node TLS socket itself verified the CA and hostname. Production REST secret independently returned HTTP 200 on a zero-row read.
+The exact CodeBuild invocation is `aws codebuild start-build --project-name
+tracepoint-production-final-source-capture-20260927 --environment-variables-override
+name=TRACEPOINT_SOURCE_PRODUCTION_CAPTURE_SLOT,value=A,type=PLAINTEXT
+name=TRACEPOINT_SOURCE_PRODUCTION_RUN_ID,value=1d761bd7-04dd-43f3-b77a-2c41130e18c2,type=PLAINTEXT
+name=TRACEPOINT_COMPOSITE_FENCE_VERSION_ID,value=<attested-version>,type=PLAINTEXT
+name=TRACEPOINT_COMPOSITE_FENCE_SHA256,value=<attested-sha256>,type=PLAINTEXT
+--profile tracepoint-production --region us-east-1` for A. After A succeeds
+and the quiet interval, use the same command for B, changing only slot to `B`
+and run ID to `c7448ea9-4645-4e99-b988-3a05de12ac70`; preserve the same
+attestation VersionId/hash. Supply the exact values from the reviewed
+attestation, never a mutable latest-version reference. Stop if the change-set
+review, two-key IAM scope, or source ZIP hash differs from this package.
+The AWS-local comparison uses the **same exact CodeBuild project and source
+ZIP**, with `--buildspec-override buildspec.source-production-double-compare.yml`
+and four plaintext metadata overrides:
+`TRACEPOINT_CAPTURE_A_VERSION_ID`, `TRACEPOINT_CAPTURE_A_SHA256`,
+`TRACEPOINT_CAPTURE_B_VERSION_ID`, `TRACEPOINT_CAPTURE_B_SHA256`. These are
+artifact identifiers/hashes, never customer data or credentials. The runner
+uses `IfNoneMatch: '*'` for create-only writes; the comparator performs only
+version-pinned reads. The exact-key role still has `PutObject`, so immutable
+VersionIds and whole-file hashes remain mandatory. The comparison buildspec
+has no source secret.
 
-## Preparation before maintenance (no source mutation)
+No customer row payload, object contents, server key or authorization token is
+logged or downloaded to a workstation. Capture failures never relax the fence.
 
-1. Require a clean reviewed commit. Build a tracked-file-only ZIP from that commit, calculate its SHA-256, upload create-only to the private build-source bucket under `source/tracepoint-production-final-capture-<sha256>.zip` with the existing build-source KMS key `6880c1ac-f131-4077-9075-8d063ec43cba`, and record its S3 VersionId. Reject any existing key with different bytes. Do not package `.env`, dirty/untracked files, or local credentials.
-2. Validate `infra/changesets/production-source-capture-20260927/template.yml` with `aws cloudformation validate-template` and a create change set. Review the change set: only the dedicated CodeBuild job, its exact-purpose role, encrypted log group/key are permitted. Execute it **during preparation**, not after opening maintenance. `SourceZipKey` is the content-addressed key from step 1. The existing shared permissions boundary is attached unchanged. The new role can read only the production REST secret, the exact source ZIP and KMS key, and write/read only the one final-artifact key. The paid-rehearsal capture role/project remain unchanged. Verify effective IAM and an unexecuted project configuration; never start the capture job before the source fence.
-3. Record the reviewed commit, ZIP SHA-256/VersionId, stack ID, CodeBuild project name, role/boundary, artifact bucket encryption/versioning/public-access-block, and production REST secret VersionId. The CodeBuild secret is referenced by JSON field; its value is never copied into a plaintext environment override or log.
-4. Rerun the read-only catalog probe. From PowerShell in the reviewed checkout, pipe the exact AWS secret directly to Node stdin (not a disk file):
+## Exact pre-authority abort
 
-   ```powershell
-   $env:TRACEPOINT_SECRET_STDIN='1'
-   aws secretsmanager get-secret-value --secret-id arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-postgres-KOMJRk --profile tracepoint-production --region us-east-1 --query SecretString --output text | node scripts/inspect-production-source-catalog.mjs
-   ```
-
-   Require exact project/account/endpoint/role, authorized TLS, read-only transaction, 122 relations and the pinned digest, zero existing fence triggers/schema. Any drift stops before freeze. Do not redirect the secret or this pipeline to a file.
-
-## Maintenance-window activation (do not execute during preparation)
-
-1. Verify the external public maintenance response and single-writer gate. Reverify the operator is in the **production** Supabase SQL Editor at a dashboard URL beginning `https://supabase.com/dashboard/project/izlkwggluhlhzlumtzes/`; staging `wztqqqashilusoppddxi` and paid rehearsal `reukdouvpshshvqnzsgw` are forbidden. Require the read-only catalog fingerprint above. The migration-reader credential cannot install triggers; use only the existing authenticated production SQL Editor owner path. The SQL's database/owner/catalog, job-name/schedule/command-shape, in-flight, preexisting-fence, and trigger-count assertions fail closed. Its first DDL and the cron pause are in one transaction, so a failed statement rolls back the entire activation.
-2. Run **exactly** `supabase/production-cutover/20260927_activate_source_fence.sql` in that exact production SQL Editor. This transaction records the dispatcher's job ID/schedule/command hash, pauses only that job, installs 122 DML plus 122 TRUNCATE `ENABLE ALWAYS` statement triggers in `public/auth/storage`, and commits `frozen=true` only after all checks pass. Do not manually edit SQL or change the relation count to make it pass.
-3. Immediately verify the production-only read RPC returns `frozen=true`, `database=postgres`, `relation_count=122`, `trigger_count=244`, and a valid `changed_at`. Verify dispatcher inactive and zero running invocations. Then run the approved rollback-only/synthetic writer-family negatives; require no persisted writes. If any writer bypasses the fence, **abort before capture** using the reverse gate below while the bridge remains authoritative. The source remains readable for capture.
-
-## Exact frozen capture
-
-Only after the fence and writer negatives pass, run:
-
-```powershell
-aws codebuild start-build --project-name tracepoint-production-final-source-capture-20260927 --profile tracepoint-production --region us-east-1 --query 'build.{id:id,arn:arn}' --output json
-```
-
-The project has the exact production source URL, project ref, AWS account, run ID and immutable destination key. The buildspec obtains only the production REST secret's `projectUrl` and `serviceRoleKey` fields from Secrets Manager. The runner permits GET for the reviewed 90 relation paths/Auth/Storage objects and POST only for the fixed **read-only** fence-status and Storage-list endpoints. It requires the same fence timestamp before and after all reads, inventories identities/memberships/objects, canonicalizes the complete artifact, uploads create-only with SSE-KMS, requires an S3 VersionId, and reads back by VersionId to verify whole-file SHA-256. Capture logs contain counts/hashes, never rows, keys, passwords or tokens. Record the CodeBuild ID, artifact key/VersionId, master and whole-file hashes. A capture failure leaves the source fenced for an explicit abort decision; do not reuse or overwrite a completed artifact.
-
-## Deterministic pre-authority abort/reversal
-
-This operation is only valid **before** customer traffic or any AWS-only write. First verify the bridge remains authoritative, no AWS-only delta exists, the public maintenance response is still active, and the source fence status/job/trigger contract is exact. In the same exact production SQL Editor, execute **only** `supabase/production-cutover/20260927_abort_source_fence.sql`. It validates the frozen state, 244 trigger set, unchanged relation fingerprint and original dispatcher command hash; transactionally drops only its named triggers/functions/schema and restores that exact dispatcher to its prior active state. Any mismatch rolls back without partially unfreezing. Verify absence of fence objects, dispatcher active, ordinary source write continuity, and bridge health; then reverse only the reviewed public maintenance stack and verify normal external forwarding. Preserve the source/target artifact and logs. **Never use this abort after AWS-only writes**; use the runbook's data-authority rollback instead.
-
-## Boundaries and stop conditions
-
-- The activation SQL was attempted against production during the prior cutover window, failed at owner-controlled Auth DDL, and rolled back. Maintenance was activated and reversed. No source freeze committed, capture, SES repoint, DNS, or authority switch occurred.
-- Production owner SQL Editor access must be explicitly reverified immediately before activation; the AWS migration-reader credential is intentionally insufficient for DDL or cron management.
-- Catalog drift, unexpected scheduler state, failed trigger installation, writer bypass, changed fence timestamp, missing artifact VersionId, S3 hash mismatch, or project/secret mismatch is a stop/abort gate, not a reason to relax assertions.
-- The existing importer is pinned to the earlier initial artifact. Final target apply remains a **separate runbook gate** and must validate this new final artifact's exact VersionId/hash; this package does not run or alter target apply.
+While public maintenance is still active, first prove the bridge remains sole
+authority and no AWS-only write occurred. Verify the exact catalog, active
+public fence, 174 triggers, dispatcher snapshot/command hash, and all external
+controls. In the exact production SQL Editor execute
+`supabase/production-cutover/20260927_abort_source_fence.sql` to remove only
+the public-table trigger layer and restore its pinned dispatcher. Reverse
+each external control using its reviewed inverse; verify app, Auth, Storage,
+service-role, and scheduler write continuity. Only then reverse the reviewed
+maintenance stack and verify normal production forwarding. Any mismatch is a
+stop gate, not a reason to improvise. This pre-authority abort is prohibited
+after AWS-only writes; use the separate data-authority rollback runbook then.
