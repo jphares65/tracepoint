@@ -12,6 +12,16 @@
     "canonicalComparatorTested": true,
     "minimumQuietSeconds": 60
   },
+  "finalImport": {
+    "targetResourceId": "db-X4DYNS3TMVSAP7Z3RISDWEYDVE",
+    "sourceArtifactSlot": "B",
+    "variableFrozenCountsSupported": false,
+    "exactArtifactVersionAndHashRequired": true,
+    "atomicRelationalApplyRehearsed": false,
+    "inTransactionFullReconciliationRehearsed": false,
+    "objectManifestAndReferenceReconciliationRehearsed": false,
+    "rollbackOnMismatchRehearsed": false
+  },
   "credentialEpoch": {
     "projectRef": "izlkwggluhlhzlumtzes",
     "captureSecretName": "tracepoint/production/migration/source-production-epoch-capture-20260928",

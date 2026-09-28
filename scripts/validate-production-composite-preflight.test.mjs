@@ -48,6 +48,7 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.ok(result.blockers.includes('ACTIVE_CREDENTIAL_INVENTORY_INCOMPLETE'));
   assert.ok(result.blockers.includes('UNKNOWN_ACTIVE_AUTONOMOUS_WRITERS'));
   assert.ok(result.blockers.includes('CREDENTIAL_EPOCH_NOT_READY'));
+  assert.ok(result.blockers.includes('FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY'));
   assert.ok(result.blockers.includes('ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN'));
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
   assert.ok(!result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
@@ -60,6 +61,12 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   const ready = structuredClone(inventory);
   ready.publicTables.triggerInstallAndAbortReviewed = true;
   ready.capture.immutableVersioned = true;
+  ready.finalImport = { targetResourceId: 'db-X4DYNS3TMVSAP7Z3RISDWEYDVE',
+    sourceArtifactSlot: 'B', variableFrozenCountsSupported: true,
+    exactArtifactVersionAndHashRequired: true, atomicRelationalApplyRehearsed: true,
+    inTransactionFullReconciliationRehearsed: true,
+    objectManifestAndReferenceReconciliationRehearsed: true,
+    rollbackOnMismatchRehearsed: true };
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.activeCredentialInventoryComplete = true;
@@ -102,6 +109,7 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     copy => { delete copy.writerPaths.externalCredentialHolders; },
     copy => { copy.writerPaths.storageElevated.rehearsalNegativePassed = false; },
     copy => { copy.capture.slots.B = copy.capture.slots.A; },
+    copy => { copy.finalImport.atomicRelationalApplyRehearsed = false; },
     copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
     copy => { copy.credentialEpoch.captureReaderOldAndRollbackDenied = false; },
     copy => { copy.rollbackDistribution.newProductionDeploymentRequired = false; },
@@ -120,6 +128,12 @@ test('an ephemeral-only writer requires positive field and comparator proof, not
   const ready = structuredClone(inventory);
   ready.publicTables.triggerInstallAndAbortReviewed = true;
   ready.capture.immutableVersioned = true;
+  ready.finalImport = { targetResourceId: 'db-X4DYNS3TMVSAP7Z3RISDWEYDVE',
+    sourceArtifactSlot: 'B', variableFrozenCountsSupported: true,
+    exactArtifactVersionAndHashRequired: true, atomicRelationalApplyRehearsed: true,
+    inTransactionFullReconciliationRehearsed: true,
+    objectManifestAndReferenceReconciliationRehearsed: true,
+    rollbackOnMismatchRehearsed: true };
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.activeCredentialInventoryComplete = true;

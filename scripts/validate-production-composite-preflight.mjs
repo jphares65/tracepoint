@@ -43,6 +43,15 @@ export function evaluateProductionCompositeReadiness(evidence) {
     evidence.capture?.slots?.B === 'c7448ea9-4645-4e99-b988-3a05de12ac70' &&
     evidence.capture?.immutableVersioned === true && evidence.capture?.canonicalComparatorTested === true &&
     evidence.capture?.minimumQuietSeconds >= 60, 'DOUBLE_CAPTURE_NOT_READY');
+  const finalImport = evidence.finalImport ?? {};
+  requireProof(finalImport.targetResourceId === 'db-X4DYNS3TMVSAP7Z3RISDWEYDVE' &&
+    finalImport.sourceArtifactSlot === 'B' && finalImport.variableFrozenCountsSupported === true &&
+    finalImport.exactArtifactVersionAndHashRequired === true &&
+    finalImport.atomicRelationalApplyRehearsed === true &&
+    finalImport.inTransactionFullReconciliationRehearsed === true &&
+    finalImport.objectManifestAndReferenceReconciliationRehearsed === true &&
+    finalImport.rollbackOnMismatchRehearsed === true,
+  'FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY');
   const epoch = evidence.credentialEpoch ?? {};
   requireProof(epoch.projectRef === SOURCE_PROJECT &&
     epoch.captureSecretName === CAPTURE_EPOCH_SECRET &&
