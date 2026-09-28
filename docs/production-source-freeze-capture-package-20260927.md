@@ -69,7 +69,8 @@ at freeze time. No route has been declared controlled by this inventory alone.
    just a PASS assertion. The capture runner fails closed without those values
    or if its timestamp/controls/project mismatch.
 5. Deploy the reviewed update to the isolated CodeBuild capture-executor stack
-   by change set. Its role must read only the exact production REST secret,
+   by change set. Its role must read only the exact production capture-epoch
+   secret (not the old migration REST or rollback/resume secret),
    content-addressed build source, one attestation key, and two fixed output
    keys. Do not update the deployed stack or start capture while preflight is
    BLOCKED. Recheck IAM boundary and effective permissions before use.
@@ -79,7 +80,11 @@ at freeze time. No route has been declared controlled by this inventory alone.
    The local package is **not** a deployed executor: upload it to the exact
    reviewed build-source bucket with versioning, record its VersionId and
    SHA-256, and update only the capture stack's `SourceZipKey` through a
-   reviewed change set after the composite preflight is complete.
+   reviewed change set after the composite preflight is complete. The pinned
+   composite attestation must use format
+   `tracepoint-production-composite-fence/v3` and include direct proof that
+   the old modern key is rejected, the legacy service key is disabled, the
+   capture key reads, and the rollback key remains unassigned to writers.
 6. Start capture slot A with run ID
    `1d761bd7-04dd-43f3-b77a-2c41130e18c2`, attestation VersionId and SHA-256.
    Record the CodeBuild ID, immutable S3 VersionId, byte SHA-256 and canonical
@@ -125,7 +130,13 @@ logged or downloaded to a workstation. Capture failures never relax the fence.
 While public maintenance is still active, first prove the bridge remains sole
 authority and no AWS-only write occurred. Verify the exact catalog, active
 public fence, 174 triggers, dispatcher snapshot/command hash, and all external
-controls. In the exact production SQL Editor execute
+controls. If the old modern source key has been retired, use the pre-created
+rollback/resume key: replace only the elevated key field in the exact ECS
+application and migration REST secrets, update the Production Vercel secret
+variable, and create a **new** pinned Production deployment. An older Vercel
+deployment retains its old environment and is not a valid rollback target.
+Verify the new deployment and ECS task read/write through the rollback key
+while maintenance remains on. In the exact production SQL Editor execute
 `supabase/production-cutover/20260927_abort_source_fence.sql` to remove only
 the public-table trigger layer and restore its pinned dispatcher. Reverse
 each external control using its reviewed inverse; verify app, Auth, Storage,

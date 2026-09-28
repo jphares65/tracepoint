@@ -70,6 +70,10 @@ its role can read `source-supabase-rest`; its role policy has one artifact key.
 The local, **undeployed** candidate now injects only the reserved modern
 capture secret, rejects legacy JWTs, and parameterizes its exact secret ARN in
 the CloudFormation role policy. The candidate's A/B run IDs remain pinned.
+The nine-file local capture package was built from clean HEAD `0e800c5` and
+verified at SHA-256 `ce6cf3442f13d12007d2aeb43b1c2409916ae741d1a4c904147da8a372b82351`.
+It has **not** been uploaded to S3 or deployed to CodeBuild; the deployed job
+still references the older `d09407a9...` archive.
 The S3 artifact bucket has versioning, KMS default encryption, and all four
 public-access blocks enabled. Deployment must await actual key creation,
 exact-ARN IAM review/change set, immutable package digest, and capture-role
