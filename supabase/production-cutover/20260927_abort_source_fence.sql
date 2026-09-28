@@ -22,6 +22,9 @@ BEGIN
         AND n.nspname='public'
         AND t.tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')
         AND t.tgenabled='A') <> 174
+     OR (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE n.nspname='tracepoint_cutover' AND c.relkind='r'
+         AND c.relrowsecurity) <> 3
      OR (SELECT count(*) FROM tracepoint_cutover.storage_permission_function_backup
        WHERE id=1 AND original_md5='5537f428cb4f1fac15320843cb213faa') <> 1
      OR position('tracepoint_cutover.write_fence_state' IN pg_get_functiondef(

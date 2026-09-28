@@ -57,3 +57,13 @@ test('authenticated Storage guard is reversible without mutating managed Storage
   assert.ok(abort.indexOf('EXECUTE (SELECT original_definition') <
     abort.indexOf('DROP TABLE tracepoint_cutover.storage_permission_function_backup'));
 });
+
+test('all three private fence bookkeeping tables enable RLS in the reviewed transaction', () => {
+  for (const table of ['write_fence_state', 'dispatcher_snapshot',
+    'storage_permission_function_backup']) {
+    assert.match(activation, new RegExp(`ALTER TABLE tracepoint_cutover\\.${table} ENABLE ROW LEVEL SECURITY;`));
+  }
+  for (const sql of [activation, abort]) {
+    assert.match(sql, /n\.nspname='tracepoint_cutover' AND c\.relkind='r'[\s\S]*?c\.relrowsecurity\) <> 3/);
+  }
+});

@@ -61,6 +61,7 @@ CREATE TABLE tracepoint_cutover.write_fence_state (
   frozen boolean NOT NULL,
   changed_at timestamptz NOT NULL
 );
+ALTER TABLE tracepoint_cutover.write_fence_state ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON tracepoint_cutover.write_fence_state FROM PUBLIC, anon, authenticated, service_role;
 CREATE TABLE tracepoint_cutover.dispatcher_snapshot (
   id integer PRIMARY KEY CHECK (id = 1),
@@ -70,6 +71,7 @@ CREATE TABLE tracepoint_cutover.dispatcher_snapshot (
   prior_active boolean NOT NULL CHECK (prior_active),
   captured_at timestamptz NOT NULL
 );
+ALTER TABLE tracepoint_cutover.dispatcher_snapshot ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON tracepoint_cutover.dispatcher_snapshot FROM PUBLIC, anon, authenticated, service_role;
 INSERT INTO tracepoint_cutover.dispatcher_snapshot
   SELECT 1, jobid, schedule, md5(command), active, clock_timestamp()
@@ -172,6 +174,9 @@ BEGIN
       AND n.nspname='public'
       AND t.tgname IN ('tracepoint_write_fence_dml','tracepoint_write_fence_truncate')
       AND t.tgenabled='A') <> 174
+     OR (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE n.nspname='tracepoint_cutover' AND c.relkind='r'
+         AND c.relrowsecurity) <> 3
      OR (SELECT count(*) FROM cron.job WHERE jobname='tracepoint-notification-email-dispatch'
          AND NOT active) <> 1
      OR (SELECT frozen FROM tracepoint_cutover.write_fence_state WHERE id=1) IS DISTINCT FROM true
