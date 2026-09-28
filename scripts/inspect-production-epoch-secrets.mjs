@@ -2,8 +2,9 @@
 // Read-only, exact-project attestation. Never prints or writes credential values.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { PRODUCTION_EPOCH, SOURCE_CREDENTIALS, classifySourceSecret,
-  fingerprintSourceSecret } from './source-credential-epoch-core.mjs';
+  extractProductionEpochKey } from './source-credential-epoch-core.mjs';
 
 assert.deepEqual(process.argv.slice(2), ['--profile=tracepoint-production'], 'EXACT_PROFILE_REQUIRED');
 const region = 'us-east-1';
@@ -11,7 +12,8 @@ const projectRef = PRODUCTION_EPOCH.projectRef;
 const names = [SOURCE_CREDENTIALS[0].name,
   PRODUCTION_EPOCH.captureSecretName, PRODUCTION_EPOCH.rollbackSecretName];
 
-function extractKey(value) {
+function extractKey(value, name) {
+  if (name !== SOURCE_CREDENTIALS[0].name) return extractProductionEpochKey(value, name);
   assert.equal(classifySourceSecret(value, projectRef), 'modern_secret', 'MODERN_KEY_REQUIRED');
   return value.startsWith('sb_secret_') ? value :
     (JSON.parse(value).serviceRoleKey ?? JSON.parse(value).SUPABASE_SECRET_KEY);
@@ -28,6 +30,8 @@ function aws(args) {
   return JSON.parse(result.stdout);
 }
 
+let stage = 'aws-identity';
+const readStatuses = [];
 try {
   const identity = aws(['sts', 'get-caller-identity']);
   assert.equal(identity.Account, '193644343389', 'PRODUCTION_ACCOUNT_REQUIRED');
@@ -35,28 +39,46 @@ try {
   // against the existing source. This keeps a missing epoch distinct from a
   // temporary source-API failure, without reading or printing key values.
   for (const name of names.slice(1)) {
+    stage = name === PRODUCTION_EPOCH.captureSecretName ? 'capture-metadata' : 'rollback-metadata';
     const metadata = aws(['secretsmanager', 'describe-secret', '--secret-id', name]);
     assert.equal(metadata.Name, name, 'SECRET_NAME_MISMATCH');
   }
   const entries = [];
   for (const name of names) {
+    const purpose = name === names[0] ? 'old' :
+      name === PRODUCTION_EPOCH.captureSecretName ? 'capture' : 'rollback';
+    stage = `${purpose}-secret-read`;
     const response = aws(['secretsmanager', 'get-secret-value', '--secret-id', name]);
     assert.equal(response.Name, name, 'SECRET_NAME_MISMATCH');
     assert.match(response.ARN ?? '', new RegExp(`^arn:aws:secretsmanager:${region}:193644343389:secret:${name}-[A-Za-z0-9]{6}$`),
       'SECRET_ARN_MISMATCH');
     assert.equal(typeof response.SecretString, 'string', 'STRING_SECRET_REQUIRED');
-    const key = extractKey(response.SecretString);
+    stage = `${purpose}-key-format`;
+    const key = extractKey(response.SecretString, name);
+    stage = `${purpose}-project-read`;
     const check = await fetch(`https://${projectRef}.supabase.co/rest/v1/departments?select=id&limit=1`, {
       headers: { apikey: key, accept: 'application/json' }, redirect: 'error',
       signal: AbortSignal.timeout(15_000),
     });
     const status = check.status;
     await check.arrayBuffer();
-    assert.equal(status, 200, 'EXACT_PROJECT_KEY_READ_FAILED');
+    let paidRehearsalStatus = null;
+    if (status !== 200 && purpose !== 'old') {
+      const paidCheck = await fetch('https://reukdouvpshshvqnzsgw.supabase.co/rest/v1/departments?select=id&limit=1', {
+        headers: { apikey: key, accept: 'application/json' }, redirect: 'error',
+        signal: AbortSignal.timeout(15_000),
+      });
+      paidRehearsalStatus = paidCheck.status;
+      await paidCheck.arrayBuffer();
+    }
+    readStatuses.push({ purpose, productionStatus: status, paidRehearsalStatus });
     entries.push({ name, arn: response.ARN, versionId: response.VersionId,
-      fingerprint: fingerprintSourceSecret(response.SecretString, projectRef), status });
+      fingerprint: createHash('sha256').update(key).digest('hex'), status });
   }
+  stage = 'distinctness';
   assert.equal(new Set(entries.map(entry => entry.fingerprint)).size, 3, 'EPOCH_KEYS_NOT_DISTINCT');
+  stage = 'project-reads';
+  assert.ok(entries.every(entry => entry.status === 200), 'EXACT_PROJECT_KEY_READ_FAILED');
   console.log(JSON.stringify({ status: 'PRODUCTION_EPOCH_SECRETS_ATTESTED', projectRef,
     oldCredential: { name: entries[0].name, arn: entries[0].arn, readStatus: entries[0].status },
     capture: { name: entries[1].name, arn: entries[1].arn,
@@ -66,6 +88,7 @@ try {
     threeCredentialsDistinct: true, keyValuesLogged: false }));
 } catch (error) {
   console.error(JSON.stringify({ status: 'PRODUCTION_EPOCH_SECRETS_NOT_READY',
-    code: /^[A-Z_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED' }));
+    stage, code: /^[A-Z0-9_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED',
+    readStatuses }));
   process.exitCode = 2;
 }

@@ -70,10 +70,14 @@ its role can read `source-supabase-rest`; its role policy has one artifact key.
 The local, **undeployed** candidate now injects only the reserved modern
 capture secret, rejects legacy JWTs, and parameterizes its exact secret ARN in
 the CloudFormation role policy. The candidate's A/B run IDs remain pinned.
-The nine-file local capture package was built from clean HEAD `0e800c5` and
+The nine-file local capture package was rebuilt from clean HEAD `44a685b` and
 verified at SHA-256 `ce6cf3442f13d12007d2aeb43b1c2409916ae741d1a4c904147da8a372b82351`.
-It has **not** been uploaded to S3 or deployed to CodeBuild; the deployed job
-still references the older `d09407a9...` archive.
+On 2026-09-28 it was uploaded create-only to the exact private, versioned,
+KMS-encrypted build-source bucket at
+`source/tracepoint-production-final-capture-ce6cf3442f13d12007d2aeb43b1c2409916ae741d1a4c904147da8a372b82351.zip`,
+S3 VersionId `knH8GdKZiGMFXiN.4uwrfdcEcbyG3GiO`. It has **not** been
+deployed to CodeBuild or run; the deployed job still references the older
+`d09407a9...` archive.
 The S3 artifact bucket has versioning, KMS default encryption, and all four
 public-access blocks enabled. Deployment must await actual key creation,
 exact-ARN IAM review/change set, immutable package digest, and capture-role
@@ -83,6 +87,21 @@ Current IAM simulation confirms the deployed capture role can read the old
 epoch paths. This is the correct **pre-deployment** state, not the desired
 cutover state. The role trust is limited to the exact CodeBuild project and
 account, with the existing production permissions boundary.
+
+After refreshing the existing production SSO source profile on 2026-09-28,
+STS again returned account `193644343389` and role
+`TracePointMigrationProduction`. The two reserved production epoch secrets
+were subsequently created at their exact paths, but their values came from
+the **paid rehearsal** project: status-only bounded reads returned 401 for
+both against `izlkwggluhlhzlumtzes` and 200 for both against
+`reukdouvpshshvqnzsgw`. A read-only dashboard inspection independently found
+the two production-named key rows in the paid project and neither in the
+production project. This is a credential handoff mismatch, not a capture
+executor defect. No key value or customer row was printed; no key was created,
+changed, or retired by this validation. The reviewed local CloudFormation
+template passed `ValidateTemplate`, but its change set must not be executed
+until the AWS secret values are replaced by two keys issued by the exact
+production project and the capture role's effective IAM is reviewed.
 
 The rollback key must stay out of every running writer until abort. A
 deterministic Vercel redeployment with replacement secret, ECS secret update

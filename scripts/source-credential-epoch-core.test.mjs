@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PRODUCTION_EPOCH, classifySourceSecret, fingerprintSourceSecret } from './source-credential-epoch-core.mjs';
+import { PRODUCTION_EPOCH, classifySourceSecret, fingerprintSourceSecret,
+  extractProductionEpochKey } from './source-credential-epoch-core.mjs';
 
 const projectRef = 'reukdouvpshshvqnzsgw';
 const secret = value => JSON.stringify({ projectUrl: `https://${projectRef}.supabase.co`, serviceRoleKey: value });
@@ -36,4 +37,20 @@ test('production epoch identities are distinct, purpose named, and production pi
     assert.match(value, /production/);
     assert.doesNotMatch(value, /rehearsal|staging/);
   }
+});
+
+test('production epoch handoff accepts only plaintext or exact-path one-field JSON', () => {
+  const key = `sb_secret_${'k'.repeat(32)}`;
+  const capture = PRODUCTION_EPOCH.captureSecretName;
+  const rollback = PRODUCTION_EPOCH.rollbackSecretName;
+  assert.equal(extractProductionEpochKey(key, capture), key);
+  assert.equal(extractProductionEpochKey(JSON.stringify({ [capture]: key }), capture), key);
+  assert.equal(extractProductionEpochKey(JSON.stringify({ [rollback]: key }), rollback), key);
+  assert.throws(() => extractProductionEpochKey(JSON.stringify({ [rollback]: key }), capture),
+    /EPOCH_SECRET_WRAPPER_MISMATCH/);
+  assert.throws(() => extractProductionEpochKey(JSON.stringify({ [capture]: key, extra: key }), capture),
+    /EPOCH_SECRET_WRAPPER_MISMATCH/);
+  assert.throws(() => extractProductionEpochKey(key, 'tracepoint/production/other'),
+    /UNAPPROVED_EPOCH_SECRET_NAME/);
+  assert.throws(() => extractProductionEpochKey('not-a-key', capture), /MODERN_KEY_REQUIRED/);
 });

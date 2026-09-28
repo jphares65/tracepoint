@@ -42,6 +42,19 @@ export function assertDistinctEpochKeys(keys) {
   assert.equal(new Set(keys).size, 3, 'EPOCH_KEYS_NOT_DISTINCT');
 }
 
+export function extractProductionEpochKey(secretString, secretName) {
+  assert.ok(secretName === PRODUCTION_EPOCH.captureSecretName ||
+    secretName === PRODUCTION_EPOCH.rollbackSecretName, 'UNAPPROVED_EPOCH_SECRET_NAME');
+  let key = secretString;
+  if (secretString.startsWith('{')) {
+    const wrapped = JSON.parse(secretString);
+    assert.deepEqual(Object.keys(wrapped), [secretName], 'EPOCH_SECRET_WRAPPER_MISMATCH');
+    key = wrapped[secretName];
+  }
+  assert.match(key, /^sb_secret_[A-Za-z0-9_-]{20,}$/, 'MODERN_KEY_REQUIRED');
+  return key;
+}
+
 export function rejectedCredential(status) { return status === 401 || status === 403; }
 
 export function rejectedStorageCredential(oldStatus, oldError, liveStatus) {
