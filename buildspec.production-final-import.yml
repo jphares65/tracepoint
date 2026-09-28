@@ -13,6 +13,11 @@ phases:
       - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
       - test "$ECR_REPOSITORY_URI" = "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production"
       - test "$IMAGE_TAG" = "final-import-$SOURCE_COMMIT"
+      - test "$SOURCE_ARCHIVE_BUCKET" = "tracepoint-production-aws-native-build-source-193644343389"
+      - echo "$SOURCE_ARCHIVE_KEY" | grep -Eq '^source/tracepoint-final-import-[0-9a-f]{64}\.zip$'
+      - test -n "$SOURCE_ARCHIVE_VERSION_ID"
+      - test -n "$SOURCE_ARCHIVE_SHA256_BASE64"
+      - test "$(aws s3api head-object --bucket "$SOURCE_ARCHIVE_BUCKET" --key "$SOURCE_ARCHIVE_KEY" --version-id "$SOURCE_ARCHIVE_VERSION_ID" --expected-bucket-owner 193644343389 --checksum-mode ENABLED --query ChecksumSHA256 --output text)" = "$SOURCE_ARCHIVE_SHA256_BASE64"
       - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 193644343389.dkr.ecr.us-east-1.amazonaws.com
   build:
     on-failure: ABORT
