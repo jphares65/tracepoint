@@ -21,6 +21,17 @@ export async function runProductionFinalAtomicImport({ first, second, target, cl
   assert.equal(plan?.parity?.status, 'FROZEN_SOURCE_QUIESCENT', 'FINAL_IMPORT_QUIESCENCE_REQUIRED');
   assert.match(plan?.selectedArtifact?.versionId ?? '', /^[A-Za-z0-9._-]+$/, 'FINAL_IMPORT_VERSION_REQUIRED');
   assert.match(plan?.selectedArtifact?.byteSha256 ?? '', /^[0-9a-f]{64}$/, 'FINAL_IMPORT_BYTE_HASH_REQUIRED');
+  return runAttestedAtomicImport({ plan, artifact, expectedTargetResourceId: FINAL_RDS_RESOURCE_ID,
+    client, readBaseline, applyRelations, reconcileInTransaction, verifyCommitted, verifyRollback });
+}
+
+/** Shared transaction body. Callers must independently attest a source pair and an isolated target. */
+export async function runAttestedAtomicImport({ plan, artifact, expectedTargetResourceId, client,
+  readBaseline, applyRelations, reconcileInTransaction, verifyCommitted, verifyRollback }) {
+  assert.match(expectedTargetResourceId ?? '', /^db-[A-Z0-9]+$/, 'FINAL_IMPORT_TARGET_RESOURCE_REQUIRED');
+  assert.equal(plan?.target?.resourceId, expectedTargetResourceId, 'FINAL_IMPORT_PLAN_TARGET_MISMATCH');
+  assert.equal(plan?.parity?.status, 'FROZEN_SOURCE_QUIESCENT', 'FINAL_IMPORT_QUIESCENCE_REQUIRED');
+  assert.equal(artifact?.masterSha256, plan?.selectedArtifact?.masterSha256, 'FINAL_IMPORT_ARTIFACT_MISMATCH');
   for (const [name, value] of Object.entries({ readBaseline, applyRelations,
     reconcileInTransaction, verifyCommitted, verifyRollback })) {
     assert.equal(typeof value, 'function', `FINAL_IMPORT_${name.toUpperCase()}_REQUIRED`);
@@ -28,7 +39,7 @@ export async function runProductionFinalAtomicImport({ first, second, target, cl
   assert.equal(typeof client?.query, 'function', 'FINAL_IMPORT_CLIENT_REQUIRED');
 
   const baseline = await readBaseline(client);
-  assert.equal(baseline?.targetResourceId, FINAL_RDS_RESOURCE_ID, 'FINAL_IMPORT_BASELINE_TARGET_MISMATCH');
+  assert.equal(baseline?.targetResourceId, expectedTargetResourceId, 'FINAL_IMPORT_BASELINE_TARGET_MISMATCH');
   assert.equal(baseline?.customerRows, 0, 'FINAL_IMPORT_TARGET_NOT_CLEAN');
   assert.equal(baseline?.authUsers, 0, 'FINAL_IMPORT_TARGET_IDENTITIES_NOT_CLEAN');
   assert.equal(baseline?.migrationLineage, 99, 'FINAL_IMPORT_SCHEMA_LINEAGE_MISMATCH');
@@ -55,7 +66,7 @@ export async function runProductionFinalAtomicImport({ first, second, target, cl
     return Object.freeze({ status: 'FINAL_RELATIONAL_IMPORT_COMMITTED',
       artifactVersionId: plan.selectedArtifact.versionId,
       artifactByteSha256: plan.selectedArtifact.byteSha256,
-      targetResourceId: FINAL_RDS_RESOURCE_ID,
+      targetResourceId: expectedTargetResourceId,
       relationalRows: plan.relationalRows, identities: plan.identities,
       memberships: plan.memberships, reconciliation });
   } catch (error) {

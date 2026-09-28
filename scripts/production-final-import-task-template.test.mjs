@@ -21,6 +21,7 @@ test('target attestation has a read-only entrypoint and no importer execution gu
   assert.match(probe, /Family: tracepoint-production-final-target-readonly-probe-20260928/);
   assert.match(probe, /EntryPoint:[\s\S]*?- node[\s\S]*?- -e/);
   assert.match(probe, /begin transaction read only/);
+  assert.match(probe, /finalImportOperations\(\)\.readBaseline\(c\)/);
   assert.match(probe, /await c\.query\('rollback'\)/);
   assert.doesNotMatch(probe, /run-production-final-import-task|TRACEPOINT_FINAL_IMPORT_EXECUTE/);
 });

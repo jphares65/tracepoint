@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { buildArtifact, APPROVED_RUN_IDS, ARTIFACT_BUCKET } from './source-production-final-capture-core.mjs';
 import { MIGRATION_RELATIONS } from './supabase-rest-ledger-core.mjs';
 import { FINAL_RDS_HOST, FINAL_RDS_INSTANCE, FINAL_RDS_RESOURCE_ID } from './production-final-import-core.mjs';
-import { runProductionFinalAtomicImport } from './production-final-atomic-import-core.mjs';
+import { runAttestedAtomicImport, runProductionFinalAtomicImport } from './production-final-atomic-import-core.mjs';
 
 const target = { DBInstanceIdentifier: FINAL_RDS_INSTANCE, DbiResourceId: FINAL_RDS_RESOURCE_ID,
   Endpoint: { Address: FINAL_RDS_HOST, Port: 5432 }, DBName: 'tracepoint', DBInstanceStatus: 'available' };
@@ -64,4 +64,19 @@ test('commit ambiguity never reports success or invokes rollback verification', 
     verifyRollback: async () => { rollbackChecked = true; return { restored: true }; } });
   await assert.rejects(runProductionFinalAtomicImport(options), /FINAL_IMPORT_COMMIT_OUTCOME_UNKNOWN/);
   assert.equal(rollbackChecked, false);
+});
+
+test('shared transaction body rejects a proof target or artifact mismatch before mutation', async () => {
+  const { calls, options } = harness();
+  const plan = { target: { resourceId: 'db-ISOLATED123' },
+    parity: { status: 'FROZEN_SOURCE_QUIESCENT' },
+    selectedArtifact: { versionId: 'B.verified', byteSha256: 'b'.repeat(64),
+      masterSha256: 'c'.repeat(64) }, relationalRows: 0, identities: 0, memberships: 0 };
+  await assert.rejects(runAttestedAtomicImport({ ...options, plan,
+    artifact: { masterSha256: 'different' }, expectedTargetResourceId: 'db-ISOLATED123' }),
+  /FINAL_IMPORT_ARTIFACT_MISMATCH/);
+  await assert.rejects(runAttestedAtomicImport({ ...options, plan,
+    artifact: { masterSha256: 'c'.repeat(64) }, expectedTargetResourceId: FINAL_RDS_RESOURCE_ID }),
+  /FINAL_IMPORT_PLAN_TARGET_MISMATCH/);
+  assert.deepEqual(calls, []);
 });

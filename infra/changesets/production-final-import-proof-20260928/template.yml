@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Private disposable final-import proof database restored from the clean final-target snapshot; no application route
+Metadata:
+  com.aws.cloudformation.Context:
+    arch: Separate RDS snapshot clone for synthetic atomic-import integration only
+    must:
+      - never attach public production, shadow, or rehearsal application services
+      - only the existing one-shot importer security group may connect
+      - retain a recoverable snapshot on deletion
+Resources:
+  ProofDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: isolate the proof clone from every application task and public ingress
+        must:
+          - PostgreSQL ingress only from the pinned one-shot importer task group
+          - no public CIDR ingress
+        mutable: review-required
+    Properties:
+      GroupDescription: Private final-import synthetic proof database
+      VpcId: vpc-04accb4047a914176
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+  ProofTaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: one-shot ECS task egress to HTTPS AWS APIs and only the proof database
+        must:
+          - no inbound traffic
+          - no route to final or public RDS security groups
+        mutable: review-required
+    Properties:
+      GroupDescription: One-shot synthetic final-import proof task
+      VpcId: vpc-04accb4047a914176
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: !Ref ProofDatabaseSecurityGroup
+  ProofDatabaseIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: admit only the one-shot proof task into the isolated clone
+        must:
+          - no public CIDR or application service ingress
+        mutable: review-required
+    Properties:
+      GroupId: !Ref ProofDatabaseSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref ProofTaskSecurityGroup
+  ProofTaskRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: read only the two immutable paid-source artifacts and describe only the proof database
+        must:
+          - no production source, capture, rollback, Cognito, SES, DNS, or application permissions
+          - no S3 object write
+        mutable: review-required
+    Properties:
+      RoleName: TracePoint-ProductionFinalImportProofTask-20260928
+      PermissionsBoundary: arn:aws:iam::193644343389:policy/TracePointProductionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: '193644343389'
+              ArnLike:
+                aws:SourceArn: arn:aws:ecs:us-east-1:193644343389:*
+      Policies:
+        - PolicyName: ExactPaidFinalImportProof
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource:
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source-rehearsal/463606ba-ce48-468d-a91c-57c8067a0d3b/final-canonical.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source-rehearsal/90e721c1-039b-47f8-b02d-c4e79d6100c8/final-canonical.json
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55
+                Condition:
+                  StringEquals:
+                    kms:ViaService: s3.us-east-1.amazonaws.com
+              - Effect: Allow
+                Action: rds:DescribeDBInstances
+                Resource: '*'
+  ProofDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: exercise the exact final schema and importer on an isolated clone, not the final target
+        must:
+          - source snapshot belongs to the independently attested clean final target
+          - private encrypted PostgreSQL with deletion protection
+          - no customer traffic or production secret attachment
+        mutable: review-required
+    Properties:
+      DBInstanceIdentifier: tracepoint-production-final-import-proof-20260928
+      DBSnapshotIdentifier: rds:tracepoint-production-final-cutover-20260926-2026-09-28-09-54
+      DBInstanceClass: db.t4g.small
+      DBSubnetGroupName: tracepoint-production-full-aws-database-databasesubnetgroup7d60f180-fiinjrdilqui
+      VPCSecurityGroups:
+        - !Ref ProofDatabaseSecurityGroup
+      DBParameterGroupName: tracepoint-production-full-aws-database-databaseparameters4609b2cf-1ug8pbz61yng
+      PubliclyAccessible: false
+      DeletionProtection: true
+      BackupRetentionPeriod: 1
+      MultiAZ: false
+      StorageType: gp3
+      EnableCloudwatchLogsExports: [postgresql]
+      CopyTagsToSnapshot: true
+      Tags:
+        - Key: Purpose
+          Value: synthetic-final-import-proof-only
+        - Key: Authority
+          Value: none
+Outputs:
+  ProofDatabaseIdentifier:
+    Value: !Ref ProofDatabase
+  ProofSecurityGroupId:
+    Value: !Ref ProofDatabaseSecurityGroup
+  ProofTaskSecurityGroupId:
+    Value: !Ref ProofTaskSecurityGroup
+  ProofTaskRoleArn:
+    Value: !GetAtt ProofTaskRole.Arn

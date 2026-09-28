@@ -5,7 +5,7 @@
   "relationFingerprint": "36558b0730e3e96cad6426f38088a5b0",
   "maintenance": { "activationReviewed": true, "reversalReviewed": true,
     "completeIngressChangeSetReviewed": true, "unmatchedHostFallbackIncluded": true },
-  "publicTables": { "count": 87, "ownerControlVerified": true, "triggerInstallAndAbortReviewed": false },
+  "publicTables": { "count": 87, "ownerControlVerified": true, "triggerInstallAndAbortReviewed": true },
   "capture": {
     "slots": { "A": "1d761bd7-04dd-43f3-b77a-2c41130e18c2", "B": "c7448ea9-4645-4e99-b988-3a05de12ac70" },
     "immutableVersioned": true,
@@ -29,7 +29,7 @@
     "threeModernKeysDistinct": true,
     "captureReaderExactArnVerified": true,
     "captureReaderOldAndRollbackDenied": true,
-    "rollbackKeyUnassignedToRunningWriters": false,
+    "rollbackKeyUnassignedToRunningWriters": true,
     "oldModernKeyIdPinned": true,
     "legacyServiceKeyStatePinned": true,
     "oldModernKeyRetirementReviewed": false,

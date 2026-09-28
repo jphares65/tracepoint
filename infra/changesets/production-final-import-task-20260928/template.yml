@@ -315,9 +315,11 @@ Resources:
               const a=(await c.query("select current_database() as database, inet_server_port()::int as port, (select ssl from pg_stat_ssl where pid=pg_backend_pid()) as tls")).rows[0];
               const m=Number((await c.query('select count(*)::int as count from tracepoint_migrations.applied_migrations')).rows[0].count);
               const u=Number((await c.query('select count(*)::int as count from auth.users')).rows[0].count);
+              const adapter=await import('./scripts/production-final-relation-adapter.mjs');
+              const baseline=await adapter.finalImportOperations().readBaseline(c);
               assert.equal(a.database,'tracepoint');assert.equal(a.port,5432);assert.equal(a.tls,true);
               await c.query('rollback');await c.end();
-              console.log(JSON.stringify({status:'FINAL_TARGET_READ_ONLY_ATTESTED',database:a.database,tls:a.tls,migrationLineage:m,authUsers:u}));
+              console.log(JSON.stringify({status:'FINAL_TARGET_READ_ONLY_ATTESTED',database:a.database,tls:a.tls,migrationLineage:m,authUsers:u,customerRows:baseline.customerRows}));
               })().catch(async e=>{await c.end().catch(()=>{});
               console.error(JSON.stringify({status:'BLOCKED',code:e.code||'FINAL_TARGET_READ_ONLY_PROBE_FAILED'}));process.exitCode=1;});
           LogConfiguration:

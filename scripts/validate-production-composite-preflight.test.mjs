@@ -47,7 +47,7 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
   assert.ok(result.blockers.includes('ACTIVE_CREDENTIAL_INVENTORY_INCOMPLETE'));
   assert.ok(result.blockers.includes('UNKNOWN_ACTIVE_AUTONOMOUS_WRITERS'));
-  assert.ok(result.blockers.includes('CREDENTIAL_EPOCH_NOT_READY'));
+  assert.ok(!result.blockers.includes('CREDENTIAL_EPOCH_NOT_READY'));
   assert.ok(result.blockers.includes('FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY'));
   assert.ok(result.blockers.includes('ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN'));
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));

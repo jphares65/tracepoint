@@ -18,7 +18,8 @@ $importFiles = @(
     'scripts/production-final-object-copy-core.mjs',
     'scripts/run-production-final-atomic-import.mjs',
     'scripts/run-production-final-object-copy.mjs',
-    'scripts/run-production-final-import-task.mjs'
+    'scripts/run-production-final-import-task.mjs',
+    'scripts/run-isolated-final-import-proof.mjs'
 )
 
 $importDirty = & git -C $importRepo status --porcelain -- $importFiles

@@ -86,7 +86,8 @@ try {
   const elevatedMetadata = (variableResult.envs ?? variableResult)
     .filter(entry => entry.key === 'SUPABASE_SECRET_KEY')
     .map(entry => ({ id: entry.id, target: entry.target, type: entry.type,
-      gitBranchSet: entry.gitBranch != null }));
+      gitBranchSet: entry.gitBranch != null,
+      createdAt: entry.createdAt ?? null, updatedAt: entry.updatedAt ?? null }));
   stage = 'deployment-list';
   const deploymentList = await getJson(token,
     `/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=100`);

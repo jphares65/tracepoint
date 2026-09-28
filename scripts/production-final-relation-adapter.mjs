@@ -21,7 +21,8 @@ export function snapshotFromArtifact(artifact) {
     artifact: { masterSha256: artifact.masterSha256 } });
 }
 
-export function finalImportOperations() {
+export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOURCE_ID) {
+  assert.match(expectedTargetResourceId, /^db-[A-Z0-9]+$/, 'FINAL_IMPORT_TARGET_RESOURCE_REQUIRED');
   let preflight;
   let snapshot;
   let normalizedEquipment;
@@ -38,7 +39,7 @@ export function finalImportOperations() {
     }
     const authUsers = Number((await client.query('select count(*)::int as count from auth.users')).rows[0].count);
     const migrationLineage = Number((await client.query('select count(*)::int as count from tracepoint_migrations.applied_migrations')).rows[0].count);
-    return { targetResourceId: FINAL_RDS_RESOURCE_ID, customerRows: [...counts.values()].reduce((sum, count) => sum + count, 0),
+    return { targetResourceId: expectedTargetResourceId, customerRows: [...counts.values()].reduce((sum, count) => sum + count, 0),
       authUsers, migrationLineage, counts };
   };
   const applyRelations = async (client, { plan, artifact }) => {
