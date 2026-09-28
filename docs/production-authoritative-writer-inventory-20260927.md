@@ -20,9 +20,9 @@ controlled; `unproven` is not a synonym for `ephemeral`.
 | Legacy Vercel historical Preview | Same project; historical immutable deployments may carry production URL/secret; automation bypass exists | Same as Production | Project-wide `Environment Equals Preview → Deny`; inverse delete exact rule | Exact Preview predicate/inverse passed against a signed-in disposable Preview deployment; live rule and historical URL negatives remain cutover-time gates |
 | Auth existing-session user API | Already issued `authenticated` JWT + production publishable/legacy API key | `auth.users` metadata, credentials/recovery/MFA and other identity state | Rehearsed single-session revoke and provider restriction; restore provider/sign-in, not revoked session | Paid synthetic existing-token write negative passed; production session drain/control inventory pending |
 | Auth new sign-in/refresh/signup | Public key or legacy anon key; Supabase Auth API; exact-project read-only `/auth/v1/settings` reports Email enabled and self-signup enabled | New identities, recovery/MFA; session fields unclassified until proven ephemeral | Reversible Auth provider/signup restriction plus session drain/revoke; restore exact settings | Paid negative/restore passed for selected flows; production Email/signup state now attested, but exact control and credential/recovery scope pending |
-| Auth admin/service API | Elevated `sb_secret_`/legacy service key, held by bridge, Vercel, tooling | User create/update/delete, recovery, MFA, identity links | Stop every credential holder, do not delete modern key; direct admin negative during fence | Paid admin-create negative passed; all production holders not yet proven stopped |
+| Auth admin/service API | Elevated `sb_secret_`/legacy service key, held by bridge, Vercel, tooling | User create/update/delete, recovery, MFA, identity links | Stop known writers, retire every old modern secret and disable the legacy service key only after distinct capture/rollback keys and the rollback distribution path are proven; direct old-key admin negative during fence | Paid credential-epoch negative/abort proof passed; production key and rollback controls not yet installed |
 | Storage authenticated API | User JWT + publishable/legacy key, `storage.objects` RLS | Object keys, bytes, metadata, ownership | Reviewed `has_department_permission` source-fence replacement plus public trigger layer; restore exact function | Read-only production RLS contract attested; direct negative in production pending cutover |
-| Storage elevated API | Service/modern secret key; elevated role bypasses RLS | Same object authority | Stop all elevated-key holders; direct object-write negative; restore exact holders | Paid synthetic upload negative passed; production holder completeness pending |
+| Storage elevated API | Service/modern secret key; elevated role bypasses RLS | Same object authority | Stop known writers, retire the old elevated credential epoch, and direct-negative old-key object writes; pre-authority abort distributes the pre-created rollback key to pinned services | Paid synthetic upload and credential-epoch negatives passed; production controls remain uninstalled |
 | S3-compatible Storage | No separate production S3 access key in dashboard inventory; protocol may be enabled | Object keys, bytes and metadata if a key appears | Recheck exact project immediately before freeze; if any key appears, reversible S3 protocol/key control and negative required | Currently `NO_SEPARATE_S3_WRITER_CREDENTIALS`; recheck required |
 | PostgREST direct browser/API | Public/legacy key and user token | RLS-protected public rows | 174 proposed public `ENABLE ALWAYS` trigger actions on 87 tables plus ingress controls; exact abort SQL removes only these | Paid service-role REST 55000 negative passed; production trigger package remains fail-closed |
 | RPC/SECURITY DEFINER | PostgREST caller; live catalog has 30 public definer functions, 18 with direct DML text, seven of those executable by `anon`; 13 refer to Auth/Storage (often `auth.uid()`), zero with direct Auth/Storage-qualified DML text | Public rows; indirect Auth/Storage effects still require call-graph classification | Public triggers for public mutations; separate Auth/Storage control for any bypass | TLS-pinned catalog scan done; function call graph and real-interface negatives pending |
@@ -31,15 +31,18 @@ controlled; `unproven` is not a synonym for `ephemeral`.
 | Admin/import tooling | Manual migration scripts, CodeBuild import/capture roles; no active import job approved | Public/Auth/Storage depending tool invocation | No starts during freeze; exact job/build inventory, active-run drain, operator audit; restore only reviewed jobs | AWS CodeBuild projects inventoried; all active executions and external schedulers need fresh check |
 | AWS direct source-rest credential holders | CloudTrail roles `TracePoint-RestLedgerExec-4272874f`, `TracePoint-RestObjectCopyExec-4272874f`, `TracePoint-RestRdsImportExec-4272874f`, `TracePointMigrationProduction` | Source REST key is capable of public/Auth/Storage writes regardless of read-only program intent | Prevent new executions, verify zero active executions; preserve read-only final-capture role only; restore job eligibility if pre-authority abort | Holder names observed; exact role/job execution controls and negative pending |
 | AWS application-secret readers not serving public traffic | CloudTrail roles `TracePoint-Phase3cRehearsalAppExec`, `tracepoint-production-aws-native-codebuild-image`, `tracepoint-production-aws-native-proof-execution-v1`, Phase 3B shadow execution role, plus migration operator | Secret may contain source-capable key; deployed native services do not expose Supabase env vars | Verify task/build configurations and active runs; revoke no key merely for proof; stop any job that can use it | Read access observed, but no source writes shown; role permissions and current workloads need complete attestation |
-| External Supabase credential holders | Any non-AWS holder of production modern/legacy keys, including Vercel and unknown third-party integration | Public/Auth/Storage | Inventory key usage/configuration and every holder, then stop holder or prove no authoritative capability; no irreversible key deletion | Vercel known; Supabase project access/log inventory currently incomplete, so this remains unclassified |
+| External Supabase credential holders | Any non-AWS holder of production modern/legacy keys, including Vercel and unknown third-party integration | Public/Auth/Storage | Inventory every **active key**, stop known writers, retire every old modern secret and disable legacy elevated JWT, then prove direct use of each retired key fails. An unknown holder of a rejected key is no longer an open writer; any remaining active key requires its own classification | Vercel known; the complete production key table, exact Vercel rollback update, and live old-key negatives remain cutover gates |
 | Privileged SQL/dashboard operator | Production SQL Editor `postgres`, source reader `tracepoint_migration_reader` (read-only) | Potentially any relation via trusted operator | No manual writes while frozen; audited access, capture A/B and source fingerprint; abort procedure pinned | Explicit trusted-human exception; read-only reader attested, operator procedure reviewed |
 
 The public maintenance response controls only the AWS bridge ingress. It does
 not block Supabase Auth/Storage, historical Vercel Preview, direct PostgREST,
-an elevated key, SQL operator access, or an external integration. The final
-production composite preflight must remain blocked until every row is either
-proven absent or has a rehearsed reversible control, a direct negative or
-appropriate immutable absence evidence, and a deterministic restore path.
+an elevated key, SQL operator access, or an external integration. The approved
+credential-epoch model retires an old modern secret irreversibly but makes the
+**source service** restorable with a separate pre-created rollback key. The
+final production composite preflight remains blocked until every **active**
+authoritative credential/writer is controlled or proven absent, old-key
+rejection is directly demonstrated, and the exact rollback-key distribution
+path is deterministic.
 
 ## Additional read-only privilege and runtime check
 
@@ -65,8 +68,11 @@ use S3 sources without webhooks; the final-source-capture project still has
 no build. This narrows **active AWS processes**, not the set of dormant or
 external holders of the still-active modern source secret key. The live
 Supabase dashboard offers only irreversible deletion for that modern key;
-no reversible key-disable control was found. No source key or project setting
-was changed during this check.
+no reversible key-disable control was found. The paid-project credential-epoch
+rehearsal proved a separate-key rollback instead of recreating a deleted key.
+Production capture/rollback keys, exact Vercel redeployment, and old-key
+retirement still require production preflight before maintenance. No source
+key or project setting was changed during this check.
 
 Capture executor preparation remains non-operative. Commit `b2276b5` was
 packaged as source SHA-256
