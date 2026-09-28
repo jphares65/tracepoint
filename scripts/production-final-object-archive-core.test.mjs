@@ -46,3 +46,17 @@ test('Supabase attachment bucket maps to the existing AWS-native attachments pre
     objects: { manifest: [{ ...attachment, destinationKey: `tracepoint-attachments/${attachment.sourceKey}` }] } }),
   /FINAL_OBJECT_DESTINATION_MISMATCH/);
 });
+
+test('only an explicitly excluded agency patch may be absent; other objects remain mandatory', () => {
+  assert.deepEqual(validateFinalObjectArchive({ ...archive, objects: [] }, artifact,
+    [object.destinationKey]), []);
+  assert.deepEqual(validateFinalObjectArchive(archive, artifact,
+    [object.destinationKey]), []);
+  assert.throws(() => validateFinalObjectArchive({ ...archive, objects: [] }, artifact,
+    ['department-assets/unrelated']), /FINAL_OBJECT_EXCLUSION_NOT_IN_SOURCE/);
+  const attachment = { ...object, sourceBucket: 'tracepoint-attachments',
+    destinationKey: `attachments/${object.sourceKey}` };
+  assert.throws(() => validateFinalObjectArchive({ ...archive, objects: [] },
+    { ...artifact, objects: { manifest: [attachment] } }, [attachment.destinationKey]),
+  /FINAL_OBJECT_EXCLUSION_NOT_AGENCY_PATCH/);
+});

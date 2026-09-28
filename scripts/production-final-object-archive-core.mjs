@@ -6,15 +6,32 @@ const VERSION = /^[A-Za-z0-9._-]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
 /** Attest the immutable in-AWS object copies associated with final capture B. */
-export function validateFinalObjectArchive(archive, artifact) {
+export function validateFinalObjectArchive(archive, artifact, excludedDestinationKeys = []) {
   assert.equal(archive?.format, 'tracepoint-final-object-archive/v1', 'FINAL_OBJECT_ARCHIVE_FORMAT');
   assert.equal(archive?.runId, APPROVED_RUN_IDS.B, 'FINAL_OBJECT_ARCHIVE_NOT_CAPTURE_B');
   assert.equal(artifact?.runId, APPROVED_RUN_IDS.B, 'FINAL_OBJECT_ARTIFACT_NOT_CAPTURE_B');
   assert.equal(archive?.artifactMasterSha256, artifact.masterSha256, 'FINAL_OBJECT_ARCHIVE_ARTIFACT_MISMATCH');
   assert.ok(Array.isArray(archive.objects), 'FINAL_OBJECT_ARCHIVE_ENTRIES_MISSING');
-  assert.equal(archive.objects.length, artifact.objects.manifest.length, 'FINAL_OBJECT_ARCHIVE_COUNT_MISMATCH');
+  const excluded = new Set(excludedDestinationKeys);
+  assert.equal(excluded.size, excludedDestinationKeys.length, 'FINAL_OBJECT_EXCLUSION_DUPLICATE');
+  const omitted = artifact.objects.manifest.filter(object => excluded.has(object.destinationKey));
+  assert.equal(omitted.length, excluded.size, 'FINAL_OBJECT_EXCLUSION_NOT_IN_SOURCE');
+  assert.ok(omitted.every(object => object.sourceBucket === 'department-assets'),
+    'FINAL_OBJECT_EXCLUSION_NOT_AGENCY_PATCH');
+  const required = artifact.objects.manifest.filter(object => !excluded.has(object.destinationKey));
+  const allowedArchiveKeys = new Set(artifact.objects.manifest.map(object =>
+    `migration/source/${APPROVED_RUN_IDS.B}/objects/${object.sourceBucket}/${object.sourceKey}`));
+  assert.ok(archive.objects.length >= required.length &&
+    archive.objects.length <= artifact.objects.manifest.length,
+  'FINAL_OBJECT_ARCHIVE_COUNT_MISMATCH');
   const archiveByKey = new Map();
+  const seenArchiveKeys = new Set();
   for (const entry of archive.objects) {
+    assert.ok(allowedArchiveKeys.has(entry.archiveKey), 'FINAL_OBJECT_ARCHIVE_EXTRA');
+    assert.equal(seenArchiveKeys.has(entry.archiveKey), false, 'FINAL_OBJECT_ARCHIVE_DUPLICATE');
+    seenArchiveKeys.add(entry.archiveKey);
+    if (omitted.some(object => entry.archiveKey ===
+      `migration/source/${APPROVED_RUN_IDS.B}/objects/${object.sourceBucket}/${object.sourceKey}`)) continue;
     assert.ok(STORAGE_BUCKETS.includes(entry.sourceBucket), 'FINAL_OBJECT_BUCKET_UNAPPROVED');
     assert.ok(typeof entry.sourceKey === 'string' && entry.sourceKey.length > 0 &&
       entry.sourceKey.split('/').every(part => part && part !== '.' && part !== '..'), 'FINAL_OBJECT_KEY_UNSAFE');
@@ -26,7 +43,7 @@ export function validateFinalObjectArchive(archive, artifact) {
     assert.equal(archiveByKey.has(entry.archiveKey), false, 'FINAL_OBJECT_ARCHIVE_DUPLICATE');
     archiveByKey.set(entry.archiveKey, entry);
   }
-  const mapped = artifact.objects.manifest.map(object => {
+  const mapped = required.map(object => {
     assert.ok(STORAGE_BUCKETS.includes(object.sourceBucket), 'FINAL_OBJECT_SOURCE_BUCKET_UNAPPROVED');
     const destinationPrefix = object.sourceBucket === 'tracepoint-attachments' ? 'attachments' : object.sourceBucket;
     assert.equal(object.destinationKey, `${destinationPrefix}/${object.sourceKey}`,

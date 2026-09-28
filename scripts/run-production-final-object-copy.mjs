@@ -111,9 +111,9 @@ export async function runFinalObjectCopy(env = process.env, services = {}) {
     assert.equal(target?.DBInstanceArn,
       `arn:aws:rds:us-east-1:${ACCOUNT}:db:${FINAL_RDS_INSTANCE}`, 'FINAL_OBJECT_RDS_ACCOUNT_MISMATCH');
     const artifact = parseAndVerifyArtifact(second.bytes, second.byteSha256, SOURCE_PROJECT_REF);
-    const fullManifest = validateFinalObjectArchive(sidecar, artifact);
     const patch = projectOmittedAgencyPatches(artifact, SOURCE_PROJECT_REF);
-    const manifest = fullManifest.filter(object => object.sourceBucket !== 'department-assets');
+    const manifest = validateFinalObjectArchive(sidecar, artifact,
+      patch.omitted.map(item => item.destinationKey));
     assert.equal(manifest.length, patch.inScopeManifest.length,
       'FINAL_OBJECT_IN_SCOPE_COUNT_MISMATCH');
     const ca = await readFile(env.TRACEPOINT_RDS_CA_PATH ?? '/app/rds-ca.pem', 'utf8');

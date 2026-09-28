@@ -10,6 +10,7 @@ import { loadPinnedCapture } from './run-production-final-atomic-import.mjs';
 import { compareFrozenCaptures, parseAndVerifyArtifact } from './source-frozen-capture-parity-core.mjs';
 import { runAttestedAtomicImport } from './production-final-atomic-import-core.mjs';
 import { finalImportOperations } from './production-final-relation-adapter.mjs';
+import { reconcileRolePermissionDifferences } from './supabase-rest-import-core.mjs';
 
 const ACCOUNT = '193644343389';
 const REGION = 'us-east-1';
@@ -118,9 +119,15 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
     if (mode === 'baseline') {
       stage = 'baseline-read';
       const baseline = await operations.readBaseline(client);
+      const roleRows = (await client.query(
+        'select role_code,permission_code from public.role_permissions order by role_code,permission_code')).rows;
+      const rolePermissions = reconcileRolePermissionDifferences(
+        b.rows.role_permissions, roleRows);
       return { status: 'ISOLATED_IMPORT_PROOF_BASELINE', targetResourceId: resourceId,
         customerRows: baseline.customerRows, authUsers: baseline.authUsers,
-        migrationLineage: baseline.migrationLineage, tlsRequired: true };
+        migrationLineage: baseline.migrationLineage, tlsRequired: true,
+        rolePermissionDifference: { sourceOnly: rolePermissions.sourceOnly,
+          targetOnly: rolePermissions.targetOnly } };
     }
     const reconcileInTransaction = mode === 'rollback'
       ? async (db, args) => { stage = 'reconcile-in-transaction'; await operations.reconcileInTransaction(db, args);
