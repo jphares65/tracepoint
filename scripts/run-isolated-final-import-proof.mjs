@@ -157,7 +157,10 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
 if (import.meta.main) {
   try { console.log(JSON.stringify(await runIsolatedFinalImportProof())); }
   catch (error) {
-    const code = /^[A-Z][A-Z0-9_:]*$/.test(String(error?.message)) ? error.message : 'ISOLATED_IMPORT_PROOF_FAILED';
+    // Node AssertionError may append a multiline value diff to an explicit
+    // assertion code. Emit only the allowlisted first line, never the diff.
+    const firstLine = String(error?.message ?? '').split('\n', 1)[0];
+    const code = /^[A-Z][A-Z0-9_:]*$/.test(firstLine) ? firstLine : 'ISOLATED_IMPORT_PROOF_FAILED';
     const type = /^[A-Za-z][A-Za-z0-9]*$/.test(String(error?.name)) ? error.name : 'Error';
     const sqlstate = /^[0-9A-Z]{5}$/.test(String(error?.code)) ? error.code : undefined;
     console.error(JSON.stringify({ status: 'BLOCKED', code,
