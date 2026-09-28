@@ -18,7 +18,7 @@ capture was started, and no public traffic was changed during this sweep.
 | RPC and SECURITY DEFINER | 30 public SECURITY DEFINER functions inventoried; 18 contain DML text, seven are anon-executable, none contains direct Auth/Storage-qualified DML text | Exact real-interface negatives plus old-epoch retirement and public-table trigger coverage |
 | Cron and notification/background | One active notification dispatcher cron job observed; isolated stop/restore pattern exists | Exact production pause, queue/drain, negative and restoration evidence |
 | Import/admin/external writers | AWS migration/proof roles and old REST secret are known; historical non-AWS holders cannot be fully enumerated | Retire old epoch, block Auth/Storage and prove the old credential is rejected; operator writes prohibited during freeze |
-| Vercel Production/Preview | Project `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`, exact team `team_HCPS7YRtZfKg7WZtSDfjhaSR`; disposable pause/Preview-deny proof passed | Fresh exact-project GET is HTTP 403 even with `teamId`; cannot reattest env IDs or execute pinned pause/new-deployment rollback until team token access is corrected |
+| Vercel Production/Preview | Project `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`, exact team `team_HCPS7YRtZfKg7WZtSDfjhaSR`; disposable pause/Preview-deny proof passed; replacement operator token passed exact-team/project read-only attestation on 2026-09-28 | Reattest token/deployment/variable IDs immediately before maintenance; execute only the pinned pause and new-deployment rollback procedure after the full source-fence preflight passes |
 | Public ECS bridge | Service revision 4 desired/running 1/1; no pause applied | Exact scale-to-zero/drain and reverse with newly distributed rollback key during maintenance |
 | Production maintenance ingress | Exact ALB listener/default forward and complete-ingress guard PASS; public endpoints return normal 200 | Activate only after full preflight; confirm both canonical and unmatched Host 503; preserve reverse operation |
 | Capture executor | Four-resource CloudFormation stack UPDATE_COMPLETE; content-addressed source ZIP and KMS/versioned artifact target; capture-only secret IAM | No build yet; require complete composite fence attestation, A/B jobs, quiet interval and immutable comparator |
@@ -33,6 +33,9 @@ capture was started, and no public traffic was changed during this sweep.
 | Rollback and acceptance | Bridge rollback image scan COMPLETE/zero findings; one-record data-authority rollback rehearsed; bidirectional Officer tenant negatives passed in isolated rehearsal | Exact production rollback-key distribution/new Vercel deployment, final delta replay contract, production read/write and cross-tenant acceptance remain gated |
 
 The production composite validator still returns `BLOCKED`. Requirements are
-not frozen as passing: the Vercel token, writer-control attestation, and
-final-artifact apply path are open. Do not infer a cutover GO from successful
+not frozen as passing: writer-control attestation and the runnable,
+rehearsed final-artifact apply path are open. A tested capture-B transaction
+boundary is present, but its actual relation-apply adapter and full
+reconciliation have not been connected or exercised against a clean isolated
+target. Do not infer a cutover GO from successful
 credential attestation, capture-package deployment, or isolated rehearsal.
