@@ -47,3 +47,46 @@ production**. Their actual invocation is reserved for a pre-authority abort
 under active maintenance and source fence, after the old credential epoch is
 retired. The new Preview deployment proves the pinned Git source and API
 permissions without exposing live Production to a test deployment.
+
+Additional disposable-project sequence on 2026-09-28: while project
+`prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw` was paused, a new synthetic Production
+deployment became externally reachable (HTTP 200) before the explicit
+unpause. The project was restored to HTTP 200 with synthetic content; the live
+TracePoint project was unchanged. Consequently, **pause alone is not a safe
+barrier during a fresh rollback deployment**. The pre-authority abort now
+requires an independently active exact-project `Environment Equals Production
+→ Deny` WAF rule before installing the rollback key. It reattests that rule
+and requires external 403 after the new deployment reaches READY, while the
+Supabase source fence, Auth/Storage controls, and public ALB maintenance stay
+active. Remove this temporary rule only after source restoration and
+single-authority write/read-back pass. The Production WAF predicate/inverse
+was previously proven on the disposable project; no live rule has been
+published at this checkpoint.
+
+Follow-up disposable proof: an API-created, active `Environment Equals
+Production → Deny` rule returned external HTTP 403. A fresh synthetic
+Production deployment `dpl_9eThuirdpARJEf7BZVvseLSFNphZ` then reached
+READY, but the origin still returned HTTP 403. Removing only that rule
+restored external HTTP 200. A subsequent read-only rule inventory showed
+zero remaining disposable rules. This proves the additional barrier covers
+the previously discovered paused-redeployment gap. The exact live-project
+control is packaged in `scripts/manage-production-vercel-cutover-deny.mjs`;
+its read-only check found zero live cutover rules. No live rule has been
+enabled. The prepared abort script now accepts external 403 or 503 before
+redeployment only while that exact Production deny is independently attested,
+and requires external 403 after the new deployment reaches READY.
+
+Rollback task correction: the currently running public revision 4 image is
+not pullable for a fresh ECS task. The source-restore script now attests and
+starts the already prepared `tracepoint-production-bridge-rollback-20260926:1`
+task definition, pinned to digest
+`sha256:e7f6cf81fd748b60450b2e4c6ee07b53dd8fbceaf5460a4e9973bd4c2534d9ce`.
+The ECR scan is COMPLETE with zero findings; the script verifies that the
+rebuilt task has the same execution/task roles and container configuration
+as live revision 4 apart from its image, waits for ECS stability, and requires
+one running task. It also attests the separate exact Production Vercel
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` variable and, during abort only under
+active deny, sets it to the modern key already in the pinned bridge secret
+before creating the fresh Production deployment. The Vercel sensitive value
+is non-readable, so its preexisting type is not assumed. This was checked
+read-only against the live project; no Production variable or service changed.

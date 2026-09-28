@@ -33,7 +33,8 @@ function withSyntheticEpochProof(ready) {
     projectRef: 'izlkwggluhlhzlumtzes',
     vercelProjectId: 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',
     productionEnvReplacementReviewed: true, newProductionDeploymentRequired: true,
-    newDeploymentIdentityPinned: true, productionAliasAndWriteReadbackVerified: true,
+    newDeploymentIdentityPinned: true, productionDenyDuringFreshDeploymentRehearsed: true,
+    runtimeWriteReadbackGateDefined: true,
     ecsExactSecretRevisionAndRestartReviewed: true,
     oldDeploymentCannotBeResumedWithRetiredKey: true,
     authStorageControlsRestoredBeforeTraffic: true, singleSourceAuthorityVerified: true,
@@ -41,14 +42,24 @@ function withSyntheticEpochProof(ready) {
 }
 
 test('current production inventory blocks uncovered autonomous writers', () => {
-  const result = evaluateProductionCompositeReadiness(inventory);
+  const uncovered = structuredClone(inventory);
+  uncovered.writers.authApi.authoritativeMutationCapable = undefined;
+  uncovered.writers.storageApi.authoritativeMutationCapable = undefined;
+  uncovered.activeCredentialInventoryComplete = false;
+  uncovered.unknownActiveAuthoritativeWriters = true;
+  uncovered.credentialEpoch.captureReaderOldAndRollbackDenied = true;
+  uncovered.rollbackDistribution.runtimeWriteReadbackGateDefined = false;
+  uncovered.writers.authApi.controls.serviceAdminWritersControlled = false;
+  uncovered.writers.legacyVercel.inventoryComplete = false;
+  uncovered.writerPaths.externalCredentialHolders.status = 'unproven';
+  const result = evaluateProductionCompositeReadiness(uncovered);
   assert.equal(result.status, 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED');
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:authApi'));
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
   assert.ok(result.blockers.includes('ACTIVE_CREDENTIAL_INVENTORY_INCOMPLETE'));
   assert.ok(result.blockers.includes('UNKNOWN_ACTIVE_AUTONOMOUS_WRITERS'));
   assert.ok(!result.blockers.includes('CREDENTIAL_EPOCH_NOT_READY'));
-  assert.ok(result.blockers.includes('FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY'));
+  assert.ok(!result.blockers.includes('FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY'));
   assert.ok(result.blockers.includes('ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN'));
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
   assert.ok(!result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
@@ -118,6 +129,8 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
     copy => { copy.credentialEpoch.captureReaderOldAndRollbackDenied = false; },
     copy => { copy.rollbackDistribution.newProductionDeploymentRequired = false; },
+    copy => { copy.rollbackDistribution.productionDenyDuringFreshDeploymentRehearsed = false; },
+    copy => { copy.rollbackDistribution.runtimeWriteReadbackGateDefined = false; },
     copy => { copy.activeCredentialInventoryComplete = false; },
     copy => { copy.unknownActiveAuthoritativeWriters = true; },
     copy => { copy.relationFingerprint = 'wrong'; },

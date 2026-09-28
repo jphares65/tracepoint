@@ -17,7 +17,9 @@ function aws(args, output = 'json') {
 
 async function getJson(token, path) {
   const exactDeploymentList = `/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=100`;
-  assert.ok(/^\/(?:v9\/projects|v13\/deployments)\//.test(path) || path === exactDeploymentList,
+  assert.ok(/^\/(?:v9\/projects|v13\/deployments)\//.test(path) ||
+    /^\/v1\/projects\/prj_V03LJyQIc231luvZ9u0gcOAt4xK4\/env\/[A-Za-z0-9]+$/.test(path) ||
+    path === exactDeploymentList,
     'UNAPPROVED_VERCEL_PATH');
   const url = new URL(`https://api.vercel.com${withExactVercelTeam(path)}`);
   // A project-scoped token cannot read team/user metadata. The exact project
@@ -88,6 +90,22 @@ try {
     .map(entry => ({ id: entry.id, target: entry.target, type: entry.type,
       gitBranchSet: entry.gitBranch != null,
       createdAt: entry.createdAt ?? null, updatedAt: entry.updatedAt ?? null }));
+  const publishableMetadata = (variableResult.envs ?? variableResult)
+    .filter(entry => entry.key === 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY')
+    .map(entry => ({ target: entry.target, type: entry.type,
+      gitBranchSet: entry.gitBranch != null }));
+  const productionPublishable = (variableResult.envs ?? variableResult)
+    .filter(entry => entry.key === 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY' &&
+      entry.target?.includes('production'));
+  assert.equal(productionPublishable.length, 1, 'VERCEL_PRODUCTION_PUBLISHABLE_AMBIGUOUS');
+  const publishableDetail = await getJson(token,
+    `/v1/projects/${VERCEL_PROJECT_ID}/env/${productionPublishable[0].id}`);
+  assert.equal(publishableDetail?.key, 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+  const publishableValue = publishableDetail.value;
+  const productionClientKeyShape = typeof publishableValue !== 'string' ? 'NONREADABLE' :
+    publishableValue.startsWith('sb_publishable_') ? 'MODERN_PUBLISHABLE' :
+      /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(publishableValue) ?
+        'LEGACY_JWT' : 'UNKNOWN';
   stage = 'deployment-list';
   const deploymentList = await getJson(token,
     `/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=100`);
@@ -108,7 +126,7 @@ try {
     gitBinding,
     baselineGitSha: deployment.meta?.githubCommitSha ?? null,
     productionSecretEnvId: ids.productionId, previewSecretEnvId: ids.previewId,
-    elevatedMetadata,
+    elevatedMetadata, publishableMetadata, productionClientKeyShape,
     tokenValueLogged: false, environmentValuesLogged: false }));
 } catch (error) {
   console.error(JSON.stringify({ status: 'PRODUCTION_VERCEL_ROLLBACK_INVENTORY_BLOCKED',

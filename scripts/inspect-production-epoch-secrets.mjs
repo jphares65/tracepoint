@@ -79,13 +79,26 @@ try {
   assert.equal(new Set(entries.map(entry => entry.fingerprint)).size, 3, 'EPOCH_KEYS_NOT_DISTINCT');
   stage = 'project-reads';
   assert.ok(entries.every(entry => entry.status === 200), 'EXACT_PROJECT_KEY_READ_FAILED');
+  stage = 'capture-storage-read';
+  const captureKey = extractKey((aws(['secretsmanager', 'get-secret-value',
+    '--secret-id', PRODUCTION_EPOCH.captureSecretName])).SecretString,
+  PRODUCTION_EPOCH.captureSecretName);
+  const storage = await fetch(`https://${projectRef}.supabase.co/storage/v1/object/list/department-assets`, {
+    method: 'POST', headers: { apikey: captureKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ prefix: '', limit: 1, offset: 0 }), redirect: 'error',
+    signal: AbortSignal.timeout(15_000),
+  });
+  const storageStatus = storage.status;
+  await storage.arrayBuffer();
+  assert.equal(storageStatus, 200, 'CAPTURE_STORAGE_BUCKET_UNAVAILABLE');
   console.log(JSON.stringify({ status: 'PRODUCTION_EPOCH_SECRETS_ATTESTED', projectRef,
     oldCredential: { name: entries[0].name, arn: entries[0].arn, readStatus: entries[0].status },
     capture: { name: entries[1].name, arn: entries[1].arn,
       versionIdPresent: Boolean(entries[1].versionId), readStatus: entries[1].status },
     rollback: { name: entries[2].name, arn: entries[2].arn,
       versionIdPresent: Boolean(entries[2].versionId), readStatus: entries[2].status },
-    threeCredentialsDistinct: true, keyValuesLogged: false }));
+    threeCredentialsDistinct: true, captureStorageStatus: storageStatus,
+    keyValuesLogged: false }));
 } catch (error) {
   console.error(JSON.stringify({ status: 'PRODUCTION_EPOCH_SECRETS_NOT_READY',
     stage, code: /^[A-Z0-9_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED',

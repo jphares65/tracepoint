@@ -131,6 +131,8 @@ try {
       has_function_privilege('service_role', p.oid, 'EXECUTE') AS service_role_can_execute,
       pg_get_functiondef(p.oid) ~* '(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+|DELETE[[:space:]]+FROM|TRUNCATE[[:space:]]+)' AS dml_text_present,
       pg_get_functiondef(p.oid) ~* '(auth\\.|storage\\.)' AS auth_or_storage_reference,
+      pg_get_functiondef(p.oid) ~* '(^|[^[:alnum:]_])EXECUTE[[:space:]]' AS dynamic_sql_present,
+      pg_get_functiondef(p.oid) ~* '(net\\.http_|dblink|http_post|http_request)' AS external_call_present,
       pg_get_functiondef(p.oid) ~* '(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+|DELETE[[:space:]]+FROM|TRUNCATE[[:space:]]+)([[:space:]]+ONLY)?[[:space:]]+(auth|storage)\\.' AS direct_managed_schema_dml_text
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.prosecdef AND p.prokind = 'f'

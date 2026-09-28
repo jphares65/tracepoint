@@ -9,7 +9,7 @@ import { VERCEL_TEAM_ID, VERCEL_TOKEN_SECRET, withExactVercelTeam } from './prod
 
 assert.deepEqual(process.argv.slice(2), ['--profile=tracepoint-production'], 'EXACT_PROFILE_REQUIRED');
 const projectId = 'prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw';
-const key = 'TRACEPOINT_ROLLBACK_PERMISSION_PROBE_20260928';
+const key = 'TRACEPOINT_ROLLBACK_SENSITIVE_PROBE_20260928';
 const aws = spawnSync(process.platform === 'win32' ? 'aws.exe' : 'aws',
   ['secretsmanager', 'get-secret-value', '--secret-id', VERCEL_TOKEN_SECRET,
     '--query', 'SecretString', '--profile', 'tracepoint-production', '--region', 'us-east-1', '--output', 'text'],
@@ -48,7 +48,7 @@ try {
   const second = `synthetic-${randomUUID()}`;
   stage = 'create';
   const created = await call('POST', `/v9/projects/${projectId}/env`,
-    { key, value: first, target: ['production'], type: 'encrypted' });
+    { key, value: first, target: ['production'], type: 'sensitive' });
   assert.ok(created.status === 200 || created.status === 201, `DISPOSABLE_CREATE_HTTP_${created.status}`);
   const entry = Array.isArray(created.result) ? created.result[0] : created.result?.created?.[0] ?? created.result;
   createdId = entry?.id;
@@ -62,6 +62,7 @@ try {
   const matches = (after.result?.envs ?? after.result ?? []).filter(item => item.key === key);
   assert.equal(matches.length, 1, 'DISPOSABLE_PROBE_COUNT_MISMATCH');
   assert.equal(matches[0].id, createdId, 'DISPOSABLE_PROBE_ID_MISMATCH');
+  assert.equal(matches[0].type, 'sensitive', 'DISPOSABLE_PROBE_TYPE_MISMATCH');
   stage = 'cleanup';
   const deleted = await call('DELETE', `/v9/projects/${projectId}/env/${createdId}`);
   assert.ok(deleted.status === 200 || deleted.status === 204, `DISPOSABLE_DELETE_HTTP_${deleted.status}`);

@@ -43,6 +43,7 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM cron.job WHERE jobname='tracepoint-notification-email-dispatch'
         AND active AND schedule='*/15 * * * *'
+        AND md5(command)='1163591ff20272c6549619eb6553f999'
         AND command LIKE '%net.http_post%'
         AND command LIKE '%tracepoint-amber.vercel.app%') <> 1 THEN
     RAISE EXCEPTION 'PRODUCTION_DISPATCHER_CONTRACT_DRIFT';

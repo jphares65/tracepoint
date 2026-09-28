@@ -6,9 +6,15 @@ import { evaluateProductionCompositeReadiness } from './validate-production-comp
 
 const evidence = JSON.parse(readFileSync(new URL('../docs/production-composite-preflight-evidence-20260927.json', import.meta.url)));
 
-test('all current fail-closed assertions map to one concrete cause without changing the gate', () => {
-  const gate = evaluateProductionCompositeReadiness(evidence);
-  const summary = summarizeRootCauses(evidence);
+test('all five root classes map fail-closed assertions without changing the gate', () => {
+  const blocked = structuredClone(evidence);
+  blocked.activeCredentialInventoryComplete = false;
+  blocked.writerPaths.authNewSession.status = 'unproven';
+  blocked.credentialEpoch.captureReaderOldAndRollbackDenied = false;
+  blocked.unfence.exactInverseReviewed = false;
+  blocked.finalImport.atomicRelationalApplyRehearsed = false;
+  const gate = evaluateProductionCompositeReadiness(blocked);
+  const summary = summarizeRootCauses(blocked);
   assert.equal(summary.status, gate.status);
   assert.equal(summary.remainingRootCauses, 5);
   assert.deepEqual(summary.roots.flatMap(root => root.failedAssertions).sort(), [...gate.blockers].sort());

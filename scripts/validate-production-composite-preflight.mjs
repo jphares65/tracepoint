@@ -95,7 +95,8 @@ export function evaluateProductionCompositeReadiness(evidence) {
     rollback.productionEnvReplacementReviewed === true &&
     rollback.newProductionDeploymentRequired === true &&
     rollback.newDeploymentIdentityPinned === true &&
-    rollback.productionAliasAndWriteReadbackVerified === true &&
+    rollback.productionDenyDuringFreshDeploymentRehearsed === true &&
+    rollback.runtimeWriteReadbackGateDefined === true &&
     rollback.ecsExactSecretRevisionAndRestartReviewed === true &&
     rollback.oldDeploymentCannotBeResumedWithRetiredKey === true &&
     rollback.authStorageControlsRestoredBeforeTraffic === true &&

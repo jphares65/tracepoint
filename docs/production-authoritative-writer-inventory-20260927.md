@@ -102,3 +102,45 @@ Development`, while two independent live production bindings identify it as
 the source. The separate TLS-verified database reader still cannot administer
 Auth settings or inventory project-scoped key holders. Those controls remain
 fail-closed.
+
+## 2026-09-28 production-bound closure review
+
+The signed-in dashboard for the exact live project has one publishable
+`default`, old modern secret `default`, and the separate capture/rollback
+modern secrets. Legacy JWT keys are enabled and have a reviewed disable
+control. The exact production project has no deployed Edge Functions and no
+separate S3-compatible Storage key. A read-only cron census found exactly
+one active job: ID 1, `tracepoint-notification-email-dispatch`, every 15
+minutes, command MD5 `1163591ff20272c6549619eb6553f999`. The public
+fence SQL now pins that hash before pausing the job. A TLS read-only database
+session census found only Supabase platform connections, PostgREST and the
+pinned migration reader; no independent active customer database writer was
+observed. The trusted SQL operator retains theoretical write capability
+under the approved no-manual-writes and double-capture model.
+
+The controls overlap by design. Public-table `ENABLE ALWAYS` triggers block
+PostgREST and SECURITY DEFINER public DML. The exact catalog shows no direct
+managed Auth/Storage DML in public SECURITY DEFINER functions; only the
+non-publicly-executable `rls_auto_enable` contains dynamic SQL, and no such
+function contains an external HTTP call. Existing Auth sessions are drained;
+new Email sessions and signups are disabled; authenticated Storage writes are
+denied by the guarded permission function. Old modern-key retirement plus
+legacy-service-JWT disablement denies elevated Auth/Storage and unknown
+historical holders. The sole cron/background dispatch is paused by exact SQL
+and independently denied by the exact Vercel Production rule. Legacy AWS and
+Vercel jobs receive no capture or rollback key; their old-key writes are
+rejected at the source. The capture key is restricted to the pinned read-only
+job; the rollback key remains unassigned to running writers.
+
+Live negative results remain **cutover execution gates**, not claims that
+production is already fenced. After public maintenance, require external
+Vercel Production/Preview denial, drained ECS tasks and job runs, Auth/session
+and Storage negatives, exact public triggers, disabled legacy keys, direct
+old-key REST/Auth/Storage rejection, capture-key read success and unchanged
+authoritative state before capture A. Any failed negative holds maintenance
+and invokes the pre-authority abort path. The disposable Vercel proof showed
+pause alone fails across a fresh deployment; the exact Production deny
+remained HTTP 403 across a READY deployment and was removed to restore HTTP
+200. The rebuilt bridge rollback task is pullable and scan-clean; the abort
+script uses it instead of the unpullable running revision-4 image and sets
+the modern browser key before a fresh pinned deployment.

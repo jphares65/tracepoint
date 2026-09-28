@@ -214,7 +214,7 @@ Resources:
       TaskRoleArn: !GetAtt ImportTaskRole.Arn
       ContainerDefinitions:
         - Name: final-relational-import
-          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b88c77d4b1938a05a6fbf963ae508c22dc0937ae35ff82595fa69c0c44c1bd24
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:89ef6188d0bce79a741a3cf53b2d59826cd2491710c20d81dc6d3f90c2564cef
           Essential: true
           ReadonlyRootFilesystem: true
           User: node
@@ -256,7 +256,7 @@ Resources:
       TaskRoleArn: !GetAtt ImportTaskRole.Arn
       ContainerDefinitions:
         - Name: final-object-copy
-          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b88c77d4b1938a05a6fbf963ae508c22dc0937ae35ff82595fa69c0c44c1bd24
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:89ef6188d0bce79a741a3cf53b2d59826cd2491710c20d81dc6d3f90c2564cef
           Essential: true
           ReadonlyRootFilesystem: true
           User: node
@@ -296,7 +296,7 @@ Resources:
       TaskRoleArn: !GetAtt ImportTaskRole.Arn
       ContainerDefinitions:
         - Name: final-target-readonly-probe
-          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b88c77d4b1938a05a6fbf963ae508c22dc0937ae35ff82595fa69c0c44c1bd24
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:89ef6188d0bce79a741a3cf53b2d59826cd2491710c20d81dc6d3f90c2564cef
           Essential: true
           ReadonlyRootFilesystem: true
           User: node
