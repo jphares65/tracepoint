@@ -1,0 +1,29 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  install:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "193644343389"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - test "$TRACEPOINT_SOURCE_REHEARSAL_PROJECT_REF" = "reukdouvpshshvqnzsgw"
+      - test "$SOURCE_REHEARSAL_FIRST_KEY" = "migration/source-rehearsal/463606ba-ce48-468d-a91c-57c8067a0d3b/final-canonical.json"
+      - test "$SOURCE_REHEARSAL_SECOND_KEY" = "migration/source-rehearsal/90e721c1-039b-47f8-b02d-c4e79d6100c8/final-canonical.json"
+      - echo "$SOURCE_REHEARSAL_FIRST_VERSION" | grep -Eq '^[A-Za-z0-9._-]+$'
+      - echo "$SOURCE_REHEARSAL_SECOND_VERSION" | grep -Eq '^[A-Za-z0-9._-]+$'
+      - echo "$SOURCE_REHEARSAL_FIRST_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+      - echo "$SOURCE_REHEARSAL_SECOND_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - node scripts/compare-frozen-source-captures.mjs --project "$TRACEPOINT_SOURCE_REHEARSAL_PROJECT_REF" --first-key "$SOURCE_REHEARSAL_FIRST_KEY" --first-version "$SOURCE_REHEARSAL_FIRST_VERSION" --first-sha256 "$SOURCE_REHEARSAL_FIRST_SHA256" --second-key "$SOURCE_REHEARSAL_SECOND_KEY" --second-version "$SOURCE_REHEARSAL_SECOND_VERSION" --second-sha256 "$SOURCE_REHEARSAL_SECOND_SHA256" --minimum-quiet-seconds 60

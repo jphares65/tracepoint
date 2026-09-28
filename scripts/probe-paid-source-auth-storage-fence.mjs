@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const origin = 'https://reukdouvpshshvqnzsgw.supabase.co';
-const secretId = 'tracepoint/production/migration/source-rehearsal-only-20260925';
+const oldSecretId = 'tracepoint/production/migration/source-rehearsal-only-20260925';
+const rollbackSecretId = 'tracepoint/production/migration/source-rehearsal-epoch-rollback-20260927';
 const probeEmail = 'jphares+source-fence-probe-20260927@tracepointhq.com';
 const probeKey = 'source-fence-probe-20260927.txt';
 const vehicleId = '4fe22291-4da8-4e98-acbe-e12be4a943ad';
@@ -54,8 +55,21 @@ export function rejected(status) { return status >= 400 && status < 600; }
 async function run() {
   const phase = process.argv[2];
   assert.ok(phase === '--on' || phase === '--off', 'PHASE_REQUIRED');
+  const credential = process.argv[3] ?? '--credential=old';
+  assert.ok(credential === '--credential=old' || credential === '--credential=rollback',
+    'CREDENTIAL_PHASE_MISMATCH');
+  assert.equal(process.argv.length <= 4, true, 'UNEXPECTED_ARGUMENT');
+  const secretId = credential === '--credential=old' ? oldSecretId : rollbackSecretId;
   assert.equal(awsValue(['sts', 'get-caller-identity', '--query', 'Account']), '193644343389', 'AWS_ACCOUNT_MISMATCH');
-  const key = awsValue(['secretsmanager', 'get-secret-value', '--secret-id', secretId, '--query', 'SecretString']);
+  const stored = awsValue(['secretsmanager', 'get-secret-value', '--secret-id', secretId, '--query', 'SecretString']);
+  let key = stored;
+  if (stored.startsWith('{')) {
+    const envelope = JSON.parse(stored);
+    assert.ok(envelope && typeof envelope === 'object' && !Array.isArray(envelope), 'SOURCE_KEY_INVALID');
+    const values = Object.values(envelope);
+    assert.equal(values.length, 1, 'SOURCE_KEY_INVALID');
+    key = values[0];
+  }
   assert.match(key, /^sb_secret_[A-Za-z0-9_-]{20,}$/, 'SOURCE_KEY_INVALID');
   const state = await request(key, 'POST', '/rest/v1/rpc/tracepoint_source_rehearsal_fence_status', '{}');
   assert.equal(state.status, 200, 'FENCE_ATTESTATION_FAILED');
@@ -95,6 +109,7 @@ async function run() {
     assert.equal(vehicle.status, 200, 'REST_POSITIVE_READ_FAILED');
     assert.equal((await vehicle.json()).length, 1, 'REST_POSITIVE_ROW_CHANGED');
     console.log(JSON.stringify({ result: 'PAID_SOURCE_WRITER_POSITIVES_PASS', sourceProject: 'reukdouvpshshvqnzsgw',
+      credentialEpoch: credential === '--credential=old' ? 'old' : 'rollback',
       authStatus, storageStatus, restStatus, authProbeRowsAfterCleanup: 0, storageProbeObjectsAfterCleanup: 0,
       credentialsLogged: false }));
     return;
@@ -125,7 +140,7 @@ async function run() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   run().catch(error => {
-    const safe = /^(?:PHASE_REQUIRED|AWS_REHEARSAL_ACCESS_FAILED|AWS_ACCOUNT_MISMATCH|SOURCE_KEY_INVALID|FENCE_ATTESTATION_FAILED|SOURCE_FENCE_PHASE_MISMATCH|AUTH_INVENTORY_FAILED|AUTH_INVENTORY_UNBOUNDED|STORAGE_INVENTORY_FAILED|STORAGE_INVENTORY_UNBOUNDED|AUTH_PROBE_PREEXISTS|STORAGE_PROBE_PREEXISTS|AUTH_POSITIVE_FAILED:\d{3}|AUTH_POSITIVE_ID_MISSING|AUTH_POSITIVE_NOT_PERSISTED|AUTH_CLEANUP_FAILED:\d{3}|AUTH_CLEANUP_NOT_PERSISTED|STORAGE_POSITIVE_FAILED:\d{3}|STORAGE_POSITIVE_NOT_PERSISTED|STORAGE_CLEANUP_FAILED:\d{3}|STORAGE_CLEANUP_NOT_PERSISTED|REST_POSITIVE_FAILED:\d{3}|REST_POSITIVE_READ_FAILED|REST_POSITIVE_ROW_CHANGED|AUTH_FENCE_GAP:\d{3}:\d+|STORAGE_FENCE_GAP:\d{3}:\d+)$/;
+    const safe = /^(?:PHASE_REQUIRED|CREDENTIAL_PHASE_MISMATCH|UNEXPECTED_ARGUMENT|AWS_REHEARSAL_ACCESS_FAILED|AWS_ACCOUNT_MISMATCH|SOURCE_KEY_INVALID|FENCE_ATTESTATION_FAILED|SOURCE_FENCE_PHASE_MISMATCH|AUTH_INVENTORY_FAILED|AUTH_INVENTORY_UNBOUNDED|STORAGE_INVENTORY_FAILED|STORAGE_INVENTORY_UNBOUNDED|AUTH_PROBE_PREEXISTS|STORAGE_PROBE_PREEXISTS|AUTH_POSITIVE_FAILED:\d{3}|AUTH_POSITIVE_ID_MISSING|AUTH_POSITIVE_NOT_PERSISTED|AUTH_CLEANUP_FAILED:\d{3}|AUTH_CLEANUP_NOT_PERSISTED|STORAGE_POSITIVE_FAILED:\d{3}|STORAGE_POSITIVE_NOT_PERSISTED|STORAGE_CLEANUP_FAILED:\d{3}|STORAGE_CLEANUP_NOT_PERSISTED|REST_POSITIVE_FAILED:\d{3}|REST_POSITIVE_READ_FAILED|REST_POSITIVE_ROW_CHANGED|AUTH_FENCE_GAP:\d{3}:\d+|STORAGE_FENCE_GAP:\d{3}:\d+)$/;
     console.error(safe.test(error?.message ?? '') ? error.message : 'PAID_SOURCE_AUTH_STORAGE_PROBE_FAILED');
     process.exitCode = 1;
   });

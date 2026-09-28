@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyExactPaidEpochCaptureSecret",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-rehearsal-epoch-capture-20260927-nU0jVB"
+    },
+    {
+      "Sid": "WriteAndVerifyOnlyTwoEpochArtifacts",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:GetObjectVersion"],
+      "Resource": [
+        "arn:aws:s3:::tracepoint-production-private-193644343389/migration/source-rehearsal/463606ba-ce48-468d-a91c-57c8067a0d3b/final-canonical.json",
+        "arn:aws:s3:::tracepoint-production-private-193644343389/migration/source-rehearsal/90e721c1-039b-47f8-b02d-c4e79d6100c8/final-canonical.json"
+      ]
+    },
+    {
+      "Sid": "ReadOnlyPinnedComparatorSourcePackage",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+      "Resource": "arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-source-rehearsal-double-compare-7f1d327042c96957.zip"
+    }
+  ]
+}
