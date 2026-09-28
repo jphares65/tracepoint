@@ -1,0 +1,287 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: One-shot final frozen-capture importer task definitions; no service, listener, DNS, or automatic run
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    ref:
+      - at: docs/production-source-freeze-capture-package-20260927.md
+        has: A/B immutable source and final target gating
+        scope: controlled production cutover only
+Resources:
+  ImportLogKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: isolate final-import diagnostic logs
+        must:
+          - no source rows or database credentials in logs
+          - use limited to exact importer log group encryption context
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::193644343389:root
+            Action: 'kms:*'
+            Resource: '*'
+          - Effect: Allow
+            Principal:
+              Service: logs.us-east-1.amazonaws.com
+            Action: [kms:Decrypt, kms:DescribeKey, kms:Encrypt, 'kms:GenerateDataKey*', 'kms:ReEncrypt*']
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: arn:aws:logs:us-east-1:193644343389:log-group:/tracepoint/production/final-import-20260928
+  ImportLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: aggregate-only final importer evidence
+        must:
+          - KMS encrypted
+          - no row values or secrets
+    Properties:
+      LogGroupName: /tracepoint/production/final-import-20260928
+      KmsKeyId: !GetAtt ImportLogKey.Arn
+      RetentionInDays: 30
+  ImportExecutionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: inject only the existing migrator credential into one-shot tasks
+        must:
+          - no Supabase credential or rollback key
+          - no public application task attachment
+    Properties:
+      RoleName: TracePoint-ProductionFinalImportExec-20260928
+      PermissionsBoundary: arn:aws:iam::193644343389:policy/TracePointProductionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: '193644343389'
+              ArnLike:
+                aws:SourceArn: arn:aws:ecs:us-east-1:193644343389:*
+      Policies:
+        - PolicyName: ExactFinalImportExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:BatchGetImage, ecr:GetDownloadUrlForLayer]
+                Resource: arn:aws:ecr:us-east-1:193644343389:repository/tracepoint-production
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55
+                Condition:
+                  StringEquals:
+                    kms:ViaService: secretsmanager.us-east-1.amazonaws.com
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: arn:aws:logs:us-east-1:193644343389:log-group:/tracepoint/production/final-import-20260928:*
+  ImportTaskRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: verify exact immutable A/B source and copy only final tenant-scoped objects
+        must:
+          - no Supabase, Cognito, SES, ECS service, or DNS access
+          - no unrestricted S3 object write
+    Properties:
+      RoleName: TracePoint-ProductionFinalImportTask-20260928
+      PermissionsBoundary: arn:aws:iam::193644343389:policy/TracePointProductionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: '193644343389'
+              ArnLike:
+                aws:SourceArn: arn:aws:ecs:us-east-1:193644343389:*
+      Policies:
+        - PolicyName: ExactFinalImportArtifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadPinnedCaptureArtifacts
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource:
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/final-canonical.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/final-canonical.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/object-archive.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/objects/department-assets/*
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/objects/tracepoint-attachments/*
+              - Sid: CopyOnlyTargetObjects
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource:
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/department-assets/*
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/attachments/*
+              - Sid: InventoryOnlyTargetObjectPrefixes
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: arn:aws:s3:::tracepoint-production-private-193644343389
+                Condition:
+                  StringLike:
+                    s3:prefix: [department-assets/, attachments/]
+              - Sid: AttestTargetBucketProtections
+                Effect: Allow
+                Action: [s3:GetBucketVersioning, s3:GetEncryptionConfiguration, s3:GetBucketPublicAccessBlock]
+                Resource: arn:aws:s3:::tracepoint-production-private-193644343389
+              - Sid: UseOnlyFinalArtifactKmsViaS3
+                Effect: Allow
+                Action: [kms:Decrypt, kms:GenerateDataKey]
+                Resource: arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55
+                Condition:
+                  StringEquals:
+                    kms:ViaService: s3.us-east-1.amazonaws.com
+              - Sid: AttestExactRdsControlPlane
+                Effect: Allow
+                Action: rds:DescribeDBInstances
+                Resource: '*'
+  ImporterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: no inbound traffic; one-shot task accesses only TLS APIs and final RDS
+        must:
+          - no public listener or service
+          - database traffic restricted to final RDS security group
+    Properties:
+      GroupDescription: Isolated final importer task egress only
+      VpcId: vpc-04accb4047a914176
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: sg-096e4787eae992cf4
+  FinalDatabaseIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: allow only this one-shot importer to reach final RDS
+        must:
+          - no public CIDR
+          - no legacy source database access
+    Properties:
+      GroupId: sg-096e4787eae992cf4
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref ImporterSecurityGroup
+  DatabaseTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: task registration only; explicit frozen artifact environment overrides required to run
+        must:
+          - image pinned by digest
+          - no public traffic or automatic task run
+    Properties:
+      Family: tracepoint-production-final-relational-import-20260928
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt ImportExecutionRole.Arn
+      TaskRoleArn: !GetAtt ImportTaskRole.Arn
+      ContainerDefinitions:
+        - Name: final-relational-import
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b88c77d4b1938a05a6fbf963ae508c22dc0937ae35ff82595fa69c0c44c1bd24
+          Essential: true
+          ReadonlyRootFilesystem: true
+          User: node
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ImportLogs
+              awslogs-region: us-east-1
+              awslogs-stream-prefix: database
+          Environment:
+            - Name: TRACEPOINT_FINAL_IMPORT_ACTION
+              Value: database
+            - Name: TRACEPOINT_EXPECTED_AWS_ACCOUNT
+              Value: '193644343389'
+            - Name: TRACEPOINT_EXPECTED_AWS_REGION
+              Value: us-east-1
+            - Name: TRACEPOINT_TARGET_RESOURCE_ID
+              Value: db-X4DYNS3TMVSAP7Z3RISDWEYDVE
+            - Name: TARGET_PGHOST
+              Value: tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com
+          Secrets:
+            - Name: TARGET_DATABASE_SECRET_JSON
+              ValueFrom: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT
+  ObjectTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: task registration only; explicit B sidecar and frozen A/B overrides required to run
+        must:
+          - image pinned by digest
+          - no public traffic or automatic task run
+    Properties:
+      Family: tracepoint-production-final-object-copy-20260928
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt ImportExecutionRole.Arn
+      TaskRoleArn: !GetAtt ImportTaskRole.Arn
+      ContainerDefinitions:
+        - Name: final-object-copy
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b88c77d4b1938a05a6fbf963ae508c22dc0937ae35ff82595fa69c0c44c1bd24
+          Essential: true
+          ReadonlyRootFilesystem: true
+          User: node
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ImportLogs
+              awslogs-region: us-east-1
+              awslogs-stream-prefix: objects
+          Environment:
+            - Name: TRACEPOINT_FINAL_IMPORT_ACTION
+              Value: objects
+            - Name: TRACEPOINT_EXPECTED_AWS_ACCOUNT
+              Value: '193644343389'
+            - Name: TRACEPOINT_TARGET_RESOURCE_ID
+              Value: db-X4DYNS3TMVSAP7Z3RISDWEYDVE
+            - Name: TARGET_PGHOST
+              Value: tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com
+          Secrets:
+            - Name: TARGET_DATABASE_SECRET_JSON
+              ValueFrom: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT
+Outputs:
+  DatabaseTaskDefinitionArn:
+    Value: !Ref DatabaseTaskDefinition
+  ObjectTaskDefinitionArn:
+    Value: !Ref ObjectTaskDefinition
+  ImporterSecurityGroupId:
+    Value: !Ref ImporterSecurityGroup
