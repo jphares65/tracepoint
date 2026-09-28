@@ -95,8 +95,10 @@ source REST secret returned HTTP 200 with only Email enabled and
 `disable_signup=false`. The credential remained in a local process pipe and
 was not printed. This closes the production provider-state inventory but does
 not prove that new signup, recovery, refresh, or service-admin writes can be
-blocked during the live freeze. The direct production project dashboard is
-not accessible to the currently signed-in `jphares65` Supabase organization
-view; it lists Development, Staging, and paid Rehearsal, but not Production.
-The separate TLS-verified database reader cannot administer Auth settings or
-inventory project-scoped key holders. Those controls remain fail-closed.
+blocked during the live freeze. The earlier dashboard visibility concern was
+resolved by pinning the project reference rather than relying on its display
+name: the signed-in dashboard shows `izlkwggluhlhzlumtzes` as `TracePoint
+Development`, while two independent live production bindings identify it as
+the source. The separate TLS-verified database reader still cannot administer
+Auth settings or inventory project-scoped key holders. Those controls remain
+fail-closed.
