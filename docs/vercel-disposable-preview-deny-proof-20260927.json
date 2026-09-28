@@ -1,0 +1,19 @@
+{
+  "format": "tracepoint-vercel-preview-deny-rehearsal/v1",
+  "dateUtc": "2026-09-28",
+  "projectId": "prj_wkk5IA0iS8cTKKuaTQoNbxYncCFw",
+  "previewDeploymentId": "dpl_7xMN4PwBGQ4mTdzvKqqCGetv39o5",
+  "previewOrigin": "https://project-q7s6a-jw24eqj52-jphares65s-projects.vercel.app",
+  "productionOrigin": "https://project-q7s6a.vercel.app",
+  "temporaryRuleId": "rule_tracepoint_disposable_preview_deny_proof_w4ydpd",
+  "condition": "Environment Equals Preview",
+  "action": "Deny",
+  "published": true,
+  "signedInPreviewDuringRule": "403 Forbidden: This request was blocked",
+  "productionDuringRuleHttpStatus": 200,
+  "inverse": "delete exact temporary rule and publish",
+  "signedInPreviewAfterInverse": "synthetic page restored",
+  "firewallAfterInverse": "No Custom Rules Yet",
+  "liveTracePointProjectChanged": false,
+  "customerDataOrCredentialsUsed": false
+}
