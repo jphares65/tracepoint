@@ -93,6 +93,24 @@ try {
   const storageOwnerDelegation = (await client.query(`SELECT
       pg_has_role('postgres', 'supabase_storage_admin', 'MEMBER') AS postgres_member_of_storage_owner,
       pg_has_role('postgres', 'supabase_storage_admin', 'USAGE') AS postgres_can_use_storage_owner`)).rows[0];
+  const managedSchemaReadPrivileges = (await client.query(`SELECT n.nspname AS schema_name,
+      c.relname AS table_name, pg_get_userbyid(n.nspowner) AS schema_owner,
+      pg_has_role('postgres', n.nspowner, 'MEMBER') AS postgres_member_of_schema_owner,
+      has_schema_privilege(current_user, n.oid, 'USAGE') AS schema_usage,
+      has_table_privilege(current_user, c.oid, 'SELECT') AS table_select,
+      has_table_privilege('postgres', c.oid, 'UPDATE') AS postgres_table_update,
+      has_table_privilege('postgres', c.oid, 'DELETE') AS postgres_table_delete
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE (n.nspname = 'auth' AND c.relname IN ('users', 'identities', 'mfa_factors'))
+       OR (n.nspname = 'storage' AND c.relname = 'objects')
+    ORDER BY n.nspname, c.relname`)).rows;
+  const managedSchemaGrants = (await client.query(`SELECT n.nspname AS schema_name,
+      grantor::regrole::text AS grantor, grantee::regrole::text AS grantee,
+      privilege_type, is_grantable
+    FROM pg_namespace n, LATERAL aclexplode(n.nspacl) acl
+    WHERE n.nspname IN ('auth', 'storage')
+      AND grantee IN ('postgres'::regrole, 'tracepoint_migration_reader'::regrole)
+    ORDER BY n.nspname, grantee, privilege_type`)).rows;
   const storageGrantors = (await client.query(`SELECT grantor::regrole::text AS grantor,
       grantee::regrole::text AS grantee, privilege_type
     FROM pg_class c, LATERAL aclexplode(c.relacl) acl
@@ -147,7 +165,8 @@ try {
     existingFenceTriggerCount: fences.length,
     cutoverSchemaPresent: cutoverSchema, dispatcher,
     storagePolicies, storageRolePrivileges, storageEffectivePrivileges,
-    storageOwnerDelegation, storageGrantors, permissionFunction,
+    storageOwnerDelegation, managedSchemaReadPrivileges, managedSchemaGrants,
+    storageGrantors, permissionFunction,
     publicDefinerFunctions,
     noCustomerRowsRead: true }, null, 2));
 } catch (error) {

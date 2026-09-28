@@ -41,6 +41,33 @@ production composite preflight must remain blocked until every row is either
 proven absent or has a rehearsed reversible control, a direct negative or
 appropriate immutable absence evidence, and a deterministic restore path.
 
+## Additional read-only privilege and runtime check
+
+The pinned, TLS-verified source catalog probe now reports managed-schema
+privileges without reading customer rows. `tracepoint_migration_reader` has
+table-level SELECT on `auth.users`, `auth.identities`, and `auth.mfa_factors`,
+but lacks USAGE on schema `auth`, so it cannot directly capture those rows.
+The `auth` schema is owned by `supabase_admin`; the available `postgres` role
+has USAGE **without grant option** and is not a member of that owner. A direct
+`GRANT USAGE` from this operator is therefore not an established path. The
+reader does have USAGE and SELECT on `storage.objects`. This does not change
+the approved reset-required Cognito migration; it identifies the limit of a
+database-side Auth parity probe and leaves authoritative credential/MFA
+changes dependent on the complete Auth writer fence.
+
+For currently deployed AWS workloads, read-only ECS inspection confirmed that
+only the public bridge task (`:4`, desired/running 1/1) injects Supabase
+runtime secret names. The Phase 3B shadow (`:18`) and Phase 3C rehearsal
+(`:23`) task definitions inject AWS-native database/auth secrets, not a
+Supabase source key; the no-public-route native authority rehearsal service
+remains desired/running 0/0. All three production-account CodeBuild projects
+use S3 sources without webhooks; the final-source-capture project still has
+no build. This narrows **active AWS processes**, not the set of dormant or
+external holders of the still-active modern source secret key. The live
+Supabase dashboard offers only irreversible deletion for that modern key;
+no reversible key-disable control was found. No source key or project setting
+was changed during this check.
+
 Capture executor preparation remains non-operative. Commit `b2276b5` was
 packaged as source SHA-256
 `aeb8e7e6cae97b4cfb41cdc11c3de300d1e17f16143d9d814415d8516ed39076`
