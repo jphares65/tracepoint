@@ -22,8 +22,8 @@ node scripts/check-production-maintenance-ingress.mjs pending
 The exact activation is:
 
 ```powershell
-aws cloudformation execute-change-set --change-set-name arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260927/d1ae3fda-1505-4d28-b77c-16a55fb7c6ec --stack-name tracepoint-production-maintenance-response-20260927 --profile tracepoint-production --region us-east-1
-aws cloudformation wait stack-create-complete --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/f41bc7e0-ba99-11f1-b90b-0e0ebc68fca1 --profile tracepoint-production --region us-east-1
+aws cloudformation execute-change-set --change-set-name arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928b/b096ce6f-e51b-475c-942c-a1803bee7eb8 --stack-name tracepoint-production-maintenance-response-20260927 --profile tracepoint-production --region us-east-1
+aws cloudformation wait stack-create-complete --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/85068000-bb8b-11f1-acc1-0affe4d14253 --profile tracepoint-production --region us-east-1
 node scripts/check-production-maintenance-ingress.mjs active
 ```
 
