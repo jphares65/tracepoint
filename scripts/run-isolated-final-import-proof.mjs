@@ -164,6 +164,8 @@ if (import.meta.main) {
       stage: error?.proofStage ?? 'environment',
       ...(typeof error?.importPhase === 'string' && /^[a-z-]+(?::[a-z_]+)?$/.test(error.importPhase)
         ? { importPhase: error.importPhase } : {}),
+      ...(error?.contractDiff && Object.values(error.contractDiff).every(value =>
+        Number.isSafeInteger(value) && value >= 0) ? { contractDiff: error.contractDiff } : {}),
       type, ...(sqlstate ? { sqlstate } : {}) }));
     process.exitCode = 1;
   }

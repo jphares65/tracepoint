@@ -11,7 +11,19 @@ import { atomicTransactionClient, AUDIT_HISTORY_RELATIONS, assertAuditHistoryEmp
   verifyDatabase, verifyEquipmentAssignmentHistory } from './run-supabase-rest-initial-import.mjs';
 
 export function snapshotFromArtifact(artifact) {
-  assert.deepEqual(artifact.tables.map(table => table.name), [...MIGRATION_RELATIONS], 'FINAL_RELATION_CONTRACT_MISMATCH');
+  const actual = artifact.tables.map(table => table.name);
+  const expected = [...MIGRATION_RELATIONS];
+  if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
+    const actualSet = new Set(actual), expectedSet = new Set(expected);
+    const error = new Error('FINAL_RELATION_CONTRACT_MISMATCH');
+    error.contractDiff = {
+      actualCount: actual.length, expectedCount: expected.length,
+      missingCount: expected.filter(name => !actualSet.has(name)).length,
+      extraCount: actual.filter(name => !expectedSet.has(name)).length,
+      reorderedCount: actual.filter((name, index) => expected[index] !== name).length,
+    };
+    throw error;
+  }
   return normalizedPatchSnapshot({ rows: new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]])),
     users: artifact.identities.rows, finalCapture: true,
     objectManifest: artifact.objects.manifest,
