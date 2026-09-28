@@ -29,7 +29,7 @@ const CAPTURES = Object.freeze({
 export function validateIsolatedProofEnvironment(env) {
   assert.equal(env.TRACEPOINT_ISOLATED_IMPORT_PROOF, 'paid-capture-b-to-proof-rds-v1',
     'ISOLATED_PROOF_GUARD_REQUIRED');
-  assert.ok(['rollback', 'apply'].includes(env.TRACEPOINT_ISOLATED_IMPORT_MODE),
+  assert.ok(['baseline', 'rollback', 'apply'].includes(env.TRACEPOINT_ISOLATED_IMPORT_MODE),
     'ISOLATED_PROOF_MODE_REQUIRED');
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_ACCOUNT, ACCOUNT, 'ISOLATED_PROOF_ACCOUNT_REQUIRED');
   assert.equal(env.TRACEPOINT_EXPECTED_AWS_REGION, REGION, 'ISOLATED_PROOF_REGION_REQUIRED');
@@ -58,18 +58,21 @@ function pinnedSpec(slot) {
 }
 
 export async function runIsolatedFinalImportProof(env = process.env, services = {}) {
+  let stage = 'environment';
   const { host, resourceId, mode, secret } = validateIsolatedProofEnvironment(env);
   delete env.TARGET_DATABASE_SECRET_JSON;
   const s3 = services.s3 ?? new S3Client({ region: REGION, maxAttempts: 2 });
   const rds = services.rds ?? new RDSClient({ region: REGION, maxAttempts: 2 });
   let client;
   try {
+    stage = 'artifact-and-target-fetch';
     const [firstSpec, secondSpec, response] = await Promise.all([
       loadPinnedCapture(s3, pinnedSpec('A')),
       loadPinnedCapture(s3, pinnedSpec('B')),
       rds.send(new DescribeDBInstancesCommand({ DBInstanceIdentifier: INSTANCE })),
     ]);
     const target = response.DBInstances?.[0];
+    stage = 'target-attestation';
     assert.equal(target?.DBInstanceIdentifier, INSTANCE, 'ISOLATED_PROOF_INSTANCE_MISMATCH');
     assert.equal(target?.DbiResourceId, resourceId, 'ISOLATED_PROOF_RESOURCE_MISMATCH');
     assert.equal(target?.Endpoint?.Address, host, 'ISOLATED_PROOF_ENDPOINT_MISMATCH');
@@ -80,6 +83,7 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
     assert.equal(target?.StorageEncrypted, true, 'ISOLATED_PROOF_TARGET_UNENCRYPTED');
     assert.equal(target?.DeletionProtection, true, 'ISOLATED_PROOF_TARGET_UNPROTECTED');
     assert.equal(target?.EngineVersion, '17.9', 'ISOLATED_PROOF_ENGINE_MISMATCH');
+    stage = 'artifact-attestation';
     const a = parseAndVerifyArtifact(firstSpec.bytes, firstSpec.byteSha256, PAID_PROJECT);
     const b = parseAndVerifyArtifact(secondSpec.bytes, secondSpec.byteSha256, PAID_PROJECT);
     assert.equal(a.runId, CAPTURES.A.runId, 'ISOLATED_PROOF_A_RUN_MISMATCH');
@@ -102,6 +106,7 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
       memberships: b.memberships.count });
     const ca = await readFile(env.TRACEPOINT_RDS_CA_PATH ?? '/app/rds-ca.pem', 'utf8');
     assert.match(ca, /BEGIN CERTIFICATE/, 'ISOLATED_PROOF_CA_MISSING');
+    stage = 'database-connect';
     client = services.client ?? new pg.Client({ host, port: 5432, database: 'tracepoint',
       user: secret.username, password: secret.password,
       ssl: { ca, rejectUnauthorized: true, servername: host },
@@ -109,10 +114,18 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
       application_name: 'tracepoint-isolated-final-import-proof' });
     await client.connect();
     const operations = finalImportOperations(resourceId);
+    if (mode === 'baseline') {
+      stage = 'baseline-read';
+      const baseline = await operations.readBaseline(client);
+      return { status: 'ISOLATED_IMPORT_PROOF_BASELINE', targetResourceId: resourceId,
+        customerRows: baseline.customerRows, authUsers: baseline.authUsers,
+        migrationLineage: baseline.migrationLineage, tlsRequired: true };
+    }
     const reconcileInTransaction = mode === 'rollback'
       ? async (db, args) => { await operations.reconcileInTransaction(db, args);
         throw new Error('ISOLATED_PROOF_FORCED_ROLLBACK'); }
       : operations.reconcileInTransaction;
+    stage = 'atomic-import';
     const result = await runAttestedAtomicImport({ plan, artifact: b,
       expectedTargetResourceId: resourceId, client,
       ...operations, reconcileInTransaction });
@@ -121,6 +134,9 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
       sourceProjectRef: PAID_PROJECT, targetResourceId: resourceId,
       relationalRows: result.relationalRows, identities: result.identities,
       memberships: result.memberships, artifactVersionId: result.artifactVersionId };
+  } catch (error) {
+    error.proofStage = stage;
+    throw error;
   } finally {
     await client?.end().catch(() => undefined);
     if (!services.s3) s3.destroy();
@@ -132,7 +148,10 @@ if (import.meta.main) {
   try { console.log(JSON.stringify(await runIsolatedFinalImportProof())); }
   catch (error) {
     const code = /^[A-Z][A-Z0-9_:]*$/.test(String(error?.message)) ? error.message : 'ISOLATED_IMPORT_PROOF_FAILED';
-    console.error(JSON.stringify({ status: 'BLOCKED', code }));
+    const type = /^[A-Za-z][A-Za-z0-9]*$/.test(String(error?.name)) ? error.name : 'Error';
+    const sqlstate = /^[0-9A-Z]{5}$/.test(String(error?.code)) ? error.code : undefined;
+    console.error(JSON.stringify({ status: 'BLOCKED', code,
+      stage: error?.proofStage ?? 'environment', type, ...(sqlstate ? { sqlstate } : {}) }));
     process.exitCode = 1;
   }
 }

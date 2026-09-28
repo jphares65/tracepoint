@@ -103,6 +103,49 @@ Resources:
               - Effect: Allow
                 Action: rds:DescribeDBInstances
                 Resource: '*'
+  ProofTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: register an explicit one-shot synthetic importer, never a service
+        must:
+          - candidate image pinned by scan-clean digest
+          - no execution guard or mode in defaults; task override must supply both
+          - only the private snapshot clone can be selected
+        mutable: review-required
+    Properties:
+      Family: tracepoint-production-final-import-proof-20260928
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: arn:aws:iam::193644343389:role/TracePoint-ProductionFinalImportExec-20260928
+      TaskRoleArn: !GetAtt ProofTaskRole.Arn
+      ContainerDefinitions:
+        - Name: isolated-import-proof
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:e64e16780a5aa8c91c5a8536f98b39d9266731e2e9f7bf2d42c717f8b4f44153
+          Essential: true
+          ReadonlyRootFilesystem: true
+          User: node
+          EntryPoint: [node, scripts/run-isolated-final-import-proof.mjs]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /tracepoint/production/final-import-20260928
+              awslogs-region: us-east-1
+              awslogs-stream-prefix: isolated-proof
+          Environment:
+            - Name: TRACEPOINT_EXPECTED_AWS_ACCOUNT
+              Value: '193644343389'
+            - Name: TRACEPOINT_EXPECTED_AWS_REGION
+              Value: us-east-1
+            - Name: TRACEPOINT_PROOF_RDS_RESOURCE_ID
+              Value: db-4HOQR2UMDO6A3W7IEJFDGGDKVQ
+            - Name: TRACEPOINT_PROOF_RDS_HOST
+              Value: tracepoint-production-final-import-proof-20260928.c8r4sgs089tu.us-east-1.rds.amazonaws.com
+          Secrets:
+            - Name: TARGET_DATABASE_SECRET_JSON
+              ValueFrom: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT
   ProofDatabase:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Snapshot
@@ -144,3 +187,5 @@ Outputs:
     Value: !Ref ProofTaskSecurityGroup
   ProofTaskRoleArn:
     Value: !GetAtt ProofTaskRole.Arn
+  ProofTaskDefinitionArn:
+    Value: !Ref ProofTaskDefinition
