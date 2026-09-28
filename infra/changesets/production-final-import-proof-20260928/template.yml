@@ -123,7 +123,7 @@ Resources:
       TaskRoleArn: !GetAtt ProofTaskRole.Arn
       ContainerDefinitions:
         - Name: isolated-import-proof
-          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:2ed5abefd80ca2848dfa97c210c5c08e5dcc5abc6ef552395bb88c20669a99d8
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:89ef6188d0bce79a741a3cf53b2d59826cd2491710c20d81dc6d3f90c2564cef
           Essential: true
           ReadonlyRootFilesystem: true
           User: node
