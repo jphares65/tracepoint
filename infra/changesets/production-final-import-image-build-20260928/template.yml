@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated final-import image builder; exact source ZIP and ECR repository, no application secrets or runtime authority
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    ref:
+      - at: docs/production-final-capture-deployment-20260928.md
+        has: source ZIP and preflight hold
+        scope: production cutover preparation
+Resources:
+  BuildLogKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: isolate build logs from public application and capture logs
+        must:
+          - logs service may use the key only for this exact build log group
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::193644343389:root
+            Action: 'kms:*'
+            Resource: '*'
+          - Effect: Allow
+            Principal:
+              Service: logs.us-east-1.amazonaws.com
+            Action: [kms:Decrypt, kms:DescribeKey, kms:Encrypt, 'kms:GenerateDataKey*', 'kms:ReEncrypt*']
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: arn:aws:logs:us-east-1:193644343389:log-group:/aws/codebuild/tracepoint-production-final-import-image-build-20260928
+  BuildLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: sanitized immutable image build evidence only
+        must:
+          - no source rows or secrets in logs
+          - KMS encrypted and retained for audit
+    Properties:
+      LogGroupName: /aws/codebuild/tracepoint-production-final-import-image-build-20260928
+      KmsKeyId: !GetAtt BuildLogKey.Arn
+      RetentionInDays: 30
+  BuildRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: separate importer builder from public application image builder
+        must:
+          - no Secrets Manager access
+          - only exact immutable source ZIP and tracepoint-production ECR repository
+          - no ECS, RDS, source Supabase, or runtime mutation permissions
+    Properties:
+      RoleName: TracePoint-ProductionFinalImportImageBuild-20260928
+      PermissionsBoundary: arn:aws:iam::193644343389:policy/TracePointProductionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: '193644343389'
+              ArnEquals:
+                aws:SourceArn: arn:aws:codebuild:us-east-1:193644343389:project/tracepoint-production-final-import-image-build-20260928
+      Policies:
+        - PolicyName: ExactFinalImportImageBuild
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadOnlyExactImmutableSource
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-final-import-d69a3af7555b1e1cd8353bd31850d435b3457cf80db28ffb4c010c1d77b10183.zip
+              - Sid: DecryptOnlyBuildSource
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: arn:aws:kms:us-east-1:193644343389:key/6880c1ac-f131-4077-9075-8d063ec43cba
+                Condition:
+                  StringEquals:
+                    kms:ViaService: s3.us-east-1.amazonaws.com
+              - Sid: PushOnlyReviewedRepository
+                Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:BatchGetImage, ecr:CompleteLayerUpload, ecr:DescribeImages, ecr:GetDownloadUrlForLayer, ecr:InitiateLayerUpload, ecr:PutImage, ecr:UploadLayerPart]
+                Resource: arn:aws:ecr:us-east-1:193644343389:repository/tracepoint-production
+              - Sid: EcrAuthentication
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: SanitizedBuildLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: arn:aws:logs:us-east-1:193644343389:log-group:/aws/codebuild/tracepoint-production-final-import-image-build-20260928:*
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: build one immutable importer image without public-app build credentials
+        must:
+          - exact source ZIP VersionId and whole-byte SHA-256 verified before build
+          - no webhook or automatic start
+          - does not connect to source or target databases
+    Properties:
+      Name: tracepoint-production-final-import-image-build-20260928
+      ServiceRole: !GetAtt BuildRole.Arn
+      Source:
+        Type: S3
+        Location: tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-final-import-d69a3af7555b1e1cd8353bd31850d435b3457cf80db28ffb4c010c1d77b10183.zip
+        BuildSpec: buildspec.production-final-import.yml
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/standard:7.0
+        ComputeType: BUILD_GENERAL1_SMALL
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: SOURCE_COMMIT
+            Type: PLAINTEXT
+            Value: b7eae11aff7a4bf47f77e4a04e380bb1fe15cb13
+          - Name: ECR_REPOSITORY_URI
+            Type: PLAINTEXT
+            Value: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production
+          - Name: IMAGE_TAG
+            Type: PLAINTEXT
+            Value: final-import-b7eae11aff7a4bf47f77e4a04e380bb1fe15cb13
+          - Name: SOURCE_ARCHIVE_BUCKET
+            Type: PLAINTEXT
+            Value: tracepoint-production-aws-native-build-source-193644343389
+          - Name: SOURCE_ARCHIVE_KEY
+            Type: PLAINTEXT
+            Value: source/tracepoint-final-import-d69a3af7555b1e1cd8353bd31850d435b3457cf80db28ffb4c010c1d77b10183.zip
+          - Name: SOURCE_ARCHIVE_VERSION_ID
+            Type: PLAINTEXT
+            Value: xZ6TRMKYfGPkcvtOzN_XrLv5XgW5cOxN
+          - Name: SOURCE_ARCHIVE_SHA256_BASE64
+            Type: PLAINTEXT
+            Value: 1po691VbHhzYNTvTGFDUNbNFfPgNso/7TAEMHXexAYM=
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref BuildLogs
