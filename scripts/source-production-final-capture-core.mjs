@@ -4,7 +4,7 @@ import { MIGRATION_RELATIONS, RELATION_ORDER_COLUMNS, canonical, sha256 } from '
 
 export const SOURCE_PROJECT_REF = 'izlkwggluhlhzlumtzes';
 export const SOURCE_ORIGIN = `https://${SOURCE_PROJECT_REF}.supabase.co`;
-export const SOURCE_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi';
+export const SOURCE_SECRET_NAME = 'tracepoint/production/migration/source-production-epoch-capture-20260928';
 export const ARTIFACT_BUCKET = 'tracepoint-production-private-193644343389';
 export const ARTIFACT_KMS_KEY_ARN = 'arn:aws:kms:us-east-1:193644343389:key/4dc71990-3cfa-49d7-88c6-383bc1067f55';
 export const FENCE_ATTESTATION_KEY = 'migration/source/composite-fence-20260927/attestation.json';
@@ -30,7 +30,7 @@ export function validateCaptureEnvironment(env) {
   assert.ok(slot === 'A' || slot === 'B', 'CAPTURE_SLOT_REQUIRED');
   assert.match(env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID ?? '', UUID, 'RUN_UUID_REQUIRED');
   assert.equal(env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID, APPROVED_RUN_IDS[slot], 'EXACT_FINAL_CAPTURE_RUN_REQUIRED');
-  assert.match(env.SOURCE_PRODUCTION_SERVICE_KEY ?? '', /^(sb_secret_[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_.-]{40,})$/, 'PRODUCTION_SERVER_KEY_REQUIRED');
+  assert.match(env.SOURCE_PRODUCTION_SERVICE_KEY ?? '', /^sb_secret_[A-Za-z0-9_-]{20,}$/, 'PRODUCTION_CAPTURE_EPOCH_KEY_REQUIRED');
   return Object.freeze({ slot, runId: env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID,
     key: `migration/source/${env.TRACEPOINT_SOURCE_PRODUCTION_RUN_ID}/final-canonical.json` });
 }

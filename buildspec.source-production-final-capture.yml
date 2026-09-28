@@ -2,9 +2,10 @@ version: 0.2
 
 env:
   shell: bash
+  variables:
+    SOURCE_PRODUCTION_PROJECT_URL: "https://izlkwggluhlhzlumtzes.supabase.co"
   secrets-manager:
-    SOURCE_PRODUCTION_PROJECT_URL: "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi:projectUrl"
-    SOURCE_PRODUCTION_SERVICE_KEY: "arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi:serviceRoleKey"
+    SOURCE_PRODUCTION_SERVICE_KEY: "tracepoint/production/migration/source-production-epoch-capture-20260928"
 
 phases:
   install:
@@ -25,7 +26,7 @@ phases:
       - test "$TRACEPOINT_SOURCE_PRODUCTION_CAPTURE_SLOT" = "A" -o "$TRACEPOINT_SOURCE_PRODUCTION_CAPTURE_SLOT" = "B"
       - echo "$TRACEPOINT_COMPOSITE_FENCE_VERSION_ID" | grep -Eq '^[A-Za-z0-9._-]+$'
       - echo "$TRACEPOINT_COMPOSITE_FENCE_SHA256" | grep -Eq '^[0-9a-f]{64}$'
-      - test -n "$SOURCE_PRODUCTION_SERVICE_KEY"
+      - echo "$SOURCE_PRODUCTION_SERVICE_KEY" | grep -Eq '^sb_secret_[A-Za-z0-9_-]{20,}$'
   build:
     on-failure: ABORT
     commands:

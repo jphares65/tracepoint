@@ -13,6 +13,10 @@ Parameters:
     Type: String
     AllowedPattern: 'source/tracepoint-production-final-capture-[0-9a-f]{64}\.zip'
     Description: Content-addressed, versioned source archive containing the reviewed commit
+  CaptureSecretArn:
+    Type: String
+    AllowedPattern: 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-production-epoch-capture-20260928-[A-Za-z0-9]{6}'
+    Description: Exact production capture-epoch secret ARN; never the bridge, migration REST, or rollback credential
 Resources:
   CaptureLogKey:
     Type: AWS::KMS::Key
@@ -67,7 +71,7 @@ Resources:
       com.aws.cloudformation.Context:
         why: distinct from rehearsal role so no project or artifact crossover is possible
         must:
-          - only exact production REST secret
+          - only the exact production capture-epoch secret, never the old or rollback key
           - only one immutable source package, one attestation key, and two exact capture keys
           - no source mutation permissions
     Properties:
@@ -94,10 +98,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion]
                 Resource: !Sub 'arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389/${SourceZipKey}'
-              - Sid: ReadOnlyExactProductionSourceCredential
+              - Sid: ReadOnlyExactProductionCaptureEpochCredential
                 Effect: Allow
                 Action: [secretsmanager:GetSecretValue, secretsmanager:DescribeSecret]
-                Resource: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/migration/source-supabase-rest-wvh4pi
+                Resource: !Ref CaptureSecretArn
               - Sid: WriteAndVerifyTwoPinnedCaptures
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject, s3:GetObjectVersion]

@@ -6,8 +6,18 @@ export const SOURCE_CREDENTIALS = Object.freeze([
   Object.freeze({ name: 'tracepoint/production/migration/source-rehearsal-only-20260925', projectRef: 'reukdouvpshshvqnzsgw' }),
 ]);
 
+export const PRODUCTION_EPOCH = Object.freeze({
+  projectRef: 'izlkwggluhlhzlumtzes',
+  captureKeyName: 'tracepoint_epoch_production_capture_20260928',
+  rollbackKeyName: 'tracepoint_epoch_production_rollback_20260928',
+  captureSecretName: 'tracepoint/production/migration/source-production-epoch-capture-20260928',
+  rollbackSecretName: 'tracepoint/production/migration/source-production-epoch-rollback-20260928',
+});
+
 export function classifySourceSecret(secretString, expectedProjectRef) {
-  if (expectedProjectRef === 'reukdouvpshshvqnzsgw' &&
+  assert.ok(expectedProjectRef === 'reukdouvpshshvqnzsgw' ||
+    expectedProjectRef === 'izlkwggluhlhzlumtzes', 'UNAPPROVED_SOURCE_PROJECT');
+  if (
     /^sb_secret_[A-Za-z0-9_-]{20,}$/.test(secretString)) return 'modern_secret';
   const value = JSON.parse(secretString);
   const projectUrl = value.projectUrl ?? value.NEXT_PUBLIC_SUPABASE_URL;

@@ -24,6 +24,7 @@ test('production capture pins project, account, credential origin, and immutable
     { TRACEPOINT_SOURCE_PRODUCTION_RUN_ID: '00000000-0000-4000-8000-000000000001' },
     { TRACEPOINT_SOURCE_PRODUCTION_CAPTURE_SLOT: 'B' },
     { SOURCE_PRODUCTION_SERVICE_KEY: '' },
+    { SOURCE_PRODUCTION_SERVICE_KEY: `eyJ${'x'.repeat(50)}` },
   ]) assert.throws(() => validateCaptureEnvironment({ ...valid, ...patch }));
 });
 
@@ -107,13 +108,17 @@ test('artifact is production-labelled and includes all reviewed relation contrac
     fenceChangedAt: '2026-09-27T12:00:00Z', rowsByRelation: new Map(), identities: [], objects: [] }));
 });
 
-test('buildspec pins only the production REST secret and does not weaken the rehearsal buildspec', () => {
+test('buildspec pins only the new production capture epoch secret and does not weaken rehearsal', () => {
   const production = readFileSync(new URL('../buildspec.source-production-final-capture.yml', import.meta.url), 'utf8');
   const rehearsal = readFileSync(new URL('../buildspec.source-rehearsal-capture.yml', import.meta.url), 'utf8');
-  assert.match(production, /source-supabase-rest-wvh4pi:serviceRoleKey/);
+  assert.match(production, /source-production-epoch-capture-20260928/);
+  assert.doesNotMatch(production, /source-supabase-rest-wvh4pi|source-production-epoch-rollback/);
   assert.match(production, /izlkwggluhlhzlumtzes/);
-  assert.match(readFileSync(new URL('../infra/changesets/production-source-capture-20260927/template.yml', import.meta.url), 'utf8'),
-    /1d761bd7-04dd-43f3-b77a-2c41130e18c2/);
+  const template = readFileSync(new URL('../infra/changesets/production-source-capture-20260927/template.yml', import.meta.url), 'utf8');
+  assert.match(template, /1d761bd7-04dd-43f3-b77a-2c41130e18c2/);
+  assert.match(template, /source-production-epoch-capture-20260928/);
+  assert.match(template, /Resource: !Ref CaptureSecretArn/);
+  assert.doesNotMatch(template, /source-supabase-rest-wvh4pi|source-production-epoch-rollback/);
   assert.doesNotMatch(production, /source-rehearsal-only|reukdouvpshshvqnzsgw|wztqqqashilusoppddxi/);
   assert.match(rehearsal, /reukdouvpshshvqnzsgw/);
   const compareBuild = readFileSync(new URL('../buildspec.source-production-double-compare.yml', import.meta.url), 'utf8');
