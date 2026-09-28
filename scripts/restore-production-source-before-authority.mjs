@@ -197,11 +197,12 @@ try {
   assert.equal(services?.length, 1, 'PUBLIC_SERVICE_MISSING');
   const service = services[0];
   assert.equal(service.status, 'ACTIVE', 'PUBLIC_SERVICE_NOT_ACTIVE');
-  assert.equal(service.taskDefinition, BASELINE_TASK, 'PUBLIC_BRIDGE_REVISION_DRIFT');
+  assert.ok([BASELINE_TASK, RESTORE_TASK].includes(service.taskDefinition),
+    'PUBLIC_BRIDGE_REVISION_DRIFT');
   if (check) {
     console.log(JSON.stringify({ status: 'PREAUTHORITY_SOURCE_RESTORE_EXECUTABLE',
       sourceProject: PRODUCTION_EPOCH.projectRef, vercelProjectId: VERCEL_PROJECT_ID,
-      baselineGitSha: BASELINE_GIT_SHA, publicTaskDefinition: BASELINE_TASK,
+      baselineGitSha: BASELINE_GIT_SHA, publicTaskDefinition: service.taskDefinition,
       restoreTaskDefinition: RESTORE_TASK, restoreImage: RESTORE_IMAGE,
       productionVercelEnvId: PRODUCTION_SECRET_ENV_ID,
       productionPublishableEnvId: publishable[0].id,
