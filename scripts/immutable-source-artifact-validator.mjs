@@ -18,14 +18,16 @@ const validUuid = value => UUID.test(String(value));
 const stableKey = (row, columns, relation) => { const value = columns.map(column => row?.[column]); assert.ok(value.every(item => item !== null && item !== undefined && item !== ""), `REQUIRED_STABLE_KEY_MISSING:${relation}`); return canonical(value); };
 
 /** Pure artifact validator. It has no live-source, target-RDS, or write dependency. */
-export function validateImmutableArtifact(artifact, { expectedSha256, expectations = INITIAL_EXPECTATIONS, enforceCurrentDriftCounts = false } = {}) {
+export function validateImmutableArtifact(artifact, { expectedSha256, expectations = INITIAL_EXPECTATIONS,
+  enforceCurrentDriftCounts = false, expectedRunId = RUN_ID,
+  expectedAuthorizationReference = AUTHORIZATION_REFERENCE } = {}) {
   assert.ok(artifact && typeof artifact === "object" && !Array.isArray(artifact), "ARTIFACT_INVALID");
   assert.match(expectedSha256, /^[0-9a-f]{64}$/, "EXPECTED_ARTIFACT_SHA256_REQUIRED");
   const { masterSha256, ...body } = artifact;
   assert.equal(masterSha256, expectedSha256, "ARTIFACT_EXPECTED_SHA256_MISMATCH");
   assert.equal(sha256(body), masterSha256, "ARTIFACT_CONTENT_SHA256_MISMATCH");
-  assert.equal(artifact.runId, RUN_ID, "ARTIFACT_RUN_ID_MISMATCH");
-  assert.equal(artifact.authorizationReference, AUTHORIZATION_REFERENCE, "ARTIFACT_AUTHORIZATION_MISMATCH");
+  assert.equal(artifact.runId, expectedRunId, "ARTIFACT_RUN_ID_MISMATCH");
+  assert.equal(artifact.authorizationReference, expectedAuthorizationReference, "ARTIFACT_AUTHORIZATION_MISMATCH");
   assert.deepEqual(artifact.source?.relationContract, [...MIGRATION_RELATIONS], "ARTIFACT_RELATION_CONTRACT_MISMATCH");
   assert.equal(artifact.tables?.length, MIGRATION_RELATIONS.length, "ARTIFACT_TABLE_COUNT_MISMATCH");
   const knownIds = new Set(), idsByRelation = new Map(), departmentsById = new Map(), tableSummary = [], violations = new Set();

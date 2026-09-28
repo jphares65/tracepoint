@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { MIGRATION_RELATIONS } from './supabase-rest-ledger-core.mjs';
+import { validateImmutableArtifact } from './immutable-source-artifact-validator.mjs';
 import { compareFrozenCaptures, parseAndVerifyArtifact } from './source-frozen-capture-parity-core.mjs';
 import { APPROVED_RUN_IDS, ARTIFACT_BUCKET, SOURCE_PROJECT_REF } from './source-production-final-capture-core.mjs';
 
@@ -19,6 +20,16 @@ function pinnedCapture(spec, slot) {
   assert.ok(spec?.bytes instanceof Uint8Array, `FINAL_IMPORT_BYTES_MISSING:${slot}`);
   const artifact = parseAndVerifyArtifact(spec.bytes, spec.byteSha256, SOURCE_PROJECT_REF);
   assert.equal(artifact.runId, APPROVED_RUN_IDS[slot], `FINAL_IMPORT_RUN_MISMATCH:${slot}`);
+  const memberships = artifact.rows.department_memberships;
+  validateImmutableArtifact(artifact, { expectedSha256: artifact.masterSha256,
+    expectedRunId: APPROVED_RUN_IDS[slot],
+    expectedAuthorizationReference: 'TP-PRODUCTION-FINAL-SOURCE-20260927',
+    expectations: { relationalRows: artifact.totalRelationalRows,
+      identities: artifact.identities.count, memberships: memberships.length,
+      activeMemberships: memberships.filter(row => row.is_active === true).length,
+      inactiveMemberships: memberships.filter(row => row.is_active !== true).length,
+      platformAdmins: artifact.rows.platform_admins.length,
+      objects: artifact.objects.count, objectBytes: artifact.objects.totalBytes } });
   return artifact;
 }
 

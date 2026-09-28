@@ -241,3 +241,10 @@ editing constants or substitute its earlier 4,813-row baseline as final
 reconciliation. Implement and rehearse a separate exact-target, exact-artifact
 atomic apply path before source maintenance. This is an engineering/package
 gap, not evidence of source or target corruption.
+
+The read-only `production-final-import-core.mjs` planning gate now checks
+both byte-pinned artifacts, the 60-second minimum quiet interval, exact
+slot B, source and tenant/reference integrity, and the exact final RDS
+control-plane identity. Its focused tests pass. It deliberately has no
+database client or write operation and does **not** close the atomic-apply
+gap above.
