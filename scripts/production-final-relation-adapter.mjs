@@ -3,6 +3,7 @@ import { MIGRATION_RELATIONS, sha256 } from './supabase-rest-ledger-core.mjs';
 import { IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE,
   normalizeRemovedEquipmentCustody, quote } from './supabase-rest-import-core.mjs';
 import { FINAL_RDS_RESOURCE_ID } from './production-final-import-core.mjs';
+import { SOURCE_PROJECT_REF } from './source-production-final-capture-core.mjs';
 import { atomicTransactionClient, AUDIT_HISTORY_RELATIONS, assertAuditHistoryEmpty,
   deriveAuditPrerequisites, hydrateMigrationAnchorProfiles, importNullableTrainingCertificationCycle,
   importRelation, insertIdentityAnchors, normalizedPatchSnapshot, preflightTarget,
@@ -10,7 +11,7 @@ import { atomicTransactionClient, AUDIT_HISTORY_RELATIONS, assertAuditHistoryEmp
   runDepartmentPrerequisiteBootstrapCleanup, verifyAtomicRollback,
   verifyDatabase, verifyEquipmentAssignmentHistory } from './run-supabase-rest-initial-import.mjs';
 
-export function snapshotFromArtifact(artifact) {
+export function snapshotFromArtifact(artifact, sourceProjectRef = SOURCE_PROJECT_REF) {
   const actual = artifact.tables.map(table => table.name);
   const expected = [...MIGRATION_RELATIONS];
   if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
@@ -24,17 +25,24 @@ export function snapshotFromArtifact(artifact) {
     };
     throw error;
   }
+  assert.ok([SOURCE_PROJECT_REF, 'reukdouvpshshvqnzsgw'].includes(sourceProjectRef),
+    'FINAL_IMPORT_SOURCE_PROJECT_NOT_APPROVED');
   return normalizedPatchSnapshot({ rows: new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]])),
     users: artifact.identities.rows, finalCapture: true,
     objectManifest: artifact.objects.manifest,
     baseline: { relationalRows: artifact.totalRelationalRows,
       identities: artifact.identities.count, memberships: artifact.memberships.count,
       objects: artifact.objects.count, objectBytes: artifact.objects.totalBytes },
-    artifact: { masterSha256: artifact.masterSha256 } });
+    artifact: { masterSha256: artifact.masterSha256 } }, `https://${sourceProjectRef}.supabase.co`);
 }
 
-export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOURCE_ID) {
+export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOURCE_ID,
+  sourceProjectRef = SOURCE_PROJECT_REF) {
   assert.match(expectedTargetResourceId, /^db-[A-Z0-9]+$/, 'FINAL_IMPORT_TARGET_RESOURCE_REQUIRED');
+  assert.ok(expectedTargetResourceId === FINAL_RDS_RESOURCE_ID
+    ? sourceProjectRef === SOURCE_PROJECT_REF
+    : expectedTargetResourceId === 'db-4HOQR2UMDO6A3W7IEJFDGGDKVQ' &&
+      sourceProjectRef === 'reukdouvpshshvqnzsgw', 'FINAL_IMPORT_SOURCE_TARGET_PAIR_INVALID');
   let preflight;
   let snapshot;
   let normalizedEquipment;
@@ -57,7 +65,7 @@ export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOU
   const applyRelations = async (client, { plan, artifact }) => {
     let phase = 'snapshot-normalization';
     try {
-    snapshot = snapshotFromArtifact(artifact);
+    snapshot = snapshotFromArtifact(artifact, sourceProjectRef);
     phase = 'equipment-normalization';
     normalizedEquipment = normalizeRemovedEquipmentCustody(snapshot.rows.get('equipment_assets') ?? [],
       snapshot.rows.get('equipment_asset_assignments') ?? [], null);

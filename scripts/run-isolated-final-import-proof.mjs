@@ -114,7 +114,7 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
       connectionTimeoutMillis: 15_000, statement_timeout: 60_000,
       application_name: 'tracepoint-isolated-final-import-proof' });
     await client.connect();
-    const operations = finalImportOperations(resourceId);
+    const operations = finalImportOperations(resourceId, PAID_PROJECT);
     if (mode === 'baseline') {
       stage = 'baseline-read';
       const baseline = await operations.readBaseline(client);

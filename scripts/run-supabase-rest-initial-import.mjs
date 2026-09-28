@@ -116,10 +116,10 @@ async function sourceSnapshot(onBoundary = () => undefined) {
   onBoundary({ event: "post-source-05", boundary: "source-validation-complete", totalRows: total, membershipCount: memberships.length });
   return { rows, users };
 }
-export function normalizedPatchSnapshot(snapshot) {
+export function normalizedPatchSnapshot(snapshot, sourceOrigin = PROJECT_URL) {
   assert.ok(snapshot.artifact, "DEPARTMENT_PATCH_NORMALIZATION_REQUIRES_PINNED_ARTIFACT");
   const originalDepartmentRows = snapshot.rows.get("departments") ?? [];
-  const normalized = normalizeDepartmentPatchRows(originalDepartmentRows, snapshot.objectManifest ?? OBJECT_MANIFEST);
+  const normalized = normalizeDepartmentPatchRows(originalDepartmentRows, snapshot.objectManifest ?? OBJECT_MANIFEST, sourceOrigin);
   if (!snapshot.finalCapture) assert.equal(normalized.evidence.changed, 2, "DEPARTMENT_PATCH_SOURCE_REFERENCE_COUNT_CHANGED");
   snapshot.rows.set("departments", normalized.rows);
   snapshot.departmentPatchNormalization = { originalDepartmentRows, evidence: normalized.evidence };

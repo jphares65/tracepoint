@@ -171,6 +171,11 @@ test("department patch normalization is exact, tenant-scoped, idempotent, and pr
   assert.throws(() => normalizeDepartmentPatchReference(legacy, object.departmentId, []), /OBJECT_NOT_IN_MANIFEST/);
   assert.throws(() => normalizeDepartmentPatchReference("https://other.example/" + object.sourceKey, object.departmentId), /ORIGIN_INVALID/);
   assert.throws(() => normalizeDepartmentPatchReference("not-a-url", object.departmentId), /URL_INVALID/);
+  const paidOrigin = "https://reukdouvpshshvqnzsgw.supabase.co";
+  const paidLegacy = `${paidOrigin}/storage/v1/object/public/department-assets/${object.sourceKey}`;
+  assert.throws(() => normalizeDepartmentPatchReference(paidLegacy, object.departmentId), /ORIGIN_INVALID/);
+  assert.equal(normalizeDepartmentPatchReference(paidLegacy, object.departmentId,
+    OBJECT_MANIFEST, paidOrigin), canonical);
   assert.ok(DATABASE_MODES.includes(DEPARTMENT_PATCH_NORMALIZATION_MODE));
 });
 

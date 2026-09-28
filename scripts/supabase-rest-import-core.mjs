@@ -93,7 +93,7 @@ export const OBJECT_REFERENCE_COLUMNS = Object.freeze([
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
 export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, POST_COMMIT_RECONCILIATION_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, DEPARTMENT_PATCH_NORMALIZATION_MODE]);
 
-export function normalizeDepartmentPatchReference(value, departmentId, manifest = OBJECT_MANIFEST) {
+export function normalizeDepartmentPatchReference(value, departmentId, manifest = OBJECT_MANIFEST, sourceOrigin = PROJECT_URL) {
   if (value === null || value === undefined || value === "") return value;
   assert.equal(typeof value, "string", "DEPARTMENT_PATCH_REFERENCE_INVALID");
   let path;
@@ -106,7 +106,7 @@ export function normalizeDepartmentPatchReference(value, departmentId, manifest 
   } else {
     let url;
     try { url = new URL(value); } catch { throw new Error("DEPARTMENT_PATCH_LEGACY_URL_INVALID"); }
-    assert.equal(url.origin, PROJECT_URL, "DEPARTMENT_PATCH_LEGACY_ORIGIN_INVALID");
+    assert.equal(url.origin, sourceOrigin, "DEPARTMENT_PATCH_LEGACY_ORIGIN_INVALID");
     assert.equal(url.search, "", "DEPARTMENT_PATCH_LEGACY_QUERY_INVALID");
     assert.equal(url.hash, "", "DEPARTMENT_PATCH_LEGACY_FRAGMENT_INVALID");
     const prefix = "/storage/v1/object/public/department-assets/";
@@ -122,8 +122,8 @@ export function normalizeDepartmentPatchReference(value, departmentId, manifest 
   return `/api/settings/department-patch?path=${encodeURIComponent(path)}`;
 }
 
-export function normalizeDepartmentPatchRows(rows, manifest = OBJECT_MANIFEST) {
-  const normalized = rows.map(row => ({ ...row, patch_url: normalizeDepartmentPatchReference(row.patch_url, row.id, manifest) }));
+export function normalizeDepartmentPatchRows(rows, manifest = OBJECT_MANIFEST, sourceOrigin = PROJECT_URL) {
+  const normalized = rows.map(row => ({ ...row, patch_url: normalizeDepartmentPatchReference(row.patch_url, row.id, manifest, sourceOrigin) }));
   const changed = normalized.filter((row, index) => row.patch_url !== rows[index].patch_url);
   return { rows: normalized, evidence: { rule: "department-patch-s3-delivery-v1", changed: changed.length, sourceCanonicalSha256: canonicalRowsHash(rows), normalizedCanonicalSha256: canonicalRowsHash(normalized), stableDepartmentIdHashes: changed.map(row => sha256(row.id)).sort() } };
 }
