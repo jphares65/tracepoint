@@ -459,6 +459,11 @@ export async function importNullableTrainingCertificationCycle(client, snapshot,
   const certificationMapping = preflight.mappings.find(item => item.relation === cycle.certifications);
   assert.equal(preflight.targetBefore.get(cycle.attendees), 0, "CYCLE_TARGET_ATTENDEES_NOT_EMPTY");
   assert.equal(preflight.targetBefore.get(cycle.certifications), 0, "CYCLE_TARGET_CERTIFICATIONS_NOT_EMPTY");
+  if ((snapshot.rows.get(cycle.attendees) ?? []).length === 0 &&
+      (snapshot.rows.get(cycle.certifications) ?? []).length === 0) {
+    return { relation: `${cycle.attendees}+${cycle.certifications}`, imported: 0, resumed: 0,
+      strategy: "empty-pair-no-write" };
+  }
   const insert = async (relation, rows, mapping) => {
     const sql = insertSql(relation, mapping.sourceColumns);
     for (const row of rows) await client.query(sql, [JSON.stringify(row)]);
