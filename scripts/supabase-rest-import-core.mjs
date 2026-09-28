@@ -1266,6 +1266,14 @@ export function importEvidence({ mappings, sourceTables, targetTables, identitie
   return { format: "tracepoint-rest-rds-import-evidence/v1", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships, objects: { count: expected.objects, totalBytes: expected.objectBytes, manifestSha256: objectManifest === OBJECT_MANIFEST ? objectManifestSha256 : sha256(objectManifest.map(({ sourceBucket, sourceKey, bytes, sha256: digest }) => ({ bucket: sourceBucket, sourceKey, size: bytes, sha256: digest }))) }, ...(baseline ? { sourceBaseline: "adopted-immutable-artifact", sourceArtifactSha256 } : {}), masterSha256: sha256({ mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships }) };
 }
 
+export function verifyEmptyIdentitySequence(relation, lastValue) {
+  assert.ok(IDENTITY_PRESERVATION_RELATIONS.includes(relation), "IDENTITY_PRESERVATION_RELATION_NOT_ALLOWED");
+  const last = bigintIdentity(lastValue, "IDENTITY_SEQUENCE_VALUE_INVALID");
+  assert.ok(last >= 1n, "IDENTITY_SEQUENCE_EMPTY_NOT_ADVANCED");
+  return Object.freeze({ relation, lastValue: String(last), maxImportedId: null,
+    nextGeneratedIdCannotCollide: true, emptyRelation: true });
+}
+
 export function sourceObjectUrl(object) {
   assert.ok(OBJECT_MANIFEST.includes(object), "Object is outside the approved manifest");
   return `${PROJECT_URL}/storage/v1/object/${object.sourceBucket}/${object.sourceKey.split("/").map(encodeURIComponent).join("/")}`;

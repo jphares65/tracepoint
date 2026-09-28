@@ -95,7 +95,7 @@ export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOU
       await importRelation(scoped, relation, snapshot.rows.get(relation) ?? [],
         preflight.mappings.find(item => item.relation === relation), preflight.resumePlan.get(relation));
     }
-    await repairSequences(scoped);
+    await repairSequences(scoped, { allowEmptyIdentityRelations: true });
     for (const relation of preflight.order) {
       if (relation === 'departments' || AUDIT_HISTORY_RELATIONS.includes(relation)) continue;
       phase = `relation:${relation}`;
@@ -106,7 +106,7 @@ export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOU
           relation === 'equipment_asset_assignments' ? normalizedEquipment.assignments : snapshot.rows.get(relation) ?? [],
         preflight.mappings.find(item => item.relation === relation), preflight.resumePlan.get(relation));
     }
-    await repairSequences(scoped);
+    await repairSequences(scoped, { allowEmptyIdentityRelations: true });
     phase = 'equipment-history';
     await verifyEquipmentAssignmentHistory(scoped, snapshot, preflight, normalizedEquipment);
     return { relationalRows: plan.relationalRows, identities: snapshot.users.length,

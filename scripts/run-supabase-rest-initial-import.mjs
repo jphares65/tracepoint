@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { verifyEmptyIdentitySequence } from "./supabase-rest-import-core.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
@@ -494,7 +495,7 @@ export async function importNullableTrainingCertificationCycle(client, snapshot,
   });
   return { relation: `${cycle.attendees}+${cycle.certifications}`, imported: (snapshot.rows.get(cycle.attendees) ?? []).length + (snapshot.rows.get(cycle.certifications) ?? []).length, resumed: 0, strategy: "two-phase-nullable-fk" };
 }
-export async function repairSequences(client) {
+export async function repairSequences(client, { allowEmptyIdentityRelations = false } = {}) {
   await client.query("do $repair$ declare item record; begin for item in select n.nspname as schemaname,c.relname as tablename,a.attname as columnname from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null loop execute format('select setval(pg_get_serial_sequence(%L,%L),coalesce((select max(%I) from %I.%I),1),true)',item.schemaname||'.'||item.tablename,item.columnname,item.columnname,item.schemaname,item.tablename); end loop; end $repair$");
   const identitySequences = [];
   for (const relation of IDENTITY_PRESERVATION_RELATIONS) {
@@ -502,10 +503,12 @@ export async function repairSequences(client) {
     assert.ok(idColumn?.sequence_name && /^public\.[a-z][a-z0-9_]*$/u.test(idColumn.sequence_name), "IDENTITY_SEQUENCE_NAME_INVALID");
     const [, sequence] = idColumn.sequence_name.split(".");
     const maximum = (await client.query(`select max(${"\"id\""})::text as maximum from public.${relation}`)).rows[0].maximum;
-    assert.ok(maximum !== null, "IDENTITY_SEQUENCE_MAX_MISSING");
     const state = (await client.query(`select last_value::text as last_value,is_called from public.${sequence}`)).rows[0];
     assert.equal(state.is_called, true, "IDENTITY_SEQUENCE_NOT_CALLED");
-    identitySequences.push(verifyIdentitySequenceAdvance(relation, state.last_value, maximum));
+    if (maximum === null) {
+      assert.equal(allowEmptyIdentityRelations, true, "IDENTITY_SEQUENCE_MAX_MISSING");
+      identitySequences.push(verifyEmptyIdentitySequence(relation, state.last_value));
+    } else identitySequences.push(verifyIdentitySequenceAdvance(relation, state.last_value, maximum));
   }
   return identitySequences;
 }

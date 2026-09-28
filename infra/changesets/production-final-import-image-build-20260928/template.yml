@@ -82,7 +82,7 @@ Resources:
               - Sid: ReadOnlyExactImmutableSource
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion]
-                Resource: arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-final-import-41f3642f362caaa8fe117d726b6ad56c71214f7c8bf040b71d17de3b0c581abd.zip
+                Resource: arn:aws:s3:::tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-final-import-f71f4ba826e6ec32ce613fbe07a6b6e74769838bd12c8df01443c8705ff48101.zip
               - Sid: DecryptOnlyBuildSource
                 Effect: Allow
                 Action: kms:Decrypt
@@ -116,7 +116,7 @@ Resources:
       ServiceRole: !GetAtt BuildRole.Arn
       Source:
         Type: S3
-        Location: tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-final-import-41f3642f362caaa8fe117d726b6ad56c71214f7c8bf040b71d17de3b0c581abd.zip
+        Location: tracepoint-production-aws-native-build-source-193644343389/source/tracepoint-final-import-f71f4ba826e6ec32ce613fbe07a6b6e74769838bd12c8df01443c8705ff48101.zip
         BuildSpec: buildspec.production-final-import.yml
       Artifacts:
         Type: NO_ARTIFACTS
@@ -128,25 +128,25 @@ Resources:
         EnvironmentVariables:
           - Name: SOURCE_COMMIT
             Type: PLAINTEXT
-            Value: 06a9b216cb1267542f0e4a8480189186890f16d4
+            Value: 6eae0bf9f5d77a65125b72fb4f5134322c1f8fff
           - Name: ECR_REPOSITORY_URI
             Type: PLAINTEXT
             Value: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production
           - Name: IMAGE_TAG
             Type: PLAINTEXT
-            Value: final-import-06a9b216cb1267542f0e4a8480189186890f16d4
+            Value: final-import-6eae0bf9f5d77a65125b72fb4f5134322c1f8fff
           - Name: SOURCE_ARCHIVE_BUCKET
             Type: PLAINTEXT
             Value: tracepoint-production-aws-native-build-source-193644343389
           - Name: SOURCE_ARCHIVE_KEY
             Type: PLAINTEXT
-            Value: source/tracepoint-final-import-41f3642f362caaa8fe117d726b6ad56c71214f7c8bf040b71d17de3b0c581abd.zip
+            Value: source/tracepoint-final-import-f71f4ba826e6ec32ce613fbe07a6b6e74769838bd12c8df01443c8705ff48101.zip
           - Name: SOURCE_ARCHIVE_VERSION_ID
             Type: PLAINTEXT
-            Value: 0qSNd2uMv1uCPqrkiJ0YgcxApNC.42UT
+            Value: U8kWj5Sv_7Ksd3JpyB0VdlJvD7_I6x.V
           - Name: SOURCE_ARCHIVE_SHA256_BASE64
             Type: PLAINTEXT
-            Value: QfNkLzYsqqj+EX1ya2rVbHEhT3yL8EC3HRfeOwxYGr0=
+            Value: 9x9LqCbm7DLOYT++B6a250dpg4vRLI3wFEPIcF/0gQE=
       LogsConfig:
         CloudWatchLogs:
           Status: ENABLED
