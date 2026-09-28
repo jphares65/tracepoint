@@ -14,6 +14,7 @@ $importFiles = @(
     'scripts/production-final-import-core.mjs',
     'scripts/production-final-atomic-import-core.mjs',
     'scripts/production-final-relation-adapter.mjs',
+    'scripts/production-final-patch-omission.mjs',
     'scripts/production-final-object-archive-core.mjs',
     'scripts/production-final-object-copy-core.mjs',
     'scripts/run-production-final-atomic-import.mjs',

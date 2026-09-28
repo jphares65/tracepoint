@@ -29,18 +29,25 @@ test('object copier requires capture B sidecar and exact final database', () => 
   /FINAL_OBJECT_SECRET_HOST_UNAPPROVED/);
 });
 
-test('reference reconciliation rejects a stale Supabase patch URL on the target', async () => {
-  const departmentId = '1d0e2994-4224-4237-8328-71020ba20027';
-  const source = { id: departmentId,
-    patch_url: `https://izlkwggluhlhzlumtzes.supabase.co/storage/v1/object/public/department-assets/${departmentId}/patch-123.jpg` };
-  const manifest = [{ sourceBucket: 'department-assets', sourceKey: `${departmentId}/patch-123.jpg`,
-    destinationKey: `department-assets/${departmentId}/patch-123.jpg`, departmentId }];
+test('omitted patch references must be NULL and remain tenant-owned', async () => {
+  const ids = ['1d0e2994-4224-4237-8328-71020ba20027', 'd01a3f80-9b0f-4a9d-bf2b-9b2dc29f50e0'];
+  const keys = [`${ids[0]}/patch-1787431778595.jpg`, `${ids[1]}/patch-1782439034425.png`];
+  const sources = ids.map((id, index) => ({ id,
+    patch_url: `https://izlkwggluhlhzlumtzes.supabase.co/storage/v1/object/public/department-assets/${keys[index]}` }));
+  const patchObjects = ids.map((departmentId, index) => ({ sourceBucket: 'department-assets',
+    sourceKey: keys[index],
+    destinationKey: `department-assets/${keys[index]}`, departmentId,
+    bytes: 1, sha256: 'a'.repeat(64) }));
   const artifact = { rows: Object.fromEntries([
-    ['departments', [source]], ['profiles', []], ['equipment_assets', []],
+    ['departments', sources], ['profiles', []], ['equipment_assets', []],
     ['training_certifications', []], ['fleet_vehicle_documents', []],
     ['attachments', []], ['drill_documents', []], ['range_packets', []],
-  ]) };
-  const client = { query: async sql => ({ rows: sql.includes('"departments"') ? [{ row: source }] : [] }) };
-  await assert.rejects(verifyFinalObjectReferences(client, artifact, manifest),
-    /FINAL_OBJECT_REFERENCE_STALE_SOURCE:departments/);
+  ]), objects: { manifest: patchObjects } };
+  const client = { query: async sql => ({ rows: sql.includes('select id::text,patch_url')
+    ? sources.map(source => ({ id: source.id, patch_url: source.patch_url })) : [] }) };
+  await assert.rejects(verifyFinalObjectReferences(client, artifact, []),
+    /PATCH_OMISSION_DANGLING_TARGET_REFERENCE/);
+  const clean = { query: async sql => ({ rows: sql.includes('select id::text,patch_url')
+    ? sources.map(source => ({ id: source.id, patch_url: null })) : [] }) };
+  assert.equal((await verifyFinalObjectReferences(clean, artifact, [])).length, 7);
 });

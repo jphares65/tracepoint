@@ -44,6 +44,9 @@ export function evaluateProductionCompositeReadiness(evidence) {
     evidence.capture?.immutableVersioned === true && evidence.capture?.canonicalComparatorTested === true &&
     evidence.capture?.minimumQuietSeconds >= 60, 'DOUBLE_CAPTURE_NOT_READY');
   const finalImport = evidence.finalImport ?? {};
+  // Agency-patch presentation is a post-cutover remediation item. This gate
+  // still requires object manifest/reference integrity and tenant ownership;
+  // a missing or cross-tenant object must never be treated as cosmetic.
   requireProof(finalImport.targetResourceId === 'db-X4DYNS3TMVSAP7Z3RISDWEYDVE' &&
     finalImport.sourceArtifactSlot === 'B' && finalImport.variableFrozenCountsSupported === true &&
     finalImport.exactArtifactVersionAndHashRequired === true &&

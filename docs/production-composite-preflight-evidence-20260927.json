@@ -20,6 +20,7 @@
     "atomicRelationalApplyRehearsed": false,
     "inTransactionFullReconciliationRehearsed": false,
     "objectManifestAndReferenceReconciliationRehearsed": false,
+    "agencyPatchRenderingRehearsed": false,
     "rollbackOnMismatchRehearsed": false
   },
   "credentialEpoch": {

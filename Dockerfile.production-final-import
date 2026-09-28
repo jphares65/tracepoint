@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY scripts/supabase-rest-ledger-core.mjs scripts/supabase-rest-import-core.mjs scripts/immutable-source-artifact-validator.mjs scripts/run-supabase-rest-initial-import.mjs ./scripts/
 COPY scripts/source-production-final-capture-core.mjs scripts/source-frozen-capture-parity-core.mjs ./scripts/
-COPY scripts/production-final-import-core.mjs scripts/production-final-atomic-import-core.mjs scripts/production-final-relation-adapter.mjs ./scripts/
+COPY scripts/production-final-import-core.mjs scripts/production-final-atomic-import-core.mjs scripts/production-final-relation-adapter.mjs scripts/production-final-patch-omission.mjs ./scripts/
 COPY scripts/production-final-object-archive-core.mjs scripts/production-final-object-copy-core.mjs ./scripts/
 COPY scripts/run-production-final-atomic-import.mjs scripts/run-production-final-object-copy.mjs scripts/run-production-final-import-task.mjs scripts/run-isolated-final-import-proof.mjs ./scripts/
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem

@@ -36,10 +36,12 @@ async function readAndVerify(s3, key, expected, versionId) {
 }
 
 /** Idempotent, create-only copy of version-pinned capture B object bytes. */
-export async function copyProductionFinalObjects(s3, mapped) {
+export async function copyProductionFinalObjects(s3, mapped, excludedDestinationKeys = []) {
   assert.ok(Array.isArray(mapped), 'FINAL_OBJECT_MANIFEST_REQUIRED');
   assert.equal(new Set(mapped.map(item => item.destinationKey)).size, mapped.length,
     'FINAL_OBJECT_DESTINATION_DUPLICATE');
+  assert.equal(new Set(excludedDestinationKeys).size, excludedDestinationKeys.length,
+    'FINAL_OBJECT_EXCLUSION_DUPLICATE');
   const [versioning, publicBlock, encryption] = await Promise.all([
     s3.send(new GetBucketVersioningCommand({ Bucket: ARTIFACT_BUCKET, ExpectedBucketOwner: ACCOUNT })),
     s3.send(new GetPublicAccessBlockCommand({ Bucket: ARTIFACT_BUCKET, ExpectedBucketOwner: ACCOUNT })),
@@ -53,8 +55,12 @@ export async function copyProductionFinalObjects(s3, mapped) {
     rule.ApplyServerSideEncryptionByDefault?.KMSMasterKeyID === ARTIFACT_KMS_KEY_ARN),
   'FINAL_OBJECT_BUCKET_KMS_MISMATCH');
   const expected = new Set(mapped.map(item => item.destinationKey));
+  const excluded = new Set(excludedDestinationKeys);
+  assert.ok([...excluded].every(key => key.startsWith('department-assets/') && !expected.has(key)),
+    'FINAL_OBJECT_EXCLUSION_UNAPPROVED');
   const current = [...await keysUnder(s3, 'department-assets/'), ...await keysUnder(s3, 'attachments/')];
-  assert.ok(current.every(key => expected.has(key)), 'FINAL_OBJECT_TARGET_EXTRA_BEFORE_COPY');
+  assert.ok(current.every(key => expected.has(key) || excluded.has(key)),
+    'FINAL_OBJECT_TARGET_EXTRA_BEFORE_COPY');
   const results = [];
   for (const object of mapped) {
     assert.ok(object.destinationKey.startsWith('department-assets/') ||
@@ -78,7 +84,8 @@ export async function copyProductionFinalObjects(s3, mapped) {
       bytes: object.bytes, sha256: object.sha256 });
   }
   const after = [...await keysUnder(s3, 'department-assets/'), ...await keysUnder(s3, 'attachments/')];
-  assert.deepEqual(after.sort(), [...expected].sort(), 'FINAL_OBJECT_TARGET_INVENTORY_MISMATCH');
+  assert.deepEqual(after.filter(key => !excluded.has(key)).sort(), [...expected].sort(),
+    'FINAL_OBJECT_TARGET_INVENTORY_MISMATCH');
   return { copiedOrVerified: results.length, bytes: results.reduce((sum, item) => sum + item.bytes, 0),
-    missing: 0, extra: 0, results };
+    missing: 0, extra: 0, excludedExisting: after.filter(key => excluded.has(key)).length, results };
 }

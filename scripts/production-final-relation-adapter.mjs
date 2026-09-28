@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { MIGRATION_RELATIONS, sha256 } from './supabase-rest-ledger-core.mjs';
 import { IMPORT_RELATIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE,
   normalizeRemovedEquipmentCustody, quote } from './supabase-rest-import-core.mjs';
+import { projectOmittedAgencyPatches } from './production-final-patch-omission.mjs';
 import { FINAL_RDS_RESOURCE_ID } from './production-final-import-core.mjs';
 import { SOURCE_PROJECT_REF } from './source-production-final-capture-core.mjs';
 import { atomicTransactionClient, AUDIT_HISTORY_RELATIONS, assertAuditHistoryEmpty,
   deriveAuditPrerequisites, hydrateMigrationAnchorProfiles, importNullableTrainingCertificationCycle,
-  importRelation, insertIdentityAnchors, normalizedPatchSnapshot, preflightTarget,
+  importRelation, insertIdentityAnchors, preflightTarget,
   repairSequences, requireIdentityAnchorPrerequisites,
   runDepartmentPrerequisiteBootstrapCleanup, verifyAtomicRollback,
   verifyDatabase, verifyEquipmentAssignmentHistory } from './run-supabase-rest-initial-import.mjs';
@@ -27,13 +28,19 @@ export function snapshotFromArtifact(artifact, sourceProjectRef = SOURCE_PROJECT
   }
   assert.ok([SOURCE_PROJECT_REF, 'reukdouvpshshvqnzsgw'].includes(sourceProjectRef),
     'FINAL_IMPORT_SOURCE_PROJECT_NOT_APPROVED');
-  return normalizedPatchSnapshot({ rows: new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]])),
+  const patch = projectOmittedAgencyPatches(artifact, sourceProjectRef);
+  const rows = new Map(MIGRATION_RELATIONS.map(relation => [relation, artifact.rows[relation]]));
+  rows.set('departments', patch.projectedDepartments);
+  return { rows,
     users: artifact.identities.rows, finalCapture: true,
-    objectManifest: artifact.objects.manifest,
+    objectManifest: patch.inScopeManifest,
+    departmentPatchNormalization: { originalDepartmentRows: patch.originalDepartmentRows,
+      evidence: patch.evidence },
     baseline: { relationalRows: artifact.totalRelationalRows,
       identities: artifact.identities.count, memberships: artifact.memberships.count,
-      objects: artifact.objects.count, objectBytes: artifact.objects.totalBytes },
-    artifact: { masterSha256: artifact.masterSha256 } }, `https://${sourceProjectRef}.supabase.co`);
+      objects: patch.inScopeManifest.length,
+      objectBytes: patch.inScopeManifest.reduce((sum, object) => sum + object.bytes, 0) },
+    artifact: { masterSha256: artifact.masterSha256 } };
 }
 
 export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOURCE_ID,

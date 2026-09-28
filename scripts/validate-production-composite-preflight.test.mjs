@@ -66,7 +66,8 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     exactArtifactVersionAndHashRequired: true, atomicRelationalApplyRehearsed: true,
     inTransactionFullReconciliationRehearsed: true,
     objectManifestAndReferenceReconciliationRehearsed: true,
-    rollbackOnMismatchRehearsed: true };
+    rollbackOnMismatchRehearsed: true,
+    agencyPatchRenderingRehearsed: false };
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.activeCredentialInventoryComplete = true;
@@ -85,6 +86,10 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   }
   ready.writers.authApi.controls.serviceAdminWritersControlled = true;
   assert.equal(evaluateProductionCompositeReadiness(ready).status, 'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
+  const missingObjectIntegrity = structuredClone(ready);
+  missingObjectIntegrity.finalImport.objectManifestAndReferenceReconciliationRehearsed = false;
+  assert.ok(evaluateProductionCompositeReadiness(missingObjectIntegrity).blockers.includes(
+    'FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY'));
   const blockedHistoricalPreview = structuredClone(ready);
   Object.assign(blockedHistoricalPreview.legacyVercel, {
     previewProductionSourceExcluded: false,

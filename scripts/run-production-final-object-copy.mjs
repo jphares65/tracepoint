@@ -7,6 +7,7 @@ import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { DescribeDBInstancesCommand, RDSClient } from '@aws-sdk/client-rds';
 import { canonical } from './supabase-rest-ledger-core.mjs';
 import { OBJECT_REFERENCE_COLUMNS, quote, reconcileObjectReferences } from './supabase-rest-import-core.mjs';
+import { projectOmittedAgencyPatches, verifyOmittedAgencyPatches } from './production-final-patch-omission.mjs';
 import { APPROVED_RUN_IDS, ARTIFACT_BUCKET, ARTIFACT_KMS_KEY_ARN,
   SOURCE_PROJECT_REF } from './source-production-final-capture-core.mjs';
 import { parseAndVerifyArtifact } from './source-frozen-capture-parity-core.mjs';
@@ -66,8 +67,13 @@ async function archiveSidecar(s3, spec) {
 }
 
 export async function verifyFinalObjectReferences(client, artifact, manifest) {
+  const patch = await verifyOmittedAgencyPatches(client, artifact, SOURCE_PROJECT_REF);
+  assert.deepEqual(manifest.map(object => object.destinationKey).sort(),
+    patch.inScopeManifest.map(object => object.destinationKey).sort(),
+    'FINAL_OBJECT_IN_SCOPE_MANIFEST_MISMATCH');
   const summaries = [];
   for (const { relation, column } of OBJECT_REFERENCE_COLUMNS) {
+    if (relation === 'departments' && column === 'patch_url') continue;
     const sourceRows = artifact.rows[relation];
     const targetRows = (await client.query(`select to_jsonb(t) as row from public.${quote(relation)} t order by t.id`))
       .rows.map(item => item.row);
@@ -105,7 +111,11 @@ export async function runFinalObjectCopy(env = process.env, services = {}) {
     assert.equal(target?.DBInstanceArn,
       `arn:aws:rds:us-east-1:${ACCOUNT}:db:${FINAL_RDS_INSTANCE}`, 'FINAL_OBJECT_RDS_ACCOUNT_MISMATCH');
     const artifact = parseAndVerifyArtifact(second.bytes, second.byteSha256, SOURCE_PROJECT_REF);
-    const manifest = validateFinalObjectArchive(sidecar, artifact);
+    const fullManifest = validateFinalObjectArchive(sidecar, artifact);
+    const patch = projectOmittedAgencyPatches(artifact, SOURCE_PROJECT_REF);
+    const manifest = fullManifest.filter(object => object.sourceBucket !== 'department-assets');
+    assert.equal(manifest.length, patch.inScopeManifest.length,
+      'FINAL_OBJECT_IN_SCOPE_COUNT_MISMATCH');
     const ca = await readFile(env.TRACEPOINT_RDS_CA_PATH ?? '/app/rds-ca.pem', 'utf8');
     client = services.client ?? new pg.Client({ host: FINAL_RDS_HOST, port: 5432,
       database: 'tracepoint', user: secret.username, password: secret.password,
@@ -121,7 +131,8 @@ export async function runFinalObjectCopy(env = process.env, services = {}) {
       true, 'FINAL_OBJECT_RDS_TLS_REQUIRED');
     const references = await verifyFinalObjectReferences(client, artifact, manifest);
     await client.query('commit');
-    const copied = await copyProductionFinalObjects(s3, manifest);
+    const copied = await copyProductionFinalObjects(s3, manifest,
+      patch.omitted.map(item => item.destinationKey));
     await client.query('begin transaction read only');
     const afterReferences = await verifyFinalObjectReferences(client, artifact, manifest);
     assert.deepEqual(afterReferences, references, 'FINAL_OBJECT_REFERENCES_CHANGED_DURING_COPY');
@@ -129,6 +140,8 @@ export async function runFinalObjectCopy(env = process.env, services = {}) {
     return { status: 'FINAL_OBJECT_COPY_RECONCILED',
       targetResourceId: FINAL_RDS_RESOURCE_ID, objectCount: copied.copiedOrVerified,
       bytes: copied.bytes, missing: copied.missing, extra: copied.extra,
+      explicitlyOmittedAgencyPatches: patch.omitted.length,
+      excludedExistingObjects: copied.excludedExisting,
       referenceSummaries: references, sourceReadOnly: true };
   } catch (error) {
     await client?.query('rollback').catch(() => undefined);
