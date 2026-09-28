@@ -29,7 +29,8 @@ export function attestVercelProject(project) {
   assert.equal(project?.link?.org, 'jphares65', 'VERCEL_GIT_ORG_MISMATCH');
   assert.equal(project?.link?.repo, 'tracepoint', 'VERCEL_GIT_REPO_MISMATCH');
   assert.equal(project?.link?.productionBranch, 'main', 'VERCEL_PRODUCTION_BRANCH_MISMATCH');
-  assert.ok(project?.link?.repoId != null, 'VERCEL_GIT_REPO_ID_MISSING');
+  assert.ok(Number.isSafeInteger(Number(project?.link?.repoId)) && Number(project.link.repoId) > 0,
+    'VERCEL_GIT_REPO_ID_MISSING');
   return true;
 }
 
@@ -73,8 +74,8 @@ export function buildVercelSourceAbortRequests(project, variables, deployment, r
   const deploy = Object.freeze({ method: 'POST', path: withExactVercelTeam('/v13/deployments?forceNew=1'),
     body: Object.freeze({ name: 'tracepoint', project: VERCEL_PROJECT_ID,
       target: 'production',
-      gitSource: Object.freeze({ type: 'github', repo: 'jphares65/tracepoint',
-        ref: BASELINE_GIT_SHA }) }) });
+      gitSource: Object.freeze({ type: 'github', repoId: Number(project.link.repoId),
+        repo: 'jphares65/tracepoint', ref: BASELINE_GIT_SHA }) }) });
   assert.equal('deploymentId' in deploy.body, false, 'OLD_DEPLOYMENT_ENV_INHERITANCE_FORBIDDEN');
   assert.equal('withLatestCommit' in deploy.body, false, 'UNPINNED_COMMIT_FORBIDDEN');
   return Object.freeze({ patch, deploy });

@@ -66,7 +66,7 @@ test('source abort patches only Production and builds pinned Git code with fresh
   assert.equal(plan.deploy.method, 'POST');
   assert.equal(plan.deploy.path, `/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}`);
   assert.deepEqual(plan.deploy.body, { name: 'tracepoint', project: VERCEL_PROJECT_ID,
-    target: 'production', gitSource: { type: 'github', repo: 'jphares65/tracepoint',
+    target: 'production', gitSource: { type: 'github', repoId: 123, repo: 'jphares65/tracepoint',
       ref: BASELINE_GIT_SHA } });
   assert.equal('deploymentId' in plan.deploy.body, false);
   assert.throws(() => buildVercelSourceAbortRequests(project, variables, deployment, 'not-a-key'));
