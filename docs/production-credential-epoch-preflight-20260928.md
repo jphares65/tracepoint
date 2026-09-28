@@ -94,6 +94,18 @@ deployment would resume a build containing the retired key. Before retiring
 the old epoch, pin the exact current Production deployment, code commit,
 environment-variable IDs/targets, deployment protection state, and a
 credential-safe way to supply the rollback secret from its exact AWS path.
+The signed-in, read-only deployment inventory currently identifies Production
+deployment `AfRHke111kN5zaHR7NGiMaqi4UMk` at
+`tracepoint-crbhnybq1-jphares65s-projects.vercel.app`, built from `main`
+commit `6588576ee2c3e95c2094e37c22ee64d0cbfad357`. Reattest this identity
+immediately before maintenance; it is not a permanent alias assumption.
+The read-only project variable inventory shows `SUPABASE_SECRET_KEY` separately
+for Production and Preview, and Production-scoped
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `NEXT_PUBLIC_SUPABASE_URL`. No value
+was revealed. The only Production elevated variable name observed is
+`SUPABASE_SECRET_KEY`; the exact variable ID and a credential-safe update
+channel remain to be pinned. The Preview value must not be assumed equal to
+Production merely because the variable names match.
 The abort sequence must update the Production server secret (and any other
 exactly attested old-key aliases), create a new deployment from the pinned
 revision with the new environment, verify its identity and source-key read,
