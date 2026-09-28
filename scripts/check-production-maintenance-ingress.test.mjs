@@ -37,6 +37,14 @@ test('template pins exactly two 503 rules and leaves default listener unmanaged'
 
 test('active state covers public and fallback while preserving isolated rules and exact default forward', () => {
   assert.doesNotThrow(() => assertIngressRules(activeRules(), 'active'));
+  const awsShape = activeRules();
+  for (const priority of ['5', '20']) {
+    const condition = awsShape.find(rule => rule.Priority === priority).Conditions[0];
+    condition.Values = copy(condition.HostHeaderConfig?.Values ?? condition.PathPatternConfig?.Values);
+  }
+  assert.doesNotThrow(() => assertIngressRules(awsShape, 'active'));
+  awsShape.find(rule => rule.Priority === '5').Conditions[0].Values = ['other.example'];
+  assert.throws(() => assertIngressRules(awsShape, 'active'));
   const missing = activeRules().filter(rule => rule.Priority !== '20');
   assert.throws(() => assertIngressRules(missing, 'active'));
   const changed = activeRules();

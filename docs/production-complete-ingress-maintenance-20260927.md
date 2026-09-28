@@ -39,3 +39,16 @@ node scripts/check-production-maintenance-ingress.mjs restored
 ```
 
 The restored verifier requires both rules absent and both external requests no longer receiving the maintenance response. It does not itself unfence Supabase or resume Vercel; those are separate single-authority abort steps.
+
+2026-09-28 execution checkpoint: a recreated change set contained only the
+two reviewed listener-rule additions and reached stack `CREATE_COMPLETE`.
+The active verifier failed before external probing because AWS returns both
+legacy `Condition.Values` and typed `HostHeaderConfig.Values` for the same
+host predicate. Following the stop gate, the exact two-rule stack was
+deleted; the restored verifier passed with unchanged default forwarding and
+external HTTP 200 for both the public and unmatched-host requests. No source
+fence, key retirement, capture or authority change occurred. The verifier
+now accepts both AWS response fields only when their values are identical;
+focused tests cover that returned shape and reject conflicting values. A new
+change set and a fresh active external 503 proof are still required before
+continuing to the source.

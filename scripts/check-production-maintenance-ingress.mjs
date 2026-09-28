@@ -63,7 +63,15 @@ export function assertIngressRules(rules, mode, pinned = baseline) {
     if (mode !== 'active') { assert.equal(actual, undefined); continue; }
     assert.ok(actual, `Missing ${priority} maintenance rule`);
     const expected = template.Resources[name].Properties;
-    assert.deepEqual(actual.Conditions, expected.Conditions);
+    const normalizedConditions = actual.Conditions.map(condition => {
+      const configValues = condition.HostHeaderConfig?.Values ??
+        condition.PathPatternConfig?.Values;
+      if ('Values' in condition) assert.deepEqual(condition.Values, configValues,
+        'ALB_LEGACY_AND_TYPED_CONDITION_VALUES_DIFFER');
+      const { Values: _legacyValues, ...typedCondition } = condition;
+      return typedCondition;
+    });
+    assert.deepEqual(normalizedConditions, expected.Conditions);
     assert.deepEqual(actual.Actions, expected.Actions);
   }
 }
