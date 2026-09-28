@@ -47,7 +47,7 @@ export function assertPendingChangeSet(changeSet, templateBody, stack, pinned = 
 }
 
 export function assertLiveContract({ caller, resource, listener, rules, dns, health, service }, mode, pinned = baseline) {
-  assert.ok(['baseline', 'active', 'restored'].includes(mode));
+  assert.ok(['baseline', 'live-baseline', 'active', 'restored'].includes(mode));
   assert.equal(caller.Account, pinned.account);
   const managed = resource.StackResourceDetail;
   assert.equal(managed.PhysicalResourceId, pinned.runtimeListenerArn);
@@ -112,8 +112,8 @@ function externalProbe(mode) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const mode = process.argv[2];
-  if (!['baseline', 'active', 'restored'].includes(mode)) {
-    throw new Error('Usage: node scripts/check-production-maintenance-response.mjs baseline|active|restored');
+  if (!['baseline', 'live-baseline', 'active', 'restored'].includes(mode)) {
+    throw new Error('Usage: node scripts/check-production-maintenance-response.mjs baseline|live-baseline|active|restored');
   }
   assertTemplateContract();
   const caller = aws('sts', 'get-caller-identity');

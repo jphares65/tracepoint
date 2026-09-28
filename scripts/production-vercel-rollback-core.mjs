@@ -9,6 +9,18 @@ export const VERCEL_TOKEN_SECRET = 'tracepoint/production/migration/vercel-cutov
 export const PRODUCTION_SECRET_ENV_ID = 'e80TWGMDKlzEEkIJ';
 export const PREVIEW_SECRET_ENV_ID = 'vHhZaYrgk5g0zNyI';
 
+export function withExactVercelTeam(path) {
+  assert.ok(typeof path === 'string' && path.startsWith('/') && !path.startsWith('//'),
+    'VERCEL_RELATIVE_PATH_REQUIRED');
+  const url = new URL(path, 'https://api.vercel.com');
+  assert.equal(url.origin, 'https://api.vercel.com', 'VERCEL_API_ORIGIN_REQUIRED');
+  const supplied = url.searchParams.getAll('teamId');
+  assert.ok(supplied.length === 0 ||
+    (supplied.length === 1 && supplied[0] === VERCEL_TEAM_ID), 'VERCEL_TEAM_QUERY_MISMATCH');
+  url.searchParams.set('teamId', VERCEL_TEAM_ID);
+  return `${url.pathname}${url.search}`;
+}
+
 export function attestVercelProject(project) {
   assert.equal(project?.id, VERCEL_PROJECT_ID, 'VERCEL_PROJECT_MISMATCH');
   assert.equal(project?.accountId, VERCEL_TEAM_ID, 'VERCEL_TEAM_MISMATCH');
@@ -56,9 +68,9 @@ export function buildVercelSourceAbortRequests(project, variables, deployment, r
   attestVercelDeployment(deployment);
   assert.match(rollbackKey, /^sb_secret_[A-Za-z0-9_-]{20,}$/, 'ROLLBACK_MODERN_KEY_REQUIRED');
   const patch = Object.freeze({ method: 'PATCH',
-    path: `/v9/projects/${VERCEL_PROJECT_ID}/env/${productionId}`,
+    path: withExactVercelTeam(`/v9/projects/${VERCEL_PROJECT_ID}/env/${productionId}`),
     body: Object.freeze({ value: rollbackKey }) });
-  const deploy = Object.freeze({ method: 'POST', path: '/v13/deployments?forceNew=1',
+  const deploy = Object.freeze({ method: 'POST', path: withExactVercelTeam('/v13/deployments?forceNew=1'),
     body: Object.freeze({ name: 'tracepoint', project: VERCEL_PROJECT_ID,
       target: 'production',
       gitSource: Object.freeze({ type: 'github', repo: 'jphares65/tracepoint',

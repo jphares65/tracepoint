@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { VERCEL_TEAM_ID, VERCEL_PROJECT_ID, BASELINE_DEPLOYMENT_UID,
   VERCEL_TOKEN_SECRET, attestVercelProject, attestVercelVariables,
-  attestVercelDeployment } from './production-vercel-rollback-core.mjs';
+  attestVercelDeployment, withExactVercelTeam } from './production-vercel-rollback-core.mjs';
 
 assert.deepEqual(process.argv.slice(2), ['--profile=tracepoint-production'], 'EXACT_PROFILE_REQUIRED');
 function aws(args, output = 'json') {
@@ -19,7 +19,7 @@ async function getJson(token, path) {
   const exactDeploymentList = `/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=100`;
   assert.ok(/^\/(?:v9\/projects|v13\/deployments)\//.test(path) || path === exactDeploymentList,
     'UNAPPROVED_VERCEL_PATH');
-  const url = new URL(`https://api.vercel.com${path}`);
+  const url = new URL(`https://api.vercel.com${withExactVercelTeam(path)}`);
   // A project-scoped token cannot read team/user metadata. The exact project
   // and owner are verified from the returned project before any other read.
   let response;
@@ -30,7 +30,14 @@ async function getJson(token, path) {
   } catch {
     throw new Error('VERCEL_NETWORK_FAILED');
   }
-  if (response.status !== 200) throw new Error(`VERCEL_READ_HTTP_${response.status}`);
+  if (response.status !== 200) {
+    let code = null;
+    try {
+      const body = await response.json();
+      if (/^[a-zA-Z0-9_-]{1,64}$/.test(body?.error?.code ?? '')) code = body.error.code;
+    } catch { /* Status is sufficient. */ }
+    throw new Error(`VERCEL_READ_HTTP_${response.status}${code ? `_${code.toUpperCase()}` : ''}`);
+  }
   return response.json();
 }
 

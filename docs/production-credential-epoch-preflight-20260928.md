@@ -178,3 +178,66 @@ not production evidence. No source key or production runtime has been changed.
 
 **Production remains unfenced and Supabase-authoritative.** Do not claim the
 preflight passed based on this inventory or on the paid-project rehearsal.
+
+## 2026-09-28 corrected-key and capture-executor checkpoint
+
+The earlier wrong-project secret-value finding is superseded by a fresh
+status-only probe. STS returned account `193644343389`. The old migration
+credential and both epoch credentials returned HTTP 200 against exact source
+`izlkwggluhlhzlumtzes`; the capture and rollback credentials did not
+authenticate against paid rehearsal `reukdouvpshshvqnzsgw`. All three values
+are distinct. The signed-in production project's key-name inventory showed
+one publishable `default` key and exactly three modern secret-key rows:
+`default`, `tracepoint_epoch_production_capture_20260928`, and
+`tracepoint_epoch_production_rollback_20260928`. Legacy JWT API keys remain
+enabled. No value was revealed, rotated, or retired by this check.
+
+The isolated four-resource capture stack
+`tracepoint-production-final-source-capture-20260927` was updated by reviewed
+change set `source-capture-epoch-20260928-cfbc8c3`. Its only resource changes
+were `CaptureProject` and `CaptureRole`; the stack reached `UPDATE_COMPLETE`.
+The CodeBuild source now points to the content-addressed `ce6cf344...` ZIP
+at S3 VersionId `knH8GdKZiGMFXiN.4uwrfdcEcbyG3GiO`; the source object
+remains KMS encrypted. The role policy references only the exact capture
+secret ARN. IAM simulation allowed `GetSecretValue` for that ARN and denied
+both the rollback secret and the old migration REST secret, with the
+permissions boundary and Organizations evaluation included. The CodeBuild
+project still has zero builds; no source capture was started.
+
+The live source catalog still has 122 relations and pinned fingerprint
+`36558b0730e3e96cad6426f38088a5b0`, with zero cutover triggers. The final
+RDS target remains private, encrypted, available and deletion-protected under
+resource ID `db-X4DYNS3TMVSAP7Z3RISDWEYDVE`. Public ECS remains the
+Supabase bridge at revision 4, desired/running 1/1. The complete-ingress
+baseline verifier returned 200 for `www` and unmatched Host, with original
+forwarding and ALB-only task ingress. Production maintenance and source fence
+remain OFF.
+
+The exact Vercel operator secret is present in Secrets Manager, but the
+read-only project API request now returns HTTP 403; its prior deployment and
+environment-variable IDs cannot be freshly reattested. No Vercel project or
+variable was changed. Until exact-project API access is restored and the
+new-deployment rollback path passes, old-key retirement and live maintenance
+remain fail-closed. The composite preflight validator still reports BLOCKED;
+do not replace missing writer-control evidence with this checkpoint.
+
+The Vercel checker and rollback request plan were corrected to append the
+exact team ID to every team-owned API request, as required by Vercel's API.
+Focused tests pass, but the exact project GET still returns HTTP 403 with
+`forbidden`; the team diagnostic also returns 403. This is an access-token
+scope/authorization gap, not a missing `teamId` parameter. The existing
+Secrets Manager path is the only approved handoff location for a replacement
+short-lived token; no token value should be entered in the repository or chat.
+
+The available relational importer is **not** the final-target apply package.
+`run-supabase-rest-initial-import.mjs` and `supabase-rest-import-core.mjs`
+pin the September 23 rehearsal RDS resource ID `db-WX6GX35AIJ546ZRCZIRQ545B3E`,
+the initial immutable source artifact, and historical row/identity counts.
+The cutover target is the distinct final RDS resource ID
+`db-X4DYNS3TMVSAP7Z3RISDWEYDVE`. No reviewed importer currently accepts
+the production slot-B artifact and applies/reconciles its variable frozen
+delta against that final target. Do not repoint the rehearsal importer by
+editing constants or substitute its earlier 4,813-row baseline as final
+reconciliation. Implement and rehearse a separate exact-target, exact-artifact
+atomic apply path before source maintenance. This is an engineering/package
+gap, not evidence of source or target corruption.

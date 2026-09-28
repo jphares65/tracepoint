@@ -45,7 +45,9 @@ test('template adds only exact-host 503 rule, never modifies default listener', 
 
 test('baseline and exact reversal retain original forward/health/service', () => {
   assert.doesNotThrow(() => assertLiveContract(fixture(), 'baseline', pinned));
+  assert.doesNotThrow(() => assertLiveContract(fixture(), 'live-baseline', pinned));
   assert.doesNotThrow(() => assertLiveContract(fixture(), 'restored', pinned));
+  assert.throws(() => assertLiveContract(fixture(true), 'live-baseline', pinned));
 });
 
 test('active state requires host-only 503 while default forward stays exact', () => {

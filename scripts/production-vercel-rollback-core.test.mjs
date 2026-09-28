@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { attestVercelProject, attestVercelVariables, attestVercelDeployment,
   buildVercelSourceAbortRequests,
+  withExactVercelTeam,
   VERCEL_TEAM_ID, VERCEL_PROJECT_ID, BASELINE_DEPLOYMENT_UID,
   BASELINE_GIT_SHA, PRODUCTION_SECRET_ENV_ID, PREVIEW_SECRET_ENV_ID
 } from './production-vercel-rollback-core.mjs';
@@ -47,14 +48,23 @@ test('live inventory script is read-only and emits identifiers, never values', (
   assert.doesNotMatch(source, /console\.log\([^\n]*(?:token|variableResult|deployment)\)/);
 });
 
+test('all team-owned Vercel requests pin the exact team exactly once', () => {
+  assert.equal(withExactVercelTeam(`/v9/projects/${VERCEL_PROJECT_ID}`),
+    `/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_TEAM_ID}`);
+  assert.equal(withExactVercelTeam(`/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}`),
+    `/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}`);
+  assert.throws(() => withExactVercelTeam('/v13/deployments?teamId=other'));
+  assert.throws(() => withExactVercelTeam('//other.example/v13/deployments'));
+});
+
 test('source abort patches only Production and builds pinned Git code with fresh environment', () => {
   const replacement = `sb_secret_${'r'.repeat(32)}`;
   const plan = buildVercelSourceAbortRequests(project, variables, deployment, replacement);
   assert.equal(plan.patch.method, 'PATCH');
-  assert.equal(plan.patch.path, `/v9/projects/${VERCEL_PROJECT_ID}/env/${PRODUCTION_SECRET_ENV_ID}`);
+  assert.equal(plan.patch.path, `/v9/projects/${VERCEL_PROJECT_ID}/env/${PRODUCTION_SECRET_ENV_ID}?teamId=${VERCEL_TEAM_ID}`);
   assert.deepEqual(plan.patch.body, { value: replacement });
   assert.equal(plan.deploy.method, 'POST');
-  assert.equal(plan.deploy.path, '/v13/deployments?forceNew=1');
+  assert.equal(plan.deploy.path, `/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}`);
   assert.deepEqual(plan.deploy.body, { name: 'tracepoint', project: VERCEL_PROJECT_ID,
     target: 'production', gitSource: { type: 'github', repo: 'jphares65/tracepoint',
       ref: BASELINE_GIT_SHA } });

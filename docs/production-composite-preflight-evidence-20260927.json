@@ -8,9 +8,23 @@
   "publicTables": { "count": 87, "ownerControlVerified": true, "triggerInstallAndAbortReviewed": false },
   "capture": {
     "slots": { "A": "1d761bd7-04dd-43f3-b77a-2c41130e18c2", "B": "c7448ea9-4645-4e99-b988-3a05de12ac70" },
-    "immutableVersioned": false,
+    "immutableVersioned": true,
     "canonicalComparatorTested": true,
     "minimumQuietSeconds": 60
+  },
+  "credentialEpoch": {
+    "projectRef": "izlkwggluhlhzlumtzes",
+    "captureSecretName": "tracepoint/production/migration/source-production-epoch-capture-20260928",
+    "rollbackSecretName": "tracepoint/production/migration/source-production-epoch-rollback-20260928",
+    "threeModernKeysDistinct": true,
+    "captureReaderExactArnVerified": true,
+    "captureReaderOldAndRollbackDenied": true,
+    "rollbackKeyUnassignedToRunningWriters": false,
+    "oldModernKeyIdPinned": true,
+    "legacyServiceKeyStatePinned": true,
+    "oldModernKeyRetirementReviewed": false,
+    "legacyServiceKeyDisableReviewed": true,
+    "oldCredentialsNegativeChecksDefined": true
   },
   "s3WriterCredentials": { "state": "NO_SEPARATE_S3_WRITER_CREDENTIALS", "productionProjectVerified": true },
   "legacyVercel": {
