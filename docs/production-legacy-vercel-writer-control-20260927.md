@@ -166,12 +166,11 @@ disposable project on September 27. The synthetic Production deployment
 `dpl_Ew7sdctcCDr2pqHgZZf3RARFAR29` was redeployed as Preview deployment
 `dpl_7xMN4PwBGQ4mTdzvKqqCGetv39o5` at
 `https://project-q7s6a-jw24eqj52-jphares65s-projects.vercel.app/`.
-The Preview origin initially returned the synthetic page to a signed-in
-browser, while the Production alias returned HTTP 200. The temporary custom
+The Production alias returned HTTP 200 before and during the proof. The temporary custom
 rule `rule_tracepoint_disposable_preview_deny_proof_w4ydpd` matched only
 `Environment Equals Preview` and used `Deny`. Once published, a signed-in
 request to the exact Preview origin returned `403 Forbidden` / `This request
-was blocked`; the Production alias still returned HTTP 200. The rule was then
+was blocked`. The rule was then
 deleted and that deletion published. Reloading the same signed-in Preview
 origin restored the exact synthetic page; the disposable Firewall rules page
 again showed no custom rules. An anonymous Preview request redirects to

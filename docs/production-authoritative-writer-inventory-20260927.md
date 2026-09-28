@@ -19,7 +19,7 @@ controlled; `unproven` is not a synonym for `ephemeral`.
 | Legacy Vercel Production | Project `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`, Production source URL and elevated key | Same as bridge; cron dispatch endpoint | Exact-project pause; inverse unpause. Disposable project proved 200→503→200 | Production target verified; live control not active |
 | Legacy Vercel historical Preview | Same project; historical immutable deployments may carry production URL/secret; automation bypass exists | Same as Production | Project-wide `Environment Equals Preview → Deny`; inverse delete exact rule | Exact Preview predicate/inverse passed against a signed-in disposable Preview deployment; live rule and historical URL negatives remain cutover-time gates |
 | Auth existing-session user API | Already issued `authenticated` JWT + production publishable/legacy API key | `auth.users` metadata, credentials/recovery/MFA and other identity state | Rehearsed single-session revoke and provider restriction; restore provider/sign-in, not revoked session | Paid synthetic existing-token write negative passed; production session drain/control inventory pending |
-| Auth new sign-in/refresh/signup | Public key or legacy anon key; Supabase Auth API | New identities, recovery/MFA; session fields unclassified until proven ephemeral | Reversible Auth provider/signup restriction plus session drain/revoke; restore exact settings | Paid negative/restore passed for selected flows; full production config and credential/recovery scope pending |
+| Auth new sign-in/refresh/signup | Public key or legacy anon key; Supabase Auth API; exact-project read-only `/auth/v1/settings` reports Email enabled and self-signup enabled | New identities, recovery/MFA; session fields unclassified until proven ephemeral | Reversible Auth provider/signup restriction plus session drain/revoke; restore exact settings | Paid negative/restore passed for selected flows; production Email/signup state now attested, but exact control and credential/recovery scope pending |
 | Auth admin/service API | Elevated `sb_secret_`/legacy service key, held by bridge, Vercel, tooling | User create/update/delete, recovery, MFA, identity links | Stop every credential holder, do not delete modern key; direct admin negative during fence | Paid admin-create negative passed; all production holders not yet proven stopped |
 | Storage authenticated API | User JWT + publishable/legacy key, `storage.objects` RLS | Object keys, bytes, metadata, ownership | Reviewed `has_department_permission` source-fence replacement plus public trigger layer; restore exact function | Read-only production RLS contract attested; direct negative in production pending cutover |
 | Storage elevated API | Service/modern secret key; elevated role bypasses RLS | Same object authority | Stop all elevated-key holders; direct object-write negative; restore exact holders | Paid synthetic upload negative passed; production holder completeness pending |
@@ -56,3 +56,14 @@ conditional project replacement possibility, so the stack must be reattested
 before execution. No validation-error events were returned. Do not execute
 it or start capture merely because the package exists; the full source-writer
 preflight is still blocked.
+
+A read-only exact-project Auth settings request through the pinned production
+source REST secret returned HTTP 200 with only Email enabled and
+`disable_signup=false`. The credential remained in a local process pipe and
+was not printed. This closes the production provider-state inventory but does
+not prove that new signup, recovery, refresh, or service-admin writes can be
+blocked during the live freeze. The direct production project dashboard is
+not accessible to the currently signed-in `jphares65` Supabase organization
+view; it lists Development, Staging, and paid Rehearsal, but not Production.
+The separate TLS-verified database reader cannot administer Auth settings or
+inventory project-scoped key holders. Those controls remain fail-closed.
