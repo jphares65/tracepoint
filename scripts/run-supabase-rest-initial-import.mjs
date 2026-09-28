@@ -15,17 +15,19 @@ import { POST_COMMIT_RECONCILIATION_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, 
 import { AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, CONNECTION_PROBE_MODE, COPY_RELATIONS, DEPARTMENT_PREREQUISITE_BOOTSTRAP_RELATIONS, DERIVED_RELATIONS, EQUIPMENT_ASSIGNMENT_HISTORY_IMPORT_GUARD, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, FINAL_CLEAN_TARGET_HOST, FINAL_CLEAN_TARGET_INSTANCE_ID, FINAL_CLEAN_TARGET_RESOURCE_ID, FIREARM_ASSIGNMENTS_SCHEMA_REPAIR, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, IDENTITY_PRESERVATION_RELATIONS, IMPORT_RELATIONS, INITIAL_ARTIFACT_BASELINE, INITIAL_ARTIFACT_BUCKET, INITIAL_ARTIFACT_KEY, INITIAL_ARTIFACT_SHA256, MIGRATION_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_TARGET_FUNCTIONS, NULLABLE_TRAINING_CERTIFICATION_CYCLE, OBJECT_MANIFEST, REHEARSAL_SCHEMA_LINEAGE_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, TARGET_SCHEMA_CONTRACT_MODE, TARGET_ACCOUNT, TARGET_BUCKET, TARGET_SEEDED_REFERENCE_RELATIONS, allAdminUsers, allRelationRows, assertDiagnosticReadOnlySql, attestFinalCleanTargetControlPlane, auditPrerequisitePlan, canonicalRowsHash, classifyArtifactResumeRelation, classifyDepartmentPrerequisiteBootstrap, classifySourceOnlyColumn, classifyTargetGeneratedInput, classifyTargetOnlyColumn, compareSourceColumns, executeNullableTrainingCertificationCycle, foreignKeyCycles, identityPreservingInsertSql, importEvidence, insertSql, normalizeRemovedEquipmentCustody, nullableTrainingCertificationCyclePlan, quote, reconcileDerivedAdministratorAssignments, reconcileExactTargetSeededRelation, reconcileFeatureCatalog, reconcileRolePermissionDifferences, requireExactTargetSeededParity, requireIdentityPreservationPreflight, requireMigrationAnchorProfileParity, requireTargetSeededFeatureCatalogParity, requireTargetSeededRolePermissionRule, requiredAuditDepartmentParents, sourceColumns, sourceHeaders, sourceObjectUrl, summarizeSourceColumn, targetRowsSql, topologicalImportOrder, updateByIdSql, validateColumnMapping, validateImportInvocation, validateObjectBytes, validateTargetSecret, verifyEquipmentAssignmentHistoryContract, verifyIdentitySequenceAdvance, withRetainedDeadline } from "./supabase-rest-import-core.mjs";
 
 const mode = process.env.TRACEPOINT_REST_IMPORT_MODE;
-assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === POST_COMMIT_RECONCILIATION_MODE || mode === OBJECT_REFERENCE_RECONCILIATION_MODE || mode === DEPARTMENT_PATCH_NORMALIZATION_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
-validateImportInvocation(process.env, mode);
+if (import.meta.main) {
+  assert.ok(mode === "database" || mode === "objects" || mode === "reconcile" || mode === "schema-contract" || mode === TARGET_SCHEMA_CONTRACT_MODE || mode === SCHEMA_REPAIR_MODE || mode === REHEARSAL_SCHEMA_LINEAGE_MODE || mode === EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE || mode === MIGRATION_MODE_SCHEMA_REPAIR_MODE || mode === SCHEMA_SWEEP_MODE || mode === TARGET_DATA_PREFLIGHT_MODE || mode === POST_COMMIT_RECONCILIATION_MODE || mode === OBJECT_REFERENCE_RECONCILIATION_MODE || mode === DEPARTMENT_PATCH_NORMALIZATION_MODE || mode === EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE || mode === ROLE_PERMISSIONS_RECONCILIATION_MODE || mode === FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE || mode === TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE || mode === TARGET_PROVENANCE_SWEEP_MODE || mode === AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE || mode === AUDIT_ARTIFACT_CLEANUP_MODE || mode === CONNECTION_PROBE_MODE || mode === AUTH_FLOW_WINDOW_INSPECT_MODE || mode === AUTH_FLOW_WINDOW_REPAIR_MODE || mode === DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, "A reviewed migration mode is required");
+  validateImportInvocation(process.env, mode);
+}
 const immutableArtifactMode = process.env.TRACEPOINT_SOURCE_MODE === "immutable-artifact";
 let headers = null;
-if (!immutableArtifactMode && mode !== CONNECTION_PROBE_MODE) {
+if (import.meta.main && !immutableArtifactMode && mode !== CONNECTION_PROBE_MODE) {
   const rawSource = process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
   delete process.env.SOURCE_SUPABASE_REST_SECRET_JSON;
   assert.ok(rawSource, "Dedicated source REST secret was not injected");
   headers = sourceHeaders(JSON.parse(rawSource));
 }
-const AUDIT_HISTORY_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit", "audit_log"]);
+export const AUDIT_HISTORY_RELATIONS = Object.freeze(["audit_events", "retired_permission_assignment_audit", "audit_log"]);
 function targetClient(target, ca, application_name) {
   assert.equal(process.env.TARGET_PGHOST, FINAL_CLEAN_TARGET_HOST, "MIGRATION_TARGET_HOST_NOT_FINAL_QUARANTINE");
   assert.equal(process.env.TARGET_PGDATABASE, "tracepoint", "MIGRATION_TARGET_DATABASE_NOT_FINAL_QUARANTINE");
@@ -46,7 +48,7 @@ function targetClient(target, ca, application_name) {
   };
   return client;
 }
-function atomicTransactionClient(client) {
+export function atomicTransactionClient(client) {
   const scoped = Object.create(client);
   scoped.query = async (sql, ...values) => {
     const control = typeof sql === "string" ? sql.trim().toLowerCase() : "";
@@ -55,7 +57,7 @@ function atomicTransactionClient(client) {
   };
   return scoped;
 }
-async function sequenceMetadata(client) {
+export async function sequenceMetadata(client) {
   const sequences = (await client.query("select c.relname as table_name,a.attname as column_name,pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) as sequence_name from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null order by c.relname,a.attname")).rows;
   const state = [];
   for (const item of sequences) {
@@ -66,7 +68,7 @@ async function sequenceMetadata(client) {
   }
   return state;
 }
-async function verifyAtomicRollback(client, preflight) {
+export async function verifyAtomicRollback(client, preflight) {
   const relations = [];
   for (const mapping of preflight.mappings) {
     const count = Number((await client.query(`select count(*)::int as count from public.${quote(mapping.relation)}`)).rows[0].count);
@@ -114,11 +116,11 @@ async function sourceSnapshot(onBoundary = () => undefined) {
   onBoundary({ event: "post-source-05", boundary: "source-validation-complete", totalRows: total, membershipCount: memberships.length });
   return { rows, users };
 }
-function normalizedPatchSnapshot(snapshot) {
+export function normalizedPatchSnapshot(snapshot) {
   assert.ok(snapshot.artifact, "DEPARTMENT_PATCH_NORMALIZATION_REQUIRES_PINNED_ARTIFACT");
   const originalDepartmentRows = snapshot.rows.get("departments") ?? [];
-  const normalized = normalizeDepartmentPatchRows(originalDepartmentRows);
-  assert.equal(normalized.evidence.changed, 2, "DEPARTMENT_PATCH_SOURCE_REFERENCE_COUNT_CHANGED");
+  const normalized = normalizeDepartmentPatchRows(originalDepartmentRows, snapshot.objectManifest ?? OBJECT_MANIFEST);
+  if (!snapshot.finalCapture) assert.equal(normalized.evidence.changed, 2, "DEPARTMENT_PATCH_SOURCE_REFERENCE_COUNT_CHANGED");
   snapshot.rows.set("departments", normalized.rows);
   snapshot.departmentPatchNormalization = { originalDepartmentRows, evidence: normalized.evidence };
   return snapshot;
@@ -160,7 +162,7 @@ async function targetForeignKeys(client) { return (await client.query("select ch
 function triggerFiresOnInsert(trigger) { return /\b(?:before|after|instead\s+of)\s+insert\b/iu.test(String(trigger.trigger_definition ?? "")); }
 function triggerWritesAuditEvents(trigger) { return triggerFiresOnInsert(trigger) && /\binsert\s+into\s+(?:public\.)?"?audit_events"?\b/iu.test(String(trigger.function_definition ?? "")); }
 function insertedRelations(trigger) { return [...new Set([...String(trigger.function_definition ?? "").matchAll(/\binsert\s+into\s+(?:public\.)?"?([a-z][a-z0-9_]*)"?/giu)].map(match => match[1].toLowerCase()))].sort(); }
-async function assertAuditHistoryEmpty(client, phase) {
+export async function assertAuditHistoryEmpty(client, phase) {
   const counts = [];
   for (const relation of AUDIT_HISTORY_RELATIONS) {
     const count = Number((await client.query(`select count(*)::int as count from public.${relation}`)).rows[0].count);
@@ -175,7 +177,7 @@ function requireExpectedRelationNames(actual, expected, code) {
   error.safeDiagnostic = { expected: [...expected], observed: [...actual] };
   throw error;
 }
-async function deriveAuditPrerequisites(client, preflight) {
+export async function deriveAuditPrerequisites(client, preflight) {
   const initial = auditPrerequisitePlan({ importRelations: IMPORT_RELATIONS, auditRelations: AUDIT_HISTORY_RELATIONS, foreignKeys: preflight.foreignKeys, targetSeededRelations: TARGET_SEEDED_REFERENCE_RELATIONS });
   // Profiles are created by the reviewed migration-anchor transaction before
   // departments.  Departments are the only prerequisite whose normal target
@@ -193,7 +195,7 @@ async function deriveAuditPrerequisites(client, preflight) {
   const evidence = triggers => triggers.map(trigger => ({ relation: trigger.relation, trigger: trigger.trigger_name, function: `${trigger.function_schema}.${trigger.function_name}`, firesOnInsert: triggerFiresOnInsert(trigger), writesAuditEvents: triggerWritesAuditEvents(trigger), inserts: insertedRelations(trigger) }));
   return { ...plan, bootstrapRelations, triggerEvidence: { profiles: evidence(profileTriggers), parent: evidence(parentTriggers), bootstrapChildren: evidence(childTriggers) } };
 }
-function requireIdentityAnchorPrerequisites(snapshot) {
+export function requireIdentityAnchorPrerequisites(snapshot) {
   const identities = new Set(snapshot.users.map(user => String(user.id)));
   assert.equal(identities.size, snapshot.users.length, "SOURCE_DUPLICATE_IDENTITIES");
   const references = [
@@ -301,7 +303,7 @@ function hasProvenGeneratedArtifactProvenance(relation, targetRows) {
   if (!targetRows.length || !["department_rules", "department_security_settings"].includes(relation)) return false;
   return targetRows.every(row => typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at)) && Date.parse(row.created_at) > CLEAN_TARGET_RESTORE_TIME);
 }
-async function preflightTarget(client, snapshot) {
+export async function preflightTarget(client, snapshot) {
   const kinds = await targetRelationKinds(client);
   for (const relation of COPY_RELATIONS) assert.equal(kinds.get(relation), "r", `TARGET_TABLE_MISSING:${relation}`);
   for (const relation of DERIVED_RELATIONS) assert.equal(kinds.get(relation), "v", `TARGET_VIEW_MISSING:${relation}`);
@@ -349,7 +351,7 @@ async function cleanupProvenMigrationArtifacts(client, snapshot, preflight) {
     await client.query("commit"); return deleted;
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
-async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites) {
+export async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, preflight, auditPrerequisites) {
   assert.deepEqual(auditPrerequisites.prerequisiteRelations, ["profiles", "departments"], "AUDIT_PREREQUISITE_GRAPH_CHANGED");
   const sourceDepartments = snapshot.rows.get("departments") ?? [], sourceAudit = snapshot.rows.get("audit_events") ?? [];
   const departments = requiredAuditDepartmentParents(sourceDepartments, sourceAudit);
@@ -377,7 +379,7 @@ async function runDepartmentPrerequisiteBootstrapCleanup(client, snapshot, prefl
     return { rule: "department-prerequisite-migration-mode", departmentCount: departments.length, bootstrapSideEffectsSuppressed: affectedRelations, auditHistoryEmptyBeforeSourceImport: true };
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
-async function insertIdentityAnchors(client, users) {
+export async function insertIdentityAnchors(client, users) {
   const profiles = new Set((await client.query("select id::text from public.profiles order by id")).rows.map(row => row.id));
   const sourceIds = new Set(users.map(user => String(user.id)));
   assert.equal(sourceIds.size, users.length, "SOURCE_DUPLICATE_IDENTITIES");
@@ -399,7 +401,7 @@ async function insertIdentityAnchors(client, users) {
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
   return { identityAnchors: users.length, profileShells: users.length, auditNeutral: true };
 }
-async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
+export async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
   const relation = "profiles", sourceRows = snapshot.rows.get(relation) ?? [];
   const mapping = preflight.mappings.find(item => item.relation === relation);
   const targetRowsBefore = await targetRows(client, relation, mapping.sourceColumns);
@@ -420,7 +422,7 @@ async function hydrateMigrationAnchorProfiles(client, snapshot, preflight) {
     return { relation, imported: sourceRows.length, resumed: 0, strategy: "hydrate-proven-migration-anchor-profiles", reconciliation };
   } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
 }
-async function importRelation(client, relation, rows, mapping, resume) {
+export async function importRelation(client, relation, rows, mapping, resume) {
   if (resume.strategy === "retain-exact-source-match") return { relation, imported: 0, resumed: rows.length, strategy: resume.strategy };
   assert.ok(["import-full", "cleanup-and-import-full"].includes(resume.strategy), `UNEXPECTED_RESUME_STRATEGY:${relation}`);
   let excluded = [];
@@ -450,7 +452,7 @@ async function importRelation(client, relation, rows, mapping, resume) {
   }
   return { relation, imported: rows.length, resumed: 0, ...(excludedReservedAssignments.length ? { excludedReservedAssignments } : {}) };
 }
-async function importNullableTrainingCertificationCycle(client, snapshot, preflight) {
+export async function importNullableTrainingCertificationCycle(client, snapshot, preflight) {
   const cycle = preflight.cyclePlan;
   const attendeeMapping = preflight.mappings.find(item => item.relation === cycle.attendees);
   const certificationMapping = preflight.mappings.find(item => item.relation === cycle.certifications);
@@ -492,7 +494,7 @@ async function importNullableTrainingCertificationCycle(client, snapshot, prefli
   });
   return { relation: `${cycle.attendees}+${cycle.certifications}`, imported: (snapshot.rows.get(cycle.attendees) ?? []).length + (snapshot.rows.get(cycle.certifications) ?? []).length, resumed: 0, strategy: "two-phase-nullable-fk" };
 }
-async function repairSequences(client) {
+export async function repairSequences(client) {
   await client.query("do $repair$ declare item record; begin for item in select n.nspname as schemaname,c.relname as tablename,a.attname as columnname from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_attribute a on a.attrelid=c.oid where n.nspname='public' and c.relkind='r' and a.attnum>0 and not a.attisdropped and pg_get_serial_sequence(format('%I.%I',n.nspname,c.relname),a.attname) is not null loop execute format('select setval(pg_get_serial_sequence(%L,%L),coalesce((select max(%I) from %I.%I),1),true)',item.schemaname||'.'||item.tablename,item.columnname,item.columnname,item.schemaname,item.tablename); end loop; end $repair$");
   const identitySequences = [];
   for (const relation of IDENTITY_PRESERVATION_RELATIONS) {
@@ -507,7 +509,7 @@ async function repairSequences(client) {
   }
   return identitySequences;
 }
-async function verifyEquipmentAssignmentHistory(client, snapshot, preflight, normalizedEquipment) {
+export async function verifyEquipmentAssignmentHistory(client, snapshot, preflight, normalizedEquipment) {
   const assetMapping = preflight.mappings.find(mapping => mapping.relation === "equipment_assets");
   const assignmentMapping = preflight.mappings.find(mapping => mapping.relation === "equipment_asset_assignments");
   assert.ok(assetMapping && assignmentMapping, "EQUIPMENT_ASSIGNMENT_HISTORY_MAPPING_MISSING");
@@ -515,13 +517,15 @@ async function verifyEquipmentAssignmentHistory(client, snapshot, preflight, nor
   const targetAssets = await targetRows(client, "equipment_assets", assetMapping.sourceColumns);
   const targetAssignments = await targetRows(client, "equipment_asset_assignments", assignmentMapping.sourceColumns);
   const evidence = verifyEquipmentAssignmentHistoryContract({ sourceAssets, sourceAssignments, targetAssets, targetAssignments });
-  assert.equal(evidence.assignments, 33, "EQUIPMENT_ASSIGNMENT_SOURCE_COUNT_CHANGED");
-  assert.equal(evidence.activeAssignments, 30, "EQUIPMENT_ASSIGNMENT_TARGET_ACTIVE_COUNT_CHANGED");
-  assert.equal(evidence.distinctActiveAssets, 30, "EQUIPMENT_ASSIGNMENT_TARGET_ACTIVE_ASSET_COUNT_CHANGED");
-  assert.equal(evidence.historicalAssignments, 3, "EQUIPMENT_ASSIGNMENT_TARGET_HISTORY_COUNT_CHANGED");
+  if (!snapshot.finalCapture) {
+    assert.equal(evidence.assignments, 33, "EQUIPMENT_ASSIGNMENT_SOURCE_COUNT_CHANGED");
+    assert.equal(evidence.activeAssignments, 30, "EQUIPMENT_ASSIGNMENT_TARGET_ACTIVE_COUNT_CHANGED");
+    assert.equal(evidence.distinctActiveAssets, 30, "EQUIPMENT_ASSIGNMENT_TARGET_ACTIVE_ASSET_COUNT_CHANGED");
+    assert.equal(evidence.historicalAssignments, 3, "EQUIPMENT_ASSIGNMENT_TARGET_HISTORY_COUNT_CHANGED");
+  }
   return { ...evidence, normalization: normalizedEquipment.evidence };
 }
-async function verifyDatabase(client, snapshot, preflight, normalizedEquipment, onStep = () => undefined) {
+export async function verifyDatabase(client, snapshot, preflight, normalizedEquipment, onStep = () => undefined) {
   const sourceTables = []; const targetTables = [];
   for (const relation of IMPORT_RELATIONS) {
     onStep(`relation:${relation}:target-read`);
@@ -539,7 +543,7 @@ async function verifyDatabase(client, snapshot, preflight, normalizedEquipment, 
       const administratorInheritanceProven = typeof functionDefinition === "string" && /membership_role\.role_code\s*=\s*'administrator'\s+or exists\s*\(/i.test(functionDefinition) && /permission\.code\s*=\s*p_permission_code/i.test(functionDefinition);
       const targetDepartments = await targetRows(client, "departments", preflight.mappings.find(item => item.relation === "departments").sourceColumns);
       const targetPermissions = await targetRows(client, "permissions", ["code"]);
-      derivedAdministratorReconciliation = reconcileDerivedAdministratorAssignments({ sourceRows, targetRows: target, sourceDepartments: snapshot.rows.get("departments") ?? [], targetDepartments, targetPermissions, administratorInheritanceProven });
+      derivedAdministratorReconciliation = reconcileDerivedAdministratorAssignments({ sourceRows, targetRows: target, sourceDepartments: snapshot.rows.get("departments") ?? [], targetDepartments, targetPermissions, administratorInheritanceProven, enforceHistoricalBaseline: !snapshot.finalCapture });
     }
     const profileAnchors = relation === "profiles" ? await profilesAreMigrationAnchors(client, sourceRows, target) : false;
     const profileReconciliation = relation === "profiles" ? requireMigrationAnchorProfileParity(sourceRows, target, profileAnchors) : null;
@@ -563,7 +567,7 @@ async function verifyDatabase(client, snapshot, preflight, normalizedEquipment, 
   const invalidForeignKeys = Number((await client.query("select count(*)::int as count from pg_constraint where contype='f' and not convalidated")).rows[0].count); assert.equal(invalidForeignKeys, 0, "TARGET_INVALID_FOREIGN_KEYS");
   const memberships = snapshot.rows.get("department_memberships") ?? [];
   onStep("evidence-summary");
-  return importEvidence({ mappings: preflight.mappings.map(({ relation, mapping }) => ({ relation, mapping })), sourceTables, targetTables, featureCatalog: preflight.featureCatalog, identities: { count: snapshot.users.length, canonicalDataSha256: canonicalRowsHash(snapshot.users) }, memberships: { count: memberships.length, canonicalDataSha256: canonicalRowsHash(memberships) }, baseline: snapshot.baseline });
+  return importEvidence({ mappings: preflight.mappings.map(({ relation, mapping }) => ({ relation, mapping })), sourceTables, targetTables, featureCatalog: preflight.featureCatalog, identities: { count: snapshot.users.length, canonicalDataSha256: canonicalRowsHash(snapshot.users) }, memberships: { count: memberships.length, canonicalDataSha256: canonicalRowsHash(memberships) }, baseline: snapshot.baseline, objectManifest: snapshot.objectManifest ?? OBJECT_MANIFEST, sourceArtifactSha256: snapshot.artifact?.masterSha256 ?? INITIAL_ARTIFACT_SHA256 });
 }
 async function runPostCommitReconciliation() {
   const rawTarget = process.env.TARGET_DATABASE_SECRET_JSON;
@@ -1516,9 +1520,11 @@ async function runReviewedMode() {
 // await whose timeout is unref'ed. Keep the event loop alive only while a
 // reviewed mode is running so request timeouts reach the existing fail-closed
 // handlers and emit sanitized evidence.
-const reviewedModeLiveness = setInterval(() => undefined, 1_000);
-try {
-  await runReviewedMode();
-} finally {
-  clearInterval(reviewedModeLiveness);
+if (import.meta.main) {
+  const reviewedModeLiveness = setInterval(() => undefined, 1_000);
+  try {
+    await runReviewedMode();
+  } finally {
+    clearInterval(reviewedModeLiveness);
+  }
 }

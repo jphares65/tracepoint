@@ -72,7 +72,7 @@ Resources:
         why: distinct from rehearsal role so no project or artifact crossover is possible
         must:
           - only the exact production capture-epoch secret, never the old or rollback key
-          - only one immutable source package, one attestation key, and two exact capture keys
+          - only one immutable source package, one attestation key, and two exact capture-run prefixes
           - no source mutation permissions
     Properties:
       RoleName: TracePoint-ProductionFinalSourceCapture-20260927
@@ -102,12 +102,18 @@ Resources:
                 Effect: Allow
                 Action: [secretsmanager:GetSecretValue, secretsmanager:DescribeSecret]
                 Resource: !Ref CaptureSecretArn
-              - Sid: WriteAndVerifyTwoPinnedCaptures
+              - Sid: WriteAndVerifyTwoPinnedCapturesAndObjectArchives
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject, s3:GetObjectVersion]
                 Resource:
                   - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/final-canonical.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/object-archive.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/objects/department-assets/*
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/1d761bd7-04dd-43f3-b77a-2c41130e18c2/objects/tracepoint-attachments/*
                   - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/final-canonical.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/object-archive.json
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/objects/department-assets/*
+                  - arn:aws:s3:::tracepoint-production-private-193644343389/migration/source/c7448ea9-4645-4e99-b988-3a05de12ac70/objects/tracepoint-attachments/*
               - Sid: ReadPinnedCompositeAttestation
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion]

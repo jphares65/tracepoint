@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { MIGRATION_RELATIONS } from './supabase-rest-ledger-core.mjs';
+import { MIGRATION_RELATIONS, canonical } from './supabase-rest-ledger-core.mjs';
 import {
   ARTIFACT_BUCKET, ARTIFACT_KMS_KEY_ARN, FENCE_ATTESTATION_KEY, SOURCE_ORIGIN, STORAGE_BUCKETS,
   attestCompositeEvidence, attestFrozen, buildArtifact, classifyStorageEntry, objectPath, relationUrl,
@@ -18,6 +18,36 @@ const secret = process.env.SOURCE_PRODUCTION_SERVICE_KEY;
 delete process.env.SOURCE_PRODUCTION_SERVICE_KEY;
 delete process.env.SOURCE_PRODUCTION_PROJECT_URL;
 const headers = Object.freeze({ apikey: secret, Accept: 'application/json' });
+const s3 = new S3Client({ region: 'us-east-1', maxAttempts: 1 });
+const archivedObjects = [];
+const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+
+async function putImmutable(key, body, contentType, metadata = {}) {
+  assert.ok(key.startsWith(`migration/source/${runId}/`), 'ARCHIVE_KEY_OUTSIDE_CAPTURE_RUN');
+  const expectedHash = digest(body);
+  let versionId;
+  try {
+    const put = await s3.send(new PutObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key,
+      ExpectedBucketOwner: '193644343389', Body: body, ContentType: contentType,
+      ServerSideEncryption: 'aws:kms', SSEKMSKeyId: ARTIFACT_KMS_KEY_ARN,
+      ChecksumSHA256: createHash('sha256').update(body).digest('base64'),
+      Metadata: metadata, IfNoneMatch: '*' }));
+    versionId = put.VersionId;
+  } catch (error) {
+    if (error?.name !== 'PreconditionFailed' && error?.$metadata?.httpStatusCode !== 412) throw error;
+  }
+  const readback = await s3.send(new GetObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key,
+    ...(versionId ? { VersionId: versionId } : {}), ExpectedBucketOwner: '193644343389' }));
+  assert.ok(readback.VersionId, 'ARCHIVE_VERSION_REQUIRED');
+  assert.equal(readback.ServerSideEncryption, 'aws:kms', 'ARCHIVE_ENCRYPTION_MISMATCH');
+  assert.equal(readback.SSEKMSKeyId, ARTIFACT_KMS_KEY_ARN, 'ARCHIVE_KMS_MISMATCH');
+  assert.equal(readback.ContentType, contentType, 'ARCHIVE_CONTENT_TYPE_MISMATCH');
+  for (const [name, value] of Object.entries(metadata))
+    assert.equal(readback.Metadata?.[name], value, `ARCHIVE_METADATA_MISMATCH:${name}`);
+  const bytes = await readback.Body.transformToByteArray();
+  assert.equal(digest(bytes), expectedHash, 'ARCHIVE_READBACK_HASH_MISMATCH');
+  return { versionId: readback.VersionId, byteSha256: expectedHash };
+}
 
 async function request(method, url, label, body) {
   sourceRequest(method, url);
@@ -82,11 +112,17 @@ async function allObjects(departmentIds) {
           if (item.kind === 'folder') { queue.push(item.prefix); continue; }
           const response = await request('GET', objectPath(bucket, item.key), `storage-object:${bucket}`);
           const bytes = new Uint8Array(await response.arrayBuffer());
-          const departmentId = bucket === 'department-assets' ? item.key.split('/')[0] : null;
-          if (departmentId !== null) assert.ok(departmentIds.has(departmentId), 'STORAGE_TENANT_MISMATCH');
-          objects.push({ sourceBucket: bucket, sourceKey: item.key, destinationKey: `${bucket}/${item.key}`,
-            bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'),
-            contentType: response.headers.get('content-type')?.split(';')[0] ?? 'application/octet-stream', departmentId });
+          const departmentId = item.key.split('/')[0];
+          assert.ok(departmentIds.has(departmentId), 'STORAGE_TENANT_MISMATCH');
+          const contentType = response.headers.get('content-type')?.split(';')[0] ?? 'application/octet-stream';
+          const archiveKey = `migration/source/${runId}/objects/${bucket}/${item.key}`;
+          const archive = await putImmutable(archiveKey, bytes, contentType,
+            departmentId ? { 'tracepoint-department-id': departmentId } : {});
+          archivedObjects.push({ sourceBucket: bucket, sourceKey: item.key, archiveKey,
+            archiveVersionId: archive.versionId, bytes: bytes.length, sha256: archive.byteSha256 });
+          const destinationPrefix = bucket === 'tracepoint-attachments' ? 'attachments' : bucket;
+          objects.push({ sourceBucket: bucket, sourceKey: item.key, destinationKey: `${destinationPrefix}/${item.key}`,
+            bytes: bytes.length, sha256: archive.byteSha256, contentType, departmentId });
           assert.ok(objects.length <= 100_000, 'STORAGE_OBJECT_BOUND_EXCEEDED');
         }
         if (entries.length < 100) break;
@@ -96,7 +132,6 @@ async function allObjects(departmentIds) {
   return objects.sort((a, b) => a.destinationKey.localeCompare(b.destinationKey));
 }
 
-const s3 = new S3Client({ region: 'us-east-1', maxAttempts: 1 });
 async function compositeEvidence(fenceChangedAt) {
   const result = await s3.send(new GetObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: FENCE_ATTESTATION_KEY,
     VersionId: evidenceVersion, ExpectedBucketOwner: '193644343389' }));
@@ -119,20 +154,21 @@ await compositeEvidence(secondFreeze);
 const artifact = buildArtifact({ runId, capturedAtUtc: new Date().toISOString(),
   fenceChangedAt: firstFreeze, rowsByRelation, identities, objects });
 try {
-  const put = await s3.send(new PutObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key,
-    ExpectedBucketOwner: '193644343389', Body: artifact.payload,
-    ContentType: 'application/json', ServerSideEncryption: 'aws:kms', SSEKMSKeyId: ARTIFACT_KMS_KEY_ARN,
-    ChecksumSHA256: createHash('sha256').update(artifact.payload).digest('base64'), IfNoneMatch: '*' }));
-  assert.ok(put.VersionId, 'ARTIFACT_VERSION_REQUIRED');
-  const readback = await s3.send(new GetObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: key,
-    VersionId: put.VersionId, ExpectedBucketOwner: '193644343389' }));
-  const bytes = await readback.Body.transformToByteArray();
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.byteSha256, 'ARTIFACT_READBACK_HASH_MISMATCH');
+  assert.equal(archivedObjects.length, objects.length, 'OBJECT_ARCHIVE_COUNT_MISMATCH');
+  const archiveKey = `migration/source/${runId}/object-archive.json`;
+  const archivePayload = canonical({ format: 'tracepoint-final-object-archive/v1', runId,
+    artifactMasterSha256: artifact.masterSha256,
+    objects: archivedObjects.sort((a, b) => a.archiveKey.localeCompare(b.archiveKey)) });
+  const objectArchive = await putImmutable(archiveKey, archivePayload, 'application/json');
+  const persistedArtifact = await putImmutable(key, artifact.payload, 'application/json');
+  assert.equal(persistedArtifact.byteSha256, artifact.byteSha256, 'ARTIFACT_READBACK_HASH_MISMATCH');
   console.log(JSON.stringify({ status: 'PRODUCTION_FROZEN_SOURCE_CAPTURE_CREATED', slot, bucket: ARTIFACT_BUCKET,
-    key, versionId: put.VersionId, byteSha256: artifact.byteSha256, masterSha256: artifact.masterSha256,
+    key, versionId: persistedArtifact.versionId, byteSha256: artifact.byteSha256, masterSha256: artifact.masterSha256,
     relationContracts: artifact.body.tables.length, totalRelationalRows: artifact.body.totalRelationalRows,
     identities: artifact.body.identities.count, memberships: artifact.body.memberships.count,
     objects: artifact.body.objects.count, objectBytes: artifact.body.objects.totalBytes,
+    objectArchive: { key: archiveKey, versionId: objectArchive.versionId,
+      byteSha256: objectArchive.byteSha256 },
     sourceProjectRef: 'izlkwggluhlhzlumtzes', fenceStable: true,
     compositeEvidenceKey: FENCE_ATTESTATION_KEY, compositeEvidenceVersion: evidenceVersion,
     compositeEvidenceSha256: evidenceSha256, rowPayloadsLogged: false }));

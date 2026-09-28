@@ -88,6 +88,7 @@ export const OBJECT_REFERENCE_COLUMNS = Object.freeze([
   { relation: "fleet_vehicle_documents", column: "document_url" },
   { relation: "attachments", column: "storage_path" },
   { relation: "drill_documents", column: "storage_path" },
+  { relation: "range_packets", column: "storage_path" },
 ]);
 export const TARGET_SCHEMA_CONTRACT_MODE = "target-schema-contract";
 export const DATABASE_MODES = Object.freeze(["database", "reconcile", "schema-contract", TARGET_SCHEMA_CONTRACT_MODE, SCHEMA_REPAIR_MODE, REHEARSAL_SCHEMA_LINEAGE_MODE, EQUIPMENT_ASSETS_LIFECYCLE_SCHEMA_REPAIR_MODE, MIGRATION_MODE_SCHEMA_REPAIR_MODE, SCHEMA_SWEEP_MODE, TARGET_DATA_PREFLIGHT_MODE, POST_COMMIT_RECONCILIATION_MODE, EQUIPMENT_ASSETS_PARITY_DIAGNOSTIC_MODE, ROLE_PERMISSIONS_RECONCILIATION_MODE, FOREIGN_KEY_CYCLE_DIAGNOSIS_MODE, TARGET_GENERATED_COLUMN_DIAGNOSTIC_MODE, TARGET_PROVENANCE_SWEEP_MODE, AUDIT_IDENTITY_COLLISION_DIAGNOSTIC_MODE, AUDIT_ARTIFACT_CLEANUP_MODE, CONNECTION_PROBE_MODE, AUTH_FLOW_WINDOW_INSPECT_MODE, AUTH_FLOW_WINDOW_REPAIR_MODE, DEPARTMENT_ROLE_PERMISSIONS_AUTH_DIAGNOSTIC_MODE, OBJECT_REFERENCE_RECONCILIATION_MODE, DEPARTMENT_PATCH_NORMALIZATION_MODE]);
@@ -512,15 +513,17 @@ export function requireTargetSeededRolePermissionRule(reconciliation) {
   return Object.freeze({ ...reconciliation, classification: "target-seeded reference data — excluded by design", sourceOnlyRule: "reviewed legacy/global defaults; department_role_permissions remains source-authoritative" });
 }
 
-export function reconcileDerivedAdministratorAssignments({ sourceRows, targetRows, sourceDepartments, targetDepartments, targetPermissions, administratorInheritanceProven }) {
+export function reconcileDerivedAdministratorAssignments({ sourceRows, targetRows, sourceDepartments, targetDepartments, targetPermissions, administratorInheritanceProven, enforceHistoricalBaseline = true }) {
   assert.equal(administratorInheritanceProven, true, "TARGET_ADMINISTRATOR_INHERITANCE_UNPROVEN");
   const sourceDepartmentIds = new Set(sourceDepartments.map(row => String(row.id)));
   const targetDepartmentIds = new Set(targetDepartments.map(row => String(row.id)));
   assert.deepEqual([...targetDepartmentIds].sort(), [...sourceDepartmentIds].sort(), "TARGET_DEPARTMENT_SCOPE_MISMATCH");
   const permissionCodes = new Set(targetPermissions.map(row => row.code));
   const excluded = sourceRows.filter(row => row.role_code === "administrator" || row.permission_code === "administer_department");
-  assert.equal(excluded.length, 42, "RESERVED_DEPARTMENT_PERMISSION_BASELINE_CHANGED");
-  assert.equal(excluded.filter(row => row.permission_code === "administer_department").length, 3, "RESERVED_ADMINISTER_DEPARTMENT_BASELINE_CHANGED");
+  if (enforceHistoricalBaseline) {
+    assert.equal(excluded.length, 42, "RESERVED_DEPARTMENT_PERMISSION_BASELINE_CHANGED");
+    assert.equal(excluded.filter(row => row.permission_code === "administer_department").length, 3, "RESERVED_ADMINISTER_DEPARTMENT_BASELINE_CHANGED");
+  }
   for (const row of excluded) {
     assert.equal(row.role_code, "administrator", "RESERVED_DEPARTMENT_PERMISSION_SEMANTIC_MISMATCH");
     assert.ok(sourceDepartmentIds.has(String(row.department_id)) && targetDepartmentIds.has(String(row.department_id)), "RESERVED_DEPARTMENT_PERMISSION_SCOPE_MISMATCH");
@@ -530,7 +533,7 @@ export function reconcileDerivedAdministratorAssignments({ sourceRows, targetRow
   assert.ok(targetRows.every(row => row.role_code !== "administrator" && row.permission_code !== "administer_department"), "TARGET_RESERVED_PERMISSION_STORED");
   assert.equal(targetRows.length, physicalSourceRows.length, "TARGET_DEPARTMENT_PERMISSION_PHYSICAL_COUNT_MISMATCH");
   assert.equal(canonicalRowsHash(targetRows), canonicalRowsHash(physicalSourceRows), "TARGET_DEPARTMENT_PERMISSION_PHYSICAL_HASH_MISMATCH");
-  return Object.freeze({ sourceRows: sourceRows.length, physicalRows: targetRows.length, derivedAdministratorRows: excluded.length, administerDepartmentRows: 3, excludedRows: excluded.map(row => ({ departmentId: row.department_id, roleCode: row.role_code, permissionCode: row.permission_code, canonicalRowSha256: sha256(row), semanticEquivalence: "target-administrator-inheritance" })) });
+  return Object.freeze({ sourceRows: sourceRows.length, physicalRows: targetRows.length, derivedAdministratorRows: excluded.length, administerDepartmentRows: excluded.filter(row => row.permission_code === "administer_department").length, excludedRows: excluded.map(row => ({ departmentId: row.department_id, roleCode: row.role_code, permissionCode: row.permission_code, canonicalRowSha256: sha256(row), semanticEquivalence: "target-administrator-inheritance" })) });
 }
 
 export function validateTargetSecret(value) {
@@ -1242,13 +1245,15 @@ export function equipmentAssetProjectionSummary(sourceRows, projectedRows, colum
   });
   return { sourceRows: sourceRows.length, projectedRows: projectedRows.length, fields, sourceCanonicalSha256: canonicalRowsHash(sourceRows), projectionCanonicalSha256: canonicalRowsHash(projectedRows), differingFields: fields.filter(field => field.parity === "FAIL").map(field => field.field) };
 }
-export function importEvidence({ mappings, sourceTables, targetTables, identities, memberships, baseline = null }) {
+export function importEvidence({ mappings, sourceTables, targetTables, identities, memberships, baseline = null, objectManifest = OBJECT_MANIFEST, sourceArtifactSha256 = INITIAL_ARTIFACT_SHA256 }) {
   const total = sourceTables.reduce((sum, table) => sum + table.rows, 0);
   const expected = baseline ?? { relationalRows: PRIOR_TOTAL_ROWS, identities: PRIOR_IDENTITIES, memberships: PRIOR_MEMBERSHIPS, objects: PRIOR_OBJECTS, objectBytes: PRIOR_OBJECT_BYTES };
   assert.equal(total, expected.relationalRows, "SOURCE_TOTAL_ROW_MISMATCH");
   assert.equal(identities.count, expected.identities, "SOURCE_IDENTITY_COUNT_MISMATCH");
   assert.equal(memberships.count, expected.memberships, "SOURCE_MEMBERSHIP_COUNT_MISMATCH");
-  return { format: "tracepoint-rest-rds-import-evidence/v1", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships, objects: { count: expected.objects, totalBytes: expected.objectBytes, manifestSha256: objectManifestSha256 }, ...(baseline ? { sourceBaseline: "adopted-immutable-artifact", sourceArtifactSha256: INITIAL_ARTIFACT_SHA256 } : {}), masterSha256: sha256({ mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships }) };
+  assert.equal(objectManifest.length, expected.objects, "SOURCE_OBJECT_COUNT_MISMATCH");
+  assert.equal(objectManifest.reduce((sum, item) => sum + item.bytes, 0), expected.objectBytes, "SOURCE_OBJECT_BYTES_MISMATCH");
+  return { format: "tracepoint-rest-rds-import-evidence/v1", runId: RUN_ID, authorizationReference: AUTHORIZATION_REFERENCE, mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships, objects: { count: expected.objects, totalBytes: expected.objectBytes, manifestSha256: objectManifest === OBJECT_MANIFEST ? objectManifestSha256 : sha256(objectManifest.map(({ sourceBucket, sourceKey, bytes, sha256: digest }) => ({ bucket: sourceBucket, sourceKey, size: bytes, sha256: digest }))) }, ...(baseline ? { sourceBaseline: "adopted-immutable-artifact", sourceArtifactSha256 } : {}), masterSha256: sha256({ mappings, sourceTables, targetTables, totalRelationalRows: total, identities, memberships }) };
 }
 
 export function sourceObjectUrl(object) {

@@ -7,6 +7,26 @@ restoration. It did **not** prove that the same reversible controls are
 available for every live production writer. Never substitute this document or
 an operator-signed attestation for a real-interface negative test.
 
+## Capture-B final apply package status (2026-09-28)
+
+The local capture runner now archives each source object, with its whole-byte
+SHA-256 and immutable S3 VersionId, under the exact A/B run prefixes. It also
+persists an `object-archive.json` sidecar bound to the corresponding canonical
+artifact. The reviewed CloudFormation template has been amended to grant the
+capture role only the two exact sidecars and object prefixes for the two
+approved Storage buckets. This template change is **not deployed**. Its change
+set, effective IAM boundary, and S3/KMS access must be reviewed before capture.
+
+The local final importer accepts only the two version-pinned, hash-pinned A/B
+artifacts, attests the exact final RDS instance, applies capture B in one
+PostgreSQL transaction, and reconciles all 90 relation contracts before commit.
+The separate object copier accepts only the B sidecar and creates/verifies
+private KMS objects in the approved tenant-scoped target prefixes. Neither
+package has yet completed a full isolated PostgreSQL/S3 integration rehearsal,
+immutable image build, ECR scan, or deployment. Keep
+`FINAL_FROZEN_ARTIFACT_APPLY_NOT_READY` set until those gates pass; local unit
+tests are not a substitute.
+
 ## Exact source and read-only preflight
 
 - Supabase project: `izlkwggluhlhzlumtzes`; REST origin:
@@ -51,9 +71,12 @@ at freeze time. No route has been declared controlled by this inventory alone.
 2. Apply each reviewed reversible operational control to the exact source:
    application/API, service-role/server/background, Auth, Storage, scheduled
    import/admin automation, and any separate S3 writer. Drain in-flight work.
-   Do not delete/rotate modern Supabase keys as a fence. The trusted operator
-   may retain theoretical write capability but must make no manual source write
-   while frozen.
+   Apply the separately rehearsed credential-epoch procedure: keep the capture
+   and rollback keys distinct and undistributed to ordinary writers; retire
+   only the pinned old elevated credential after the rollback distribution
+   path and direct old-key negative are ready. The trusted operator may retain
+   theoretical write capability but must make no manual source write while
+   frozen.
 3. In the production-project SQL Editor only, run
    `supabase/production-cutover/20260927_activate_source_fence.sql`. It guards
    the full catalog, installs 174 `ENABLE ALWAYS` triggers on the 87 public
@@ -71,8 +94,8 @@ at freeze time. No route has been declared controlled by this inventory alone.
 5. Deploy the reviewed update to the isolated CodeBuild capture-executor stack
    by change set. Its role must read only the exact production capture-epoch
    secret (not the old migration REST or rollback/resume secret),
-   content-addressed build source, one attestation key, and two fixed output
-   keys. Do not update the deployed stack or start capture while preflight is
+   content-addressed build source, one attestation key, and the two exact
+   capture-run artifact/object prefixes. Do not update the deployed stack or start capture while preflight is
    BLOCKED. Recheck IAM boundary and effective permissions before use.
    `pwsh -NoProfile -File scripts/package-production-final-capture.ps1`
    creates a local content-addressed source ZIP from nine explicit code/build
