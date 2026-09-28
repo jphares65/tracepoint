@@ -184,7 +184,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     assertEcsIngress({ service, task, networkInterface, securityGroup, loadBalancer });
     if (mode === 'pending') {
       const stackName = 'tracepoint-production-maintenance-response-20260927';
-      const changeSetArn = 'arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928b/b096ce6f-e51b-475c-942c-a1803bee7eb8';
+      const changeSetArn = 'arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928c/bb37cab2-ec8f-4e0c-b574-9dfb0450ad8b';
       const stack = aws('cloudformation', 'describe-stacks', '--stack-name', stackName).Stacks[0];
       assert.equal(stack.StackStatus, 'REVIEW_IN_PROGRESS');
       assert.equal(stack.RoleARN, 'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1');

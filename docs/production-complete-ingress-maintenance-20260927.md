@@ -22,8 +22,8 @@ node scripts/check-production-maintenance-ingress.mjs pending
 The exact activation is:
 
 ```powershell
-aws cloudformation execute-change-set --change-set-name arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928b/b096ce6f-e51b-475c-942c-a1803bee7eb8 --stack-name tracepoint-production-maintenance-response-20260927 --profile tracepoint-production --region us-east-1
-aws cloudformation wait stack-create-complete --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/85068000-bb8b-11f1-acc1-0affe4d14253 --profile tracepoint-production --region us-east-1
+aws cloudformation execute-change-set --change-set-name arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928c/bb37cab2-ec8f-4e0c-b574-9dfb0450ad8b --stack-name tracepoint-production-maintenance-response-20260927 --profile tracepoint-production --region us-east-1
+aws cloudformation wait stack-create-complete --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/916053d0-bb90-11f1-8c66-0e920151c467 --profile tracepoint-production --region us-east-1
 node scripts/check-production-maintenance-ingress.mjs active
 ```
 
@@ -32,9 +32,9 @@ Require both external probes to return the exact 503 maintenance body, the origi
 Before reversal, `list-stack-resources` must show exactly the two named listener rules. The exact reversal is:
 
 ```powershell
-aws cloudformation list-stack-resources --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/f41bc7e0-ba99-11f1-b90b-0e0ebc68fca1 --profile tracepoint-production --region us-east-1 --output json
-aws cloudformation delete-stack --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/f41bc7e0-ba99-11f1-b90b-0e0ebc68fca1 --profile tracepoint-production --region us-east-1
-aws cloudformation wait stack-delete-complete --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/f41bc7e0-ba99-11f1-b90b-0e0ebc68fca1 --profile tracepoint-production --region us-east-1
+aws cloudformation list-stack-resources --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/916053d0-bb90-11f1-8c66-0e920151c467 --profile tracepoint-production --region us-east-1 --output json
+aws cloudformation delete-stack --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/916053d0-bb90-11f1-8c66-0e920151c467 --profile tracepoint-production --region us-east-1
+aws cloudformation wait stack-delete-complete --stack-name arn:aws:cloudformation:us-east-1:193644343389:stack/tracepoint-production-maintenance-response-20260927/916053d0-bb90-11f1-8c66-0e920151c467 --profile tracepoint-production --region us-east-1
 node scripts/check-production-maintenance-ingress.mjs restored
 ```
 
