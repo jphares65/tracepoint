@@ -16,7 +16,7 @@ test('synthetic import proof clone has only private one-shot ingress and exact p
   assert.doesNotMatch(template, /0\.0\.0\.0\/0\s*\n\s*IpProtocol: tcp\s*\n\s*FromPort: 5432/);
   assert.doesNotMatch(template, /arn:aws:s3:::.*\/migration\/source\/c7448ea9-4645-4e99-b988-3a05de12ac70/);
   assert.doesNotMatch(template, /secretsmanager:GetSecretValue|ecs:UpdateService|route53:|cognito-idp:/);
-  assert.match(template, /tracepoint-production@sha256:000483ddbeba124502a0f3928889c3b5888117d882ae0aae4fa9b8491135759d/);
+  assert.match(template, /tracepoint-production@sha256:51f55a94284d9d602e8182f66de4ddba77dc59c9fd04234038a805cd18e43017/);
   assert.match(template, /EntryPoint: \[node, scripts\/run-isolated-final-import-proof\.mjs\]/);
   assert.doesNotMatch(template, /Name: TRACEPOINT_ISOLATED_IMPORT_PROOF|Name: TRACEPOINT_ISOLATED_IMPORT_MODE/);
 });
