@@ -278,6 +278,60 @@ Resources:
           Secrets:
             - Name: TARGET_DATABASE_SECRET_JSON
               ValueFrom: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT
+  ReadOnlyTargetProbeTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: explicit read-only TLS/schema attestation before any frozen artifact apply
+        must:
+          - no import entrypoint or mutation SQL
+          - no public listener, service, or automatic task run
+    Properties:
+      Family: tracepoint-production-final-target-readonly-probe-20260928
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt ImportExecutionRole.Arn
+      TaskRoleArn: !GetAtt ImportTaskRole.Arn
+      ContainerDefinitions:
+        - Name: final-target-readonly-probe
+          Image: 193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@sha256:b88c77d4b1938a05a6fbf963ae508c22dc0937ae35ff82595fa69c0c44c1bd24
+          Essential: true
+          ReadonlyRootFilesystem: true
+          User: node
+          EntryPoint:
+            - node
+            - -e
+            - >-
+              const pg=require('pg');const fs=require('fs');const assert=require('assert/strict');
+              const s=JSON.parse(process.env.TARGET_DATABASE_SECRET_JSON);
+              const h=process.env.TARGET_PGHOST;
+              assert.equal(h,'tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com');
+              const c=new pg.Client({host:h,port:5432,database:'tracepoint',user:s.username,password:s.password,
+              ssl:{ca:fs.readFileSync('/app/rds-ca.pem','utf8'),rejectUnauthorized:true,servername:h},
+              connectionTimeoutMillis:15000,statement_timeout:30000,application_name:'tracepoint-final-import-read-only-attestation'});
+              (async()=>{await c.connect();await c.query('begin transaction read only');
+              const a=(await c.query("select current_database() as database, inet_server_port()::int as port, (select ssl from pg_stat_ssl where pid=pg_backend_pid()) as tls")).rows[0];
+              const m=Number((await c.query('select count(*)::int as count from tracepoint_migrations.applied_migrations')).rows[0].count);
+              const u=Number((await c.query('select count(*)::int as count from auth.users')).rows[0].count);
+              assert.equal(a.database,'tracepoint');assert.equal(a.port,5432);assert.equal(a.tls,true);
+              await c.query('rollback');await c.end();
+              console.log(JSON.stringify({status:'FINAL_TARGET_READ_ONLY_ATTESTED',database:a.database,tls:a.tls,migrationLineage:m,authUsers:u}));
+              })().catch(async e=>{await c.end().catch(()=>{});
+              console.error(JSON.stringify({status:'BLOCKED',code:e.code||'FINAL_TARGET_READ_ONLY_PROBE_FAILED'}));process.exitCode=1;});
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ImportLogs
+              awslogs-region: us-east-1
+              awslogs-stream-prefix: readonly
+          Environment:
+            - Name: TARGET_PGHOST
+              Value: tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com
+          Secrets:
+            - Name: TARGET_DATABASE_SECRET_JSON
+              ValueFrom: arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT
 Outputs:
   DatabaseTaskDefinitionArn:
     Value: !Ref DatabaseTaskDefinition
@@ -285,3 +339,5 @@ Outputs:
     Value: !Ref ObjectTaskDefinition
   ImporterSecurityGroupId:
     Value: !Ref ImporterSecurityGroup
+  ReadOnlyTargetProbeTaskDefinitionArn:
+    Value: !Ref ReadOnlyTargetProbeTaskDefinition
