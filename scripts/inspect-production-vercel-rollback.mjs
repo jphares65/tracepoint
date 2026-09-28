@@ -2,7 +2,7 @@
 // Exact-project, read-only Vercel rollback inventory. Never prints tokens or env values.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { VERCEL_TEAM_ID, VERCEL_PROJECT_ID, BASELINE_DEPLOYMENT_ID,
+import { VERCEL_TEAM_ID, VERCEL_PROJECT_ID, BASELINE_DEPLOYMENT_UID,
   VERCEL_TOKEN_SECRET, attestVercelProject, attestVercelVariables,
   attestVercelDeployment } from './production-vercel-rollback-core.mjs';
 
@@ -16,35 +16,95 @@ function aws(args, output = 'json') {
 }
 
 async function getJson(token, path) {
-  assert.match(path, /^\/(?:v9\/projects|v13\/deployments)\//, 'UNAPPROVED_VERCEL_PATH');
+  const exactDeploymentList = `/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=100`;
+  assert.ok(/^\/(?:v9\/projects|v13\/deployments)\//.test(path) || path === exactDeploymentList,
+    'UNAPPROVED_VERCEL_PATH');
   const url = new URL(`https://api.vercel.com${path}`);
-  url.searchParams.set('teamId', VERCEL_TEAM_ID);
-  const response = await fetch(url, { method: 'GET', redirect: 'error',
-    headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
-    signal: AbortSignal.timeout(15_000) });
-  assert.equal(response.status, 200, 'VERCEL_READ_FAILED');
+  // A project-scoped token cannot read team/user metadata. The exact project
+  // and owner are verified from the returned project before any other read.
+  let response;
+  try {
+    response = await fetch(url, { method: 'GET', redirect: 'error',
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000) });
+  } catch {
+    throw new Error('VERCEL_NETWORK_FAILED');
+  }
+  if (response.status !== 200) throw new Error(`VERCEL_READ_HTTP_${response.status}`);
   return response.json();
 }
 
+async function diagnosticStatus(token, path) {
+  assert.ok(path === '/v2/user' || path === `/v2/teams/${VERCEL_TEAM_ID}`,
+    'UNAPPROVED_VERCEL_DIAGNOSTIC_PATH');
+  const url = new URL(`https://api.vercel.com${path}`);
+  const response = await fetch(url, { method: 'GET', redirect: 'error',
+    headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+    signal: AbortSignal.timeout(15_000) });
+  let code = null;
+  try {
+    const body = await response.json();
+    if (/^[a-zA-Z0-9_-]{1,64}$/.test(body?.error?.code ?? '')) code = body.error.code;
+  } catch { /* status alone is sufficient */ }
+  return { status: response.status, code };
+}
+
+let stage = 'aws-identity';
+let safeDiagnostic = null;
 try {
   const identity = JSON.parse(aws(['sts', 'get-caller-identity']));
   assert.equal(identity.Account, '193644343389', 'PRODUCTION_ACCOUNT_REQUIRED');
-  const token = aws(['secretsmanager', 'get-secret-value', '--secret-id', VERCEL_TOKEN_SECRET,
+  stage = 'token-secret';
+  const secretPayload = aws(['secretsmanager', 'get-secret-value', '--secret-id', VERCEL_TOKEN_SECRET,
     '--query', 'SecretString'], 'text');
+  const wrapped = secretPayload.startsWith('{') ? JSON.parse(secretPayload) : null;
+  if (wrapped) assert.deepEqual(Object.keys(wrapped), [VERCEL_TOKEN_SECRET],
+    'VERCEL_SECRET_WRAPPER_MISMATCH');
+  const token = wrapped ? wrapped[VERCEL_TOKEN_SECRET] : secretPayload;
+  assert.equal(typeof token, 'string', 'VERCEL_TOKEN_STRING_REQUIRED');
   assert.ok(token.length >= 32 && !/\s/.test(token), 'VERCEL_TOKEN_SHAPE_INVALID');
+  stage = 'token-scope';
+  safeDiagnostic = { user: await diagnosticStatus(token, '/v2/user'),
+    team: await diagnosticStatus(token, `/v2/teams/${VERCEL_TEAM_ID}`) };
+  stage = 'project';
   const project = await getJson(token, `/v9/projects/${VERCEL_PROJECT_ID}`);
   attestVercelProject(project);
+  const gitBinding = { type: project.link?.type ?? null,
+    org: project.link?.org ?? null, repo: project.link?.repo ?? null,
+    repoIdPresent: project.link?.repoId != null,
+    productionBranch: project.link?.productionBranch ?? null };
+  stage = 'variables';
   const variableResult = await getJson(token, `/v9/projects/${VERCEL_PROJECT_ID}/env`);
   const ids = attestVercelVariables(variableResult.envs ?? variableResult);
-  const deployment = await getJson(token, `/v13/deployments/${BASELINE_DEPLOYMENT_ID}`);
+  const elevatedMetadata = (variableResult.envs ?? variableResult)
+    .filter(entry => entry.key === 'SUPABASE_SECRET_KEY')
+    .map(entry => ({ id: entry.id, target: entry.target, type: entry.type,
+      gitBranchSet: entry.gitBranch != null }));
+  stage = 'deployment-list';
+  const deploymentList = await getJson(token,
+    `/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=100`);
+  const listed = deploymentList.deployments ?? [];
+  assert.ok(Array.isArray(listed), 'VERCEL_DEPLOYMENT_LIST_INVALID');
+  safeDiagnostic.deploymentList = { count: listed.length,
+    firstFive: listed.slice(0, 5).map(entry => ({ id: entry.uid ?? entry.id,
+      target: entry.target ?? null, readyState: entry.readyState ?? null,
+      projectIdMatches: entry.projectId === VERCEL_PROJECT_ID })) };
+  const candidate = listed.find(entry => (entry.uid ?? entry.id) === BASELINE_DEPLOYMENT_UID);
+  assert.ok(candidate, 'VERCEL_BASELINE_DEPLOYMENT_NOT_LISTED');
+  stage = 'deployment';
+  const deployment = await getJson(token, `/v13/deployments/${BASELINE_DEPLOYMENT_UID}`);
   attestVercelDeployment(deployment);
   console.log(JSON.stringify({ status: 'PRODUCTION_VERCEL_ROLLBACK_INVENTORY_ATTESTED',
     teamId: VERCEL_TEAM_ID, projectId: VERCEL_PROJECT_ID,
-    baselineDeploymentId: BASELINE_DEPLOYMENT_ID,
+    baselineDeploymentUid: BASELINE_DEPLOYMENT_UID,
+    gitBinding,
+    baselineGitSha: deployment.meta?.githubCommitSha ?? null,
     productionSecretEnvId: ids.productionId, previewSecretEnvId: ids.previewId,
+    elevatedMetadata,
     tokenValueLogged: false, environmentValuesLogged: false }));
 } catch (error) {
   console.error(JSON.stringify({ status: 'PRODUCTION_VERCEL_ROLLBACK_INVENTORY_BLOCKED',
-    code: /^[A-Z_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED' }));
+    stage, code: /^[A-Z0-9_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED',
+    ...(safeDiagnostic ? { diagnostic: safeDiagnostic } : {}) }));
   process.exitCode = 2;
 }

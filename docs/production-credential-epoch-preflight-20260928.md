@@ -108,9 +108,15 @@ The read-only project variable inventory shows `SUPABASE_SECRET_KEY` separately
 for Production and Preview, and Production-scoped
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `NEXT_PUBLIC_SUPABASE_URL`. No value
 was revealed. The only Production elevated variable name observed is
-`SUPABASE_SECRET_KEY`; the exact variable ID and a credential-safe update
-channel remain to be pinned. The Preview value must not be assumed equal to
-Production merely because the variable names match.
+`SUPABASE_SECRET_KEY`. On 2026-09-28, the approved one-day, project-scoped
+Vercel token at `tracepoint/production/migration/vercel-cutover-operator-20260928`
+passed read-only API attestation. The API returned the exact team, project,
+GitHub binding `jphares65/tracepoint`, Production branch `main`, and baseline
+deployment UID `dpl_AfRHke111kN5zaHR7NGiMaqi4UMk` at the pinned commit.
+The distinct Production and Preview elevated variable IDs are
+`e80TWGMDKlzEEkIJ` and `vHhZaYrgk5g0zNyI`, respectively. The token and
+variable values were not printed. Reattest token validity, deployment,
+variable IDs, and project ownership immediately before maintenance or abort.
 The abort sequence must update the Production server secret (and any other
 exactly attested old-key aliases), create a new deployment from the pinned
 revision with the new environment, verify its identity and source-key read,
@@ -121,7 +127,11 @@ deployment must not be resumed as the rollback target. Preview remains
 denied until its production-source-bearing deployments cannot write.
 
 This mechanism follows Vercel's documented deployment-scoped environment
-semantics; it has **not** been operationally proven against the live project.
+semantics. The reviewed abort request plan patches only the exact Production
+variable ID, then creates a new Git-source deployment at the pinned SHA. It
+does not use `deploymentId` redeployment, which Vercel documents as inheriting
+the original environment. The plan is unit-tested but has **not** been
+operationally proven against the live project.
 The read-only validator now requires positive evidence for the new deployment,
 alias, ECS revision, Auth/Storage restoration, and single-source authority.
 The rollback secret-transform contract in
@@ -136,8 +146,8 @@ The exact-project read-only Vercel API checker is
 production AWS profile, reads the approved short-lived token from
 `tracepoint/production/migration/vercel-cutover-operator-20260928` without
 printing it, and rejects a different Vercel team/project, ambiguous
-Production/Preview secret variables, or a deployment/code mismatch. The
-token secret is not yet attested. This checker makes **no** Vercel change.
+Production/Preview secret variables, or a deployment/code mismatch. The token
+is attested for exact-project reads. This checker makes **no** Vercel change.
 
 ### Current fail-closed result
 
