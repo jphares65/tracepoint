@@ -1,0 +1,28 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "193644343389"
+      - test "$AWS_DEFAULT_REGION" = "us-east-1"
+      - echo "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+      - test "$ECR_REPOSITORY_URI" = "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production"
+      - test "$IMAGE_TAG" = "final-import-$SOURCE_COMMIT"
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 193644343389.dkr.ecr.us-east-1.amazonaws.com
+  build:
+    on-failure: ABORT
+    commands:
+      - set +x
+      - docker build --pull --file Dockerfile.production-final-import --label org.opencontainers.image.revision="$SOURCE_COMMIT" --tag "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
+      - docker run --rm --read-only --user node --entrypoint node "$ECR_REPOSITORY_URI:$IMAGE_TAG" --check scripts/run-production-final-import-task.mjs
+      - docker inspect "$ECR_REPOSITORY_URI:$IMAGE_TAG" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' | grep -Fx "$SOURCE_COMMIT"
+      - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
+  post_build:
+    commands:
+      - set +x
+      - if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then aws ecr describe-images --repository-name tracepoint-production --image-ids imageTag="$IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text; fi
