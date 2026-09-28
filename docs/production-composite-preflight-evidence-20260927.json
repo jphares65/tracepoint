@@ -32,7 +32,7 @@
     "rollbackKeyUnassignedToRunningWriters": true,
     "oldModernKeyIdPinned": true,
     "legacyServiceKeyStatePinned": true,
-    "oldModernKeyRetirementReviewed": false,
+    "oldModernKeyRetirementReviewed": true,
     "legacyServiceKeyDisableReviewed": true,
     "oldCredentialsNegativeChecksDefined": true
   },

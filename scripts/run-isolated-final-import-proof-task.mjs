@@ -7,8 +7,8 @@ const ACCOUNT = '193644343389';
 const REGION = 'us-east-1';
 const PROFILE = 'tracepoint-production';
 const CLUSTER = 'tracepoint-production';
-const TASK = 'tracepoint-production-final-import-proof-20260928:2';
-const IMAGE_DIGEST = 'sha256:3106f9bc307a1e2f2e8d5737a9aa0881f4ad8de56089e1389c5da0da2e23d772';
+const TASK = 'tracepoint-production-final-import-proof-20260928:3';
+const IMAGE_DIGEST = 'sha256:000483ddbeba124502a0f3928889c3b5888117d882ae0aae4fa9b8491135759d';
 const SUBNET = 'subnet-0f4cbed3e60d90bfc';
 const GROUP = 'sg-030d7ad5f033167b1';
 

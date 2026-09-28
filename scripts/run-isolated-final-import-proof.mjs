@@ -123,13 +123,22 @@ export async function runIsolatedFinalImportProof(env = process.env, services = 
         migrationLineage: baseline.migrationLineage, tlsRequired: true };
     }
     const reconcileInTransaction = mode === 'rollback'
-      ? async (db, args) => { await operations.reconcileInTransaction(db, args);
+      ? async (db, args) => { stage = 'reconcile-in-transaction'; await operations.reconcileInTransaction(db, args);
         throw new Error('ISOLATED_PROOF_FORCED_ROLLBACK'); }
-      : operations.reconcileInTransaction;
+      : async (db, args) => { stage = 'reconcile-in-transaction';
+        return operations.reconcileInTransaction(db, args); };
     stage = 'atomic-import';
     const result = await runAttestedAtomicImport({ plan, artifact: b,
       expectedTargetResourceId: resourceId, client,
-      ...operations, reconcileInTransaction });
+      ...operations,
+      readBaseline: async db => { stage = 'atomic-baseline'; return operations.readBaseline(db); },
+      applyRelations: async (db, args) => { stage = 'apply-relations';
+        return operations.applyRelations(db, args); },
+      reconcileInTransaction,
+      verifyCommitted: async (db, args) => { stage = 'verify-committed';
+        return operations.verifyCommitted(db, args); },
+      verifyRollback: async (db, args) => { stage = 'verify-rollback';
+        return operations.verifyRollback(db, args); } });
     assert.equal(mode, 'apply', 'ISOLATED_PROOF_ROLLBACK_UNEXPECTED_COMMIT');
     return { status: 'ISOLATED_IMPORT_PROOF_COMMITTED',
       sourceProjectRef: PAID_PROJECT, targetResourceId: resourceId,
@@ -152,7 +161,10 @@ if (import.meta.main) {
     const type = /^[A-Za-z][A-Za-z0-9]*$/.test(String(error?.name)) ? error.name : 'Error';
     const sqlstate = /^[0-9A-Z]{5}$/.test(String(error?.code)) ? error.code : undefined;
     console.error(JSON.stringify({ status: 'BLOCKED', code,
-      stage: error?.proofStage ?? 'environment', type, ...(sqlstate ? { sqlstate } : {}) }));
+      stage: error?.proofStage ?? 'environment',
+      ...(typeof error?.importPhase === 'string' && /^[a-z-]+(?::[a-z_]+)?$/.test(error.importPhase)
+        ? { importPhase: error.importPhase } : {}),
+      type, ...(sqlstate ? { sqlstate } : {}) }));
     process.exitCode = 1;
   }
 }

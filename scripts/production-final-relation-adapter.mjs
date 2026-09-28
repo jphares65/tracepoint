@@ -43,25 +43,33 @@ export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOU
       authUsers, migrationLineage, counts };
   };
   const applyRelations = async (client, { plan, artifact }) => {
+    let phase = 'snapshot-normalization';
+    try {
     snapshot = snapshotFromArtifact(artifact);
     normalizedEquipment = normalizeRemovedEquipmentCustody(snapshot.rows.get('equipment_assets') ?? [],
       snapshot.rows.get('equipment_asset_assignments') ?? []);
     const scoped = atomicTransactionClient(client);
+    phase = 'target-preflight';
     preflight = await preflightTarget(scoped, snapshot);
+    phase = 'audit-prerequisites';
     const audit = await deriveAuditPrerequisites(scoped, preflight);
     requireIdentityAnchorPrerequisites(snapshot);
     await assertAuditHistoryEmpty(scoped, 'before_identity_anchor_creation');
+    phase = 'identity-anchors';
     await insertIdentityAnchors(scoped, snapshot.users);
     await assertAuditHistoryEmpty(scoped, 'before_department_prerequisite_bootstrap');
+    phase = 'department-bootstrap';
     await runDepartmentPrerequisiteBootstrapCleanup(scoped, snapshot, preflight, audit);
     await assertAuditHistoryEmpty(scoped, 'before_source_history');
     for (const relation of AUDIT_HISTORY_RELATIONS) {
+      phase = `audit-history:${relation}`;
       await importRelation(scoped, relation, snapshot.rows.get(relation) ?? [],
         preflight.mappings.find(item => item.relation === relation), preflight.resumePlan.get(relation));
     }
     await repairSequences(scoped);
     for (const relation of preflight.order) {
       if (relation === 'departments' || AUDIT_HISTORY_RELATIONS.includes(relation)) continue;
+      phase = `relation:${relation}`;
       if (relation === 'profiles') await hydrateMigrationAnchorProfiles(scoped, snapshot, preflight);
       else if (relation === NULLABLE_TRAINING_CERTIFICATION_CYCLE.token) await importNullableTrainingCertificationCycle(scoped, snapshot, preflight);
       else await importRelation(scoped, relation,
@@ -70,9 +78,14 @@ export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOU
         preflight.mappings.find(item => item.relation === relation), preflight.resumePlan.get(relation));
     }
     await repairSequences(scoped);
+    phase = 'equipment-history';
     await verifyEquipmentAssignmentHistory(scoped, snapshot, preflight, normalizedEquipment);
     return { relationalRows: plan.relationalRows, identities: snapshot.users.length,
       memberships: (snapshot.rows.get('department_memberships') ?? []).length };
+    } catch (error) {
+      error.importPhase = phase;
+      throw error;
+    }
   };
   const reconcile = async (client, { plan, artifact }) => {
     assert.ok(preflight && snapshot && normalizedEquipment, 'FINAL_IMPORT_APPLY_NOT_RUN');
