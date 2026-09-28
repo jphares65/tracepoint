@@ -161,6 +161,24 @@ reversible Production-deployment barrier. It does **not** resolve the live
 project's Preview-secret binding or prove that every production-source writer
 is fenced. The disposable project is left active with only its synthetic page.
 
+The exact **Preview** predicate and inverse were also exercised on this same
+disposable project on September 27. The synthetic Production deployment
+`dpl_Ew7sdctcCDr2pqHgZZf3RARFAR29` was redeployed as Preview deployment
+`dpl_7xMN4PwBGQ4mTdzvKqqCGetv39o5` at
+`https://project-q7s6a-jw24eqj52-jphares65s-projects.vercel.app/`.
+The Preview origin initially returned the synthetic page to a signed-in
+browser, while the Production alias returned HTTP 200. The temporary custom
+rule `rule_tracepoint_disposable_preview_deny_proof_w4ydpd` matched only
+`Environment Equals Preview` and used `Deny`. Once published, a signed-in
+request to the exact Preview origin returned `403 Forbidden` / `This request
+was blocked`; the Production alias still returned HTTP 200. The rule was then
+deleted and that deletion published. Reloading the same signed-in Preview
+origin restored the exact synthetic page; the disposable Firewall rules page
+again showed no custom rules. An anonymous Preview request redirects to
+Vercel SSO before the custom-rule result is visible, so the signed-in request
+is the meaningful negative control. No live TracePoint Vercel rule, deployment,
+environment variable, or traffic was changed by this proof.
+
 Read-only inspection of the live project's deployment protection showed
 project-level **Vercel Authentication / Require Log In** selected. Two Ready
 Preview deployment URLs tested from an unauthenticated external client
