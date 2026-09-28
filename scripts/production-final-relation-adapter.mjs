@@ -46,8 +46,9 @@ export function finalImportOperations(expectedTargetResourceId = FINAL_RDS_RESOU
     let phase = 'snapshot-normalization';
     try {
     snapshot = snapshotFromArtifact(artifact);
+    phase = 'equipment-normalization';
     normalizedEquipment = normalizeRemovedEquipmentCustody(snapshot.rows.get('equipment_assets') ?? [],
-      snapshot.rows.get('equipment_asset_assignments') ?? []);
+      snapshot.rows.get('equipment_asset_assignments') ?? [], null);
     const scoped = atomicTransactionClient(client);
     phase = 'target-preflight';
     preflight = await preflightTarget(scoped, snapshot);

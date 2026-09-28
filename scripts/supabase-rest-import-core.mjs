@@ -876,7 +876,7 @@ export function equipmentAssignmentHistoryImportGuardEnabled(value) {
 // The application removal workflow clears the current custodian and closes the
 // existing custody row. Legacy source data can predate that invariant; preserve
 // the source rows unchanged and apply only this bounded import-time projection.
-export function normalizeRemovedEquipmentCustody(sourceAssets, sourceAssignments) {
+export function normalizeRemovedEquipmentCustody(sourceAssets, sourceAssignments, expectedNormalizedAssets = 1) {
   assert.ok(Array.isArray(sourceAssets) && Array.isArray(sourceAssignments), "EQUIPMENT_NORMALIZATION_SOURCE_INVALID");
   const assignmentsByAsset = new Map();
   for (const row of sourceAssignments) {
@@ -906,7 +906,11 @@ export function normalizeRemovedEquipmentCustody(sourceAssets, sourceAssignments
     normalizedAssets++;
     return { ...asset, assigned_user_id: null };
   });
-  assert.equal(normalizedAssets, 1, "REMOVED_EQUIPMENT_NORMALIZATION_SCOPE_CHANGED");
+  // The historical pinned artifact has exactly one such row. A final frozen
+  // capture has variable counts; its per-row custody invariants and full
+  // in-transaction reconciliation remain mandatory.
+  if (expectedNormalizedAssets !== null)
+    assert.equal(normalizedAssets, expectedNormalizedAssets, "REMOVED_EQUIPMENT_NORMALIZATION_SCOPE_CHANGED");
   const assignments = sourceAssignments.map(row => {
     if (!normalizedAssignmentIds.has(String(row.id))) return row;
     const asset = sourceAssets.find(candidate => String(candidate.id) === String(row.equipment_asset_id));

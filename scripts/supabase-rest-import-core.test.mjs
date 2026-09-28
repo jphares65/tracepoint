@@ -64,6 +64,17 @@ test("removed equipment normalization fails closed on missing or conflicting cus
   assert.throws(() => normalizeRemovedEquipmentCustody([asset], [{ ...assignment, return_notes: "unexplained" }]), /RETURN_NOTE_AMBIGUOUS/);
   assert.throws(() => normalizeRemovedEquipmentCustody([{ ...asset, assigned_user_id: null }], [assignment]), /UNEXPECTED_OPEN_CUSTODY/);
 });
+test("final frozen capture accepts a variable removed-custody count without weakening row checks", () => {
+  assert.throws(() => normalizeRemovedEquipmentCustody([], []), /NORMALIZATION_SCOPE_CHANGED/);
+  const empty = normalizeRemovedEquipmentCustody([], [], null);
+  assert.equal(empty.evidence.normalizedAssets, 0);
+  assert.equal(empty.evidence.closedCustody, 0);
+  const asset = { id: "removed-stale", department_id: "tenant-a", lifecycle_status: "removed",
+    assigned_user_id: "user-a", removed_at: "2026-09-04T12:00:00Z", removed_by: "actor-a" };
+  const assignment = { id: "stale", department_id: "tenant-b", equipment_asset_id: asset.id,
+    assigned_user_id: "user-a", assigned_at: "2026-09-01T12:00:00Z", returned_at: null };
+  assert.throws(() => normalizeRemovedEquipmentCustody([asset], [assignment], null), /CROSS_TENANT/);
+});
 test("equipment parity diagnostic emits only aggregate field counts and has no import path", () => {
   const rows = [{ id: "synthetic-1", lifecycle_status: "removed", assigned_user_id: null, assigned_location: "" }, { id: "synthetic-2", lifecycle_status: "active", assigned_user_id: "synthetic-user", assigned_location: null }];
   const projection = [{ ...rows[0], assigned_location: null }, rows[1]];
