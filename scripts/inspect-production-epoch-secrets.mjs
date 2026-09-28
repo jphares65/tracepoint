@@ -2,15 +2,11 @@
 // Read-only, exact-project attestation. Never prints or writes credential values.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { PRODUCTION_EPOCH, SOURCE_CREDENTIALS, classifySourceSecret,
   fingerprintSourceSecret } from './source-credential-epoch-core.mjs';
 
 assert.deepEqual(process.argv.slice(2), ['--profile=tracepoint-production'], 'EXACT_PROFILE_REQUIRED');
-process.env.AWS_PROFILE = 'tracepoint-production';
-process.env.AWS_SDK_LOAD_CONFIG = '1';
 const region = 'us-east-1';
-const secrets = new SecretsManagerClient({ region, maxAttempts: 1 });
 const projectRef = PRODUCTION_EPOCH.projectRef;
 const names = [SOURCE_CREDENTIALS[0].name,
   PRODUCTION_EPOCH.captureSecretName, PRODUCTION_EPOCH.rollbackSecretName];
@@ -21,16 +17,30 @@ function extractKey(value) {
     (JSON.parse(value).serviceRoleKey ?? JSON.parse(value).SUPABASE_SECRET_KEY);
 }
 
+function aws(args) {
+  const result = spawnSync(process.platform === 'win32' ? 'aws.exe' : 'aws',
+    [...args, '--profile', 'tracepoint-production', '--region', region, '--output', 'json'],
+    { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 });
+  if (result.status !== 0) {
+    if (result.stderr?.includes('ResourceNotFoundException')) throw new Error('MISSING_EXACT_SECRET');
+    throw new Error('AWS_READ_ONLY_CALL_FAILED');
+  }
+  return JSON.parse(result.stdout);
+}
+
 try {
-  const stsResult = spawnSync(process.platform === 'win32' ? 'aws.exe' : 'aws',
-    ['sts', 'get-caller-identity', '--profile', 'tracepoint-production',
-      '--region', region, '--output', 'json'], { encoding: 'utf8', maxBuffer: 16384 });
-  assert.equal(stsResult.status, 0, 'PRODUCTION_STS_UNAVAILABLE');
-  const identity = JSON.parse(stsResult.stdout);
+  const identity = aws(['sts', 'get-caller-identity']);
   assert.equal(identity.Account, '193644343389', 'PRODUCTION_ACCOUNT_REQUIRED');
+  // Identify absent reserved destinations before attempting any network probe
+  // against the existing source. This keeps a missing epoch distinct from a
+  // temporary source-API failure, without reading or printing key values.
+  for (const name of names.slice(1)) {
+    const metadata = aws(['secretsmanager', 'describe-secret', '--secret-id', name]);
+    assert.equal(metadata.Name, name, 'SECRET_NAME_MISMATCH');
+  }
   const entries = [];
   for (const name of names) {
-    const response = await secrets.send(new GetSecretValueCommand({ SecretId: name }));
+    const response = aws(['secretsmanager', 'get-secret-value', '--secret-id', name]);
     assert.equal(response.Name, name, 'SECRET_NAME_MISMATCH');
     assert.match(response.ARN ?? '', new RegExp(`^arn:aws:secretsmanager:${region}:193644343389:secret:${name}-[A-Za-z0-9]{6}$`),
       'SECRET_ARN_MISMATCH');
@@ -56,9 +66,6 @@ try {
     threeCredentialsDistinct: true, keyValuesLogged: false }));
 } catch (error) {
   console.error(JSON.stringify({ status: 'PRODUCTION_EPOCH_SECRETS_NOT_READY',
-    code: error?.name === 'ResourceNotFoundException' ? 'MISSING_EXACT_SECRET' :
-      /^[A-Z_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED' }));
+    code: /^[A-Z_]+$/.test(error?.message ?? '') ? error.message : 'ATTESTATION_FAILED' }));
   process.exitCode = 2;
-} finally {
-  secrets.destroy();
 }
