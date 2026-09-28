@@ -120,6 +120,13 @@ This mechanism follows Vercel's documented deployment-scoped environment
 semantics; it has **not** been operationally proven against the live project.
 The read-only validator now requires positive evidence for the new deployment,
 alias, ECS revision, Auth/Storage restoration, and single-source authority.
+The rollback secret-transform contract in
+`scripts/production-credential-rollback-core.mjs` permits only the elevated
+key field to change in the exact public ECS application secret and migration
+REST secret. It rejects project drift, old-key drift, a non-modern replacement,
+and an unchanged key. Applying the transforms and restarting the bridge is
+reserved for an abort under the maintained source fence; the tests use only
+synthetic credentials, and no production secret has been rewritten.
 The exact-project read-only Vercel API checker is
 `scripts/inspect-production-vercel-rollback.mjs`. It accepts only the
 production AWS profile, reads the approved short-lived token from
