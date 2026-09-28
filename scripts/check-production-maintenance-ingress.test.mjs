@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { assertIngressTemplate, assertIngressRules, assertChangeSet, assertExternalIngress,
+import { assertIngressTemplate, assertIngressRules, assertChangeSet, assertChangeSetExecutionRole, assertExternalIngress,
   assertEcsIngress } from './check-production-maintenance-ingress.mjs';
 
 const template = JSON.parse(readFileSync(resolve('infra/changesets/production-maintenance-response-20260927/maintenance.json')));
@@ -64,6 +64,18 @@ test('change set is exactly the two reviewed rule additions', () => {
   } }));
   assert.doesNotThrow(() => assertChangeSet({ Status: 'CREATE_COMPLETE', ExecutionStatus: 'AVAILABLE', Changes: changes }, template));
   assert.throws(() => assertChangeSet({ Status: 'CREATE_COMPLETE', ExecutionStatus: 'AVAILABLE', Changes: changes.slice(0, 1) }, template));
+});
+
+test('pending change set uses the pinned CloudFormation execution role', () => {
+  const changeSetArn = 'arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928e/49b68879-1ebe-4122-84da-7786a2c755e1';
+  const event = { eventSource: 'cloudformation.amazonaws.com', eventName: 'CreateChangeSet',
+    recipientAccountId: '193644343389',
+    requestParameters: { roleARN: 'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1' },
+    responseElements: { id: changeSetArn } };
+  assert.doesNotThrow(() => assertChangeSetExecutionRole(event, changeSetArn));
+  const drift = copy(event);
+  drift.requestParameters.roleARN = 'arn:aws:iam::193644343389:role/unapproved';
+  assert.throws(() => assertChangeSetExecutionRole(drift, changeSetArn));
 });
 
 test('external verifier requires both public and unmatched hosts to receive exact 503', () => {

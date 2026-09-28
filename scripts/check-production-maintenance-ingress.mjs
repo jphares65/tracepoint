@@ -102,6 +102,15 @@ function aws(...args) {
   return JSON.parse(command('aws', [...args, '--profile', baseline.profile, '--region', baseline.region, '--output', 'json']));
 }
 
+export function assertChangeSetExecutionRole(event, changeSetArn) {
+  assert.equal(event.eventSource, 'cloudformation.amazonaws.com');
+  assert.equal(event.eventName, 'CreateChangeSet');
+  assert.equal(event.recipientAccountId, baseline.account);
+  assert.equal(event.requestParameters?.roleARN,
+    'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1');
+  assert.equal(event.responseElements?.id, changeSetArn);
+}
+
 function probe(host) {
   // TLS/SNI remains the valid public host; only HTTP Host changes for fallback coverage.
   const marker = `TRACEPOINT_STATUS_${Date.now()}`;
@@ -184,10 +193,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     assertEcsIngress({ service, task, networkInterface, securityGroup, loadBalancer });
     if (mode === 'pending') {
       const stackName = 'tracepoint-production-maintenance-response-20260927';
-      const changeSetArn = 'arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928c/bb37cab2-ec8f-4e0c-b574-9dfb0450ad8b';
+      const changeSetArn = 'arn:aws:cloudformation:us-east-1:193644343389:changeSet/activate-complete-ingress-503-20260928e/49b68879-1ebe-4122-84da-7786a2c755e1';
       const stack = aws('cloudformation', 'describe-stacks', '--stack-name', stackName).Stacks[0];
       assert.equal(stack.StackStatus, 'REVIEW_IN_PROGRESS');
-      assert.equal(stack.RoleARN, 'arn:aws:iam::193644343389:role/cdk-hnb659fds-cfn-exec-role-193644343389-us-east-1');
+      // REVIEW_IN_PROGRESS stacks omit RoleARN from DescribeStacks. Verify the
+      // immutable CreateChangeSet CloudTrail request instead.
+      const createEvent = aws('cloudtrail', 'lookup-events', '--lookup-attributes',
+        'AttributeKey=EventId,AttributeValue=29231604-1209-44b7-b0c1-440f7a5b6869').Events[0];
+      assert.ok(createEvent, 'CHANGE_SET_CREATE_AUDIT_MISSING');
+      assertChangeSetExecutionRole(JSON.parse(createEvent.CloudTrailEvent), changeSetArn);
       assert.deepEqual(aws('cloudformation', 'list-stack-resources', '--stack-name', stackName).StackResourceSummaries, []);
       const changeSet = aws('cloudformation', 'describe-change-set', '--change-set-name', changeSetArn,
         '--stack-name', stackName);
