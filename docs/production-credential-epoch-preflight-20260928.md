@@ -120,6 +120,13 @@ This mechanism follows Vercel's documented deployment-scoped environment
 semantics; it has **not** been operationally proven against the live project.
 The read-only validator now requires positive evidence for the new deployment,
 alias, ECS revision, Auth/Storage restoration, and single-source authority.
+The exact-project read-only Vercel API checker is
+`scripts/inspect-production-vercel-rollback.mjs`. It accepts only the
+production AWS profile, reads the approved short-lived token from
+`tracepoint/production/migration/vercel-cutover-operator-20260928` without
+printing it, and rejects a different Vercel team/project, ambiguous
+Production/Preview secret variables, or a deployment/code mismatch. The
+token secret is not yet attested. This checker makes **no** Vercel change.
 
 ### Current fail-closed result
 
