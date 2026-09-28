@@ -37,7 +37,7 @@ if (-not $importStage.StartsWith($importTempRoot, [StringComparison]::OrdinalIgn
     -not (Split-Path $importStage -Leaf).StartsWith('tracepoint-final-import-stage-')) {
     throw 'FINAL_IMPORT_PACKAGE_STAGE_UNSAFE'
 }
-New-Item -ItemType Directory -LiteralPath $importStage -ErrorAction Stop | Out-Null
+New-Item -ItemType Directory -Path $importStage -ErrorAction Stop | Out-Null
 try {
     foreach ($importFile in $importFiles) {
         $importSource = Join-Path $importRepo $importFile
