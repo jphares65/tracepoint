@@ -26,6 +26,17 @@ retained and was not repeated.
 - The exact project's Storage S3 dashboard shows protocol enabled but **no
   separate S3 access keys**. Recheck this immediately before freeze; it does
   not substitute for authenticated/elevated Storage API controls.
+- The exact project's Auth provider page shows Email enabled, new-user signup
+  enabled, and email confirmation enabled. These are the current states to
+  capture before any reversible cutover restriction; none was changed.
+- The production Supabase Edge Functions page shows no deployed function;
+  the live Vercel project's Cron Jobs page shows no configured cron job.
+  Neither observation rules out direct APIs, the known Supabase `pg_cron`
+  dispatcher, or external secret holders.
+- Aggregate-only read-only SQL in the exact production project found one
+  `cron.job` row, active, with the expected dispatch job name. It also found
+  16 Auth sessions and 21 refresh-token rows. These are pre-fence counts,
+  not consent to revoke them outside the approved maintenance sequence.
 
 ## Writer and control inventory
 
@@ -45,6 +56,11 @@ retained and was not repeated.
 The known old modern key is not the entire old epoch: the enabled legacy
 `service_role` key remains a separate elevated path. Neither it nor unknown
 historical holders can be ignored before the direct freeze-time negatives.
+The currently running Phase 3B shadow and Phase 3C rehearsal task definitions
+inject PostgreSQL/AWS-native secrets, not Supabase source credentials; the
+no-traffic authority rehearsal service is at desired/running 0/0. The
+production final-capture project has zero builds; the most recent paid-source
+capture and image-build jobs completed successfully and are not running.
 
 ## Capture/rollback package state
 
@@ -58,11 +74,47 @@ The S3 artifact bucket has versioning, KMS default encryption, and all four
 public-access blocks enabled. Deployment must await actual key creation,
 exact-ARN IAM review/change set, immutable package digest, and capture-role
 negative checks proving it cannot read the old or rollback secret.
+Current IAM simulation confirms the deployed capture role can read the old
+`source-supabase-rest` secret but receives `implicitDeny` for both reserved
+epoch paths. This is the correct **pre-deployment** state, not the desired
+cutover state. The role trust is limited to the exact CodeBuild project and
+account, with the existing production permissions boundary.
 
 The rollback key must stay out of every running writer until abort. A
 deterministic Vercel redeployment with replacement secret, ECS secret update
 and restart, Auth/Storage restoration, and single-authority verification is
 still required; deleting a modern key is not the reversal operation.
+
+### Vercel rollback distribution gate
+
+The live Vercel project is `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`. A change
+to its Production `SUPABASE_SECRET_KEY` applies only to a **new** Production
+deployment. Merely unpausing, re-aliasing, or rolling back to an older
+deployment would resume a build containing the retired key. Before retiring
+the old epoch, pin the exact current Production deployment, code commit,
+environment-variable IDs/targets, deployment protection state, and a
+credential-safe way to supply the rollback secret from its exact AWS path.
+The abort sequence must update the Production server secret (and any other
+exactly attested old-key aliases), create a new deployment from the pinned
+revision with the new environment, verify its identity and source-key read,
+then restore its Production alias/ingress. Keep maintenance and the source
+fence active until both Vercel and the exact public ECS bridge revision use
+the rollback key and representative Supabase reads/writes pass. An old
+deployment must not be resumed as the rollback target. Preview remains
+denied until its production-source-bearing deployments cannot write.
+
+This mechanism follows Vercel's documented deployment-scoped environment
+semantics; it has **not** been operationally proven against the live project.
+The read-only validator now requires positive evidence for the new deployment,
+alias, ECS revision, Auth/Storage restoration, and single-source authority.
+
+### Current fail-closed result
+
+The local production preflight validator remains BLOCKED. It now names the
+missing exact credential-epoch attestation, old-epoch retirement proof, and
+rollback distribution proof explicitly in addition to the pre-existing writer
+and capture gates. Its synthetic-ready test passes, but that is a unit test,
+not production evidence. No source key or production runtime has been changed.
 
 **Production remains unfenced and Supabase-authoritative.** Do not claim the
 preflight passed based on this inventory or on the paid-project rehearsal.

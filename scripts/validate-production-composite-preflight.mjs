@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url';
 
 export const SOURCE_PROJECT = 'izlkwggluhlhzlumtzes';
 export const SOURCE_FINGERPRINT = '36558b0730e3e96cad6426f38088a5b0';
+export const CAPTURE_EPOCH_SECRET = 'tracepoint/production/migration/source-production-epoch-capture-20260928';
+export const ROLLBACK_EPOCH_SECRET = 'tracepoint/production/migration/source-production-epoch-rollback-20260928';
 export const WRITER_FAMILIES = Object.freeze([
   'applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background', 'scheduledImportAdmin',
   'legacyVercel',
@@ -41,6 +43,21 @@ export function evaluateProductionCompositeReadiness(evidence) {
     evidence.capture?.slots?.B === 'c7448ea9-4645-4e99-b988-3a05de12ac70' &&
     evidence.capture?.immutableVersioned === true && evidence.capture?.canonicalComparatorTested === true &&
     evidence.capture?.minimumQuietSeconds >= 60, 'DOUBLE_CAPTURE_NOT_READY');
+  const epoch = evidence.credentialEpoch ?? {};
+  requireProof(epoch.projectRef === SOURCE_PROJECT &&
+    epoch.captureSecretName === CAPTURE_EPOCH_SECRET &&
+    epoch.rollbackSecretName === ROLLBACK_EPOCH_SECRET &&
+    epoch.threeModernKeysDistinct === true &&
+    epoch.captureReaderExactArnVerified === true &&
+    epoch.captureReaderOldAndRollbackDenied === true &&
+    epoch.rollbackKeyUnassignedToRunningWriters === true,
+  'CREDENTIAL_EPOCH_NOT_READY');
+  requireProof(epoch.oldModernKeyIdPinned === true &&
+    epoch.legacyServiceKeyStatePinned === true &&
+    epoch.oldModernKeyRetirementReviewed === true &&
+    epoch.legacyServiceKeyDisableReviewed === true &&
+    epoch.oldCredentialsNegativeChecksDefined === true,
+  'OLD_EPOCH_RETIREMENT_UNPROVEN');
   requireProof(evidence.s3WriterCredentials?.state === 'NO_SEPARATE_S3_WRITER_CREDENTIALS' &&
     evidence.s3WriterCredentials?.productionProjectVerified === true,
   'S3_WRITER_INVENTORY_OPEN');
@@ -60,6 +77,18 @@ export function evaluateProductionCompositeReadiness(evidence) {
   'LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN');
   requireProof(evidence.unfence?.exactInverseReviewed === true &&
     evidence.unfence?.restoreVerificationDefined === true, 'UNFENCE_UNPROVEN');
+  const rollback = evidence.rollbackDistribution ?? {};
+  requireProof(rollback.projectRef === SOURCE_PROJECT &&
+    rollback.vercelProjectId === 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4' &&
+    rollback.productionEnvReplacementReviewed === true &&
+    rollback.newProductionDeploymentRequired === true &&
+    rollback.newDeploymentIdentityPinned === true &&
+    rollback.productionAliasAndWriteReadbackVerified === true &&
+    rollback.ecsExactSecretRevisionAndRestartReviewed === true &&
+    rollback.oldDeploymentCannotBeResumedWithRetiredKey === true &&
+    rollback.authStorageControlsRestoredBeforeTraffic === true &&
+    rollback.singleSourceAuthorityVerified === true,
+  'ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN');
   requireProof(evidence.unknownAutonomousWriters === false, 'UNKNOWN_AUTONOMOUS_WRITERS');
   const paths = evidence.writerPaths ?? {};
   requireProof(JSON.stringify(Object.keys(paths).sort()) ===

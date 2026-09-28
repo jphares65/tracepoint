@@ -18,12 +18,36 @@ function withSyntheticWriterPathProof(ready) {
   });
 }
 
+function withSyntheticEpochProof(ready) {
+  ready.credentialEpoch = {
+    projectRef: 'izlkwggluhlhzlumtzes',
+    captureSecretName: 'tracepoint/production/migration/source-production-epoch-capture-20260928',
+    rollbackSecretName: 'tracepoint/production/migration/source-production-epoch-rollback-20260928',
+    threeModernKeysDistinct: true, captureReaderExactArnVerified: true,
+    captureReaderOldAndRollbackDenied: true, rollbackKeyUnassignedToRunningWriters: true,
+    oldModernKeyIdPinned: true, legacyServiceKeyStatePinned: true,
+    oldModernKeyRetirementReviewed: true, legacyServiceKeyDisableReviewed: true,
+    oldCredentialsNegativeChecksDefined: true,
+  };
+  ready.rollbackDistribution = {
+    projectRef: 'izlkwggluhlhzlumtzes',
+    vercelProjectId: 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',
+    productionEnvReplacementReviewed: true, newProductionDeploymentRequired: true,
+    newDeploymentIdentityPinned: true, productionAliasAndWriteReadbackVerified: true,
+    ecsExactSecretRevisionAndRestartReviewed: true,
+    oldDeploymentCannotBeResumedWithRetiredKey: true,
+    authStorageControlsRestoredBeforeTraffic: true, singleSourceAuthorityVerified: true,
+  };
+}
+
 test('current production inventory blocks uncovered autonomous writers', () => {
   const result = evaluateProductionCompositeReadiness(inventory);
   assert.equal(result.status, 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED');
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:authApi'));
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
   assert.ok(result.blockers.includes('UNKNOWN_AUTONOMOUS_WRITERS'));
+  assert.ok(result.blockers.includes('CREDENTIAL_EPOCH_NOT_READY'));
+  assert.ok(result.blockers.includes('ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN'));
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
   assert.ok(!result.blockers.includes('LEGACY_VERCEL_WRITER_CONTROL_UNPROVEN'));
   assert.ok(result.blockers.includes('WRITER_INVENTORY_OPEN:legacyVercel'));
@@ -38,6 +62,7 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.unknownAutonomousWriters = false;
+  withSyntheticEpochProof(ready);
   withSyntheticWriterPathProof(ready);
   Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
     pauseAndResumeRehearsed: true, pause503NegativeRehearsed: true,
@@ -76,6 +101,8 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     copy => { copy.writerPaths.storageElevated.rehearsalNegativePassed = false; },
     copy => { copy.capture.slots.B = copy.capture.slots.A; },
     copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
+    copy => { copy.credentialEpoch.captureReaderOldAndRollbackDenied = false; },
+    copy => { copy.rollbackDistribution.newProductionDeploymentRequired = false; },
     copy => { copy.relationFingerprint = 'wrong'; },
   ]) {
     const copy = structuredClone(ready);
@@ -92,6 +119,7 @@ test('an ephemeral-only writer requires positive field and comparator proof, not
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
   ready.unknownAutonomousWriters = false;
+  withSyntheticEpochProof(ready);
   withSyntheticWriterPathProof(ready);
   Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
     pauseAndResumeRehearsed: true, pause503NegativeRehearsed: true,
