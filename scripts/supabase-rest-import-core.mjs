@@ -506,8 +506,14 @@ export function reconcileRolePermissionDifferences(sourceRows, targetRows) {
   });
 }
 
-export function requireTargetSeededRolePermissionRule(reconciliation) {
+export function requireTargetSeededRolePermissionRule(reconciliation, { exactPaidProofParity = false } = {}) {
   assert.equal(reconciliation.relation, "role_permissions");
+  if (exactPaidProofParity) {
+    assert.deepEqual(reconciliation.sourceOnly, [], "PAID_PROOF_ROLE_PERMISSIONS_SOURCE_ONLY");
+    assert.deepEqual(reconciliation.targetOnly, [], "PAID_PROOF_ROLE_PERMISSIONS_TARGET_ONLY");
+    return Object.freeze({ ...reconciliation, classification: "exact paid-proof authorization parity",
+      sourceOnlyRule: "zero authorization differences on isolated paid source and private proof clone" });
+  }
   assert.deepEqual(reconciliation.targetOnly, [], "TARGET_SEEDED_ROLE_PERMISSIONS_TARGET_ONLY");
   assert.deepEqual(reconciliation.sourceOnly, [...TARGET_SEEDED_ROLE_PERMISSION_SOURCE_ONLY], "TARGET_SEEDED_ROLE_PERMISSIONS_UNREVIEWED_SOURCE_ONLY");
   return Object.freeze({ ...reconciliation, classification: "target-seeded reference data — excluded by design", sourceOnlyRule: "reviewed legacy/global defaults; department_role_permissions remains source-authoritative" });

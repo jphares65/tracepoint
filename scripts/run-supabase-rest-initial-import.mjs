@@ -831,7 +831,9 @@ async function reconcileTargetSeededReferences(client, snapshot) {
     if (relation === "feature_catalog") {
       const reconciliation = requireTargetSeededFeatureCatalogParity(reconcileFeatureCatalog(sourceRows, targetRows, columns));
       results.set(relation, { ...reconciliation, targetCanonicalSha256: reconciliation.targetCanonicalSha256 });
-    } else if (relation === "role_permissions") results.set(relation, requireTargetSeededRolePermissionRule(reconcileRolePermissionDifferences(sourceRows, targetRows)));
+    } else if (relation === "role_permissions") results.set(relation, requireTargetSeededRolePermissionRule(
+      reconcileRolePermissionDifferences(sourceRows, targetRows),
+      { exactPaidProofParity: snapshot.exactPaidProofRoleParity === true }));
     else results.set(relation, requireExactTargetSeededParity(reconcileExactTargetSeededRelation(relation, sourceRows, targetRows, TARGET_SEEDED_STABLE_COLUMNS[relation])));
   }
   return results;

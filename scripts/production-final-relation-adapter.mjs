@@ -33,6 +33,7 @@ export function snapshotFromArtifact(artifact, sourceProjectRef = SOURCE_PROJECT
   rows.set('departments', patch.projectedDepartments);
   return { rows,
     users: artifact.identities.rows, finalCapture: true,
+    exactPaidProofRoleParity: sourceProjectRef === 'reukdouvpshshvqnzsgw',
     objectManifest: patch.inScopeManifest,
     departmentPatchNormalization: { originalDepartmentRows: patch.originalDepartmentRows,
       evidence: patch.evidence },
