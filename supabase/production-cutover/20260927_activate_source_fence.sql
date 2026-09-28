@@ -4,13 +4,11 @@
 -- Auth, Storage, service-role, background, and S3-compatible writer.
 -- Submit only through the SQL Editor for project izlkwggluhlhzlumtzes after
 -- the external project-identity preflight and public maintenance 503 pass.
+-- The paid-project composite-fence and credential-epoch inverse were proven.
+-- This SQL is only the public-table and dispatcher layer; the operator must
+-- first verify the external maintenance, ECS, Vercel, Auth and credential
+-- controls named above. Never infer a complete source freeze from this commit.
 BEGIN;
-DO $preflight_block$ BEGIN
-  RAISE EXCEPTION 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED';
-END $preflight_block$;
--- The guard above remains until the versioned production writer inventory,
--- real-interface negatives, and exact inverse controls all pass review.
--- Remove it only in a subsequent reviewed cutover package, never ad hoc.
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
 

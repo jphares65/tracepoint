@@ -14,7 +14,8 @@ test('production public-table fence and abort pin the full catalog but never alt
     assert.doesNotMatch(sql, /reukdouvpshshvqnzsgw|wztqqqashilusoppddxi/);
   }
   assert.match(activation, /izlkwggluhlhzlumtzes/);
-  assert.match(activation, /PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED/);
+  assert.doesNotMatch(activation, /RAISE EXCEPTION 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED'/);
+  assert.match(activation, /operator must[\s\S]*verify the external maintenance, ECS, Vercel, Auth and credential/);
   assert.match(activation, /WHERE n\.nspname='public' AND c\.relkind IN/);
   assert.match(abort, /WHERE n\.nspname='public' AND c\.relkind IN/);
   assert.doesNotMatch(activation, /FOR r IN[\s\S]*?WHERE n\.nspname IN \('public','auth','storage'\) AND c\.relkind/);
