@@ -87,7 +87,8 @@ still required; deleting a modern key is not the reversal operation.
 
 ### Vercel rollback distribution gate
 
-The live Vercel project is `prj_V03LJyQIc231luvZ9u0gcOAt4xK4`. A change
+The live Vercel project is `prj_V03LJyQIc231luvZ9u0gcOAt4xK4` in team
+`team_HCPS7YRtZfKg7WZtSDfjhaSR`. A change
 to its Production `SUPABASE_SECRET_KEY` applies only to a **new** Production
 deployment. Merely unpausing, re-aliasing, or rolling back to an older
 deployment would resume a build containing the retired key. Before retiring

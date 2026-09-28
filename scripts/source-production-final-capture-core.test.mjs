@@ -51,10 +51,13 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
   const fenceChangedAt = '2026-09-27T12:00:00Z';
   const families = ['applicationApi', 'serviceRole', 'authApi', 'storageApi', 'background',
     'scheduledImportAdmin', 'legacyVercel'];
-  const evidence = { format: 'tracepoint-production-composite-fence/v2', projectRef: 'izlkwggluhlhzlumtzes',
+  const evidence = { format: 'tracepoint-production-composite-fence/v3', projectRef: 'izlkwggluhlhzlumtzes',
     relationFingerprint: '36558b0730e3e96cad6426f38088a5b0', fenceChangedAt,
     maintenance503: true, publicTriggers: 174,
     s3WriterCredentials: 'NO_SEPARATE_S3_WRITER_CREDENTIALS', observedAtUtc: '2026-09-27T12:01:00Z',
+    credentialEpoch: { captureSecretName: 'tracepoint/production/migration/source-production-epoch-capture-20260928',
+      oldModernKeyRejected: true, legacyServiceKeyDisabled: true, captureKeyReads: true,
+      rollbackKeyUnassignedToWriters: true, oldCredentialNegativeEvidenceSha256: 'd'.repeat(64) },
     legacyVercel: { projectId: 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',
       productionOrigin: 'https://tracepoint-amber.vercel.app', paused503: true,
       previewProductionSourceExcluded: true },
@@ -82,6 +85,10 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
     { legacyVercel: { ...evidence.legacyVercel, paused503: false } },
     { legacyVercel: { ...evidence.legacyVercel, previewProductionSourceExcluded: false } },
     { format: 'tracepoint-production-composite-fence/v1' },
+    { format: 'tracepoint-production-composite-fence/v2' },
+    { credentialEpoch: { ...evidence.credentialEpoch, oldModernKeyRejected: false } },
+    { credentialEpoch: { ...evidence.credentialEpoch, legacyServiceKeyDisabled: false } },
+    { credentialEpoch: { ...evidence.credentialEpoch, rollbackKeyUnassignedToWriters: false } },
     { writerPaths: { ...evidence.writerPaths, storageElevated: {
       ...evidence.writerPaths.storageElevated, directNegativePassed: false } } },
     { writers: { ...evidence.writers, authApi: { ...evidence.writers.authApi, directNegativePassed: false } } }])

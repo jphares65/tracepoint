@@ -30,7 +30,7 @@ No Storage object metadata is excluded yet. Storage listing timestamps and inter
 | Scheduled/import/admin automation | Potentially yes | Exact job inventory, pause/inverse, and negative or absence evidence |
 | Privileged SQL operator | Theoretical yes | Human-controlled exception only; no manual writes during freeze, audited access and stable double capture |
 
-The production readiness gate and capture attestation now accept either (a) an inventoried, controlled authoritative writer with direct negative evidence and an inverse, or (b) an inventoried writer proven to touch **only** ephemeral state, with a pinned before/after evidence hash and tested comparator exclusion. An unclassified writer fails closed. No current production writer has been marked ephemeral; the current evidence remains blocked. The capture attestation format is `tracepoint-production-composite-fence/v2`, so the previous v1 evidence cannot accidentally authorize a capture.
+The production readiness gate and capture attestation now accept either (a) an inventoried, controlled authoritative writer with direct negative evidence and an inverse, or (b) an inventoried writer proven to touch **only** ephemeral state, with a pinned before/after evidence hash and tested comparator exclusion. An unclassified writer fails closed. No current production writer has been marked ephemeral; the current evidence remains blocked. The capture attestation format is `tracepoint-production-composite-fence/v3`: it additionally requires direct old-modern-key rejection, legacy-service-key disablement, capture-key read success, and rollback-key non-distribution, so prior v1/v2 evidence cannot authorize a capture.
 
 ## Remaining proof before maintenance
 

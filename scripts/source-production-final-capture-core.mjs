@@ -83,13 +83,21 @@ export function attestFrozen(value) {
 }
 
 export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now()) {
-  assert.equal(value?.format, 'tracepoint-production-composite-fence/v2', 'COMPOSITE_EVIDENCE_FORMAT');
+  assert.equal(value?.format, 'tracepoint-production-composite-fence/v3', 'COMPOSITE_EVIDENCE_FORMAT');
   assert.equal(value?.projectRef, SOURCE_PROJECT_REF, 'COMPOSITE_SOURCE_MISMATCH');
   assert.equal(value?.relationFingerprint, '36558b0730e3e96cad6426f38088a5b0', 'COMPOSITE_CATALOG_MISMATCH');
   assert.equal(value?.fenceChangedAt, fenceChangedAt, 'COMPOSITE_FENCE_TIMESTAMP_MISMATCH');
   assert.equal(value?.maintenance503, true, 'MAINTENANCE_BARRIER_NOT_ATTESTED');
   assert.equal(value?.publicTriggers, 174, 'PUBLIC_FENCE_NOT_ATTESTED');
   assert.equal(value?.s3WriterCredentials, 'NO_SEPARATE_S3_WRITER_CREDENTIALS', 'S3_WRITER_GATE_OPEN');
+  const epoch = value?.credentialEpoch ?? {};
+  assert.equal(epoch.captureSecretName, SOURCE_SECRET_NAME, 'CAPTURE_EPOCH_SECRET_MISMATCH');
+  assert.equal(epoch.oldModernKeyRejected, true, 'OLD_MODERN_KEY_NOT_RETIRED');
+  assert.equal(epoch.legacyServiceKeyDisabled, true, 'LEGACY_SERVICE_KEY_STILL_ACTIVE');
+  assert.equal(epoch.captureKeyReads, true, 'CAPTURE_EPOCH_READ_UNPROVEN');
+  assert.equal(epoch.rollbackKeyUnassignedToWriters, true, 'ROLLBACK_KEY_EXPOSED_TO_WRITER');
+  assert.match(epoch.oldCredentialNegativeEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
+    'OLD_EPOCH_NEGATIVE_EVIDENCE_UNPINNED');
   assert.equal(value?.legacyVercel?.projectId, 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',
     'LEGACY_VERCEL_PROJECT_MISMATCH');
   assert.equal(value?.legacyVercel?.productionOrigin, 'https://tracepoint-amber.vercel.app',
