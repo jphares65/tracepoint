@@ -89,7 +89,12 @@ export function evaluateProductionCompositeReadiness(evidence) {
     rollback.authStorageControlsRestoredBeforeTraffic === true &&
     rollback.singleSourceAuthorityVerified === true,
   'ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN');
-  requireProof(evidence.unknownAutonomousWriters === false, 'UNKNOWN_AUTONOMOUS_WRITERS');
+  // Unknown historical holders of a *rejected* credential are not writers.
+  // This does not waive inventory of any credential that will remain active.
+  requireProof(evidence.activeCredentialInventoryComplete === true,
+    'ACTIVE_CREDENTIAL_INVENTORY_INCOMPLETE');
+  requireProof(evidence.unknownActiveAuthoritativeWriters === false,
+    'UNKNOWN_ACTIVE_AUTONOMOUS_WRITERS');
   const paths = evidence.writerPaths ?? {};
   requireProof(JSON.stringify(Object.keys(paths).sort()) ===
     JSON.stringify([...REQUIRED_WRITER_PATHS].sort()), 'WRITER_PATH_INVENTORY_INCOMPLETE');

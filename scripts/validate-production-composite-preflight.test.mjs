@@ -45,7 +45,8 @@ test('current production inventory blocks uncovered autonomous writers', () => {
   assert.equal(result.status, 'PRODUCTION_COMPOSITE_PREFLIGHT_BLOCKED');
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:authApi'));
   assert.ok(result.blockers.includes('WRITER_STATE_UNCLASSIFIED:storageApi'));
-  assert.ok(result.blockers.includes('UNKNOWN_AUTONOMOUS_WRITERS'));
+  assert.ok(result.blockers.includes('ACTIVE_CREDENTIAL_INVENTORY_INCOMPLETE'));
+  assert.ok(result.blockers.includes('UNKNOWN_ACTIVE_AUTONOMOUS_WRITERS'));
   assert.ok(result.blockers.includes('CREDENTIAL_EPOCH_NOT_READY'));
   assert.ok(result.blockers.includes('ROLLBACK_CREDENTIAL_DISTRIBUTION_UNPROVEN'));
   assert.ok(result.blockers.includes('AUTH_SERVICE_ADMIN_WRITERS_UNCONTROLLED'));
@@ -61,7 +62,8 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   ready.capture.immutableVersioned = true;
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
-  ready.unknownAutonomousWriters = false;
+  ready.activeCredentialInventoryComplete = true;
+  ready.unknownActiveAuthoritativeWriters = false;
   withSyntheticEpochProof(ready);
   withSyntheticWriterPathProof(ready);
   Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
@@ -103,6 +105,8 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
     copy => { copy.legacyVercel.pause503NegativeRehearsed = false; },
     copy => { copy.credentialEpoch.captureReaderOldAndRollbackDenied = false; },
     copy => { copy.rollbackDistribution.newProductionDeploymentRequired = false; },
+    copy => { copy.activeCredentialInventoryComplete = false; },
+    copy => { copy.unknownActiveAuthoritativeWriters = true; },
     copy => { copy.relationFingerprint = 'wrong'; },
   ]) {
     const copy = structuredClone(ready);
@@ -118,7 +122,8 @@ test('an ephemeral-only writer requires positive field and comparator proof, not
   ready.capture.immutableVersioned = true;
   ready.unfence.exactInverseReviewed = true;
   ready.unfence.restoreVerificationDefined = true;
-  ready.unknownAutonomousWriters = false;
+  ready.activeCredentialInventoryComplete = true;
+  ready.unknownActiveAuthoritativeWriters = false;
   withSyntheticEpochProof(ready);
   withSyntheticWriterPathProof(ready);
   Object.assign(ready.legacyVercel, { productionPauseAndResumeReviewed: true,
