@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { attestVercelProject, attestVercelVariables, attestVercelDeployment,
   VERCEL_TEAM_ID, VERCEL_PROJECT_ID, BASELINE_DEPLOYMENT_ID,
   BASELINE_GIT_SHA } from './production-vercel-rollback-core.mjs';
@@ -21,4 +22,12 @@ test('only the exact Vercel project, team, environment split, and deployment pas
   assert.throws(() => attestVercelVariables([variables[0], { ...variables[0] }]));
   assert.throws(() => attestVercelVariables([variables[0], { ...variables[0], target: ['preview'] }]));
   assert.throws(() => attestVercelDeployment({ ...deployment, meta: { githubCommitSha: 'wrong' } }));
+});
+
+test('live inventory script is read-only and emits identifiers, never values', () => {
+  const source = readFileSync(new URL('./inspect-production-vercel-rollback.mjs', import.meta.url), 'utf8');
+  assert.match(source, /method: 'GET'/);
+  assert.doesNotMatch(source, /method: '(?:POST|PATCH|PUT|DELETE)'/);
+  assert.match(source, /tokenValueLogged: false, environmentValuesLogged: false/);
+  assert.doesNotMatch(source, /console\.log\([^\n]*(?:token|variableResult|deployment)\)/);
 });
