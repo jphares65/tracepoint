@@ -7,8 +7,8 @@ const template = await readFile(new URL('../infra/changesets/production-final-im
 
 test('isolated importer builder has exact source, repository and no runtime secret access', () => {
   assert.match(template, /TracePoint-ProductionFinalImportImageBuild-20260928/);
-  assert.match(template, /tracepoint-final-import-84255ac804d5d01c24488adce6efeadca4a29de4e011f63cf2dd99a565cdcaac\.zip/);
-  assert.match(template, /jJCscp3hGk5S7UceiZGkyai2SOg5GXk9/);
+  assert.match(template, /tracepoint-final-import-01c030f154e79c6550d779d1675174e06c08ac1874f4ead72f0dfbd0f3cde02c\.zip/);
+  assert.match(template, /K5zccTEbmgYnEsm_YVY.71siViVcsoYg/);
   assert.match(template, /arn:aws:ecr:us-east-1:193644343389:repository\/tracepoint-production/);
   assert.doesNotMatch(template, /secretsmanager:GetSecretValue|tracepoint\/production\/final\/database-runtime/);
   assert.doesNotMatch(template, /ecs:RunTask|rds:|cognito-idp:|ses:|route53:/);

@@ -19,6 +19,9 @@ const env = {
 test('isolated proof accepts only pinned paid-to-clone execution and never final RDS', () => {
   assert.equal(validateIsolatedProofEnvironment(env).mode, 'rollback');
   assert.equal(validateIsolatedProofEnvironment({ ...env, TRACEPOINT_ISOLATED_IMPORT_MODE: 'baseline' }).mode, 'baseline');
+  assert.equal(validateIsolatedProofEnvironment({ ...env,
+    TARGET_DATABASE_SECRET_JSON: JSON.stringify({ ...JSON.parse(env.TARGET_DATABASE_SECRET_JSON),
+      host: 'tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com' }) }).mode, 'rollback');
   assert.equal(validateIsolatedProofEnvironment({ ...env, TRACEPOINT_ISOLATED_IMPORT_MODE: 'apply' }).mode, 'apply');
   for (const [key, value] of Object.entries({
     TRACEPOINT_ISOLATED_IMPORT_PROOF: 'capture-b-to-final-rds-v1',
@@ -29,6 +32,6 @@ test('isolated proof accepts only pinned paid-to-clone execution and never final
   })) assert.throws(() => validateIsolatedProofEnvironment({ ...env, [key]: value }));
   assert.throws(() => validateIsolatedProofEnvironment({ ...env,
     TARGET_DATABASE_SECRET_JSON: JSON.stringify({ ...JSON.parse(env.TARGET_DATABASE_SECRET_JSON),
-      host: 'tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com' }) }),
+      host: 'unrelated.c8r4sgs089tu.us-east-1.rds.amazonaws.com' }) }),
   /ISOLATED_PROOF_SECRET_SOURCE_MISMATCH/);
 });

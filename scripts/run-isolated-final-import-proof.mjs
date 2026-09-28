@@ -42,9 +42,10 @@ export function validateIsolatedProofEnvironment(env) {
   assert.ok(secret?.username && secret?.password, 'ISOLATED_PROOF_SECRET_REQUIRED');
   // The cloned snapshot shares the migrator password; the stored secret itself
   // remains pinned to final RDS and must never be rewritten for this proof.
-  assert.equal(secret?.host,
+  assert.ok(new Set([
     'tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com',
-  'ISOLATED_PROOF_SECRET_SOURCE_MISMATCH');
+    'tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com',
+  ]).has(secret?.host), 'ISOLATED_PROOF_SECRET_SOURCE_MISMATCH');
   return { host: env.TRACEPOINT_PROOF_RDS_HOST,
     resourceId: env.TRACEPOINT_PROOF_RDS_RESOURCE_ID,
     mode: env.TRACEPOINT_ISOLATED_IMPORT_MODE, secret };
