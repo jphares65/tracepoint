@@ -95,7 +95,12 @@ export function attestCompositeEvidence(value, fenceChangedAt, now = Date.now())
   assert.equal(epoch.oldModernKeyRejected, true, 'OLD_MODERN_KEY_NOT_RETIRED');
   assert.equal(epoch.legacyServiceKeyDisabled, true, 'LEGACY_SERVICE_KEY_STILL_ACTIVE');
   assert.equal(epoch.captureKeyReads, true, 'CAPTURE_EPOCH_READ_UNPROVEN');
-  assert.equal(epoch.rollbackKeyUnassignedToWriters, true, 'ROLLBACK_KEY_EXPOSED_TO_WRITER');
+  // An aborted pre-authority attempt may leave the reserved rollback key in
+  // stopped legacy configuration. It must not be assigned to a running writer.
+  // The stopped bridge and paused Vercel controls are independently attested
+  // below through the required writer-path inventory.
+  assert.equal(epoch.rollbackKeyUnassignedToRunningWriters, true,
+    'ROLLBACK_KEY_EXPOSED_TO_RUNNING_WRITER');
   assert.match(epoch.oldCredentialNegativeEvidenceSha256 ?? '', /^[0-9a-f]{64}$/,
     'OLD_EPOCH_NEGATIVE_EVIDENCE_UNPINNED');
   assert.equal(value?.legacyVercel?.projectId, 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',

@@ -107,7 +107,9 @@ at freeze time. No route has been declared controlled by this inventory alone.
    composite attestation must use format
    `tracepoint-production-composite-fence/v3` and include direct proof that
    the old modern key is rejected, the legacy service key is disabled, the
-   capture key reads, and the rollback key remains unassigned to writers.
+   capture key reads, and the rollback key is unassigned to any running
+   writer. A stopped bridge or paused Vercel configuration may retain the
+   reserved rollback key for the reviewed pre-authority inverse.
 6. Start capture slot A with run ID
    `1d761bd7-04dd-43f3-b77a-2c41130e18c2`, attestation VersionId and SHA-256.
    Record the CodeBuild ID, immutable S3 VersionId, byte SHA-256 and canonical

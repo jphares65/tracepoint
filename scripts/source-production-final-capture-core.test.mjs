@@ -57,7 +57,7 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
     s3WriterCredentials: 'NO_SEPARATE_S3_WRITER_CREDENTIALS', observedAtUtc: '2026-09-27T12:01:00Z',
     credentialEpoch: { captureSecretName: 'tracepoint/production/migration/source-production-epoch-capture-20260928',
       oldModernKeyRejected: true, legacyServiceKeyDisabled: true, captureKeyReads: true,
-      rollbackKeyUnassignedToWriters: true, oldCredentialNegativeEvidenceSha256: 'd'.repeat(64) },
+      rollbackKeyUnassignedToRunningWriters: true, oldCredentialNegativeEvidenceSha256: 'd'.repeat(64) },
     legacyVercel: { projectId: 'prj_V03LJyQIc231luvZ9u0gcOAt4xK4',
       productionOrigin: 'https://tracepoint-amber.vercel.app', paused503: true,
       previewProductionSourceExcluded: true },
@@ -88,7 +88,7 @@ test('capture rejects incomplete, stale, or cross-project composite attestations
     { format: 'tracepoint-production-composite-fence/v2' },
     { credentialEpoch: { ...evidence.credentialEpoch, oldModernKeyRejected: false } },
     { credentialEpoch: { ...evidence.credentialEpoch, legacyServiceKeyDisabled: false } },
-    { credentialEpoch: { ...evidence.credentialEpoch, rollbackKeyUnassignedToWriters: false } },
+    { credentialEpoch: { ...evidence.credentialEpoch, rollbackKeyUnassignedToRunningWriters: false } },
     { writerPaths: { ...evidence.writerPaths, storageElevated: {
       ...evidence.writerPaths.storageElevated, directNegativePassed: false } } },
     { writers: { ...evidence.writers, authApi: { ...evidence.writers.authApi, directNegativePassed: false } } }])
