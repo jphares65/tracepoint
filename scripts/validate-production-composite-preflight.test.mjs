@@ -27,6 +27,7 @@ function withSyntheticEpochProof(ready) {
     captureReaderOldAndRollbackDenied: true, rollbackKeyUnassignedToRunningWriters: true,
     oldModernKeyIdPinned: true, legacyServiceKeyStatePinned: true,
     oldModernKeyRetirementReviewed: true, legacyServiceKeyDisableReviewed: true,
+    legacySigningKeyRevokeRestoreRehearsed: true,
     oldCredentialsNegativeChecksDefined: true,
   };
   ready.rollbackDistribution = {
@@ -97,6 +98,16 @@ test('complete reversible controls and exact two-slot capture would pass', () =>
   }
   ready.writers.authApi.controls.serviceAdminWritersControlled = true;
   assert.equal(evaluateProductionCompositeReadiness(ready).status, 'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
+  const noBearerFenceInverse = structuredClone(ready);
+  noBearerFenceInverse.credentialEpoch.legacySigningKeyRevokeRestoreRehearsed = false;
+  assert.ok(evaluateProductionCompositeReadiness(noBearerFenceInverse).blockers.includes(
+    'OLD_EPOCH_RETIREMENT_UNPROVEN'));
+  const afterAbort = structuredClone(ready);
+  afterAbort.credentialEpoch.threeModernKeysDistinct = false;
+  afterAbort.credentialEpoch.oldModernKeyRetiredRuntimeUsesRollback = true;
+  afterAbort.credentialEpoch.captureAndRollbackKeysDistinct = true;
+  assert.equal(evaluateProductionCompositeReadiness(afterAbort).status,
+    'PRODUCTION_COMPOSITE_PREFLIGHT_PASS');
   const missingObjectIntegrity = structuredClone(ready);
   missingObjectIntegrity.finalImport.objectManifestAndReferenceReconciliationRehearsed = false;
   assert.ok(evaluateProductionCompositeReadiness(missingObjectIntegrity).blockers.includes(

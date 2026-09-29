@@ -76,7 +76,12 @@ try {
       fingerprint: createHash('sha256').update(key).digest('hex'), status });
   }
   stage = 'distinctness';
-  assert.equal(new Set(entries.map(entry => entry.fingerprint)).size, 3, 'EPOCH_KEYS_NOT_DISTINCT');
+  // After a pre-authority abort the old modern key is irreversibly retired;
+  // the source REST secret is deliberately replaced with the reserved rollback key.
+  const activeIsRollback = entries[0].fingerprint === entries[2].fingerprint;
+  assert.notEqual(entries[1].fingerprint, entries[2].fingerprint, 'CAPTURE_AND_ROLLBACK_KEYS_NOT_DISTINCT');
+  assert.ok(activeIsRollback || new Set(entries.map(entry => entry.fingerprint)).size === 3,
+    'UNEXPECTED_ACTIVE_SOURCE_KEY');
   stage = 'project-reads';
   assert.ok(entries.every(entry => entry.status === 200), 'EXACT_PROJECT_KEY_READ_FAILED');
   stage = 'capture-storage-read';
@@ -97,7 +102,8 @@ try {
       versionIdPresent: Boolean(entries[1].versionId), readStatus: entries[1].status },
     rollback: { name: entries[2].name, arn: entries[2].arn,
       versionIdPresent: Boolean(entries[2].versionId), readStatus: entries[2].status },
-    threeCredentialsDistinct: true, captureStorageStatus: storageStatus,
+    threeCredentialsDistinct: !activeIsRollback, activeSourceUsesRollbackKey: activeIsRollback,
+    captureAndRollbackDistinct: true, captureStorageStatus: storageStatus,
     keyValuesLogged: false }));
 } catch (error) {
   console.error(JSON.stringify({ status: 'PRODUCTION_EPOCH_SECRETS_NOT_READY',

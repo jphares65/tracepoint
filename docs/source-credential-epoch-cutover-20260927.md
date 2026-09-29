@@ -84,3 +84,33 @@ separate gates.
 No production maintenance, source freeze, key deletion, capture, import,
 worker repoint, DNS change, or authority switch is authorized by this
 document alone. Every existing cutover stop/abort gate remains in force.
+
+## 2026-09-28 legacy bearer correction
+
+Disabling JWT-based API keys blocks use as `apikey`, **not** bearer-JWT
+verification. The paid-project legacy signing key
+`744e09fe-e9c7-416c-a3fa-1c29f9798148` was moved to Revoked by the
+project owner. A read-only request with the legacy `anon` JWT bearer then
+returned 401 while the dedicated modern capture key retained read access.
+The owner moved that **same** key back to Standby; the same bearer request
+returned 200. The current ECC signing key was unchanged. No production
+signing key was changed in this rehearsal.
+
+For the production fence, disabling `anon` and `service_role` API keys is
+insufficient. After the public maintenance barrier, writer drain, rollback
+readiness and public SQL fence are verified, the exact *previous* production
+legacy signing key `b7859fb3-6f9d-4c82-87b5-04bfaca95259` must be moved
+to Revoked. Do not revoke the current ECC key. Require read-only rejection
+of the legacy bearer, rejection of old modern-key REST/Auth/Storage access,
+and successful capture-key reads before capture A. Any mismatch stops the
+cutover before capture. The project owner must perform the dashboard
+signing-key transition; do not copy the production service-role JWT into
+the local environment to test it.
+
+On a pre-authority abort, while external maintenance and writer denies
+remain active, move only that exact previous legacy signing key back to
+Standby, verify legacy bearer read access is restored, then complete the
+existing rollback-key distribution, Auth/Storage/SQL unfence and
+single-authority checks before reopening traffic. This inverse was proven
+only in the paid rehearsal project; a production transition must still be
+verified live at each gate.

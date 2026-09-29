@@ -59,7 +59,9 @@ export function evaluateProductionCompositeReadiness(evidence) {
   requireProof(epoch.projectRef === SOURCE_PROJECT &&
     epoch.captureSecretName === CAPTURE_EPOCH_SECRET &&
     epoch.rollbackSecretName === ROLLBACK_EPOCH_SECRET &&
-    epoch.threeModernKeysDistinct === true &&
+    (epoch.threeModernKeysDistinct === true ||
+      (epoch.oldModernKeyRetiredRuntimeUsesRollback === true &&
+        epoch.captureAndRollbackKeysDistinct === true)) &&
     epoch.captureReaderExactArnVerified === true &&
     epoch.captureReaderOldAndRollbackDenied === true &&
     epoch.rollbackKeyUnassignedToRunningWriters === true,
@@ -68,6 +70,7 @@ export function evaluateProductionCompositeReadiness(evidence) {
     epoch.legacyServiceKeyStatePinned === true &&
     epoch.oldModernKeyRetirementReviewed === true &&
     epoch.legacyServiceKeyDisableReviewed === true &&
+    epoch.legacySigningKeyRevokeRestoreRehearsed === true &&
     epoch.oldCredentialsNegativeChecksDefined === true,
   'OLD_EPOCH_RETIREMENT_UNPROVEN');
   requireProof(evidence.s3WriterCredentials?.state === 'NO_SEPARATE_S3_WRITER_CREDENTIALS' &&
