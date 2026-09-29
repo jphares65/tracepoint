@@ -42,6 +42,21 @@ export async function resolvePostgresIdentitySummary(principal:AuthenticatedPrin
  }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
 }
 
+export async function resolvePostgresPlatformLanding(principal:AuthenticatedPrincipal){
+ const client=await getPostgresPool().connect();
+ try{
+  await beginSubject(client,principal.userId);
+  const result=await client.query(`select public.is_platform_admin() as is_platform_admin,
+    exists(select 1 from public.department_memberships
+      where user_id=$1 and is_active=true) as has_active_department_membership`,[principal.userId]);
+  await client.query("commit");
+  return {
+   isPlatformAdmin:result.rows[0]?.is_platform_admin===true,
+   hasActiveDepartmentMembership:result.rows[0]?.has_active_department_membership===true,
+  };
+ }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
+}
+
 export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,selectedDepartmentId:string,supportDepartmentId:string){
  const client=await getPostgresPool().connect();
  try{
