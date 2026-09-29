@@ -16,6 +16,8 @@ The Supabase dashboard states that disabling the legacy keys affects the `apikey
 
 This is a source-authority safety gap, not a relational importer or application issue. Before another maintenance window, a separately reviewed and rehearsed reversible control for the legacy JWT signing authority (or another exact way to deny privileged bearer use) and a non-exposing direct negative test are required. Do not assume dashboard API-key disable is sufficient.
 
+The S3 protocol switch appeared off immediately after Save but appeared enabled on a later dashboard reload. The project showed zero separate S3 access keys, so this was not evidence of an active S3-key writer; nevertheless the switch alone must not be counted as a persistent fence control in a future attempt.
+
 ## Pre-authority restoration
 
 - Re-enabled both legacy JWT API keys in the production dashboard.
