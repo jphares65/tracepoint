@@ -61,3 +61,12 @@ export function rejectedStorageCredential(oldStatus, oldError, liveStatus) {
   return rejectedCredential(oldStatus) || (oldStatus === 400 && liveStatus === 200
     && oldError?.code === 'AccessDenied' && oldError?.error === 'Unauthorized');
 }
+
+export function rejectedStorageCredentialAgainstInvalidControl(
+  oldStatus, oldError, liveStatus, invalidStatus, invalidError,
+) {
+  return rejectedStorageCredential(oldStatus, oldError, liveStatus) ||
+    (oldStatus === 400 && invalidStatus === 400 && liveStatus === 200 &&
+      oldError?.code === 'InvalidRequest' && oldError?.error === 'Error' &&
+      invalidError?.code === oldError.code && invalidError?.error === oldError.error);
+}

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { assertDistinctEpochKeys, rejectedCredential, rejectedStorageCredential } from './source-credential-epoch-core.mjs';
+import { assertDistinctEpochKeys, rejectedCredential, rejectedStorageCredential,
+  rejectedStorageCredentialAgainstInvalidControl } from './source-credential-epoch-core.mjs';
 
 test('credential epoch requires three distinct modern keys', () => {
   const keys = ['a', 'b', 'c'].map(letter => `sb_secret_${letter.repeat(24)}`);
@@ -23,6 +24,12 @@ test('Storage HTTP 400 is accepted only for exact denied credential with a live 
   assert.equal(rejectedStorageCredential(400, { code: 'NoSuchBucket', error: 'Bad Request' }, 200), false);
   assert.equal(rejectedStorageCredential(500, { code: 'AccessDenied', error: 'Unauthorized' }, 200), false);
   assert.equal(rejectedStorageCredential(401, null, 200), true);
+  assert.equal(rejectedStorageCredentialAgainstInvalidControl(400,
+    { code: 'InvalidRequest', error: 'Error' }, 200, 400,
+    { code: 'InvalidRequest', error: 'Error' }), true);
+  assert.equal(rejectedStorageCredentialAgainstInvalidControl(400,
+    { code: 'InvalidRequest', error: 'Error' }, 200, 400,
+    { code: 'Other', error: 'Error' }), false);
 });
 
 test('paid epoch probe is exact-project and never prints credentials or rows', () => {

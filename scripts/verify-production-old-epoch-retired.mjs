@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { PRODUCTION_EPOCH, extractProductionEpochKey, rejectedCredential,
-  rejectedStorageCredential } from './source-credential-epoch-core.mjs';
+  rejectedStorageCredentialAgainstInvalidControl } from './source-credential-epoch-core.mjs';
 
 assert.deepEqual(process.argv.slice(2), ['--profile=tracepoint-production', '--after-retirement'],
   'EXACT_PRODUCTION_ARGUMENTS_REQUIRED');
@@ -76,12 +76,21 @@ try {
   const body = { prefix: '', limit: 1, offset: 0 };
   const oldStorage = await request(oldKey, 'POST', list, body);
   const captureStorage = await request(captureKey, 'POST', list, body);
+  const invalidStorage = await request('invalid-cutover-probe-20260928', 'POST', list, body);
   let safeError = null;
   try {
     const parsed = JSON.parse(oldStorage.text);
     safeError = { code: parsed?.code, error: parsed?.error };
   } catch { /* HTTP status may suffice. */ }
-  assert.ok(rejectedStorageCredential(oldStorage.status, safeError, captureStorage.status),
+  let invalidError = null;
+  try {
+    const parsed = JSON.parse(invalidStorage.text);
+    invalidError = { code: parsed?.code, error: parsed?.error };
+  } catch { /* Status and exact error shape are both required below. */ }
+  const sameAsInvalidControl = oldStorage.status === 400 && invalidStorage.status === 400 &&
+    safeError?.code === invalidError?.code && safeError?.error === invalidError?.error;
+  assert.ok(rejectedStorageCredentialAgainstInvalidControl(oldStorage.status, safeError,
+    captureStorage.status, invalidStorage.status, invalidError),
     'OLD_KEY_STORAGE_STILL_AUTHORIZED');
   assert.equal(captureStorage.status, 200, 'CAPTURE_STORAGE_CONTROL_FAILED');
   stage = 'postcheck';
@@ -92,6 +101,7 @@ try {
     projectRef: PRODUCTION_EPOCH.projectRef, oldRestRead: oldRead.status,
     oldRestWrite: oldWrite.status, unknownHolderWrite: unknownHolder.status,
     oldAuth: auth.status, oldStorage: oldStorage.status,
+    invalidStorageControl: invalidStorage.status, storageMatchesInvalidControl: sameAsInvalidControl,
     captureRest: capture.status, captureStorage: captureStorage.status,
     authoritativeProbeRowUnchanged: true, credentialValuesLogged: false }));
 } catch (error) {
