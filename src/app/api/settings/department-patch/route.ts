@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   hasAnyServerPermission,
   resolveServerAccess,
+  type ServerAccessContext,
 } from "@/lib/tracepoint/server-access";
 import { createObjectStore, departmentPatchPathFromMetadata } from "@/lib/storage/object-store";
 
@@ -16,6 +17,28 @@ const EXTENSIONS: Record<string, "png" | "jpg" | "webp"> = {
   "image/jpeg": "jpg",
   "image/webp": "webp",
 };
+
+async function recordPatchAudit(
+  context: ServerAccessContext,
+  result: "succeeded" | "failed",
+  details: Record<string, unknown>,
+) {
+  return context.admin.from("audit_events").insert({
+    department_id: context.departmentId,
+    actor_user_id: context.userId,
+    action: "department_patch_upload",
+    entity_type: "department",
+    entity_id: context.departmentId,
+    summary: `Department patch upload ${result}.`,
+    details: {
+      actor_user_id: context.userId,
+      target_department_id: context.departmentId,
+      effective_context: context.isSuperAdmin ? (context.isSupportMode ? "platform_support_mode" : "platform_explicit_tenant") : "department_membership",
+      result,
+      ...details,
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   const access = await resolveServerAccess();
@@ -74,6 +97,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (upload.error) {
+    await recordPatchAudit(context, "failed", { stage: "object_upload" });
     return NextResponse.json(
       { error: upload.error.message },
       { status: 500 },
@@ -84,9 +108,22 @@ export async function POST(request: NextRequest) {
   const delivery = await objectStore.createDepartmentPatchDelivery(storagePath);
   if(delivery.error || !delivery.signedUrl){
     await objectStore.removeDepartmentPatch(storagePath);
+    await recordPatchAudit(context, "failed", { stage: "delivery_preparation", storage_path: storagePath });
     return NextResponse.json({error:"Patch delivery could not be prepared."},{status:500});
   }
   const patchUrl = delivery.signedUrl;
+
+  const currentPatch = await context.admin
+    .from("departments")
+    .select("patch_url")
+    .eq("id", context.departmentId)
+    .maybeSingle();
+
+  if (currentPatch.error || !currentPatch.data) {
+    await objectStore.removeDepartmentPatch(storagePath);
+    await recordPatchAudit(context, "failed", { stage: "settings_read", storage_path: storagePath });
+    return NextResponse.json({ error: currentPatch.error?.message ?? "Department was not found." }, { status: currentPatch.error ? 500 : 404 });
+  }
 
   const { error: updateError } = await context.admin
     .from("departments")
@@ -95,11 +132,23 @@ export async function POST(request: NextRequest) {
 
   if (updateError) {
     await objectStore.removeDepartmentPatch(storagePath);
+    await recordPatchAudit(context, "failed", { stage: "settings_persistence", storage_path: storagePath });
 
     return NextResponse.json(
       { error: updateError.message },
       { status: 500 },
     );
+  }
+
+  const { error: auditError } = await recordPatchAudit(context, "succeeded", {
+    storage_path: storagePath,
+    previous_patch_url: currentPatch.data.patch_url ?? null,
+    patch_url: patchUrl,
+  });
+  if (auditError) {
+    await context.admin.from("departments").update({ patch_url: currentPatch.data.patch_url ?? null }).eq("id", context.departmentId);
+    await objectStore.removeDepartmentPatch(storagePath);
+    return NextResponse.json({ error: "The department patch operation could not be audited." }, { status: 500 });
   }
 
   return NextResponse.json({

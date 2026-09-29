@@ -64,6 +64,12 @@ type ArmoryResponse = {
   error?: string;
 };
 
+type CustodyResponse = {
+  current?: { holder_type: "OFFICER" | "SECURE_STORAGE"; holder_user_id?: string | null; storage_location_id?: string | null; custody_since?: string | null } | null;
+  restrictions?: Array<{ no_possession_permitted: boolean; duty_only: boolean; daily_return_required: boolean; supervisor_approval_required: boolean; reason_category: string; is_active: boolean; expires_at?: string | null }>;
+  events?: Array<{ id: string; action_type: string; reason: string; occurred_at: string; to_holder_type: string }>;
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "Not recorded";
 
@@ -156,6 +162,7 @@ export default function FirearmRecordPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [notFound, setNotFound] = useState(false);
+  const [custody, setCustody] = useState<CustodyResponse | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -194,6 +201,14 @@ export default function FirearmRecordPage() {
         setCanInspect(Boolean(payload.access?.canInspect));
         setFirearm(selected);
         setNotFound(!selected);
+        if (selected) {
+          const custodyResponse = await fetch(`/api/armory/firearms/${encodeURIComponent(selected.id)}/custody`, { cache: "no-store" });
+          if (custodyResponse.ok && mounted) {
+            setCustody(await custodyResponse.json() as CustodyResponse);
+          } else if (mounted) {
+            setCustody(null);
+          }
+        }
       } catch (error) {
         if (!mounted) return;
 
@@ -405,11 +420,11 @@ export default function FirearmRecordPage() {
 
                   <div>
                     <h2 className="text-[15px] font-bold text-white">
-                      Current Custody
+                      Assignment
                     </h2>
 
                     <p className="text-[11px] text-slate-500">
-                      Current active firearm assignment.
+                      Who the firearm is assigned to. Physical custody is tracked separately.
                     </p>
                   </div>
                 </div>
@@ -514,6 +529,27 @@ export default function FirearmRecordPage() {
                 )}
               </section>
             </div>
+
+            <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+              <div className="flex items-center gap-3">
+                <span className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-2.5 text-violet-300">
+                  <ShieldCheck size={18} />
+                </span>
+                <div>
+                  <h2 className="text-[15px] font-bold text-white">Physical Custody</h2>
+                  <p className="text-[11px] text-slate-500">Where the firearm is right now. Changing custody never changes assignment.</p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <InfoField label="Current Holder" value={custody?.current ? custody.current.holder_type === "SECURE_STORAGE" ? "Department secure storage" : "Officer" : "Not recorded"} />
+                <InfoField label="Custody Since" value={formatDateTime(custody?.current?.custody_since)} />
+                <InfoField label="Restriction" value={(() => { const active = custody?.restrictions?.find((item) => item.is_active); if (!active) return "None"; if (active.no_possession_permitted) return "No possession permitted"; if (active.duty_only) return "Duty-only possession"; if (active.daily_return_required) return "Daily return required"; if (active.supervisor_approval_required) return "Supervisor approval required"; return active.reason_category; })()} />
+              </div>
+              <div className="mt-5 border-t border-slate-800 pt-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">Custody History</p>
+                {custody?.events?.length ? <ol className="mt-3 space-y-2">{custody.events.slice(0, 5).map((event) => <li key={event.id} className="text-[12px] text-slate-300">{formatDateTime(event.occurred_at)} · {event.action_type.replace(/_/g, " ")} · {event.reason}</li>)}</ol> : <p className="mt-3 text-[12px] text-slate-500">No custody events are recorded for this firearm.</p>}
+              </div>
+            </section>
 
             <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
               <div className="flex items-center gap-3">
