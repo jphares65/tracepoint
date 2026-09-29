@@ -7,8 +7,9 @@ import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuratio
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { isApprovedRehearsalInvite } from "./cognito-rehearsal-invite-guard";
 import { assertPendingInviteAbsentInCognito, parsePendingInviteRetry } from "./cognito-invite-retry-core";
+import { cognitoInviteAuthorizationContext } from "./cognito-invite-authorization-context";
 
-export type CognitoInviteInput={actorUserId:string;departmentId:string;email:string;fullName:string;badgeNumber:string;rankTitle:string;unitName:string;employeeNumber:string;roleCodes:string[];groupIds:string[];siteUrl:string;active?:boolean};
+export type CognitoInviteInput={actorUserId:string;departmentId:string;email:string;fullName:string;badgeNumber:string;rankTitle:string;unitName:string;employeeNumber:string;roleCodes:string[];groupIds:string[];siteUrl:string;active?:boolean;supportMode?:boolean};
 
 export async function inviteCognitoUser(input:CognitoInviteInput){
  const rehearsalRetry=isApprovedRehearsalInvite(process.env,input);
@@ -16,13 +17,14 @@ export async function inviteCognitoUser(input:CognitoInviteInput){
  const pool=getPostgresPool(),directory=getCognitoAdminDirectory(process.env,input);
  let userId:string=randomUUID(),operationId:string=randomUUID(),providerUsername:string=randomUUID();
  const retryArguments=[input.departmentId,input.email,input.fullName,input.badgeNumber,input.rankTitle,input.unitName,input.employeeNumber,input.roleCodes,input.groupIds];
- const pending=rehearsalRetry?await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
+ const authorization=cognitoInviteAuthorizationContext(input);
+ const pending=rehearsalRetry?await withPostgresAuthorization(pool,authorization,async client=>{
   const result=await client.query("select * from tracepoint_auth.inspect_cognito_invite_retry($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::uuid[])",retryArguments) as {rows:unknown[]};
   return parsePendingInviteRetry(result.rows);
  }):null;
  if(pending){
   await assertPendingInviteAbsentInCognito(directory,input.email,pending);
-  const claimed=await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
+  const claimed=await withPostgresAuthorization(pool,authorization,async client=>{
    const result=await client.query("select * from tracepoint_auth.claim_cognito_invite_retry($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::uuid[],$10)",[...retryArguments,pending.operation_id]) as {rows:unknown[]};
    return parsePendingInviteRetry(result.rows);
   });
@@ -30,7 +32,7 @@ export async function inviteCognitoUser(input:CognitoInviteInput){
    throw new Error("Pending invitation claim changed.");
   userId=claimed.user_id;operationId=claimed.operation_id;providerUsername=claimed.provider_username;
  }else{
-  await withPostgresAuthorization(pool,{subjectId:input.actorUserId,departmentId:input.departmentId},async client=>{
+  await withPostgresAuthorization(pool,authorization,async client=>{
    await client.query("select tracepoint_auth.prepare_cognito_invite($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text[],$12::uuid[],$13)",[userId,operationId,providerUsername,input.departmentId,input.email,input.fullName,input.badgeNumber,input.rankTitle,input.unitName,input.employeeNumber,input.roleCodes,input.groupIds,input.active!==false]);
   });
  }

@@ -7,12 +7,14 @@ import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { getCognitoMigrationDirectory } from "./cognito-admin";
 import { migrateExistingUserToCognito } from "./cognito-existing-user-migration-core";
 import { parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core";
+import { cognitoInviteAuthorizationContext } from "./cognito-invite-authorization-context";
 
 export async function provisionExistingCognitoUser(input: {
   actorUserId: string;
   departmentId: string;
   targetUserId: string;
   siteUrl: string;
+  supportMode?: boolean;
 }) {
   assertIdentityMutationAllowed();
   const pool = getPostgresPool();
@@ -38,7 +40,7 @@ export async function provisionExistingCognitoUser(input: {
         async prepare(value) {
           return withPostgresAuthorization(
             pool,
-            { subjectId: value.actorUserId, departmentId: value.departmentId },
+            cognitoInviteAuthorizationContext(value),
             async client => {
               const result = await client.query(
                 "select * from tracepoint_auth.prepare_existing_cognito_migration($1,$2,$3,$4)",

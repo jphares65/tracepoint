@@ -97,6 +97,7 @@ export async function assignCognitoPassword(input: {
 export async function beginCognitoPasswordReset(input: {
   actorUserId: string;
   departmentId: string;
+  supportMode?: boolean;
   targetEmail: string;
 }) {
   assertIdentityMutationAllowed();

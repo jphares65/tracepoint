@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       const canManage=hasAnyServerPermission(resolved.context,["manage_users","administer_department"]),canAdminister=hasAnyServerPermission(resolved.context,["administer_department"]);
       if(!canManage)return NextResponse.json({error:"You do not have permission to manage users."},{status:403});
       if(roleCodes.includes("administrator")&&!canAdminister)return NextResponse.json({error:"Only a department Administrator may assign the Administrator role."},{status:403});
-      const result=await inviteCognitoUser({actorUserId:resolved.context.userId,departmentId,email,fullName,badgeNumber,rankTitle,unitName,employeeNumber,roleCodes,groupIds,siteUrl});
+      const result=await inviteCognitoUser({actorUserId:resolved.context.userId,departmentId,email,fullName,badgeNumber,rankTitle,unitName,employeeNumber,roleCodes,groupIds,siteUrl,supportMode:resolved.context.isSupportMode});
       return NextResponse.json({ok:true,invitationSent:true,message:`Invitation sent to ${email}.`,operationId:result.operationId});
     }
 

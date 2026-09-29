@@ -5,18 +5,18 @@ import { withPostgresAuthorization } from "@/lib/database/postgres-authorization
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { getCognitoMigrationDirectory } from "./cognito-admin";
 import { parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core";
+import { cognitoInviteAuthorizationContext } from "./cognito-invite-authorization-context";
 
 export async function resendPendingCognitoActivation(input: {
   actorUserId: string;
   departmentId: string;
   targetUserId: string;
+  supportMode?: boolean;
 }) {
   assertIdentityMutationAllowed();
   const pool = getPostgresPool();
-  const row = await withPostgresAuthorization(pool, {
-    subjectId: input.actorUserId,
-    departmentId: input.departmentId,
-  }, async client => {
+  const authorization = cognitoInviteAuthorizationContext(input);
+  const row = await withPostgresAuthorization(pool, authorization, async client => {
     const result = await client.query(
       "select * from tracepoint_auth.prepare_cognito_activation_resend($1,$2)",
       [input.departmentId, input.targetUserId],
@@ -28,10 +28,7 @@ export async function resendPendingCognitoActivation(input: {
   const expectedIssuer = `https://cognito-idp.${config.verification.region}.amazonaws.com/${config.verification.userPoolId}`;
   if (row.issuer !== expectedIssuer) throw new Error("Cognito activation pool mismatch.");
   await getCognitoMigrationDirectory().resendInvitation(row.email, row.provider_subject);
-  await withPostgresAuthorization(pool, {
-    subjectId: input.actorUserId,
-    departmentId: input.departmentId,
-  }, async client => {
+  await withPostgresAuthorization(pool, authorization, async client => {
     await client.query("select tracepoint_auth.finish_cognito_activation_resend($1,$2,$3)",
       [input.departmentId, input.targetUserId, row.provider_subject]);
   });

@@ -57,13 +57,14 @@ export async function POST(request: NextRequest) {
           departmentId,
           targetUserId: userId,
           siteUrl,
+          supportMode: access.context.isSupportMode,
         });
         return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
       }
       if (identityState !== "pending") {
         return NextResponse.json({ error: "This account does not require activation." }, { status: 400 });
       }
-      await resendPendingCognitoActivation({actorUserId:access.context.userId,departmentId,targetUserId:userId});
+      await resendPendingCognitoActivation({actorUserId:access.context.userId,departmentId,targetUserId:userId,supportMode:access.context.isSupportMode});
       return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
     }
 

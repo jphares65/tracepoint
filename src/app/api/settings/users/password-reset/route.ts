@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       if (!hasServerPermission(access.context, "manage_users")) {
         return NextResponse.json({ error: "You do not have permission to manage users." }, { status: 403 });
       }
-      const target = await beginCognitoPasswordReset({ actorUserId: access.context.userId, departmentId, targetEmail: email });
+      const target = await beginCognitoPasswordReset({ actorUserId: access.context.userId, departmentId, targetEmail: email, supportMode: access.context.isSupportMode });
       return NextResponse.json({ ok: true, message: `Password reset sent to ${target.email}.` });
     }
 
