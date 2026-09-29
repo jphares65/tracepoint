@@ -63,7 +63,7 @@ async function main() {
   const cognito = new CognitoIdentityProviderClient({ region: 'us-east-1', maxAttempts: 2 });
   try {
     const mode = process.env.TRACEPOINT_FINAL_COGNITO_STAGE;
-    assert.ok(mode === 'on' || mode === 'preflight', 'STAGE_FLAG_MISSING');
+    assert.ok(['on', 'preflight', 'verify'].includes(mode), 'STAGE_FLAG_MISSING');
     assert.equal(process.env.TRACEPOINT_AWS_ACCOUNT_ID, ACCOUNT, 'ACCOUNT_PIN_MISMATCH');
     assert.equal(process.env.TRACEPOINT_COGNITO_USER_POOL_ID, POOL, 'POOL_PIN_MISMATCH');
     const secret = JSON.parse(process.env.TARGET_DATABASE_SECRET_JSON ?? 'null');
@@ -101,9 +101,24 @@ async function main() {
     if (mode === 'preflight') assert.equal(linksResult.rowCount, 0, 'PREEXISTING_COGNITO_LINKS');
     const pendingById = new Map(linksResult.rows.map(link => [String(link.tracepoint_user_id), link]));
     assert.equal(pendingById.size, linksResult.rowCount, 'COGNITO_LINK_DUPLICATE');
-    assert.ok(linksResult.rows.every(link => link.issuer === ISSUER && link.state === 'pending' &&
+    const requiredState = mode === 'verify' ? 'active' : 'pending';
+    assert.ok(linksResult.rows.every(link => link.issuer === ISSUER && link.state === requiredState &&
       source.some(user => String(user.id) === String(link.tracepoint_user_id)) &&
       UUID.test(String(link.subject)) && link.provider_username === link.subject), 'COGNITO_LINK_CONFLICT');
+    if (mode === 'verify') {
+      assert.equal(linksResult.rowCount, 96, 'ACTIVE_COGNITO_LINK_COUNT_MISMATCH');
+      phase = 'identity-link-verification';
+      for (const user of source) {
+        const link = pendingById.get(String(user.id));
+        assert.ok(link, 'ACTIVE_COGNITO_LINK_MISSING');
+        const actual = await cognito.send(new AdminGetUserCommand({ UserPoolId: POOL, Username: link.provider_username }));
+        const validated = validateCognito(actual, user, expectedStatus(user, memberships, new Date()));
+        assert.equal(validated.subject, link.subject, 'ACTIVE_COGNITO_SUBJECT_MISMATCH');
+      }
+      console.log(JSON.stringify({ status: 'FINAL_COGNITO_COHORT_VERIFIED', sourceIdentities: 96,
+        activeLinks: 96, unmatched: 0, tenantMemberships: 95, credentialsLogged: false, mutations: 0 }));
+      return;
+    }
     phase = 'cognito-preflight';
     // No source email may already exist in the exact pool on the initial run.
     // A resumed task may see a previously created FORCE_CHANGE_PASSWORD user;
@@ -189,5 +204,5 @@ async function main() {
     process.exitCode = 1;
   } finally { await db?.end().catch(() => {}); cognito.destroy(); }
 }
-if (['on', 'preflight'].includes(process.env.TRACEPOINT_FINAL_COGNITO_STAGE)) main();
+if (['on', 'preflight', 'verify'].includes(process.env.TRACEPOINT_FINAL_COGNITO_STAGE)) main();
 module.exports = { validateSource, expectedStatus, validateCognito };

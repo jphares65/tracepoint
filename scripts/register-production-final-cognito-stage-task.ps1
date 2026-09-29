@@ -1,4 +1,4 @@
-param([string] $Profile = 'tracepoint-production', [ValidateSet('preflight','on')][string] $Mode = 'preflight')
+param([string] $Profile = 'tracepoint-production', [ValidateSet('preflight','on','verify')][string] $Mode = 'preflight')
 $ErrorActionPreference = 'Stop'
 $region = 'us-east-1'
 $account = '193644343389'
