@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const buildspec = readFileSync(new URL('../buildspec.aws-native-production.yml', import.meta.url), 'utf8');
+const codeBuildEntrypoint = readFileSync(new URL('../buildspec.production-image.yml', import.meta.url), 'utf8');
 const dockerfile = readFileSync(new URL('../Dockerfile.aws-native-production', import.meta.url), 'utf8');
 
 test('production-native build requires exact account, production origin, and no Supabase build credentials', () => {
@@ -24,4 +25,12 @@ test('production-native runtime is non-root, verifies RDS CA, and excludes rehea
   assert.match(dockerfile, /truststore\.pki\.rds\.amazonaws\.com\/us-east-1\/us-east-1-bundle\.pem/);
   assert.doesNotMatch(runtime, /COPY[^\n]*(?:phase3c-|database\/rehearsal|SUPABASE)/i);
   assert.match(buildspec, /Rehearsal fixture entered production image/);
+});
+
+test('the production CodeBuild entrypoint uses the native container and fails closed without its RDS CA', () => {
+  assert.match(codeBuildEntrypoint, /TRACEPOINT_BUILD_PROVIDER_MODE" = "aws-native-production/);
+  assert.match(codeBuildEntrypoint, /Dockerfile\.aws-native-production/);
+  assert.match(codeBuildEntrypoint, /fs\.accessSync\(path,fs\.constants\.R_OK\)/);
+  assert.match(codeBuildEntrypoint, /RDS CA missing/);
+  assert.doesNotMatch(codeBuildEntrypoint, /docker build --pull --secret/);
 });
