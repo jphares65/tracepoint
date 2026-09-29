@@ -40,7 +40,7 @@ before(async () => {
   await client.query(await readFile("database/aws/028_firearm_custody_phase_a.sql", "utf8"));
 });
 
-after(async () => { await client?.end().catch(() => undefined); await database?.stop().catch(() => undefined); await rm(directory, { recursive: true, force: true }); });
+after(async () => { await client?.end().catch(() => undefined); await database?.stop().catch(() => undefined); await rm(directory, { recursive: true, force: true }).catch(() => undefined); });
 
 test("native custody transfer preserves assignment, rejects cross-tenant substitution, and is idempotent", async () => {
   const department = "10000000-0000-4000-8000-000000000001";
