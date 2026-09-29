@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
+import { PRODUCTION_COGNITO_INVITATION_BODY, PRODUCTION_COGNITO_INVITATION_SUBJECT } from './production-cognito-invitation';
 export interface CognitoFoundationProps extends cdk.StackProps { environmentName:'staging'|'production'; }
 export class CognitoFoundationStack extends cdk.Stack {
  constructor(scope:Construct,id:string,props:CognitoFoundationProps){
@@ -11,9 +12,16 @@ export class CognitoFoundationStack extends cdk.Stack {
    userPoolName:'tracepoint-'+props.environmentName,featurePlan:cognito.FeaturePlan.ESSENTIALS,
    selfSignUpEnabled:false,signInAliases:{email:true},signInCaseSensitive:false,autoVerify:{email:true},
    accountRecovery:cognito.AccountRecovery.EMAIL_ONLY,mfa:cognito.Mfa.REQUIRED,mfaSecondFactor:{otp:true,sms:false},
-   passwordPolicy:{minLength:14,requireLowercase:true,requireUppercase:true,requireDigits:true,requireSymbols:true,tempPasswordValidity:cdk.Duration.days(1)},
+   passwordPolicy:{minLength:props.environmentName==='production'?10:14,requireLowercase:true,requireUppercase:true,requireDigits:true,requireSymbols:true,tempPasswordValidity:cdk.Duration.days(1)},
    deletionProtection:true,removalPolicy:cdk.RemovalPolicy.RETAIN,
   });
+  if(props.environmentName==='production'){
+   const resource=pool.node.defaultChild as cognito.CfnUserPool;
+   resource.addPropertyOverride('AdminCreateUserConfig.InviteMessageTemplate',{
+    EmailSubject:PRODUCTION_COGNITO_INVITATION_SUBJECT,
+    EmailMessage:PRODUCTION_COGNITO_INVITATION_BODY,
+   });
+  }
   const client=pool.addClient('Application',{
    userPoolClientName:'tracepoint-'+props.environmentName+'-web',generateSecret:false,
    authFlows:{userSrp:true},preventUserExistenceErrors:true,enableTokenRevocation:true,

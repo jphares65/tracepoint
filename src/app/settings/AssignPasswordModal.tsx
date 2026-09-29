@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import { COGNITO_PASSWORD_MIN_LENGTH, COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
 
 type AssignPasswordModalProps = {
   departmentId: string;
@@ -39,8 +40,8 @@ export default function AssignPasswordModal({
     event.preventDefault();
     setLocalError(null);
 
-    if (password.length < 8) {
-      setLocalError("Password must be at least 8 characters.");
+    if (!isCognitoCompliantPassword(password)) {
+      setLocalError(COGNITO_PASSWORD_REQUIREMENTS);
       return;
     }
 
@@ -164,7 +165,7 @@ export default function AssignPasswordModal({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
-                minLength={8}
+                minLength={COGNITO_PASSWORD_MIN_LENGTH}
                 autoComplete="new-password"
                 className="min-w-0 flex-1 bg-transparent px-3.5 py-3 text-sm text-white outline-none"
               />
@@ -186,6 +187,8 @@ export default function AssignPasswordModal({
             </div>
           </label>
 
+          <p className="text-xs leading-5 text-slate-400">{COGNITO_PASSWORD_REQUIREMENTS}</p>
+
           <label className="block">
             <span className="mb-2 block text-xs font-semibold text-slate-300">
               Confirm new password
@@ -198,7 +201,7 @@ export default function AssignPasswordModal({
                 setConfirmPassword(event.target.value)
               }
               required
-              minLength={8}
+              minLength={COGNITO_PASSWORD_MIN_LENGTH}
               autoComplete="new-password"
               className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-3.5 py-3 text-sm text-white outline-none transition focus:border-blue-500/70"
             />

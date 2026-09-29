@@ -11,6 +11,7 @@ import { cognitoSdkClientConfiguration, isCognitoPoolForRegion } from "./cognito
 import { notificationMode } from "@/lib/email/notification-mode";
 import { isApprovedRehearsalInvite } from "./cognito-rehearsal-invite-guard";
 import { pendingUserCreateInput } from "./cognito-pending-user-core";
+import { isCognitoCompliantPassword } from "./password-policy";
 
 type CognitoSender={send(command:unknown):Promise<unknown>};
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -44,10 +45,10 @@ export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
   const after=this.map({Username:result.User?.Username,UserAttributes:result.User?.Attributes,Enabled:result.User?.Enabled,UserStatus:result.User?.UserStatus});
   if(after.subject!==expected||after.username!==expected||after.email!==alias||!after.enabled||after.status!=="FORCE_CHANGE_PASSWORD")throw new CognitoDirectoryError("unavailable");
  }
- async setPermanentPassword(username:string,password:string){if(password.length<14||password.length>256)throw new CognitoDirectoryError("invalid_password");await this.send(new AdminSetUserPasswordCommand({UserPoolId:this.userPoolId,Username:this.username(username),Password:password,Permanent:true}));}
+ async setPermanentPassword(username:string,password:string){if(!isCognitoCompliantPassword(password))throw new CognitoDirectoryError("invalid_password");await this.send(new AdminSetUserPasswordCommand({UserPoolId:this.userPoolId,Username:this.username(username),Password:password,Permanent:true}));}
  async markEmailVerified(username:string){await this.send(new AdminUpdateUserAttributesCommand({UserPoolId:this.userPoolId,Username:this.username(username),UserAttributes:[{Name:"email_verified",Value:"true"}]}));}
  async beginPasswordReset(username:string){await this.send(new AdminResetUserPasswordCommand({UserPoolId:this.userPoolId,Username:this.username(username)}));}
- async completePasswordReset(username:string,code:string,password:string){if(!code||code.length>2048||password.length<14||password.length>256)throw new CognitoDirectoryError("invalid_code");await this.send(new ConfirmForgotPasswordCommand({ClientId:this.clientId,Username:this.username(username),ConfirmationCode:code,Password:password}));}
+ async completePasswordReset(username:string,code:string,password:string){if(!code||code.length>2048||!isCognitoCompliantPassword(password))throw new CognitoDirectoryError("invalid_code");await this.send(new ConfirmForgotPasswordCommand({ClientId:this.clientId,Username:this.username(username),ConfirmationCode:code,Password:password}));}
  async disable(username:string){await this.send(new AdminDisableUserCommand({UserPoolId:this.userPoolId,Username:this.username(username)}));}
  async enable(username:string){await this.send(new AdminEnableUserCommand({UserPoolId:this.userPoolId,Username:this.username(username)}));}
  async globalSignOut(username:string){await this.send(new AdminUserGlobalSignOutCommand({UserPoolId:this.userPoolId,Username:this.username(username)}));}

@@ -1,0 +1,23 @@
+{
+  "account": "193644343389",
+  "region": "us-east-1",
+  "stack": "tracepoint-production-full-aws-cognito",
+  "poolLogicalId": "Users0A0EEA89",
+  "poolId": "us-east-1_diFmWDMe9",
+  "baselineCanonicalSha256": "A098968D60149F7D2D6DB576DD70DECB1F8D35F0687819A631F892E1A80B4EBB",
+  "expectedMinimumLength": 14,
+  "newMinimumLength": 10,
+  "emailSubject": "Your temporary password",
+  "emailMessageLines": [
+    "<p>Welcome to TracePoint.</p>",
+    "<p>Your username is:</p>",
+    "<p>",
+    "{username}",
+    "</p>",
+    "<p>Your temporary password is:</p>",
+    "<p>",
+    "{####}",
+    "</p>",
+    "<p>Sign in using your email address and the temporary password above. You will then be prompted to create a new password.</p>"
+  ]
+}
