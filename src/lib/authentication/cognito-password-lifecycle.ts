@@ -7,6 +7,7 @@ import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
 import { getCognitoAdminDirectory } from "./cognito-admin";
 import { assertCognitoPasswordResetReady, CognitoDirectoryError, type CognitoDirectoryUser } from "./cognito-admin-core";
+import { passwordOperationContext } from "./cognito-password-operation-context";
 import { isCognitoCompliantPassword } from "./password-policy";
 
 type PasswordOperationKind = "assign_password" | "reset_password";
@@ -26,10 +27,11 @@ async function prepare(input: {
   kind: PasswordOperationKind;
   actorUserId: string;
   departmentId: string;
+  supportMode?: boolean;
   targetUserId?: string;
   targetEmail?: string;
 }) {
-  return withPostgresAuthorization(getPostgresPool(), { subjectId: input.actorUserId, departmentId: input.departmentId }, async client => {
+  return withPostgresAuthorization(getPostgresPool(), passwordOperationContext(input), async client => {
     const result = await client.query(
       "select * from tracepoint_auth.prepare_cognito_password_operation($1,$2,$3,$4,$5)",
       [input.operationId, input.kind, input.departmentId, input.targetUserId ?? null, input.targetEmail ?? null],
@@ -68,6 +70,7 @@ function assertDirectoryMatch(prepared: PreparedPasswordOperation, actual: Cogni
 export async function assignCognitoPassword(input: {
   actorUserId: string;
   departmentId: string;
+  supportMode?: boolean;
   targetUserId: string;
   password: string;
 }) {

@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       const assigned = await assignCognitoPassword({
         actorUserId: context.userId,
         departmentId,
+        supportMode: context.isSupportMode,
         targetUserId,
         password,
       });
