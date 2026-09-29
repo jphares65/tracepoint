@@ -9,6 +9,7 @@ import { parseCognitoTargetConfiguration } from "@/lib/authentication/cognito-ru
 import { resolvePostgresAccess } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
+import { resolveTenantContext } from "@/lib/tracepoint/tenant-context";
 
 type AccessFailure = {
   ok: false;
@@ -176,27 +177,36 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
   const supportDepartmentId =
     clean(cookieStore.get("tracepoint_support_department_id")?.value);
 
-  const supportModeRequested =
-    Boolean(supportDepartmentId) &&
-    supportDepartmentId === selectedDepartmentId;
+  const { data: platformAdmin, error: platformAdminError } = await admin
+    .from("platform_admins")
+    .select("is_active")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  if (supportModeRequested) {
+  if (platformAdminError) {
+    return {
+      ok: false,
+      status: 500,
+      error: platformAdminError.message,
+    };
+  }
+
+  const isPlatformAdmin = platformAdmin?.is_active === true;
+  const supportModeRequested =
+    Boolean(supportDepartmentId) && supportDepartmentId === selectedDepartmentId;
+
+  // A platform administrator must still name a single tenant. This permits
+  // tenant-scoped support without inventing a department membership.
+  if (isPlatformAdmin && selectedDepartmentId) {
     const [
-      platformAdminResult,
       departmentResult,
       profileResult,
       departmentFeaturesResult,
     ] = await Promise.all([
       admin
-        .from("platform_admins")
-        .select("is_active")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-
-      admin
         .from("departments")
         .select("name,short_name,patch_url,accent_color,login_theme")
-        .eq("id", supportDepartmentId)
+        .eq("id", selectedDepartmentId)
         .maybeSingle(),
 
       admin
@@ -208,24 +218,8 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
       admin
         .from("department_features")
         .select("feature_code,is_enabled")
-        .eq("department_id", supportDepartmentId),
+        .eq("department_id", selectedDepartmentId),
     ]);
-
-    if (platformAdminResult.error) {
-      return {
-        ok: false,
-        status: 500,
-        error: platformAdminResult.error.message,
-      };
-    }
-
-    if (platformAdminResult.data?.is_active !== true) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Platform administrator access is required for Support Mode.",
-      };
-    }
 
     if (departmentResult.error) {
       return {
@@ -239,7 +233,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
       return {
         ok: false,
         status: 404,
-        error: "Support Mode agency was not found.",
+        error: "Selected agency was not found.",
       };
     }
 
@@ -280,7 +274,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
         userId: user.id,
         email: clean(user.email),
         fullName,
-        departmentId: supportDepartmentId,
+        departmentId: selectedDepartmentId,
         departmentName:
           clean(department.name) || "TracePoint Department",
         departmentShortName:
@@ -300,7 +294,7 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
           "administer_department" as TracePointPermission,
         ],
         isSuperAdmin: true,
-        isSupportMode: true,
+        isSupportMode: supportModeRequested,
         enabledFeatures,
       },
     };
@@ -323,27 +317,22 @@ export async function resolveServerAccess(): Promise<ServerAccessResult> {
   }
 
   const memberships = (membershipRows ?? []) as MembershipRow[];
+  const tenantContext = resolveTenantContext({
+    selectedDepartmentId,
+    activeMembershipDepartmentIds: memberships.map((row) =>
+      clean(row.department_id),
+    ),
+    isPlatformAdmin: false,
+  });
 
-  if (memberships.length === 0) {
+  if (!tenantContext.ok && tenantContext.reason === "no_membership") {
     return {
       ok: false,
       status: 403,
       error: "No active department membership was found.",
     };
   }
-let membership: MembershipRow | undefined;
-
-  if (selectedDepartmentId) {
-    membership = memberships.find(
-      (row) => clean(row.department_id) === selectedDepartmentId,
-    );
-  }
-
-  if (!membership && memberships.length === 1) {
-    membership = memberships[0];
-  }
-
-  if (!membership) {
+  if (!tenantContext.ok) {
     return {
       ok: false,
       status: 409,
@@ -352,13 +341,23 @@ let membership: MembershipRow | undefined;
     };
   }
 
-  const departmentId = String(membership.department_id);
+  const departmentId = tenantContext.departmentId;
+  const membership = memberships.find(
+    (row) => clean(row.department_id) === departmentId,
+  );
+
+  if (!membership) {
+    return {
+      ok: false,
+      status: 403,
+      error: "No active department membership was found.",
+    };
+  }
 
   const [
     departmentResult,
     profileResult,
     membershipRolesResult,
-    platformAdminResult,
     departmentFeaturesResult,
   ] = await Promise.all([
     admin
@@ -380,12 +379,6 @@ let membership: MembershipRow | undefined;
       .eq("user_id", user.id),
 
     admin
-      .from("platform_admins")
-      .select("is_active")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-
-    admin
       .from("department_features")
       .select("feature_code,is_enabled")
       .eq("department_id", departmentId),
@@ -404,14 +397,6 @@ let membership: MembershipRow | undefined;
       ok: false,
       status: 500,
       error: membershipRolesResult.error.message,
-    };
-  }
-
-  if (platformAdminResult.error) {
-    return {
-      ok: false,
-      status: 500,
-      error: platformAdminResult.error.message,
     };
   }
 
@@ -489,8 +474,7 @@ let membership: MembershipRow | undefined;
     permissionRows.map((row) => row.permission_code),
   );
 
-  const isSuperAdmin =
-    platformAdminResult.data?.is_active === true;
+  const isSuperAdmin = isPlatformAdmin;
 
   const enabledFeatures = uniqueStrings(
     (departmentFeaturesResult.data ?? [])

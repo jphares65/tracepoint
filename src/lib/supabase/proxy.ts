@@ -240,16 +240,10 @@ export async function updateSession(request: NextRequest) {
   const selectedDepartmentId =
     request.cookies.get("tracepoint_department_id")?.value?.trim() ?? "";
 
-  const supportDepartmentId =
-    request.cookies
-      .get("tracepoint_support_department_id")
-      ?.value?.trim() ?? "";
-
-  const supportModeRequested =
-    Boolean(supportDepartmentId) &&
-    supportDepartmentId === selectedDepartmentId;
-
-  if (supportModeRequested) {
+  // A platform administrator may only bypass membership checks after a tenant
+  // has been explicitly selected. The route resolver validates that tenant
+  // before any tenant-scoped operation is performed.
+  if (selectedDepartmentId) {
     const { data: isPlatformAdmin, error: supportAdminError } =
       await supabase.rpc("is_platform_admin");
 

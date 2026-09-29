@@ -18,11 +18,19 @@ const EXTENSIONS: Record<string, "png" | "jpg" | "webp"> = {
   "image/webp": "webp",
 };
 
+type PatchAuditResult = "succeeded" | "failed";
+
 async function recordPatchAudit(
   context: ServerAccessContext,
-  result: "succeeded" | "failed",
+  result: PatchAuditResult,
   details: Record<string, unknown>,
 ) {
+  const effectiveContext = context.isSuperAdmin
+    ? context.isSupportMode
+      ? "platform_support_mode"
+      : "platform_explicit_tenant"
+    : "department_membership";
+
   return context.admin.from("audit_events").insert({
     department_id: context.departmentId,
     actor_user_id: context.userId,
@@ -32,12 +40,21 @@ async function recordPatchAudit(
     summary: `Department patch upload ${result}.`,
     details: {
       actor_user_id: context.userId,
+      actor_email: context.email,
       target_department_id: context.departmentId,
-      effective_context: context.isSuperAdmin ? (context.isSupportMode ? "platform_support_mode" : "platform_explicit_tenant") : "department_membership",
+      effective_context: effectiveContext,
+      action: "department_patch_upload",
       result,
       ...details,
     },
   });
+}
+
+function auditFailureResponse() {
+  return NextResponse.json(
+    { error: "The department patch operation could not be audited." },
+    { status: 500 },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -97,7 +114,13 @@ export async function POST(request: NextRequest) {
   });
 
   if (upload.error) {
-    await recordPatchAudit(context, "failed", { stage: "object_upload" });
+    const { error: auditError } = await recordPatchAudit(
+      context,
+      "failed",
+      { stage: "object_upload", error: upload.error.message },
+    );
+    if (auditError) return auditFailureResponse();
+
     return NextResponse.json(
       { error: upload.error.message },
       { status: 500 },
@@ -108,7 +131,16 @@ export async function POST(request: NextRequest) {
   const delivery = await objectStore.createDepartmentPatchDelivery(storagePath);
   if(delivery.error || !delivery.signedUrl){
     await objectStore.removeDepartmentPatch(storagePath);
-    await recordPatchAudit(context, "failed", { stage: "delivery_preparation", storage_path: storagePath });
+    const { error: auditError } = await recordPatchAudit(
+      context,
+      "failed",
+      {
+        stage: "delivery_preparation",
+        storage_path: storagePath,
+        error: delivery.error?.message ?? "Patch delivery could not be prepared.",
+      },
+    );
+    if (auditError) return auditFailureResponse();
     return NextResponse.json({error:"Patch delivery could not be prepared."},{status:500});
   }
   const patchUrl = delivery.signedUrl;
@@ -121,8 +153,20 @@ export async function POST(request: NextRequest) {
 
   if (currentPatch.error || !currentPatch.data) {
     await objectStore.removeDepartmentPatch(storagePath);
-    await recordPatchAudit(context, "failed", { stage: "settings_read", storage_path: storagePath });
-    return NextResponse.json({ error: currentPatch.error?.message ?? "Department was not found." }, { status: currentPatch.error ? 500 : 404 });
+    const { error: auditError } = await recordPatchAudit(
+      context,
+      "failed",
+      {
+        stage: "settings_read",
+        storage_path: storagePath,
+        error: currentPatch.error?.message ?? "Department was not found.",
+      },
+    );
+    if (auditError) return auditFailureResponse();
+    return NextResponse.json(
+      { error: currentPatch.error?.message ?? "Department was not found." },
+      { status: currentPatch.error ? 500 : 404 },
+    );
   }
 
   const { error: updateError } = await context.admin
@@ -132,7 +176,16 @@ export async function POST(request: NextRequest) {
 
   if (updateError) {
     await objectStore.removeDepartmentPatch(storagePath);
-    await recordPatchAudit(context, "failed", { stage: "settings_persistence", storage_path: storagePath });
+    const { error: auditError } = await recordPatchAudit(
+      context,
+      "failed",
+      {
+        stage: "settings_persistence",
+        storage_path: storagePath,
+        error: updateError.message,
+      },
+    );
+    if (auditError) return auditFailureResponse();
 
     return NextResponse.json(
       { error: updateError.message },
@@ -146,9 +199,12 @@ export async function POST(request: NextRequest) {
     patch_url: patchUrl,
   });
   if (auditError) {
-    await context.admin.from("departments").update({ patch_url: currentPatch.data.patch_url ?? null }).eq("id", context.departmentId);
+    await context.admin
+      .from("departments")
+      .update({ patch_url: currentPatch.data.patch_url ?? null })
+      .eq("id", context.departmentId);
     await objectStore.removeDepartmentPatch(storagePath);
-    return NextResponse.json({ error: "The department patch operation could not be audited." }, { status: 500 });
+    return auditFailureResponse();
   }
 
   return NextResponse.json({
