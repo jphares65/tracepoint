@@ -51,13 +51,22 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   if(!enabled)return response(503,'provider_disabled');const url=new URL(request.url);
   // Next may expose the ECS container origin in Request.url behind the shadow ALB.
   // Accept it only with the exact external HTTPS host attested by both proxy headers.
+  const exactProxyHeaders=request.headers.get('host')===new URL(origin).host&&
+   request.headers.get('x-forwarded-host')===new URL(origin).host&&
+   request.headers.get('x-forwarded-proto')==='https';
   const shadowProxyOrigin=config.notificationMode==='shadow'&&
    (url.hostname==='0.0.0.0'||/^ip-(?:\d{1,3}-){3}\d{1,3}\.ec2\.internal$/.test(url.hostname))&&
    url.protocol==='https:'&&url.port==='3000'&&
-   request.headers.get('host')===new URL(origin).host&&
-   request.headers.get('x-forwarded-host')===new URL(origin).host&&
-   request.headers.get('x-forwarded-proto')==='https';
-  if((url.origin!==origin&&!shadowProxyOrigin)||url.pathname!==path){
+   exactProxyHeaders;
+  // The production ALB terminates TLS and forwards HTTP to the private ECS
+  // container. Next can expose that internal hop in Request.url. This exception
+  // is valid only with the exact external Host and HTTPS proxy assertions; the
+  // separate CSRF Origin check below still requires the production site origin.
+  const productionProxyOrigin=config.notificationMode==='normal'&&config.environment==='production'&&
+   exactProxyHeaders&&((url.hostname==='0.0.0.0'&&url.port==='3000'&&
+     (url.protocol==='http:'||url.protocol==='https:'))||
+    (url.origin==='http://tracepointhq.com'));
+  if((url.origin!==origin&&!shadowProxyOrigin&&!productionProxyOrigin)||url.pathname!==path){
    if(config.notificationMode==='shadow')console.warn(JSON.stringify({event:'shadow-cognito-request-mismatch',
     actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
     host:request.headers.get('host'),forwardedHost:request.headers.get('x-forwarded-host'),

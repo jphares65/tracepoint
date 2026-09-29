@@ -104,6 +104,26 @@ test('shadow accepts only its exact ALB-forwarded HTTPS origin when Next exposes
  const production=createCognitoTransport(productionConfig,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
  assert.equal((await production.begin(new Request(boundAddress,{method:'POST',headers:{...headers,origin:'https://tracepointhq.com'}}))).status,400);
 });
+test('production accepts only the exact HTTPS-forwarded container hop for login start',async()=>{
+ const site='https://tracepointhq.com';
+ const productionConfig={...config,environment:'production' as const,account:'193644343389',siteOrigin:site,notificationMode:'normal' as const};
+ const pkce=createCognitoPkce(productionConfig,{async put(){},async take(){return null}});
+ const api=createCognitoTransport(productionConfig,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
+ const headers={host:'tracepointhq.com','x-forwarded-host':'tracepointhq.com','x-forwarded-proto':'https',origin:site,'sec-fetch-site':'same-origin'};
+ const begin=(url:string,overrides:Record<string,string>={})=>api.begin(new Request(url,{method:'POST',headers:{...headers,...overrides}}));
+ for(const authority of ['http://0.0.0.0:3000','https://0.0.0.0:3000','http://tracepointhq.com']){
+  const response=await begin(authority+'/api/auth/cognito/login');
+  assert.equal(response.status,303);
+  assert.equal(new URL(response.headers.get('location')!).searchParams.get('redirect_uri'),site+'/api/auth/cognito/callback');
+  for(const override of ([{host:'evil.invalid'},{'x-forwarded-host':'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
+   assert.equal((await begin(authority+'/api/auth/cognito/login',override)).status,400);
+  assert.equal((await begin(authority+'/api/auth/cognito/login',{origin:'https://evil.invalid'})).status,403);
+  const callback=await api.callback(new Request(authority+'/api/auth/cognito/callback?state=a&code=b',{headers}));
+  assert.equal(callback.status,401); // The proxy guard accepts it; absent PKCE cookie fails closed.
+ }
+ for(const url of ['http://0.0.0.0:3001/api/auth/cognito/login','http://evil.invalid/api/auth/cognito/login'])
+  assert.equal((await begin(url)).status,400);
+});
 test('receipt lifetime and target boundary cannot be widened by transport ports',async()=>{
  const f=fixture();f.ports.rotate=async()=>({userId,handle,expiresAt:Math.floor(Date.now()/1000)+86401});assert.equal((await f.api.refresh(post('refresh',{cookie:'__Host-tracepoint-cognito-session='+handle}))).status,401);assert.throws(()=>createCognitoTransport({...config,account:'265544358665'},f.ports),/target/);
 });

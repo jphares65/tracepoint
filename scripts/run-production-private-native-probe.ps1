@@ -26,7 +26,17 @@ console.log('PRIVATE_PROBE_STARTED');
   assert.equal(body.status,'ok','PRIVATE_HEALTH_BODY');
   const protectedResponse=await request('/api/settings/audit-log');
   assert.ok([302,303,307,308,401,403].includes(protectedResponse.status),'PRIVATE_UNAUTHENTICATED_ROUTE_NOT_DENIED');
-  console.log(JSON.stringify({status:'PRIVATE_NATIVE_HTTP_PASS',health:200,protectedRoute:protectedResponse.status,publicRoute:false}));
+  const login=await fetch(`http://${ip}:3000/api/auth/cognito/login`,{method:'POST',headers:{
+    Host:'tracepointhq.com',Origin:'https://tracepointhq.com','X-Forwarded-Host':'tracepointhq.com',
+    'X-Forwarded-Proto':'https','Sec-Fetch-Site':'same-origin'
+  },redirect:'manual',signal:AbortSignal.timeout(8000)});
+  if(login.status!==303){let code='non_json';try{code=(await login.json()).code??'missing_code'}catch{};console.log(JSON.stringify({status:'PRIVATE_LOGIN_START_REJECTED',http:login.status,code}));}
+  assert.equal(login.status,303,'PRIVATE_LOGIN_START_STATUS');
+  const redirect=new URL(login.headers.get('location'));
+  assert.equal(redirect.protocol,'https:','PRIVATE_LOGIN_REDIRECT_TLS');
+  assert.equal(redirect.searchParams.get('client_id'),'9tfp383dgjuvanhnh94bstafr','PRIVATE_LOGIN_CLIENT_MISMATCH');
+  assert.equal(redirect.searchParams.get('redirect_uri'),'https://tracepointhq.com/api/auth/cognito/callback','PRIVATE_LOGIN_CALLBACK_MISMATCH');
+  console.log(JSON.stringify({status:'PRIVATE_NATIVE_HTTP_PASS',health:200,protectedRoute:protectedResponse.status,loginStart:303,publicRoute:false}));
 })().catch(error=>{console.error(JSON.stringify({status:'PRIVATE_NATIVE_HTTP_FAILED',code:/^[A-Z_]+$/.test(error.message)?error.message:'FAIL_CLOSED',class:error.name}));process.exitCode=1});
 '@
 $definition = @{
