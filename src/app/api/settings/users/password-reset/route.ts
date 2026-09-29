@@ -2,6 +2,7 @@ import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
 import { beginCognitoPasswordReset } from "@/lib/authentication/cognito-password-lifecycle";
+import { CognitoDirectoryError } from "@/lib/authentication/cognito-admin-core";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type PasswordResetRequest = {
@@ -182,6 +183,20 @@ export async function POST(request: NextRequest) {
       message: `Password reset sent to ${email}.`,
     });
   } catch (error) {
+    if (error instanceof CognitoDirectoryError) {
+      if (error.code === "initial_password_required") {
+        return NextResponse.json(
+          { error: "This account still requires its initial password change. Use Send Activation or Assign Password; no reset email was sent." },
+          { status: 409 },
+        );
+      }
+      if (error.code === "recovery_unavailable") {
+        return NextResponse.json(
+          { error: "Cognito email recovery is unavailable for this account. No reset email was sent." },
+          { status: 409 },
+        );
+      }
+    }
     const message =
       error instanceof Error
         ? error.message

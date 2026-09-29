@@ -3218,10 +3218,14 @@ export default function AdminSettingsPage() {
                             }
                             disabled={
                               !canManageUsers ||
+                              member.activation_status !== "activated" ||
                               passwordResetEmail === member.email ||
                               (member.role_codes.includes("administrator") &&
                                 !canAdminister)
                             }
+                            title={member.activation_status !== "activated"
+                              ? "Use Send Activation or Assign Password until the account is activated."
+                              : undefined}
                             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-3.5 py-2 text-sm font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {passwordResetEmail === member.email ? (

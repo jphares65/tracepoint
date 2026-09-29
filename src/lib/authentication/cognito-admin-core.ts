@@ -6,7 +6,11 @@ export function isCognitoDirectoryUsername(value:string){
  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 export class CognitoDirectoryError extends Error{
- constructor(readonly code:"conflict"|"not_found"|"invalid_password"|"invalid_code"|"expired_code"|"throttled"|"unavailable"){super("The AWS identity operation could not be completed.");this.name="CognitoDirectoryError";}
+ constructor(readonly code:"conflict"|"not_found"|"invalid_password"|"invalid_code"|"expired_code"|"throttled"|"unavailable"|"initial_password_required"|"recovery_unavailable"){super("The AWS identity operation could not be completed.");this.name="CognitoDirectoryError";}
+}
+export function assertCognitoPasswordResetReady(user:CognitoDirectoryUser){
+ if(user.status==="FORCE_CHANGE_PASSWORD")throw new CognitoDirectoryError("initial_password_required");
+ if(user.status!=="CONFIRMED"||user.emailVerified!==true)throw new CognitoDirectoryError("recovery_unavailable");
 }
 export interface CognitoAdminDirectory{
  createPending(input:CreatePendingCognitoUser):Promise<CognitoDirectoryUser>;

@@ -6,7 +6,7 @@ import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
 import { getCognitoAdminDirectory } from "./cognito-admin";
-import { CognitoDirectoryError, type CognitoDirectoryUser } from "./cognito-admin-core";
+import { assertCognitoPasswordResetReady, CognitoDirectoryError, type CognitoDirectoryUser } from "./cognito-admin-core";
 import { isCognitoCompliantPassword } from "./password-policy";
 
 type PasswordOperationKind = "assign_password" | "reset_password";
@@ -101,7 +101,9 @@ export async function beginCognitoPasswordReset(input: {
   const prepared = await prepare({ ...input, operationId, kind: "reset_password" });
   const directory = getCognitoAdminDirectory();
   try {
-    assertDirectoryMatch(prepared, await directory.get(prepared.providerUsername));
+    const actual = await directory.get(prepared.providerUsername);
+    assertDirectoryMatch(prepared, actual);
+    assertCognitoPasswordResetReady(actual);
     await directory.globalSignOut(prepared.providerUsername);
     await directory.beginPasswordReset(prepared.providerUsername);
     await finish(operationId, true);
