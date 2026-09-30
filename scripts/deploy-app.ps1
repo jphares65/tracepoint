@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
-    [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn
+    [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
+    [switch]$SkipLocalValidation
 )
 
 # Application-only deployment. This script intentionally does not call CDK or
@@ -286,11 +287,15 @@ if ($RollbackTaskDefinitionArn) {
 }
 
 $commit = Assert-ReviewedCommit
-try {
-    Invoke-RequiredLocalValidation
-} catch {
-    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
-    throw
+if ($SkipLocalValidation) {
+    Add-DeploymentWarning 'Local canonical validation is explicitly bypassed for this release; CodeBuild remains the required pre-publish canonical validation gate.'
+} else {
+    try {
+        Invoke-RequiredLocalValidation
+    } catch {
+        Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
+        throw
+    }
 }
 $imageTag = "$commit$($configuration.ImageSuffix)"
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
