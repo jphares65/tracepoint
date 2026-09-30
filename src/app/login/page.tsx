@@ -2,7 +2,9 @@
 import { redirect } from "next/navigation";
 
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { shouldRedirectAuthenticatedLogin } from "@/lib/authentication/login-recovery-core";
 import { runtimeAuthenticationProvider } from "@/lib/authentication/request-session-core";
+import { resolvePostgresPlatformLanding } from "@/lib/tracepoint/server-access-postgres";
 
 import LoginForm from "./LoginForm";
 
@@ -28,10 +30,13 @@ export default async function LoginPage({
   const nextPath = safeNextPath(params.next);
 
   const principal = await resolveAuthenticatedPrincipal();
-  if (principal) {
+  const providerMode = runtimeAuthenticationProvider(process.env) === "cognito" ? "aws-native" : "bridge";
+  const nativeBaselineAccess = principal?.provider === "cognito"
+    ? await resolvePostgresPlatformLanding(principal).catch(() => null)
+    : null;
+  if (shouldRedirectAuthenticatedLogin(principal, providerMode, nativeBaselineAccess)) {
     redirect(nextPath);
   }
-  const providerMode = runtimeAuthenticationProvider(process.env) === "cognito" ? "aws-native" : "bridge";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">

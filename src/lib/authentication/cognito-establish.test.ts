@@ -22,7 +22,15 @@ before(async()=>{
  directory=await mkdtemp(path.join(tmpdir(),'tracepoint-cognito-compose-'));const port=await localPostgresPort();
  server=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'synthetic-local-only',port,persistent:true,postgresFlags:['-h','127.0.0.1'],initdbFlags:['--encoding=UTF8','--locale=C'],onLog:()=>{},onError:()=>{}});
  await server.initialise();await server.start();pool=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password:'synthetic-local-only',database:'postgres'});
- await pool.query('create role anon;create role authenticated;create role service_role;create table profiles(id uuid primary key)');
+ await pool.query(`create role anon;create role authenticated;create role service_role;
+  create table profiles(id uuid primary key);
+  create table platform_admins(user_id uuid primary key,is_active boolean not null);
+  create table department_memberships(department_id uuid not null,user_id uuid not null,is_active boolean not null);
+  create function public.is_platform_admin() returns boolean language sql stable security definer set search_path=public as $$
+    select exists(select 1 from public.platform_admins where user_id=nullif(current_setting('tracepoint.subject_id',true),'')::uuid and is_active=true)
+  $$;
+  grant select on platform_admins,department_memberships to authenticated;
+  grant execute on function public.is_platform_admin() to authenticated;`);
  for(const file of ['202609050006_authentication_identity_links.sql','202609050010_authentication_session_state.sql','202609050011_authentication_refresh_state.sql'])await pool.query(await readFile('supabase/migrations/'+file,'utf8'));
  await pool.query(await readFile('database/aws/002_cognito_application_session_idle.sql','utf8'));
 });
@@ -30,9 +38,13 @@ after(async()=>{
  await pool?.end();await server?.stop();
  if(directory){const resolved=path.resolve(directory);assert.ok(resolved.startsWith(path.resolve(tmpdir())+path.sep));assert.ok(path.basename(resolved).startsWith('tracepoint-cognito-compose-'));await rm(resolved,{recursive:true,force:true,maxRetries:10,retryDelay:100});await assert.rejects(access(resolved));}
 });
-async function fixture(){
+async function fixture(options:{baseline?:'platform_admin'|'tenant_member'|'none',linked?:boolean}={}){
  const userId=randomUUID(),subject=randomUUID(),authTime=Math.floor(Date.now()/1000)-60;
- await pool.query('insert into profiles values($1)',[userId]);await pool.query("insert into authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state) values('cognito',$1,$2,$3,'active')",[issuer,subject,userId]);
+ const baseline=options.baseline??'tenant_member';
+ await pool.query('insert into profiles values($1)',[userId]);
+ if(options.linked!==false)await pool.query("insert into authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state) values('cognito',$1,$2,$3,'active')",[issuer,subject,userId]);
+ if(baseline==='platform_admin')await pool.query('insert into platform_admins values($1,true)',[userId]);
+ if(baseline==='tenant_member')await pool.query('insert into department_memberships values($1,$2,true)',[randomUUID(),userId]);
  const mapping={async findActive(i:string,s:string){const result=await pool.query("select tracepoint_user_id from authentication_identity_links where issuer=$1 and subject=$2 and state='active'",[i,s]);return result.rowCount===1?{userId:result.rows[0].tracepoint_user_id}:null;}};
  const sessions=new PostgresCognitoSessionStore(pool),refresh=new PostgresCognitoRefreshStore(pool,new RefreshSessionSealer('synthetic',new Map([['synthetic',randomBytes(32)]])),{issuer,clientId:config.clientId});
  function jwt(kind:'id'|'access',patch:Record<string,unknown>={}){
@@ -52,6 +64,25 @@ test('signed initial establishment and rotation compose with real durable Postgr
  },{jwksCache:cache});
  const rotated=await rotate(receipt.handle);assert.notEqual(rotated.handle,receipt.handle);assert.equal(rotated.expiresAt,receipt.expiresAt);await assert.rejects(rotate(receipt.handle));assert.equal(exchanges,1);
  assert.equal((await pool.query('select count(*)::int as count from authentication_access_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,2);
+});
+test('linked platform administrators and tenant members each receive a durable application session',async()=>{
+ for(const baseline of ['platform_admin','tenant_member'] as const){
+  const f=await fixture({baseline});const receipt=await f.establish(f.tokens(),nonce);
+  assert.match(receipt.handle,/^[A-Za-z0-9_-]{43}$/);
+  assert.equal((await pool.query('select count(*)::int as count from authentication_refresh_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,1);
+ }
+});
+test('a linked principal without a platform grant or tenant membership cannot persist an application session',async()=>{
+ const f=await fixture({baseline:'none'});
+ await assert.rejects(f.establish(f.tokens(),nonce),{message:'Cognito session establishment failed. Start a new sign-in.'});
+ assert.equal((await pool.query('select count(*)::int as count from authentication_access_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
+ assert.equal((await pool.query('select count(*)::int as count from authentication_refresh_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
+});
+test('an unlinked Cognito identity still fails before application session issuance',async()=>{
+ const f=await fixture({linked:false});
+ await assert.rejects(f.establish(f.tokens(),nonce),{message:'Cognito session establishment failed. Start a new sign-in.'});
+ assert.equal((await pool.query('select count(*)::int as count from authentication_access_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
+ assert.equal((await pool.query('select count(*)::int as count from authentication_refresh_sessions where tracepoint_user_id=$1',[f.userId])).rows[0].count,0);
 });
 test('bad nonce or inconsistent original authentication cannot issue a durable refresh handle',async()=>{
  for(const [idPatch,accessPatch,suppliedNonce] of [[{}, {},'wrong'],[{auth_time:0},{auth_time:0},nonce],[{}, {auth_time:1},nonce]] as [Record<string,unknown>,Record<string,unknown>,string][]){

@@ -31,6 +31,11 @@ function readCookie(request:Request,name:string){
  if(matches.length!==1)throw Error();const value=matches[0].slice(name.length+1);if(!handlePattern.test(value))throw Error();return value;
 }
 const cookie=(name:string,value:string,maxAge:number)=>`${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+const clearTenantContext=()=>[
+ cookie('tracepoint_department_id','',0),
+ cookie('tracepoint_support_department_id','',0),
+];
+const clearApplicationContext=()=>[cookie(sessionCookie,'',0),...clearTenantContext()];
 
 // Disabled route factory. No Next route or active provider imports this module.
 // Opaque session receipts are the only browser credential; provider tokens stay
@@ -119,8 +124,10 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
     });
     branch='identity_receipt_match';if(!established||identity.userId!==established.userId)throw Error();
     branch='session_cookie';shadowCognitoDiagnostic('callback_success');
-    return response(303,'authenticated',{location:origin+'/',cookies:[cleared,session(established)]});
-   }catch{shadowCognitoDiagnostic(branch);return response(401,'authorization_rejected',{cookies:[cleared]});}
+    // Tenant selection and Support Mode are account-specific. They must never
+    // survive a successful Cognito account switch.
+    return response(303,'authenticated',{location:origin+'/',cookies:[cleared,...clearTenantContext(),session(established)]});
+   }catch{shadowCognitoDiagnostic(branch);return response(401,'authorization_rejected',{cookies:[cleared,...clearApplicationContext()]});}
   },
   async refresh(request:Request){
    const rejected=guard(request,'/api/auth/cognito/refresh','POST');if(rejected)return rejected;
