@@ -213,7 +213,8 @@ function Test-Deployment {
     if ($LASTEXITCODE -ne 0) { throw 'ECS did not reach a steady state.' }
     $service = Get-Service
     if ((Get-ServiceInvariant -Service $service) -ne $Invariant) { throw 'Unexpected ECS service infrastructure change detected.' }
-    if ($service.taskDefinition -ne $ExpectedTaskArn -or @($service.deployments).Count -ne 1 -or $service.deployments[0].rolloutState -ne 'COMPLETED') { throw 'ECS rollout did not complete the expected task revision.' }
+    $primaryDeployment = @($service.deployments | Where-Object { $_.status -eq 'PRIMARY' }) | Select-Object -First 1
+    if ($service.taskDefinition -ne $ExpectedTaskArn -or $null -eq $primaryDeployment -or $primaryDeployment.taskDefinition -ne $ExpectedTaskArn -or $primaryDeployment.rolloutState -ne 'COMPLETED') { throw 'ECS rollout did not complete the expected task revision.' }
     if ($service.runningCount -ne $service.desiredCount -or $service.pendingCount -ne 0) { throw 'ECS service task counts are unhealthy.' }
     $targetGroup = @($service.loadBalancers)[0].targetGroupArn
     if ([string]::IsNullOrWhiteSpace([string]$targetGroup)) { throw 'The ECS application service has no existing ALB target group.' }
