@@ -124,6 +124,21 @@ test('production accepts only the exact HTTPS-forwarded container hop for login 
  for(const url of ['http://0.0.0.0:3001/api/auth/cognito/login','http://evil.invalid/api/auth/cognito/login'])
   assert.equal((await begin(url)).status,400);
 });
+test('staging accepts only its exact HTTPS-forwarded container hop for login start',async()=>{
+ const pkce=createCognitoPkce(config,{async put(){},async take(){return null}});
+ const api=createCognitoTransport(config,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
+ const headers={host:'staging.tracepointhq.com','x-forwarded-host':'staging.tracepointhq.com','x-forwarded-proto':'https',origin, 'sec-fetch-site':'same-origin'};
+ const begin=(url:string,overrides:Record<string,string>={})=>api.begin(new Request(url,{method:'POST',headers:{...headers,...overrides}}));
+ for(const authority of ['http://0.0.0.0:3000','https://0.0.0.0:3000']){
+  const response=await begin(authority+'/api/auth/cognito/login');
+  assert.equal(response.status,303);
+  assert.equal(new URL(response.headers.get('location')!).searchParams.get('redirect_uri'),origin+'/api/auth/cognito/callback');
+  for(const override of ([{host:'evil.invalid'},{'x-forwarded-host':'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
+   assert.equal((await begin(authority+'/api/auth/cognito/login',override)).status,400);
+ }
+ for(const url of ['http://0.0.0.0:3001/api/auth/cognito/login','http://staging.tracepointhq.com/api/auth/cognito/login'])
+  assert.equal((await begin(url)).status,400);
+});
 test('receipt lifetime and target boundary cannot be widened by transport ports',async()=>{
  const f=fixture();f.ports.rotate=async()=>({userId,handle,expiresAt:Math.floor(Date.now()/1000)+86401});assert.equal((await f.api.refresh(post('refresh',{cookie:'__Host-tracepoint-cognito-session='+handle}))).status,401);assert.throws(()=>createCognitoTransport({...config,account:'265544358665'},f.ports),/target/);
 });
