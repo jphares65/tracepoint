@@ -76,7 +76,7 @@ function Invoke-MigrationTask([string]$Commit) {
   try {
     [IO.File]::WriteAllText($payload, ($registration | ConvertTo-Json -Depth 100 -Compress), [Text.UTF8Encoding]::new($false))
     $definition = (Invoke-Aws @('ecs','register-task-definition','--cli-input-json',"file://$payload")).taskDefinition
-    $overrides = @{ containerOverrides = @(@{ name='tracepoint'; command=@('scripts/run-aws-native-migrations.mjs',$Action,$Environment) }) } | ConvertTo-Json -Compress
+    $overrides = @{ containerOverrides = @(@{ name='tracepoint'; command=@('scripts/run-aws-native-migrations.mjs',$Action,$Environment) }) } | ConvertTo-Json -Depth 10 -Compress
     $network = @{ awsvpcConfiguration = $service.networkConfiguration.awsvpcConfiguration } | ConvertTo-Json -Depth 10 -Compress
     $task = (Invoke-Aws @('ecs','run-task','--cluster',$settings.Cluster,'--task-definition',$definition.taskDefinitionArn,'--launch-type','FARGATE','--network-configuration',$network,'--overrides',$overrides)).tasks | Select-Object -First 1
     if (!$task.taskArn) { throw 'Migration task did not start.' }
