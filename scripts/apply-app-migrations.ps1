@@ -19,8 +19,13 @@ if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 function Invoke-Aws([string[]]$Arguments) {
-  $output = & aws.exe @Arguments --profile $settings.Profile --region $settings.Region --output json 2>&1
-  if ($LASTEXITCODE -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ')" }
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = & aws.exe @Arguments --profile $settings.Profile --region $settings.Region --output json 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $previousErrorActionPreference }
+  if ($exitCode -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ') :: $($output -join ' ')" }
   return ($output -join [Environment]::NewLine) | ConvertFrom-Json
 }
 function Require-CleanCommit {
