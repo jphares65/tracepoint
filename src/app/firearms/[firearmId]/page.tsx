@@ -60,6 +60,9 @@ type ArmoryResponse = {
     canViewAll?: boolean;
     canManage?: boolean;
     canInspect?: boolean;
+    canCheckInCustody?: boolean;
+    canCheckOutCustody?: boolean;
+    canCorrectCustody?: boolean;
   };
   error?: string;
 };
@@ -68,6 +71,12 @@ type CustodyResponse = {
   current?: { holder_type: "OFFICER" | "SECURE_STORAGE"; holder_user_id?: string | null; storage_location_id?: string | null; custody_since?: string | null } | null;
   restrictions?: Array<{ no_possession_permitted: boolean; duty_only: boolean; daily_return_required: boolean; supervisor_approval_required: boolean; reason_category: string; is_active: boolean; expires_at?: string | null }>;
   events?: Array<{ id: string; action_type: string; reason: string; occurred_at: string; to_holder_type: string }>;
+};
+
+type StorageLocation = {
+  id: string;
+  name: string;
+  description?: string | null;
 };
 
 function formatDate(value?: string | null) {
@@ -158,11 +167,22 @@ export default function FirearmRecordPage() {
   const firearmId = params.firearmId;
 
   const [firearm, setFirearm] = useState<FirearmRecord | null>(null);
+  const [canCheckInCustody, setCanCheckInCustody] = useState(false);
+  const [canCheckOutCustody, setCanCheckOutCustody] = useState(false);
+  const [canCorrectCustody, setCanCorrectCustody] = useState(false);
   const [canInspect, setCanInspect] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [notFound, setNotFound] = useState(false);
   const [custody, setCustody] = useState<CustodyResponse | null>(null);
+  const [storageLocations, setStorageLocations] = useState<StorageLocation[]>([]);
+  const [transferDestination, setTransferDestination] = useState<"SECURE_STORAGE" | "OFFICER" | null>(null);
+  const [selectedStorageLocationId, setSelectedStorageLocationId] = useState("");
+  const [transferReason, setTransferReason] = useState("");
+  const [transferNotes, setTransferNotes] = useState("");
+  const [administrativeCorrection, setAdministrativeCorrection] = useState(false);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -199,6 +219,9 @@ export default function FirearmRecordPage() {
           records.find((record) => record.id === firearmId) ?? null;
 
         setCanInspect(Boolean(payload.access?.canInspect));
+        setCanCheckInCustody(Boolean(payload.access?.canCheckInCustody));
+        setCanCheckOutCustody(Boolean(payload.access?.canCheckOutCustody));
+        setCanCorrectCustody(Boolean(payload.access?.canCorrectCustody));
         setFirearm(selected);
         setNotFound(!selected);
         if (selected) {
@@ -207,6 +230,11 @@ export default function FirearmRecordPage() {
             setCustody(await custodyResponse.json() as CustodyResponse);
           } else if (mounted) {
             setCustody(null);
+          }
+          const locationsResponse = await fetch("/api/armory/storage-locations", { cache: "no-store" });
+          if (locationsResponse.ok && mounted) {
+            const locationsPayload = await locationsResponse.json() as { locations?: StorageLocation[] };
+            setStorageLocations(Array.isArray(locationsPayload.locations) ? locationsPayload.locations : []);
           }
         }
       } catch (error) {
@@ -234,6 +262,57 @@ export default function FirearmRecordPage() {
   const conditionStatus = firearm?.is_active
     ? firearm.condition_status ?? "In Service"
     : "Archived";
+
+  async function refreshCustody() {
+    if (!firearm) return;
+    const response = await fetch(`/api/armory/firearms/${encodeURIComponent(firearm.id)}/custody`, { cache: "no-store" });
+    if (response.ok) setCustody(await response.json() as CustodyResponse);
+  }
+
+  async function submitCustodyTransfer() {
+    if (!firearm || !transferDestination || !transferReason.trim()) {
+      setTransferError("A destination and reason are required.");
+      return;
+    }
+    if (transferDestination === "SECURE_STORAGE" && !selectedStorageLocationId) {
+      setTransferError("Choose an active secure-storage location.");
+      return;
+    }
+    if (transferDestination === "OFFICER" && !firearm.active_assignment?.assigned_to_user_id) {
+      setTransferError("This firearm has no active assignment to return custody to.");
+      return;
+    }
+
+    setTransferBusy(true);
+    setTransferError("");
+    try {
+      const response = await fetch(`/api/armory/firearms/${encodeURIComponent(firearm.id)}/custody`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toHolderType: transferDestination,
+          toHolderUserId: transferDestination === "OFFICER" ? firearm.active_assignment?.assigned_to_user_id : null,
+          toStorageLocationId: transferDestination === "SECURE_STORAGE" ? selectedStorageLocationId : null,
+          reason: transferReason.trim(),
+          notes: transferNotes.trim() || null,
+          idempotencyKey: crypto.randomUUID(),
+          administrativeCorrection,
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Custody could not be updated.");
+      await refreshCustody();
+      setTransferDestination(null);
+      setSelectedStorageLocationId("");
+      setTransferReason("");
+      setTransferNotes("");
+      setAdministrativeCorrection(false);
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : "Custody could not be updated.");
+    } finally {
+      setTransferBusy(false);
+    }
+  }
 
   return (
     <TracePointShell activePage="Armory">
@@ -549,6 +628,25 @@ export default function FirearmRecordPage() {
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">Custody History</p>
                 {custody?.events?.length ? <ol className="mt-3 space-y-2">{custody.events.slice(0, 5).map((event) => <li key={event.id} className="text-[12px] text-slate-300">{formatDateTime(event.occurred_at)} · {event.action_type.replace(/_/g, " ")} · {event.reason}</li>)}</ol> : <p className="mt-3 text-[12px] text-slate-500">No custody events are recorded for this firearm.</p>}
               </div>
+              {(canCheckInCustody || canCheckOutCustody || canCorrectCustody) && (
+                <div className="mt-5 border-t border-slate-800 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">Custody Actions</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {canCheckInCustody && <button type="button" onClick={() => { setTransferDestination("SECURE_STORAGE"); setTransferError(""); }} className="rounded-xl bg-violet-600 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-violet-500">Transfer to Secure Storage</button>}
+                    {canCheckOutCustody && firearm.active_assignment && <button type="button" onClick={() => { setTransferDestination("OFFICER"); setTransferError(""); }} className="rounded-xl border border-violet-500/40 px-3 py-2 text-[12px] font-semibold text-violet-200 transition hover:border-violet-400 hover:text-white">Return to Assigned Officer</button>}
+                  </div>
+                  {transferDestination && <div className="mt-4 rounded-2xl border border-violet-500/25 bg-slate-950/60 p-4">
+                    <p className="text-[13px] font-bold text-white">{transferDestination === "SECURE_STORAGE" ? "Transfer to Secure Storage" : "Return to Assigned Officer"}</p>
+                    {transferDestination === "SECURE_STORAGE" ? <label className="mt-3 block text-[11px] font-semibold text-slate-400">Secure-storage location<select value={selectedStorageLocationId} onChange={(event) => setSelectedStorageLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select a location</option>{storageLocations.map((location) => <option key={location.id} value={location.id}>{location.name}{location.description ? ` — ${location.description}` : ""}</option>)}</select></label> : <p className="mt-3 text-[12px] text-slate-300">Custody will return to <span className="font-semibold text-white">{getAssignedOfficerDisplayName(firearm.active_assignment!)}</span>. The firearm assignment will not change.</p>}
+                    {transferDestination === "SECURE_STORAGE" && storageLocations.length === 0 && <p className="mt-2 text-[12px] text-amber-300">No active secure-storage locations are configured for this agency. Ask an authorized armory administrator to create one before transferring custody.</p>}
+                    <label className="mt-3 block text-[11px] font-semibold text-slate-400">Reason<textarea value={transferReason} onChange={(event) => setTransferReason(event.target.value)} required rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white" /></label>
+                    <label className="mt-3 block text-[11px] font-semibold text-slate-400">Notes <span className="font-normal text-slate-600">(optional)</span><textarea value={transferNotes} onChange={(event) => setTransferNotes(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white" /></label>
+                    {canCorrectCustody && <label className="mt-3 flex items-center gap-2 text-[12px] text-slate-300"><input type="checkbox" checked={administrativeCorrection} onChange={(event) => setAdministrativeCorrection(event.target.checked)} /> Record this as an administrative correction</label>}
+                    {transferError && <p className="mt-3 text-[12px] text-red-300">{transferError}</p>}
+                    <div className="mt-4 flex gap-2"><button type="button" disabled={transferBusy || (transferDestination === "SECURE_STORAGE" && storageLocations.length === 0)} onClick={() => void submitCustodyTransfer()} className="rounded-xl bg-violet-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-50">{transferBusy ? "Updating custody…" : "Confirm Transfer"}</button><button type="button" disabled={transferBusy} onClick={() => { setTransferDestination(null); setTransferError(""); }} className="rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300">Cancel</button></div>
+                  </div>}
+                </div>
+              )}
             </section>
 
             <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">

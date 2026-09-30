@@ -26,3 +26,13 @@ test("custody API is server-authorized and never creates a Cognito identity", as
   assert.match(route, /transfer_firearm_custody/);
   assert.doesNotMatch(route, /AdminCreateUser|AdminSetUserPassword|cognito/i);
 });
+
+test("firearm detail uses the native custody write and storage-location contracts", async () => {
+  const page = await readFile("src/app/firearms/[firearmId]/page.tsx", "utf8");
+  assert.match(page, /\/api\/armory\/storage-locations/);
+  assert.match(page, /method: "POST"/);
+  assert.match(page, /\/api\/armory\/firearms\/\$\{encodeURIComponent\(firearm\.id\)\}\/custody/);
+  assert.match(page, /Transfer to Secure Storage/);
+  assert.match(page, /Return to Assigned Officer/);
+  assert.match(page, /Changing custody never changes assignment/);
+});

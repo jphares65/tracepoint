@@ -70,10 +70,30 @@ export async function GET(request: NextRequest) {
     "manage_firearms",
     "manage_inspections",
   ]);
+  const canCheckInCustody = hasAnyServerPermission(context, [
+    "firearm_custody.check_in",
+    "manage_firearms",
+  ]);
+  const canCheckOutCustody = hasAnyServerPermission(context, [
+    "firearm_custody.check_out",
+    "manage_firearms",
+  ]);
+  const canCorrectCustody = hasAnyServerPermission(context, [
+    "firearm_custody.override",
+    "manage_firearms",
+  ]);
 
   try {
     const data = await createArmoryReadRepository(context.db, context.admin, context.departmentId, context.userId).getFirearmInventory({ departmentId: context.departmentId, userId: context.userId, includeArchived, canViewAll, canManage, canInspect });
-    return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({
+      ...data,
+      access: {
+        ...data.access,
+        canCheckInCustody,
+        canCheckOutCustody,
+        canCorrectCustody,
+      },
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return responseError(
       error,
