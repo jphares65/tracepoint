@@ -6,6 +6,7 @@ RUN npm ci
 
 FROM public.ecr.aws/docker/library/node:24-trixie-slim AS builder
 WORKDIR /app
+RUN apt-get update && apt-get install --no-install-recommends -y openssl && rm -rf /var/lib/apt/lists/*
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SITE_URL
 ARG DEPLOYMENT_VERSION
