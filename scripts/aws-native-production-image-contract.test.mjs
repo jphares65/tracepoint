@@ -34,3 +34,13 @@ test('the production CodeBuild entrypoint uses the native container and fails cl
   assert.match(codeBuildEntrypoint, /RDS CA missing/);
   assert.doesNotMatch(codeBuildEntrypoint, /docker build --pull --secret/);
 });
+
+test('production Sentry source-map upload is build-only and preserves the regional RDS CA path', () => {
+  assert.match(codeBuildEntrypoint, /test -n "\$SENTRY_WEB_DSN"/);
+  assert.match(codeBuildEntrypoint, /test -n "\$SENTRY_AUTH_TOKEN"/);
+  assert.match(codeBuildEntrypoint, /--secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN/);
+  assert.match(dockerfile, /--mount=type=secret,id=sentry_auth_token,required=true/);
+  assert.match(dockerfile, /TRACEPOINT_SENTRY_PRODUCTION_BUILD=true/);
+  assert.match(dockerfile, /truststore\.pki\.rds\.amazonaws\.com\/us-east-1\/us-east-1-bundle\.pem/);
+  assert.doesNotMatch(dockerfile, /global\/global-bundle\.pem/);
+});
