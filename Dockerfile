@@ -17,6 +17,9 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV DEPLOYMENT_VERSION=$DEPLOYMENT_VERSION
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
+RUN timeout 5m npm run lint && \
+    timeout 20m node scripts/run-application-tests.mjs && \
+    timeout 5m node --test scripts/aws-native-migrations.test.mjs
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 # BuildKit mounts the Server Action key for this instruction only. It is not a

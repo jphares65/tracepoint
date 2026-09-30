@@ -23,10 +23,6 @@ phases:
       - test -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY"
       - test -n "$SENTRY_WEB_DSN"
       - test -n "$SENTRY_AUTH_TOKEN"
-      - timeout 10m npm ci
-      - timeout 5m npm run lint
-      - timeout 20m node scripts/run-application-tests.mjs
-      - timeout 5m node --test scripts/aws-native-migrations.test.mjs
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
   build:
     on-failure: ABORT
