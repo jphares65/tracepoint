@@ -349,5 +349,6 @@ catch {
             Write-Warning "Rollback completed: restored previously healthy task revision $previousHealthyTaskArn."
         } catch { throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)" }
     }
-    throw $failure
+    throw
 }
+
