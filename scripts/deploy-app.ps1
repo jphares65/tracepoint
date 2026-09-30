@@ -71,8 +71,14 @@ function Invoke-Native {
 function Assert-ReviewedCommit {
     $sha = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
     if ($LASTEXITCODE -ne 0 -or $sha -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve the reviewed HEAD commit.' }
-    $changes = @(& git.exe -C $repositoryRoot status --porcelain --untracked-files=all)
-    if ($changes.Count -ne 0) { throw 'Refusing to deploy a working tree with uncommitted or untracked files.' }
+    # Porcelain is the Git machine interface. Join its explicit entries rather
+    # than testing PowerShell's captured-output Count, which can represent an
+    # empty native-command result inconsistently across hosts.
+    $changes = @(& git.exe -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the working tree.' }
+    if (-not [string]::IsNullOrWhiteSpace([string]::Join("`n", [string[]]$changes))) {
+        throw 'Refusing to deploy a working tree with uncommitted or untracked files.'
+    }
     return $sha
 }
 
