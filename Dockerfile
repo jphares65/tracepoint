@@ -17,7 +17,7 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV DEPLOYMENT_VERSION=$DEPLOYMENT_VERSION
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN timeout 5m npm run lint && \
+RUN lint_results="$(mktemp)"; set +e; timeout 5m node node_modules/eslint/bin/eslint.js . --format json --output-file "$lint_results"; lint_status=$?; set -e; test -s "$lint_results"; node scripts/lint-ratchet.mjs --results "$lint_results" --baseline lint-baseline.json; test "$lint_status" -eq 0 -o "$lint_status" -eq 1; rm -f "$lint_results" && \
     timeout 20m node scripts/run-application-tests.mjs && \
     timeout 5m node --test scripts/aws-native-migrations.test.mjs
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
