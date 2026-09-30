@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $settings = @{
-  staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; Repository='tracepoint-staging'; Bucket='tracepoint-staging-build-source-559054714699'; Key='source/tracepoint-staging-source.zip'; Build='tracepoint-staging-image-build' }
+  staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; Repository='tracepoint-staging'; Bucket='tracepoint-staging-build-source-559054714699'; Key='source/tracepoint-staging-source.zip'; Build='tracepoint-staging-image-build'; MigrationTaskDefinition='tracepoint-staging-database-bootstrap:27'; MigratorSecretArn='arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/database/migrator-GqXXWG' }
   production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build' }
 }[$Environment]
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
@@ -66,7 +66,8 @@ function Publish-MigrationImage([string]$Commit) {
 function Invoke-MigrationTask([string]$Commit) {
   $service = (Invoke-Aws @('ecs','describe-services','--cluster',$settings.Cluster,'--services',$settings.Service)).services | Select-Object -First 1
   if (!$service -or $service.status -ne 'ACTIVE') { throw 'Expected ECS application service is not active.' }
-  $current = (Invoke-Aws @('ecs','describe-task-definition','--task-definition',$service.taskDefinition)).taskDefinition
+  $sourceTaskDefinition = if ($settings.MigrationTaskDefinition) { $settings.MigrationTaskDefinition } else { $service.taskDefinition }
+  $current = (Invoke-Aws @('ecs','describe-task-definition','--task-definition',$sourceTaskDefinition)).taskDefinition
   if ($current.networkMode -ne 'awsvpc' -or @($current.requiresCompatibilities) -notcontains 'FARGATE' -or @($current.containerDefinitions).Count -ne 1) { throw 'Unexpected ECS task pattern.' }
   $image = Publish-MigrationImage $Commit
   $registration = [ordered]@{}
@@ -74,13 +75,28 @@ function Invoke-MigrationTask([string]$Commit) {
     $property = $current.PSObject.Properties[$field]
     if ($null -ne $property -and $null -ne $property.Value) { $registration[$field] = $property.Value }
   }
-  $registration.containerDefinitions[0].image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
+  $container = $registration.containerDefinitions[0]
+  $container.image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
+  $container.command = @('scripts/run-aws-native-migrations.mjs',$Action,$Environment)
+  if ($settings.MigratorSecretArn) {
+    # A migration task must use the existing database-owner credential, never
+    # the web service's least-privileged runtime credential.  Deliberately
+    # replace the bootstrap task's names with the runner's single input.
+    $container.secrets = @([ordered]@{ name='TRACEPOINT_DATABASE_SECRET_JSON'; valueFrom=$settings.MigratorSecretArn })
+    $container.environment = @(
+      [ordered]@{ name='CONFIGURATION_ENVIRONMENT'; value=$Environment },
+      [ordered]@{ name='TRACEPOINT_DATA_PROVIDER'; value='postgres' },
+      [ordered]@{ name='TRACEPOINT_RUNTIME_PROVIDER_MODE'; value='aws-native' },
+      [ordered]@{ name='TRACEPOINT_DATABASE_CA_PATH'; value='/app/rds-ca.pem' },
+      [ordered]@{ name='DEPLOYMENT_VERSION'; value=$Commit }
+    )
+  }
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
     [IO.File]::WriteAllText($payload, ($registration | ConvertTo-Json -Depth 100 -Compress), [Text.UTF8Encoding]::new($false))
     $definition = (Invoke-Aws @('ecs','register-task-definition','--cli-input-json',"file://$payload")).taskDefinition
-    $overrides = @{ containerOverrides = @(@{ name='tracepoint'; command=@('scripts/run-aws-native-migrations.mjs',$Action,$Environment) }) } | ConvertTo-Json -Depth 10 -Compress
+    $overrides = @{ containerOverrides = @(@{ name=$container.name; command=$container.command }) } | ConvertTo-Json -Depth 10 -Compress
     [IO.File]::WriteAllText($overridesPayload, $overrides, [Text.UTF8Encoding]::new($false))
     $awsvpc = $service.networkConfiguration.awsvpcConfiguration
     $network = "awsvpcConfiguration={subnets=[$($awsvpc.subnets -join ',')],securityGroups=[$($awsvpc.securityGroups -join ',')],assignPublicIp=$($awsvpc.assignPublicIp)}"
@@ -89,8 +105,8 @@ function Invoke-MigrationTask([string]$Commit) {
     & aws.exe ecs wait tasks-stopped --cluster $settings.Cluster --tasks $task.taskArn --profile $settings.Profile --region $settings.Region
     if ($LASTEXITCODE -ne 0) { throw 'Migration task did not stop cleanly.' }
     $finished = (Invoke-Aws @('ecs','describe-tasks','--cluster',$settings.Cluster,'--tasks',$task.taskArn)).tasks | Select-Object -First 1
-    $container = $finished.containers | Where-Object name -eq 'tracepoint' | Select-Object -First 1
-    if ($finished.stopCode -ne 'EssentialContainerExited' -or $container.exitCode -ne 0) { throw "Migration task failed (stop code $($finished.stopCode), exit code $($container.exitCode))." }
+    $finishedContainer = $finished.containers | Where-Object name -eq $container.name | Select-Object -First 1
+    if ($finished.stopCode -ne 'EssentialContainerExited' -or $finishedContainer.exitCode -ne 0) { throw "Migration task failed (stop code $($finished.stopCode), exit code $($finishedContainer.exitCode))." }
     Write-Host "AWS-native migration task succeeded: $($task.taskArn); image $($image.Digest)."
   } finally {
     if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload -Force }
