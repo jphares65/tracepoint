@@ -83,10 +83,14 @@ test("command header and composed sections stay command-level and configurable",
 });
 
 test("dashboard and analytics expose permission-gated visual builders with secondary settings access", async () => {
-  const [visual, rangePanel, dashboard, analytics, shell, settings, legacy, layout] =
+  const [visual, visualConfigurationRoute, rangePanel, dashboard, analytics, shell, settings, legacy, layout] =
     await Promise.all([
       readFile(
         "src/app/components/VisualCustomization.tsx",
+        "utf8",
+      ),
+      readFile(
+        "src/app/api/settings/visual-configuration/route.ts",
         "utf8",
       ),
       readFile(
@@ -105,8 +109,13 @@ test("dashboard and analytics expose permission-gated visual builders with secon
     ]);
 
   assert.match(visual, /normalizeAnalyticsDashboardConfiguration/);
-  assert.match(visual, /\.select\("range_qualification_rules"\)/);
-  assert.match(visual, /mergeAnalyticsDashboardConfiguration/);
+  assert.match(visual, /fetch\("\/api\/settings\/visual-configuration"/);
+  assert.match(visualConfigurationRoute, /resolveServerAccess/);
+  assert.match(
+    visualConfigurationRoute,
+    /\.select\("require_rifle_familiarization,range_qualification_rules"\)/,
+  );
+  assert.match(visualConfigurationRoute, /mergeAnalyticsDashboardConfiguration/);
   assert.match(visual, /Reset to default/);
   assert.doesNotMatch(rangePanel, /Dashboard & Analytics Presentation/);
   assert.doesNotMatch(rangePanel, /patchAnalyticsDashboard/);
