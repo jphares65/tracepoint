@@ -135,7 +135,7 @@ function Publish-Image {
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'supabase/migrations', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
@@ -245,7 +245,18 @@ function Invoke-DeploymentSafeRemoteSmoke {
 }
 
 function Invoke-RequiredLocalValidation {
-    Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'run-application-tests.mjs'))
+    $outputPath = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-validation-' + [guid]::NewGuid().ToString('N') + '.log')
+    try {
+        & node.exe (Join-Path $PSScriptRoot 'run-application-tests.mjs') *> $outputPath
+        if ($LASTEXITCODE -eq 0) { return }
+        $output = [IO.File]::ReadAllText($outputPath)
+        if ($output -match 'uv_os_get_passwd returned ENOMEM') {
+            Add-DeploymentWarning 'Local canonical validation could not start embedded PostgreSQL because of the known workstation ENOMEM condition; CodeBuild will run the canonical suite before publishing the image.'
+            return
+        }
+        throw 'Canonical local application validation failed; see the command output for the failed assertion.'
+    }
+    finally { if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath -Force } }
 }
 
 function Invoke-PostDeploymentDiagnostics {
