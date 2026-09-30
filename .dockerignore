@@ -5,8 +5,12 @@ node_modules
 infra/**
 !infra/lib/
 !infra/lib/production-target.ts
+!infra/**
 docs
 supabase
+!supabase/
+!supabase/migrations/
+!supabase/migrations/**
 *.txt
 .env*
 npm-debug.log*
