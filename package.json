@@ -21,6 +21,7 @@
     "@aws-sdk/client-secrets-manager": "3.1127.0",
     "@aws-sdk/client-sesv2": "^3.1127.0",
     "@aws-sdk/s3-request-presigner": "3.1127.0",
+    "@sentry/nextjs": "^11.1.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
     "aws-jwt-verify": "5.2.1",

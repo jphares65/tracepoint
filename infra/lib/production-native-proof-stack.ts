@@ -57,7 +57,8 @@ export class ProductionNativeProofStack extends cdk.Stack {
     const boundary = new iam.ManagedPolicy(this, 'NativeProofBoundary', {
       managedPolicyName: 'TracePointProductionNativeProofBoundary-v1',
       description: 'Exact upper bound for isolated AWS-native production proof; bridge boundary v16 is unchanged',
-      statements: [...runtimeStatements, ...executionStatements],
+      statements: [...runtimeStatements, ...executionStatements,
+        new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [sentryRuntimeSecret] })],
     });
     const principal = new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
       conditions: { StringEquals: { 'aws:SourceAccount': account },

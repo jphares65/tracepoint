@@ -21,12 +21,14 @@ phases:
       - test -z "${NEXT_PUBLIC_SUPABASE_URL:-}"
       - test -z "${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-}"
       - test -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY"
+      - test -n "$SENTRY_WEB_DSN"
+      - test -n "$SENTRY_AUTH_TOKEN"
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
   build:
     on-failure: ABORT
     commands:
       - set +x
-      - docker build --pull -f Dockerfile.aws-native-production --secret id=next_server_actions_encryption_key,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY --build-arg NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" --build-arg DEPLOYMENT_VERSION="$SOURCE_COMMIT" --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.runtime=aws-native-production -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
+      - docker build --pull -f Dockerfile.aws-native-production --secret id=next_server_actions_encryption_key,env=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY --secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN --build-arg NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" --build-arg NEXT_PUBLIC_SENTRY_DSN="$SENTRY_WEB_DSN" --build-arg NEXT_PUBLIC_TRACEPOINT_ENVIRONMENT=production --build-arg NEXT_PUBLIC_DEPLOYMENT_VERSION="$SOURCE_COMMIT" --build-arg DEPLOYMENT_VERSION="$SOURCE_COMMIT" --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label tracepoint.runtime=aws-native-production -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" .
       - docker inspect "$ECR_REPOSITORY_URI:$IMAGE_TAG" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' | grep -Fx "$SOURCE_COMMIT"
       - docker run --rm --read-only --entrypoint /nodejs/bin/node "$ECR_REPOSITORY_URI:$IMAGE_TAG" -e 'const fs=require("node:fs");const path="/app/rds-ca.pem";fs.accessSync(path,fs.constants.R_OK);if(!fs.readFileSync(path,"utf8").includes("BEGIN CERTIFICATE"))throw Error("RDS CA missing");for(const forbidden of ["/app/phase3c-rehearsal-auth-fixture.cjs","/app/database/rehearsal"]){if(fs.existsSync(forbidden))throw Error("Rehearsal fixture entered production image")}console.log("Production-native CA and rehearsal isolation verified")'
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"

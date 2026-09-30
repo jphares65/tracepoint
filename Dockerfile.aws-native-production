@@ -9,14 +9,23 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SITE_URL
 ARG DEPLOYMENT_VERSION
+ARG NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_TRACEPOINT_ENVIRONMENT
+ARG NEXT_PUBLIC_DEPLOYMENT_VERSION
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV DEPLOYMENT_VERSION=$DEPLOYMENT_VERSION
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+ENV NEXT_PUBLIC_TRACEPOINT_ENVIRONMENT=$NEXT_PUBLIC_TRACEPOINT_ENVIRONMENT
+ENV NEXT_PUBLIC_DEPLOYMENT_VERSION=$NEXT_PUBLIC_DEPLOYMENT_VERSION
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \
+    --mount=type=secret,id=sentry_auth_token,required=true \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/next_server_actions_encryption_key)" \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token)" \
+    TRACEPOINT_SENTRY_PRODUCTION_BUILD=true \
     npm run build
 RUN mkdir -p /runtime-volumes/cache /runtime-volumes/tmp && \
     touch /runtime-volumes/cache/.tracepoint-volume /runtime-volumes/tmp/.tracepoint-volume && \
@@ -28,6 +37,8 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+ARG DEPLOYMENT_VERSION
+ENV DEPLOYMENT_VERSION=$DEPLOYMENT_VERSION
 COPY --from=builder --chown=nonroot:nonroot /app/public ./public
 COPY --from=builder --chown=nonroot:nonroot /app/.next/standalone ./
 COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
