@@ -76,13 +76,15 @@ function Invoke-MigrationTask([string]$Commit) {
   }
   $registration.containerDefinitions[0].image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
+  $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
     [IO.File]::WriteAllText($payload, ($registration | ConvertTo-Json -Depth 100 -Compress), [Text.UTF8Encoding]::new($false))
     $definition = (Invoke-Aws @('ecs','register-task-definition','--cli-input-json',"file://$payload")).taskDefinition
     $overrides = @{ containerOverrides = @(@{ name='tracepoint'; command=@('scripts/run-aws-native-migrations.mjs',$Action,$Environment) }) } | ConvertTo-Json -Depth 10 -Compress
+    [IO.File]::WriteAllText($overridesPayload, $overrides, [Text.UTF8Encoding]::new($false))
     $awsvpc = $service.networkConfiguration.awsvpcConfiguration
     $network = "awsvpcConfiguration={subnets=[$($awsvpc.subnets -join ',')],securityGroups=[$($awsvpc.securityGroups -join ',')],assignPublicIp=$($awsvpc.assignPublicIp)}"
-    $task = (Invoke-Aws @('ecs','run-task','--cluster',$settings.Cluster,'--task-definition',$definition.taskDefinitionArn,'--launch-type','FARGATE','--network-configuration',$network,'--overrides',$overrides)).tasks | Select-Object -First 1
+    $task = (Invoke-Aws @('ecs','run-task','--cluster',$settings.Cluster,'--task-definition',$definition.taskDefinitionArn,'--launch-type','FARGATE','--network-configuration',$network,'--overrides',"file://$overridesPayload")).tasks | Select-Object -First 1
     if (!$task.taskArn) { throw 'Migration task did not start.' }
     & aws.exe ecs wait tasks-stopped --cluster $settings.Cluster --tasks $task.taskArn --profile $settings.Profile --region $settings.Region
     if ($LASTEXITCODE -ne 0) { throw 'Migration task did not stop cleanly.' }
@@ -90,7 +92,10 @@ function Invoke-MigrationTask([string]$Commit) {
     $container = $finished.containers | Where-Object name -eq 'tracepoint' | Select-Object -First 1
     if ($finished.stopCode -ne 'EssentialContainerExited' -or $container.exitCode -ne 0) { throw "Migration task failed (stop code $($finished.stopCode), exit code $($container.exitCode))." }
     Write-Host "AWS-native migration task succeeded: $($task.taskArn); image $($image.Digest)."
-  } finally { if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload -Force } }
+  } finally {
+    if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload -Force }
+    if (Test-Path -LiteralPath $overridesPayload) { Remove-Item -LiteralPath $overridesPayload -Force }
+  }
 }
 
 Assert-Identity
