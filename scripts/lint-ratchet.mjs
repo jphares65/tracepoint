@@ -2,7 +2,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const normalizeMessage = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+const normalizeMessage = value => String(value ?? '')
+  .replace(/\s+(?:[A-Za-z]:)?[\\/][^\s]+:\d+:\d+.*$/s, '')
+  .replace(/\s+/g, ' ')
+  .trim();
 const relativePath = value => path.relative(process.cwd(), value).replaceAll('\\', '/');
 
 export function normalizeLintResults(results) {
@@ -22,7 +25,7 @@ export function normalizeLintResults(results) {
 }
 
 export function compareBaseline(baseline, current) {
-  const expected = new Map(baseline.findings.map(item => [JSON.stringify({ path: item.path, ruleId: item.ruleId, severity: item.severity, message: item.message }), item.count]));
+  const expected = new Map(baseline.findings.map(item => [JSON.stringify({ path: item.path.replaceAll('\\', '/'), ruleId: item.ruleId, severity: item.severity, message: normalizeMessage(item.message) }), item.count]));
   const actual = new Map(current.map(item => [JSON.stringify({ path: item.path, ruleId: item.ruleId, severity: item.severity, message: item.message }), item.count]));
   const introduced = [];
   const removed = [];
