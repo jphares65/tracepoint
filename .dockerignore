@@ -21,6 +21,7 @@ npm-debug.log*
 !supabase/
 !supabase/migrations/
 !supabase/migrations/**/*.sql
+!database/aws/002_cognito_application_session_idle.sql
 !database/aws/022_cognito_flow_window.sql
 !database/aws/023_audit_log_read_authorization.sql
 !database/aws/024_notification_email_server_enqueue.sql
