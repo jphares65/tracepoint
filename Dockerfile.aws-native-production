@@ -24,9 +24,13 @@ ENV NEXT_PUBLIC_DEPLOYMENT_VERSION=$NEXT_PUBLIC_DEPLOYMENT_VERSION
 ENV TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64=$TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
+# Embedded PostgreSQL test fixtures refuse to start as root.  The Node image
+# supplies this non-root user; switch back after the test-only command.
+USER node
 RUN timeout 5m node scripts/assert-production-lint-ratchet.mjs && \
     timeout 20m node scripts/run-application-tests.mjs && \
     timeout 5m node --test scripts/aws-native-migrations.test.mjs
+USER root
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \
