@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$Environment,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
     [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn
 )
 

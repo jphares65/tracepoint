@@ -39,7 +39,10 @@ function Assert-Identity {
   if ($identity.Account -ne $settings.Account -or $identity.Arn -notmatch "assumed-role/[^/]*$($settings.Role)[^/]*/") { throw 'AWS identity does not match the requested environment.' }
 }
 function Publish-MigrationImage([string]$Commit) {
-  $tag = if ($Environment -eq 'production') { "$Commit-aws-native-production" } else { $Commit }
+  # The web image intentionally excludes the migration entry point.  Keep the
+  # migration task's image immutable and tied to the same source commit, but
+  # never reuse the application's SHA tag.
+  $tag = if ($Environment -eq 'production') { "$Commit-aws-native-production-migration" } else { "$Commit-aws-native-migration" }
   try { $existing = (Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails | Select-Object -First 1 } catch { $existing = $null }
   if ($existing -and $existing.imageDigest) { return @{ Tag=$tag; Digest=$existing.imageDigest } }
   $dir = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-' + [guid]::NewGuid().ToString('N')); $zip = Join-Path $dir 'source.zip'

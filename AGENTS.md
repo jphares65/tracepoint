@@ -8,16 +8,22 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# TracePoint change classes
+# TracePoint release lanes
 
-## Application-only
+Classify every task before changing anything, then remain in that lane.
 
-Normal TracePoint feature, UI, workflow, API, repository, reporting, validation, and application database work is application-only. Codex may implement, test, and deploy these changes to staging with `scripts/deploy-app.ps1` without repeated approval checkpoints.
+## Lane A — application-only
 
-The canonical application deployment path builds the reviewed, clean Git commit, pushes its immutable ECR image, registers an ECS task-definition revision copied from the live application pattern with only its image changed, and updates only the existing application ECS service. It must not run CDK or CloudFormation reconciliation.
+Normal TracePoint feature, UI, workflow, API, repository, reporting, validation, and application code work is application-only. Codex may implement, test, and deploy these changes to staging with `scripts/deploy-app.ps1 staging` without repeated approval checkpoints.
 
-## Infrastructure/security
+The canonical path builds the reviewed, clean Git commit, pushes its immutable ECR image, registers a task-definition revision copied from the live application pattern with only its image changed, and updates only the existing application ECS service. It must not run CDK or CloudFormation reconciliation.
 
-IAM, CDK/CloudFormation, networking, Cognito configuration, WAF, DNS, SES, AWS account configuration, secrets architecture, backup architecture, and other platform or security changes are infrastructure/security work. They require explicit review and approval before deployment.
+## Lane B — application database migrations
 
-Do not use `scripts/deploy-app.ps1` to make, reconcile, or work around infrastructure/security changes.
+Versioned files under `database/aws/` and application database work use `scripts/migrate-db.ps1`. The runner validates the target account and role before it starts an ECS one-off task, uses the existing RDS runtime secret only inside that task, records SHA-checked ledger evidence, and never applies a migration twice. Staging migrations are application work; production migration application requires an explicitly authorized production release.
+
+## Lane C — infrastructure/security
+
+IAM, CDK/CloudFormation, networking, Cognito configuration, WAF, DNS, SES, AWS account configuration, secrets architecture, backup architecture, and other platform or security changes require explicit review and approval before deployment.
+
+Do not use either canonical application script to make, reconcile, or work around Lane C changes.
