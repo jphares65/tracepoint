@@ -250,7 +250,12 @@ function Invoke-PostDeploymentDiagnostics {
     # This existing browser-style suite is helpful, but Node/runtime restrictions
     # on the operator workstation are not evidence that a healthy ECS release is bad.
     if ($Environment -eq 'staging') {
-        Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'test-staging-http.mjs'))
+        try {
+            Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'test-staging-http.mjs'))
+        }
+        catch {
+            Add-DeploymentWarning "LOCAL VALIDATION WARNING: $($_.Exception.Message)"
+        }
     }
 }
 
@@ -290,12 +295,7 @@ try {
     Test-Deployment -ExpectedTaskArn $registered.taskDefinitionArn -ExpectedImageDigest $image.imageDigest -ExpectedImageUri $imageUri -Invariant $invariant
     Write-Host "DEPLOYMENT SUCCEEDED: $Environment commit $commit, image $imageUri, task $($registered.taskDefinitionArn)."
     Write-Host "Rollback command: .\scripts\deploy-app.ps1 -Environment $Environment -RollbackTaskDefinitionArn $previousHealthyTaskArn"
-    try {
-        Invoke-PostDeploymentDiagnostics
-    } catch {
-        Write-Warning "LOCAL VALIDATION WARNING: $($_.Exception.Message)"
-        Write-Host 'DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING'
-    }
+    Invoke-PostDeploymentDiagnostics
     if ($script:DeploymentWarnings.Count -gt 0) { Write-Host 'DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING' }
 }
 catch {
@@ -309,7 +309,10 @@ catch {
             $previousImage = (Invoke-Aws @('ecr', 'describe-images', '--repository-name', $configuration.Repository, '--image-ids', "imageDigest=$previousDigest")).imageDetails | Select-Object -First 1
             Test-Deployment -ExpectedTaskArn $previousHealthyTaskArn -ExpectedImageDigest $previousImage.imageDigest -ExpectedImageUri $previousTask.containerDefinitions[0].image -Invariant $invariant
             Write-Warning "Rollback completed: restored previously healthy task revision $previousHealthyTaskArn."
-        } catch { throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)" }
+        }
+        catch {
+            throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)"
+        }
     }
     throw $failure
 }
