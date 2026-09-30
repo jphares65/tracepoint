@@ -18,11 +18,6 @@ npm-debug.log*
 **/*secret*.json
 **/*.dump
 **/*.sql
-!database/aws/022_cognito_flow_window.sql
-!database/aws/023_audit_log_read_authorization.sql
-!database/aws/024_notification_email_server_enqueue.sql
-!database/aws/025_cognito_provider_username_reconciliation.sql
-!database/aws/026_cognito_invite_profile_trigger_reconciliation.sql
-!database/aws/027_cognito_invite_retry_claim.sql
+!database/aws/*.sql
 !database/rehearsal/001_readington_officer_first_login.sql
 !database/rehearsal/002_montville_officer_first_login.sql
