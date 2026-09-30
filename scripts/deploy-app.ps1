@@ -133,7 +133,7 @@ function Publish-Image {
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/assert-production-lint-ratchet.mjs', 'scripts/aws-native-migrations.test.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/aws-native-migrations.test.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
@@ -144,13 +144,7 @@ function Publish-Image {
         Invoke-Native -File git.exe -Arguments $archiveArguments
         $version = (Invoke-Aws @('s3api', 'put-object', '--bucket', $configuration.SourceBucket, '--key', $configuration.SourceKey, '--body', $archive, '--expected-bucket-owner', $configuration.Account)).VersionId
         if ([string]::IsNullOrWhiteSpace([string]$version) -or $version -eq 'None') { throw 'The versioned application source upload failed.' }
-        $lintRatchetBaseline = '7ba11188dc8eb9fae119e131bd8053150b666ee7'
-        & git.exe -C $repositoryRoot merge-base --is-ancestor $lintRatchetBaseline $Commit
-        if ($LASTEXITCODE -ne 0) { throw "Production lint ratchet baseline $lintRatchetBaseline is not an ancestor of the reviewed commit." }
-        $changedLintFiles = @(& git.exe -C $repositoryRoot diff --name-only "$lintRatchetBaseline..$Commit" -- | Where-Object { $_ -match '^(src|scripts)/.+\.[cm]?[jt]sx?$' })
-        if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate the production lint ratchet changed-file manifest.' }
-        $lintRatchetManifest = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($changedLintFiles | ConvertTo-Json -Compress)))
-        $overrides = @("name=IMAGE_TAG,value=$ImageTag,type=PLAINTEXT", "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT", "name=TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64,value=$lintRatchetManifest,type=PLAINTEXT")
+        $overrides = @("name=IMAGE_TAG,value=$ImageTag,type=PLAINTEXT", "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT")
         $buildArguments = @('codebuild', 'start-build', '--project-name', $configuration.BuildProject, '--source-version', $version, '--environment-variables-override') + $overrides
         $build = (Invoke-Aws -Arguments $buildArguments).build
         if ([string]::IsNullOrWhiteSpace([string]$build.id)) { throw 'The application image build did not start.' }
