@@ -3,6 +3,10 @@ import type { PoolClient } from "pg";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { PostgresDataClient } from "@/lib/database/postgres-data-client";
 import type { AuthenticatedPrincipal } from "@/lib/authentication/request-session-core";
+import {
+ emitProductionSessionDiagnostic,
+ type ProductionSessionDiagnostic,
+} from "@/lib/authentication/production-session-diagnostic";
 import { effectiveDepartmentPermissions } from "./permission-authority";
 import { TRACEPOINT_PERMISSIONS, type TracePointPermission } from "./permissions";
 
@@ -57,18 +61,27 @@ export async function resolvePostgresPlatformLanding(principal:AuthenticatedPrin
  }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
 }
 
-export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,selectedDepartmentId:string,supportDepartmentId:string){
+export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,selectedDepartmentId:string,supportDepartmentId:string,diagnostic?:ProductionSessionDiagnostic){
  const client=await getPostgresPool().connect();
  try{
   await beginSubject(client,principal.userId);
   const platform=(await client.query("select public.is_platform_admin() as allowed")).rows[0]?.allowed===true;
   const support=Boolean(supportDepartmentId)&&supportDepartmentId===selectedDepartmentId;
   if(support){
-   if(!platform){await client.query("rollback");return {ok:false as const,status:403,error:"Platform administrator access is required for Support Mode."};}
+   if(!platform){
+    await client.query("rollback");
+    if(diagnostic)emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:false,supportModeConsideredActive:true,finalAuthorizationBranch:"support_mode_platform_admin_denied"});
+    return {ok:false as const,status:403,error:"Platform administrator access is required for Support Mode."};
+   }
    const result=await client.query("select * from public.platform_support_context($1)",[supportDepartmentId]);
    const department=result.rows[0];
-   if(!department){await client.query("rollback");return {ok:false as const,status:404,error:"Support Mode agency was not found."};}
+   if(!department){
+    await client.query("rollback");
+    if(diagnostic)emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:true,supportModeConsideredActive:true,finalAuthorizationBranch:"support_mode_department_not_found"});
+    return {ok:false as const,status:404,error:"Support Mode agency was not found."};
+   }
    await client.query("commit");
+   if(diagnostic)emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:true,supportModeConsideredActive:true,finalAuthorizationBranch:"support_mode_authorized"});
    const email=principal.email,fullName=principal.fullName||email.split("@")[0]||"TracePoint Platform Administrator";
    const dataClient=new PostgresDataClient(getPostgresPool(),principal.userId,supportDepartmentId,null,true);
    return {ok:true as const,context:{
@@ -79,6 +92,9 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
     roleCodes:["platform_support"],roleLabels:["Platform Support"],primaryRoleLabel:"Platform Support",
     permissions:["administer_department" as TracePointPermission],isSuperAdmin:true,isSupportMode:true,enabledFeatures:unique(department.enabled_features??[]),
    }};
+  }
+  if(diagnostic?.supportCookiePresent){
+   emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:platform,supportModeConsideredActive:false,finalAuthorizationBranch:"support_mode_cookie_not_active"});
   }
   const memberships=await client.query("select department_id,badge_number,rank_title,unit_name from public.department_memberships where user_id=$1 and is_active=true order by department_id",[principal.userId]);
   if(!memberships.rowCount){await client.query("rollback");return {ok:false as const,status:403,error:"No active department membership was found."};}
