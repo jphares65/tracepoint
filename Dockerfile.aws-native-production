@@ -6,6 +6,9 @@ RUN npm ci
 
 FROM public.ecr.aws/docker/library/node:24-trixie-slim AS builder
 WORKDIR /app
+# The preserved notification test suite generates a short-lived synthetic certificate.
+# Keep this build/test-only CLI out of the distroless runtime stage.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SITE_URL
 ARG DEPLOYMENT_VERSION
