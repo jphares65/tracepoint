@@ -69,6 +69,17 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) { throw "$File failed." }
 }
 
+function Test-CleanImageScan {
+    param([Parameter(Mandatory)]$Scan)
+    if ($Scan.imageScanStatus.status -ne 'COMPLETE') { return $false }
+    $severityCounts = $Scan.imageScanFindings.findingSeverityCounts
+    if ($null -eq $severityCounts) { return $true }
+    foreach ($severity in $severityCounts.PSObject.Properties) {
+        if ([int]$severity.Value -gt 0) { return $false }
+    }
+    return $true
+}
+
 function Assert-ReviewedCommit {
     $sha = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
     if ($LASTEXITCODE -ne 0 -or $sha -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve the reviewed HEAD commit.' }
@@ -132,7 +143,7 @@ function Publish-Image {
         $labels = (Invoke-Aws @('ecr','batch-get-image','--repository-name',$configuration.Repository,'--image-ids',"imageTag=$ImageTag",'--accepted-media-types','application/vnd.docker.distribution.manifest.v2+json')).images | Select-Object -First 1
         if ($null -eq $labels) { throw 'Existing application image cannot be attested.' }
         $existingScan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
-        if ($existingScan.imageScanStatus.status -ne 'COMPLETE' -or @($existingScan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The existing application image scan is not clean.' }
+        if (-not (Test-CleanImageScan $existingScan)) { throw 'The existing application image scan is not clean.' }
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
@@ -166,7 +177,7 @@ function Publish-Image {
     $image = (Invoke-Aws @('ecr', 'describe-images', '--repository-name', $configuration.Repository, '--image-ids', "imageTag=$ImageTag")).imageDetails | Select-Object -First 1
     if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The immutable application image was not pushed to ECR.' }
     $scan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
-    if ($scan.imageScanStatus.status -ne 'COMPLETE' -or @($scan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The application image scan is not clean.' }
+    if (-not (Test-CleanImageScan $scan)) { throw 'The application image scan is not clean.' }
     return $image
 }
 
