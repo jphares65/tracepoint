@@ -74,10 +74,10 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
     (config.environment==='production'&&url.origin==='http://tracepointhq.com')||
     (config.environment==='staging'&&url.origin==='http://staging.tracepointhq.com'));
   if((url.origin!==origin&&!shadowProxyOrigin&&!normalProxyOrigin)||url.pathname!==path){
-   if(config.notificationMode==='shadow')console.warn(JSON.stringify({event:'shadow-cognito-request-mismatch',
+   if(config.notificationMode==='shadow'||config.environment==='staging')console.warn(JSON.stringify({event:config.notificationMode==='shadow'?'shadow-cognito-request-mismatch':'staging-cognito-request-mismatch',
     actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
     host:request.headers.get('host'),forwardedHost:request.headers.get('x-forwarded-host'),
-    forwardedProto:request.headers.get('x-forwarded-proto')}));
+    forwardedProto:request.headers.get('x-forwarded-proto'),forwardedPort:request.headers.get('x-forwarded-port')}));
    return response(400,'invalid_request');
   }
   if(request.method!==method)return response(405,'method_not_allowed');
