@@ -32,8 +32,16 @@ $imageRepository = "$($configuration.Account).dkr.ecr.$($configuration.Region).a
 
 function Invoke-Aws {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    $output = & aws.exe @Arguments --profile $configuration.Profile --region $configuration.Region --output json 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ')" }
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & aws.exe @Arguments --profile $configuration.Profile --region $configuration.Region --output json 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ')" }
     return ($output -join [Environment]::NewLine) | ConvertFrom-Json
 }
 
