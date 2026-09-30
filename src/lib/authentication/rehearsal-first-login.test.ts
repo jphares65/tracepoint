@@ -32,6 +32,7 @@ before(async()=>{
   await admin.query(`
     create role anon; create role authenticated; create role service_role;
     create role tracepoint_runtime login password 'synthetic-runtime-only';
+    grant authenticated to tracepoint_runtime;
     create schema auth; create schema tracepoint_auth;
     create table public.profiles(id uuid primary key,email text);
     create table auth.users(id uuid primary key,email text);
@@ -44,10 +45,13 @@ before(async()=>{
     create table public.audit_events(department_id uuid,actor_user_id uuid,action text,entity_type text,entity_id uuid,summary text,new_value jsonb);
     create table public.authentication_access_sessions(issuer text,subject text,tracepoint_user_id uuid,token_id uuid,issued_at timestamptz,expires_at timestamptz,revoked_at timestamptz);
     create table public.authentication_session_revocations(tracepoint_user_id uuid,issuer text,revoked_before timestamptz);
+    create function public.is_platform_admin() returns boolean language sql stable as $$select false$$;
     grant usage on schema public,tracepoint_auth to tracepoint_runtime;
     grant select,update on public.authentication_identity_links to tracepoint_runtime;
     grant select on public.authentication_access_sessions,public.authentication_session_revocations to tracepoint_runtime;
     grant insert on public.authentication_access_sessions to tracepoint_runtime;
+    grant select on public.department_memberships to authenticated;
+    grant execute on function public.is_platform_admin() to authenticated;
   `);
   await admin.query(await readFile('database/rehearsal/001_readington_officer_first_login.sql','utf8'));
   await admin.query(await readFile('database/rehearsal/002_montville_officer_first_login.sql','utf8'));
