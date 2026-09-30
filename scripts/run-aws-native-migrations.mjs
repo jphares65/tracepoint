@@ -8,7 +8,7 @@ const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
 
-if (!["status", "baseline", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|baseline|apply> <staging|production>");
+if (!["status", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|baseline|reconcile|apply> <staging|production>");
 if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
 if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
 if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
@@ -89,7 +89,7 @@ async function ensureLedger(client) {
     content_sha256 text not null check (content_sha256 ~ '^[0-9a-f]{64}$'),
     applied_at timestamptz not null default now(), application_git_sha text not null,
     environment text not null check (environment in ('staging','production')),
-    application_context text not null check (application_context in ('baseline','apply')),
+    application_context text not null check (application_context in ('baseline','reconcile','apply')),
     is_baseline boolean not null default false
   )`);
 }
@@ -120,6 +120,21 @@ try {
         for (const file of target) await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'baseline',true)`, [file.version, file.filename, file.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
         await client.query("commit");
       } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+    } else if (action === "reconcile") {
+      if (before?.length) throw new Error("AWS-native migration ledger already contains entries; reconciliation requires an unbaselined verified historical schema.");
+      const historical = files.filter((file) => file.version <= 27);
+      const phaseA = files.find((file) => file.version === 28);
+      const reconciliation = files.find((file) => file.version === 29 && file.filename === "029_firearm_custody_phase_a_function_reconciliation.sql");
+      if (!phaseA || !reconciliation) throw new Error("Expected Phase A 028 and reconciliation 029 are unavailable.");
+      await client.query("begin");
+      try {
+        await ensureLedger(client);
+        for (const file of historical) await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'baseline',true)`, [file.version, file.filename, file.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
+        await client.query("commit");
+      } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+      await client.query(migrationSqlWithLedgerEntry(reconciliation, { environment: requestedEnvironment, action: "reconcile" }));
+      await verifyBaselineAnchor(client);
+      await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'baseline',true)`, [phaseA.version, phaseA.filename, phaseA.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
     } else {
       if (!before) throw new Error("AWS-native migration ledger is absent; run the verified staging baseline first.");
       const applied = new Set(before.map((row) => Number(row.version)));

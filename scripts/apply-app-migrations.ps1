@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','baseline','apply')][string]$Action = 'status',
+    [ValidateSet('status','baseline','reconcile','apply')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit
 )
 
