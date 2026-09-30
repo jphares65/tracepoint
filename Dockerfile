@@ -17,6 +17,8 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV DEPLOYMENT_VERSION=$DEPLOYMENT_VERSION
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
+ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
+RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 # BuildKit mounts the Server Action key for this instruction only. It is not a
 # Docker ARG, ENV layer, or copied file. CI must read the same Secrets Manager
 # JSON key that ECS injects when the task starts.
@@ -38,6 +40,9 @@ ENV PORT=3000
 COPY --from=builder --chown=nonroot:nonroot /app/public ./public
 COPY --from=builder --chown=nonroot:nonroot /app/.next/standalone ./
 COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
+COPY --from=builder --chown=nonroot:nonroot /app/rds-ca.pem /app/rds-ca.pem
+COPY --from=builder --chown=nonroot:nonroot /app/database/aws ./database/aws
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/run-aws-native-migrations.mjs ./scripts/run-aws-native-migrations.mjs
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
 COPY --from=builder --chown=nonroot:nonroot /runtime-volumes/cache /app/.next/cache

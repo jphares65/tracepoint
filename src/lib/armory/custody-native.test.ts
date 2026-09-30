@@ -45,3 +45,19 @@ test("normal firearm inventory exposes the existing custody workflow", async () 
   assert.match(page, /Manage Custody/);
   assert.match(page, /href=\{`\/firearms\/\$\{selectedFirearm\.id\}`\}/);
 });
+
+test("restricted use preserves assignment, uses existing custody, and keeps its history", async () => {
+  const sql = await readFile("database/aws/029_firearm_restricted_use.sql", "utf8");
+  const route = await readFile("src/app/api/armory/firearms/[firearmId]/custody/route.ts", "utf8");
+  const page = await readFile("src/app/firearms/page.tsx", "utf8");
+  assert.match(sql, /manage_restrictions'\) or public\.has_department_permission\(v_department_id, 'manage_firearms'/);
+  assert.match(sql, /restricted use requires an active assignment/);
+  assert.match(sql, /update public\.firearm_possession_restrictions set is_active=false/);
+  assert.match(sql, /firearm_possession_restriction_cleared/);
+  assert.match(route, /set_firearm_restricted_use/);
+  assert.match(route, /clear_firearm_possession_restriction/);
+  assert.match(page, /RESTRICTED USE/);
+  assert.match(page, /Record in Storage/);
+  assert.match(page, /Return to Officer/);
+  assert.match(page, /no_possession_permitted/);
+});

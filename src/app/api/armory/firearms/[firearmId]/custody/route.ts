@@ -45,13 +45,26 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
   const { firearmId } = await params;
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   if (!uuid.test(firearmId) || !hasAnyServerPermission(context, ["firearm_custody.manage_restrictions", "manage_firearms"])) return permissionDeniedResponse("Restriction-management permission is required.");
-  const result = await context.db.rpc("create_firearm_possession_restriction", {
-    p_firearm_id: firearmId, p_reason_category: text(body.reasonCategory),
+  const result = await context.db.rpc("set_firearm_restricted_use", {
+    p_firearm_id: firearmId, p_reason: text(body.reasonCategory),
     p_no_possession_permitted: body.noPossessionPermitted === true,
-    p_duty_only: body.dutyOnly === true, p_daily_return_required: body.dailyReturnRequired === true,
+    p_duty_only: body.dutyOnly !== false, p_daily_return_required: body.dailyReturnRequired === true,
     p_supervisor_approval_required: body.supervisorApprovalRequired === true,
-    p_notes: text(body.notes), p_expires_at: text(body.expiresAt),
+    p_notes: text(body.notes),
   });
+  if (result.error) return NextResponse.json({ error: result.error.message }, { status: result.error.code === "42501" ? 403 : 409 });
+  return NextResponse.json({ ok: true, restrictionId: result.data });
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const resolved = await resolveServerAccess();
+  if (!resolved.ok) return accessFailureResponse(resolved);
+  const context = resolved.context;
+  const { firearmId } = await params;
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+  const restrictionId = text(body.restrictionId);
+  if (!uuid.test(firearmId) || !uuid.test(restrictionId ?? "") || !hasAnyServerPermission(context, ["firearm_custody.manage_restrictions", "manage_firearms"])) return permissionDeniedResponse("Restriction-management permission is required.");
+  const result = await context.db.rpc("clear_firearm_possession_restriction", { p_restriction_id: restrictionId, p_reason: text(body.reason) });
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: result.error.code === "42501" ? 403 : 409 });
   return NextResponse.json({ ok: true, restrictionId: result.data });
 }
