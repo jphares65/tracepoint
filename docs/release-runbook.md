@@ -21,7 +21,7 @@ From a clean, reviewed commit:
 .\scripts\smoke-staging.ps1
 ```
 
-`deploy-app.ps1` runs reliable local application checks before ECS changes, builds and scan-checks a SHA-tagged ECR image, registers a task revision copied from the current application definition with only that image changed, and updates only the application ECS service. It then requires ECS steady state, expected desired/running/pending counts, healthy non-draining ALB targets, a `200` TracePoint health response, and exact running image digest before declaring success. Deployment-safe remote smoke failures roll back to the preceding healthy task revision.
+`deploy-app.ps1` runs deterministic lint and migration-runner integrity checks before ECS changes, builds and scan-checks a SHA-tagged ECR image, registers a task revision copied from the current application definition with only that image changed, and updates only the application ECS service. It then requires ECS steady state, expected desired/running/pending counts, healthy non-draining ALB targets, a `200` TracePoint health response, and exact running image digest before declaring success. Deployment-safe remote smoke failures roll back to the preceding healthy task revision.
 
 Post-deployment workstation/sandbox diagnostics are reported as `DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING`; they cannot roll back a release that passed deployment-authoritative evidence. A concrete HTTP failure from the deployed service remains a deployment failure and rolls back.
 

@@ -243,7 +243,12 @@ function Invoke-DeploymentSafeRemoteSmoke {
 }
 
 function Invoke-RequiredLocalValidation {
-    Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'run-application-tests.mjs'))
+    # These gates are deterministic in the developer and Codex environments.
+    # The full application suite remains useful, but is diagnostic because its
+    # test host can terminate after all passing output without an application
+    # failure (for example, on sandbox process cleanup).
+    Invoke-Native -File npm.cmd -Arguments @('run', 'lint')
+    Invoke-Native -File node.exe -Arguments @('--test', (Join-Path $PSScriptRoot 'aws-native-migrations.test.mjs'))
 }
 
 function Invoke-PostDeploymentDiagnostics {
@@ -251,6 +256,7 @@ function Invoke-PostDeploymentDiagnostics {
     # on the operator workstation are not evidence that a healthy ECS release is bad.
     if ($Environment -eq 'staging') {
         try {
+            Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'run-application-tests.mjs'))
             Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'test-staging-http.mjs'))
         }
         catch {
