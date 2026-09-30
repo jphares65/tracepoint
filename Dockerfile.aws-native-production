@@ -19,9 +19,11 @@ ENV NEXT_PUBLIC_TRACEPOINT_ENVIRONMENT=$NEXT_PUBLIC_TRACEPOINT_ENVIRONMENT
 ENV NEXT_PUBLIC_DEPLOYMENT_VERSION=$NEXT_PUBLIC_DEPLOYMENT_VERSION
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
+USER 65532
 RUN lint_results="$(mktemp)"; set +e; timeout 5m node node_modules/eslint/bin/eslint.js . --format json --output-file "$lint_results"; lint_status=$?; set -e; test -s "$lint_results"; node scripts/lint-ratchet.mjs --results "$lint_results" --baseline lint-baseline.json; test "$lint_status" -eq 0 -o "$lint_status" -eq 1; rm -f "$lint_results" && \
     timeout 20m node scripts/run-application-tests.mjs && \
     timeout 5m node --test scripts/aws-native-migrations.test.mjs
+USER root
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \

@@ -139,7 +139,7 @@ function Publish-Image {
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'infra', 'lint-baseline.json', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts')
+    $archivePaths = @('.dockerignore', 'infra', 'lint-baseline.json', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts', 'supabase/migrations')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
