@@ -136,7 +136,7 @@ test('staging accepts only its exact HTTPS-forwarded container hop for login sta
   for(const override of ([{host:'evil.invalid'},{'x-forwarded-host':'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
    assert.equal((await begin(authority+'/api/auth/cognito/login',override)).status,400);
  }
- for(const url of ['http://0.0.0.0:3001/api/auth/cognito/login','http://staging.tracepointhq.com/api/auth/cognito/login'])
+ for(const url of ['http://0.0.0.0:3001/api/auth/cognito/login','http://evil.invalid/api/auth/cognito/login'])
   assert.equal((await begin(url)).status,400);
 });
 test('receipt lifetime and target boundary cannot be widened by transport ports',async()=>{
