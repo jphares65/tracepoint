@@ -22,14 +22,14 @@ async function migrations() {
   const result = await Promise.all(names.map(async (filename) => {
     const contents = await readFile(path.join(migrationDirectory, filename), "utf8");
     const version = Number(filename.slice(0, 3));
-    if (!/^\s*begin;[\s\S]*commit;\s*$/i.test(contents)) throw new Error(`${filename} must own exactly one outer BEGIN/COMMIT transaction.`);
-    return { version, filename, contents, sha256: digest(contents) };
+    return { version, filename, contents, sha256: digest(contents), ownsTransaction: /^\s*begin;[\s\S]*commit;\s*$/i.test(contents) };
   }));
   for (let index = 1; index < result.length; index += 1) if (result[index - 1].version >= result[index].version) throw new Error("AWS-native migrations are not uniquely ordered.");
   return result;
 }
 
 function migrationSqlWithLedgerEntry(migration, context) {
+  if (!migration.ownsTransaction) throw new Error(`${migration.filename} cannot be executed: AWS-native migrations must own an explicit outer BEGIN/COMMIT transaction.`);
   const entry = `\ninsert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values (${migration.version}, ${quote(migration.filename)}, ${quote(migration.sha256)}, ${quote(process.env.DEPLOYMENT_VERSION ?? "unknown")}, ${quote(context.environment)}, ${quote(context.action)}, false);\ncommit;`;
   return migration.contents.replace(/commit;\s*$/i, entry);
 }
@@ -109,6 +109,9 @@ try {
     if (action === "baseline") {
       if (before?.length) throw new Error("AWS-native migration ledger already contains entries; refusing to re-baseline.");
       await verifyBaselineAnchor(client);
+      // 001–028 are an audited historical baseline. Some legacy files predate
+      // the explicit transaction convention; only post-baseline migrations may
+      // be executed by this runner and must own a transaction.
       const target = files.filter((file) => file.version <= 28);
       if (target.at(-1)?.version !== 28) throw new Error("Baseline requires the verified Phase A migration 028.");
       await client.query("begin");
