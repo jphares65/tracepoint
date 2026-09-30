@@ -164,6 +164,9 @@ export class ImageBuildStack extends cdk.Stack {
           AWS_ACCOUNT_ID: { value: this.account },
           CONFIGURATION_ENVIRONMENT: { value: props.environmentName },
           ECR_REPOSITORY_URI: { value: props.repository.repositoryUri },
+          ...(props.environmentName === "production"
+            ? { TRACEPOINT_BUILD_PROVIDER_MODE: { value: "aws-native-production" } }
+            : {}),
           NEXT_PUBLIC_SUPABASE_URL: secretVariable("NEXT_PUBLIC_SUPABASE_URL"),
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: secretVariable(
             "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
