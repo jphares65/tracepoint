@@ -21,6 +21,7 @@ export class ProductionNativeProofStack extends cdk.Stack {
     const logGroupArn = `arn:aws:logs:${region}:${account}:log-group:${logGroupName}:*`;
     const nativeSecret = `arn:aws:secretsmanager:${region}:${account}:secret:tracepoint/production/application/aws-native-rIikku`;
     const databaseSecret = `arn:aws:secretsmanager:${region}:${account}:secret:tracepoint/production/final/database-runtime-20260926-yg23sb`;
+    const sentryRuntimeSecret = `arn:aws:secretsmanager:${region}:${account}:secret:tracepoint/production/sentry-runtime-yGnfPL`;
     const identity = `arn:aws:ses:${region}:${account}:identity/tracepointhq.com`;
     const configurationSet = `arn:aws:ses:${region}:${account}:configuration-set/tracepoint-production`;
     const pool = `arn:aws:cognito-idp:${region}:${account}:userpool/us-east-1_diFmWDMe9`;
@@ -48,7 +49,7 @@ export class ProductionNativeProofStack extends cdk.Stack {
       new iam.PolicyStatement({ actions: ['ecr:GetAuthorizationToken'], resources: ['*'] }),
       new iam.PolicyStatement({ actions: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability'], resources: [repository] }),
       new iam.PolicyStatement({ actions: ['logs:CreateLogStream', 'logs:PutLogEvents'], resources: [logGroupArn] }),
-      new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'], resources: [nativeSecret, databaseSecret] }),
+      new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'], resources: [nativeSecret, databaseSecret, sentryRuntimeSecret] }),
       new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: [key],
         conditions: { StringEquals: { 'kms:ViaService': `secretsmanager.${region}.amazonaws.com` } } }),
     ];
