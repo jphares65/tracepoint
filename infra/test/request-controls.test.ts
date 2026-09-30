@@ -27,7 +27,7 @@ test('only exact approved uploads count the common body-size rule',()=>{
   ]);
   assert.deepEqual(rules[1].Statement.ManagedRuleGroupStatement.ScopeDownStatement.NotStatement.Statement,{OrStatement:{Statements:[shadow.ScopeDownStatement,patch.ScopeDownStatement]}});
   assert.deepEqual(shadow.RuleActionOverrides,[{Name:'SizeRestrictions_BODY',ActionToUse:{Count:{}}}]);
-  assert.deepEqual(patch.RuleActionOverrides,[{Name:'SizeRestrictions_BODY',ActionToUse:{Count:{}}}]);
+  assert.deepEqual(patch.RuleActionOverrides,[{Name:'SizeRestrictions_BODY',ActionToUse:{Count:{}}},{Name:'CrossSiteScripting_BODY',ActionToUse:{Count:{}}}]);
   assert.equal(rules[1].Statement.ManagedRuleGroupStatement.RuleActionOverrides,undefined);
   assert.deepEqual(rules[4].Statement.ManagedRuleGroupStatement,{VendorName:'AWS',Name:'AWSManagedRulesKnownBadInputsRuleSet'});
   assert.deepEqual(rules[5].Statement.ManagedRuleGroupStatement,{VendorName:'AWS',Name:'AWSManagedRulesAmazonIpReputationList'});

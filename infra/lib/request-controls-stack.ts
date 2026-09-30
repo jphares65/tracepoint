@@ -32,7 +32,7 @@ export class RequestControlsStack extends cdk.Stack {
   const productionManagedRules:waf.CfnWebACL.RuleProperty[]=props.environment==='production'?[
     managed('AwsCommonProtection',10,'AWSManagedRulesCommonRuleSet',{notStatement:{statement:sizeRestrictedUploads}}),
     managed('ShadowAmmunitionCommonProtection',11,'AWSManagedRulesCommonRuleSet',shadowAmmunitionSave,[{name:'SizeRestrictions_BODY',actionToUse:{count:{}}}]),
-    managed('AgencyPatchUploadCommonProtection',12,'AWSManagedRulesCommonRuleSet',agencyPatchUpload,[{name:'SizeRestrictions_BODY',actionToUse:{count:{}}}]),
+    managed('AgencyPatchUploadCommonProtection',12,'AWSManagedRulesCommonRuleSet',agencyPatchUpload,[{name:'SizeRestrictions_BODY',actionToUse:{count:{}}},{name:'CrossSiteScripting_BODY',actionToUse:{count:{}}}]),
     managed('AwsKnownBadInputs',20,'AWSManagedRulesKnownBadInputsRuleSet'),
     managed('AwsIpReputation',30,'AWSManagedRulesAmazonIpReputationList'),
   ]:[];
