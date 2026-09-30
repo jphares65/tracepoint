@@ -40,17 +40,25 @@ function Add-DeploymentWarning {
 
 function Invoke-Aws {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $output = & aws.exe @Arguments --profile $configuration.Profile --region $configuration.Region --output json 2>&1
-        $exitCode = $LASTEXITCODE
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $output = & aws.exe @Arguments --profile $configuration.Profile --region $configuration.Region --output json 2>&1
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if ($exitCode -eq 0) { return ($output -join [Environment]::NewLine) | ConvertFrom-Json }
+
+        $diagnostic = $output -join [Environment]::NewLine
+        if ($attempt -lt 3 -and $diagnostic -match 'config profile .+ could not be found') {
+            Start-Sleep -Seconds 2
+            continue
+        }
+        throw "AWS command failed: aws $($Arguments -join ' ') :: $diagnostic"
     }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    if ($exitCode -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ')" }
-    return ($output -join [Environment]::NewLine) | ConvertFrom-Json
 }
 
 function Assert-AwsIdentity {
