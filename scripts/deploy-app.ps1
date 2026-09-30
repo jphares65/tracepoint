@@ -16,7 +16,7 @@ $configuration = @{
         Region = 'us-east-1'; Cluster = 'tracepoint-staging'; Service = 'tracepoint-staging'
         Repository = 'tracepoint-staging'; SourceBucket = 'tracepoint-staging-build-source-559054714699'
         SourceKey = 'source/tracepoint-staging-source.zip'; BuildProject = 'tracepoint-staging-image-build'
-        Host = 'https://staging.tracepointhq.com'; ImageSuffix = ''
+        Host = 'https://staging.tracepointhq.com'; ImageSuffix = '-aws-native-staging'
     }
     production = @{
         Account = '193644343389'; Profile = 'tracepoint-production'; Role = 'TracePointMigrationProduction'
@@ -128,12 +128,14 @@ function Publish-Image {
         $existingImage = $null
     }
     if ($null -ne $existingImage -and -not [string]::IsNullOrWhiteSpace([string]$existingImage.imageDigest)) {
+        $labels = (Invoke-Aws @('ecr','batch-get-image','--repository-name',$configuration.Repository,'--image-ids',"imageTag=$ImageTag",'--accepted-media-types','application/vnd.docker.distribution.manifest.v2+json')).images | Select-Object -First 1
+        if ($null -eq $labels) { throw 'Existing application image cannot be attested.' }
         $existingScan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
         if ($existingScan.imageScanStatus.status -ne 'COMPLETE' -or @($existingScan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The existing application image scan is not clean.' }
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
@@ -144,7 +146,7 @@ function Publish-Image {
         Invoke-Native -File git.exe -Arguments $archiveArguments
         $version = (Invoke-Aws @('s3api', 'put-object', '--bucket', $configuration.SourceBucket, '--key', $configuration.SourceKey, '--body', $archive, '--expected-bucket-owner', $configuration.Account)).VersionId
         if ([string]::IsNullOrWhiteSpace([string]$version) -or $version -eq 'None') { throw 'The versioned application source upload failed.' }
-        $overrides = @("name=IMAGE_TAG,value=$ImageTag,type=PLAINTEXT", "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT")
+        $overrides = @("name=IMAGE_TAG,value=$ImageTag,type=PLAINTEXT", "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT", 'name=TRACEPOINT_ARTIFACT_TYPE,value=application,type=PLAINTEXT')
         $buildArguments = @('codebuild', 'start-build', '--project-name', $configuration.BuildProject, '--source-version', $version, '--environment-variables-override') + $overrides
         $build = (Invoke-Aws -Arguments $buildArguments).build
         if ([string]::IsNullOrWhiteSpace([string]$build.id)) { throw 'The application image build did not start.' }

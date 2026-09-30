@@ -42,7 +42,7 @@ function Publish-MigrationImage([string]$Commit) {
   # The web image intentionally excludes the migration entry point.  Keep the
   # migration task's image immutable and tied to the same source commit, but
   # never reuse the application's SHA tag.
-  $tag = if ($Environment -eq 'production') { "$Commit-aws-native-production" } else { $Commit }
+  $tag = "migration-$Commit-aws-native-$Environment"
   try { $existing = (Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails | Select-Object -First 1 } catch { $existing = $null }
   if ($existing -and $existing.imageDigest) { return @{ Tag=$tag; Digest=$existing.imageDigest } }
   $dir = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-' + [guid]::NewGuid().ToString('N')); $zip = Join-Path $dir 'source.zip'
@@ -54,7 +54,7 @@ function Publish-MigrationImage([string]$Commit) {
     if ($LASTEXITCODE -ne 0) { throw 'Unable to create the immutable migration image source archive.' }
     $version = (Invoke-Aws @('s3api','put-object','--bucket',$settings.Bucket,'--key',$settings.Key,'--body',$zip,'--expected-bucket-owner',$settings.Account)).VersionId
     if (!$version -or $version -eq 'None') { throw 'Versioned source upload failed.' }
-    $build = (Invoke-Aws @('codebuild','start-build','--project-name',$settings.Build,'--source-version',$version,'--environment-variables-override',"name=IMAGE_TAG,value=$tag,type=PLAINTEXT","name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT")).build
+    $build = (Invoke-Aws @('codebuild','start-build','--project-name',$settings.Build,'--source-version',$version,'--environment-variables-override',"name=IMAGE_TAG,value=$tag,type=PLAINTEXT","name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT",'name=TRACEPOINT_ARTIFACT_TYPE,value=migration,type=PLAINTEXT')).build
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(45)
     do { Start-Sleep -Seconds 15; $state = (Invoke-Aws @('codebuild','batch-get-builds','--ids',$build.id)).builds[0].buildStatus; if ($state -ne 'IN_PROGRESS') { break } } while ([DateTimeOffset]::UtcNow -lt $deadline)
     if ($state -ne 'SUCCEEDED') { throw "Migration image build ended with $state." }
