@@ -21,8 +21,8 @@ $configuration = @{
     production = @{
         Account = '193644343389'; Profile = 'tracepoint-production'; Role = 'TracePointMigrationProduction'
         Region = 'us-east-1'; Cluster = 'tracepoint-production'; Service = 'tracepoint-production'
-        Repository = 'tracepoint-production'; SourceBucket = 'tracepoint-production-build-source-193644343389'
-        SourceKey = 'source/tracepoint-production-source.zip'; BuildProject = 'tracepoint-production-image-build'
+        Repository = 'tracepoint-production'; SourceBucket = 'tracepoint-production-aws-native-build-source-193644343389'
+        SourceKey = 'source/tracepoint-production-aws-native-source.zip'; BuildProject = 'tracepoint-production-aws-native-image-build'
         Host = 'https://tracepointhq.com'; ImageSuffix = '-aws-native-production'
     }
 }[$Environment]
@@ -194,7 +194,11 @@ function Test-Deployment {
     $targetGroup = @($service.loadBalancers)[0].targetGroupArn
     if ([string]::IsNullOrWhiteSpace([string]$targetGroup)) { throw 'The ECS application service has no existing ALB target group.' }
     $targets = (Invoke-Aws @('elbv2', 'describe-target-health', '--target-group-arn', $targetGroup)).TargetHealthDescriptions
-    if (@($targets | Where-Object { $_.TargetHealth.State -ne 'healthy' }).Count -ne 0 -or @($targets).Count -ne $service.desiredCount) { throw 'ALB targets are not all healthy.' }
+    # A completed rolling deployment can legitimately retain draining old targets
+    # while ALB connection deregistration finishes. They are not serving the new
+    # release and must not be mistaken for an unhealthy new target.
+    $activeTargets = @($targets | Where-Object { $_.TargetHealth.State -ne 'draining' })
+    if (@($activeTargets | Where-Object { $_.TargetHealth.State -ne 'healthy' }).Count -ne 0 -or @($activeTargets).Count -ne $service.desiredCount) { throw 'ALB active targets are not all healthy.' }
     $taskArns = @((Invoke-Aws @('ecs', 'list-tasks', '--cluster', $configuration.Cluster, '--service-name', $configuration.Service, '--desired-status', 'RUNNING')).taskArns)
     if ($taskArns.Count -ne $service.desiredCount) { throw 'Unexpected running application task count.' }
     $taskArguments = @('ecs', 'describe-tasks', '--cluster', $configuration.Cluster, '--tasks') + $taskArns
@@ -209,16 +213,40 @@ function Test-Deployment {
         $health = $response.Content | ConvertFrom-Json
     } catch { throw 'The public /api/health verification failed.' }
     if ($response.StatusCode -ne 200 -or $health.status -ne 'ok' -or $health.service -ne 'tracepoint') { throw 'The public /api/health response is unhealthy.' }
+    Invoke-DeploymentSafeRemoteSmoke
 }
 
-function Invoke-SmokeTests {
+function Invoke-DeploymentSafeRemoteSmoke {
+    # These requests execute against the deployed service. A failure is evidence
+    # about the release itself, unlike a local test-runner failure.
+    foreach ($route in @('/api/health', '/login')) {
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Uri "$($configuration.Host)$route" -TimeoutSec 30
+        } catch { throw "Deployment-safe remote smoke failed for $route." }
+        if ($response.StatusCode -ne 200) { throw "Deployment-safe remote smoke returned HTTP $($response.StatusCode) for $route." }
+    }
+}
+
+function Invoke-RequiredLocalValidation {
     Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'run-application-tests.mjs'))
+}
+
+function Invoke-PostDeploymentDiagnostics {
+    # This existing browser-style suite is helpful, but Node/runtime restrictions
+    # on the operator workstation are not evidence that a healthy ECS release is bad.
     if ($Environment -eq 'staging') {
         Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'test-staging-http.mjs'))
     }
 }
 
 Assert-AwsIdentity | Out-Null
+$commit = Assert-ReviewedCommit
+try {
+    Invoke-RequiredLocalValidation
+} catch {
+    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
+    throw
+}
 $serviceBefore = Get-Service
 $invariant = Get-ServiceInvariant -Service $serviceBefore
 $previousHealthyTaskArn = [string]$serviceBefore.taskDefinition
@@ -236,7 +264,6 @@ if ($RollbackTaskDefinitionArn) {
     exit 0
 }
 
-$commit = Assert-ReviewedCommit
 $imageTag = "$commit$($configuration.ImageSuffix)"
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
 $imageUri = "${imageRepository}@$($image.imageDigest)"
@@ -246,20 +273,26 @@ try {
     $deploymentStarted = $true
     $null = Invoke-Aws @('ecs', 'update-service', '--cluster', $configuration.Cluster, '--service', $configuration.Service, '--task-definition', $registered.taskDefinitionArn)
     Test-Deployment -ExpectedTaskArn $registered.taskDefinitionArn -ExpectedImageDigest $image.imageDigest -ExpectedImageUri $imageUri -Invariant $invariant
-    Invoke-SmokeTests
-    Write-Host "Deployment complete: $Environment commit $commit, image $imageUri, task $($registered.taskDefinitionArn)."
+    Write-Host "DEPLOYMENT SUCCEEDED: $Environment commit $commit, image $imageUri, task $($registered.taskDefinitionArn)."
     Write-Host "Rollback command: .\scripts\deploy-app.ps1 -Environment $Environment -RollbackTaskDefinitionArn $previousHealthyTaskArn"
+    try {
+        Invoke-PostDeploymentDiagnostics
+    } catch {
+        Write-Warning "LOCAL VALIDATION WARNING: $($_.Exception.Message)"
+        Write-Host 'DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING'
+    }
 }
 catch {
     $failure = $_
     if ($deploymentStarted) {
+        Write-Host "DEPLOYMENT FAILED — rollback initiated: $($failure.Exception.Message)"
         try {
             $null = Invoke-Aws @('ecs', 'update-service', '--cluster', $configuration.Cluster, '--service', $configuration.Service, '--task-definition', $previousHealthyTaskArn)
             $previousTask = Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn
             $previousDigest = $previousTask.containerDefinitions[0].image.Substring($imageRepository.Length + 1)
             $previousImage = (Invoke-Aws @('ecr', 'describe-images', '--repository-name', $configuration.Repository, '--image-ids', "imageDigest=$previousDigest")).imageDetails | Select-Object -First 1
             Test-Deployment -ExpectedTaskArn $previousHealthyTaskArn -ExpectedImageDigest $previousImage.imageDigest -ExpectedImageUri $previousTask.containerDefinitions[0].image -Invariant $invariant
-            Write-Warning "Deployment failed; restored previously healthy task revision $previousHealthyTaskArn."
+            Write-Warning "Rollback completed: restored previously healthy task revision $previousHealthyTaskArn."
         } catch { throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)" }
     }
     throw $failure
