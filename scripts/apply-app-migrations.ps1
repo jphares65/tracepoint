@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','baseline','apply')][string]$Action = 'status'
+    [ValidateSet('status','baseline','apply')][string]$Action = 'status',
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit
 )
 
 # This command runs a finite ECS task. It never starts the web server, updates
@@ -61,7 +62,10 @@ function Invoke-MigrationTask([string]$Commit) {
   if ($current.networkMode -ne 'awsvpc' -or @($current.requiresCompatibilities) -notcontains 'FARGATE' -or @($current.containerDefinitions).Count -ne 1) { throw 'Unexpected ECS task pattern.' }
   $image = Publish-MigrationImage $Commit
   $registration = [ordered]@{}
-  foreach ($field in @('family','taskRoleArn','executionRoleArn','networkMode','containerDefinitions','volumes','placementConstraints','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) { if ($null -ne $current.$field) { $registration[$field] = $current.$field } }
+  foreach ($field in @('family','taskRoleArn','executionRoleArn','networkMode','containerDefinitions','volumes','placementConstraints','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) {
+    $property = $current.PSObject.Properties[$field]
+    if ($null -ne $property -and $null -ne $property.Value) { $registration[$field] = $property.Value }
+  }
   $registration.containerDefinitions[0].image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
@@ -82,4 +86,9 @@ function Invoke-MigrationTask([string]$Commit) {
 
 Assert-Identity
 $commit = Require-CleanCommit
+if ($ImageCommit) {
+  $resolved = (& git.exe -C $root rev-parse "$ImageCommit^{commit}").Trim().ToLowerInvariant()
+  if ($LASTEXITCODE -ne 0 -or $resolved -ne $ImageCommit) { throw 'Migration image commit is not a local immutable commit.' }
+  $commit = $resolved
+}
 Invoke-MigrationTask $commit
