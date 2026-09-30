@@ -101,6 +101,27 @@ type ArmoryPayload = {
   members: ArmoryMember[];
 };
 
+type CustodyResponse = {
+  current?: {
+    holder_type: "OFFICER" | "SECURE_STORAGE";
+    holder_user_id?: string | null;
+    storage_location_id?: string | null;
+  } | null;
+  restrictions?: Array<{
+    no_possession_permitted: boolean;
+    duty_only: boolean;
+    daily_return_required: boolean;
+    supervisor_approval_required: boolean;
+    reason_category: string;
+    is_active: boolean;
+  }>;
+};
+
+type StorageLocation = {
+  id: string;
+  name: string;
+};
+
 type FirearmStatus =
   | "In Service"
   | "Out of Service"
@@ -223,6 +244,18 @@ function formatDateTime(value?: string | null) {
   });
 }
 
+function getRestrictionLabel(custody: CustodyResponse | null) {
+  const active = custody?.restrictions?.find((item) => item.is_active);
+
+  if (!active) return null;
+  if (active.no_possession_permitted) return "No possession permitted";
+  if (active.duty_only) return "Duty only";
+  if (active.daily_return_required) return "Daily return required";
+  if (active.supervisor_approval_required) return "Supervisor approval required";
+
+  return active.reason_category || "Restricted";
+}
+
 function getFirearmLabel(firearm: ArmoryFirearm) {
   return `${firearm.make} ${firearm.model}`.trim();
 }
@@ -296,6 +329,10 @@ export default function FirearmsPage() {
   const suppressFocusColumnSortRef = useRef(false);
   const [showFocusColumns, setShowFocusColumns] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<FirearmWorkspaceTab>("custody");
+  const [selectedCustody, setSelectedCustody] = useState<CustodyResponse | null>(null);
+  const [storageLocations, setStorageLocations] = useState<StorageLocation[]>([]);
+  const [custodyLoading, setCustodyLoading] = useState(false);
+  const [custodyLoaded, setCustodyLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddFirearm, setShowAddFirearm] = useState(false);
@@ -327,6 +364,33 @@ export default function FirearmsPage() {
   const selectedFirearm = useMemo(
     () => firearms.find((firearm) => firearm.id === selectedFirearmId) ?? null,
     [firearms, selectedFirearmId],
+  );
+
+  const selectedRestriction = getRestrictionLabel(selectedCustody);
+  const selectedPhysicalCustody = (() => {
+    if (custodyLoading) return "Loading…";
+    if (!custodyLoaded) return "Unavailable";
+    if (!selectedCustody?.current) return "Not recorded";
+
+    if (selectedCustody.current.holder_type === "SECURE_STORAGE") {
+      return (
+        storageLocations.find(
+          (location) => location.id === selectedCustody.current?.storage_location_id,
+        )?.name ?? "Department secure storage"
+      );
+    }
+
+    return selectedFirearm?.active_assignment
+      ? `Officer — ${getAssignedOfficerDisplayName(selectedFirearm.active_assignment)}`
+      : "Officer";
+  })();
+
+  const custodyNeedsAttention = Boolean(
+    !custodyLoading &&
+      custodyLoaded &&
+      selectedFirearm?.active_assignment &&
+      (!selectedCustody?.current ||
+        selectedCustody.current.holder_type === "SECURE_STORAGE"),
   );
 
   const filteredFirearms = useMemo(() => {
@@ -785,6 +849,67 @@ export default function FirearmsPage() {
     setEditAssetNumber(selectedFirearm.asset_number ?? "");
     setEditNotes(selectedFirearm.notes ?? "");
     setEditChangeNote("");
+  }, [selectedFirearm]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!selectedFirearm) {
+      void Promise.resolve().then(() => {
+        if (!mounted) return;
+        setSelectedCustody(null);
+        setStorageLocations([]);
+        setCustodyLoaded(false);
+      });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const firearmId = selectedFirearm.id;
+
+    async function loadCustody() {
+      setCustodyLoading(true);
+      setSelectedCustody(null);
+      setStorageLocations([]);
+      setCustodyLoaded(false);
+
+      try {
+        const [custodyResponse, locationsResponse] = await Promise.all([
+          fetch(
+            `/api/armory/firearms/${encodeURIComponent(firearmId)}/custody`,
+            { cache: "no-store" },
+          ),
+          fetch("/api/armory/storage-locations", { cache: "no-store" }),
+        ]);
+
+        if (!mounted) return;
+
+        if (custodyResponse.ok) {
+          setSelectedCustody(
+            (await custodyResponse.json()) as CustodyResponse,
+          );
+          setCustodyLoaded(true);
+        }
+
+        if (locationsResponse.ok) {
+          const payload = (await locationsResponse.json()) as {
+            locations?: StorageLocation[];
+          };
+          setStorageLocations(
+            Array.isArray(payload.locations) ? payload.locations : [],
+          );
+        }
+      } finally {
+        if (mounted) setCustodyLoading(false);
+      }
+    }
+
+    void Promise.resolve().then(loadCustody);
+
+    return () => {
+      mounted = false;
+    };
   }, [selectedFirearm]);
 
   async function handleAddFirearm() {
@@ -1604,6 +1729,63 @@ The firearm will be removed from active inventory and future operational selecti
                         </div>
                       </div>
                     </div>
+
+                    <section className="rounded-3xl border border-violet-500/25 bg-violet-950/15 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-200">
+                            Custody at a glance
+                          </p>
+                          <p className="mt-1 text-sm text-slate-400">
+                            Assignment and physical custody are tracked separately.
+                          </p>
+                        </div>
+                        <a
+                          href={`/firearms/${selectedFirearm.id}`}
+                          className="inline-flex items-center rounded-xl bg-violet-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-violet-500"
+                        >
+                          Manage Custody
+                        </a>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Assignment
+                          </p>
+                          <p className="mt-1 font-semibold text-slate-100">
+                            {selectedFirearm.active_assignment
+                              ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
+                              : "Unassigned"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Physical Custody
+                          </p>
+                          <p className="mt-1 font-semibold text-slate-100">
+                            {selectedPhysicalCustody}
+                          </p>
+                        </div>
+                      </div>
+
+                      {(custodyNeedsAttention || selectedRestriction) && (
+                        <div className="mt-4 space-y-2">
+                          {custodyNeedsAttention && (
+                            <p className="rounded-xl border border-amber-500/30 bg-amber-950/25 px-3 py-2 text-xs font-semibold text-amber-200">
+                              {selectedCustody?.current?.holder_type === "SECURE_STORAGE"
+                                ? "Assigned — Department custody"
+                                : "Physical custody not recorded — select Manage Custody to establish it."}
+                            </p>
+                          )}
+                          {selectedRestriction && (
+                            <p className="rounded-xl border border-rose-500/30 bg-rose-950/25 px-3 py-2 text-xs font-semibold text-rose-200">
+                              Restricted — {selectedRestriction}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </section>
 
                     <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40 p-1">
                       <div className="flex min-w-max gap-1">

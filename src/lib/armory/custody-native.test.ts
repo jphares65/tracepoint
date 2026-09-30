@@ -36,3 +36,12 @@ test("firearm detail uses the native custody write and storage-location contract
   assert.match(page, /Return to Assigned Officer/);
   assert.match(page, /Changing custody never changes assignment/);
 });
+
+test("normal firearm inventory exposes the existing custody workflow", async () => {
+  const page = await readFile("src/app/firearms/page.tsx", "utf8");
+  assert.match(page, /\/api\/armory\/firearms\/\$\{encodeURIComponent\(firearmId\)\}\/custody/);
+  assert.match(page, /\/api\/armory\/storage-locations/);
+  assert.match(page, /Physical Custody/);
+  assert.match(page, /Manage Custody/);
+  assert.match(page, /href=\{`\/firearms\/\$\{selectedFirearm\.id\}`\}/);
+});
