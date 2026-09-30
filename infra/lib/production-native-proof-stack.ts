@@ -21,6 +21,7 @@ export class ProductionNativeProofStack extends cdk.Stack {
     const logGroupArn = `arn:aws:logs:${region}:${account}:log-group:${logGroupName}:*`;
     const nativeSecret = `arn:aws:secretsmanager:${region}:${account}:secret:tracepoint/production/application/aws-native-rIikku`;
     const databaseSecret = `arn:aws:secretsmanager:${region}:${account}:secret:tracepoint/production/final/database-runtime-20260926-yg23sb`;
+    const sentryRuntimeSecret = `arn:aws:secretsmanager:${region}:${account}:secret:tracepoint/production/sentry-runtime-yGnfPL`;
     const identity = `arn:aws:ses:${region}:${account}:identity/tracepointhq.com`;
     const configurationSet = `arn:aws:ses:${region}:${account}:configuration-set/tracepoint-production`;
     const pool = `arn:aws:cognito-idp:${region}:${account}:userpool/us-east-1_diFmWDMe9`;
@@ -56,7 +57,8 @@ export class ProductionNativeProofStack extends cdk.Stack {
     const boundary = new iam.ManagedPolicy(this, 'NativeProofBoundary', {
       managedPolicyName: 'TracePointProductionNativeProofBoundary-v1',
       description: 'Exact upper bound for isolated AWS-native production proof; bridge boundary v16 is unchanged',
-      statements: [...runtimeStatements, ...executionStatements],
+      statements: [...runtimeStatements, ...executionStatements,
+        new iam.PolicyStatement({ actions: ['secretsmanager:GetSecretValue'], resources: [sentryRuntimeSecret] })],
     });
     const principal = new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
       conditions: { StringEquals: { 'aws:SourceAccount': account },

@@ -39,6 +39,12 @@ assert.equal(withAction('s3:*').length, 0);
 assert.equal(withAction('ses:*').length, 0);
 assert.equal(withAction('ecr:GetAuthorizationToken')[0].Resource, '*');
 assert.equal(statements.filter(statement => statement.Resource === '*').length, 1);
+const sentryRuntimeSecret = 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/sentry-runtime-yGnfPL';
+const sentryRuntimeStatements = withAction('secretsmanager:GetSecretValue').filter(statement =>
+  JSON.stringify(statement.Resource).includes('tracepoint/production/sentry-runtime-yGnfPL'));
+assert.equal(sentryRuntimeStatements.length, 1);
+assert.deepEqual(sentryRuntimeStatements[0].Resource, sentryRuntimeSecret);
+assert.equal(actionSet(sentryRuntimeStatements[0]).size, 1);
 for (const statement of statements.filter(statement => actionSet(statement).has('cognito-idp:AdminCreateUser'))) {
   assert.equal(statement.Resource, 'arn:aws:cognito-idp:us-east-1:193644343389:userpool/us-east-1_diFmWDMe9');
 }
