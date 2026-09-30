@@ -21,3 +21,6 @@ npm-debug.log*
 !database/aws/*.sql
 !database/rehearsal/001_readington_officer_first_login.sql
 !database/rehearsal/002_montville_officer_first_login.sql
+!supabase/
+!supabase/migrations/
+!supabase/migrations/*.sql
