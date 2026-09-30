@@ -8,8 +8,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const result = await resolveServerAccess(request);
+export async function GET() {
+  const result = await resolveServerAccess();
 
   if (!result.ok) {
     return accessFailureResponse(result);
