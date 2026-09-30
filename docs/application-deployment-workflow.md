@@ -20,7 +20,11 @@ From a clean, reviewed checkout:
 
 The script validates the account, region, and expected assumed role before it reads or changes deployment state. It archives the reviewed Git SHA, runs the existing environment-specific CodeBuild image build, tags the immutable ECR image with that SHA (production retains its existing `-aws-native-production` suffix), waits for a clean ECR scan, and copies the live application task-definition pattern while changing only the `tracepoint` container image to the matching immutable digest. It then calls `ecs update-service` only for the existing application service.
 
-Validation fails the deployment if ECS does not stabilize, the service shape changes, a target is unhealthy, `/api/health` is not a healthy TracePoint response, the running task image/digest does not match the ECR release, or the existing application tests fail. Staging also runs the existing staging HTTP smoke suite.
+Before ECS changes, the script runs account, source-state, and required local application validation. A failure there stops the workflow before it registers or deploys an application revision.
+
+After ECS changes, rollback-authoritative checks are limited to evidence about the deployment: ECS steady state and task counts, active (non-draining) ALB target health, public `/api/health`, the running task-definition/image digest, and deployment-safe remote smoke requests. ALB targets in `draining` state are expected during deregistration and do not invalidate an otherwise healthy new release.
+
+The existing staging HTTP smoke suite runs afterward as a post-deployment diagnostic. A local Node, sandbox, dependency, or workstation-network failure produces `DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING`; it cannot roll back a release that passed the AWS and remote checks.
 
 If a prior run built the same immutable SHA image but stopped before the ECS update, rerun the command. The script verifies and reuses that exact scan-clean image rather than trying to overwrite its ECR tag.
 

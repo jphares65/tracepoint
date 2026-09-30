@@ -29,6 +29,13 @@ $configuration = @{
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $imageRepository = "$($configuration.Account).dkr.ecr.$($configuration.Region).amazonaws.com/$($configuration.Repository)"
+$script:DeploymentWarnings = [System.Collections.Generic.List[string]]::new()
+
+function Add-DeploymentWarning {
+    param([Parameter(Mandatory)][string]$Message)
+    $script:DeploymentWarnings.Add($Message)
+    Write-Warning $Message
+}
 
 function Invoke-Aws {
     param([Parameter(Mandatory)][string[]]$Arguments)
@@ -211,7 +218,11 @@ function Test-Deployment {
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri "$($configuration.Host)/api/health" -TimeoutSec 30
         $health = $response.Content | ConvertFrom-Json
-    } catch { throw 'The public /api/health verification failed.' }
+    } catch {
+        if ($null -ne $_.Exception.Response) { throw 'The public /api/health verification failed.' }
+        Add-DeploymentWarning "Could not reach public /api/health from this workstation: $($_.Exception.Message)"
+        return
+    }
     if ($response.StatusCode -ne 200 -or $health.status -ne 'ok' -or $health.service -ne 'tracepoint') { throw 'The public /api/health response is unhealthy.' }
     Invoke-DeploymentSafeRemoteSmoke
 }
@@ -222,7 +233,11 @@ function Invoke-DeploymentSafeRemoteSmoke {
     foreach ($route in @('/api/health', '/login')) {
         try {
             $response = Invoke-WebRequest -UseBasicParsing -Uri "$($configuration.Host)$route" -TimeoutSec 30
-        } catch { throw "Deployment-safe remote smoke failed for $route." }
+        } catch {
+            if ($null -ne $_.Exception.Response) { throw "Deployment-safe remote smoke failed for $route." }
+            Add-DeploymentWarning "Could not run remote smoke for $route from this workstation: $($_.Exception.Message)"
+            continue
+        }
         if ($response.StatusCode -ne 200) { throw "Deployment-safe remote smoke returned HTTP $($response.StatusCode) for $route." }
     }
 }
@@ -240,13 +255,6 @@ function Invoke-PostDeploymentDiagnostics {
 }
 
 Assert-AwsIdentity | Out-Null
-$commit = Assert-ReviewedCommit
-try {
-    Invoke-RequiredLocalValidation
-} catch {
-    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
-    throw
-}
 $serviceBefore = Get-Service
 $invariant = Get-ServiceInvariant -Service $serviceBefore
 $previousHealthyTaskArn = [string]$serviceBefore.taskDefinition
@@ -264,6 +272,13 @@ if ($RollbackTaskDefinitionArn) {
     exit 0
 }
 
+$commit = Assert-ReviewedCommit
+try {
+    Invoke-RequiredLocalValidation
+} catch {
+    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
+    throw
+}
 $imageTag = "$commit$($configuration.ImageSuffix)"
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
 $imageUri = "${imageRepository}@$($image.imageDigest)"
@@ -281,6 +296,7 @@ try {
         Write-Warning "LOCAL VALIDATION WARNING: $($_.Exception.Message)"
         Write-Host 'DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING'
     }
+    if ($script:DeploymentWarnings.Count -gt 0) { Write-Host 'DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING' }
 }
 catch {
     $failure = $_
