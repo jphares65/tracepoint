@@ -133,7 +133,7 @@ function Publish-Image {
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/aws-native-migrations.test.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
@@ -243,17 +243,14 @@ function Invoke-DeploymentSafeRemoteSmoke {
 }
 
 function Invoke-RequiredLocalValidation {
-    # These gates are deterministic in the developer and Codex environments.
-    # The full application suite remains useful, but is diagnostic because its
-    # test host can terminate after all passing output without an application
-    # failure (for example, on sandbox process cleanup).
-    Invoke-Native -File npm.cmd -Arguments @('run', 'lint')
-    Invoke-Native -File node.exe -Arguments @('--test', (Join-Path $PSScriptRoot 'aws-native-migrations.test.mjs'))
+    # Workstation checks are intentionally non-authoritative. CodeBuild runs
+    # lint, the application suite, and migration-runner integrity checks with
+    # bounded timeouts before this script receives an image to deploy.
+    Write-Host 'LOCAL DIAGNOSTICS OPTIONAL — CodeBuild is the authoritative validation environment.'
 }
 
 function Invoke-PostDeploymentDiagnostics {
-    # This existing browser-style suite is helpful, but Node/runtime restrictions
-    # on the operator workstation are not evidence that a healthy ECS release is bad.
+    # These optional workstation diagnostics are never deployment authority.
     if ($Environment -eq 'staging') {
         try {
             Invoke-Native -File node.exe -Arguments @((Join-Path $PSScriptRoot 'run-application-tests.mjs'))
