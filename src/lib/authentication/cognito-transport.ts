@@ -54,6 +54,12 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   const exactProxyHeaders=request.headers.get('host')===new URL(origin).host&&
    request.headers.get('x-forwarded-host')===new URL(origin).host&&
    request.headers.get('x-forwarded-proto')==='https';
+  // ALB forwards the original Host and its TLS assertion, but does not add
+  // X-Forwarded-Host. If an upstream does provide that header it must still
+  // agree with the configured public host.
+  const normalProxyHeaders=request.headers.get('host')===new URL(origin).host&&
+   request.headers.get('x-forwarded-proto')==='https'&&
+   [null,new URL(origin).host].includes(request.headers.get('x-forwarded-host'));
   const shadowProxyOrigin=config.notificationMode==='shadow'&&
    (url.hostname==='0.0.0.0'||/^ip-(?:\d{1,3}-){3}\d{1,3}\.ec2\.internal$/.test(url.hostname))&&
    url.protocol==='https:'&&url.port==='3000'&&
@@ -62,7 +68,7 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   // container. Next can expose that internal hop in Request.url. This exception
   // is valid only with the exact external Host and HTTPS proxy assertions; the
   // separate CSRF Origin check below still requires the normal site origin.
-  const normalProxyOrigin=config.notificationMode==='normal'&&exactProxyHeaders&&
+  const normalProxyOrigin=config.notificationMode==='normal'&&normalProxyHeaders&&
    ((url.hostname==='0.0.0.0'&&url.port==='3000'&&
      (url.protocol==='http:'||url.protocol==='https:'))||
     (config.environment==='production'&&url.origin==='http://tracepointhq.com')||
