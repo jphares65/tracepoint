@@ -201,6 +201,16 @@ function Test-Deployment {
     & aws.exe ecs wait services-stable --cluster $configuration.Cluster --services $configuration.Service --profile $configuration.Profile --region $configuration.Region
     if ($LASTEXITCODE -ne 0) { throw 'ECS did not reach a steady state.' }
     $service = Get-Service
+    $rolloutDeadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
+    while (
+        $service.taskDefinition -eq $ExpectedTaskArn -and
+        @($service.deployments).Count -eq 1 -and
+        $service.deployments[0].rolloutState -eq 'IN_PROGRESS' -and
+        [DateTimeOffset]::UtcNow -lt $rolloutDeadline
+    ) {
+        Start-Sleep -Seconds 5
+        $service = Get-Service
+    }
     if ((Get-ServiceInvariant -Service $service) -ne $Invariant) { throw 'Unexpected ECS service infrastructure change detected.' }
     if ($service.taskDefinition -ne $ExpectedTaskArn -or @($service.deployments).Count -ne 1 -or $service.deployments[0].rolloutState -ne 'COMPLETED') { throw 'ECS rollout did not complete the expected task revision.' }
     if ($service.runningCount -ne $service.desiredCount -or $service.pendingCount -ne 0) { throw 'ECS service task counts are unhealthy.' }
