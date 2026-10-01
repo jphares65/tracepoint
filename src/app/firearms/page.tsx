@@ -99,7 +99,7 @@ type ArmoryPayload = {
   departmentId: string;
   firearms: ArmoryFirearm[];
   members: ArmoryMember[];
-  access?: { canManageRestrictions?: boolean };
+  access?: { canManageRestrictions?: boolean; canManageRestrictedCustody?: boolean };
 };
 
 type CustodyResponse = {
@@ -115,6 +115,7 @@ type CustodyResponse = {
     daily_return_required: boolean;
     supervisor_approval_required: boolean;
     reason_category: string;
+    restriction_type?: "no_carry" | "duty_only";
     is_active: boolean;
   }>;
 };
@@ -250,8 +251,8 @@ function getRestrictionLabel(custody: CustodyResponse | null) {
   const active = custody?.restrictions?.find((item) => item.is_active);
 
   if (!active) return null;
-  if (active.no_possession_permitted) return "No possession permitted";
-  if (active.duty_only) return "Duty only";
+  if (active.restriction_type === "no_carry" || active.no_possession_permitted) return "No Carry";
+  if (active.restriction_type === "duty_only" || active.duty_only) return "Duty Only";
   if (active.daily_return_required) return "Daily return required";
   if (active.supervisor_approval_required) return "Supervisor approval required";
 
@@ -336,8 +337,11 @@ export default function FirearmsPage() {
   const [custodyLoading, setCustodyLoading] = useState(false);
   const [custodyLoaded, setCustodyLoaded] = useState(false);
   const [canManageRestrictions, setCanManageRestrictions] = useState(false);
-  const [restrictedUseMode, setRestrictedUseMode] = useState<"enable" | "disable" | "storage" | "return" | "initializeOfficer" | "initializeStorage" | null>(null);
+  const [restrictedUseMode, setRestrictedUseMode] = useState<"enable" | "disable" | "storage" | "return" | null>(null);
   const [restrictedUseReason, setRestrictedUseReason] = useState("");
+  const [restrictionType, setRestrictionType] = useState<"no_carry" | "duty_only">("duty_only");
+  const [restrictionEffectiveDate, setRestrictionEffectiveDate] = useState("");
+  const [restrictionReviewDate, setRestrictionReviewDate] = useState("");
   const [restrictedUseBusy, setRestrictedUseBusy] = useState(false);
   const [restrictedStorageLocationId, setRestrictedStorageLocationId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -930,25 +934,27 @@ export default function FirearmsPage() {
   }
 
   async function submitRestrictedUse() {
-    if (!selectedFirearm || !restrictedUseMode || !restrictedUseReason.trim()) return;
+    if (!selectedFirearm || !restrictedUseMode) return;
     setRestrictedUseBusy(true);
     setError(null);
     try {
       const active = selectedCustody?.restrictions?.find((item) => item.is_active);
       const method = restrictedUseMode === "enable" ? "PUT" : restrictedUseMode === "disable" ? "DELETE" : "POST";
       const body = restrictedUseMode === "enable"
-        ? { reasonCategory: restrictedUseReason, dutyOnly: true }
+        ? { restrictionType, effectiveDate: restrictionEffectiveDate || null, reason: restrictedUseReason, reviewDate: restrictionReviewDate || null }
         : restrictedUseMode === "disable"
           ? { restrictionId: active?.id, reason: restrictedUseReason }
-          : restrictedUseMode === "return" || restrictedUseMode === "initializeOfficer"
-            ? { toHolderType: "OFFICER", toHolderUserId: selectedFirearm.active_assignment?.assigned_to_user_id, reason: restrictedUseReason, idempotencyKey: crypto.randomUUID() }
-            : { toHolderType: "SECURE_STORAGE", toStorageLocationId: restrictedStorageLocationId || storageLocations[0]?.id, reason: restrictedUseReason, idempotencyKey: crypto.randomUUID() };
+          : restrictedUseMode === "return"
+            ? { action: "CHECK_OUT", idempotencyKey: crypto.randomUUID() }
+            : { action: "CHECK_IN", storageLocationId: restrictedStorageLocationId || storageLocations[0]?.id, idempotencyKey: crypto.randomUUID() };
       const response = await fetch(`/api/armory/firearms/${encodeURIComponent(selectedFirearm.id)}/custody`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response));
       await refreshSelectedCustody();
       setRestrictedUseMode(null);
       setRestrictedUseReason("");
       setRestrictedStorageLocationId("");
+      setRestrictionEffectiveDate("");
+      setRestrictionReviewDate("");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Restricted Use could not be updated.");
     } finally { setRestrictedUseBusy(false); }
@@ -1782,12 +1788,6 @@ The firearm will be removed from active inventory and future operational selecti
                             Assignment and physical custody are tracked separately.
                           </p>
                         </div>
-                        <a
-                          href={`/firearms/${selectedFirearm.id}`}
-                          className="inline-flex items-center rounded-xl bg-violet-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-violet-500"
-                        >
-                          Manage Custody
-                        </a>
                       </div>
 
                       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -1831,16 +1831,19 @@ The firearm will be removed from active inventory and future operational selecti
 
                     {selectedRestriction ? (
                       <section className="rounded-3xl border border-rose-500/40 bg-rose-950/20 p-4">
-                        <p className="text-xs font-black tracking-[0.2em] text-rose-200">RESTRICTED USE</p>
-                        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-slate-400">Assignment</p><p className="font-semibold text-white">{selectedFirearm.active_assignment ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment) : "Unassigned"}</p></div><div><p className="text-xs text-slate-400">Physical Custody</p><p className="font-semibold text-white">{selectedPhysicalCustody}</p></div><div><p className="text-xs text-slate-400">Restriction</p><p className="font-semibold text-rose-100">{selectedRestriction}</p></div></div>
-                        {canManageRestrictions && !restrictedUseMode && <div className="mt-4 flex flex-wrap gap-2">{!selectedCustody?.current ? <div><p className="mb-2 text-xs font-bold tracking-wide text-rose-100">SET CURRENT CUSTODY</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setRestrictedUseMode("initializeOfficer")} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white">With Assigned Officer</button><button type="button" onClick={() => setRestrictedUseMode("initializeStorage")} className="rounded-xl border border-rose-300/40 px-3 py-2 text-sm font-bold text-rose-100">In Secure Storage</button></div></div> : selectedCustody.current.holder_type === "SECURE_STORAGE" ? (selectedCustody.restrictions?.find((item) => item.is_active)?.no_possession_permitted ? <span className="text-sm font-semibold text-rose-200">Possession Prohibited</span> : <button type="button" onClick={() => setRestrictedUseMode("return")} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white">Return to Officer</button>) : <button type="button" onClick={() => setRestrictedUseMode("storage")} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white">Record in Storage</button>}<button type="button" onClick={() => setRestrictedUseMode("disable")} className="rounded-xl border border-rose-300/40 px-3 py-2 text-sm font-bold text-rose-100">Clear Restricted Use</button></div>}
-                        {restrictedUseMode && <div className="mt-4 rounded-2xl border border-rose-300/30 p-3">{(restrictedUseMode === "storage" || restrictedUseMode === "initializeStorage") && storageLocations.length > 1 && <label className="block text-xs font-semibold text-slate-300">Secure storage<select value={restrictedStorageLocationId} onChange={(event) => setRestrictedStorageLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white"><option value="">Select a location</option>{storageLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>}<label className="mt-3 block text-xs font-semibold text-slate-300">Reason<textarea value={restrictedUseReason} onChange={(event) => setRestrictedUseReason(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><div className="mt-3 flex gap-2"><button type="button" disabled={restrictedUseBusy || !restrictedUseReason.trim() || ((restrictedUseMode === "storage" || restrictedUseMode === "initializeStorage") && (!storageLocations.length || (storageLocations.length > 1 && !restrictedStorageLocationId)))} onClick={() => void submitRestrictedUse()} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">{restrictedUseMode === "return" || restrictedUseMode === "initializeOfficer" ? "Return to Officer" : restrictedUseMode === "disable" ? "Clear Restricted Use" : "Record in Storage"}</button><button type="button" onClick={() => { setRestrictedUseMode(null); setRestrictedUseReason(""); }} className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200">Cancel</button></div></div>}
+                        <p className="text-sm font-black tracking-[0.12em] text-rose-100">{selectedRestriction === "No Carry" ? "RESTRICTED — NO CARRY" : "DUTY ONLY"}</p>
+                        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-slate-400">Assigned to</p><p className="font-semibold text-white">{selectedFirearm.active_assignment ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment) : "Unassigned"}</p></div><div><p className="text-xs text-slate-400">Current custody</p><p className="font-semibold text-white">{selectedPhysicalCustody}</p></div><div><p className="text-xs text-slate-400">Restriction</p><p className="font-semibold text-rose-100">{selectedRestriction}</p></div></div>
+                        {!restrictedUseMode && selectedRestriction === "Duty Only" && selectedCustody?.current?.holder_type === "SECURE_STORAGE" && <button type="button" onClick={() => setRestrictedUseMode("return")} className="mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white">Check Out</button>}
+                        {!restrictedUseMode && selectedRestriction === "Duty Only" && selectedCustody?.current?.holder_type === "OFFICER" && <button type="button" onClick={() => setRestrictedUseMode("storage")} className="mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white">Check In</button>}
+                        {selectedRestriction === "No Carry" && <p className="mt-4 text-sm font-semibold text-rose-200">Checkout is blocked until an authorized user changes or removes this restriction.</p>}
+                        {canManageRestrictions && !restrictedUseMode && <button type="button" onClick={() => setRestrictedUseMode("disable")} className="ml-2 mt-4 rounded-xl border border-rose-300/40 px-3 py-2 text-sm font-bold text-rose-100">Remove restriction</button>}
+                        {restrictedUseMode && <div className="mt-4 rounded-2xl border border-rose-300/30 p-3">{restrictedUseMode === "storage" && <label className="block text-xs font-semibold text-slate-300">Secure storage<select value={restrictedStorageLocationId} onChange={(event) => setRestrictedStorageLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white">{storageLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>}<label className="mt-3 block text-xs font-semibold text-slate-300">{restrictedUseMode === "disable" ? "Removal reason" : "Notes (optional)"}<textarea value={restrictedUseReason} onChange={(event) => setRestrictedUseReason(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><div className="mt-3 flex gap-2"><button type="button" disabled={restrictedUseBusy || (restrictedUseMode === "storage" && !storageLocations.length)} onClick={() => void submitRestrictedUse()} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">{restrictedUseMode === "return" ? "Check Out" : restrictedUseMode === "disable" ? "Remove restriction" : "Check In"}</button><button type="button" onClick={() => setRestrictedUseMode(null)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200">Cancel</button></div></div>}
                       </section>
                     ) : canManageRestrictions && selectedFirearm.active_assignment ? (
-                      <button type="button" onClick={() => setRestrictedUseMode("enable")} className="self-start text-xs font-semibold text-slate-500 hover:text-slate-200">Mark as Restricted Use</button>
+                      <button type="button" onClick={() => setRestrictedUseMode("enable")} className="self-start text-xs font-semibold text-slate-500 hover:text-slate-200">Add restricted-use status</button>
                     ) : null}
 
-                    {restrictedUseMode === "enable" && !selectedRestriction && <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-3"><label className="block text-xs font-semibold text-slate-300">Restricted Use reason<textarea value={restrictedUseReason} onChange={(event) => setRestrictedUseReason(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><div className="mt-3 flex gap-2"><button type="button" disabled={restrictedUseBusy || !restrictedUseReason.trim()} onClick={() => void submitRestrictedUse()} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white">Mark Restricted Use</button><button type="button" onClick={() => setRestrictedUseMode(null)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200">Cancel</button></div></div>}
+                    {restrictedUseMode === "enable" && !selectedRestriction && <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-3"><label className="block text-xs font-semibold text-slate-300">Restriction type<select value={restrictionType} onChange={(event) => setRestrictionType(event.target.value as "no_carry" | "duty_only")} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white"><option value="duty_only">Duty Only</option><option value="no_carry">No Carry</option></select></label><label className="mt-3 block text-xs font-semibold text-slate-300">Effective date<input type="date" value={restrictionEffectiveDate} onChange={(event) => setRestrictionEffectiveDate(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><label className="mt-3 block text-xs font-semibold text-slate-300">Reason / reference (optional)<textarea value={restrictedUseReason} onChange={(event) => setRestrictedUseReason(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><label className="mt-3 block text-xs font-semibold text-slate-300">Review / expiration date (optional)<input type="date" value={restrictionReviewDate} onChange={(event) => setRestrictionReviewDate(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><div className="mt-3 flex gap-2"><button type="button" disabled={restrictedUseBusy} onClick={() => void submitRestrictedUse()} className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-bold text-white">Save restriction</button><button type="button" onClick={() => setRestrictedUseMode(null)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200">Cancel</button></div></div>}
 
                     <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40 p-1">
                       <div className="flex min-w-max gap-1">

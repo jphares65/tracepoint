@@ -38,6 +38,7 @@ before(async () => {
     create function public.has_department_permission(p_department_id uuid,p_permission_code text) returns boolean language sql stable as $$select public.is_department_member(p_department_id)$$;
   `);
   await client.query(await readFile("database/aws/028_firearm_custody_phase_a.sql", "utf8"));
+  await client.query(await readFile("database/aws/031_restricted_firearm_simple_custody.sql", "utf8"));
 });
 
 after(async () => { await client?.end().catch(() => undefined); await database?.stop().catch(() => undefined); await rm(directory, { recursive: true, force: true }).catch(() => undefined); });
@@ -65,4 +66,19 @@ test("native custody transfer preserves assignment, rejects cross-tenant substit
   assert.equal((await client.query("select count(*)::int as count from public.firearm_custody_events where firearm_id=$1", [firearm])).rows[0].count, 1);
   await client.query("select set_config('tracepoint.department_id',$1,false)", [otherDepartment]);
   await assert.rejects(() => client.query("select public.transfer_firearm_custody($1,'OFFICER',$2,null,'bad',null,'60000000-0000-4000-8000-000000000002',false)", [firearm, user]), /firearm unavailable/);
+});
+
+test("simple restricted custody checks in and out without changing assignment and audits both actions", async () => {
+  const department = "10000000-0000-4000-8000-000000000001";
+  const user = "20000000-0000-4000-8000-000000000001";
+  const firearm = "30000000-0000-4000-8000-000000000001";
+  const assignment = "40000000-0000-4000-8000-000000000001";
+  const location = "50000000-0000-4000-8000-000000000001";
+  await client.query("select set_config('tracepoint.subject_id',$1,false), set_config('tracepoint.department_id',$2,false)", [user, department]);
+  await client.query("select public.set_firearm_restriction($1,'duty_only',current_date,'training')", [firearm]);
+  await client.query("select public.operate_restricted_firearm_custody($1,'CHECK_OUT',null,null,$2)", [firearm, "60000000-0000-4000-8000-000000000003"]);
+  assert.equal((await client.query("select holder_type from public.firearm_current_custody where firearm_id=$1", [firearm])).rows[0].holder_type, "OFFICER");
+  await client.query("select public.operate_restricted_firearm_custody($1,'CHECK_IN',$2,null,$3)", [firearm, location, "60000000-0000-4000-8000-000000000004"]);
+  assert.equal((await client.query("select returned_at is null as active from public.firearm_assignments where id=$1", [assignment])).rows[0].active, true);
+  assert.equal((await client.query("select count(*)::int as count from public.audit_events where action in ('firearm_checked_out','firearm_checked_in')")).rows[0].count, 2);
 });
