@@ -308,7 +308,11 @@ if ($RollbackTaskDefinitionArn) {
 
 $commit = Assert-ReviewedCommit
 if ($SkipLocalValidation) {
-    Add-DeploymentWarning 'Local canonical validation is explicitly bypassed for this release; CodeBuild remains the required pre-publish canonical validation gate.'
+    # Keep the bypass visible in the final release summary.  Do not emit a
+    # warning record here: some non-interactive PowerShell hosts treat it as a
+    # terminal pipeline result and never reach the required CodeBuild gate.
+    $script:DeploymentWarnings.Add('Local canonical validation is explicitly bypassed for this release; CodeBuild remains the required pre-publish canonical validation gate.')
+    Write-Host 'Local canonical validation is explicitly bypassed; CodeBuild remains the required pre-publish canonical validation gate.'
 } else {
     try {
         Invoke-RequiredLocalValidation
