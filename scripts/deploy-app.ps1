@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
     [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
+    [ValidatePattern('^[0-9a-fA-F]{40}$')][string]$ImageCommit,
     [switch]$SkipLocalValidation
 )
 
@@ -409,6 +410,11 @@ if ($RollbackTaskDefinitionArn) {
 }
 
 $commit = Assert-ReviewedCommit
+if ($ImageCommit) {
+    & git.exe -C $repositoryRoot cat-file -e "$ImageCommit^{commit}"
+    if ($LASTEXITCODE -ne 0) { throw "Image commit '$ImageCommit' is not a local commit." }
+    $commit = $ImageCommit.ToLowerInvariant()
+}
 if ($SkipLocalValidation) {
     Add-DeploymentWarning 'Local canonical validation is explicitly bypassed for this release; CodeBuild remains the required pre-publish canonical validation gate.'
 } else {
