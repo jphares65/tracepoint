@@ -229,6 +229,16 @@ function Register-ApplicationTaskRevision {
 
 function Test-Deployment {
     param([Parameter(Mandatory)][string]$ExpectedTaskArn, [Parameter(Mandatory)][string]$ExpectedImageDigest, [Parameter(Mandatory)][string]$ExpectedImageUri, [Parameter(Mandatory)][string]$Invariant)
+    # update-service can return before ECS exposes the new task definition to
+    # describe-services. Wait for that transition before using the stable
+    # waiter, otherwise it can immediately accept the prior healthy revision.
+    $visibilityDeadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
+    do {
+        $serviceBeforeWait = Get-Service
+        if ($serviceBeforeWait.taskDefinition -eq $ExpectedTaskArn) { break }
+        Start-Sleep -Seconds 5
+    } while ([DateTimeOffset]::UtcNow -lt $visibilityDeadline)
+    if ($serviceBeforeWait.taskDefinition -ne $ExpectedTaskArn) { throw 'ECS did not begin the expected task revision.' }
     & aws.exe ecs wait services-stable --cluster $configuration.Cluster --services $configuration.Service --profile $configuration.Profile --region $configuration.Region
     if ($LASTEXITCODE -ne 0) { throw 'ECS did not reach a steady state.' }
     $service = Get-Service
