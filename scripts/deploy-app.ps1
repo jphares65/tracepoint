@@ -32,11 +32,83 @@ $configuration = @{
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $imageRepository = "$($configuration.Account).dkr.ecr.$($configuration.Region).amazonaws.com/$($configuration.Repository)"
 $script:DeploymentWarnings = [System.Collections.Generic.List[string]]::new()
+$deploymentLockDirectory = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TracePoint\deployment-locks'
 
 function Add-DeploymentWarning {
     param([Parameter(Mandatory)][string]$Message)
     $script:DeploymentWarnings.Add($Message)
     Write-Warning $Message
+}
+
+# The image tag is immutable. Serialize deployments per environment on this
+# workstation so two release invocations cannot race to publish the same tag or
+# update the same ECS service. A stale lease is retained as evidence and only
+# replaced after its recorded owning process is confirmed gone.
+function Get-DeploymentLockPath {
+    param([Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$LockEnvironment)
+    return Join-Path $deploymentLockDirectory "deploy-app-$LockEnvironment.lock.json"
+}
+
+function Get-DeploymentLockOwner {
+    param([Parameter(Mandatory)][string]$Path)
+    try { return (Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json) }
+    catch { return $null }
+}
+
+function Test-DeploymentLockOwnerActive {
+    param($Owner)
+    if ($null -eq $Owner -or $null -eq $Owner.pid -or $null -eq $Owner.processStartFileTimeUtc) { return $false }
+    try {
+        $process = Get-Process -Id ([int]$Owner.pid) -ErrorAction Stop
+        $recordedStart = [DateTime]::FromFileTimeUtc([int64]$Owner.processStartFileTimeUtc)
+        return ([Math]::Abs(($process.StartTime.ToUniversalTime() - $recordedStart).TotalSeconds) -lt 1)
+    } catch {
+        return $false
+    }
+}
+
+function Acquire-DeploymentLock {
+    param([Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$LockEnvironment)
+    New-Item -ItemType Directory -Path $deploymentLockDirectory -Force | Out-Null
+    $path = Get-DeploymentLockPath -LockEnvironment $LockEnvironment
+    $owner = [ordered]@{
+        environment = $LockEnvironment
+        pid = $PID
+        processStartFileTimeUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToFileTimeUtc()
+        acquiredAt = [DateTime]::UtcNow.ToString('o')
+        token = [guid]::NewGuid().ToString('N')
+    }
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        try {
+            $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($owner | ConvertTo-Json -Compress))
+            $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+            try {
+                $stream.Write($bytes, 0, $bytes.Length)
+                $stream.Flush($true)
+            } finally {
+                $stream.Dispose()
+            }
+            return [pscustomobject]@{ Path = $path; Token = $owner.token; Environment = $LockEnvironment }
+        } catch [IO.IOException] {
+            $existingOwner = Get-DeploymentLockOwner -Path $path
+            if (Test-DeploymentLockOwnerActive $existingOwner) {
+                throw "Another $LockEnvironment deployment is already running (PID $($existingOwner.pid))."
+            }
+            $stalePath = "$path.stale-$([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'))-$([guid]::NewGuid().ToString('N'))"
+            try { Move-Item -LiteralPath $path -Destination $stalePath -ErrorAction Stop }
+            catch { throw "Unable to safely preserve the stale $LockEnvironment deployment lock at '$path'." }
+        }
+    }
+    throw "Unable to acquire the $LockEnvironment deployment lock at '$path'."
+}
+
+function Release-DeploymentLock {
+    param($Lock)
+    if ($null -eq $Lock -or -not (Test-Path -LiteralPath $Lock.Path)) { return }
+    $owner = Get-DeploymentLockOwner -Path $Lock.Path
+    if ($null -ne $owner -and $owner.token -eq $Lock.Token) {
+        Remove-Item -LiteralPath $Lock.Path -Force
+    }
 }
 
 function Invoke-Aws {
@@ -316,6 +388,8 @@ function Invoke-PostDeploymentDiagnostics {
     }
 }
 
+$deploymentLock = Acquire-DeploymentLock -LockEnvironment $Environment
+try {
 Assert-AwsIdentity | Out-Null
 $serviceBefore = Get-Service
 $invariant = Get-ServiceInvariant -Service $serviceBefore
@@ -378,5 +452,9 @@ catch {
         } catch { throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)" }
     }
     throw
+}
+}
+finally {
+    Release-DeploymentLock -Lock $deploymentLock
 }
 
