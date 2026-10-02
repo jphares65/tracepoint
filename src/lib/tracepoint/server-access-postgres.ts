@@ -10,7 +10,9 @@ import {
 import { effectiveDepartmentPermissions } from "./permission-authority";
 import { TRACEPOINT_PERMISSIONS, type TracePointPermission } from "./permissions";
 
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL validates UUID values at the authorization boundary. Cognito and
+// newer UUID generators are not limited to the legacy v1-v5/RFC4122 layout.
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const labels:Record<string,string>={administrator:"Administrator",department_admin:"Department Administrator",admin:"Administrator",chief:"Chief",command_staff:"Command Staff",supervisor:"Supervisor",range_master:"Range Master",armorer:"Armorer",instructor:"Instructor",officer:"Officer"};
 const priority=["administrator","department_admin","admin","chief","command_staff","supervisor","range_master","armorer","instructor","officer"];
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
