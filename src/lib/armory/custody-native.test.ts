@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
@@ -23,7 +23,7 @@ test("custody mutations are idempotent and append an audit event", async () => {
 test("custody API is server-authorized and never creates a Cognito identity", async () => {
   const route = await readFile("src/app/api/armory/firearms/[firearmId]/custody/route.ts", "utf8");
   assert.match(route, /resolveServerAccess\(\)/);
-  assert.match(route, /transfer_firearm_custody/);
+  assert.match(route, /operate_restricted_firearm_custody/);
   assert.doesNotMatch(route, /AdminCreateUser|AdminSetUserPassword|cognito/i);
 });
 
@@ -54,10 +54,14 @@ test("restricted use preserves assignment, uses existing custody, and keeps its 
   assert.match(sql, /restricted use requires an active assignment/);
   assert.match(sql, /update public\.firearm_possession_restrictions set is_active=false/);
   assert.match(sql, /firearm_possession_restriction_cleared/);
-  assert.match(route, /set_firearm_restricted_use/);
-  assert.match(route, /clear_firearm_possession_restriction/);
-  assert.match(page, /RESTRICTED USE/);
-  assert.match(page, /Record in Storage/);
-  assert.match(page, /Return to Officer/);
+  assert.match(route, /set_firearm_restriction/);
+  assert.match(route, /clear_firearm_restriction/);
+  assert.match(page, /No Carry/);
+  assert.match(page, /Duty Only/);
+  
   assert.match(page, /no_possession_permitted/);
 });
+
+
+
+
