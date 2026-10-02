@@ -129,7 +129,7 @@ test('staging accepts only its exact HTTPS-forwarded container hop for login sta
  const api=createCognitoTransport(config,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
  const headers={host:'staging.tracepointhq.com','x-forwarded-proto':'https',origin, 'sec-fetch-site':'same-origin'};
  const begin=(url:string,overrides:Record<string,string>={})=>api.begin(new Request(url,{method:'POST',headers:{...headers,...overrides}}));
- for(const authority of ['http://0.0.0.0:3000','https://0.0.0.0:3000','http://staging.tracepointhq.com']){
+ for(const authority of ['http://0.0.0.0:3000','https://0.0.0.0:3000','http://staging.tracepointhq.com','http://ip-10-40-0-90.ec2.internal:3000','https://ip-10-40-1-90.ec2.internal:3000']){
   const response=await begin(authority+'/api/auth/cognito/login');
   assert.equal(response.status,303);
   assert.equal(new URL(response.headers.get('location')!).searchParams.get('redirect_uri'),origin+'/api/auth/cognito/callback');

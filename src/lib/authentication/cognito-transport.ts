@@ -72,7 +72,9 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
    ((url.hostname==='0.0.0.0'&&url.port==='3000'&&
      (url.protocol==='http:'||url.protocol==='https:'))||
     (config.environment==='production'&&url.origin==='http://tracepointhq.com')||
-    (config.environment==='staging'&&url.origin==='http://staging.tracepointhq.com'));
+    (config.environment==='staging'&&(url.origin==='http://staging.tracepointhq.com'||
+     (url.port==='3000'&&(url.protocol==='http:'||url.protocol==='https:')&&
+      /^ip-10-40-[01]-\d{1,3}\.ec2\.internal$/.test(url.hostname)))));
   if((url.origin!==origin&&!shadowProxyOrigin&&!normalProxyOrigin)||url.pathname!==path){
    if(config.notificationMode==='shadow'||config.environment==='staging')console.warn(JSON.stringify({event:config.notificationMode==='shadow'?'shadow-cognito-request-mismatch':'staging-cognito-request-mismatch',
     actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
