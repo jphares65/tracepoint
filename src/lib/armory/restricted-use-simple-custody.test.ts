@@ -6,10 +6,11 @@ const sqlPath = "database/aws/031_restricted_firearm_simple_custody.sql";
 const routePath = "src/app/api/armory/firearms/[firearmId]/custody/route.ts";
 const pagePath = "src/app/firearms/page.tsx";
 
-test("restricted controls are only rendered after a restriction is active", async () => {
+test("restricted use is a contextual custody status with Set and Manage actions", async () => {
   const page = await readFile(pagePath, "utf8");
-  assert.match(page, /selectedRestriction \? \(/);
-  assert.match(page, /!selectedRestriction &&/);
+  assert.match(page, /Restricted Use/);
+  assert.match(page, /selectedRestriction \? "Manage" : "Set"/);
+  assert.doesNotMatch(page, /Add restricted-use status/);
 });
 
 test("only the dedicated restriction permission can create or remove a restriction", async () => {
@@ -20,12 +21,20 @@ test("only the dedicated restriction permission can create or remove a restricti
   assert.doesNotMatch(route, /manage_restrictions", "manage_firearms/);
 });
 
-test("no-carry blocks checkout while duty-only yields one state-driven action", async () => {
+test("no-carry is unmistakable while duty-only yields one state-driven custody action", async () => {
   const [sql, page] = await Promise.all([readFile(sqlPath, "utf8"), readFile(pagePath, "utf8")]);
   assert.match(sql, /no-carry restriction prohibits checkout/);
-  assert.match(page, /RESTRICTED — NO CARRY/);
-  assert.match(page, /holder_type === "SECURE_STORAGE".*Check Out/);
+  assert.match(page, /NO CARRY — this firearm remains assigned/);
+  assert.match(page, /holder_type === "SECURE_STORAGE".*Return to Officer/);
   assert.match(page, /holder_type === "OFFICER".*Check In/);
+  assert.match(page, /Physical custody: \{selectedPhysicalCustody\}/);
+});
+
+test("managing a restriction keeps its editable details in the existing restriction API", async () => {
+  const page = await readFile(pagePath, "utf8");
+  assert.match(page, /restrictedUseMode === "manage"/);
+  assert.match(page, /Administrative notes \(optional\)/);
+  assert.match(page, /notes: restrictionNotes \|\| null/);
 });
 
 test("restricted check-in and checkout preserve assignment and append audit records", async () => {
