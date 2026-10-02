@@ -17,7 +17,10 @@ export type PostgresSubjectContext = {
   subjectId: string;
 };
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL owns the typed, stable user-id mapping. Cognito identifiers can
+// use newer UUID layouts, so accept the UUID wire format without imposing a
+// legacy version or variant restriction before the database authorization.
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function assertContext(context: PostgresAuthorizationContext) {
   if (!uuidPattern.test(context.subjectId) || !uuidPattern.test(context.departmentId)) {
