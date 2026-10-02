@@ -313,7 +313,7 @@ if ($SkipLocalValidation) {
     try {
         Invoke-RequiredLocalValidation
     } catch {
-        Write-Host "PRE-DEPLOYMENT VALIDATION FAILED â€” ECS unchanged: $($_.Exception.Message)"
+        Write-Host "PRE-DEPLOYMENT VALIDATION FAILED - ECS unchanged: $($_.Exception.Message)"
         throw
     }
 }
@@ -339,7 +339,7 @@ try {
 catch {
     $failure = $_
     if ($deploymentStarted) {
-        Write-Host "DEPLOYMENT FAILED â€” rollback initiated: $($failure.Exception.Message)"
+        Write-Host "DEPLOYMENT FAILED - rollback initiated: $($failure.Exception.Message)"
         try {
             $null = Invoke-Aws @('ecs', 'update-service', '--cluster', $configuration.Cluster, '--service', $configuration.Service, '--task-definition', $previousHealthyTaskArn)
             $previousTask = Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn
