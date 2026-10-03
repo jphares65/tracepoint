@@ -13,6 +13,11 @@ test("restricted use is a contextual custody status with Set and Manage actions"
   assert.doesNotMatch(page, /Add restricted-use status/);
 });
 
+test("the detailed custody card is reserved for duty-only operational custody", async () => {
+  const page = await readFile(pagePath, "utf8");
+  assert.match(page, /workspaceTab === "custody" && selectedRestriction === "Duty Only"/);
+});
+
 test("only the dedicated restriction permission can create or remove a restriction", async () => {
   const [sql, route] = await Promise.all([readFile(sqlPath, "utf8"), readFile(routePath, "utf8")]);
   assert.match(sql, /'manage_firearm_restrictions'/);

@@ -1920,7 +1920,7 @@ The firearm will be removed from active inventory and future operational selecti
                       <FirearmAttachments firearmId={selectedFirearm.id} />
                     )}
 
-                    {workspaceTab === "custody" && (
+                    {workspaceTab === "custody" && selectedRestriction === "Duty Only" && (
                     <div className="rounded-3xl border border-slate-200 p-4">
                       <div className="flex items-center gap-2">
                         <ClipboardList className="h-5 w-5 text-slate-500" />
