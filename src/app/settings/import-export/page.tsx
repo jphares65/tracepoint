@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate as formatDisplayDate, formatDateTime as formatDisplayDateTime } from "@/lib/format/date";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
 import { REPORT_DEFINITIONS, reportCollection } from "@/lib/reports/report-definitions";
@@ -4128,21 +4129,7 @@ function ImportWizardContent() {
           return "-";
         }
 
-        const date = new Date(
-          value.length === 10
-            ? `${value}T12:00:00`
-            : value,
-        );
-
-        if (
-          Number.isNaN(
-            date.getTime(),
-          )
-        ) {
-          return value;
-        }
-
-        return date.toLocaleDateString();
+        return formatDisplayDate(value, value);
       }
 
       function dateTimeText(
@@ -4152,18 +4139,7 @@ function ImportWizardContent() {
           return "-";
         }
 
-        const date =
-          new Date(value);
-
-        if (
-          Number.isNaN(
-            date.getTime(),
-          )
-        ) {
-          return value;
-        }
-
-        return date.toLocaleString();
+        return formatDisplayDateTime(value, value);
       }
 
       function wrapText(
@@ -5729,13 +5705,7 @@ function ImportWizardContent() {
           return "-";
         }
 
-        const parsed = new Date(value);
-
-        if (Number.isNaN(parsed.getTime())) {
-          return value;
-        }
-
-        return parsed.toLocaleString();
+        return formatDisplayDateTime(value, value);
       }
 
       function formatDate(value?: string) {
@@ -5743,17 +5713,7 @@ function ImportWizardContent() {
           return "-";
         }
 
-        const parsed = new Date(
-          value.length === 10
-            ? `${value}T00:00:00`
-            : value,
-        );
-
-        if (Number.isNaN(parsed.getTime())) {
-          return value;
-        }
-
-        return parsed.toLocaleDateString();
+        return formatDisplayDate(value, value);
       }
 
       function wrapText(

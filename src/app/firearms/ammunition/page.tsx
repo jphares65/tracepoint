@@ -20,6 +20,7 @@ import {
 
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 import {
   EMPTY_AMMO_WORKSPACE,
   VERIFICATION_MODES,
@@ -161,22 +162,6 @@ function formatMoney(value: number) {
     style: "currency",
     currency: "USD",
   }).format(value);
-}
-
-function formatDate(value?: string) {
-  if (!value) return "Not recorded";
-
-  const date = value.includes("T")
-    ? new Date(value)
-    : new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function inputClass() {
@@ -910,7 +895,7 @@ export default function ArmoryAmmunitionPage() {
                               </td>
                               <td className="px-5 py-4 text-slate-400">
                                 {lastCount
-                                  ? formatDate(lastCount.completedAt)
+                                  ? formatDateTime(lastCount.completedAt)
                                   : "Not counted"}
                               </td>
                               <td className="px-5 py-4">
@@ -1631,7 +1616,7 @@ export default function ArmoryAmmunitionPage() {
                                 {formatNumber(item.quantityChange)}
                               </p>
                               <p className="text-xs text-slate-600">
-                                {formatDate(item.createdAt)}
+                                {formatDateTime(item.createdAt)}
                               </p>
                             </div>
                           </div>

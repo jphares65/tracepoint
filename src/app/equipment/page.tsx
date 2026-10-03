@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate } from "@/lib/format/date";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import { groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
 
@@ -217,20 +218,6 @@ function statusClasses(status: ReadinessStatus) {
     default:
       return "border-red-500/30 bg-red-500/10 text-red-300";
   }
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-
-  const parsed = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 async function responseError(response: Response) {

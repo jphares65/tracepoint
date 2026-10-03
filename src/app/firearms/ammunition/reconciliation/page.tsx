@@ -15,6 +15,7 @@ import {
 
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 
 type ReconciliationStatus = "Draft" | "Submitted" | "Certified";
 
@@ -62,32 +63,6 @@ type Payload = {
   active: Reconciliation | null;
   history: Reconciliation[];
 };
-
-function formatDate(value?: string | null) {
-  if (!value) return "Not set";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "Not set";
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "Not set";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not set";
-
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 async function readError(response: Response) {
   try {

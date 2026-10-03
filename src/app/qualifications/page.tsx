@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
+import { formatDate } from "@/lib/format/date";
 import {
   AlertTriangle,
   CalendarDays,
@@ -240,16 +241,6 @@ async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | 
     console.warn("Could not load Supabase qualification workspace.", error);
     return null;
   }
-}
-
-function formatDate(date?: string) {
-  if (!date) return "No date";
-
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function getDateValue(date?: string) {

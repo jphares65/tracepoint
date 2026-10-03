@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { formatDate } from "@/lib/format/date";
 import {
   Activity,
   AlertTriangle,
@@ -430,16 +431,6 @@ function getDateValue(date?: string) {
 function getTodayValue() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-}
-
-function formatDate(date?: string) {
-  if (!date) return "No date";
-
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function isQualificationDrill(drill?: RangeDayDrill | null) {

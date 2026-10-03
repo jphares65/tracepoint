@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
+import { formatDateTime } from "@/lib/format/date";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -255,20 +256,6 @@ function getFirearmName(firearm: ArmoryFirearm) {
   if (model) return model;
 
   return "Unnamed firearm";
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "Not recorded";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -605,7 +592,7 @@ function NewInspectionContent() {
                       />
                       <DetailPill
                         label="Last Updated"
-                        value={formatDate(selectedFirearm.updated_at)}
+                        value={formatDateTime(selectedFirearm.updated_at)}
                       />
                       <DetailPill
                         label="Active"

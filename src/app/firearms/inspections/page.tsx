@@ -5,6 +5,7 @@ import Link from "next/link";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
+import { formatDateTime } from "@/lib/format/date";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -70,20 +71,6 @@ function normalizeStatus(value?: string | null): CurrentFirearmStatus {
   }
 
   return "In Service";
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "Not recorded";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function getFirearmName(firearm: ArmoryFirearm) {
@@ -422,7 +409,7 @@ export default function ArmoryInspectionsPage() {
                       </td>
 
                       <td className="px-4 py-3 text-[12px] text-slate-500">
-                        {formatDate(firearm.updated_at)}
+                        {formatDateTime(firearm.updated_at)}
                       </td>
 
                       <td className="px-4 py-3">

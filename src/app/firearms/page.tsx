@@ -22,6 +22,7 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import { formatDateTime } from "@/lib/format/date";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import FirearmAttachments from "@/app/components/FirearmAttachments";
 import {
@@ -234,20 +235,6 @@ function formatFirearmType(type?: string | null) {
   const match = FIREARM_TYPES.find((item) => item.value === type);
 
   return match?.label ?? "Other";
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "Not recorded";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function getRestrictionLabel(custody: CustodyResponse | null) {

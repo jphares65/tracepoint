@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Image from "next/image";
+import { formatDateTime } from "@/lib/format/date";
 
 const DEFAULT_ITEMS = [
   ["body", "Body, windshield and mirrors"],
@@ -556,7 +557,7 @@ export default function QuickInspectionPanel({
                     <p className="mt-1 text-[10px] text-slate-500">
                       Performed by{" "}
                       {item.inspector_name || "System / legacy record"} ·{" "}
-                      {new Date(item.inspected_at).toLocaleString()} ·{" "}
+                      {formatDateTime(item.inspected_at)} ·{" "}
                       {Number(item.mileage || 0).toLocaleString()} mi ·{" "}
                       {Number(item.hours || 0).toLocaleString()} hrs ·{" "}
                       {item.defect_count || 0} defects

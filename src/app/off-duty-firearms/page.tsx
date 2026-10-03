@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -177,34 +178,6 @@ function oneYearFromTodayInputValue() {
   const date = new Date();
   date.setFullYear(date.getFullYear() + 1);
   return date.toISOString().slice(0, 10);
-}
-
-function formatDate(value?: string) {
-  if (!value) return "?";
-
-  const parsed = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(value: string) {
-  const parsed = new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function getInitials(name: string) {
@@ -981,7 +954,7 @@ function ReviewDrawer({
                     <div className="mt-2 grid gap-1 text-[11px] text-slate-400 sm:grid-cols-2">
                       <span>Inspected by: {inspection.inspectedBy}</span>
                       <span className="sm:text-right">
-                        Recorded: {new Date(inspection.createdAt).toLocaleString()}
+                        Recorded: {formatDateTime(inspection.createdAt)}
                       </span>
                     </div>
 
@@ -1788,7 +1761,7 @@ export default function OffDutyFirearmsPage() {
                       Submitted
                     </p>
                     <p className="mt-1 text-[11px] text-slate-300">
-                      {formatDate(record.submittedAt)}
+                      {formatDateTime(record.submittedAt)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2">

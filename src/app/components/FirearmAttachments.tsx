@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Archive, Download, FileImage, FileText, Loader2, Paperclip, Upload } from "lucide-react";
+import { formatDateTime } from "@/lib/format/date";
 
 type Attachment = {
   id: string; attachment_type: string; file_name: string; mime_type: string; file_size: number;
@@ -107,7 +108,7 @@ export default function FirearmAttachments({ firearmId }: { firearmId: string })
           items.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
             {item.mime_type.startsWith("image/") ? <FileImage className="h-5 w-5 shrink-0 text-slate-400"/> : <FileText className="h-5 w-5 shrink-0 text-slate-400"/>}
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-100">{item.file_name}</p>
-              <p className="text-[11px] text-slate-500">{label(item.attachment_type)} • {size(item.file_size)} • {new Date(item.uploaded_at).toLocaleDateString()}</p>
+              <p className="text-[11px] text-slate-500">{label(item.attachment_type)} • {size(item.file_size)} • {formatDateTime(item.uploaded_at)}</p>
               {item.description && <p className="mt-1 text-xs text-slate-400">{item.description}</p>}</div>
             <a href={`/api/attachments/${item.id}/download`} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" title="Download"><Download className="h-4 w-4"/></a>
             <button type="button" onClick={() => void archive(item)} className="rounded-xl border border-slate-700 p-2 text-slate-400 hover:border-red-900 hover:text-red-300" title="Archive"><Archive className="h-4 w-4"/></button>

@@ -21,6 +21,7 @@ import {
 
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 
 type Status =
   | "Draft"
@@ -190,19 +191,6 @@ const STATUS_STYLE: Record<Status, string> = {
 
 function fieldClass() {
   return "mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none transition focus:border-blue-500";
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "Not recorded";
-  const date = value.includes("T")
-    ? new Date(value)
-    : new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 async function readError(response: Response) {
@@ -1060,7 +1048,7 @@ export default function PersonalRiflesPage() {
                           <Detail label="Trigger" value={selected.trigger} />
                           <Detail label="Muzzle Device" value={selected.muzzle_device} />
                           <Detail label="Magazine Type" value={selected.magazine_type} />
-                          <Detail label="Submitted" value={formatDate(selected.submitted_at)} />
+                          <Detail label="Submitted" value={formatDateTime(selected.submitted_at)} />
                           <Detail label="Approved" value={formatDate(selected.approval_date)} />
                           <Detail label="Expires" value={formatDate(selected.expiration_date)} />
                         </div>
@@ -1311,7 +1299,7 @@ export default function PersonalRiflesPage() {
                                   </p>
                                 </div>
                                 <p className="text-xs text-slate-600">
-                                  {formatDate(entry.created_at)}
+                                  {formatDateTime(entry.created_at)}
                                 </p>
                               </div>
                               {entry.notes && (

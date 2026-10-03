@@ -5,6 +5,7 @@ import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
 import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
 import DrillDocuments from "@/app/components/DrillDocuments";
+import { formatDate } from "@/lib/format/date";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -1166,15 +1167,6 @@ function parseOptionalNumber(value: string) {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function formatDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function getRangeDateValue(date?: string) {
   if (!date) return 0;
 
@@ -1186,15 +1178,7 @@ function getRangeDateValue(date?: string) {
 function getShortDateLabel(date?: string) {
   if (!date) return "Never";
 
-  const parsed = new Date(`${date}T00:00:00`);
-
-  if (Number.isNaN(parsed.getTime())) return "Never";
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDate(date, "Never");
 }
 
 function getDrillTemplateReferenceId(drill: RangeDayDrill) {

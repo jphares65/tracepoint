@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { formatDate } from "@/lib/format/date";
 
 import {
   accessFailureResponse,
@@ -96,16 +97,6 @@ function dateValue(value?: string | null) {
 
   const timestamp = new Date(`${value}T00:00:00`).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "Missing";
-
-  return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function numericValue(value: unknown): number | undefined {

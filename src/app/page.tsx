@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDateTime } from "@/lib/format/date";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Priority = "Critical" | "High" | "Normal";
@@ -138,22 +139,6 @@ function professionalGreeting(profile: HomeProfile) {
   const rank = profile.rankTitle.trim();
   const rankLabel = RANK_ABBREVIATIONS[rank] || rank;
   return rankLabel ? `${rankLabel} ${parts[parts.length - 1]}` : parts[0];
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "Current";
-
-  const parsed = value.includes("T")
-    ? new Date(value)
-    : new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function priorityCard(priority: Priority) {
@@ -649,7 +634,7 @@ export default function OfficerHomePage() {
                           {item.detail}
                         </p>
                         <p className="mt-1.5 text-[9px] text-slate-600">
-                          {formatDate(item.createdAt)}
+                          {formatDateTime(item.createdAt)}
                         </p>
 
                         <div className="mt-2.5 flex flex-wrap gap-2">
