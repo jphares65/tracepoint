@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate } from "@/lib/format/date";
 
 type Member = {
   user_id: string;
@@ -821,8 +822,7 @@ export default function CertificationsPage() {
                         </td>
 
                         <td className="px-5 py-4 text-slate-300">
-                          {item.expiration_date ||
-                            "None"}
+                          {formatDate(item.expiration_date, "None")}
                         </td>
 
                         <td className="px-5 py-4">
