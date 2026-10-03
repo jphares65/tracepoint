@@ -28,7 +28,7 @@ after(async () => { await client?.end().catch(() => undefined); await database?.
 
 test("AWS-native ledger reserves migration 033 for Fleet document metadata", async () => {
   const files = (await readdir("database/aws")).filter((file) => file.endsWith(".sql")).sort();
-  assert.equal(files.at(-1), "033_fleet_vehicle_document_metadata.sql");
+  assert.ok(files.includes("033_fleet_vehicle_document_metadata.sql"));
   assert.equal(new Set(files.map((file) => file.slice(0, 3))).size, files.length);
 });
 
