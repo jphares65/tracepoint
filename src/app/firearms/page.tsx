@@ -1914,20 +1914,15 @@ The firearm will be removed from active inventory and future operational selecti
 
                     {workspaceTab === "custody" && (
                     <div className={`rounded-3xl border p-4 ${selectedRestriction === "No Carry" ? "border-rose-500/50 bg-rose-950/15" : selectedRestriction === "Duty Only" ? "border-amber-500/50 bg-amber-950/15" : "border-emerald-500/40 bg-emerald-950/10"}`}>
-                      <div className="flex items-center gap-2">
-                        <ClipboardList className="h-5 w-5 text-slate-500" />
-                        <h3 className="font-bold text-white">
-                          Current Custody
-                        </h3>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-slate-500" /><h3 className="font-bold text-white">Current Custody</h3></div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-black tracking-wide ${selectedRestriction === "No Carry" ? "bg-rose-600 text-white" : selectedRestriction === "Duty Only" ? "bg-amber-500/20 text-amber-200" : "bg-emerald-500/20 text-emerald-200"}`}>Restricted Use: {selectedRestriction ?? "None"}</span>
                       </div>
 
-                      <div className={`mt-4 rounded-2xl border p-3 ${selectedRestriction ? "border-rose-500/40 bg-rose-950/25" : "border-slate-700 bg-slate-950/30"}`}>
+                      <div className="mt-4 space-y-3">
                         <div className="grid gap-3 text-sm sm:grid-cols-2">
                           <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Assignment</p><p className="mt-1 font-semibold text-slate-100">{selectedFirearm.active_assignment ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment) : "Unassigned"}</p></div>
                           <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Physical Custody</p><p className="mt-1 font-semibold text-slate-100">{selectedPhysicalCustody}</p></div>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-3">
-                          <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Restricted Use</p><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-black tracking-wide ${selectedRestriction === "No Carry" ? "bg-rose-600 text-white" : selectedRestriction === "Duty Only" ? "bg-amber-500/20 text-amber-200" : "bg-slate-800 text-slate-300"}`}>{selectedRestriction ?? "None"}</span>{selectedRestriction === "Duty Only" && <span className="text-xs font-semibold text-slate-300">Physical custody: {selectedPhysicalCustody}</span>}</div></div>
                         </div>
                         {selectedRestriction === "No Carry" && <p className="mt-3 border-t border-rose-400/20 pt-3 text-sm font-bold text-rose-100">NO CARRY — this firearm remains assigned but may not be checked out to an officer.</p>}
                         {selectedRestriction === "Duty Only" && !restrictedUseMode && <div className="mt-3 border-t border-amber-300/15 pt-3">{selectedCustody?.current?.holder_type === "OFFICER" && <button type="button" onClick={() => { setWorkspaceTab("restricted"); setRestrictedUseMode("storage"); }} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Check In</button>}{selectedCustody?.current?.holder_type === "SECURE_STORAGE" && <button type="button" onClick={() => { setWorkspaceTab("restricted"); setRestrictedUseMode("return"); }} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Return to Officer</button>}</div>}
