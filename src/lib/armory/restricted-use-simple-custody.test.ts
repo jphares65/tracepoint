@@ -13,6 +13,16 @@ test("restricted use is a contextual custody status with Set and Manage actions"
   assert.doesNotMatch(page, /Add restricted-use status/);
 });
 
+test("workspace navigation has fixed mobile destinations and a More menu", async () => {
+  const page = await readFile(pagePath, "utf8");
+  assert.match(page, /grid-cols-4/);
+  assert.match(page, /Restricted"/);
+  assert.match(page, />More</);
+  assert.match(page, /setWorkspaceTab\("edit"\)/);
+  assert.match(page, /setWorkspaceTab\("status"\)/);
+  assert.doesNotMatch(page, /overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950\/40 p-1/);
+});
+
 test("the authoritative custody card remains available and contains the restricted-use summary", async () => {
   const page = await readFile(pagePath, "utf8");
   assert.match(page, /workspaceTab === "custody" && \(/);
