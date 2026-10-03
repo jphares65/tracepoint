@@ -21,6 +21,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
   if (!detail) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
 
+  const documentResult = await context.admin.from("attachments")
+    .select("id,attachment_type,file_name,mime_type,file_size,description,expiration_date,uploaded_by_user_id,uploaded_at")
+    .eq("department_id", context.departmentId).eq("entity_type", "fleet_vehicle_document").eq("entity_id", vehicleId)
+    .is("archived_at", null).order("uploaded_at", { ascending: false });
+  if (documentResult.error) return NextResponse.json({ error: documentResult.error.message }, { status: 500 });
+
   const inspections = detail.inspections as Array<Record<string, unknown>>;
   const inspectionIds = inspections.map((inspection) =>
     String(inspection.id),
@@ -86,6 +92,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       ...inspection,
       evidence: evidenceByInspection.get(String(inspection.id)) ?? [],
     })),
+    documents: [
+      ...(documentResult.data ?? []).map((document: Record<string, unknown>) => ({
+        ...document, title: document.description || document.file_name, document_type: document.attachment_type,
+        viewUrl: `/api/attachments/${document.id}/download?disposition=inline`,
+        downloadUrl: `/api/attachments/${document.id}/download`, managedAttachment: true,
+      })),
+      ...detail.documents,
+    ],
     canManage: canManageFleet(context, detail.rules),
     canMaintain: canPerformFleetMaintenance(context, detail.rules),
     canConfigure: canConfigureFleet(context),

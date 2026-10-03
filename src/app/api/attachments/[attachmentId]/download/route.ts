@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { attachmentPathFromMetadata, createObjectStore } from "@/lib/storage/object-store";
 import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
 
 type RouteContext = { params: Promise<{ attachmentId: string }> };
 
-export async function GET(_request: Request, routeContext: RouteContext) {
+export async function GET(request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
   const { attachmentId } = await routeContext.params;
@@ -43,10 +43,10 @@ export async function GET(_request: Request, routeContext: RouteContext) {
   if (!storagePath) {
     return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
   }
-  const signed = await createObjectStore(admin, departmentId).createAttachmentDownload(
-    storagePath,
-    row.file_name,
-  );
+  const objectStore = createObjectStore(admin, departmentId);
+  const signed = request.nextUrl.searchParams.get("disposition") === "inline"
+    ? await objectStore.createAttachmentView(storagePath)
+    : await objectStore.createAttachmentDownload(storagePath, row.file_name);
   if (signed.error || !signed.signedUrl) return NextResponse.json({ error: "Download could not be created." }, { status: 500 });
   return NextResponse.redirect(signed.signedUrl);
   } catch (error) { console.error("Attachment download failed", error); return NextResponse.json({ error: "Download could not be created." }, { status: 500 }); }
