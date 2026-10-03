@@ -27,6 +27,7 @@ export interface ObjectStore {
   uploadTrainingFile(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadFirearmAttachment(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadFleetInspectionEvidence(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
+  uploadFleetDocument(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadDrillDocument(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   removeAttachment(path: AttachmentObjectPath): Promise<ObjectStoreResult>;
   createAttachmentDownload(
@@ -98,6 +99,7 @@ const ATTACHMENT_DOMAINS = new Set([
   "agency-training",
   "firearm",
   "fleet-inspection",
+  "fleet-document",
   "drill-document",
 ]);
 
@@ -193,6 +195,15 @@ export class SupabaseObjectStore implements ObjectStore {
     return this.uploadAttachment(
       attachmentPath(
         `${input.departmentId}/fleet-inspection/${input.recordId}/${input.objectId}-${safeName(input.fileName, "evidence", true)}`,
+      ),
+      input,
+    );
+  }
+
+  uploadFleetDocument(input: AttachmentUploadInput) {
+    return this.uploadAttachment(
+      attachmentPath(
+        `${input.departmentId}/fleet-document/${input.recordId}/${input.objectId}-${safeName(input.fileName, "document", true)}`,
       ),
       input,
     );
