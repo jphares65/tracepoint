@@ -53,6 +53,7 @@ import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import FleetRulesPanel from "./fleet/FleetRulesPanel";
 import AgencyTrainingRulesPanel from "@/app/settings/components/AgencyTrainingRulesPanel";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import SecureStorageLocationsPanel from "./components/SecureStorageLocationsPanel";
 
 type TabId =
   | "agency"
@@ -4092,6 +4093,9 @@ export default function AdminSettingsPage() {
                       }
                     />
                   </div>
+                </SettingsCard>
+                <SettingsCard title="Secure Storage" description="Manage agency locations available to firearm custody workflows.">
+                  <SecureStorageLocationsPanel />
                 </SettingsCard>
                 <SettingsCard
                   title="Personally Owned Rifle Program"
