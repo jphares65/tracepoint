@@ -44,7 +44,8 @@ test("no-carry is unmistakable while duty-only yields one state-driven custody a
   assert.match(page, /NO CARRY — this firearm remains assigned/);
   assert.match(page, /holder_type === "SECURE_STORAGE".*Return to Officer/);
   assert.match(page, /holder_type === "OFFICER".*Check In/);
-  assert.match(page, /Physical custody: \{selectedPhysicalCustody\}/);
+  assert.doesNotMatch(page, /Custody at a glance/);
+  assert.doesNotMatch(page, /Physical custody: \{selectedPhysicalCustody\}/);
 });
 
 test("managing a restriction keeps its editable details in the existing restriction API", async () => {
