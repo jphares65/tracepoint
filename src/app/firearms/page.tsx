@@ -23,6 +23,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { formatDateTime } from "@/lib/format/date";
+import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import FirearmAttachments from "@/app/components/FirearmAttachments";
 import {
@@ -298,6 +299,7 @@ function StatInline({
 }
 
 export default function FirearmsPage() {
+  const { hasPermission } = useTracePointAccess();
   const [firearms, setFirearms] = useState<ArmoryFirearm[]>([]);
   const [members, setMembers] = useState<ArmoryMember[]>([]);
   const [selectedFirearmId, setSelectedFirearmId] = useState<string | null>(
@@ -336,6 +338,10 @@ export default function FirearmsPage() {
   const [restrictionReviewDate, setRestrictionReviewDate] = useState("");
   const [restrictedUseBusy, setRestrictedUseBusy] = useState(false);
   const [restrictedStorageLocationId, setRestrictedStorageLocationId] = useState("");
+  const [storageLocationQuery, setStorageLocationQuery] = useState("");
+  const [storageLocationPickerOpen, setStorageLocationPickerOpen] = useState(false);
+  const [storageLocationCreating, setStorageLocationCreating] = useState(false);
+  const [storageLocationError, setStorageLocationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddFirearm, setShowAddFirearm] = useState(false);
@@ -371,6 +377,19 @@ export default function FirearmsPage() {
 
   const selectedRestriction = getRestrictionLabel(selectedCustody);
   const activeRestriction = selectedCustody?.restrictions?.find((item) => item.is_active);
+  const canManageStorageLocations =
+    hasPermission("firearm_custody.manage_storage_locations") ||
+    hasPermission("manage_firearms");
+  const normalizedStorageLocationQuery = storageLocationQuery.trim().toLocaleLowerCase();
+  const filteredStorageLocations = useMemo(
+    () => storageLocations.filter((location) =>
+      !normalizedStorageLocationQuery || location.name.toLocaleLowerCase().includes(normalizedStorageLocationQuery),
+    ),
+    [normalizedStorageLocationQuery, storageLocations],
+  );
+  const hasStorageLocationMatch = storageLocations.some(
+    (location) => location.name.trim().toLocaleLowerCase() === normalizedStorageLocationQuery,
+  );
   const selectedPhysicalCustody = (() => {
     if (custodyLoading) return "Loading…";
     if (!custodyLoaded) return "Unavailable";
@@ -406,6 +425,69 @@ export default function FirearmsPage() {
       setRestrictionReviewDate(activeRestriction.expires_at?.slice(0, 10) ?? "");
     }
     setRestrictedUseMode(activeRestriction ? "manage" : "enable");
+  }
+
+  function openRestrictedStorageEditor() {
+    const defaultLocation = storageLocations.find(
+      (location) => location.id === restrictedStorageLocationId,
+    ) ?? storageLocations[0];
+
+    setRestrictedStorageLocationId(defaultLocation?.id ?? "");
+    setStorageLocationQuery(defaultLocation?.name ?? "");
+    setStorageLocationError(null);
+    setStorageLocationPickerOpen(false);
+    setRestrictedUseMode("storage");
+  }
+
+  function selectStorageLocation(location: StorageLocation) {
+    setRestrictedStorageLocationId(location.id);
+    setStorageLocationQuery(location.name);
+    setStorageLocationError(null);
+    setStorageLocationPickerOpen(false);
+  }
+
+  async function createStorageLocation() {
+    const name = storageLocationQuery.trim();
+    if (!name || hasStorageLocationMatch || !canManageStorageLocations) return;
+
+    setStorageLocationCreating(true);
+    setStorageLocationError(null);
+
+    try {
+      const response = await fetch("/api/armory/storage-locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+
+      const payload = (await response.json()) as { storageLocationId?: string };
+      const createdLocationId = payload.storageLocationId;
+      if (!createdLocationId) throw new Error("Secure Storage was created without a location ID.");
+
+      const locationsResponse = await fetch("/api/armory/storage-locations", {
+        cache: "no-store",
+      });
+      const locationsPayload = locationsResponse.ok
+        ? (await locationsResponse.json()) as { locations?: StorageLocation[] }
+        : null;
+      const locations = Array.isArray(locationsPayload?.locations)
+        ? locationsPayload.locations
+        : [...storageLocations, { id: createdLocationId, name }];
+      const createdLocation = locations.find((location) => location.id === createdLocationId)
+        ?? { id: createdLocationId, name };
+
+      setStorageLocations(locations);
+      selectStorageLocation(createdLocation);
+    } catch (createError) {
+      setStorageLocationError(
+        createError instanceof Error
+          ? createError.message
+          : "Secure Storage could not be created.",
+      );
+    } finally {
+      setStorageLocationCreating(false);
+    }
   }
 
   const filteredFirearms = useMemo(() => {
@@ -958,6 +1040,9 @@ export default function FirearmsPage() {
       setRestrictedUseReason("");
       setRestrictionNotes("");
       setRestrictedStorageLocationId("");
+      setStorageLocationQuery("");
+      setStorageLocationPickerOpen(false);
+      setStorageLocationError(null);
       setRestrictionEffectiveDate("");
       setRestrictionReviewDate("");
     } catch (submitError) {
@@ -1805,7 +1890,7 @@ The firearm will be removed from active inventory and future operational selecti
 
                         {selectedRestriction === "Duty Only" && !restrictedUseMode && (
                           <div className="mt-3 border-t border-amber-300/15 pt-3">
-                            {selectedCustody?.current?.holder_type === "OFFICER" && <button type="button" onClick={() => setRestrictedUseMode("storage")} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Check In</button>}
+                            {selectedCustody?.current?.holder_type === "OFFICER" && <button type="button" onClick={openRestrictedStorageEditor} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Check In</button>}
                             {selectedCustody?.current?.holder_type === "SECURE_STORAGE" && <button type="button" onClick={() => setRestrictedUseMode("return")} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Return to Officer</button>}
                           </div>
                         )}
@@ -1828,7 +1913,89 @@ The firearm will be removed from active inventory and future operational selecti
                         )}
 
                         {(restrictedUseMode === "storage" || restrictedUseMode === "return") && (
-                          <div className="mt-4 border-t border-slate-700 pt-4">{restrictedUseMode === "storage" && <label className="block text-xs font-semibold text-slate-300">Secure storage<select value={restrictedStorageLocationId} onChange={(event) => setRestrictedStorageLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white">{storageLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>}<label className="mt-3 block text-xs font-semibold text-slate-300">Notes (optional)<textarea value={restrictedUseReason} onChange={(event) => setRestrictedUseReason(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={restrictedUseBusy || (restrictedUseMode === "storage" && !storageLocations.length)} onClick={() => void submitRestrictedUse()} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 disabled:opacity-50">{restrictedUseMode === "return" ? "Return to Officer" : "Check In"}</button><button type="button" onClick={() => setRestrictedUseMode(null)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200">Cancel</button></div></div>
+                          <div className="mt-4 border-t border-slate-700 pt-4">
+                            {restrictedUseMode === "storage" && (
+                              <div className="min-w-0">
+                                <label className="block text-xs font-semibold text-slate-300" htmlFor="restricted-storage-location">
+                                  Secure Storage
+                                </label>
+                                <div className="relative mt-1 min-w-0">
+                                  <input
+                                    id="restricted-storage-location"
+                                    type="text"
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-controls="restricted-storage-location-options"
+                                    aria-expanded={storageLocationPickerOpen}
+                                    autoComplete="off"
+                                    value={storageLocationQuery}
+                                    onFocus={() => setStorageLocationPickerOpen(true)}
+                                    onChange={(event) => {
+                                      setStorageLocationQuery(event.target.value);
+                                      setRestrictedStorageLocationId("");
+                                      setStorageLocationError(null);
+                                      setStorageLocationPickerOpen(true);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Escape") {
+                                        setStorageLocationPickerOpen(false);
+                                      } else if (event.key === "ArrowDown") {
+                                        event.preventDefault();
+                                        setStorageLocationPickerOpen(true);
+                                      } else if (event.key === "Enter" && storageLocationPickerOpen) {
+                                        const matchingLocation = filteredStorageLocations[0];
+                                        if (matchingLocation) {
+                                          event.preventDefault();
+                                          selectStorageLocation(matchingLocation);
+                                        } else if (canManageStorageLocations && normalizedStorageLocationQuery) {
+                                          event.preventDefault();
+                                          void createStorageLocation();
+                                        }
+                                      }
+                                    }}
+                                    placeholder="Search secure storage"
+                                    className="w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white outline-none focus:border-amber-400"
+                                  />
+                                  {storageLocationPickerOpen && (
+                                    <div id="restricted-storage-location-options" role="listbox" className="mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl">
+                                      {filteredStorageLocations.map((location) => (
+                                        <button
+                                          key={location.id}
+                                          type="button"
+                                          role="option"
+                                          aria-selected={location.id === restrictedStorageLocationId}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => selectStorageLocation(location)}
+                                          className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${location.id === restrictedStorageLocationId ? "bg-amber-500/20 text-amber-100" : "text-slate-200 hover:bg-slate-800"}`}
+                                        >
+                                          {location.name}
+                                        </button>
+                                      ))}
+                                      {!filteredStorageLocations.length && (
+                                        <p className="px-3 py-2 text-xs text-slate-400">
+                                          No active secure-storage locations configured.
+                                        </p>
+                                      )}
+                                      {canManageStorageLocations && normalizedStorageLocationQuery && !hasStorageLocationMatch && (
+                                        <button
+                                          type="button"
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => void createStorageLocation()}
+                                          disabled={storageLocationCreating}
+                                          className="mt-1 w-full rounded-lg border border-amber-400/40 px-3 py-2 text-left text-sm font-bold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+                                        >
+                                          {storageLocationCreating ? "Creating…" : `Create "${storageLocationQuery.trim()}"`}
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                {storageLocationError && <p role="alert" className="mt-2 text-xs font-semibold text-rose-200">{storageLocationError}</p>}
+                              </div>
+                            )}
+                            <label className="mt-3 block text-xs font-semibold text-slate-300">Notes (optional)<textarea value={restrictedUseReason} onChange={(event) => setRestrictedUseReason(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-sm text-white" /></label>
+                            <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={restrictedUseBusy || (restrictedUseMode === "storage" && !restrictedStorageLocationId)} onClick={() => void submitRestrictedUse()} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 disabled:opacity-50">{restrictedUseMode === "return" ? "Return to Officer" : "Check In"}</button><button type="button" onClick={() => setRestrictedUseMode(null)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200">Cancel</button></div>
+                          </div>
                         )}
 
                         {selectedRestriction && canManageRestrictions && !restrictedUseMode && <button type="button" onClick={() => setRestrictedUseMode("disable")} className="mt-3 text-xs font-bold text-rose-200 hover:text-white">Clear restriction</button>}
@@ -1892,7 +2059,7 @@ The firearm will be removed from active inventory and future operational selecti
                           <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Physical Custody</p><p className="mt-1 font-semibold text-slate-100">{selectedPhysicalCustody}</p></div>
                         </div>
                         {selectedRestriction === "No Carry" && <p className="mt-3 border-t border-rose-400/20 pt-3 text-sm font-bold text-rose-100">NO CARRY — this firearm remains assigned but may not be checked out to an officer.</p>}
-                        {selectedRestriction === "Duty Only" && !restrictedUseMode && <div className="mt-3 border-t border-amber-300/15 pt-3">{selectedCustody?.current?.holder_type === "OFFICER" && <button type="button" onClick={() => { setWorkspaceTab("restricted"); setRestrictedUseMode("storage"); }} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Check In</button>}{selectedCustody?.current?.holder_type === "SECURE_STORAGE" && <button type="button" onClick={() => { setWorkspaceTab("restricted"); setRestrictedUseMode("return"); }} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Return to Officer</button>}</div>}
+                        {selectedRestriction === "Duty Only" && !restrictedUseMode && <div className="mt-3 border-t border-amber-300/15 pt-3">{selectedCustody?.current?.holder_type === "OFFICER" && <button type="button" onClick={() => { setWorkspaceTab("restricted"); openRestrictedStorageEditor(); }} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Check In</button>}{selectedCustody?.current?.holder_type === "SECURE_STORAGE" && <button type="button" onClick={() => { setWorkspaceTab("restricted"); setRestrictedUseMode("return"); }} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400">Return to Officer</button>}</div>}
                       </div>
 
                       {selectedFirearm.active_assignment ? (
