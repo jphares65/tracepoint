@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
 
-import { parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core.ts";
+import { parseCognitoMobileTargetConfiguration, parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core.ts";
 
 const key = () => randomBytes(32).toString("base64url");
 const valid = {
@@ -29,6 +29,14 @@ test("parses a bounded AWS-native Cognito key configuration", () => {
   assert.deepEqual(configuration.verification.trustedClientIds, ["syntheticclient", "syntheticmobileclient"]);
   assert.equal(configuration.state.keys.get("current")?.byteLength, 32);
   assert.equal(configuration.refresh.keys.get("current")?.byteLength, 32);
+});
+
+test("mobile bearer validation is pinned to the separate public client", () => {
+  assert.equal(parseCognitoMobileTargetConfiguration(valid).verification.clientId, "syntheticmobileclient");
+  for (const environment of [
+    { ...valid, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: undefined },
+    { ...valid, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: valid.TRACEPOINT_COGNITO_CLIENT_ID },
+  ]) assert.throws(() => parseCognitoMobileTargetConfiguration(environment), /(mobile client boundary|provider target)/);
 });
 
 test("rejects bridge, mixed-account and malformed key configurations", () => {
