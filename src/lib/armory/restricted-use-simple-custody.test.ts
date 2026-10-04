@@ -16,6 +16,9 @@ test("restricted use is a contextual custody status with Set and Manage actions"
 test("workspace navigation has fixed mobile destinations and a More menu", async () => {
   const page = await readFile(pagePath, "utf8");
   assert.match(page, /grid-cols-4/);
+  assert.match(page, /lg:flex lg:items-center/);
+  assert.match(page, /hidden shrink-0 rounded-xl px-3 py-2 text-xs font-bold transition lg:block/);
+  assert.match(page, /text-xs font-bold transition lg:hidden/);
   assert.match(page, /Restricted"/);
   assert.match(page, />More</);
   assert.match(page, /setWorkspaceTab\("edit"\)/);

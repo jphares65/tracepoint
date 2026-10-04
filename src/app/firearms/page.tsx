@@ -1848,7 +1848,7 @@ The firearm will be removed from active inventory and future operational selecti
                     </section>}
 
                     <div className="relative rounded-2xl border border-slate-800 bg-slate-950/40 p-1">
-                      <div className="grid grid-cols-4 gap-1 sm:flex sm:items-center">
+                      <div className="grid grid-cols-4 gap-1 lg:flex lg:items-center">
                         {([
                           ["custody", "Custody"],
                           ["restricted", "Restricted Use"],
@@ -1860,7 +1860,7 @@ The firearm will be removed from active inventory and future operational selecti
                             key={tab}
                             type="button"
                             onClick={() => { setWorkspaceTab(tab); setWorkspaceMoreOpen(false); }}
-                            className={`hidden shrink-0 rounded-xl px-3 py-2 text-xs font-bold transition sm:block ${
+                            className={`hidden shrink-0 rounded-xl px-3 py-2 text-xs font-bold transition lg:block ${
                               workspaceTab === tab
                                 ? "bg-blue-600 text-white shadow-sm"
                                 : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
@@ -1869,10 +1869,10 @@ The firearm will be removed from active inventory and future operational selecti
                             {label}
                           </button>
                         ))}
-                        {(["custody", "restricted", "documents"] as const).map((tab) => <button key={`mobile-${tab}`} type="button" onClick={() => { setWorkspaceTab(tab); setWorkspaceMoreOpen(false); }} className={`rounded-xl px-2 py-2 text-xs font-bold transition sm:hidden ${workspaceTab === tab ? "bg-blue-600 text-white shadow-sm" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>{tab === "restricted" ? "Restricted" : tab[0].toUpperCase() + tab.slice(1)}</button>)}
-                        <button type="button" onClick={() => setWorkspaceMoreOpen((open) => !open)} className={`rounded-xl px-2 py-2 text-xs font-bold transition sm:hidden ${workspaceTab === "edit" || workspaceTab === "status" ? "bg-blue-600 text-white shadow-sm" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>More</button>
+                        {(["custody", "restricted", "documents"] as const).map((tab) => <button key={`mobile-${tab}`} type="button" onClick={() => { setWorkspaceTab(tab); setWorkspaceMoreOpen(false); }} className={`rounded-xl px-2 py-2 text-xs font-bold transition lg:hidden ${workspaceTab === tab ? "bg-blue-600 text-white shadow-sm" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>{tab === "restricted" ? "Restricted" : tab[0].toUpperCase() + tab.slice(1)}</button>)}
+                        <button type="button" onClick={() => setWorkspaceMoreOpen((open) => !open)} className={`rounded-xl px-2 py-2 text-xs font-bold transition lg:hidden ${workspaceTab === "edit" || workspaceTab === "status" ? "bg-blue-600 text-white shadow-sm" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>More</button>
                       </div>
-                      {workspaceMoreOpen && <div className="absolute right-1 top-full z-10 mt-2 grid w-36 gap-1 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl sm:hidden"><button type="button" onClick={() => { setWorkspaceTab("edit"); setWorkspaceMoreOpen(false); }} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-200 hover:bg-slate-800">Edit</button><button type="button" onClick={() => { setWorkspaceTab("status"); setWorkspaceMoreOpen(false); }} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-200 hover:bg-slate-800">Status</button></div>}
+                      {workspaceMoreOpen && <div className="absolute right-1 top-full z-10 mt-2 grid w-36 gap-1 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl lg:hidden"><button type="button" onClick={() => { setWorkspaceTab("edit"); setWorkspaceMoreOpen(false); }} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-200 hover:bg-slate-800">Edit</button><button type="button" onClick={() => { setWorkspaceTab("status"); setWorkspaceMoreOpen(false); }} className="rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-200 hover:bg-slate-800">Status</button></div>}
                     </div>
 
                     {workspaceTab === "documents" && (
