@@ -5,6 +5,11 @@ import { Boxes, Plus, RefreshCw } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
 import OutstandingCheckouts from "./OutstandingCheckouts";
 import InventoryCheckoutForm from "./InventoryCheckoutForm";
+import {
+  INVENTORY_UNIT_OPTIONS,
+  nextUnitValue,
+  unitSelection,
+} from "@/lib/inventory/unit-of-measure";
 
 type Item = {
   id: string;
@@ -329,18 +334,44 @@ export default function InventoryPage() {
                         }
                       />
                     </Label>
-                    <Label text="Unit of measure">
-                      <input
+                    <Label
+                      text="Unit of measure"
+                      helper="How this item is counted, such as each, box, case, or pack."
+                    >
+                      <select
                         className={field}
-                        placeholder="Example: each, box, case"
-                        value={itemForm.unitOfMeasure}
+                        value={unitSelection(itemForm.unitOfMeasure)}
                         onChange={(event) =>
                           setItemForm({
                             ...itemForm,
-                            unitOfMeasure: event.target.value,
+                            unitOfMeasure: nextUnitValue(
+                              itemForm.unitOfMeasure,
+                              event.target.value,
+                            ),
                           })
                         }
-                      />
+                      >
+                        {INVENTORY_UNIT_OPTIONS.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                        <option value="other">Other</option>
+                      </select>
+                      {unitSelection(itemForm.unitOfMeasure) === "other" ? (
+                        <input
+                          className={field}
+                          required
+                          placeholder="Custom unit of measure"
+                          value={itemForm.unitOfMeasure}
+                          onChange={(event) =>
+                            setItemForm({
+                              ...itemForm,
+                              unitOfMeasure: event.target.value,
+                            })
+                          }
+                        />
+                      ) : null}
                     </Label>
                   </div>
                   <Label

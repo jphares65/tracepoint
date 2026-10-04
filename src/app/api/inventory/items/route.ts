@@ -1,7 +1,113 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInventoryServerContext, inventoryDenied, nullableText, text } from "@/lib/tracepoint/inventory-server";
+import {
+  getInventoryServerContext,
+  inventoryDenied,
+  nullableText,
+  text,
+} from "@/lib/tracepoint/inventory-server";
 export const dynamic = "force-dynamic";
 const modes = new Set(["pooled", "consumable"]);
-export async function GET() { const c = await getInventoryServerContext(); if ("error" in c) return c.error; if (!c.canView) return inventoryDenied("view"); const { data, error } = await c.db.from("inventory_items").select("*").eq("department_id", c.departmentId).order("name"); return error ? NextResponse.json({ error: error.message }, { status: 500 }) : NextResponse.json({ items: data ?? [], canManage: c.canManage }); }
-export async function POST(request: NextRequest) { const c = await getInventoryServerContext(); if ("error" in c) return c.error; if (!c.canManage) return inventoryDenied("manage"); const b = await request.json().catch(() => ({})); const name = text(b.name, 150), trackingMode = text(b.trackingMode, 20); if (!name || !modes.has(trackingMode)) return NextResponse.json({ error: "Name and a valid tracking mode are required." }, { status: 400 }); const { data, error } = await c.db.from("inventory_items").insert({ department_id:c.departmentId, name, category:text(b.category,100)||"General", description:nullableText(b.description,2000), tracking_mode:trackingMode, unit_of_measure:text(b.unitOfMeasure,50)||"each", sku:nullableText(b.sku,100), is_active:b.isActive!==false, created_by:c.user.id, updated_by:c.user.id }).select("*").single(); return error ? NextResponse.json({ error:error.message }, { status:error.code==="23505"?409:500 }) : NextResponse.json({ item:data }, { status:201 }); }
-export async function PATCH(request: NextRequest) { const c = await getInventoryServerContext(); if ("error" in c) return c.error; if (!c.canManage) return inventoryDenied("manage"); const b=await request.json().catch(()=>({})), id=text(b.id,100), name=text(b.name,150), trackingMode=text(b.trackingMode,20); if(!id||!name||!modes.has(trackingMode)) return NextResponse.json({error:"Item ID, name, and a valid tracking mode are required."},{status:400}); const {data,error}=await c.db.from("inventory_items").update({name,category:text(b.category,100)||"General",description:nullableText(b.description,2000),tracking_mode:trackingMode,unit_of_measure:text(b.unitOfMeasure,50)||"each",sku:nullableText(b.sku,100),is_active:b.isActive!==false,updated_by:c.user.id}).eq("id",id).eq("department_id",c.departmentId).select("*").maybeSingle(); return error?NextResponse.json({error:error.message},{status:error.code==="23505"?409:500}):!data?NextResponse.json({error:"Inventory item was not found."},{status:404}):NextResponse.json({item:data}); }
+function writeFailure(error: { code?: string } | null) {
+  if (error?.code === "23505")
+    return {
+      error: "An inventory item with this name already exists.",
+      status: 409,
+    };
+  if (error?.code === "42501")
+    return {
+      error: "You do not have permission to save this inventory item.",
+      status: 403,
+    };
+  return { error: "The inventory item could not be saved.", status: 500 };
+}
+export async function GET() {
+  const c = await getInventoryServerContext();
+  if ("error" in c) return c.error;
+  if (!c.canView) return inventoryDenied("view");
+  const { data, error } = await c.db
+    .from("inventory_items")
+    .select("*")
+    .eq("department_id", c.departmentId)
+    .order("name");
+  return error
+    ? NextResponse.json({ error: error.message }, { status: 500 })
+    : NextResponse.json({ items: data ?? [], canManage: c.canManage });
+}
+export async function POST(request: NextRequest) {
+  const c = await getInventoryServerContext();
+  if ("error" in c) return c.error;
+  if (!c.canManage) return inventoryDenied("manage");
+  const b = await request.json().catch(() => ({}));
+  const name = text(b.name, 150),
+    trackingMode = text(b.trackingMode, 20);
+  if (!name || !modes.has(trackingMode))
+    return NextResponse.json(
+      { error: "Name and a valid tracking mode are required." },
+      { status: 400 },
+    );
+  const { data, error } = await c.db
+    .from("inventory_items")
+    .insert({
+      department_id: c.departmentId,
+      name,
+      category: text(b.category, 100) || "General",
+      description: nullableText(b.description, 2000),
+      tracking_mode: trackingMode,
+      unit_of_measure: text(b.unitOfMeasure, 50) || "each",
+      sku: nullableText(b.sku, 100),
+      is_active: b.isActive !== false,
+      created_by: c.user.id,
+      updated_by: c.user.id,
+    })
+    .select("*")
+    .single();
+  if (error) {
+    const failure = writeFailure(error);
+    return NextResponse.json(
+      { error: failure.error },
+      { status: failure.status },
+    );
+  }
+  return NextResponse.json({ item: data }, { status: 201 });
+}
+export async function PATCH(request: NextRequest) {
+  const c = await getInventoryServerContext();
+  if ("error" in c) return c.error;
+  if (!c.canManage) return inventoryDenied("manage");
+  const b = await request.json().catch(() => ({})),
+    id = text(b.id, 100),
+    name = text(b.name, 150),
+    trackingMode = text(b.trackingMode, 20);
+  if (!id || !name || !modes.has(trackingMode))
+    return NextResponse.json(
+      { error: "Item ID, name, and a valid tracking mode are required." },
+      { status: 400 },
+    );
+  const { data, error } = await c.db
+    .from("inventory_items")
+    .update({
+      name,
+      category: text(b.category, 100) || "General",
+      description: nullableText(b.description, 2000),
+      tracking_mode: trackingMode,
+      unit_of_measure: text(b.unitOfMeasure, 50) || "each",
+      sku: nullableText(b.sku, 100),
+      is_active: b.isActive !== false,
+      updated_by: c.user.id,
+    })
+    .eq("id", id)
+    .eq("department_id", c.departmentId)
+    .select("*")
+    .maybeSingle();
+  return error
+    ? NextResponse.json(
+        { error: error.message },
+        { status: error.code === "23505" ? 409 : 500 },
+      )
+    : !data
+      ? NextResponse.json(
+          { error: "Inventory item was not found." },
+          { status: 404 },
+        )
+      : NextResponse.json({ item: data });
+}
