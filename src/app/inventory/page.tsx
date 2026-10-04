@@ -3,29 +3,603 @@
 import { useEffect, useMemo, useState } from "react";
 import { Boxes, Plus, RefreshCw } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
+import OutstandingCheckouts from "./OutstandingCheckouts";
 
-type Item={id:string;name:string;category:string;description:string|null;tracking_mode:"pooled"|"consumable";unit_of_measure:string;sku:string|null;is_active:boolean};
-type Location={id:string;name:string;description:string|null;is_active:boolean};
-type Balance={id:string;inventory_item_id:string;inventory_location_id:string;on_hand_quantity:number|string;inventory_items:Item|null;inventory_locations:Location|null};
-type ItemForm={id?:string;name:string;category:string;description:string;trackingMode:"pooled"|"consumable";unitOfMeasure:string;sku:string;isActive:boolean};
-type LocationForm={id?:string;name:string;description:string;isActive:boolean};
-const field="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white";
-const blankItem: ItemForm={name:"",category:"General",description:"",trackingMode:"pooled",unitOfMeasure:"each",sku:"",isActive:true};
-const blankLocation: LocationForm={name:"",description:"",isActive:true};
+type Item = {
+  id: string;
+  name: string;
+  category: string;
+  description: string | null;
+  tracking_mode: "pooled" | "consumable";
+  unit_of_measure: string;
+  sku: string | null;
+  is_active: boolean;
+};
+type Location = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+};
+type Balance = {
+  id: string;
+  inventory_item_id: string;
+  inventory_location_id: string;
+  on_hand_quantity: number | string;
+  inventory_items: Item | null;
+  inventory_locations: Location | null;
+};
+type ItemForm = {
+  id?: string;
+  name: string;
+  category: string;
+  description: string;
+  trackingMode: "pooled" | "consumable";
+  unitOfMeasure: string;
+  sku: string;
+  isActive: boolean;
+};
+type LocationForm = {
+  id?: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+};
+const field =
+  "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white";
+const blankItem: ItemForm = {
+  name: "",
+  category: "General",
+  description: "",
+  trackingMode: "pooled",
+  unitOfMeasure: "each",
+  sku: "",
+  isActive: true,
+};
+const blankLocation: LocationForm = {
+  name: "",
+  description: "",
+  isActive: true,
+};
 
-export default function InventoryPage(){
- const [items,setItems]=useState<Item[]>([]),[locations,setLocations]=useState<Location[]>([]),[balances,setBalances]=useState<Balance[]>([]),[locationId,setLocationId]=useState(""),[message,setMessage]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(true),[itemForm,setItemForm]=useState<ItemForm>(blankItem),[locationForm,setLocationForm]=useState<LocationForm>(blankLocation),[movement,setMovement]=useState({transactionType:"receive",itemId:"",sourceLocationId:"",destinationLocationId:"",quantity:"",reason:"",reference:""});
- const activeLocations=useMemo(()=>locations.filter(x=>x.is_active),[locations]);
- async function load(){setLoading(true);setError("");try{const suffix=locationId?`?locationId=${encodeURIComponent(locationId)}`:"";const [a,b,c]=await Promise.all([fetch("/api/inventory/items",{cache:"no-store"}),fetch("/api/inventory/locations",{cache:"no-store"}),fetch(`/api/inventory/balances${suffix}`,{cache:"no-store"})]);if(!a.ok||!b.ok||!c.ok)throw new Error("Inventory could not be loaded.");setItems((await a.json()).items??[]);setLocations((await b.json()).locations??[]);setBalances((await c.json()).balances??[])}catch(e){setError(e instanceof Error?e.message:"Inventory could not be loaded.")}finally{setLoading(false)}}
- // load is intentionally refreshed only when the selected location changes.
- // eslint-disable-next-line react-hooks/exhaustive-deps
- useEffect(()=>{void Promise.resolve().then(load)},[locationId]);
- async function submit(url:string,body:unknown,done:()=>void,method="POST"){setError("");setMessage("");const r=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const p=await r.json().catch(()=>({}));if(!r.ok){setError(p.error??"Request failed.");return;}done();setMessage("Saved.");await load();}
- return <TracePointShell activePage="Inventory"><main className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6"><section className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-blue-400">Pooled stock</p><h1 className="mt-1 text-2xl font-bold text-white">Inventory</h1><p className="mt-1 text-sm text-slate-400">Manage quantity-based stock separately from assigned equipment.</p></div><button onClick={()=>void load()} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200"><RefreshCw size={14}/>Refresh</button></section>
- {error?<p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>:null}{message?<p className="rounded-lg border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-200">{message}</p>:null}
- <section className="grid gap-4 lg:grid-cols-3"><Panel title={itemForm.id?"Edit item":"Add item"}><form onSubmit={e=>{e.preventDefault();void submit("/api/inventory/items",itemForm,()=>setItemForm(blankItem),itemForm.id?"PATCH":"POST");}} className="grid gap-2"><input className={field} placeholder="Item name" value={itemForm.name} onChange={e=>setItemForm({...itemForm,name:e.target.value})}/><div className="grid grid-cols-2 gap-2"><input className={field} placeholder="Category" value={itemForm.category} onChange={e=>setItemForm({...itemForm,category:e.target.value})}/><input className={field} placeholder="Unit (each)" value={itemForm.unitOfMeasure} onChange={e=>setItemForm({...itemForm,unitOfMeasure:e.target.value})}/></div><select className={field} value={itemForm.trackingMode} onChange={e=>setItemForm({...itemForm,trackingMode:e.target.value as ItemForm["trackingMode"]})}><option value="pooled">Pooled</option><option value="consumable">Consumable</option></select><input className={field} placeholder="SKU / part number (optional)" value={itemForm.sku} onChange={e=>setItemForm({...itemForm,sku:e.target.value})}/><textarea className={field} placeholder="Description (optional)" value={itemForm.description} onChange={e=>setItemForm({...itemForm,description:e.target.value})}/><label className="text-xs text-slate-400"><input type="checkbox" checked={itemForm.isActive} onChange={e=>setItemForm({...itemForm,isActive:e.target.checked})}/> Active</label><Submit label={itemForm.id?"Save item":"Add item"}/></form></Panel>
- <Panel title={locationForm.id?"Edit location":"Add location"}><form onSubmit={e=>{e.preventDefault();void submit("/api/inventory/locations",locationForm,()=>setLocationForm(blankLocation),locationForm.id?"PATCH":"POST");}} className="grid gap-2"><input className={field} placeholder="Location name" value={locationForm.name} onChange={e=>setLocationForm({...locationForm,name:e.target.value})}/><textarea className={field} placeholder="Description (optional)" value={locationForm.description} onChange={e=>setLocationForm({...locationForm,description:e.target.value})}/><p className="text-xs text-slate-500">Vehicle, room, and bin targets are reserved for a later phase.</p><label className="text-xs text-slate-400"><input type="checkbox" checked={locationForm.isActive} onChange={e=>setLocationForm({...locationForm,isActive:e.target.checked})}/> Active</label><Submit label={locationForm.id?"Save location":"Add location"}/></form></Panel>
- <Panel title="Stock movement"><form onSubmit={e=>{e.preventDefault();void submit("/api/inventory/transactions",{...movement,quantity:Number(movement.quantity)},()=>setMovement({...movement,quantity:"",reason:"",reference:""}));}} className="grid gap-2"><select className={field} value={movement.transactionType} onChange={e=>setMovement({...movement,transactionType:e.target.value})}><option value="receive">Receive</option><option value="adjust">Adjust (+/-)</option><option value="transfer">Transfer</option></select><select className={field} value={movement.itemId} onChange={e=>setMovement({...movement,itemId:e.target.value})}><option value="">Select item</option>{items.filter(x=>x.is_active).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>{movement.transactionType!=="receive"?<LocationSelect label="Source" value={movement.sourceLocationId} locations={activeLocations} onChange={v=>setMovement({...movement,sourceLocationId:v})}/>:null}{movement.transactionType!=="adjust"?<LocationSelect label="Destination" value={movement.destinationLocationId} locations={activeLocations} onChange={v=>setMovement({...movement,destinationLocationId:v})}/>:null}<input className={field} type="number" step="0.001" placeholder={movement.transactionType==="adjust"?"Adjustment, e.g. -2":"Quantity"} value={movement.quantity} onChange={e=>setMovement({...movement,quantity:e.target.value})}/><input className={field} placeholder="Reason (optional)" value={movement.reason} onChange={e=>setMovement({...movement,reason:e.target.value})}/><Submit label={movement.transactionType==="transfer"?"Transfer stock":"Record movement"}/></form></Panel></section>
- <section className="rounded-xl border border-slate-800 bg-slate-900/40"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 p-4"><div className="flex items-center gap-2"><Boxes size={17} className="text-blue-300"/><h2 className="font-semibold text-white">Balances</h2></div><select className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" value={locationId} onChange={e=>setLocationId(e.target.value)}><option value="">All locations</option>{locations.map(x=><option key={x.id} value={x.id}>{x.name}{x.is_active?"":" (inactive)"}</option>)}</select></div><div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-4">Item</th><th className="p-4">Mode</th><th className="p-4">Location</th><th className="p-4 text-right">On hand</th></tr></thead><tbody className="divide-y divide-slate-800">{balances.map(b=><tr key={b.id}><td className="p-4 font-medium text-white">{b.inventory_items?.name}</td><td className="p-4 text-slate-400">{b.inventory_items?.tracking_mode}</td><td className="p-4 text-slate-300">{b.inventory_locations?.name}</td><td className="p-4 text-right text-white">{Number(b.on_hand_quantity).toLocaleString()} {b.inventory_items?.unit_of_measure}</td></tr>)}{!loading&&!balances.length?<tr><td colSpan={4} className="p-8 text-center text-slate-500">No stock recorded for this location.</td></tr>:null}</tbody></table></div></section>
- <section className="grid gap-4 lg:grid-cols-2"><List title="Items" rows={items} render={x=><><b>{x.name}</b><span>{x.category} · {x.tracking_mode} · {x.unit_of_measure}{x.is_active?"":" · inactive"}</span><button className="w-fit text-xs text-blue-300" onClick={()=>setItemForm({id:x.id,name:x.name,category:x.category,description:x.description??"",trackingMode:x.tracking_mode,unitOfMeasure:x.unit_of_measure,sku:x.sku??"",isActive:x.is_active})}>Edit</button></>}/><List title="Locations" rows={locations} render={x=><><b>{x.name}</b><span>{x.description||"No description"}{x.is_active?"":" · inactive"}</span><button className="w-fit text-xs text-blue-300" onClick={()=>setLocationForm({id:x.id,name:x.name,description:x.description??"",isActive:x.is_active})}>Edit</button></>}/></section></main></TracePointShell>}
-function Panel({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"><h2 className="font-semibold text-white">{title}</h2><div className="mt-3">{children}</div></section>};function Submit({label}:{label:string}){return <button className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"><Plus size={15}/>{label}</button>};function LocationSelect({label,value,locations,onChange}:{label:string;value:string;locations:Location[];onChange:(v:string)=>void}){return <label className="text-xs text-slate-400">{label}<select className={field} value={value} onChange={e=>onChange(e.target.value)}><option value="">Select location</option>{locations.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>};function List<T extends {id:string}>({title,rows,render}:{title:string;rows:T[];render:(x:T)=>React.ReactNode}){return <section className="rounded-xl border border-slate-800 bg-slate-900/40"><h2 className="border-b border-slate-800 p-4 font-semibold text-white">{title}</h2><div className="divide-y divide-slate-800">{rows.map(x=><div key={x.id} className="flex flex-col gap-1 p-3 text-sm text-white">{render(x)}</div>)}{!rows.length?<p className="p-4 text-sm text-slate-500">None configured.</p>:null}</div></section>}
+export default function InventoryPage() {
+  const [items, setItems] = useState<Item[]>([]),
+    [locations, setLocations] = useState<Location[]>([]),
+    [balances, setBalances] = useState<Balance[]>([]),
+    [locationId, setLocationId] = useState(""),
+    [message, setMessage] = useState(""),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
+    [itemForm, setItemForm] = useState<ItemForm>(blankItem),
+    [locationForm, setLocationForm] = useState<LocationForm>(blankLocation),
+    [movement, setMovement] = useState({
+      transactionType: "receive",
+      itemId: "",
+      sourceLocationId: "",
+      destinationLocationId: "",
+      quantity: "",
+      reason: "",
+      reference: "",
+    });
+  const activeLocations = useMemo(
+    () => locations.filter((x) => x.is_active),
+    [locations],
+  );
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const suffix = locationId
+        ? `?locationId=${encodeURIComponent(locationId)}`
+        : "";
+      const [a, b, c] = await Promise.all([
+        fetch("/api/inventory/items", { cache: "no-store" }),
+        fetch("/api/inventory/locations", { cache: "no-store" }),
+        fetch(`/api/inventory/balances${suffix}`, { cache: "no-store" }),
+      ]);
+      if (!a.ok || !b.ok || !c.ok)
+        throw new Error("Inventory could not be loaded.");
+      setItems((await a.json()).items ?? []);
+      setLocations((await b.json()).locations ?? []);
+      setBalances((await c.json()).balances ?? []);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Inventory could not be loaded.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+  // load is intentionally refreshed only when the selected location changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [locationId]);
+  async function submit(
+    url: string,
+    body: unknown,
+    done: () => void,
+    method = "POST",
+  ) {
+    setError("");
+    setMessage("");
+    const r = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const p = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setError(p.error ?? "Request failed.");
+      return;
+    }
+    done();
+    setMessage("Saved.");
+    await load();
+  }
+  return (
+    <TracePointShell activePage="Inventory">
+      <main className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+        <section className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.18em] text-blue-400">
+              Pooled stock
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-white">Inventory</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Manage quantity-based stock separately from assigned equipment.
+            </p>
+          </div>
+          <button
+            onClick={() => void load()}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200"
+          >
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+        </section>
+        {error ? (
+          <p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-sm text-red-200">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p className="rounded-lg border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-200">
+            {message}
+          </p>
+        ) : null}
+        <section className="grid gap-4 lg:grid-cols-3">
+          <Panel title={itemForm.id ? "Edit item" : "Add item"}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit(
+                  "/api/inventory/items",
+                  itemForm,
+                  () => setItemForm(blankItem),
+                  itemForm.id ? "PATCH" : "POST",
+                );
+              }}
+              className="grid gap-2"
+            >
+              <input
+                className={field}
+                placeholder="Item name"
+                value={itemForm.name}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, name: e.target.value })
+                }
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  className={field}
+                  placeholder="Category"
+                  value={itemForm.category}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, category: e.target.value })
+                  }
+                />
+                <input
+                  className={field}
+                  placeholder="Unit (each)"
+                  value={itemForm.unitOfMeasure}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, unitOfMeasure: e.target.value })
+                  }
+                />
+              </div>
+              <select
+                className={field}
+                value={itemForm.trackingMode}
+                onChange={(e) =>
+                  setItemForm({
+                    ...itemForm,
+                    trackingMode: e.target.value as ItemForm["trackingMode"],
+                  })
+                }
+              >
+                <option value="pooled">Pooled</option>
+                <option value="consumable">Consumable</option>
+              </select>
+              <input
+                className={field}
+                placeholder="SKU / part number (optional)"
+                value={itemForm.sku}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, sku: e.target.value })
+                }
+              />
+              <textarea
+                className={field}
+                placeholder="Description (optional)"
+                value={itemForm.description}
+                onChange={(e) =>
+                  setItemForm({ ...itemForm, description: e.target.value })
+                }
+              />
+              <label className="text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={itemForm.isActive}
+                  onChange={(e) =>
+                    setItemForm({ ...itemForm, isActive: e.target.checked })
+                  }
+                />{" "}
+                Active
+              </label>
+              <Submit label={itemForm.id ? "Save item" : "Add item"} />
+            </form>
+          </Panel>
+          <Panel title={locationForm.id ? "Edit location" : "Add location"}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit(
+                  "/api/inventory/locations",
+                  locationForm,
+                  () => setLocationForm(blankLocation),
+                  locationForm.id ? "PATCH" : "POST",
+                );
+              }}
+              className="grid gap-2"
+            >
+              <input
+                className={field}
+                placeholder="Location name"
+                value={locationForm.name}
+                onChange={(e) =>
+                  setLocationForm({ ...locationForm, name: e.target.value })
+                }
+              />
+              <textarea
+                className={field}
+                placeholder="Description (optional)"
+                value={locationForm.description}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    description: e.target.value,
+                  })
+                }
+              />
+              <p className="text-xs text-slate-500">
+                Vehicle, room, and bin targets are reserved for a later phase.
+              </p>
+              <label className="text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={locationForm.isActive}
+                  onChange={(e) =>
+                    setLocationForm({
+                      ...locationForm,
+                      isActive: e.target.checked,
+                    })
+                  }
+                />{" "}
+                Active
+              </label>
+              <Submit
+                label={locationForm.id ? "Save location" : "Add location"}
+              />
+            </form>
+          </Panel>
+          <Panel title="Stock movement">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit(
+                  "/api/inventory/transactions",
+                  { ...movement, quantity: Number(movement.quantity) },
+                  () =>
+                    setMovement({
+                      ...movement,
+                      quantity: "",
+                      reason: "",
+                      reference: "",
+                    }),
+                );
+              }}
+              className="grid gap-2"
+            >
+              <select
+                className={field}
+                value={movement.transactionType}
+                onChange={(e) =>
+                  setMovement({ ...movement, transactionType: e.target.value })
+                }
+              >
+                <option value="receive">Receive</option>
+                <option value="adjust">Adjust (+/-)</option>
+                <option value="transfer">Transfer</option>
+              </select>
+              <select
+                className={field}
+                value={movement.itemId}
+                onChange={(e) =>
+                  setMovement({ ...movement, itemId: e.target.value })
+                }
+              >
+                <option value="">Select item</option>
+                {items
+                  .filter((x) => x.is_active)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+              </select>
+              {movement.transactionType !== "receive" ? (
+                <LocationSelect
+                  label="Source"
+                  value={movement.sourceLocationId}
+                  locations={activeLocations}
+                  onChange={(v) =>
+                    setMovement({ ...movement, sourceLocationId: v })
+                  }
+                />
+              ) : null}
+              {movement.transactionType !== "adjust" ? (
+                <LocationSelect
+                  label="Destination"
+                  value={movement.destinationLocationId}
+                  locations={activeLocations}
+                  onChange={(v) =>
+                    setMovement({ ...movement, destinationLocationId: v })
+                  }
+                />
+              ) : null}
+              <input
+                className={field}
+                type="number"
+                step="0.001"
+                placeholder={
+                  movement.transactionType === "adjust"
+                    ? "Adjustment, e.g. -2"
+                    : "Quantity"
+                }
+                value={movement.quantity}
+                onChange={(e) =>
+                  setMovement({ ...movement, quantity: e.target.value })
+                }
+              />
+              <input
+                className={field}
+                placeholder="Reason (optional)"
+                value={movement.reason}
+                onChange={(e) =>
+                  setMovement({ ...movement, reason: e.target.value })
+                }
+              />
+              <Submit
+                label={
+                  movement.transactionType === "transfer"
+                    ? "Transfer stock"
+                    : "Record movement"
+                }
+              />
+            </form>
+          </Panel>
+        </section>
+        <section className="rounded-xl border border-slate-800 bg-slate-900/40">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 p-4">
+            <div className="flex items-center gap-2">
+              <Boxes size={17} className="text-blue-300" />
+              <h2 className="font-semibold text-white">Balances</h2>
+            </div>
+            <select
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+            >
+              <option value="">All locations</option>
+              {locations.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                  {x.is_active ? "" : " (inactive)"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[650px] text-left text-sm">
+              <thead className="text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="p-4">Item</th>
+                  <th className="p-4">Mode</th>
+                  <th className="p-4">Location</th>
+                  <th className="p-4 text-right">On hand</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {balances.map((b) => (
+                  <tr key={b.id}>
+                    <td className="p-4 font-medium text-white">
+                      {b.inventory_items?.name}
+                    </td>
+                    <td className="p-4 text-slate-400">
+                      {b.inventory_items?.tracking_mode}
+                    </td>
+                    <td className="p-4 text-slate-300">
+                      {b.inventory_locations?.name}
+                    </td>
+                    <td className="p-4 text-right text-white">
+                      {Number(b.on_hand_quantity).toLocaleString()}{" "}
+                      {b.inventory_items?.unit_of_measure}
+                    </td>
+                  </tr>
+                ))}
+                {!loading && !balances.length ? (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-slate-500">
+                      No stock recorded for this location.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <OutstandingCheckouts />
+      <section className="grid gap-4 lg:grid-cols-2">
+          <List
+            title="Items"
+            rows={items}
+            render={(x) => (
+              <>
+                <b>{x.name}</b>
+                <span>
+                  {x.category} · {x.tracking_mode} · {x.unit_of_measure}
+                  {x.is_active ? "" : " · inactive"}
+                </span>
+                <button
+                  className="w-fit text-xs text-blue-300"
+                  onClick={() =>
+                    setItemForm({
+                      id: x.id,
+                      name: x.name,
+                      category: x.category,
+                      description: x.description ?? "",
+                      trackingMode: x.tracking_mode,
+                      unitOfMeasure: x.unit_of_measure,
+                      sku: x.sku ?? "",
+                      isActive: x.is_active,
+                    })
+                  }
+                >
+                  Edit
+                </button>
+              </>
+            )}
+          />
+          <List
+            title="Locations"
+            rows={locations}
+            render={(x) => (
+              <>
+                <b>{x.name}</b>
+                <span>
+                  {x.description || "No description"}
+                  {x.is_active ? "" : " · inactive"}
+                </span>
+                <button
+                  className="w-fit text-xs text-blue-300"
+                  onClick={() =>
+                    setLocationForm({
+                      id: x.id,
+                      name: x.name,
+                      description: x.description ?? "",
+                      isActive: x.is_active,
+                    })
+                  }
+                >
+                  Edit
+                </button>
+              </>
+            )}
+          />
+        </section>
+      </main>
+    </TracePointShell>
+  );
+}
+function Panel({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <h2 className="font-semibold text-white">{title}</h2>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+function Submit({ label }: { label: string }) {
+  return (
+    <button className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">
+      <Plus size={15} />
+      {label}
+    </button>
+  );
+}
+function LocationSelect({
+  label,
+  value,
+  locations,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  locations: Location[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="text-xs text-slate-400">
+      {label}
+      <select
+        className={field}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Select location</option>
+        {locations.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+function List<T extends { id: string }>({
+  title,
+  rows,
+  render,
+}: {
+  title: string;
+  rows: T[];
+  render: (x: T) => React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-900/40">
+      <h2 className="border-b border-slate-800 p-4 font-semibold text-white">
+        {title}
+      </h2>
+      <div className="divide-y divide-slate-800">
+        {rows.map((x) => (
+          <div
+            key={x.id}
+            className="flex flex-col gap-1 p-3 text-sm text-white"
+          >
+            {render(x)}
+          </div>
+        ))}
+        {!rows.length ? (
+          <p className="p-4 text-sm text-slate-500">None configured.</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
