@@ -196,6 +196,12 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         icon: Boxes,
       },
       {
+        label: "Inventory",
+        href: "/inventory",
+        icon: Boxes,
+        requirement: { anyOf: ["view_inventory", "manage_inventory", "adjust_inventory"] },
+      },
+      {
         label: "Fleet Management",
         href: "/fleet-management",
         icon: Boxes,
