@@ -13,15 +13,18 @@ test("restricted use is a contextual custody status with Set and Manage actions"
   assert.doesNotMatch(page, /Add restricted-use status/);
 });
 
-test("workspace navigation uses the fixed four-cell layout at every pane width", async () => {
+test("workspace navigation is a single-line capsule rail with an accessible More menu", async () => {
   const page = await readFile(pagePath, "utf8");
-  assert.match(page, /grid-cols-4/);
-  assert.match(page, /min-w-0 rounded-xl px-2 py-2 text-xs font-bold transition/);
+  assert.match(page, /flex min-w-0 items-center gap-1/);
+  assert.match(page, /min-h-10 shrink-0 whitespace-nowrap rounded-xl px-2 text-\[11px\] font-bold transition/);
+  assert.match(page, /aria-label="More firearm actions"/);
+  assert.match(page, /<Ellipsis className="h-4 w-4" aria-hidden="true"/);
+  assert.match(page, /role="menu"/);
   assert.doesNotMatch(page, /lg:flex lg:items-center/);
   assert.doesNotMatch(page, /lg:block/);
   assert.doesNotMatch(page, /lg:hidden/);
   assert.match(page, /Restricted"/);
-  assert.match(page, />More</);
+  assert.doesNotMatch(page, />More</);
   assert.match(page, /setWorkspaceTab\("edit"\)/);
   assert.match(page, /setWorkspaceTab\("status"\)/);
   assert.doesNotMatch(page, /overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950\/40 p-1/);
