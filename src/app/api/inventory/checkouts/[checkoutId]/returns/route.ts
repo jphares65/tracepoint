@@ -1,0 +1,4 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getInventoryServerContext, inventoryDenied, nullableText, quantity } from "@/lib/tracepoint/inventory-server";
+export const dynamic="force-dynamic";
+export async function POST(request:NextRequest,{params}:{params:Promise<{checkoutId:string}>}){const c=await getInventoryServerContext();if("error" in c)return c.error;if(!c.canAdjust)return inventoryDenied("adjust");const b=await request.json().catch(()=>({})),id=(await params).checkoutId,amount=quantity(b.quantity);if(!id||!Number.isFinite(amount))return NextResponse.json({error:"Checkout and return quantity are required."},{status:400});const {data,error}=await c.db.rpc("return_inventory_checkout",{p_checkout_id:id,p_quantity:amount,p_reason:nullableText(b.reason,1000),p_reference:nullableText(b.reference,250)});return error?NextResponse.json({error:error.message},{status:error.message.includes("exceeds")?409:400}):NextResponse.json({checkout:data});}
