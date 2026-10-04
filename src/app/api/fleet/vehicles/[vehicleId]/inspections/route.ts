@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy dynamic database boundary */
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -27,7 +28,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ vehicleId: string }> },
 ) {
-  const access = await resolveServerAccess();
+  const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
   const { vehicleId } = await params;

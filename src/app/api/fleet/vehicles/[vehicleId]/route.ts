@@ -10,11 +10,13 @@ import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ vehicleId: string }> }) {
-  const access = await resolveServerAccess();
+export async function GET(request: NextRequest, { params }: { params: Promise<{ vehicleId: string }> }) {
+  const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
   const { vehicleId } = await params;
+  const mobile = request.nextUrl.pathname.startsWith("/api/mobile/");
+  const attachmentBase = mobile ? "/api/mobile/attachments" : "/api/attachments";
 
   let detail;
   try { detail = await createFleetReadRepository(context.admin, context.departmentId).getVehicleDetail({ departmentId: context.departmentId, vehicleId, canViewNetworkDetails: (rules) => canViewNetworkDetails(context, rules) }); }
@@ -73,7 +75,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
           description: attachment.description,
           uploadedAt: attachment.uploaded_at,
           viewUrl: view.signedUrl,
-          downloadUrl: `/api/attachments/${attachment.id}/download`,
+          downloadUrl: `${attachmentBase}/${attachment.id}/download`,
         };
       }),
     );
@@ -95,8 +97,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     documents: [
       ...(documentResult.data ?? []).map((document: Record<string, unknown>) => ({
         ...document, title: document.description || document.file_name, document_type: document.attachment_type,
-        viewUrl: `/api/attachments/${document.id}/download?disposition=inline`,
-        downloadUrl: `/api/attachments/${document.id}/download`, managedAttachment: true,
+        viewUrl: `${attachmentBase}/${document.id}/download?disposition=inline`,
+        downloadUrl: `${attachmentBase}/${document.id}/download`, managedAttachment: true,
       })),
       ...detail.documents,
     ],
@@ -109,7 +111,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ vehicleId: string }> }) {
-  const access = await resolveServerAccess();
+  const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
   const { vehicleId } = await params;

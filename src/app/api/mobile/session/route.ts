@@ -15,7 +15,7 @@ const noStore = { "Cache-Control": "no-store, private" };
 export async function POST(request: Request) {
   const token = parseUniqueBearerToken(request.headers.get("authorization"));
   if (!token) return NextResponse.json({ error: "Authentication is required." }, { status: 401, headers: noStore });
-  const principal = await resolveRuntimeCognitoMobileBearer(token);
+  const principal = await resolveRuntimeCognitoMobileBearer(token, process.env, { establish: true });
   if (!principal) return NextResponse.json({ error: "Authentication is required." }, { status: 401, headers: noStore });
 
   const selected = request.headers.get("x-tracepoint-department-id")?.trim() ?? "";

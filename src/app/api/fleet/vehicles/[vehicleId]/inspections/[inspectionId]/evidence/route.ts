@@ -22,7 +22,7 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 export async function POST(request: NextRequest, routeContext: RouteContext) {
-  const access = await resolveServerAccess();
+  const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
   const { vehicleId, inspectionId } = await routeContext.params;

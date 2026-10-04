@@ -5,6 +5,9 @@ import { NextResponse } from "next/server";
 
 import { readBearerToken } from "@/lib/authentication/request-bearer";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { resolveRuntimeCognitoMobileBearer } from "@/lib/authentication/cognito-mobile-session";
+import { parseUniqueBearerToken } from "@/lib/authentication/request-bearer-core";
+import { isDedicatedMobileApiPath, mobileDepartmentSelection } from "@/lib/authentication/mobile-route-policy-core";
 import { parseCognitoTargetConfiguration } from "@/lib/authentication/cognito-runtime-configuration-core";
 import {
   emitProductionSessionDiagnostic,
@@ -135,6 +138,19 @@ export async function resolveServerAccess(request?: Request): Promise<ServerAcce
     const diagnostic = productionSessionDiagnostic(requestHeaders, request);
     try {
       parseCognitoTargetConfiguration(process.env);
+      // Only dedicated /api/mobile routes may resolve bearer credentials.
+      // Browser routes keep their cookie-only security boundary below.
+      if (request && isDedicatedMobileApiPath(request.url)) {
+        const token = parseUniqueBearerToken(request.headers.get("authorization"));
+        if (!token) return { ok: false, status: 401, error: "Authentication is required." };
+        const principal = await resolveRuntimeCognitoMobileBearer(token);
+        if (!principal) return { ok: false, status: 401, error: "Authentication is required." };
+        const department = mobileDepartmentSelection(request.headers.get("x-tracepoint-department-id"));
+        if (!department.ok) {
+          return { ok: false, status: 400, error: "The selected department is invalid." };
+        }
+        return await resolvePostgresAccess(principal, department.selected, "") as ServerAccessResult;
+      }
       // Browser sessions are the only native application credential in this
       // release. A bearer token must never fall through to Supabase.
       if (requestHeaders.has("authorization")) {

@@ -6,7 +6,7 @@ import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
 type RouteContext = { params: Promise<{ attachmentId: string }> };
 
 export async function GET(request: NextRequest, routeContext: RouteContext) {
-  const resolved = await resolveServerAccess();
+  const resolved = await resolveServerAccess(request);
   if (!resolved.ok) return accessFailureResponse(resolved);
   const { attachmentId } = await routeContext.params;
   const { admin, departmentId } = resolved.context;

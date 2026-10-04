@@ -41,8 +41,12 @@ async function resolve(token: string, environment: Record<string, string | undef
   });
 }
 
-export function resolveRuntimeCognitoMobileBearer(token: string, environment = process.env) {
-  return resolve(token, environment, true);
+export function resolveRuntimeCognitoMobileBearer(
+  token: string,
+  environment = process.env,
+  options: { establish?: boolean } = {},
+) {
+  return resolve(token, environment, options.establish === true);
 }
 
 export async function revokeRuntimeCognitoMobileBearer(token: string, environment = process.env) {
