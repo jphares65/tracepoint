@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { resolveLoginSession } from "./login-session-core.ts";
-import { InvalidApplicationSessionCookieError } from "./request-session-core.ts";
+import { uniqueCookieValue } from "./request-session-core.ts";
+
+const sessionCookie = "__Host-tracepoint-cognito-session";
+const validHandle = "a".repeat(43);
 
 test("/login without an application session remains unauthenticated and is cleaned", async () => {
   const result = await resolveLoginSession(async () => null);
@@ -10,9 +13,9 @@ test("/login without an application session remains unauthenticated and is clean
 });
 
 test("/login with a malformed application session remains unauthenticated and is cleaned", async () => {
-  const result = await resolveLoginSession(async () => {
-    throw new InvalidApplicationSessionCookieError();
-  });
+  const result = await resolveLoginSession(async () =>
+    uniqueCookieValue(`${sessionCookie}=malformed`, sessionCookie),
+  );
   assert.deepEqual(result, { principal: null, requiresCleanup: true });
 });
 
@@ -27,9 +30,16 @@ test("/login with a valid authenticated session keeps the authenticated principa
   assert.deepEqual(result, { principal, requiresCleanup: false });
 });
 
-test("/login treats a session verification failure as anonymous local state", async () => {
-  const result = await resolveLoginSession(async () => {
-    throw new Error("Application session could not be verified.");
-  });
+test("/login with a duplicated application-session cookie remains unauthenticated and is cleaned", async () => {
+  const result = await resolveLoginSession(async () =>
+    uniqueCookieValue(`${sessionCookie}=${validHandle}; ${sessionCookie}=${validHandle}`, sessionCookie),
+  );
   assert.deepEqual(result, { principal: null, requiresCleanup: true });
+});
+
+test("/login does not silently swallow unrelated resolver failures", async () => {
+  const failure = new Error("database unavailable");
+  await assert.rejects(resolveLoginSession(async () => {
+    throw failure;
+  }), failure);
 });

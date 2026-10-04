@@ -1,6 +1,7 @@
 ﻿import Image from "next/image";
 import { redirect } from "next/navigation";
 
+import { resolveLoginSession } from "@/lib/authentication/login-session-core";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
 import { runtimeAuthenticationProvider } from "@/lib/authentication/request-session-core";
 
@@ -27,8 +28,10 @@ export default async function LoginPage({
   const params = await searchParams;
   const nextPath = safeNextPath(params.next);
 
-  const principal = await resolveAuthenticatedPrincipal();
-  if (principal) {
+  // The proxy normally clears bad receipts before rendering. Keep this route
+  // independently safe when it is bypassed or a stale request still arrives.
+  const loginSession = await resolveLoginSession(resolveAuthenticatedPrincipal);
+  if (loginSession.principal) {
     redirect(nextPath);
   }
   const providerMode = runtimeAuthenticationProvider(process.env) === "cognito" ? "aws-native" : "bridge";
