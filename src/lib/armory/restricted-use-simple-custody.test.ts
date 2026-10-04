@@ -30,6 +30,23 @@ test("workspace navigation is a single-line capsule rail with an accessible More
   assert.doesNotMatch(page, /overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950\/40 p-1/);
 });
 
+test("workspace navigation renders once before every selected-workspace panel", async () => {
+  const page = await readFile(pagePath, "utf8");
+  const navigation = page.indexOf('aria-label="More firearm actions"');
+
+  assert.equal((page.match(/aria-label="More firearm actions"/g) ?? []).length, 1);
+  assert.ok(navigation > page.indexOf("Selected Firearm"));
+  for (const workspacePanel of [
+    '{workspaceTab === "restricted"',
+    '{workspaceTab === "documents"',
+    '{workspaceTab === "custody"',
+    '{workspaceTab === "edit"',
+    '{workspaceTab === "status"',
+  ]) {
+    assert.ok(navigation < page.indexOf(workspacePanel));
+  }
+});
+
 test("the authoritative custody card remains available and contains the restricted-use summary", async () => {
   const page = await readFile(pagePath, "utf8");
   assert.match(page, /workspaceTab === "custody" && \(/);
