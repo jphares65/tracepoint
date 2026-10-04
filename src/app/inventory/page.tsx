@@ -648,7 +648,7 @@ export default function InventoryPage() {
             ) : null}
           </section>
         ) : null}
-        <OutstandingCheckouts />
+        <OutstandingCheckouts onReturnSuccess={load} />
         <Panel title="Temporary checkout">
           <InventoryCheckoutForm
             items={items}
