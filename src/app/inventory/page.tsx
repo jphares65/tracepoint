@@ -5,6 +5,9 @@ import { Boxes, Plus, RefreshCw } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
 import OutstandingCheckouts from "./OutstandingCheckouts";
 import InventoryCheckoutForm from "./InventoryCheckoutForm";
+import SearchablePicker, {
+  type SearchablePickerOption,
+} from "@/app/components/SearchablePicker";
 import {
   INVENTORY_UNIT_OPTIONS,
   nextUnitValue,
@@ -52,6 +55,7 @@ type LocationForm = {
   isActive: boolean;
 };
 type Action = "item" | "receive" | "transfer" | "more" | null;
+type LocationCreateTarget = "source" | "destination" | null;
 const field =
   "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white";
 const blankItem: ItemForm = {
@@ -91,6 +95,9 @@ export default function InventoryPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [canManageInventory, setCanManageInventory] = useState(false);
+  const [createLocationTarget, setCreateLocationTarget] =
+    useState<LocationCreateTarget>(null);
   const activeLocations = useMemo(
     () => locations.filter((location) => location.is_active),
     [locations],
@@ -122,9 +129,17 @@ export default function InventoryPage() {
         ]);
       if (!itemResponse.ok || !locationResponse.ok || !balanceResponse.ok)
         throw new Error("Inventory could not be loaded.");
-      setItems((await itemResponse.json()).items ?? []);
-      setLocations((await locationResponse.json()).locations ?? []);
-      setBalances((await balanceResponse.json()).balances ?? []);
+      const [itemPayload, locationPayload, balancePayload] = await Promise.all([
+        itemResponse.json(),
+        locationResponse.json(),
+        balanceResponse.json(),
+      ]);
+      setItems(itemPayload.items ?? []);
+      setLocations(locationPayload.locations ?? []);
+      setBalances(balancePayload.balances ?? []);
+      setCanManageInventory(
+        Boolean(itemPayload.canManage ?? locationPayload.canManage),
+      );
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -164,6 +179,33 @@ export default function InventoryPage() {
     setStockMovement(movement(next));
     setAction(action === next ? null : next);
   };
+  async function createLocationForPicker(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    const response = await fetch("/api/inventory/locations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...locationForm, id: undefined }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(payload.error ?? "The inventory location could not be created.");
+      return;
+    }
+    const created = payload.location as Location;
+    setLocations((current) =>
+      [...current, created].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setStockMovement((current) =>
+      createLocationTarget === "source"
+        ? { ...current, sourceLocationId: created.id }
+        : { ...current, destinationLocationId: created.id },
+    );
+    setLocationForm(blankLocation);
+    setCreateLocationTarget(null);
+    setMessage("Location created.");
+    await load();
+  }
 
   return (
     <TracePointShell activePage="Inventory">
@@ -477,6 +519,7 @@ export default function InventoryPage() {
                   </Label>
                   {action === "transfer" ? (
                     <LocationField
+                      id="inventory-source-location"
                       text="From"
                       helper="Current inventory location"
                       value={stockMovement.sourceLocationId}
@@ -487,9 +530,17 @@ export default function InventoryPage() {
                           sourceLocationId: value,
                         })
                       }
+                      canCreate={canManageInventory}
+                      loading={loading}
+                      error={error}
+                      onCreate={() => {
+                        setLocationForm(blankLocation);
+                        setCreateLocationTarget("source");
+                      }}
                     />
                   ) : null}
                   <LocationField
+                    id="inventory-destination-location"
                     text={action === "receive" ? "Store at" : "To"}
                     helper={
                       action === "receive"
@@ -504,6 +555,13 @@ export default function InventoryPage() {
                         destinationLocationId: value,
                       })
                     }
+                    canCreate={canManageInventory}
+                    loading={loading}
+                    error={error}
+                    onCreate={() => {
+                      setLocationForm(blankLocation);
+                      setCreateLocationTarget("destination");
+                    }}
                   />
                   <Label
                     text={
@@ -548,6 +606,14 @@ export default function InventoryPage() {
                     }
                   />
                 </form>
+                {createLocationTarget ? (
+                  <InlineLocationCreate
+                    form={locationForm}
+                    onChange={setLocationForm}
+                    onCancel={() => setCreateLocationTarget(null)}
+                    onSubmit={createLocationForPicker}
+                  />
+                ) : null}
               </Panel>
             ) : null}
             {action === "more" ? (
@@ -760,33 +826,108 @@ function Label({
   );
 }
 function LocationField({
+  id,
   text,
   helper,
   value,
   locations,
   onChange,
+  canCreate,
+  onCreate,
+  loading,
+  error,
 }: {
+  id: string;
   text: string;
   helper: string;
   value: string;
   locations: Location[];
   onChange: (value: string) => void;
+  canCreate: boolean;
+  onCreate: () => void;
+  loading: boolean;
+  error: string;
 }) {
   return (
-    <Label text={text} helper={helper}>
-      <select
-        className={field}
+    <div className="block text-xs font-medium text-slate-300">
+      <span>{text}</span>
+      <span className="mt-1 block font-normal text-slate-500">{helper}</span>
+      <SearchablePicker
+        id={id}
+        label={text}
+        options={locations.map((location): SearchablePickerOption => ({
+          id: location.id,
+          label: location.name,
+        }))}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Choose a location</option>
-        {locations.map((location) => (
-          <option key={location.id} value={location.id}>
-            {location.name}
-          </option>
-        ))}
-      </select>
-    </Label>
+        onChange={onChange}
+        placeholder="Search locations"
+        loading={loading}
+        error={error}
+        createAction={
+          canCreate
+            ? { label: "Create new location", onSelect: onCreate }
+            : undefined
+        }
+      />
+    </div>
+  );
+}
+function InlineLocationCreate({
+  form,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  form: LocationForm;
+  onChange: (form: LocationForm) => void;
+  onCancel: () => void;
+  onSubmit: (event: React.FormEvent) => Promise<void>;
+}) {
+  return (
+    <form
+      onSubmit={(event) => void onSubmit(event)}
+      className="mt-4 rounded-lg border border-blue-900/70 bg-blue-950/20 p-3"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-white">
+          Create new location
+        </h3>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs text-slate-300"
+        >
+          Cancel
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <Label text="Location name">
+          <input
+            required
+            className={field}
+            placeholder="Example: Patrol Supply Room"
+            value={form.name}
+            onChange={(event) =>
+              onChange({ ...form, name: event.target.value })
+            }
+          />
+        </Label>
+        <Label text="Description">
+          <input
+            className={field}
+            placeholder="Additional location details (optional)"
+            value={form.description}
+            onChange={(event) =>
+              onChange({ ...form, description: event.target.value })
+            }
+          />
+        </Label>
+      </div>
+      <button className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">
+        Create and select location
+      </button>
+    </form>
   );
 }
 function Submit({ label }: { label: string }) {
