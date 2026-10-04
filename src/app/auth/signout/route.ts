@@ -2,6 +2,7 @@
 
 import { configuredSiteOrigin } from "@/lib/authentication/redirects";
 import { createRuntimeCognitoTransport, isCognitoRuntimeEnabled } from "@/lib/authentication/cognito-runtime-transport";
+import { postOnlySignOutResponse } from "@/lib/authentication/signout-method-core";
 
 function clearTracePointCookies(response: NextResponse) {
   for (const name of [
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  if (isCognitoRuntimeEnabled()) return NextResponse.json({error:"Sign out requires POST."},{status:405,headers:{Allow:"POST","Cache-Control":"no-store"}});
+  if (isCognitoRuntimeEnabled()) {
+    const response = postOnlySignOutResponse();
+    return NextResponse.json(response.body, response.init);
+  }
   const loginUrl = new URL('/login', configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL));
   const supabase = await (await import("@/lib/supabase/server")).createClient();
   await supabase.auth.signOut();

@@ -9,6 +9,13 @@ export type AuthenticatedPrincipal = {
 
 const handlePattern = /^[A-Za-z0-9_-]{43}$/;
 
+export class InvalidApplicationSessionCookieError extends Error {
+  constructor() {
+    super("Invalid application session cookie.");
+    this.name = "InvalidApplicationSessionCookieError";
+  }
+}
+
 export function uniqueCookieValue(cookieHeader: string | null, name: string) {
   const values = (cookieHeader ?? "")
     .split(";")
@@ -16,7 +23,9 @@ export function uniqueCookieValue(cookieHeader: string | null, name: string) {
     .filter((part) => part.startsWith(`${name}=`))
     .map((part) => part.slice(name.length + 1));
   if (values.length === 0) return null;
-  if (values.length !== 1 || !handlePattern.test(values[0])) throw new Error("Invalid application session cookie.");
+  if (values.length !== 1 || !handlePattern.test(values[0])) {
+    throw new InvalidApplicationSessionCookieError();
+  }
   return values[0];
 }
 

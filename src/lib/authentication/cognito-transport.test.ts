@@ -51,6 +51,14 @@ test('logout persists revocation before hosted logout redirect and never claims 
  f.ports.revoke=async()=>{throw Error('private store failure');};const failed=await f.api.logout(request);assert.equal(failed.status,503);assert.equal(failed.headers.has('location'),false);assert.equal((await failed.text()).includes('private'),false);
  assert.equal(failed.headers.getSetCookie().length,4);
 });
+test('sign-out transport continues to reject GET while explicit POST revokes the Cognito session',async()=>{
+ const f=fixture(),get=new Request(origin+'/api/auth/cognito/logout');
+ assert.equal((await f.api.logout(get)).status,405);
+ assert.equal(f.calls.revoke,0);
+ const postResponse=await f.api.logout(post('logout',{cookie:'__Host-tracepoint-cognito-session='+handle}));
+ assert.equal(postResponse.status,303);
+ assert.equal(f.calls.revoke,1);
+});
 test('transport refuses a PKCE cookie lifetime divergent from the server contract',async()=>{
  const f=fixture(),begin=f.ports.pkce.begin;
  f.ports.pkce.begin=async()=>{const flow=await begin();return {...flow,cookie:{...flow.cookie,maxAge:601}}};
