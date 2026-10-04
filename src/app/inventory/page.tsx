@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Boxes, Plus, RefreshCw } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
 import OutstandingCheckouts from "./OutstandingCheckouts";
+import InventoryCheckoutForm from "./InventoryCheckoutForm";
 
 type Item = {
   id: string;
@@ -459,6 +460,7 @@ export default function InventoryPage() {
             </table>
           </div>
         </section>
+      <InventoryCheckoutForm items={items} locations={activeLocations} balances={balances} onSuccess={load} />
       <OutstandingCheckouts />
       <section className="grid gap-4 lg:grid-cols-2">
           <List
