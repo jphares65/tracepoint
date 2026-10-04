@@ -1,9 +1,10 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveAuthenticatedPrincipal } from "./request-session";
-import { isAwsNativePublicPath, sessionExpiryRedirectTarget } from "./request-proxy-core";
+import { resolveLoginSession } from "./login-session-core";
+import { isAwsNativePublicPath, loginRedirectTarget, sessionExpiryRedirectTarget } from "./request-proxy-core";
 import { InvalidApplicationSessionCookieError } from "./request-session-core";
-import { clearLocalSessionState } from "./session-cleanup";
+import { clearLocalSessionState, withoutLocalSessionCookies } from "./session-cleanup";
 import { shouldRouteToPlatformConsole } from "./post-auth-routing-core";
 import { resolvePostgresPlatformLanding } from "@/lib/tracepoint/server-access-postgres";
 
@@ -21,13 +22,28 @@ function signInRequiredResponse(request: NextRequest, clearLocalState = false) {
  return clearLocalState ? clearLocalSessionState(response) : response;
 }
 
-export async function updateAwsNativeSession(request:NextRequest){
+function cleanLoginResponse(request: NextRequest) {
+ const headers = new Headers(request.headers);
+ const cookie = withoutLocalSessionCookies(headers.get("cookie"));
+ if (cookie) headers.set("cookie", cookie);
+ else headers.delete("cookie");
+ return clearLocalSessionState(NextResponse.next({ request: { headers } }));
+}
+
+export async function updateAwsNativeSession(
+ request:NextRequest,
+ resolvePrincipal: typeof resolveAuthenticatedPrincipal = resolveAuthenticatedPrincipal,
+){
  const pathname=request.nextUrl.pathname;
- // Login must still inspect a durable receipt. A stale receipt is cleared here,
- // while a valid receipt is left for the login page's existing redirect logic.
- if(isAwsNativePublicPath(pathname)&&pathname!=="/login")return NextResponse.next({request});
+ const isLogin=pathname.toLowerCase()==="/login";
+ if(isAwsNativePublicPath(pathname)&&!isLogin)return NextResponse.next({request});
+ if(isLogin){
+  const loginSession=await resolveLoginSession(() => resolvePrincipal(request.headers.get("cookie")));
+  if(loginSession.requiresCleanup)return cleanLoginResponse(request);
+  return NextResponse.redirect(new URL(loginRedirectTarget(request.nextUrl.search),request.url));
+ }
  let principal;
- try{principal=await resolveAuthenticatedPrincipal(request.headers.get("cookie"));}
+ try{principal=await resolvePrincipal(request.headers.get("cookie"));}
  catch(error){
   if(error instanceof InvalidApplicationSessionCookieError)return signInRequiredResponse(request,true);
   return NextResponse.json({error:"TracePoint session verification is unavailable."},{status:503,headers:noStore});

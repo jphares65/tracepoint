@@ -7,3 +7,7 @@ export function sessionExpiryRedirectTarget(pathname:string,search:string){
  if(pathname==="/login")return null;
  return `/login?next=${encodeURIComponent(safeRequestedPath(pathname,search))}`;
 }
+export function loginRedirectTarget(search:string){
+ const next=new URLSearchParams(search).get("next")??"/";
+ return next.startsWith("/")&&!next.startsWith("//")?next:"/";
+}
