@@ -26,7 +26,7 @@ before(async () => {
 
 after(async () => { await client?.end().catch(() => undefined); await database?.stop().catch(() => undefined); await rm(directory, { recursive: true, force: true }).catch(() => undefined); });
 
-test("AWS-native ledger reserves migration 033 for Fleet document metadata", async () => {
+test("AWS-native ledger retains migration 033 for Fleet document metadata", async () => {
   const files = (await readdir("database/aws")).filter((file) => file.endsWith(".sql")).sort();
   assert.ok(files.includes("033_fleet_vehicle_document_metadata.sql"));
   assert.equal(new Set(files.map((file) => file.slice(0, 3))).size, files.length);
