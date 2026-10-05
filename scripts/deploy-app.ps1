@@ -259,7 +259,11 @@ function Publish-Image {
         $lintRatchetBaseline = '7ba11188dc8eb9fae119e131bd8053150b666ee7'
         & git.exe -C $repositoryRoot merge-base --is-ancestor $lintRatchetBaseline $Commit
         if ($LASTEXITCODE -ne 0) { throw "Production lint ratchet baseline $lintRatchetBaseline is not an ancestor of the reviewed commit." }
-        $changedLintFiles = @(& git.exe -C $repositoryRoot diff --name-only "$lintRatchetBaseline..$Commit" -- | Where-Object { $_ -match '^(src|scripts)/.+\.[cm]?[jt]sx?$' })
+        $changedLintFiles = @(& git.exe -C $repositoryRoot diff --name-only "$lintRatchetBaseline..$Commit" -- | Where-Object {
+            if ($_ -match '^src/.+\.[cm]?[jt]sx?$') { return $true }
+            if ($_ -notmatch '^scripts/.+\.[cm]?[jt]sx?$') { return $false }
+            return $archivePaths -contains $_
+        })
         if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate the production lint ratchet changed-file manifest.' }
         $lintRatchetManifest = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($changedLintFiles | ConvertTo-Json -Compress)))
         $overrides = @("name=IMAGE_TAG,value=$ImageTag,type=PLAINTEXT", "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT", "name=TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64,value=$lintRatchetManifest,type=PLAINTEXT")
