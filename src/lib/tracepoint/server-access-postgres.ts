@@ -1,4 +1,5 @@
 import "server-only";
+import { listMobileSupportAgencies, recordMobileSupportEntry } from "./mobile-support-core";
 import type { PoolClient } from "pg";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { PostgresDataClient } from "@/lib/database/postgres-data-client";
@@ -131,4 +132,25 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
    enabledFeatures:unique(features.rows.map(row=>row.feature_code)),
   }};
  }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
+}
+
+// Keep the same subject-scoped transaction and database checks as browser Support Mode.
+export async function listPostgresMobileSupportAgencies(principal: AuthenticatedPrincipal) {
+ const client = await getPostgresPool().connect();
+ try {
+  await beginSubject(client, principal.userId);
+  const agencies = await listMobileSupportAgencies((sql, values) => client.query(sql, values));
+  await client.query("commit"); return agencies;
+ } catch (error) { await client.query("rollback").catch(() => {}); throw error; }
+ finally { client.release(); }
+}
+
+export async function recordPostgresMobileSupportEntry(principal: AuthenticatedPrincipal, departmentId: string) {
+ const client = await getPostgresPool().connect();
+ try {
+  await beginSubject(client, principal.userId);
+  await recordMobileSupportEntry((sql, values) => client.query(sql, values), departmentId);
+  await client.query("commit");
+ } catch (error) { await client.query("rollback").catch(() => {}); throw error; }
+ finally { client.release(); }
 }

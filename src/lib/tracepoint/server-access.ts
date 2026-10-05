@@ -7,14 +7,14 @@ import { readBearerToken } from "@/lib/authentication/request-bearer";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
 import { resolveRuntimeCognitoMobileBearer } from "@/lib/authentication/cognito-mobile-session";
 import { parseUniqueBearerToken } from "@/lib/authentication/request-bearer-core";
-import { isDedicatedMobileApiPath, mobileDepartmentSelection } from "@/lib/authentication/mobile-route-policy-core";
+import { isDedicatedMobileApiPath, mobileDepartmentSelection, mobileSupportSelection } from "@/lib/authentication/mobile-route-policy-core";
 import { parseCognitoTargetConfiguration } from "@/lib/authentication/cognito-runtime-configuration-core";
 import {
   emitProductionSessionDiagnostic,
   productionSessionDiagnostic,
   withResolvedCognitoPrincipal,
 } from "@/lib/authentication/production-session-diagnostic";
-import { resolvePostgresAccess } from "@/lib/tracepoint/server-access-postgres";
+import { resolvePostgresAccess, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { resolveTenantContext } from "@/lib/tracepoint/tenant-context";
@@ -149,7 +149,18 @@ export async function resolveServerAccess(request?: Request): Promise<ServerAcce
         if (!department.ok) {
           return { ok: false, status: 400, error: "The selected department is invalid." };
         }
-        return await resolvePostgresAccess(principal, department.selected, "") as ServerAccessResult;
+        const support = mobileSupportSelection(department.selected, request.headers.get("x-tracepoint-support-mode"));
+        if (!support.ok) return { ok: false, status: 400, error: "The Support Mode context is invalid." };
+        // A caller-supplied flag never grants access: the resolver rechecks
+        // platform administrator status and the target agency on every request.
+        const resolved = await resolvePostgresAccess(principal, department.selected, support.support);
+        if (resolved.ok && support.support) {
+          // Audit every support context entry, including direct workflow calls.
+          // Never let a caller skip auditing by bypassing session establishment.
+          try { await recordPostgresMobileSupportEntry(principal, support.support); }
+          catch { return { ok: false, status: 500, error: "Support Mode could not be validated and audited." }; }
+        }
+        return resolved as ServerAccessResult;
       }
       // Browser sessions are the only native application credential in this
       // release. A bearer token must never fall through to Supabase.

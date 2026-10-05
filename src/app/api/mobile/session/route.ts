@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { resolveRuntimeCognitoMobileBearer } from "@/lib/authentication/cognito-mobile-session";
 import { parseUniqueBearerToken } from "@/lib/authentication/request-bearer-core";
-import { listPostgresMemberships, resolvePostgresAccess, resolvePostgresIdentitySummary } from "@/lib/tracepoint/server-access-postgres";
+import { listPostgresMemberships, resolvePostgresAccess, resolvePostgresIdentitySummary, listPostgresMobileSupportAgencies, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
+import { mobileSupportSelection } from "@/lib/authentication/mobile-route-policy-core";
 import { toAccessPayload } from "@/lib/tracepoint/server-access";
 
 export const dynamic = "force-dynamic";
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const noStore = { "Cache-Control": "no-store, private" };
 
 /**
@@ -20,6 +21,16 @@ export async function POST(request: Request) {
 
   const selected = request.headers.get("x-tracepoint-department-id")?.trim() ?? "";
   if (selected && !uuid.test(selected)) return NextResponse.json({ error: "The selected department is invalid." }, { status: 400, headers: noStore });
+  const support = mobileSupportSelection(selected, request.headers.get("x-tracepoint-support-mode"));
+  if (!support.ok) return NextResponse.json({ error: "The Support Mode context is invalid." }, { status: 400, headers: noStore });
+  if (support.support) {
+    const resolved = await resolvePostgresAccess(principal, selected, support.support);
+    if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status, headers: noStore });
+    // Fail closed if entry cannot be audited. Restore/refresh may record another entry.
+    try { await recordPostgresMobileSupportEntry(principal, selected); }
+    catch { return NextResponse.json({ error: "Support Mode could not be validated and audited." }, { status: 500, headers: noStore }); }
+    return NextResponse.json({ selectionRequired: false, platformAdmin: true, isSupportMode: true, memberships: [], access: toAccessPayload(resolved.context) }, { headers: noStore });
+  }
   const [memberships, identity] = await Promise.all([listPostgresMemberships(principal), resolvePostgresIdentitySummary(principal)]);
   const membershipPayload = memberships.map((membership) => ({
     departmentId: String(membership.department_id ?? ""),
@@ -30,7 +41,10 @@ export async function POST(request: Request) {
   }));
   if (!memberships.length) {
     if (!identity.isPlatformAdmin) return NextResponse.json({ error: "No active department membership was found." }, { status: 403, headers: noStore });
-    return NextResponse.json({ userId: principal.userId, displayIdentity: { fullName: identity.fullName, email: identity.email }, platformAdmin: true, selectionRequired: true, requiresSupportContext: true, memberships: [] }, { headers: noStore });
+    try {
+      const supportAgencies = await listPostgresMobileSupportAgencies(principal);
+      return NextResponse.json({ userId: principal.userId, displayIdentity: { fullName: identity.fullName, email: identity.email }, platformAdmin: true, selectionRequired: true, requiresSupportContext: true, memberships: [], supportAgencies }, { headers: noStore });
+    } catch { return NextResponse.json({ error: "Support Mode agencies could not be loaded." }, { status: 500, headers: noStore }); }
   }
   if (!selected && memberships.length > 1) return NextResponse.json({ userId: principal.userId, displayIdentity: { fullName: identity.fullName, email: identity.email }, platformAdmin: identity.isPlatformAdmin, selectionRequired: true, memberships: membershipPayload }, { headers: noStore });
   const resolved = await resolvePostgresAccess(principal, selected, "");
