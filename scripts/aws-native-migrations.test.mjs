@@ -14,3 +14,18 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /AWS_NATIVE_BASELINE_UNVERIFIED/);
   assert.match(runner, /action === "baseline" && requestedEnvironment !== "staging"/);
 });
+
+test("migration image archives include every Docker validation script for staging and production", async () => {
+  const archiveRunner = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
+  const stagingDockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
+  const productionDockerfile = await readFile(new URL("../Dockerfile.aws-native-production", import.meta.url), "utf8");
+
+  for (const script of ["scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"]) {
+    assert.match(stagingDockerfile, new RegExp(script.replaceAll(".", "\\.")));
+    assert.match(archiveRunner, new RegExp(`\\$paths = @[^\\n]*${script.replaceAll(".", "\\.")}`));
+  }
+  for (const script of ["scripts/assert-production-lint-ratchet.mjs", "scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"]) {
+    assert.match(productionDockerfile, new RegExp(script.replaceAll(".", "\\.")));
+    assert.match(archiveRunner, new RegExp(`if \\(\\$Environment -eq 'production'\\) \\{ \\$paths = @[^\\n]*${script.replaceAll(".", "\\.")}`));
+  }
+});
