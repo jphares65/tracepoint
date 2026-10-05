@@ -41,6 +41,7 @@ import type {
 
 import {
   addLibraryDrillToRangeDay,
+  addDrillLibraryTemplateToWorkspace,
   createDrillLibraryTemplate,
   createRangePacket,
   getAttendanceCount,
@@ -3470,7 +3471,7 @@ export default function RangeDaysPage() {
     window.requestAnimationFrame(() => window.print());
   }
 
-  function handleCreateDrillTemplate() {
+  async function handleCreateDrillTemplate() {
     if (!canManageRangeDays) return;
     if (!newDrillName.trim()) return;
 
@@ -3594,13 +3595,47 @@ export default function RangeDaysPage() {
         }
       : createdTemplate;
 
-    setDrillLibrary((current) =>
-      editingDrillTemplateId
-        ? current.map((template) =>
-            template.id === editingDrillTemplateId ? savedTemplate : template,
-          )
-        : [savedTemplate, ...current],
-    );
+    if (editingDrillTemplateId) {
+      setDrillLibrary((current) =>
+        current.map((template) =>
+          template.id === editingDrillTemplateId
+            ? savedTemplate
+            : template,
+        ),
+      );
+    } else {
+      const workspace = addDrillLibraryTemplateToWorkspace({
+        rangeDays,
+        drillLibrary,
+        rangeDayDrills,
+        rangeRoster,
+        results,
+        malfunctions,
+      }, savedTemplate);
+
+      // Documents validates the template against the server workspace. Persist
+      // before rendering the new card so its first document request succeeds.
+      if (remoteWorkspaceSyncTimer) {
+        clearTimeout(remoteWorkspaceSyncTimer);
+        remoteWorkspaceSyncTimer = null;
+      }
+
+      writeStoredRangeDayWorkspace(workspace);
+      setSaveMessage("Creating drill...");
+
+      try {
+        await saveRemoteRangeDayWorkspace(workspace);
+      } catch (error) {
+        setSaveMessage(
+          error instanceof Error
+            ? error.message
+            : "The drill could not be created.",
+        );
+        return;
+      }
+
+      setDrillLibrary(workspace.drillLibrary);
+    }
 
     if (editingDrillTemplateId) {
       const scoredDrillIds = new Set(results.map((result) => result.drillId));
