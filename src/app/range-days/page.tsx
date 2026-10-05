@@ -498,16 +498,23 @@ async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
     const payload = (await response.json().catch(() => ({}))) as {
       error?: string;
     };
-    throw new Error(payload.error || "The range workspace could not be saved.");
+    throw new Error(
+      `${payload.error || "The range workspace could not be saved."} (HTTP ${response.status})`,
+    );
+  }
+}
+
+function cancelPendingRemoteRangeDayWorkspaceSync() {
+  if (remoteWorkspaceSyncTimer) {
+    clearTimeout(remoteWorkspaceSyncTimer);
+    remoteWorkspaceSyncTimer = null;
   }
 }
 
 function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   if (typeof window === "undefined") return;
 
-  if (remoteWorkspaceSyncTimer) {
-    clearTimeout(remoteWorkspaceSyncTimer);
-  }
+  cancelPendingRemoteRangeDayWorkspaceSync();
 
   remoteWorkspaceSyncTimer = setTimeout(() => {
     saveRemoteRangeDayWorkspace(workspace).catch((error) => {
@@ -1851,6 +1858,7 @@ export default function RangeDaysPage() {
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedDrillId, setSelectedDrillId] = useState("");
   const [selectedRunNumber, setSelectedRunNumber] = useState(1);
+  const [addingDrillTemplateId, setAddingDrillTemplateId] = useState("");
   const [qualificationStandards, setQualificationStandards] = useState<
     QualificationStandardReference[]
   >([]);
@@ -3712,8 +3720,9 @@ export default function RangeDaysPage() {
     setShowCreateDrillForm(false);
   }
 
-  function handleAddTemplateToSelectedRangeDay(templateId: string) {
-    if (!selectedRangeDay || !canEditSelectedRangeDay) return;
+  async function handleAddTemplateToSelectedRangeDay(templateId: string) {
+    if (!selectedRangeDay || !canEditSelectedRangeDay || addingDrillTemplateId)
+      return;
 
     const copiedDrill = addLibraryDrillToRangeDay(
       {
@@ -3723,7 +3732,12 @@ export default function RangeDaysPage() {
       drillLibrary,
     );
 
-    if (!copiedDrill) return;
+    if (!copiedDrill) {
+      setSaveMessage(
+        "The selected Drill Library record is no longer available. Reload and try again.",
+      );
+      return;
+    }
 
     const sourceTemplate = drillLibrary.find(
       (template) => template.id === templateId,
@@ -3764,9 +3778,37 @@ export default function RangeDaysPage() {
         sourceTemplate?.departmentStandardRetirementDate,
     };
 
-    setRangeDayDrills((current) => [...current, normalizedCopiedDrill]);
-    setSelectedDrillId(normalizedCopiedDrill.id);
-    resetEntryForm(1);
+    const workspace: StoredRangeDayWorkspace = {
+      rangeDays,
+      drillLibrary,
+      rangeDayDrills: [...rangeDayDrills, normalizedCopiedDrill],
+      rangeRoster,
+      results,
+      malfunctions,
+    };
+
+    // Documents are attached to the source Drill Library template, not this
+    // Range Day instance. Persist the association before changing the UI so a
+    // document-related workspace write cannot race and overwrite it.
+    cancelPendingRemoteRangeDayWorkspaceSync();
+    setAddingDrillTemplateId(templateId);
+    setSaveMessage("Adding drill...");
+    try {
+      await saveRemoteRangeDayWorkspace(workspace);
+      writeStoredRangeDayWorkspace(workspace);
+      setRangeDayDrills(workspace.rangeDayDrills);
+      setSelectedDrillId(normalizedCopiedDrill.id);
+      resetEntryForm(1);
+      setSaveMessage(`${normalizedCopiedDrill.name} added.`);
+    } catch (error) {
+      setSaveMessage(
+        error instanceof Error
+          ? error.message
+          : "The drill could not be added to this range day.",
+      );
+    } finally {
+      setAddingDrillTemplateId("");
+    }
   }
 
   async function handleRemoveDrillFromSelectedRangeDay(
@@ -3796,8 +3838,11 @@ export default function RangeDaysPage() {
         error?: string;
         workspace?: Partial<StoredRangeDayWorkspace>;
       };
-      if (!response.ok)
-        throw new Error(payload.error || "The drill could not be removed.");
+      if (!response.ok) {
+        throw new Error(
+          `${payload.error || "The drill could not be removed."} (HTTP ${response.status})`,
+        );
+      }
 
       const nextDrills =
         payload.workspace?.rangeDayDrills ??
@@ -6226,22 +6271,26 @@ export default function RangeDaysPage() {
                                 type="button"
                                 disabled={
                                   template.status !== "Active" ||
-                                  !canEditSelectedRangeDay
+                                  !canEditSelectedRangeDay ||
+                                  Boolean(addingDrillTemplateId)
                                 }
                                 onClick={() =>
-                                  handleAddTemplateToSelectedRangeDay(
+                                  void handleAddTemplateToSelectedRangeDay(
                                     template.id,
                                   )
                                 }
                                 className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
                                   template.status === "Active" &&
-                                  canEditSelectedRangeDay
+                                  canEditSelectedRangeDay &&
+                                  !addingDrillTemplateId
                                     ? "bg-blue-600 text-white hover:bg-blue-500"
                                     : "cursor-not-allowed bg-slate-800 text-slate-600"
                                 }`}
                               >
                                 <Plus size={14} />
-                                Add to This Range Day
+                                {addingDrillTemplateId === template.id
+                                  ? "Adding…"
+                                  : "Add to This Range Day"}
                               </button>
                             </div>
                             <div className="mt-2">

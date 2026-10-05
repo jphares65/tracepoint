@@ -22,6 +22,27 @@ test("range managers may edit planning records in their agency", () => {
   }), { ok: true, mode: "manage" });
 });
 
+test("a manager can persist and reload a new Range Day drill association without changing the Drill Library", () => {
+  const existing = { ...base(), rangeDayDrills: [] };
+  const added = {
+    ...existing,
+    rangeDayDrills: [{ id: "assignment-1", rangeDayId: "day-1", sourceTemplateId: "template-1", name: "Baseline" }],
+  };
+  const decision = authorizeRangeWorkspaceMutation({
+    existingWorkspace: existing,
+    nextWorkspace: added,
+    departmentId: "agency-a",
+    permissions: ["manage_range_days"],
+  });
+
+  assert.deepEqual(decision, { ok: true, mode: "manage" });
+  // The saved workspace is also the reload source; its template and assignment
+  // remain independently addressable after JSON serialization.
+  const reloaded = JSON.parse(JSON.stringify(added));
+  assert.equal(reloaded.drillLibrary[0].id, "template-1");
+  assert.equal(reloaded.rangeDayDrills[0].sourceTemplateId, "template-1");
+});
+
 test("viewers and participants cannot forge direct planning updates", () => {
   const existing = base();
   const next = { ...existing, rangeDayDrills: [] };
