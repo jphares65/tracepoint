@@ -111,8 +111,8 @@ function fleetUnavailable(error: { code?: string; message?: string } | null) {
     : error?.message || "Fleet records could not be loaded.";
 }
 
-export async function GET() {
-  const access = await resolveServerAccess();
+export async function GET(request: NextRequest) {
+  const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
 
   const resolved = access.context;

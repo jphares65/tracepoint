@@ -20,6 +20,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
+import { formatDateTime } from "@/lib/format/date";
 
 type ActiveAssignment = {
   id: string;
@@ -78,40 +79,6 @@ type StorageLocation = {
   name: string;
   description?: string | null;
 };
-
-function formatDate(value?: string | null) {
-  if (!value) return "Not recorded";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Not recorded";
-  }
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "Not recorded";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Not recorded";
-  }
-
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 function formatFirearmType(value?: string | null) {
   if (!value) return "Other";
@@ -518,7 +485,7 @@ export default function FirearmRecordPage() {
                     <div className="grid gap-4 sm:grid-cols-2">
                       <InfoField
                         label="Assigned"
-                        value={formatDate(
+                        value={formatDateTime(
                           firearm.active_assignment.assigned_at,
                         )}
                       />

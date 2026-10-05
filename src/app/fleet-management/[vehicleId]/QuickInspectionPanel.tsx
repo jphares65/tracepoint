@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Image from "next/image";
+import { formatDateTime } from "@/lib/format/date";
 
 const DEFAULT_ITEMS = [
   ["body", "Body, windshield and mirrors"],
@@ -52,6 +53,50 @@ type InspectionEvidence = {
   downloadUrl: string;
 };
 
+type Inspection = {
+  id: string;
+  inspection_type: string;
+  result: string;
+  mileage?: number | string | null;
+  hours?: number | string | null;
+  defect_count?: number | null;
+  inspected_at?: string | null;
+  inspector_name?: string | null;
+  evidence?: InspectionEvidence[] | null;
+  checklist?: Item[];
+};
+
+type ChecklistRule = {
+  id?: string;
+  label?: string;
+  category?: string;
+  required?: boolean;
+  critical?: boolean;
+  active?: boolean;
+  sort_order?: number;
+};
+
+type VehicleEquipment = {
+  id: string;
+  name: string;
+  serial_number?: string | null;
+  category?: string | null;
+  status: string;
+  is_required?: boolean | null;
+  is_critical?: boolean | null;
+};
+
+type Vehicle = {
+  current_mileage?: number | string | null;
+  current_hours?: number | string | null;
+};
+
+type InspectionRules = {
+  inspection_checklist?: ChecklistRule[] | null;
+  inspection_include_required_equipment?: boolean | null;
+  inspection_types?: string[] | null;
+};
+
 function badge(result: string) {
   return result === "Passed"
     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
@@ -69,10 +114,10 @@ export default function QuickInspectionPanel({
   onSaved,
 }: {
   vehicleId: string;
-  vehicle: any;
-  inspections: any[];
-  rules: any;
-  equipment: any[];
+  vehicle: Vehicle;
+  inspections: Inspection[];
+  rules: InspectionRules;
+  equipment: VehicleEquipment[];
   onSaved: () => Promise<void>;
 }) {
   const configuredSource =
@@ -82,9 +127,9 @@ export default function QuickInspectionPanel({
       : DEFAULT_ITEMS;
 
   const configured = configuredSource
-    .filter((item: any) => item?.active !== false)
+    .filter((item) => item.active !== false)
     .sort(
-      (a: any, b: any) =>
+      (a, b) =>
         Number(a?.sort_order ?? 0) - Number(b?.sort_order ?? 0),
     );
 
@@ -102,7 +147,7 @@ export default function QuickInspectionPanel({
       : ["Pre-Shift", "Post-Shift", "Weekly"];
 
   const makeItems = (): Item[] => [
-    ...configured.map((item: any, index: number) => ({
+    ...configured.map((item, index) => ({
       id: String(item.id || `item-${index + 1}`),
       label: String(item.label || `Item ${index + 1}`),
       category: String(item.category || "Vehicle Condition"),
@@ -113,7 +158,7 @@ export default function QuickInspectionPanel({
       note: "",
     })),
 
-    ...requiredEquipment.map((item: any, index: number) => ({
+    ...requiredEquipment.map((item, index) => ({
       id: `equipment:${item.id}`,
       equipmentId: item.id,
       label: `${item.name}${item.serial_number ? ` · Serial ${item.serial_number}` : ""}`,
@@ -146,7 +191,7 @@ export default function QuickInspectionPanel({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [previewRecords, setPreviewRecords] = useState<any[]>([]);
+  const [previewRecords, setPreviewRecords] = useState<Inspection[]>([]);
 
   const allInspections = [...previewRecords, ...inspections];
 
@@ -544,10 +589,7 @@ export default function QuickInspectionPanel({
         <div className="divide-y divide-slate-800">
           {allInspections.length ? (
             allInspections.map((item) => (
-              <article
-                key={item.id}
-                className="p-4"
-              >
+              <article key={item.id} className="p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-white">
@@ -556,7 +598,7 @@ export default function QuickInspectionPanel({
                     <p className="mt-1 text-[10px] text-slate-500">
                       Performed by{" "}
                       {item.inspector_name || "System / legacy record"} ·{" "}
-                      {new Date(item.inspected_at).toLocaleString()} ·{" "}
+                      {formatDateTime(item.inspected_at)} ·{" "}
                       {Number(item.mileage || 0).toLocaleString()} mi ·{" "}
                       {Number(item.hours || 0).toLocaleString()} hrs ·{" "}
                       {item.defect_count || 0} defects

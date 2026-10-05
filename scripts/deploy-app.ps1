@@ -1,12 +1,15 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
-    [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn
+    [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
+    [ValidatePattern('^[0-9a-fA-F]{40}$')][string]$ImageCommit,
+    [switch]$SkipLocalValidation
 )
 
 # Application-only deployment. This script intentionally does not call CDK or
 # CloudFormation and has no commands that modify platform resources.
 Set-StrictMode -Version Latest
+$failure = $null
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
@@ -16,7 +19,7 @@ $configuration = @{
         Region = 'us-east-1'; Cluster = 'tracepoint-staging'; Service = 'tracepoint-staging'
         Repository = 'tracepoint-staging'; SourceBucket = 'tracepoint-staging-build-source-559054714699'
         SourceKey = 'source/tracepoint-staging-source.zip'; BuildProject = 'tracepoint-staging-image-build'
-        Host = 'https://staging.tracepointhq.com'; ImageSuffix = ''
+        Host = 'https://staging.tracepointhq.com'; ImageSuffix = '-aws-native-staging'
     }
     production = @{
         Account = '193644343389'; Profile = 'tracepoint-production'; Role = 'TracePointMigrationProduction'
@@ -28,8 +31,10 @@ $configuration = @{
 }[$Environment]
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $PSScriptRoot 'deploy-app-rollout-core.ps1')
 $imageRepository = "$($configuration.Account).dkr.ecr.$($configuration.Region).amazonaws.com/$($configuration.Repository)"
 $script:DeploymentWarnings = [System.Collections.Generic.List[string]]::new()
+$deploymentLockDirectory = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TracePoint\deployment-locks'
 
 function Add-DeploymentWarning {
     param([Parameter(Mandatory)][string]$Message)
@@ -37,19 +42,98 @@ function Add-DeploymentWarning {
     Write-Warning $Message
 }
 
+# The image tag is immutable. Serialize deployments per environment on this
+# workstation so two release invocations cannot race to publish the same tag or
+# update the same ECS service. A stale lease is retained as evidence and only
+# replaced after its recorded owning process is confirmed gone.
+function Get-DeploymentLockPath {
+    param([Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$LockEnvironment)
+    return Join-Path $deploymentLockDirectory "deploy-app-$LockEnvironment.lock.json"
+}
+
+function Get-DeploymentLockOwner {
+    param([Parameter(Mandatory)][string]$Path)
+    try { return (Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json) }
+    catch { return $null }
+}
+
+function Test-DeploymentLockOwnerActive {
+    param($Owner)
+    if ($null -eq $Owner -or $null -eq $Owner.pid -or $null -eq $Owner.processStartFileTimeUtc) { return $false }
+    try {
+        $process = Get-Process -Id ([int]$Owner.pid) -ErrorAction Stop
+        $recordedStart = [DateTime]::FromFileTimeUtc([int64]$Owner.processStartFileTimeUtc)
+        return ([Math]::Abs(($process.StartTime.ToUniversalTime() - $recordedStart).TotalSeconds) -lt 1)
+    } catch {
+        return $false
+    }
+}
+
+function Acquire-DeploymentLock {
+    param([Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$LockEnvironment)
+    New-Item -ItemType Directory -Path $deploymentLockDirectory -Force | Out-Null
+    $path = Get-DeploymentLockPath -LockEnvironment $LockEnvironment
+    $owner = [ordered]@{
+        environment = $LockEnvironment
+        pid = $PID
+        processStartFileTimeUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToFileTimeUtc()
+        acquiredAt = [DateTime]::UtcNow.ToString('o')
+        token = [guid]::NewGuid().ToString('N')
+    }
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        try {
+            $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($owner | ConvertTo-Json -Compress))
+            $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+            try {
+                $stream.Write($bytes, 0, $bytes.Length)
+                $stream.Flush($true)
+            } finally {
+                $stream.Dispose()
+            }
+            return [pscustomobject]@{ Path = $path; Token = $owner.token; Environment = $LockEnvironment }
+        } catch [IO.IOException] {
+            $existingOwner = Get-DeploymentLockOwner -Path $path
+            if (Test-DeploymentLockOwnerActive $existingOwner) {
+                throw "Another $LockEnvironment deployment is already running (PID $($existingOwner.pid))."
+            }
+            $stalePath = "$path.stale-$([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'))-$([guid]::NewGuid().ToString('N'))"
+            try { Move-Item -LiteralPath $path -Destination $stalePath -ErrorAction Stop }
+            catch { throw "Unable to safely preserve the stale $LockEnvironment deployment lock at '$path'." }
+        }
+    }
+    throw "Unable to acquire the $LockEnvironment deployment lock at '$path'."
+}
+
+function Release-DeploymentLock {
+    param($Lock)
+    if ($null -eq $Lock -or -not (Test-Path -LiteralPath $Lock.Path)) { return }
+    $owner = Get-DeploymentLockOwner -Path $Lock.Path
+    if ($null -ne $owner -and $owner.token -eq $Lock.Token) {
+        Remove-Item -LiteralPath $Lock.Path -Force
+    }
+}
+
 function Invoke-Aws {
     param([Parameter(Mandatory)][string[]]$Arguments)
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $output = & aws.exe @Arguments --profile $configuration.Profile --region $configuration.Region --output json 2>&1
-        $exitCode = $LASTEXITCODE
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $output = & aws.exe @Arguments --profile $configuration.Profile --region $configuration.Region --output json 2>&1
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if ($exitCode -eq 0) { return ($output -join [Environment]::NewLine) | ConvertFrom-Json }
+
+        $diagnostic = $output -join [Environment]::NewLine
+        if ($attempt -lt 3 -and $diagnostic -match 'config profile .+ could not be found') {
+            Start-Sleep -Seconds 2
+            continue
+        }
+        throw "AWS command failed: aws $($Arguments -join ' ') :: $diagnostic"
     }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    if ($exitCode -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ')" }
-    return ($output -join [Environment]::NewLine) | ConvertFrom-Json
 }
 
 function Assert-AwsIdentity {
@@ -66,6 +150,33 @@ function Invoke-Native {
     param([Parameter(Mandatory)][string]$File, [Parameter(Mandatory)][string[]]$Arguments)
     & $File @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$File failed." }
+}
+
+function Test-CleanImageScan {
+    param([Parameter(Mandatory)]$Scan)
+    if ($Scan.imageScanStatus.status -ne 'COMPLETE') { return $false }
+    $severityCounts = $Scan.imageScanFindings.findingSeverityCounts
+    if ($null -eq $severityCounts) { return $true }
+    foreach ($severity in $severityCounts.PSObject.Properties) {
+        if ([int]$severity.Value -gt 0) { return $false }
+    }
+    return $true
+}
+
+function Wait-CleanImageScan {
+    param([Parameter(Mandatory)][string]$ImageTag)
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(15)
+    do {
+        $scan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
+        $status = [string]$scan.imageScanStatus.status
+        if ($status -eq 'COMPLETE') {
+            if (-not (Test-CleanImageScan $scan)) { throw 'The application image scan is not clean.' }
+            return
+        }
+        if ($status -ne 'IN_PROGRESS') { throw "The application image scan ended with $status." }
+        Start-Sleep -Seconds 10
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw 'The application image scan did not complete within 15 minutes.'
 }
 
 function Assert-ReviewedCommit {
@@ -128,8 +239,9 @@ function Publish-Image {
         $existingImage = $null
     }
     if ($null -ne $existingImage -and -not [string]::IsNullOrWhiteSpace([string]$existingImage.imageDigest)) {
-        $existingScan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
-        if ($existingScan.imageScanStatus.status -ne 'COMPLETE' -or @($existingScan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The existing application image scan is not clean.' }
+        $labels = (Invoke-Aws @('ecr','batch-get-image','--repository-name',$configuration.Repository,'--image-ids',"imageTag=$ImageTag",'--accepted-media-types','application/vnd.docker.distribution.manifest.v2+json')).images | Select-Object -First 1
+        if ($null -eq $labels) { throw 'Existing application image cannot be attested.' }
+        Wait-CleanImageScan -ImageTag $ImageTag
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
@@ -151,6 +263,7 @@ function Publish-Image {
         if ($LASTEXITCODE -ne 0) { throw 'Unable to calculate the production lint ratchet changed-file manifest.' }
         $lintRatchetManifest = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($changedLintFiles | ConvertTo-Json -Compress)))
         $overrides = @("name=IMAGE_TAG,value=$ImageTag,type=PLAINTEXT", "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT", "name=TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64,value=$lintRatchetManifest,type=PLAINTEXT")
+        $overrides += 'name=TRACEPOINT_ARTIFACT_TYPE,value=application,type=PLAINTEXT'
         $buildArguments = @('codebuild', 'start-build', '--project-name', $configuration.BuildProject, '--source-version', $version, '--environment-variables-override') + $overrides
         $build = (Invoke-Aws -Arguments $buildArguments).build
         if ([string]::IsNullOrWhiteSpace([string]$build.id)) { throw 'The application image build did not start.' }
@@ -168,8 +281,7 @@ function Publish-Image {
     }
     $image = (Invoke-Aws @('ecr', 'describe-images', '--repository-name', $configuration.Repository, '--image-ids', "imageTag=$ImageTag")).imageDetails | Select-Object -First 1
     if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The immutable application image was not pushed to ECR.' }
-    $scan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
-    if ($scan.imageScanStatus.status -ne 'COMPLETE' -or @($scan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The application image scan is not clean.' }
+    Wait-CleanImageScan -ImageTag $ImageTag
     return $image
 }
 
@@ -198,21 +310,22 @@ function Register-ApplicationTaskRevision {
 
 function Test-Deployment {
     param([Parameter(Mandatory)][string]$ExpectedTaskArn, [Parameter(Mandatory)][string]$ExpectedImageDigest, [Parameter(Mandatory)][string]$ExpectedImageUri, [Parameter(Mandatory)][string]$Invariant)
+    # update-service can return before ECS exposes the new task definition to
+    # describe-services. Wait for that transition before using the stable
+    # waiter, otherwise it can immediately accept the prior healthy revision.
+    $visibilityDeadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
+    do {
+        $serviceBeforeWait = Get-Service
+        if ($serviceBeforeWait.taskDefinition -eq $ExpectedTaskArn) { break }
+        Start-Sleep -Seconds 5
+    } while ([DateTimeOffset]::UtcNow -lt $visibilityDeadline)
+    if ($serviceBeforeWait.taskDefinition -ne $ExpectedTaskArn) { throw 'ECS did not begin the expected task revision.' }
     & aws.exe ecs wait services-stable --cluster $configuration.Cluster --services $configuration.Service --profile $configuration.Profile --region $configuration.Region
     if ($LASTEXITCODE -ne 0) { throw 'ECS did not reach a steady state.' }
-    $service = Get-Service
-    $rolloutDeadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
-    while (
-        $service.taskDefinition -eq $ExpectedTaskArn -and
-        @($service.deployments).Count -eq 1 -and
-        $service.deployments[0].rolloutState -eq 'IN_PROGRESS' -and
-        [DateTimeOffset]::UtcNow -lt $rolloutDeadline
-    ) {
-        Start-Sleep -Seconds 5
-        $service = Get-Service
-    }
-    if ((Get-ServiceInvariant -Service $service) -ne $Invariant) { throw 'Unexpected ECS service infrastructure change detected.' }
-    if ($service.taskDefinition -ne $ExpectedTaskArn -or @($service.deployments).Count -ne 1 -or $service.deployments[0].rolloutState -ne 'COMPLETED') { throw 'ECS rollout did not complete the expected task revision.' }
+    # The ECS waiter can return while the primary deployment is still waiting
+    # for ALB's configured healthy-check threshold. Keep polling the expected
+    # revision rather than rolling back a normally stabilizing task.
+    $service = Wait-ExpectedEcsRolloutCompletion -ExpectedTaskArn $ExpectedTaskArn -Invariant $Invariant -GetService ${function:Get-Service} -GetInvariant ${function:Get-ServiceInvariant}
     if ($service.runningCount -ne $service.desiredCount -or $service.pendingCount -ne 0) { throw 'ECS service task counts are unhealthy.' }
     $targetGroup = @($service.loadBalancers)[0].targetGroupArn
     if ([string]::IsNullOrWhiteSpace([string]$targetGroup)) { throw 'The ECS application service has no existing ALB target group.' }
@@ -259,10 +372,18 @@ function Invoke-DeploymentSafeRemoteSmoke {
 }
 
 function Invoke-RequiredLocalValidation {
-    # Workstation checks are intentionally non-authoritative. CodeBuild runs
-    # lint, the application suite, and migration-runner integrity checks with
-    # bounded timeouts before this script receives an image to deploy.
-    Write-Host 'LOCAL DIAGNOSTICS OPTIONAL — CodeBuild is the authoritative validation environment.'
+    $outputPath = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-validation-' + [guid]::NewGuid().ToString('N') + '.log')
+    try {
+        & node.exe (Join-Path $PSScriptRoot 'run-application-tests.mjs') *> $outputPath
+        if ($LASTEXITCODE -eq 0) { return }
+        $output = [IO.File]::ReadAllText($outputPath)
+        if ($output -match 'uv_os_get_passwd returned ENOMEM') {
+            Add-DeploymentWarning 'Local canonical validation could not start embedded PostgreSQL because of the known workstation ENOMEM condition; CodeBuild will run the canonical suite before publishing the image.'
+            return
+        }
+        throw 'Canonical local application validation failed; see the command output for the failed assertion.'
+    }
+    finally { if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath -Force } }
 }
 
 function Invoke-PostDeploymentDiagnostics {
@@ -278,6 +399,8 @@ function Invoke-PostDeploymentDiagnostics {
     }
 }
 
+$deploymentLock = Acquire-DeploymentLock -LockEnvironment $Environment
+try {
 Assert-AwsIdentity | Out-Null
 $serviceBefore = Get-Service
 $invariant = Get-ServiceInvariant -Service $serviceBefore
@@ -297,11 +420,20 @@ if ($RollbackTaskDefinitionArn) {
 }
 
 $commit = Assert-ReviewedCommit
-try {
-    Invoke-RequiredLocalValidation
-} catch {
-    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
-    throw
+if ($ImageCommit) {
+    & git.exe -C $repositoryRoot cat-file -e "$ImageCommit^{commit}"
+    if ($LASTEXITCODE -ne 0) { throw "Image commit '$ImageCommit' is not a local commit." }
+    $commit = $ImageCommit.ToLowerInvariant()
+}
+if ($SkipLocalValidation) {
+    Add-DeploymentWarning 'Local canonical validation is explicitly bypassed for this release; CodeBuild remains the required pre-publish canonical validation gate.'
+} else {
+    try {
+        Invoke-RequiredLocalValidation
+    } catch {
+        Write-Host "PRE-DEPLOYMENT VALIDATION FAILED - ECS unchanged: $($_.Exception.Message)"
+        throw
+    }
 }
 $imageTag = "$commit$($configuration.ImageSuffix)"
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
@@ -320,7 +452,7 @@ try {
 catch {
     $failure = $_
     if ($deploymentStarted) {
-        Write-Host "DEPLOYMENT FAILED — rollback initiated: $($failure.Exception.Message)"
+        Write-Host "DEPLOYMENT FAILED - rollback initiated: $($failure.Exception.Message)"
         try {
             $null = Invoke-Aws @('ecs', 'update-service', '--cluster', $configuration.Cluster, '--service', $configuration.Service, '--task-definition', $previousHealthyTaskArn)
             $previousTask = Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn
@@ -333,5 +465,9 @@ catch {
             throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)"
         }
     }
-    throw $failure
+    throw
+}
+}
+finally {
+    Release-DeploymentLock -Lock $deploymentLock
 }

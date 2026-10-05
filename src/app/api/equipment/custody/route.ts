@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy dynamic database boundary */
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -39,7 +40,7 @@ const VALID_CONDITIONS = new Set([
 ]);
 
 export async function GET(request: NextRequest) {
-  const context = await getEquipmentServerContext();
+  const context = await getEquipmentServerContext(request);
   if ("error" in context) return context.error;
 
   const identifier = normalizeIdentifier(request.nextUrl.searchParams.get("identifier"));
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const context = await getEquipmentServerContext();
+  const context = await getEquipmentServerContext(request);
   if ("error" in context) return context.error;
 
   const body = await request.json().catch(() => ({}));

@@ -7,6 +7,8 @@ type Result<T = unknown> = { data: T | null; error: null | { message: string; co
 type Relation = { alias: string; table: string; local: string; foreign: string; cardinality: "one" | "many" };
 
 const identifier = /^[a-z][a-z0-9_]*$/;
+// The database's UUID columns provide the typed validation. Do not reject
+// Cognito/newer UUID layouts before the tenant authorization transaction.
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const jsonColumns = new Set([
   "ai_migration_workspaces.state", "audit_events.details", "audit_events.new_value", "audit_events.previous_value",

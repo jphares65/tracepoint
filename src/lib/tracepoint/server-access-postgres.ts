@@ -1,4 +1,5 @@
 import "server-only";
+import { listMobileSupportAgencies, recordMobileSupportEntry } from "./mobile-support-core";
 import type { PoolClient } from "pg";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { PostgresDataClient } from "@/lib/database/postgres-data-client";
@@ -6,6 +7,8 @@ import type { AuthenticatedPrincipal } from "@/lib/authentication/request-sessio
 import { effectiveDepartmentPermissions } from "./permission-authority";
 import { TRACEPOINT_PERMISSIONS, type TracePointPermission } from "./permissions";
 
+// PostgreSQL validates UUID values at the authorization boundary. Cognito and
+// newer UUID generators are not limited to the legacy v1-v5/RFC4122 layout.
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const labels:Record<string,string>={administrator:"Administrator",department_admin:"Department Administrator",admin:"Administrator",chief:"Chief",command_staff:"Command Staff",supervisor:"Supervisor",range_master:"Range Master",armorer:"Armorer",instructor:"Instructor",officer:"Officer"};
 const priority=["administrator","department_admin","admin","chief","command_staff","supervisor","range_master","armorer","instructor","officer"];
@@ -113,4 +116,25 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
    enabledFeatures:unique(features.rows.map(row=>row.feature_code)),
   }};
  }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
+}
+
+// Keep the same subject-scoped transaction and database checks as browser Support Mode.
+export async function listPostgresMobileSupportAgencies(principal: AuthenticatedPrincipal) {
+ const client = await getPostgresPool().connect();
+ try {
+  await beginSubject(client, principal.userId);
+  const agencies = await listMobileSupportAgencies((sql, values) => client.query(sql, values));
+  await client.query("commit"); return agencies;
+ } catch (error) { await client.query("rollback").catch(() => {}); throw error; }
+ finally { client.release(); }
+}
+
+export async function recordPostgresMobileSupportEntry(principal: AuthenticatedPrincipal, departmentId: string) {
+ const client = await getPostgresPool().connect();
+ try {
+  await beginSubject(client, principal.userId);
+  await recordMobileSupportEntry((sql, values) => client.query(sql, values), departmentId);
+  await client.query("commit");
+ } catch (error) { await client.query("rollback").catch(() => {}); throw error; }
+ finally { client.release(); }
 }

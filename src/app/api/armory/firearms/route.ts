@@ -82,10 +82,8 @@ export async function GET(request: NextRequest) {
     "firearm_custody.override",
     "manage_firearms",
   ]);
-  const canManageRestrictions = hasAnyServerPermission(context, [
-    "firearm_custody.manage_restrictions",
-    "manage_firearms",
-  ]);
+  const canManageRestrictions = hasAnyServerPermission(context, ["manage_firearm_restrictions"]);
+  const canManageRestrictedCustody = hasAnyServerPermission(context, ["manage_restricted_firearm_custody"]);
 
   try {
     const data = await createArmoryReadRepository(context.db, context.admin, context.departmentId, context.userId).getFirearmInventory({ departmentId: context.departmentId, userId: context.userId, includeArchived, canViewAll, canManage, canInspect });
@@ -97,6 +95,7 @@ export async function GET(request: NextRequest) {
         canCheckOutCustody,
         canCorrectCustody,
         canManageRestrictions,
+        canManageRestrictedCustody,
       },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

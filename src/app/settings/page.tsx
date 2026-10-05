@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import {
   type ChangeEvent,
   type ReactNode,
@@ -33,6 +35,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/format/date";
 
 import TracePointShell from "@/app/components/TracePointShell";
 import OffDutyRulesPanel from "@/app/settings/components/OffDutyRulesPanel";
@@ -52,6 +55,7 @@ import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import FleetRulesPanel from "./fleet/FleetRulesPanel";
 import AgencyTrainingRulesPanel from "@/app/settings/components/AgencyTrainingRulesPanel";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import SecureStorageLocationsPanel from "./components/SecureStorageLocationsPanel";
 
 type TabId =
   | "agency"
@@ -294,20 +298,6 @@ function normalizeArray(value: unknown) {
 function numberValue(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
 }
 
 function humanize(value: string) {
@@ -1425,11 +1415,12 @@ export default function AdminSettingsPage() {
 
     setMemberGroupIds([]);
 
-    const { data: groupMembershipRows, error: groupMembershipError } = await dataClient
-      .from("department_group_members")
-      .select("group_id")
-      .eq("department_id", departmentId)
-      .eq("user_id", member.user_id);
+    const { data: groupMembershipRows, error: groupMembershipError } =
+      await dataClient
+        .from("department_group_members")
+        .select("group_id")
+        .eq("department_id", departmentId)
+        .eq("user_id", member.user_id);
 
     if (groupMembershipError) {
       showNotice(
@@ -1440,7 +1431,9 @@ export default function AdminSettingsPage() {
       return;
     }
 
-    const groupMemberships = (groupMembershipRows ?? []) as Array<{ group_id?: string }>;
+    const groupMemberships = (groupMembershipRows ?? []) as Array<{
+      group_id?: string;
+    }>;
     setMemberGroupIds(
       groupMemberships
         .map((row: { group_id?: string }) => row.group_id)
@@ -1450,7 +1443,7 @@ export default function AdminSettingsPage() {
     );
   }
 
-  async function loadQualificationStandards() {
+  const loadQualificationStandards = useCallback(async () => {
     if (!departmentId) return;
 
     setQualificationStandardsLoading(true);
@@ -1499,7 +1492,7 @@ export default function AdminSettingsPage() {
     } finally {
       setQualificationStandardsLoading(false);
     }
-  }
+  }, [dataClient, departmentId, showNotice]);
 
   useEffect(() => {
     if (
@@ -1511,9 +1504,18 @@ export default function AdminSettingsPage() {
       return;
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadQualificationStandards();
-  }, [accessLoading, activeTab, canAdminister, departmentId]);
+    const loadTimer = window.setTimeout(() => {
+      void loadQualificationStandards();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, [
+    accessLoading,
+    activeTab,
+    canAdminister,
+    departmentId,
+    loadQualificationStandards,
+  ]);
 
   async function createQualificationStandard() {
     const name = newQualificationStandardName.trim();
@@ -2003,7 +2005,9 @@ export default function AdminSettingsPage() {
         permissionCodes?: string[];
       };
       if (!response.ok) {
-        throw new Error(result.error || "The role permission matrix could not be updated.");
+        throw new Error(
+          result.error || "The role permission matrix could not be updated.",
+        );
       }
 
       const roleLabel =
@@ -2576,7 +2580,7 @@ export default function AdminSettingsPage() {
         {!loading && !accessLoading && activeTab === "views" ? (
           <SettingsCard
             title="Operational Views"
-            description="Open either page in its visual builder to shape the agency&apos;s command experience."
+            description="Open either page in its visual builder to shape the agency's command experience."
           >
             <div className="grid gap-4 md:grid-cols-2">
               <a
@@ -2590,7 +2594,8 @@ export default function AdminSettingsPage() {
                   Command Dashboard
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Arrange operational cards, choose card sizes, and control dashboard sections in a live preview.
+                  Arrange operational cards, choose card sizes, and control
+                  dashboard sections in a live preview.
                 </p>
                 <p className="mt-4 text-xs font-semibold text-blue-300">
                   Customize Dashboard →
@@ -2607,7 +2612,8 @@ export default function AdminSettingsPage() {
                   Analytics
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Choose summary metrics, arrange analysis sections, and tune advanced signal settings.
+                  Choose summary metrics, arrange analysis sections, and tune
+                  advanced signal settings.
                 </p>
                 <p className="mt-4 text-xs font-semibold text-violet-300">
                   Customize Analytics →
@@ -3223,9 +3229,11 @@ export default function AdminSettingsPage() {
                               (member.role_codes.includes("administrator") &&
                                 !canAdminister)
                             }
-                            title={member.activation_status !== "activated"
-                              ? "Use Send Activation or Assign Password until the account is activated."
-                              : undefined}
+                            title={
+                              member.activation_status !== "activated"
+                                ? "Use Send Activation or Assign Password until the account is activated."
+                                : undefined
+                            }
                             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-3.5 py-2 text-sm font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {passwordResetEmail === member.email ? (
@@ -3294,7 +3302,10 @@ export default function AdminSettingsPage() {
                               {role.display_name}
                             </h3>
                             {locked ? (
-                              <StatusPill label="Inherited: all permissions" tone="green" />
+                              <StatusPill
+                                label="Inherited: all permissions"
+                                tone="green"
+                              />
                             ) : null}
                           </div>
                           <p className="mt-1 text-xs leading-5 text-slate-600">
@@ -4107,6 +4118,12 @@ export default function AdminSettingsPage() {
                   </div>
                 </SettingsCard>
                 <SettingsCard
+                  title="Secure Storage"
+                  description="Manage agency locations available to firearm custody workflows."
+                >
+                  <SecureStorageLocationsPanel />
+                </SettingsCard>
+                <SettingsCard
                   title="Personally Owned Rifle Program"
                   description="Configure whether officers may submit personally owned rifles and which approval safeguards apply."
                 >
@@ -4307,9 +4324,12 @@ export default function AdminSettingsPage() {
             >
               <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-700 bg-slate-950/60 p-6 text-center">
                 {department.patch_url ? (
-                  <img
+                  <Image
                     src={department.patch_url}
                     alt="Department patch"
+                    width={112}
+                    height={112}
+                    unoptimized
                     className="h-28 w-28 object-contain"
                   />
                 ) : (

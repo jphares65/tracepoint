@@ -409,6 +409,7 @@ export type Database = {
           entity_id: string | null
           entity_key: string | null
           entity_type: string
+          expiration_date: string | null
           file_name: string
           file_size: number
           id: string
@@ -427,6 +428,7 @@ export type Database = {
           entity_id?: string | null
           entity_key?: string | null
           entity_type: string
+          expiration_date?: string | null
           file_name: string
           file_size: number
           id?: string
@@ -445,6 +447,7 @@ export type Database = {
           entity_id?: string | null
           entity_key?: string | null
           entity_type?: string
+          expiration_date?: string | null
           file_name?: string
           file_size?: number
           id?: string

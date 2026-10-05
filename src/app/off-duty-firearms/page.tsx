@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -8,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -44,11 +46,7 @@ type RequestStatus =
   | "Withdrawn";
 
 type AuthorizationStatus =
-  | "Not Authorized"
-  | "Authorized"
-  | "Expiring Soon"
-  | "Expired"
-  | "Revoked";
+  "Not Authorized" | "Authorized" | "Expiring Soon" | "Expired" | "Revoked";
 
 type InspectionStatus = "Not Inspected" | "Current" | "Due Soon" | "Overdue";
 
@@ -113,7 +111,8 @@ type OffDutyFirearm = {
   reviewedAt?: string;
   reviewedBy?: string;
   approvalDate?: string;
-  approvalExpires?: string;  decisionNotes?: string;
+  approvalExpires?: string;
+  decisionNotes?: string;
   lastQual: string;
   qualificationStatus: string;
   qualificationReason: string;
@@ -160,14 +159,9 @@ const TABS: OffDutyTab[] = [
   "Needs Action",
 ];
 
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function nowIso() {
-  return new Date().toISOString();
-}
 
 function todayInputValue() {
   return new Date().toISOString().slice(0, 10);
@@ -177,34 +171,6 @@ function oneYearFromTodayInputValue() {
   const date = new Date();
   date.setFullYear(date.getFullYear() + 1);
   return date.toISOString().slice(0, 10);
-}
-
-function formatDate(value?: string) {
-  if (!value) return "?";
-
-  const parsed = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(value: string) {
-  const parsed = new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function getInitials(name: string) {
@@ -357,7 +323,9 @@ function RequestDrawer({
       !caliber.trim() ||
       !firearmType.trim()
     ) {
-      setError("Make, model, serial number, caliber, and firearm type are required.");
+      setError(
+        "Make, model, serial number, caliber, and firearm type are required.",
+      );
       return;
     }
 
@@ -398,7 +366,9 @@ function RequestDrawer({
               Officer Portal
             </p>
             <h2 className="mt-1 text-xl font-bold text-white">
-              {initialRecord ? "Correct & Resubmit Request" : "Submit Off-Duty Firearm Request"}
+              {initialRecord
+                ? "Correct & Resubmit Request"
+                : "Submit Off-Duty Firearm Request"}
             </h2>
             <p className="mt-1 text-[12px] text-slate-400">
               {initialRecord
@@ -420,7 +390,10 @@ function RequestDrawer({
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
           <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.08] p-4">
             <div className="flex items-start gap-3">
-              <ShieldAlert size={18} className="mt-0.5 flex-shrink-0 text-red-300" />
+              <ShieldAlert
+                size={18}
+                className="mt-0.5 flex-shrink-0 text-red-300"
+              />
               <div>
                 <p className="text-[13px] font-semibold text-red-200">
                   Not authorized until approved
@@ -440,10 +413,30 @@ function RequestDrawer({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make *" className={inputClass} />
-              <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model *" className={inputClass} />
-              <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Serial Number *" className={inputClass} />
-              <input value={caliber} onChange={(e) => setCaliber(e.target.value)} placeholder="Caliber *" className={inputClass} />
+              <input
+                value={make}
+                onChange={(e) => setMake(e.target.value)}
+                placeholder="Make *"
+                className={inputClass}
+              />
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Model *"
+                className={inputClass}
+              />
+              <input
+                value={serial}
+                onChange={(e) => setSerial(e.target.value)}
+                placeholder="Serial Number *"
+                className={inputClass}
+              />
+              <input
+                value={caliber}
+                onChange={(e) => setCaliber(e.target.value)}
+                placeholder="Caliber *"
+                className={inputClass}
+              />
 
               <select
                 value={firearmType}
@@ -455,9 +448,24 @@ function RequestDrawer({
                 <option>Other</option>
               </select>
 
-              <input value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="Magazine Capacity" className={inputClass} />
-              <input value={optic} onChange={(e) => setOptic(e.target.value)} placeholder="Optic / Sights" className={inputClass} />
-              <input value={weaponLight} onChange={(e) => setWeaponLight(e.target.value)} placeholder="Weapon Light" className={inputClass} />
+              <input
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+                placeholder="Magazine Capacity"
+                className={inputClass}
+              />
+              <input
+                value={optic}
+                onChange={(e) => setOptic(e.target.value)}
+                placeholder="Optic / Sights"
+                className={inputClass}
+              />
+              <input
+                value={weaponLight}
+                onChange={(e) => setWeaponLight(e.target.value)}
+                placeholder="Weapon Light"
+                className={inputClass}
+              />
             </div>
 
             <input
@@ -522,7 +530,9 @@ function RequestDrawer({
                   />
                   <span>
                     {item.label}
-                    {item.required && <span className="ml-1 text-red-300">*</span>}
+                    {item.required && (
+                      <span className="ml-1 text-red-300">*</span>
+                    )}
                   </span>
                 </label>
               ))}
@@ -583,7 +593,6 @@ function ReviewDrawer({
     qualificationOverrideReason: string,
   ) => void;
   onInspectionRecorded: () => Promise<void>;
-
 }) {
   const [notes, setNotes] = useState(record.decisionNotes ?? "");
   const [effectiveDate, setEffectiveDate] = useState(
@@ -597,11 +606,10 @@ function ReviewDrawer({
   const [qualificationOverrideReason, setQualificationOverrideReason] =
     useState("");
 
-  const [inspectionDate, setInspectionDate] = useState(
-    todayInputValue(),
+  const [inspectionDate, setInspectionDate] = useState(todayInputValue());
+  const [inspectionResult, setInspectionResult] = useState<"Pass" | "Fail">(
+    "Pass",
   );
-  const [inspectionResult, setInspectionResult] =
-    useState<"Pass" | "Fail">("Pass");
   const [inspectionNotes, setInspectionNotes] = useState("");
   const [inspectionSaving, setInspectionSaving] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
@@ -610,10 +618,9 @@ function ReviewDrawer({
   >([]);
   const [inspectionHistoryLoading, setInspectionHistoryLoading] =
     useState(false);
-  const [inspectionHistoryError, setInspectionHistoryError] =
-    useState("");
+  const [inspectionHistoryError, setInspectionHistoryError] = useState("");
 
-  async function loadInspectionHistory() {
+  const loadInspectionHistory = useCallback(async () => {
     setInspectionHistoryLoading(true);
     setInspectionHistoryError("");
 
@@ -630,8 +637,7 @@ function ReviewDrawer({
 
       if (!response.ok) {
         throw new Error(
-          payload.error ||
-            "Inspection history could not be loaded.",
+          payload.error || "Inspection history could not be loaded.",
         );
       }
 
@@ -645,11 +651,15 @@ function ReviewDrawer({
     } finally {
       setInspectionHistoryLoading(false);
     }
-  }
+  }, [record.id]);
 
   useEffect(() => {
-    void loadInspectionHistory();
-  }, [record.id]);
+    const loadTimer = window.setTimeout(() => {
+      void loadInspectionHistory();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, [loadInspectionHistory]);
 
   async function recordInspection() {
     if (!inspectionDate) {
@@ -687,10 +697,7 @@ function ReviewDrawer({
       }
 
       setInspectionNotes("");
-      await Promise.all([
-        onInspectionRecorded(),
-        loadInspectionHistory(),
-      ]);
+      await Promise.all([onInspectionRecorded(), loadInspectionHistory()]);
     } catch (inspectionSubmitError) {
       setInspectionError(
         inspectionSubmitError instanceof Error
@@ -770,7 +777,6 @@ function ReviewDrawer({
             <StatusBadge value={record.authorizationStatus} />
             <StatusBadge value={record.inspectionStatus} />
           </div>
-
           {record.authorizationStatus !== "Authorized" && (
             <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.08] p-4">
               <p className="text-[13px] font-semibold text-red-200">
@@ -778,7 +784,6 @@ function ReviewDrawer({
               </p>
             </div>
           )}
-
           <section className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:grid-cols-2">
             {[
               ["Make / Model", getFirearmLabel(record)],
@@ -790,7 +795,10 @@ function ReviewDrawer({
               ["Optic", record.optic || "None entered"],
               ["Weapon Light", record.weaponLight || "None entered"],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3">
+              <div
+                key={label}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3"
+              >
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-600">
                   {label}
                 </p>
@@ -798,7 +806,6 @@ function ReviewDrawer({
               </div>
             ))}
           </section>
-
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
             <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-white">
               <ClipboardCheck size={15} className="text-blue-400" />
@@ -858,7 +865,8 @@ function ReviewDrawer({
                 {record.officerNotes || "No officer notes entered."}
               </p>
             </div>
-          </section>          {canManageInspections && (
+          </section>{" "}
+          {canManageInspections && (
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
               <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-white">
                 <ClipboardCheck size={15} className="text-blue-400" />
@@ -873,9 +881,7 @@ function ReviewDrawer({
                   <input
                     type="date"
                     value={inspectionDate}
-                    onChange={(event) =>
-                      setInspectionDate(event.target.value)
-                    }
+                    onChange={(event) => setInspectionDate(event.target.value)}
                     style={{ colorScheme: "dark" }}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-white"
                   />
@@ -888,9 +894,7 @@ function ReviewDrawer({
                   <select
                     value={inspectionResult}
                     onChange={(event) =>
-                      setInspectionResult(
-                        event.target.value as "Pass" | "Fail",
-                      )
+                      setInspectionResult(event.target.value as "Pass" | "Fail")
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-white"
                   >
@@ -902,9 +906,7 @@ function ReviewDrawer({
 
               <textarea
                 value={inspectionNotes}
-                onChange={(event) =>
-                  setInspectionNotes(event.target.value)
-                }
+                onChange={(event) => setInspectionNotes(event.target.value)}
                 placeholder="Inspection findings or notes..."
                 rows={3}
                 className="mt-3 w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-white outline-none focus:border-blue-500"
@@ -933,9 +935,6 @@ function ReviewDrawer({
               </div>
             </section>
           )}
-
-
-
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
             <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-white">
               <ClipboardCheck size={15} className="text-blue-400" />
@@ -964,7 +963,10 @@ function ReviewDrawer({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         {inspection.result === "Pass" ? (
-                          <CheckCircle2 size={14} className="text-emerald-400" />
+                          <CheckCircle2
+                            size={14}
+                            className="text-emerald-400"
+                          />
                         ) : (
                           <XCircle size={14} className="text-red-400" />
                         )}
@@ -981,7 +983,7 @@ function ReviewDrawer({
                     <div className="mt-2 grid gap-1 text-[11px] text-slate-400 sm:grid-cols-2">
                       <span>Inspected by: {inspection.inspectedBy}</span>
                       <span className="sm:text-right">
-                        Recorded: {new Date(inspection.createdAt).toLocaleString()}
+                        Recorded: {formatDateTime(inspection.createdAt)}
                       </span>
                     </div>
 
@@ -995,7 +997,6 @@ function ReviewDrawer({
               </div>
             )}
           </section>
-
           {reviewMode && record.requestStatus === "Pending Command Review" && (
             <section className="rounded-2xl border border-blue-500/30 bg-blue-500/[0.05] p-4">
               <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-white">
@@ -1036,8 +1037,8 @@ function ReviewDrawer({
                   Qualification Requirement
                 </p>
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  Determine whether this firearm requires an independent qualification
-                  under department policy.
+                  Determine whether this firearm requires an independent
+                  qualification under department policy.
                 </p>
 
                 <div className="mt-3 space-y-2">
@@ -1058,7 +1059,8 @@ function ReviewDrawer({
                         Independent qualification required
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">
-                        TracePoint will require a current qualifying record before approval.
+                        TracePoint will require a current qualifying record
+                        before approval.
                       </p>
                     </div>
                   </label>
@@ -1076,11 +1078,12 @@ function ReviewDrawer({
                     />
                     <div>
                       <p className="text-[12px] font-semibold text-slate-200">
-                        Independent qualification not required per department policy
+                        Independent qualification not required per department
+                        policy
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">
-                        The approving authority is documenting that this firearm does not
-                        require its own qualification record.
+                        The approving authority is documenting that this firearm
+                        does not require its own qualification record.
                       </p>
                     </div>
                   </label>
@@ -1146,7 +1149,6 @@ function ReviewDrawer({
               </div>
             </section>
           )}
-
           {record.reviewedBy && (
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
               <h3 className="text-[14px] font-semibold text-white">Decision</h3>
@@ -1189,7 +1191,6 @@ function ReviewDrawer({
               </p>
             </section>
           )}
-
           <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
             <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-white">
               <History size={15} className="text-blue-400" />
@@ -1253,15 +1254,16 @@ export default function OffDutyFirearmsPage() {
   const [currentUserId, setCurrentUserId] = useState("");
   const [canReview, setCanReview] = useState(false);
   const [canSubmit, setCanSubmit] = useState(false);
-  const [canManageInspections, setCanManageInspections] =
-    useState(false);
+  const [canManageInspections, setCanManageInspections] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [portalMode, setPortalMode] = useState<PortalMode>("Officer Portal");
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<OffDutyTab>("All Records");
   const [requestDrawerOpen, setRequestDrawerOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<OffDutyFirearm | null>(null);
+  const [editingRecord, setEditingRecord] = useState<OffDutyFirearm | null>(
+    null,
+  );
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
   async function loadOffDutyRequests() {
@@ -1294,14 +1296,9 @@ export default function OffDutyFirearmsPage() {
       setCurrentUserId(payload.currentUser?.id ?? "");
       setCanReview(payload.canReview === true);
       setCanSubmit(payload.canSubmit === true);
-      setCanManageInspections(
-        payload.canManageInspections === true,
-      );
+      setCanManageInspections(payload.canManageInspections === true);
 
-      if (
-        payload.canReview !== true &&
-        payload.canManageInspections !== true
-      ) {
+      if (payload.canReview !== true && payload.canManageInspections !== true) {
         setPortalMode("Officer Portal");
         setActiveTab("All Records");
       }
@@ -1318,7 +1315,11 @@ export default function OffDutyFirearmsPage() {
   }
 
   useEffect(() => {
-    void loadOffDutyRequests();
+    const loadTimer = window.setTimeout(() => {
+      void loadOffDutyRequests();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, []);
 
   const visibleBaseRecords = useMemo(
@@ -1353,7 +1354,7 @@ export default function OffDutyFirearmsPage() {
   }, [visibleBaseRecords, query, activeTab]);
 
   const selectedRecord = selectedRecordId
-    ? records.find((record) => record.id === selectedRecordId) ?? null
+    ? (records.find((record) => record.id === selectedRecordId) ?? null)
     : null;
 
   const kpis =
@@ -1552,7 +1553,6 @@ export default function OffDutyFirearmsPage() {
     setRequestDrawerOpen(true);
   }
 
-
   return (
     <TracePointShell activePage="Off-Duty Firearms">
       {requestDrawerOpen && canSubmit && (
@@ -1605,57 +1605,58 @@ export default function OffDutyFirearmsPage() {
             <div className="flex flex-col gap-2 sm:flex-row">
               {(canReview || canManageInspections) && (
                 <div className="grid grid-cols-2 rounded-xl border border-slate-800 bg-slate-950/50 p-1">
-                {(["Officer Portal", "Department View"] as PortalMode[]).map(
-                  (mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => {
-                        setPortalMode(mode);
-                        setActiveTab(
-                          mode === "Department View"
-                            ? "Pending Approvals"
-                            : "All Records",
-                        );
-                        setQuery("");
-                      }}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold transition ${
-                        portalMode === mode
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-500 hover:text-slate-200"
-                      }`}
-                    >
-                      {mode === "Officer Portal" ? (
-                        "My Requests"
-                      ) : (
-                        <>
-                          <span>Department Review</span>
-                          {records.filter(
-                            (record) =>
-                              record.requestStatus === "Pending Command Review",
-                          ).length > 0 && (
-                            <span
-                              className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                                portalMode === mode
-                                  ? "bg-white/20 text-white"
-                                  : "bg-blue-500/15 text-blue-300"
-                              }`}
-                            >
-                              {
-                                records.filter(
-                                  (record) =>
-                                    record.requestStatus ===
-                                    "Pending Command Review",
-                                ).length
-                              }
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </button>
-                  ),
-                )}
-              </div>
+                  {(["Officer Portal", "Department View"] as PortalMode[]).map(
+                    (mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setPortalMode(mode);
+                          setActiveTab(
+                            mode === "Department View"
+                              ? "Pending Approvals"
+                              : "All Records",
+                          );
+                          setQuery("");
+                        }}
+                        className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold transition ${
+                          portalMode === mode
+                            ? "bg-blue-600 text-white"
+                            : "text-slate-500 hover:text-slate-200"
+                        }`}
+                      >
+                        {mode === "Officer Portal" ? (
+                          "My Requests"
+                        ) : (
+                          <>
+                            <span>Department Review</span>
+                            {records.filter(
+                              (record) =>
+                                record.requestStatus ===
+                                "Pending Command Review",
+                            ).length > 0 && (
+                              <span
+                                className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                  portalMode === mode
+                                    ? "bg-white/20 text-white"
+                                    : "bg-blue-500/15 text-blue-300"
+                                }`}
+                              >
+                                {
+                                  records.filter(
+                                    (record) =>
+                                      record.requestStatus ===
+                                      "Pending Command Review",
+                                  ).length
+                                }
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                    ),
+                  )}
+                </div>
               )}
 
               {portalMode === "Officer Portal" && canSubmit && (
@@ -1683,10 +1684,10 @@ export default function OffDutyFirearmsPage() {
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3">
           <p className="text-[11px] leading-relaxed text-slate-500">
-            Notifications generated by submissions and command decisions are saved
-            for TracePoint officer and command workflows. This page remains the
-            module workspace for requests, approvals, corrections, and authorization
-            history.
+            Notifications generated by submissions and command decisions are
+            saved for TracePoint officer and command workflows. This page
+            remains the module workspace for requests, approvals, corrections,
+            and authorization history.
           </p>
         </section>
 
@@ -1788,7 +1789,7 @@ export default function OffDutyFirearmsPage() {
                       Submitted
                     </p>
                     <p className="mt-1 text-[11px] text-slate-300">
-                      {formatDate(record.submittedAt)}
+                      {formatDateTime(record.submittedAt)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-800 bg-slate-950/30 px-3 py-2">
@@ -1842,16 +1843,3 @@ export default function OffDutyFirearmsPage() {
     </TracePointShell>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

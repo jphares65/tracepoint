@@ -78,3 +78,10 @@ test("sets only subject context for platform operations", async () => {
   ]);
   assert.equal(value.released(), true);
 });
+
+test("accepts a UUIDv7 subject for Cognito-era platform authorization", async () => {
+  const value = fixture();
+  const subjectId = "04a874b8-c0b1-700d-e816-26758473bde3";
+  await withPostgresSubjectAuthorization(value.pool, { subjectId }, client => client.query("select synthetic"));
+  assert.deepEqual(value.calls[2], { text: "select set_config('tracepoint.subject_id', $1, true)", values: [subjectId] });
+});

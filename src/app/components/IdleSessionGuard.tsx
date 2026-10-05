@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { submitIdleSessionExpiry } from "./idle-session-core";
+
 const WARNING_AFTER_MS = 25 * 60 * 1000;
 const SIGN_OUT_AFTER_MS = 30 * 60 * 1000;
 
@@ -28,13 +30,11 @@ export default function IdleSessionGuard() {
   }, []);
 
   const signOut = useCallback(() => {
-    window.location.assign("/auth/signout");
-  }, []);
-
-  const resetTimers = useCallback(() => {
     clearTimers();
-    setShowWarning(false);
+    submitIdleSessionExpiry(document);
+  }, [clearTimers]);
 
+  const scheduleTimers = useCallback(() => {
     warningTimer.current = setTimeout(() => {
       setShowWarning(true);
     }, WARNING_AFTER_MS);
@@ -42,10 +42,16 @@ export default function IdleSessionGuard() {
     signOutTimer.current = setTimeout(() => {
       signOut();
     }, SIGN_OUT_AFTER_MS);
-  }, [clearTimers, signOut]);
+  }, [signOut]);
+
+  const resetTimers = useCallback(() => {
+    clearTimers();
+    setShowWarning(false);
+    scheduleTimers();
+  }, [clearTimers, scheduleTimers]);
 
   useEffect(() => {
-    resetTimers();
+    scheduleTimers();
 
     for (const eventName of ACTIVITY_EVENTS) {
       window.addEventListener(eventName, resetTimers, { passive: true });
@@ -58,7 +64,7 @@ export default function IdleSessionGuard() {
         window.removeEventListener(eventName, resetTimers);
       }
     };
-  }, [clearTimers, resetTimers]);
+  }, [clearTimers, resetTimers, scheduleTimers]);
 
   if (!showWarning) return null;
 

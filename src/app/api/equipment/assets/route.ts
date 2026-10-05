@@ -18,8 +18,8 @@ const VALID_LIFECYCLE = new Set([
   "removed",
 ]);
 
-export async function GET() {
-  const context = await getEquipmentServerContext();
+export async function GET(request: NextRequest) {
+  const context = await getEquipmentServerContext(request);
 
   if ("error" in context) return context.error;
 

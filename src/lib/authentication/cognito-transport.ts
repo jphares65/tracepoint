@@ -59,23 +59,32 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   const exactProxyHeaders=request.headers.get('host')===new URL(origin).host&&
    request.headers.get('x-forwarded-host')===new URL(origin).host&&
    request.headers.get('x-forwarded-proto')==='https';
+  // ALB forwards the original Host and its TLS assertion, but does not add
+  // X-Forwarded-Host. If an upstream does provide that header it must still
+  // agree with the configured public host.
+  const normalProxyHeaders=request.headers.get('host')===new URL(origin).host&&
+   request.headers.get('x-forwarded-proto')==='https'&&
+   [null,new URL(origin).host].includes(request.headers.get('x-forwarded-host'));
   const shadowProxyOrigin=config.notificationMode==='shadow'&&
    (url.hostname==='0.0.0.0'||/^ip-(?:\d{1,3}-){3}\d{1,3}\.ec2\.internal$/.test(url.hostname))&&
    url.protocol==='https:'&&url.port==='3000'&&
    exactProxyHeaders;
-  // The production ALB terminates TLS and forwards HTTP to the private ECS
+  // The normal ALB terminates TLS and forwards HTTP to the private ECS
   // container. Next can expose that internal hop in Request.url. This exception
   // is valid only with the exact external Host and HTTPS proxy assertions; the
-  // separate CSRF Origin check below still requires the production site origin.
-  const productionProxyOrigin=config.notificationMode==='normal'&&config.environment==='production'&&
-   exactProxyHeaders&&((url.hostname==='0.0.0.0'&&url.port==='3000'&&
+  // separate CSRF Origin check below still requires the normal site origin.
+  const normalProxyOrigin=config.notificationMode==='normal'&&normalProxyHeaders&&
+   ((url.hostname==='0.0.0.0'&&url.port==='3000'&&
      (url.protocol==='http:'||url.protocol==='https:'))||
-    (url.origin==='http://tracepointhq.com'));
-  if((url.origin!==origin&&!shadowProxyOrigin&&!productionProxyOrigin)||url.pathname!==path){
-   if(config.notificationMode==='shadow')console.warn(JSON.stringify({event:'shadow-cognito-request-mismatch',
+    (config.environment==='production'&&url.origin==='http://tracepointhq.com')||
+    (config.environment==='staging'&&(url.origin==='http://staging.tracepointhq.com'||
+     (url.port==='3000'&&(url.protocol==='http:'||url.protocol==='https:')&&
+      /^ip-10-40-[01]-\d{1,3}\.ec2\.internal$/.test(url.hostname)))));
+  if((url.origin!==origin&&!shadowProxyOrigin&&!normalProxyOrigin)||url.pathname!==path){
+   if(config.notificationMode==='shadow'||config.environment==='staging')console.warn(JSON.stringify({event:config.notificationMode==='shadow'?'shadow-cognito-request-mismatch':'staging-cognito-request-mismatch',
     actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
     host:request.headers.get('host'),forwardedHost:request.headers.get('x-forwarded-host'),
-    forwardedProto:request.headers.get('x-forwarded-proto')}));
+    forwardedProto:request.headers.get('x-forwarded-proto'),forwardedPort:request.headers.get('x-forwarded-port')}));
    return response(400,'invalid_request');
   }
   if(request.method!==method)return response(405,'method_not_allowed');

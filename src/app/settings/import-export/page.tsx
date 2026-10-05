@@ -8,7 +8,6 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardCheck,
-  Download,
   FileSpreadsheet,
   Files,
   Loader2,
@@ -19,9 +18,16 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import {
+  formatDate as formatDisplayDate,
+  formatDateTime as formatDisplayDateTime,
+} from "@/lib/format/date";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
-import { REPORT_DEFINITIONS, reportCollection } from "@/lib/reports/report-definitions";
+import {
+  REPORT_DEFINITIONS,
+  reportCollection,
+} from "@/lib/reports/report-definitions";
 
 type ImportTypeId =
   | "personnel"
@@ -104,12 +110,41 @@ type PilotPersonnel = {
   rankTitle?: string | null;
 };
 
+type ReportScalar = string | number | boolean | null;
+type ReportValue = ReportScalar | ReportRecord | ReportRecord[];
+type ReportRecord = { [field: string]: ReportValue | undefined };
+
+type AmmunitionLotExport = {
+  caliber?: string | null;
+  manufacturer?: string | null;
+  loadDescription?: string | null;
+  lotNumber?: string | null;
+  purchaseDate?: string | null;
+  quantityOnHand?: number | string | null;
+  replacementDueDate?: string | null;
+  recallFlag?: boolean | null;
+  notes?: string | null;
+  costPerRound?: number | string | null;
+  lowStockThreshold?: number | string | null;
+};
+
+function isReportRecord(value: unknown): value is ReportRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function reportRecords(value: unknown): ReportRecord[] {
+  return Array.isArray(value) ? value.filter(isReportRecord) : [];
+}
+
+function reportString(value: ReportValue | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 const IMPORT_TYPES: ImportTypeDefinition[] = [
   {
     id: "personnel",
     label: "Personnel",
-    description:
-      "Import personnel and stage accounts pending activation.",
+    description: "Import personnel and stage accounts pending activation.",
     supportStatus: "Can Import",
     duplicateKeys: ["badgeNumber", "email"],
     fields: [
@@ -156,8 +191,7 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
   {
     id: "firearms",
     label: "Firearms",
-    description:
-      "Import firearm inventory directly into the Armory.",
+    description: "Import firearm inventory directly into the Armory.",
     supportStatus: "Can Import",
     duplicateKeys: ["serialNumber"],
     fields: [
@@ -201,13 +235,17 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
           "weapon caliber",
           "weapon calibre",
         ],
-        help:
-          "Optional during onboarding. Missing values are imported as TBD / Unknown and can be updated later.",
+        help: "Optional during onboarding. Missing values are imported as TBD / Unknown and can be updated later.",
       },
       {
         key: "assetNumber",
         label: "Asset Number",
-        aliases: ["asset", "asset number", "property number", "inventory number"],
+        aliases: [
+          "asset",
+          "asset number",
+          "property number",
+          "inventory number",
+        ],
       },
       {
         key: "conditionStatus",
@@ -226,8 +264,7 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
           "officer name",
           "employee",
         ],
-        help:
-          "Optional. Matches an active officer by name, email, or badge number.",
+        help: "Optional. Matches an active officer by name, email, or badge number.",
       },
       {
         key: "notes",
@@ -308,7 +345,11 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
       {
         key: "nightScore",
         label: "Night Score",
-        aliases: ["night score", "night qualification score", "low light score"],
+        aliases: [
+          "night score",
+          "night qualification score",
+          "low light score",
+        ],
       },
       {
         key: "nightPassingScore",
@@ -387,8 +428,7 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
   {
     id: "equipment",
     label: "Equipment",
-    description:
-      "Import issued equipment and readiness assets.",
+    description: "Import issued equipment and readiness assets.",
     supportStatus: "Can Import",
     duplicateKeys: ["serialNumber"],
     fields: [
@@ -565,22 +605,18 @@ const IMPORT_TYPES: ImportTypeDefinition[] = [
         aliases: ["notes", "comments", "remarks"],
       },
     ],
-  },];
+  },
+];
 
 function normalizeHeader(value: string) {
   return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 }
 
-function splitCsvLine(line: string) {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false
-
-  return values;
-}
-
 function parseCsv(text: string): ParsedCsv {
-  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalized = text
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   const lines = normalized.split("\n").filter((line) => line.trim().length > 0);
 
   if (lines.length === 0) {
@@ -638,9 +674,7 @@ function detectOnboardingDatasetType(
   const normalizedHeaders = headers.map(normalizeHeader);
 
   const hasAnyHeader = (...values: string[]) =>
-    values.some((value) =>
-      normalizedHeaders.includes(normalizeHeader(value)),
-    );
+    values.some((value) => normalizedHeaders.includes(normalizeHeader(value)));
   if (
     normalizedName.includes("import notes") ||
     normalizedName.includes("source snapshot") ||
@@ -659,7 +693,6 @@ function detectOnboardingDatasetType(
   ) {
     return "off_duty_firearms";
   }
-
 
   if (
     normalizedName.includes("personnel") ||
@@ -716,12 +749,7 @@ function detectOnboardingDatasetType(
 
   if (
     hasAnyHeader("qualification date", "qual date") &&
-    hasAnyHeader(
-      "score",
-      "qualification score",
-      "day score",
-      "night score",
-    )
+    hasAnyHeader("score", "qualification score", "day score", "night score")
   ) {
     return "qualification_history";
   }
@@ -762,9 +790,7 @@ function worksheetMatrixToParsedCsv(matrix: unknown[][]): ParsedCsv {
     return { headers: [], rows: [] };
   }
 
-  const headers = (matrix[0] ?? []).map((value) =>
-    String(value ?? "").trim(),
-  );
+  const headers = (matrix[0] ?? []).map((value) => String(value ?? "").trim());
 
   const rows = matrix
     .slice(1)
@@ -788,9 +814,7 @@ function worksheetMatrixToParsedCsv(matrix: unknown[][]): ParsedCsv {
   };
 }
 
-async function parseOnboardingFile(
-  file: File,
-): Promise<OnboardingDataset[]> {
+async function parseOnboardingFile(file: File): Promise<OnboardingDataset[]> {
   const lowerName = file.name.toLowerCase();
 
   if (lowerName.endsWith(".csv")) {
@@ -801,19 +825,13 @@ async function parseOnboardingFile(
         id: `${file.name}-csv`,
         sourceFile: file.name,
         sourceSheet: file.name,
-        detectedType: detectOnboardingDatasetType(
-          file.name,
-          parsed.headers,
-        ),
+        detectedType: detectOnboardingDatasetType(file.name, parsed.headers),
         parsed,
       },
     ];
   }
 
-  if (
-    lowerName.endsWith(".xlsx") ||
-    lowerName.endsWith(".xls")
-  ) {
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
     const XLSX = await import("xlsx");
     const workbook = XLSX.read(await file.arrayBuffer(), {
       type: "array",
@@ -822,14 +840,11 @@ async function parseOnboardingFile(
     return workbook.SheetNames.map((sheetName) => {
       const worksheet = workbook.Sheets[sheetName];
 
-      const matrix = XLSX.utils.sheet_to_json<unknown[]>(
-        worksheet,
-        {
-          header: 1,
-          raw: false,
-          defval: "",
-        },
-      );
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+        header: 1,
+        raw: false,
+        defval: "",
+      });
 
       const parsed = worksheetMatrixToParsedCsv(matrix);
 
@@ -837,10 +852,7 @@ async function parseOnboardingFile(
         id: `${file.name}-${sheetName}`,
         sourceFile: file.name,
         sourceSheet: sheetName,
-        detectedType: detectOnboardingDatasetType(
-          sheetName,
-          parsed.headers,
-        ),
+        detectedType: detectOnboardingDatasetType(sheetName, parsed.headers),
         parsed,
       };
     }).filter(
@@ -851,11 +863,12 @@ async function parseOnboardingFile(
     );
   }
 
-  throw new Error(
-    "Unsupported file type. Upload a CSV, XLSX, or XLS file.",
-  );
+  throw new Error("Unsupported file type. Upload a CSV, XLSX, or XLS file.");
 }
-function buildAutoMapping(headers: string[], definition: ImportTypeDefinition): MappingState {
+function buildAutoMapping(
+  headers: string[],
+  definition: ImportTypeDefinition,
+): MappingState {
   const mapping: MappingState = {};
   const normalizedHeaders = headers.map((header) => ({
     raw: header,
@@ -874,7 +887,11 @@ function buildAutoMapping(headers: string[], definition: ImportTypeDefinition): 
   return mapping;
 }
 
-function getMappedValue(row: Record<string, string>, mapping: MappingState, fieldKey: string) {
+function getMappedValue(
+  row: Record<string, string>,
+  mapping: MappingState,
+  fieldKey: string,
+) {
   const sourceHeader = mapping[fieldKey];
 
   if (!sourceHeader) return "";
@@ -953,7 +970,14 @@ function validateRows(
 
       if (
         type &&
-        !["handgun", "rifle", "shotgun", "less lethal", "less_lethal", "other"].includes(type)
+        ![
+          "handgun",
+          "rifle",
+          "shotgun",
+          "less lethal",
+          "less_lethal",
+          "other",
+        ].includes(type)
       ) {
         issues.push({
           rowNumber: rowIndex + 2,
@@ -1002,19 +1026,22 @@ function validateRows(
         });
       }
 
-      ["dayScore", "dayPassingScore", "nightScore", "nightPassingScore"].forEach(
-        (field) => {
-          const value = row[field];
-          if (value && Number.isNaN(Number(value.replace(/,/g, "")))) {
-            issues.push({
-              rowNumber: rowIndex + 2,
-              severity: "error",
-              field,
-              message: `${field} must be numeric.`,
-            });
-          }
-        },
-      );
+      [
+        "dayScore",
+        "dayPassingScore",
+        "nightScore",
+        "nightPassingScore",
+      ].forEach((field) => {
+        const value = row[field];
+        if (value && Number.isNaN(Number(value.replace(/,/g, "")))) {
+          issues.push({
+            rowNumber: rowIndex + 2,
+            severity: "error",
+            field,
+            message: `${field} must be numeric.`,
+          });
+        }
+      });
     }
   });
 
@@ -1049,7 +1076,9 @@ function normalizeFirearmType(value: string) {
   const normalized = value.trim().toLowerCase();
 
   if (normalized === "less lethal") return "less_lethal";
-  if (["handgun", "rifle", "shotgun", "less_lethal", "other"].includes(normalized)) {
+  if (
+    ["handgun", "rifle", "shotgun", "less_lethal", "other"].includes(normalized)
+  ) {
     return normalized;
   }
 
@@ -1107,13 +1136,6 @@ function normalizePersonLookup(value: string) {
   }
 
   return normalized;
-}
-
-function getLastName(value: string) {
-  const normalized = normalizePersonLookup(value);
-  const parts = normalized.split(" ").filter(Boolean);
-
-  return parts.at(-1) ?? "";
 }
 
 function getPersonnelMatch(
@@ -1234,11 +1256,11 @@ async function importFirearm(
   return payload;
 }
 
-
 type CsvValue = string | number | boolean | null | undefined;
 
 function csvEscape(value: CsvValue) {
-  const stringValue = value === null || value === undefined ? "" : String(value);
+  const stringValue =
+    value === null || value === undefined ? "" : String(value);
 
   if (
     stringValue.includes(",") ||
@@ -1278,9 +1300,7 @@ async function recordClientDataExport({
       error?: string;
     };
 
-    throw new Error(
-      payload.error ?? "The data export could not be audited.",
-    );
+    throw new Error(payload.error ?? "The data export could not be audited.");
   }
 }
 
@@ -1305,7 +1325,9 @@ async function downloadCsv(fileName: string, rows: Record<string, CsvValue>[]) {
 
   const csv = [
     headers.join(","),
-    ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(",")),
+    ...rows.map((row) =>
+      headers.map((header) => csvEscape(row[header])).join(","),
+    ),
   ].join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1358,7 +1380,6 @@ async function fetchJson<T>(url: string) {
 
 const exportDate = () => new Date().toISOString().slice(0, 10);
 
-
 function ImportWizardContent() {
   const searchParams = useSearchParams();
 
@@ -1370,74 +1391,138 @@ function ImportWizardContent() {
   });
   const activeDepartmentId = access.departmentId;
 
-  const departmentId =
-    platformDepartmentId || activeDepartmentId;
-  const [onboardingDatasets, setOnboardingDatasets] =
-    useState<OnboardingDataset[]>([]);
-  const [onboardingFileName, setOnboardingFileName] =
-    useState("");
-  const [onboardingLoading, setOnboardingLoading] =
-    useState(false);
-  const [onboardingError, setOnboardingError] =
-    useState<string | null>(null);
-  const [selectedTypeId, setSelectedTypeId] = useState<ImportTypeId>("personnel");
+  const departmentId = platformDepartmentId || activeDepartmentId;
+  const [onboardingDatasets, setOnboardingDatasets] = useState<
+    OnboardingDataset[]
+  >([]);
+  const [onboardingFileName, setOnboardingFileName] = useState("");
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [selectedTypeId, setSelectedTypeId] =
+    useState<ImportTypeId>("personnel");
   const [step, setStep] = useState<ImportStep>("type");
   const [fileName, setFileName] = useState("");
-  const [parsedCsv, setParsedCsv] = useState<ParsedCsv>({ headers: [], rows: [] });
+  const [parsedCsv, setParsedCsv] = useState<ParsedCsv>({
+    headers: [],
+    rows: [],
+  });
   const [mapping, setMapping] = useState<MappingState>({});
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
 
-  const [reportType, setReportType] =
-    useState("off-duty-firearms");
+  const [reportType, setReportType] = useState("off-duty-firearms");
 
   const [reportOfficerId, setReportOfficerId] = useState("all");
-  const [reportDateMode, setReportDateMode] = useState<
-    "all" | "custom"
-  >("all");
+  const [reportDateMode, setReportDateMode] = useState<"all" | "custom">("all");
   const [reportStartDate, setReportStartDate] = useState("");
   const [reportEndDate, setReportEndDate] = useState("");
   const [reportStatus, setReportStatus] = useState("all");
-  const [reportIncludeWorkflow, setReportIncludeWorkflow] =
-    useState(true);
+  const [reportIncludeWorkflow, setReportIncludeWorkflow] = useState(true);
   const [reportIncludeInspections, setReportIncludeInspections] =
     useState(true);
-  const [reportIncludeNotes, setReportIncludeNotes] =
-    useState(true);
-  const [reportGenerating, setReportGenerating] =
-    useState(false);
-  const [reportOfficerOptions, setReportOfficerOptions] =
-    useState<
-      Array<{
-        id: string;
-        name: string;
-        badge: string;
-      }>
-    >([]);
+  const [reportIncludeNotes, setReportIncludeNotes] = useState(true);
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const [reportOfficerOptions, setReportOfficerOptions] = useState<
+    Array<{
+      id: string;
+      name: string;
+      badge: string;
+    }>
+  >([]);
 
-  const availableReports = useMemo(() => REPORT_DEFINITIONS.filter((definition) => {
-    if (definition.key === "complete") return access.hasPermission("administer_department");
-    const entitled = !definition.featureCode || access.isFeatureEnabled(definition.featureCode);
-    const permitted = definition.permissions.length === 0 || access.hasAnyPermission(definition.permissions);
-    return entitled && permitted;
-  }), [access]);
-  const selectedReportDefinition = availableReports.find((definition) => definition.key === reportType) ?? availableReports[0];
-  const selectedReportFilters = new Set(selectedReportDefinition?.filters ?? []);
+  const availableReports = useMemo(
+    () =>
+      REPORT_DEFINITIONS.filter((definition) => {
+        if (definition.key === "complete")
+          return access.hasPermission("administer_department");
+        const entitled =
+          !definition.featureCode ||
+          access.isFeatureEnabled(definition.featureCode);
+        const permitted =
+          definition.permissions.length === 0 ||
+          access.hasAnyPermission(definition.permissions);
+        return entitled && permitted;
+      }),
+    [access],
+  );
+  const selectedReportDefinition =
+    availableReports.find((definition) => definition.key === reportType) ??
+    availableReports[0];
+  const selectedReportFilters = new Set(
+    selectedReportDefinition?.filters ?? [],
+  );
   const effectiveReportType = selectedReportDefinition?.key ?? "";
-  const reportStatusOptions = effectiveReportType === "off-duty-firearms"
-    ? ["Draft","Pending Command Review","Returned for Correction","Approved","Denied","Withdrawn"]
-    : effectiveReportType === "firearm-inspections" ? ["Passed","Failed","Needs Maintenance","Removed from Service"]
-    : effectiveReportType === "fleet" ? ["Available","Attention","Maintenance","Out of Service","Retired"]
-    : effectiveReportType === "fleet-inspections" ? ["Passed","Passed with Defects","Failed"]
-    : effectiveReportType === "fleet-maintenance" ? ["Open","Assigned","Scheduled","In Progress","Awaiting Parts","Completed","Cancelled"]
-    : effectiveReportType === "fleet-equipment" ? ["Current","Attention","Missing","Out of Service","Removed"]
-    : effectiveReportType === "equipment" ? ["active","out_of_service","removed"]
-    : effectiveReportType === "certifications" ? ["Current","Due Soon","Expired","Missing"]
-    : effectiveReportType === "agency-training" ? ["draft","scheduled","in_progress","completed","cancelled"]
-    : effectiveReportType === "range-days" ? ["Draft","Scheduled","In Progress","Completed","Cancelled"]
-    : effectiveReportType === "alerts" || effectiveReportType === "readiness" ? ["Critical","High","Normal","Resolved"]
-    : ["Current","Completed","Incomplete","Passed","Failed"];
+  const reportStatusOptions =
+    effectiveReportType === "off-duty-firearms"
+      ? [
+          "Draft",
+          "Pending Command Review",
+          "Returned for Correction",
+          "Approved",
+          "Denied",
+          "Withdrawn",
+        ]
+      : effectiveReportType === "firearm-inspections"
+        ? ["Passed", "Failed", "Needs Maintenance", "Removed from Service"]
+        : effectiveReportType === "fleet"
+          ? [
+              "Available",
+              "Attention",
+              "Maintenance",
+              "Out of Service",
+              "Retired",
+            ]
+          : effectiveReportType === "fleet-inspections"
+            ? ["Passed", "Passed with Defects", "Failed"]
+            : effectiveReportType === "fleet-maintenance"
+              ? [
+                  "Open",
+                  "Assigned",
+                  "Scheduled",
+                  "In Progress",
+                  "Awaiting Parts",
+                  "Completed",
+                  "Cancelled",
+                ]
+              : effectiveReportType === "fleet-equipment"
+                ? [
+                    "Current",
+                    "Attention",
+                    "Missing",
+                    "Out of Service",
+                    "Removed",
+                  ]
+                : effectiveReportType === "equipment"
+                  ? ["active", "out_of_service", "removed"]
+                  : effectiveReportType === "certifications"
+                    ? ["Current", "Due Soon", "Expired", "Missing"]
+                    : effectiveReportType === "agency-training"
+                      ? [
+                          "draft",
+                          "scheduled",
+                          "in_progress",
+                          "completed",
+                          "cancelled",
+                        ]
+                      : effectiveReportType === "range-days"
+                        ? [
+                            "Draft",
+                            "Scheduled",
+                            "In Progress",
+                            "Completed",
+                            "Cancelled",
+                          ]
+                        : effectiveReportType === "alerts" ||
+                            effectiveReportType === "readiness"
+                          ? ["Critical", "High", "Normal", "Resolved"]
+                          : [
+                              "Current",
+                              "Completed",
+                              "Incomplete",
+                              "Passed",
+                              "Failed",
+                            ];
 
   const [exportError, setExportError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -1451,7 +1536,9 @@ function ImportWizardContent() {
       try {
         const payload = await fetchJson<{
           personnel?: PilotPersonnel[];
-        }>(`/api/settings/onboarding/personnel-directory?departmentId=${encodeURIComponent(departmentId)}`);
+        }>(
+          `/api/settings/onboarding/personnel-directory?departmentId=${encodeURIComponent(departmentId)}`,
+        );
 
         if (!isMounted) return;
 
@@ -1477,7 +1564,9 @@ function ImportWizardContent() {
   }, [departmentId]);
 
   const selectedDefinition = useMemo(
-    () => IMPORT_TYPES.find((type) => type.id === selectedTypeId) ?? IMPORT_TYPES[0],
+    () =>
+      IMPORT_TYPES.find((type) => type.id === selectedTypeId) ??
+      IMPORT_TYPES[0],
     [selectedTypeId],
   );
 
@@ -1487,16 +1576,11 @@ function ImportWizardContent() {
   );
 
   const validationIssues = useMemo(() => {
-    const issues = validateRows(
-      parsedCsv.rows,
-      mapping,
-      selectedDefinition,
-    );
+    const issues = validateRows(parsedCsv.rows, mapping, selectedDefinition);
 
     if (selectedDefinition.id === "firearms") {
       mappedRows.forEach((row, rowIndex) => {
-        const assignedOfficerName =
-          row.assignedOfficerName?.trim() ?? "";
+        const assignedOfficerName = row.assignedOfficerName?.trim() ?? "";
 
         if (
           assignedOfficerName &&
@@ -1506,23 +1590,18 @@ function ImportWizardContent() {
             rowNumber: rowIndex + 2,
             severity: "error",
             field: "assignedOfficerName",
-            message:
-              `Assigned officer "${assignedOfficerName}" did not uniquely match an active personnel record.`,
+            message: `Assigned officer "${assignedOfficerName}" did not uniquely match an active personnel record.`,
           });
         }
       });
     }
 
     return issues;
-  }, [
-    mappedRows,
-    parsedCsv.rows,
-    mapping,
-    selectedDefinition,
-    personnel,
-  ]);
+  }, [mappedRows, parsedCsv.rows, mapping, selectedDefinition, personnel]);
 
-  const blockingErrors = validationIssues.filter((issue) => issue.severity === "error");
+  const blockingErrors = validationIssues.filter(
+    (issue) => issue.severity === "error",
+  );
 
   const filteredPreviewRows = useMemo(() => {
     if (!search.trim()) return mappedRows.slice(0, 25);
@@ -1531,14 +1610,14 @@ function ImportWizardContent() {
 
     return mappedRows
       .filter((row) =>
-        Object.values(row).some((value) => value.toLowerCase().includes(normalized)),
+        Object.values(row).some((value) =>
+          value.toLowerCase().includes(normalized),
+        ),
       )
       .slice(0, 25);
   }, [mappedRows, search]);
 
-  async function handleOnboardingFile(
-    event: ChangeEvent<HTMLInputElement>,
-  ) {
+  async function handleOnboardingFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) return;
@@ -1727,8 +1806,7 @@ function ImportWizardContent() {
           continue;
         }
         if (selectedDefinition.id === "equipment") {
-          const assignedOfficerName =
-            row.assignedOfficerName?.trim() ?? "";
+          const assignedOfficerName = row.assignedOfficerName?.trim() ?? "";
 
           const matchedOfficer = assignedOfficerName
             ? getPersonnelMatch(assignedOfficerName, personnel)
@@ -1740,28 +1818,25 @@ function ImportWizardContent() {
             );
           }
 
-          const response = await fetch(
-            "/api/settings/onboarding/equipment",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                departmentId,
-                equipmentType: row.equipmentType,
-                manufacturer: row.manufacturer,
-                model: row.model?.trim() || "TBD / Unknown",
-                serialNumber: row.serialNumber,
-                lotNumber: row.lotNumber,
-                assignedToUserId: matchedOfficer?.userId,
-                issueDate: row.issueDate,
-                expirationDate: row.expirationDate,
-                lastInspectionDate: row.lastInspectionDate,
-                nextInspectionDate: row.nextInspectionDate,
-                lifecycleStatus: row.lifecycleStatus,
-                notes: row.notes,
-              }),
-            },
-          );
+          const response = await fetch("/api/settings/onboarding/equipment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              departmentId,
+              equipmentType: row.equipmentType,
+              manufacturer: row.manufacturer,
+              model: row.model?.trim() || "TBD / Unknown",
+              serialNumber: row.serialNumber,
+              lotNumber: row.lotNumber,
+              assignedToUserId: matchedOfficer?.userId,
+              issueDate: row.issueDate,
+              expirationDate: row.expirationDate,
+              lastInspectionDate: row.lastInspectionDate,
+              nextInspectionDate: row.nextInspectionDate,
+              lifecycleStatus: row.lifecycleStatus,
+              notes: row.notes,
+            }),
+          });
 
           const payload = await response.json();
 
@@ -1864,8 +1939,7 @@ function ImportWizardContent() {
           continue;
         }
 
-        const assignedOfficerName =
-          row.assignedOfficerName?.trim() ?? "";
+        const assignedOfficerName = row.assignedOfficerName?.trim() ?? "";
 
         const matchedOfficer = assignedOfficerName
           ? getPersonnelMatch(assignedOfficerName, personnel)
@@ -1886,9 +1960,7 @@ function ImportWizardContent() {
       } catch (error) {
         failures.push(
           `Row ${index + 2}: ${
-            error instanceof Error
-              ? error.message
-              : "Unknown import error"
+            error instanceof Error ? error.message : "Unknown import error"
           }`,
         );
       }
@@ -1916,7 +1988,6 @@ function ImportWizardContent() {
     setImporting(false);
     setStep("report");
   }
-
 
   async function handleExportPersonnel() {
     setExporting("personnel");
@@ -2015,8 +2086,8 @@ function ImportWizardContent() {
     try {
       const payload = await fetchJson<{
         workspace?: {
-          dutyLots?: Array<Record<string, any>>;
-          trainingLots?: Array<Record<string, any>>;
+          dutyLots?: AmmunitionLotExport[];
+          trainingLots?: AmmunitionLotExport[];
         };
       }>("/api/pilot/ammunition");
 
@@ -2035,20 +2106,22 @@ function ImportWizardContent() {
         notes: lot.notes,
       }));
 
-      const trainingRows = (payload.workspace?.trainingLots ?? []).map((lot) => ({
-        workspace: "Training",
-        caliber: lot.caliber,
-        manufacturer: lot.manufacturer,
-        loadDescription: lot.loadDescription,
-        lotNumber: lot.lotNumber,
-        purchaseDate: lot.purchaseDate,
-        quantityOnHand: lot.quantityOnHand,
-        replacementDueDate: "",
-        recallFlag: "",
-        costPerRound: lot.costPerRound,
-        lowStockThreshold: lot.lowStockThreshold,
-        notes: lot.notes,
-      }));
+      const trainingRows = (payload.workspace?.trainingLots ?? []).map(
+        (lot) => ({
+          workspace: "Training",
+          caliber: lot.caliber,
+          manufacturer: lot.manufacturer,
+          loadDescription: lot.loadDescription,
+          lotNumber: lot.lotNumber,
+          purchaseDate: lot.purchaseDate,
+          quantityOnHand: lot.quantityOnHand,
+          replacementDueDate: "",
+          recallFlag: "",
+          costPerRound: lot.costPerRound,
+          lowStockThreshold: lot.lowStockThreshold,
+          notes: lot.notes,
+        }),
+      );
 
       await downloadCsv(`tracepoint-ammunition-${exportDate()}.csv`, [
         ...dutyRows,
@@ -2062,7 +2135,6 @@ function ImportWizardContent() {
       setExporting(null);
     }
   }
-
 
   async function handleExportQualifications() {
     setExporting("qualifications");
@@ -2126,17 +2198,11 @@ function ImportWizardContent() {
       });
 
       const rangeDayById = new Map(
-        (workspace?.rangeDays ?? []).map((rangeDay) => [
-          rangeDay.id,
-          rangeDay,
-        ]),
+        (workspace?.rangeDays ?? []).map((rangeDay) => [rangeDay.id, rangeDay]),
       );
 
       const drillById = new Map(
-        (workspace?.drillLibrary ?? []).map((drill) => [
-          drill.id,
-          drill,
-        ]),
+        (workspace?.drillLibrary ?? []).map((drill) => [drill.id, drill]),
       );
 
       const rows = (workspace?.results ?? [])
@@ -2146,8 +2212,7 @@ function ImportWizardContent() {
           const drillName = drill?.name ?? "";
           const drillCategory = drill?.category ?? "";
 
-          const classification =
-            `${drillName} ${drillCategory}`.toLowerCase();
+          const classification = `${drillName} ${drillCategory}`.toLowerCase();
 
           const isQualification =
             classification.includes("qualification") ||
@@ -2176,9 +2241,7 @@ function ImportWizardContent() {
                 ? "Night Qualification"
                 : `Run ${runNumber}`;
 
-          const malfunctionCount = (
-            workspace?.malfunctions ?? []
-          ).filter(
+          const malfunctionCount = (workspace?.malfunctions ?? []).filter(
             (malfunction) =>
               malfunction.drillRunId === result.id ||
               result.malfunctionIds?.includes(malfunction.id),
@@ -2186,9 +2249,7 @@ function ImportWizardContent() {
 
           return {
             officerName:
-              officer?.displayName ||
-              officer?.fullName ||
-              result.officerId,
+              officer?.displayName || officer?.fullName || result.officerId,
             badgeNumber: officer?.badgeNumber,
             rankTitle: officer?.rankTitle,
             officerId: result.officerId,
@@ -2226,11 +2287,9 @@ function ImportWizardContent() {
 
             instructorId: result.instructorId,
 
-            deficiencyObserved:
-              result.deficiencyObserved,
+            deficiencyObserved: result.deficiencyObserved,
 
-            remedialTrainingRecommended:
-              result.remedialTrainingRecommended,
+            remedialTrainingRecommended: result.remedialTrainingRecommended,
 
             malfunctionCount,
             notes: result.notes,
@@ -2239,20 +2298,14 @@ function ImportWizardContent() {
             resultId: result.id,
           };
         })
-        .filter(
-          (row): row is NonNullable<typeof row> =>
-            row !== null,
-        )
+        .filter((row): row is NonNullable<typeof row> => row !== null)
         .sort((a, b) =>
           String(b.qualificationDate ?? "").localeCompare(
             String(a.qualificationDate ?? ""),
           ),
         );
 
-      await downloadCsv(
-        `tracepoint-qualifications-${exportDate()}.csv`,
-        rows,
-      );
+      await downloadCsv(`tracepoint-qualifications-${exportDate()}.csv`, rows);
     } catch (error) {
       setExportError(
         error instanceof Error
@@ -2326,17 +2379,11 @@ function ImportWizardContent() {
       });
 
       const rangeDayById = new Map(
-        (workspace?.rangeDays ?? []).map((rangeDay) => [
-          rangeDay.id,
-          rangeDay,
-        ]),
+        (workspace?.rangeDays ?? []).map((rangeDay) => [rangeDay.id, rangeDay]),
       );
 
       const drillById = new Map(
-        (workspace?.drillLibrary ?? []).map((drill) => [
-          drill.id,
-          drill,
-        ]),
+        (workspace?.drillLibrary ?? []).map((drill) => [drill.id, drill]),
       );
 
       const rows = (workspace?.results ?? [])
@@ -2349,9 +2396,7 @@ function ImportWizardContent() {
             ? personnelById.get(result.instructorId)
             : undefined;
 
-          const malfunctionCount = (
-            workspace?.malfunctions ?? []
-          ).filter(
+          const malfunctionCount = (workspace?.malfunctions ?? []).filter(
             (malfunction) =>
               malfunction.drillRunId === result.id ||
               result.malfunctionIds?.includes(malfunction.id),
@@ -2361,9 +2406,7 @@ function ImportWizardContent() {
 
           return {
             officerName:
-              officer?.displayName ||
-              officer?.fullName ||
-              result.officerId,
+              officer?.displayName || officer?.fullName || result.officerId,
 
             badgeNumber: officer?.badgeNumber,
             rankTitle: officer?.rankTitle,
@@ -2403,11 +2446,9 @@ function ImportWizardContent() {
 
             instructorId: result.instructorId,
 
-            deficiencyObserved:
-              result.deficiencyObserved,
+            deficiencyObserved: result.deficiencyObserved,
 
-            remedialTrainingRecommended:
-              result.remedialTrainingRecommended,
+            remedialTrainingRecommended: result.remedialTrainingRecommended,
 
             malfunctionCount,
             notes: result.notes,
@@ -2499,10 +2540,7 @@ function ImportWizardContent() {
       });
 
       const drillById = new Map(
-        (workspace?.drillLibrary ?? []).map((drill) => [
-          drill.id,
-          drill,
-        ]),
+        (workspace?.drillLibrary ?? []).map((drill) => [drill.id, drill]),
       );
 
       const results = workspace?.results ?? [];
@@ -2516,9 +2554,7 @@ function ImportWizardContent() {
 
           const officerIds = Array.from(
             new Set(
-              rangeDayResults
-                .map((result) => result.officerId)
-                .filter(Boolean),
+              rangeDayResults.map((result) => result.officerId).filter(Boolean),
             ),
           );
 
@@ -2532,9 +2568,7 @@ function ImportWizardContent() {
 
           const drillIds = Array.from(
             new Set(
-              rangeDayResults
-                .map((result) => result.drillId)
-                .filter(Boolean),
+              rangeDayResults.map((result) => result.drillId).filter(Boolean),
             ),
           );
 
@@ -2546,39 +2580,27 @@ function ImportWizardContent() {
             ),
           );
 
-          const resultIds = new Set(
-            rangeDayResults.map((result) => result.id),
-          );
+          const resultIds = new Set(rangeDayResults.map((result) => result.id));
 
-          const malfunctionCount = malfunctions.filter(
-            (malfunction) =>
-              Boolean(
-                malfunction.drillRunId &&
-                  resultIds.has(malfunction.drillRunId),
-              ),
+          const malfunctionCount = malfunctions.filter((malfunction) =>
+            Boolean(
+              malfunction.drillRunId && resultIds.has(malfunction.drillRunId),
+            ),
           ).length;
 
           const officerNames = officerIds.map((officerId) => {
             const officer = personnelById.get(officerId);
 
-            return (
-              officer?.displayName ||
-              officer?.fullName ||
-              officerId
-            );
+            return officer?.displayName || officer?.fullName || officerId;
           });
 
-          const instructorNames = instructorIds.map(
-            (instructorId) => {
-              const instructor = personnelById.get(instructorId);
+          const instructorNames = instructorIds.map((instructorId) => {
+            const instructor = personnelById.get(instructorId);
 
-              return (
-                instructor?.displayName ||
-                instructor?.fullName ||
-                instructorId
-              );
-            },
-          );
+            return (
+              instructor?.displayName || instructor?.fullName || instructorId
+            );
+          });
 
           const drillNames = drillIds.map((drillId) => {
             const drill = drillById.get(drillId);
@@ -2638,20 +2660,13 @@ function ImportWizardContent() {
           };
         })
         .sort((a, b) =>
-          String(b.date ?? "").localeCompare(
-            String(a.date ?? ""),
-          ),
+          String(b.date ?? "").localeCompare(String(a.date ?? "")),
         );
 
-      await downloadCsv(
-        `tracepoint-range-days-${exportDate()}.csv`,
-        rows,
-      );
+      await downloadCsv(`tracepoint-range-days-${exportDate()}.csv`, rows);
     } catch (error) {
       setExportError(
-        error instanceof Error
-          ? error.message
-          : "Range Days export failed.",
+        error instanceof Error ? error.message : "Range Days export failed.",
       );
     } finally {
       setExporting(null);
@@ -2708,17 +2723,11 @@ function ImportWizardContent() {
       }>("/api/training/certifications");
 
       const membersById = new Map(
-        (payload.members ?? []).map((member) => [
-          member.user_id,
-          member,
-        ]),
+        (payload.members ?? []).map((member) => [member.user_id, member]),
       );
 
       const typesById = new Map(
-        (payload.certificationTypes ?? []).map((type) => [
-          type.id,
-          type,
-        ]),
+        (payload.certificationTypes ?? []).map((type) => [type.id, type]),
       );
 
       const requirementsByTypeId = new Map(
@@ -2737,82 +2746,56 @@ function ImportWizardContent() {
             : undefined;
 
           const requirement = certification.certification_type_id
-            ? requirementsByTypeId.get(
-                certification.certification_type_id,
-              )
+            ? requirementsByTypeId.get(certification.certification_type_id)
             : undefined;
 
           return {
-            officerName:
-              member?.full_name ||
-              certification.user_id,
+            officerName: member?.full_name || certification.user_id,
 
-            badgeNumber:
-              member?.badge_number,
+            badgeNumber: member?.badge_number,
 
-            rankTitle:
-              member?.rank_title,
+            rankTitle: member?.rank_title,
 
-            userId:
-              certification.user_id,
+            userId: certification.user_id,
 
-            certificationTitle:
-              certification.certification_title,
+            certificationTitle: certification.certification_title,
 
-            certificationTypeId:
-              certification.certification_type_id,
+            certificationTypeId: certification.certification_type_id,
 
-            category:
-              type?.category,
+            category: type?.category,
 
-            typeDescription:
-              type?.description,
+            typeDescription: type?.description,
 
             issuingOrganization:
-              certification.issuing_organization ||
-              type?.issuing_organization,
+              certification.issuing_organization || type?.issuing_organization,
 
-            credentialNumber:
-              certification.credential_number,
+            credentialNumber: certification.credential_number,
 
-            issueDate:
-              certification.issue_date,
+            issueDate: certification.issue_date,
 
-            expirationDate:
-              certification.expiration_date,
+            expirationDate: certification.expiration_date,
 
-            expirationRequired:
-              type?.expiration_required,
+            expirationRequired: type?.expiration_required,
 
-            defaultValidDays:
-              type?.default_valid_days,
+            defaultValidDays: type?.default_valid_days,
 
-            defaultDueSoonDays:
-              type?.default_due_soon_days,
+            defaultDueSoonDays: type?.default_due_soon_days,
 
-            requiredByDepartment:
-              requirement?.is_required,
+            requiredByDepartment: requirement?.is_required,
 
-            requirementValidDays:
-              requirement?.valid_days,
+            requirementValidDays: requirement?.valid_days,
 
-            requirementDueSoonDays:
-              requirement?.due_soon_days,
+            requirementDueSoonDays: requirement?.due_soon_days,
 
-            requirementNotes:
-              requirement?.notes,
+            requirementNotes: requirement?.notes,
 
-            reminderDays:
-              certification.reminder_days?.join("; "),
+            reminderDays: certification.reminder_days?.join("; "),
 
-            documentUrl:
-              certification.document_url,
+            documentUrl: certification.document_url,
 
-            notes:
-              certification.notes,
+            notes: certification.notes,
 
-            certificationId:
-              certification.id,
+            certificationId: certification.id,
           };
         })
         .sort((a, b) =>
@@ -2821,10 +2804,7 @@ function ImportWizardContent() {
           ),
         );
 
-      await downloadCsv(
-        `tracepoint-certifications-${exportDate()}.csv`,
-        rows,
-      );
+      await downloadCsv(`tracepoint-certifications-${exportDate()}.csv`, rows);
     } catch (error) {
       setExportError(
         error instanceof Error
@@ -2861,10 +2841,7 @@ function ImportWizardContent() {
               last_inspection_date?: string | null;
               next_inspection_date?: string | null;
 
-              lifecycle_status:
-                | "active"
-                | "out_of_service"
-                | "removed";
+              lifecycle_status: "active" | "out_of_service" | "removed";
 
               notes?: string | null;
               document_url?: string | null;
@@ -2917,17 +2894,11 @@ function ImportWizardContent() {
         ]);
 
       const membersById = new Map(
-        (assetsPayload.members ?? []).map((member) => [
-          member.userId,
-          member,
-        ]),
+        (assetsPayload.members ?? []).map((member) => [member.userId, member]),
       );
 
       const typesById = new Map(
-        (typesPayload.items ?? []).map((type) => [
-          type.id,
-          type,
-        ]),
+        (typesPayload.items ?? []).map((type) => [type.id, type]),
       );
 
       const requirementsByTypeId = new Map(
@@ -2939,13 +2910,9 @@ function ImportWizardContent() {
 
       const rows = (assetsPayload.items ?? [])
         .map((asset) => {
-          const type = typesById.get(
-            asset.equipment_type_id,
-          );
+          const type = typesById.get(asset.equipment_type_id);
 
-          const requirement = requirementsByTypeId.get(
-            asset.equipment_type_id,
-          );
+          const requirement = requirementsByTypeId.get(asset.equipment_type_id);
 
           const member = asset.assigned_user_id
             ? membersById.get(asset.assigned_user_id)
@@ -2954,66 +2921,45 @@ function ImportWizardContent() {
           return {
             equipmentId: asset.id,
 
-            equipmentType:
-              type?.name ||
-              asset.equipment_type_id,
+            equipmentType: type?.name || asset.equipment_type_id,
 
-            equipmentTypeId:
-              asset.equipment_type_id,
+            equipmentTypeId: asset.equipment_type_id,
 
-            category:
-              type?.category,
+            category: type?.category,
 
-            typeDescription:
-              type?.description,
+            typeDescription: type?.description,
 
-            manufacturer:
-              asset.manufacturer,
+            manufacturer: asset.manufacturer,
 
-            model:
-              asset.model,
+            model: asset.model,
 
-            serialNumber:
-              asset.serial_number,
+            serialNumber: asset.serial_number,
 
-            lotNumber:
-              asset.lot_number,
+            lotNumber: asset.lot_number,
 
-            assignedOfficer:
-              member?.fullName,
+            assignedOfficer: member?.fullName,
 
-            badgeNumber:
-              member?.badgeNumber,
+            badgeNumber: member?.badgeNumber,
 
-            rankTitle:
-              member?.rankTitle,
+            rankTitle: member?.rankTitle,
 
-            assignedUserId:
-              asset.assigned_user_id,
+            assignedUserId: asset.assigned_user_id,
 
-            issueDate:
-              asset.issue_date,
+            issueDate: asset.issue_date,
 
-            expirationDate:
-              asset.expiration_date,
+            expirationDate: asset.expiration_date,
 
-            expirationRequired:
-              type?.expiration_required,
+            expirationRequired: type?.expiration_required,
 
-            defaultValidDays:
-              type?.default_valid_days,
+            defaultValidDays: type?.default_valid_days,
 
-            defaultExpirationDueSoonDays:
-              type?.default_due_soon_days,
+            defaultExpirationDueSoonDays: type?.default_due_soon_days,
 
-            lastInspectionDate:
-              asset.last_inspection_date,
+            lastInspectionDate: asset.last_inspection_date,
 
-            nextInspectionDate:
-              asset.next_inspection_date,
+            nextInspectionDate: asset.next_inspection_date,
 
-            inspectionRequired:
-              type?.inspection_required,
+            inspectionRequired: type?.inspection_required,
 
             defaultInspectionIntervalDays:
               type?.default_inspection_interval_days,
@@ -3021,17 +2967,13 @@ function ImportWizardContent() {
             defaultInspectionDueSoonDays:
               type?.default_inspection_due_soon_days,
 
-            requiredByDepartment:
-              requirement?.is_required,
+            requiredByDepartment: requirement?.is_required,
 
-            requiredQuantity:
-              requirement?.required_quantity,
+            requiredQuantity: requirement?.required_quantity,
 
-            requirementValidDays:
-              requirement?.valid_days,
+            requirementValidDays: requirement?.valid_days,
 
-            requirementDueSoonDays:
-              requirement?.due_soon_days,
+            requirementDueSoonDays: requirement?.due_soon_days,
 
             requirementInspectionIntervalDays:
               requirement?.inspection_interval_days,
@@ -3039,23 +2981,17 @@ function ImportWizardContent() {
             requirementInspectionDueSoonDays:
               requirement?.inspection_due_soon_days,
 
-            requirementNotes:
-              requirement?.notes,
+            requirementNotes: requirement?.notes,
 
-            lifecycleStatus:
-              asset.lifecycle_status,
+            lifecycleStatus: asset.lifecycle_status,
 
-            documentUrl:
-              asset.document_url,
+            documentUrl: asset.document_url,
 
-            notes:
-              asset.notes,
+            notes: asset.notes,
           };
         })
         .sort((a, b) => {
-          const typeCompare = String(
-            a.equipmentType ?? "",
-          ).localeCompare(
+          const typeCompare = String(a.equipmentType ?? "").localeCompare(
             String(b.equipmentType ?? ""),
           );
 
@@ -3063,22 +2999,15 @@ function ImportWizardContent() {
             return typeCompare;
           }
 
-          return String(
-            a.assignedOfficer ?? "",
-          ).localeCompare(
+          return String(a.assignedOfficer ?? "").localeCompare(
             String(b.assignedOfficer ?? ""),
           );
         });
 
-      await downloadCsv(
-        `tracepoint-equipment-${exportDate()}.csv`,
-        rows,
-      );
+      await downloadCsv(`tracepoint-equipment-${exportDate()}.csv`, rows);
     } catch (error) {
       setExportError(
-        error instanceof Error
-          ? error.message
-          : "Equipment export failed.",
+        error instanceof Error ? error.message : "Equipment export failed.",
       );
     } finally {
       setExporting(null);
@@ -3144,15 +3073,9 @@ function ImportWizardContent() {
           qualificationReason: string;
 
           inspectionStatus:
-            | "Not Inspected"
-            | "Current"
-            | "Due Soon"
-            | "Overdue";
+            "Not Inspected" | "Current" | "Due Soon" | "Overdue";
 
-          compliance:
-            | "Authorized"
-            | "At Risk"
-            | "Non-Compliant";
+          compliance: "Authorized" | "At Risk" | "Non-Compliant";
 
           auditTrail?: Array<{
             id: string;
@@ -3194,8 +3117,7 @@ function ImportWizardContent() {
 
           const submittedEvents = auditTrail.filter(
             (event) =>
-              event.action === "Submitted" ||
-              event.action === "Resubmitted",
+              event.action === "Submitted" || event.action === "Resubmitted",
           );
 
           const approvalEvents = auditTrail.filter(
@@ -3207,8 +3129,7 @@ function ImportWizardContent() {
           );
 
           const returnEvents = auditTrail.filter(
-            (event) =>
-              event.action === "Returned for Correction",
+            (event) => event.action === "Returned for Correction",
           );
 
           const revocationEvents = auditTrail.filter(
@@ -3234,61 +3155,44 @@ function ImportWizardContent() {
             holster: record.holster,
 
             proofOwnership: record.proofOwnership,
-            qualificationReviewed:
-              record.qualificationReviewed,
-            inspectionReviewed:
-              record.inspectionReviewed,
-            policyAcknowledged:
-              record.policyAcknowledged,
+            qualificationReviewed: record.qualificationReviewed,
+            inspectionReviewed: record.inspectionReviewed,
+            policyAcknowledged: record.policyAcknowledged,
 
             officerNotes: record.officerNotes,
 
             requestStatus: record.requestStatus,
-            authorizationStatus:
-              record.authorizationStatus,
+            authorizationStatus: record.authorizationStatus,
 
             submittedAt: record.submittedAt,
             reviewedAt: record.reviewedAt,
             reviewedBy: record.reviewedBy,
 
-            approvalEffectiveDate:
-              record.approvalDate,
+            approvalEffectiveDate: record.approvalDate,
 
-            approvalExpirationDate:
-              record.approvalExpires,
+            approvalExpirationDate: record.approvalExpires,
 
-            decisionNotes:
-              record.decisionNotes,
+            decisionNotes: record.decisionNotes,
 
-            qualificationStatus:
-              record.qualificationStatus,
+            qualificationStatus: record.qualificationStatus,
 
-            qualificationReason:
-              record.qualificationReason,
+            qualificationReason: record.qualificationReason,
 
-            inspectionStatus:
-              record.inspectionStatus,
+            inspectionStatus: record.inspectionStatus,
 
-            complianceStatus:
-              record.compliance,
+            complianceStatus: record.compliance,
 
-            workflowEventCount:
-              auditTrail.length,
+            workflowEventCount: auditTrail.length,
 
-            submissionEventCount:
-              submittedEvents.length,
+            submissionEventCount: submittedEvents.length,
 
-            approvalEventCount:
-              approvalEvents.length,
+            approvalEventCount: approvalEvents.length,
 
-            denialEventCount:
-              denialEvents.length,
+            denialEventCount: denialEvents.length,
 
-            returnForCorrectionCount:
-              returnEvents.length,
+            returnForCorrectionCount: returnEvents.length,
 
-            revocationEventCount:
-              revocationEvents.length,
+            revocationEventCount: revocationEvents.length,
 
             auditHistory,
           };
@@ -3359,15 +3263,9 @@ function ImportWizardContent() {
         action: event.action,
         changedByUserId: event.changed_by_user_id,
         changeNote: event.change_note,
-        changedFields: stringifyAuditValue(
-          event.changed_fields,
-        ),
-        oldValues: stringifyAuditValue(
-          event.old_values,
-        ),
-        newValues: stringifyAuditValue(
-          event.new_values,
-        ),
+        changedFields: stringifyAuditValue(event.changed_fields),
+        oldValues: stringifyAuditValue(event.old_values),
+        newValues: stringifyAuditValue(event.new_values),
       }));
 
       await downloadCsv(
@@ -3438,14 +3336,11 @@ function ImportWizardContent() {
     };
   }, [departmentId]);
 
-
   async function handleGenerateCompleteReport() {
     setReportGenerating(true);
     setExportError(null);
 
     try {
-      type JsonObject = Record<string, any>;
-
       async function safeReportFetch(
         name: string,
         url: string,
@@ -3453,13 +3348,19 @@ function ImportWizardContent() {
       ): Promise<{
         name: string;
         ok: boolean;
-        data: JsonObject;
+        data: ReportRecord;
         error?: string;
       }> {
         const reportKeys = Array.isArray(reportKey) ? reportKey : [reportKey];
-        if (!availableReports.some((definition) => reportKeys.includes(definition.key))) return { name, ok: true, data: {} };
+        if (
+          !availableReports.some((definition) =>
+            reportKeys.includes(definition.key),
+          )
+        )
+          return { name, ok: true, data: {} };
         try {
-          const data = await fetchJson<JsonObject>(url);
+          const payload = await fetchJson<unknown>(url);
+          const data = isReportRecord(payload) ? payload : {};
 
           return {
             name,
@@ -3480,31 +3381,19 @@ function ImportWizardContent() {
       }
 
       const results = await Promise.all([
-        safeReportFetch(
-          "Personnel",
-          "/api/pilot/personnel",
-          "personnel",
-        ),
-        safeReportFetch(
-          "Range / Training",
-          "/api/pilot/range-workspace",
-          ["range-days","training-records","qualifications"],
-        ),
+        safeReportFetch("Personnel", "/api/pilot/personnel", "personnel"),
+        safeReportFetch("Range / Training", "/api/pilot/range-workspace", [
+          "range-days",
+          "training-records",
+          "qualifications",
+        ]),
         safeReportFetch(
           "Certifications",
           "/api/training/certifications",
           "certifications",
         ),
-        safeReportFetch(
-          "Equipment",
-          "/api/equipment/assets",
-          "equipment",
-        ),
-        safeReportFetch(
-          "Equipment Types",
-          "/api/equipment/types",
-          "equipment",
-        ),
+        safeReportFetch("Equipment", "/api/equipment/assets", "equipment"),
+        safeReportFetch("Equipment Types", "/api/equipment/types", "equipment"),
         safeReportFetch(
           "Off-Duty Firearms",
           "/api/off-duty-firearms",
@@ -3515,153 +3404,129 @@ function ImportWizardContent() {
           "/api/settings/audit-log/export?purpose=complete_report",
           "audit-history",
         ),
+        safeReportFetch("Firearms", "/api/armory/firearms", "firearms"),
         safeReportFetch(
-          "Firearms",
-          "/api/armory/firearms",
-          "firearms",
+          "Firearm Inspections",
+          "/api/armory/inspections",
+          "firearm-inspections",
         ),
-        safeReportFetch("Firearm Inspections", "/api/armory/inspections", "firearm-inspections"),
-        safeReportFetch("Personal Rifles", "/api/armory/personal-rifles", "personal-rifles"),
         safeReportFetch(
-          "Ammunition",
-          "/api/armory/ammunition",
-          ["ammunition","ammunition-transactions"],
+          "Personal Rifles",
+          "/api/armory/personal-rifles",
+          "personal-rifles",
         ),
-        safeReportFetch("Agency Training", "/api/agency-training/events", "agency-training"),
-        safeReportFetch("Fleet", "/api/fleet/report", ["fleet","fleet-inspections","fleet-maintenance","fleet-equipment"]),
+        safeReportFetch("Ammunition", "/api/armory/ammunition", [
+          "ammunition",
+          "ammunition-transactions",
+        ]),
+        safeReportFetch(
+          "Agency Training",
+          "/api/agency-training/events",
+          "agency-training",
+        ),
+        safeReportFetch("Fleet", "/api/fleet/report", [
+          "fleet",
+          "fleet-inspections",
+          "fleet-maintenance",
+          "fleet-equipment",
+        ]),
         safeReportFetch("Alerts", "/api/notifications", "alerts"),
       ]);
 
-      const byName = new Map(
-        results.map((result) => [
-          result.name,
-          result,
-        ]),
+      const byName = new Map(results.map((result) => [result.name, result]));
+
+      const personnelData = byName.get("Personnel")?.data ?? {};
+
+      const rangeData = byName.get("Range / Training")?.data ?? {};
+
+      const certificationData = byName.get("Certifications")?.data ?? {};
+
+      const equipmentData = byName.get("Equipment")?.data ?? {};
+
+      const equipmentTypesData = byName.get("Equipment Types")?.data ?? {};
+
+      const offDutyData = byName.get("Off-Duty Firearms")?.data ?? {};
+
+      const auditData = byName.get("Audit History")?.data ?? {};
+
+      const firearmsData = byName.get("Firearms")?.data ?? {};
+      const firearmInspections = reportRecords(
+        byName.get("Firearm Inspections")?.data.inspections,
+      );
+      const personalRifles = reportRecords(
+        byName.get("Personal Rifles")?.data.rifles,
       );
 
-      const personnelData =
-        byName.get("Personnel")?.data ?? {};
+      const ammunitionData = byName.get("Ammunition")?.data ?? {};
+      const agencyTraining = reportRecords(
+        byName.get("Agency Training")?.data.events,
+      );
+      const fleet = reportRecords(byName.get("Fleet")?.data.vehicles);
+      const fleetInspections = reportRecords(
+        byName.get("Fleet")?.data.inspections,
+      );
+      const fleetWorkOrders = reportRecords(
+        byName.get("Fleet")?.data.workOrders,
+      );
+      const fleetEquipment = reportRecords(
+        byName.get("Fleet")?.data.equipment,
+      );
+      const alerts = reportRecords(byName.get("Alerts")?.data.items);
 
-      const rangeData =
-        byName.get("Range / Training")?.data ?? {};
+      const personnel = reportRecords(
+        personnelData.personnel ?? personnelData.members,
+      );
 
-      const certificationData =
-        byName.get("Certifications")?.data ?? {};
+      const workspace = isReportRecord(rangeData.workspace)
+        ? rangeData.workspace
+        : rangeData;
 
-      const equipmentData =
-        byName.get("Equipment")?.data ?? {};
-
-      const equipmentTypesData =
-        byName.get("Equipment Types")?.data ?? {};
-
-      const offDutyData =
-        byName.get("Off-Duty Firearms")?.data ?? {};
-
-      const auditData =
-        byName.get("Audit History")?.data ?? {};
-
-      const firearmsData =
-        byName.get("Firearms")?.data ?? {};
-      const firearmInspections = byName.get("Firearm Inspections")?.data.inspections ?? [];
-      const personalRifles = byName.get("Personal Rifles")?.data.rifles ?? [];
-
-      const ammunitionData =
-        byName.get("Ammunition")?.data ?? {};
-      const agencyTraining = byName.get("Agency Training")?.data.events ?? [];
-      const fleet = byName.get("Fleet")?.data.vehicles ?? [];
-      const fleetInspections = byName.get("Fleet")?.data.inspections ?? [];
-      const fleetWorkOrders = byName.get("Fleet")?.data.workOrders ?? [];
-      const fleetEquipment = byName.get("Fleet")?.data.equipment ?? [];
-      const alerts = byName.get("Alerts")?.data.items ?? [];
-
-      const personnel =
-        personnelData.personnel ??
-        personnelData.members ??
-        [];
-
-      const workspace =
-        rangeData.workspace ??
-        rangeData;
-
-      const rangeDays =
-        workspace.rangeDays ?? [];
-
-      const drills =
-        workspace.drillLibrary ?? [];
-
-      const trainingResults =
-        workspace.results ?? [];
-
-      const certifications =
-        certificationData.certifications ?? [];
-
-      const equipment =
-        equipmentData.items ?? [];
-
-      const equipmentTypes =
-        equipmentTypesData.items ?? [];
-
-      const offDuty =
-        offDutyData.records ?? [];
-
-      const audit =
-        auditData.events ?? [];
-
-      const firearms =
-        firearmsData.firearms ??
-        firearmsData.items ??
-        [];
-
-      const ammunitionLots = ammunitionData.lots ?? [];
-      const dutyLots = ammunitionLots.filter((lot:any)=>String(lot.category??"").toLowerCase()==="duty");
-      const trainingLots = ammunitionLots.filter((lot:any)=>String(lot.category??"").toLowerCase()!=="duty");
-      const ammunitionTransactions = ammunitionData.transactions ?? [];
+      const rangeDays = reportRecords(workspace.rangeDays);
+      const drills = reportRecords(workspace.drillLibrary);
+      const trainingResults = reportRecords(workspace.results);
+      const certifications = reportRecords(certificationData.certifications);
+      const equipment = reportRecords(equipmentData.items);
+      const equipmentTypes = reportRecords(equipmentTypesData.items);
+      const offDuty = reportRecords(offDutyData.records);
+      const audit = reportRecords(auditData.events);
+      const firearms = reportRecords(firearmsData.firearms ?? firearmsData.items);
+      const ammunitionLots = reportRecords(ammunitionData.lots);
+      const dutyLots = ammunitionLots.filter(
+        (lot) => String(lot.category ?? "").toLowerCase() === "duty",
+      );
+      const trainingLots = ammunitionLots.filter(
+        (lot) => String(lot.category ?? "").toLowerCase() !== "duty",
+      );
+      const ammunitionTransactions = reportRecords(ammunitionData.transactions);
 
       const selectedOfficerId =
-        reportOfficerId === "all"
-          ? null
-          : reportOfficerId;
+        reportOfficerId === "all" ? null : reportOfficerId;
 
-      function recordMatchesOfficer(
-        possibleIds: unknown[],
-      ) {
+      function recordMatchesOfficer(possibleIds: unknown[]) {
         if (!selectedOfficerId) {
           return true;
         }
 
         return possibleIds.some(
-          (value) =>
-            String(value ?? "") ===
-            selectedOfficerId,
+          (value) => String(value ?? "") === selectedOfficerId,
         );
       }
 
-      function inDateRange(
-        value?: string | null,
-      ) {
-        if (
-          reportDateMode !== "custom" ||
-          !value
-        ) {
+      function inDateRange(value?: string | null) {
+        if (reportDateMode !== "custom" || !value) {
           return true;
         }
 
         const parsed = new Date(
-          value.length === 10
-            ? `${value}T12:00:00`
-            : value,
+          value.length === 10 ? `${value}T12:00:00` : value,
         );
 
-        if (
-          Number.isNaN(parsed.getTime())
-        ) {
+        if (Number.isNaN(parsed.getTime())) {
           return false;
         }
 
         if (reportStartDate) {
-          const start = new Date(
-            `${reportStartDate}T00:00:00`,
-          );
+          const start = new Date(`${reportStartDate}T00:00:00`);
 
           if (parsed < start) {
             return false;
@@ -3669,9 +3534,7 @@ function ImportWizardContent() {
         }
 
         if (reportEndDate) {
-          const end = new Date(
-            `${reportEndDate}T23:59:59.999`,
-          );
+          const end = new Date(`${reportEndDate}T23:59:59.999`);
 
           if (parsed > end) {
             return false;
@@ -3703,360 +3566,220 @@ function ImportWizardContent() {
 
         const value = {
           name: String(name),
-          badge: String(
-            member.badgeNumber ??
-              member.badge_number ??
-              "",
-          ),
-          rank: String(
-            member.rankTitle ??
-              member.rank_title ??
-              "",
-          ),
+          badge: String(member.badgeNumber ?? member.badge_number ?? ""),
+          rank: String(member.rankTitle ?? member.rank_title ?? ""),
         };
 
-        for (const id of [
-          member.id,
-          member.userId,
-          member.user_id,
-        ]) {
+        for (const id of [member.id, member.userId, member.user_id]) {
           if (id) {
-            personnelMap.set(
-              String(id),
-              value,
-            );
+            personnelMap.set(String(id), value);
           }
         }
       }
 
-      for (
-        const member of
-        certificationData.members ?? []
-      ) {
-        const id =
-          member.user_id ??
-          member.userId;
+      for (const member of reportRecords(certificationData.members)) {
+        const id = member.user_id ?? member.userId;
 
         if (id) {
-          personnelMap.set(
-            String(id),
-            {
-              name: String(
-                member.full_name ??
-                  member.fullName ??
-                  id,
-              ),
-              badge: String(
-                member.badge_number ??
-                  member.badgeNumber ??
-                  "",
-              ),
-              rank: String(
-                member.rank_title ??
-                  member.rankTitle ??
-                  "",
-              ),
-            },
-          );
+          personnelMap.set(String(id), {
+            name: String(member.full_name ?? member.fullName ?? id),
+            badge: String(member.badge_number ?? member.badgeNumber ?? ""),
+            rank: String(member.rank_title ?? member.rankTitle ?? ""),
+          });
         }
       }
 
-      for (
-        const member of
-        equipmentData.members ?? []
-      ) {
-        const id =
-          member.userId ??
-          member.user_id;
+      for (const member of reportRecords(equipmentData.members)) {
+        const id = member.userId ?? member.user_id;
 
         if (id) {
-          personnelMap.set(
-            String(id),
-            {
-              name: String(
-                member.fullName ??
-                  member.full_name ??
-                  id,
-              ),
-              badge: String(
-                member.badgeNumber ??
-                  member.badge_number ??
-                  "",
-              ),
-              rank: String(
-                member.rankTitle ??
-                  member.rank_title ??
-                  "",
-              ),
-            },
-          );
+          personnelMap.set(String(id), {
+            name: String(member.fullName ?? member.full_name ?? id),
+            badge: String(member.badgeNumber ?? member.badge_number ?? ""),
+            rank: String(member.rankTitle ?? member.rank_title ?? ""),
+          });
         }
       }
 
-      const rangeDaysById =
-        new Map<string, any>();
+      const rangeDaysById = new Map<string, ReportRecord>();
 
       for (const rangeDay of rangeDays) {
         if (rangeDay.id) {
-          rangeDaysById.set(
-            String(rangeDay.id),
-            rangeDay,
-          );
+          rangeDaysById.set(String(rangeDay.id), rangeDay);
         }
       }
 
-      const drillsById =
-        new Map<string, any>();
+      const drillsById = new Map<string, ReportRecord>();
 
       for (const drill of drills) {
         if (drill.id) {
-          drillsById.set(
-            String(drill.id),
-            drill,
-          );
+          drillsById.set(String(drill.id), drill);
         }
       }
 
-      const equipmentTypesById =
-        new Map<string, any>();
+      const equipmentTypesById = new Map<string, ReportRecord>();
 
       for (const type of equipmentTypes) {
         if (type.id) {
-          equipmentTypesById.set(
-            String(type.id),
-            type,
-          );
+          equipmentTypesById.set(String(type.id), type);
         }
       }
 
-      const filteredTraining =
-        trainingResults.filter(
-          (result: any) => {
-            if (
-              !recordMatchesOfficer([
-                result.officerId,
-                result.officer_id,
-                result.userId,
-                result.user_id,
-              ])
-            ) {
-              return false;
-            }
+      const filteredTraining = trainingResults.filter((result) => {
+        if (
+          !recordMatchesOfficer([
+            result.officerId,
+            result.officer_id,
+            result.userId,
+            result.user_id,
+          ])
+        ) {
+          return false;
+        }
 
-            const day =
-              rangeDaysById.get(
-                String(
-                  result.rangeDayId ??
-                    result.range_day_id ??
-                    "",
-                ),
-              );
-
-            return inDateRange(
-              day?.date ??
-                result.date ??
-                result.trainingDate,
-            );
-          },
+        const day = rangeDaysById.get(
+          String(result.rangeDayId ?? result.range_day_id ?? ""),
         );
 
-      const filteredQualifications =
-        filteredTraining.filter(
-          (result: any) => {
-            const drill =
-              drillsById.get(
-                String(
-                  result.drillId ??
-                    result.drill_id ??
-                    "",
-                ),
-              );
+        return inDateRange(
+          reportString(day?.date) ??
+            reportString(result.date) ??
+            reportString(result.trainingDate),
+        );
+      });
 
-            const classification =
-              `${drill?.name ?? ""} ${
-                drill?.category ?? ""
-              }`.toLowerCase();
-
-            return (
-              classification.includes(
-                "qualification",
-              ) ||
-              classification.includes(
-                "qualifying",
-              ) ||
-              classification.includes(
-                "rifle",
-              )
-            );
-          },
+      const filteredQualifications = filteredTraining.filter((result) => {
+        const drill = drillsById.get(
+          String(result.drillId ?? result.drill_id ?? ""),
         );
 
-      const filteredRangeDays =
-        rangeDays.filter(
-          (rangeDay: any) => {
-            if (
-              !inDateRange(
-                rangeDay.date,
-              )
-            ) {
-              return false;
-            }
+        const classification = `${drill?.name ?? ""} ${
+          drill?.category ?? ""
+        }`.toLowerCase();
 
-            if (!selectedOfficerId) {
-              return true;
-            }
-
-            return filteredTraining.some(
-              (result: any) =>
-                String(
-                  result.rangeDayId ??
-                    result.range_day_id ??
-                    "",
-                ) ===
-                String(rangeDay.id),
-            );
-          },
+        return (
+          classification.includes("qualification") ||
+          classification.includes("qualifying") ||
+          classification.includes("rifle")
         );
+      });
 
-      const filteredCertifications =
-        certifications.filter(
-          (certification: any) => {
-            if (
-              !recordMatchesOfficer([
-                certification.user_id,
-                certification.userId,
-                certification.officerId,
-              ])
-            ) {
-              return false;
-            }
+      const filteredRangeDays = rangeDays.filter((rangeDay) => {
+        if (!inDateRange(reportString(rangeDay.date))) {
+          return false;
+        }
 
-            return inDateRange(
+        if (!selectedOfficerId) {
+          return true;
+        }
+
+        return filteredTraining.some(
+          (result) =>
+            String(result.rangeDayId ?? result.range_day_id ?? "") ===
+            String(rangeDay.id),
+        );
+      });
+
+      const filteredCertifications = certifications.filter(
+        (certification) => {
+          if (
+            !recordMatchesOfficer([
+              certification.user_id,
+              certification.userId,
+              certification.officerId,
+            ])
+          ) {
+            return false;
+          }
+
+          return inDateRange(
+            reportString(
               certification.issue_date ??
                 certification.issueDate ??
                 certification.expiration_date ??
                 certification.expirationDate,
-            );
-          },
+            ),
+          );
+        },
+      );
+
+      const filteredEquipment = equipment.filter((asset) => {
+        if (
+          !recordMatchesOfficer([
+            asset.assigned_user_id,
+            asset.assignedUserId,
+            asset.userId,
+          ])
+        ) {
+          return false;
+        }
+
+        return inDateRange(
+          reportString(
+            asset.issue_date ??
+              asset.issueDate ??
+              asset.expiration_date ??
+              asset.expirationDate,
+          ),
         );
+      });
 
-      const filteredEquipment =
-        equipment.filter(
-          (asset: any) => {
-            if (
-              !recordMatchesOfficer([
-                asset.assigned_user_id,
-                asset.assignedUserId,
-                asset.userId,
-              ])
-            ) {
-              return false;
-            }
+      const filteredOffDuty = offDuty.filter((record) => {
+        if (
+          !recordMatchesOfficer([
+            record.officerId,
+            record.officer_id,
+            record.userId,
+          ])
+        ) {
+          return false;
+        }
 
-            return inDateRange(
-              asset.issue_date ??
-                asset.issueDate ??
-                asset.expiration_date ??
-                asset.expirationDate,
-            );
-          },
+        if (
+          !inDateRange(
+            reportString(record.submittedAt ?? record.submitted_at),
+          )
+        ) {
+          return false;
+        }
+
+        if (reportStatus !== "all" && record.requestStatus !== reportStatus) {
+          return false;
+        }
+
+        return true;
+      });
+
+      const filteredAudit = audit.filter((event) => {
+        if (!inDateRange(reportString(event.created_at ?? event.createdAt))) {
+          return false;
+        }
+
+        if (!selectedOfficerId) {
+          return true;
+        }
+
+        return (
+          String(event.changed_by_user_id ?? event.changedByUserId ?? "") ===
+          selectedOfficerId
         );
+      });
 
-      const filteredOffDuty =
-        offDuty.filter(
-          (record: any) => {
-            if (
-              !recordMatchesOfficer([
-                record.officerId,
-                record.officer_id,
-                record.userId,
-              ])
-            ) {
-              return false;
-            }
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
 
-            if (
-              !inDateRange(
-                record.submittedAt ??
-                  record.submitted_at,
-              )
-            ) {
-              return false;
-            }
+      const pdf = await PDFDocument.create();
 
-            if (
-              reportStatus !== "all" &&
-              record.requestStatus !==
-                reportStatus
-            ) {
-              return false;
-            }
+      const regular = await pdf.embedFont(StandardFonts.Helvetica);
 
-            return true;
-          },
-        );
+      const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-      const filteredAudit =
-        audit.filter(
-          (event: any) => {
-            if (
-              !inDateRange(
-                event.created_at ??
-                  event.createdAt,
-              )
-            ) {
-              return false;
-            }
-
-            if (!selectedOfficerId) {
-              return true;
-            }
-
-            return (
-              String(
-                event.changed_by_user_id ??
-                  event.changedByUserId ??
-                  "",
-              ) === selectedOfficerId
-            );
-          },
-        );
-
-      const {
-        PDFDocument,
-        StandardFonts,
-        rgb,
-      } = await import("pdf-lib");
-
-      const pdf =
-        await PDFDocument.create();
-
-      const regular =
-        await pdf.embedFont(
-          StandardFonts.Helvetica,
-        );
-
-      const bold =
-        await pdf.embedFont(
-          StandardFonts.HelveticaBold,
-        );
-
-      let logo:
-        | Awaited<
-            ReturnType<typeof pdf.embedPng>
-          >
-        | null = null;
+      let logo: Awaited<ReturnType<typeof pdf.embedPng>> | null = null;
 
       try {
-        const logoResponse =
-          await fetch(
-            "/tracepoint-logo-dark.png",
-          );
+        const logoResponse = await fetch("/tracepoint-logo-dark.png");
 
         if (logoResponse.ok) {
-          logo = await pdf.embedPng(
-            await logoResponse.arrayBuffer(),
-          );
+          logo = await pdf.embedPng(await logoResponse.arrayBuffer());
         }
       } catch {
         logo = null;
@@ -4068,102 +3791,82 @@ function ImportWizardContent() {
       const RIGHT = 44;
       const BOTTOM = 52;
 
-      const dark = rgb(
-        2 / 255,
-        6 / 255,
-        23 / 255,
-      );
+      const dark = rgb(2 / 255, 6 / 255, 23 / 255);
 
-      const textColor = rgb(
-        15 / 255,
-        23 / 255,
-        42 / 255,
-      );
+      const textColor = rgb(15 / 255, 23 / 255, 42 / 255);
 
-      const muted = rgb(
-        71 / 255,
-        85 / 255,
-        105 / 255,
-      );
+      const muted = rgb(71 / 255, 85 / 255, 105 / 255);
 
-      const border = rgb(
-        203 / 255,
-        213 / 255,
-        225 / 255,
-      );
+      const border = rgb(203 / 255, 213 / 255, 225 / 255);
 
       const white = rgb(1, 1, 1);
 
-      let page =
-        pdf.addPage([
-          WIDTH,
-          HEIGHT,
-        ]);
+      let page = pdf.addPage([WIDTH, HEIGHT]);
 
       let y = 630;
       let sectionSuppressed = false;
       let currentSection = "";
-      const sectionReportKeys: Record<string,string> = {"QUALIFICATION HISTORY":"qualifications","TRAINING RECORDS":"training-records","RANGE DAYS":"range-days","CERTIFICATIONS":"certifications","EQUIPMENT":"equipment","OFF-DUTY FIREARMS":"off-duty-firearms","FIREARMS INVENTORY":"firearms","AMMUNITION":"ammunition","AGENCY TRAINING":"agency-training","FLEET":"fleet","FLEET INSPECTIONS":"fleet-inspections","FLEET MAINTENANCE AND WORK ORDERS":"fleet-maintenance","VEHICLE-ASSOCIATED EQUIPMENT":"fleet-equipment","CURRENT ALERTS AND UNRESOLVED ITEMS":"alerts","AUDIT HISTORY":"audit-history"};
-      const summaryReportKeys: Record<string,string> = {"Personnel Records":"personnel","Firearms":"firearms","Duty Ammunition Lots":"ammunition","Training Ammunition Lots":"ammunition","Qualification Records":"qualifications","Training Records":"training-records","Range Days":"range-days","Certifications":"certifications","Equipment Assets":"equipment","Off-Duty Firearm Requests":"off-duty-firearms","Audit Events":"audit-history","Agency Training Events":"agency-training","Fleet Vehicles":"fleet","Fleet Inspections":"fleet-inspections","Fleet Work Orders":"fleet-maintenance","Vehicle Equipment":"fleet-equipment","Current Alerts":"alerts"};
-      const reportAvailable=(key:string)=>availableReports.some((definition)=>definition.key===key);
+      const sectionReportKeys: Record<string, string> = {
+        "QUALIFICATION HISTORY": "qualifications",
+        "TRAINING RECORDS": "training-records",
+        "RANGE DAYS": "range-days",
+        CERTIFICATIONS: "certifications",
+        EQUIPMENT: "equipment",
+        "OFF-DUTY FIREARMS": "off-duty-firearms",
+        "FIREARMS INVENTORY": "firearms",
+        AMMUNITION: "ammunition",
+        "AGENCY TRAINING": "agency-training",
+        FLEET: "fleet",
+        "FLEET INSPECTIONS": "fleet-inspections",
+        "FLEET MAINTENANCE AND WORK ORDERS": "fleet-maintenance",
+        "VEHICLE-ASSOCIATED EQUIPMENT": "fleet-equipment",
+        "CURRENT ALERTS AND UNRESOLVED ITEMS": "alerts",
+        "AUDIT HISTORY": "audit-history",
+      };
+      const summaryReportKeys: Record<string, string> = {
+        "Personnel Records": "personnel",
+        Firearms: "firearms",
+        "Duty Ammunition Lots": "ammunition",
+        "Training Ammunition Lots": "ammunition",
+        "Qualification Records": "qualifications",
+        "Training Records": "training-records",
+        "Range Days": "range-days",
+        Certifications: "certifications",
+        "Equipment Assets": "equipment",
+        "Off-Duty Firearm Requests": "off-duty-firearms",
+        "Audit Events": "audit-history",
+        "Agency Training Events": "agency-training",
+        "Fleet Vehicles": "fleet",
+        "Fleet Inspections": "fleet-inspections",
+        "Fleet Work Orders": "fleet-maintenance",
+        "Vehicle Equipment": "fleet-equipment",
+        "Current Alerts": "alerts",
+      };
+      const reportAvailable = (key: string) =>
+        availableReports.some((definition) => definition.key === key);
 
-      function clean(
-        value: unknown,
-      ) {
-        if (
-          value === null ||
-          value === undefined ||
-          value === ""
-        ) {
+      function clean(value: unknown) {
+        if (value === null || value === undefined || value === "") {
           return "-";
         }
 
         return String(value);
       }
 
-      function dateText(
-        value?: string | null,
-      ) {
-        if (!value) {
+      function dateText(value: unknown) {
+        if (typeof value !== "string" || !value) {
           return "-";
         }
 
-        const date = new Date(
-          value.length === 10
-            ? `${value}T12:00:00`
-            : value,
-        );
-
-        if (
-          Number.isNaN(
-            date.getTime(),
-          )
-        ) {
-          return value;
-        }
-
-        return date.toLocaleDateString();
+        return formatDisplayDate(value, value);
       }
 
-      function dateTimeText(
-        value?: string | null,
-      ) {
-        if (!value) {
+      function dateTimeText(value: unknown) {
+        if (typeof value !== "string" || !value) {
           return "-";
         }
 
-        const date =
-          new Date(value);
-
-        if (
-          Number.isNaN(
-            date.getTime(),
-          )
-        ) {
-          return value;
-        }
-
-        return date.toLocaleString();
+        return formatDisplayDateTime(value, value);
       }
 
       function wrapText(
@@ -4172,23 +3875,15 @@ function ImportWizardContent() {
         size: number,
         font = regular,
       ) {
-        const words =
-          clean(value).split(/\s+/);
+        const words = clean(value).split(/\s+/);
 
         const lines: string[] = [];
         let current = "";
 
         for (const word of words) {
-          const test = current
-            ? `${current} ${word}`
-            : word;
+          const test = current ? `${current} ${word}` : word;
 
-          if (
-            font.widthOfTextAtSize(
-              test,
-              size,
-            ) <= maxWidth
-          ) {
+          if (font.widthOfTextAtSize(test, size) <= maxWidth) {
             current = test;
           } else {
             if (current) {
@@ -4203,9 +3898,7 @@ function ImportWizardContent() {
           lines.push(current);
         }
 
-        return lines.length
-          ? lines
-          : [""];
+        return lines.length ? lines : [""];
       }
 
       function drawMasthead() {
@@ -4218,87 +3911,56 @@ function ImportWizardContent() {
         });
 
         if (logo) {
-          const dimensions =
-            logo.scale(0.16);
+          const dimensions = logo.scale(0.16);
 
           const maxWidth = 190;
 
           const ratio =
-            dimensions.width >
-            maxWidth
-              ? maxWidth /
-                dimensions.width
-              : 1;
+            dimensions.width > maxWidth ? maxWidth / dimensions.width : 1;
 
           page.drawImage(logo, {
             x: LEFT,
             y: 718,
-            width:
-              dimensions.width *
-              ratio,
-            height:
-              dimensions.height *
-              ratio,
+            width: dimensions.width * ratio,
+            height: dimensions.height * ratio,
           });
         } else {
-          page.drawText(
-            "TRACEPOINT",
-            {
-              x: LEFT,
-              y: 740,
-              size: 20,
-              font: bold,
-              color: white,
-            },
-          );
-        }
-
-        page.drawText(
-          "COMPLETE TRACEPOINT REPORT",
-          {
+          page.drawText("TRACEPOINT", {
             x: LEFT,
-            y: 688,
-            size: 15,
+            y: 740,
+            size: 20,
             font: bold,
             color: white,
-          },
-        );
+          });
+        }
 
-        page.drawText(
-          "Operational Accountability. Verified.",
-          {
-            x: LEFT,
-            y: 670,
-            size: 8,
-            font: regular,
-            color: rgb(
-              203 / 255,
-              213 / 255,
-              225 / 255,
-            ),
-          },
-        );
+        page.drawText("COMPLETE TRACEPOINT REPORT", {
+          x: LEFT,
+          y: 688,
+          size: 15,
+          font: bold,
+          color: white,
+        });
+
+        page.drawText("Operational Accountability. Verified.", {
+          x: LEFT,
+          y: 670,
+          size: 8,
+          font: regular,
+          color: rgb(203 / 255, 213 / 255, 225 / 255),
+        });
 
         y = 630;
       }
 
       function nextPage() {
-        page =
-          pdf.addPage([
-            WIDTH,
-            HEIGHT,
-          ]);
+        page = pdf.addPage([WIDTH, HEIGHT]);
 
         drawMasthead();
       }
 
-      function ensureSpace(
-        required: number,
-      ) {
-        if (
-          y - required <
-          BOTTOM
-        ) {
+      function ensureSpace(required: number) {
+        if (y - required < BOTTOM) {
           nextPage();
         }
       }
@@ -4312,39 +3974,24 @@ function ImportWizardContent() {
         },
       ) {
         if (sectionSuppressed) return;
-        const size =
-          options?.size ?? 8;
+        const size = options?.size ?? 8;
 
-        const indent =
-          options?.indent ?? 0;
+        const indent = options?.indent ?? 0;
 
-        const font =
-          options?.bold
-            ? bold
-            : regular;
+        const font = options?.bold ? bold : regular;
 
-        const lines =
-          wrapText(
-            value,
-            WIDTH -
-              LEFT -
-              RIGHT -
-              indent,
-            size,
-            font,
-          );
-
-        ensureSpace(
-          lines.length *
-            (size + 4) +
-            3,
+        const lines = wrapText(
+          value,
+          WIDTH - LEFT - RIGHT - indent,
+          size,
+          font,
         );
+
+        ensureSpace(lines.length * (size + 4) + 3);
 
         for (const row of lines) {
           page.drawText(row, {
-            x:
-              LEFT +
-              indent,
+            x: LEFT + indent,
             y,
             size,
             font,
@@ -4355,23 +4002,22 @@ function ImportWizardContent() {
         }
       }
 
-      function field(
-        label: string,
-        value: unknown,
-      ) {
-        if (currentSection === "EXECUTIVE SUMMARY" && summaryReportKeys[label] && !reportAvailable(summaryReportKeys[label])) return;
-        write(
-          `${label}: ${clean(
-            value,
-          )}`,
-        );
+      function field(label: string, value: unknown) {
+        if (
+          currentSection === "EXECUTIVE SUMMARY" &&
+          summaryReportKeys[label] &&
+          !reportAvailable(summaryReportKeys[label])
+        )
+          return;
+        write(`${label}: ${clean(value)}`);
       }
 
-      function section(
-        title: string,
-      ) {
+      function section(title: string) {
         currentSection = title;
-        sectionSuppressed = Boolean(sectionReportKeys[title] && !reportAvailable(sectionReportKeys[title]));
+        sectionSuppressed = Boolean(
+          sectionReportKeys[title] &&
+          !reportAvailable(sectionReportKeys[title]),
+        );
         if (sectionSuppressed) return;
         ensureSpace(34);
 
@@ -4393,9 +4039,7 @@ function ImportWizardContent() {
             y,
           },
           end: {
-            x:
-              WIDTH -
-              RIGHT,
+            x: WIDTH - RIGHT,
             y,
           },
           thickness: 0.7,
@@ -4405,9 +4049,7 @@ function ImportWizardContent() {
         y -= 15;
       }
 
-      function itemHeading(
-        value: string,
-      ) {
+      function itemHeading(value: string) {
         if (sectionSuppressed) return;
         ensureSpace(24);
 
@@ -4421,24 +4063,16 @@ function ImportWizardContent() {
 
       drawMasthead();
 
-      const selectedOfficer =
-        selectedOfficerId
-          ? personnelMap.get(
-              selectedOfficerId,
-            )
-          : null;
+      const selectedOfficer = selectedOfficerId
+        ? personnelMap.get(selectedOfficerId)
+        : null;
 
-      section(
-        "REPORT PARAMETERS",
-      );
+      section("REPORT PARAMETERS");
 
       field(
         "Officer",
-        selectedOfficer
-          ?.name ??
-          (selectedOfficerId
-            ? selectedOfficerId
-            : "All Officers"),
+        selectedOfficer?.name ??
+          (selectedOfficerId ? selectedOfficerId : "All Officers"),
       );
 
       field(
@@ -4446,86 +4080,53 @@ function ImportWizardContent() {
         reportDateMode === "all"
           ? "All Time"
           : `${
-              reportStartDate
-                ? dateText(
-                    reportStartDate,
-                  )
-                : "Beginning"
-            } through ${
-              reportEndDate
-                ? dateText(
-                    reportEndDate,
-                  )
-                : "Present"
-            }`,
+              reportStartDate ? dateText(reportStartDate) : "Beginning"
+            } through ${reportEndDate ? dateText(reportEndDate) : "Present"}`,
       );
 
-      field(
-        "Generated",
-        new Date().toLocaleString(),
-      );
+      field("Generated", new Date().toLocaleString());
 
-      section(
-        "EXECUTIVE SUMMARY",
-      );
+      section("EXECUTIVE SUMMARY");
 
-      field(
-        "Personnel Records",
-        personnel.length,
-      );
+      field("Personnel Records", personnel.length);
 
-      field(
-        "Firearms",
-        firearms.length,
-      );
-      if (availableReports.some((definition)=>definition.key==="firearm-inspections")) field("Firearm Inspections",firearmInspections.length);
+      field("Firearms", firearms.length);
+      if (
+        availableReports.some(
+          (definition) => definition.key === "firearm-inspections",
+        )
+      )
+        field("Firearm Inspections", firearmInspections.length);
 
-      field(
-        "Duty Ammunition Lots",
-        dutyLots.length,
-      );
+      field("Duty Ammunition Lots", dutyLots.length);
 
-      field(
-        "Training Ammunition Lots",
-        trainingLots.length,
-      );
-      if (availableReports.some((definition)=>definition.key==="ammunition-transactions")) field("Ammunition Transactions",ammunitionTransactions.length);
-      if (availableReports.some((definition)=>definition.key==="personal-rifles")) field("Personal Rifles",personalRifles.length);
+      field("Training Ammunition Lots", trainingLots.length);
+      if (
+        availableReports.some(
+          (definition) => definition.key === "ammunition-transactions",
+        )
+      )
+        field("Ammunition Transactions", ammunitionTransactions.length);
+      if (
+        availableReports.some(
+          (definition) => definition.key === "personal-rifles",
+        )
+      )
+        field("Personal Rifles", personalRifles.length);
 
-      field(
-        "Qualification Records",
-        filteredQualifications.length,
-      );
+      field("Qualification Records", filteredQualifications.length);
 
-      field(
-        "Training Records",
-        filteredTraining.length,
-      );
+      field("Training Records", filteredTraining.length);
 
-      field(
-        "Range Days",
-        filteredRangeDays.length,
-      );
+      field("Range Days", filteredRangeDays.length);
 
-      field(
-        "Certifications",
-        filteredCertifications.length,
-      );
+      field("Certifications", filteredCertifications.length);
 
-      field(
-        "Equipment Assets",
-        filteredEquipment.length,
-      );
+      field("Equipment Assets", filteredEquipment.length);
 
-      field(
-        "Off-Duty Firearm Requests",
-        filteredOffDuty.length,
-      );
+      field("Off-Duty Firearm Requests", filteredOffDuty.length);
 
-      field(
-        "Audit Events",
-        filteredAudit.length,
-      );
+      field("Audit Events", filteredAudit.length);
       field("Agency Training Events", agencyTraining.length);
       field("Fleet Vehicles", fleet.length);
       field("Fleet Inspections", fleetInspections.length);
@@ -4533,111 +4134,64 @@ function ImportWizardContent() {
       field("Vehicle Equipment", fleetEquipment.length);
       field("Current Alerts", alerts.length);
 
-      const failedSections =
-        results.filter(
-          (result) =>
-            !result.ok,
-        );
+      const failedSections = results.filter((result) => !result.ok);
 
-      if (
-        failedSections.length
-      ) {
-        section(
-          "DATA AVAILABILITY",
-        );
+      if (failedSections.length) {
+        section("DATA AVAILABILITY");
 
         write(
           "The report was generated successfully, but the following sections could not be retrieved:",
         );
 
-        for (
-          const failed of
-          failedSections
-        ) {
-          write(
-            `${failed.name}: ${
-              failed.error ??
-              "Unavailable"
-            }`,
-            {
-              indent: 10,
-            },
-          );
+        for (const failed of failedSections) {
+          write(`${failed.name}: ${failed.error ?? "Unavailable"}`, {
+            indent: 10,
+          });
         }
       }
 
-      if (availableReports.some((definition)=>definition.key==="personnel")) {
-      section("PERSONNEL DIRECTORY");
-      if (!personnel.length) write("No personnel records returned.");
-      for (const person of personnel) { itemHeading(clean(person.displayName ?? person.fullName ?? person.name));field("Badge",person.badgeNumber ?? person.badge_number);field("Rank",person.rankTitle ?? person.rank_title);field("Unit",person.unitName ?? person.unit_name);field("Active",person.isActive ?? person.is_active); }
-      }
-
-      section(
-        "QUALIFICATION HISTORY",
-      );
-
       if (
-        !filteredQualifications.length
+        availableReports.some((definition) => definition.key === "personnel")
       ) {
-        write(
-          "No matching qualification records.",
-        );
+        section("PERSONNEL DIRECTORY");
+        if (!personnel.length) write("No personnel records returned.");
+        for (const person of personnel) {
+          itemHeading(
+            clean(person.displayName ?? person.fullName ?? person.name),
+          );
+          field("Badge", person.badgeNumber ?? person.badge_number);
+          field("Rank", person.rankTitle ?? person.rank_title);
+          field("Unit", person.unitName ?? person.unit_name);
+          field("Active", person.isActive ?? person.is_active);
+        }
       }
 
-      for (
-        const result of
-        filteredQualifications
-      ) {
-        const day =
-          rangeDaysById.get(
-            String(
-              result.rangeDayId ??
-                result.range_day_id ??
-                "",
-            ),
-          );
+      section("QUALIFICATION HISTORY");
 
-        const drill =
-          drillsById.get(
-            String(
-              result.drillId ??
-                result.drill_id ??
-                "",
-            ),
-          );
+      if (!filteredQualifications.length) {
+        write("No matching qualification records.");
+      }
 
-        const officer =
-          personnelMap.get(
-            String(
-              result.officerId ??
-                result.officer_id ??
-                "",
-            ),
-          );
-
-        itemHeading(
-          `${dateText(
-            day?.date,
-          )} - ${
-            officer?.name ??
-            "Officer"
-          }`,
+      for (const result of filteredQualifications) {
+        const day = rangeDaysById.get(
+          String(result.rangeDayId ?? result.range_day_id ?? ""),
         );
 
-        field(
-          "Course / Drill",
-          drill?.name,
+        const drill = drillsById.get(
+          String(result.drillId ?? result.drill_id ?? ""),
         );
 
-        field(
-          "Category",
-          drill?.category,
+        const officer = personnelMap.get(
+          String(result.officerId ?? result.officer_id ?? ""),
         );
 
-        field(
-          "Score",
-          result.score,
-        );
+        itemHeading(`${dateText(day?.date)} - ${officer?.name ?? "Officer"}`);
+
+        field("Course / Drill", drill?.name);
+
+        field("Category", drill?.category);
+
+        field("Score", result.score);
 
         field(
           "Result",
@@ -4650,170 +4204,79 @@ function ImportWizardContent() {
                 : "Incomplete",
         );
 
-        if (
-          reportIncludeNotes &&
-          result.notes
-        ) {
-          field(
-            "Notes",
-            result.notes,
-          );
+        if (reportIncludeNotes && result.notes) {
+          field("Notes", result.notes);
         }
 
         y -= 5;
       }
 
-      section(
-        "TRAINING RECORDS",
-      );
+      section("TRAINING RECORDS");
 
-      if (
-        !filteredTraining.length
-      ) {
-        write(
-          "No matching training records.",
-        );
+      if (!filteredTraining.length) {
+        write("No matching training records.");
       }
 
-      for (
-        const result of
-        filteredTraining
-      ) {
-        const day =
-          rangeDaysById.get(
-            String(
-              result.rangeDayId ??
-                result.range_day_id ??
-                "",
-            ),
-          );
+      for (const result of filteredTraining) {
+        const day = rangeDaysById.get(
+          String(result.rangeDayId ?? result.range_day_id ?? ""),
+        );
 
-        const drill =
-          drillsById.get(
-            String(
-              result.drillId ??
-                result.drill_id ??
-                "",
-            ),
-          );
+        const drill = drillsById.get(
+          String(result.drillId ?? result.drill_id ?? ""),
+        );
 
-        const officer =
-          personnelMap.get(
-            String(
-              result.officerId ??
-                result.officer_id ??
-                "",
-            ),
-          );
+        const officer = personnelMap.get(
+          String(result.officerId ?? result.officer_id ?? ""),
+        );
 
         itemHeading(
-          `${dateText(
-            day?.date,
-          )} - ${
-            drill?.name ??
-            "Training Activity"
-          }`,
+          `${dateText(day?.date)} - ${drill?.name ?? "Training Activity"}`,
         );
 
-        field(
-          "Officer",
-          officer?.name,
-        );
+        field("Officer", officer?.name);
 
-        field(
-          "Range Day",
-          day?.title,
-        );
+        field("Range Day", day?.title);
 
-        field(
-          "Location",
-          day?.location,
-        );
+        field("Location", day?.location);
 
-        field(
-          "Score",
-          result.score,
-        );
+        field("Score", result.score);
 
-        field(
-          "Completed",
-          result.completed
-            ? "Yes"
-            : "No",
-        );
+        field("Completed", result.completed ? "Yes" : "No");
 
         y -= 5;
       }
 
       section("RANGE DAYS");
 
-      if (
-        !filteredRangeDays.length
-      ) {
-        write(
-          "No matching range days.",
-        );
+      if (!filteredRangeDays.length) {
+        write("No matching range days.");
       }
 
-      for (
-        const day of
-        filteredRangeDays
-      ) {
-        itemHeading(
-          `${dateText(
-            day.date,
-          )} - ${clean(
-            day.title,
-          )}`,
-        );
+      for (const day of filteredRangeDays) {
+        itemHeading(`${dateText(day.date)} - ${clean(day.title)}`);
 
-        field(
-          "Status",
-          day.status,
-        );
+        field("Status", day.status);
 
-        field(
-          "Location",
-          day.location,
-        );
+        field("Location", day.location);
 
-        if (
-          reportIncludeNotes &&
-          day.notes
-        ) {
-          field(
-            "Notes",
-            day.notes,
-          );
+        if (reportIncludeNotes && day.notes) {
+          field("Notes", day.notes);
         }
 
         y -= 5;
       }
 
-      section(
-        "CERTIFICATIONS",
-      );
+      section("CERTIFICATIONS");
 
-      if (
-        !filteredCertifications.length
-      ) {
-        write(
-          "No matching certification records.",
-        );
+      if (!filteredCertifications.length) {
+        write("No matching certification records.");
       }
 
-      for (
-        const certification of
-        filteredCertifications
-      ) {
-        const officer =
-          personnelMap.get(
-            String(
-              certification.user_id ??
-                certification.userId ??
-                "",
-            ),
-          );
+      for (const certification of filteredCertifications) {
+        const officer = personnelMap.get(
+          String(certification.user_id ?? certification.userId ?? ""),
+        );
 
         itemHeading(
           `${officer?.name ?? "Officer"} - ${
@@ -4831,34 +4294,23 @@ function ImportWizardContent() {
 
         field(
           "Credential Number",
-          certification.credential_number ??
-            certification.credentialNumber,
+          certification.credential_number ?? certification.credentialNumber,
         );
 
         field(
           "Issue Date",
-          dateText(
-            certification.issue_date ??
-              certification.issueDate,
-          ),
+          dateText(certification.issue_date ?? certification.issueDate),
         );
 
         field(
           "Expiration Date",
           dateText(
-            certification.expiration_date ??
-              certification.expirationDate,
+            certification.expiration_date ?? certification.expirationDate,
           ),
         );
 
-        if (
-          reportIncludeNotes &&
-          certification.notes
-        ) {
-          field(
-            "Notes",
-            certification.notes,
-          );
+        if (reportIncludeNotes && certification.notes) {
+          field("Notes", certification.notes);
         }
 
         y -= 5;
@@ -4866,193 +4318,89 @@ function ImportWizardContent() {
 
       section("EQUIPMENT");
 
-      if (
-        !filteredEquipment.length
-      ) {
-        write(
-          "No matching equipment records.",
-        );
+      if (!filteredEquipment.length) {
+        write("No matching equipment records.");
       }
 
-      for (
-        const asset of
-        filteredEquipment
-      ) {
-        const type =
-          equipmentTypesById.get(
-            String(
-              asset.equipment_type_id ??
-                asset.equipmentTypeId ??
-                "",
-            ),
-          );
+      for (const asset of filteredEquipment) {
+        const type = equipmentTypesById.get(
+          String(asset.equipment_type_id ?? asset.equipmentTypeId ?? ""),
+        );
 
-        const officer =
-          personnelMap.get(
-            String(
-              asset.assigned_user_id ??
-                asset.assignedUserId ??
-                "",
-            ),
-          );
+        const officer = personnelMap.get(
+          String(asset.assigned_user_id ?? asset.assignedUserId ?? ""),
+        );
 
         itemHeading(
-          `${type?.name ?? "Equipment"} - ${
-            officer?.name ??
-            "Unassigned"
-          }`,
+          `${type?.name ?? "Equipment"} - ${officer?.name ?? "Unassigned"}`,
         );
 
         field(
           "Manufacturer / Model",
-          [
-            asset.manufacturer,
-            asset.model,
-          ]
-            .filter(Boolean)
-            .join(" "),
+          [asset.manufacturer, asset.model].filter(Boolean).join(" "),
         );
 
-        field(
-          "Serial Number",
-          asset.serial_number ??
-            asset.serialNumber,
-        );
+        field("Serial Number", asset.serial_number ?? asset.serialNumber);
 
         field(
           "Lifecycle Status",
-          asset.lifecycle_status ??
-            asset.lifecycleStatus,
+          asset.lifecycle_status ?? asset.lifecycleStatus,
         );
 
-        field(
-          "Issue Date",
-          dateText(
-            asset.issue_date ??
-              asset.issueDate,
-          ),
-        );
+        field("Issue Date", dateText(asset.issue_date ?? asset.issueDate));
 
         field(
           "Expiration Date",
-          dateText(
-            asset.expiration_date ??
-              asset.expirationDate,
-          ),
+          dateText(asset.expiration_date ?? asset.expirationDate),
         );
 
-        if (
-          reportIncludeNotes &&
-          asset.notes
-        ) {
-          field(
-            "Notes",
-            asset.notes,
-          );
+        if (reportIncludeNotes && asset.notes) {
+          field("Notes", asset.notes);
         }
 
         y -= 5;
       }
 
-      section(
-        "OFF-DUTY FIREARMS",
-      );
+      section("OFF-DUTY FIREARMS");
 
-      if (
-        !filteredOffDuty.length
-      ) {
-        write(
-          "No matching off-duty firearm requests.",
-        );
+      if (!filteredOffDuty.length) {
+        write("No matching off-duty firearm requests.");
       }
 
-      for (
-        const record of
-        filteredOffDuty
-      ) {
+      for (const record of filteredOffDuty) {
         itemHeading(
-          `${record.officer ?? "Officer"} - ${
-            record.make ?? ""
-          } ${
+          `${record.officer ?? "Officer"} - ${record.make ?? ""} ${
             record.model ?? ""
           }`,
         );
 
-        field(
-          "Serial Number",
-          record.serial,
-        );
+        field("Serial Number", record.serial);
 
-        field(
-          "Caliber",
-          record.caliber,
-        );
+        field("Caliber", record.caliber);
 
-        field(
-          "Request Status",
-          record.requestStatus,
-        );
+        field("Request Status", record.requestStatus);
 
-        field(
-          "Authorization Status",
-          record.authorizationStatus,
-        );
+        field("Authorization Status", record.authorizationStatus);
 
-        field(
-          "Submitted",
-          dateTimeText(
-            record.submittedAt,
-          ),
-        );
+        field("Submitted", dateTimeText(record.submittedAt));
 
-        field(
-          "Qualification Status",
-          record.qualificationStatus,
-        );
+        field("Qualification Status", record.qualificationStatus);
 
-        field(
-          "Inspection Status",
-          record.inspectionStatus,
-        );
+        field("Inspection Status", record.inspectionStatus);
 
-        field(
-          "Compliance",
-          record.compliance,
-        );
+        field("Compliance", record.compliance);
 
-        if (
-          reportIncludeNotes
-        ) {
-          field(
-            "Officer Notes",
-            record.officerNotes,
-          );
+        if (reportIncludeNotes) {
+          field("Officer Notes", record.officerNotes);
 
-          field(
-            "Decision Notes",
-            record.decisionNotes,
-          );
+          field("Decision Notes", record.decisionNotes);
         }
 
-        if (
-          reportIncludeWorkflow &&
-          Array.isArray(
-            record.auditTrail,
-          )
-        ) {
-          for (
-            const event of
-            record.auditTrail
-          ) {
+        if (reportIncludeWorkflow && Array.isArray(record.auditTrail)) {
+          for (const event of record.auditTrail) {
             write(
-              `${dateTimeText(
-                event.timestamp,
-              )} - ${
-                event.action ??
-                ""
-              } - ${
-                event.actor ??
-                ""
+              `${dateTimeText(event.timestamp)} - ${event.action ?? ""} - ${
+                event.actor ?? ""
               }`,
               {
                 indent: 12,
@@ -5065,190 +4413,221 @@ function ImportWizardContent() {
         y -= 6;
       }
 
-      section(
-        "FIREARMS INVENTORY",
-      );
+      section("FIREARMS INVENTORY");
 
       if (!firearms.length) {
-        write(
-          "No firearm inventory records returned.",
-        );
+        write("No firearm inventory records returned.");
       }
 
-      for (
-        const firearm of
-        firearms
-      ) {
-        itemHeading(
-          `${
-            firearm.make ??
-            "Firearm"
-          } ${
-            firearm.model ??
-            ""
-          }`,
-        );
+      for (const firearm of firearms) {
+        itemHeading(`${firearm.make ?? "Firearm"} ${firearm.model ?? ""}`);
 
         field(
           "Serial Number",
-          firearm.serial_number ??
-            firearm.serialNumber ??
-            firearm.serial,
+          firearm.serial_number ?? firearm.serialNumber ?? firearm.serial,
         );
 
-        field(
-          "Caliber",
-          firearm.caliber,
-        );
+        field("Caliber", firearm.caliber);
 
-        field(
-          "Status",
-          firearm.status ??
-            firearm.lifecycle_status,
-        );
+        field("Status", firearm.status ?? firearm.lifecycle_status);
 
         y -= 4;
       }
 
-      if (availableReports.some((definition)=>definition.key==="firearm-inspections")) {
-      section("FIREARM INSPECTION HISTORY");
-      if (!firearmInspections.length) write("No firearm inspection records returned.");
-      for (const inspection of firearmInspections) { itemHeading(`${dateText(inspection.inspection_date)} - ${clean(inspection.result)}`);field("Firearm",inspection.firearm_id);field("Inspector",inspection.inspector_name);field("Notes",inspection.notes); }
+      if (
+        availableReports.some(
+          (definition) => definition.key === "firearm-inspections",
+        )
+      ) {
+        section("FIREARM INSPECTION HISTORY");
+        if (!firearmInspections.length)
+          write("No firearm inspection records returned.");
+        for (const inspection of firearmInspections) {
+          itemHeading(
+            `${dateText(inspection.inspection_date)} - ${clean(inspection.result)}`,
+          );
+          field("Firearm", inspection.firearm_id);
+          field("Inspector", inspection.inspector_name);
+          field("Notes", inspection.notes);
+        }
       }
 
       section("AMMUNITION");
 
-      field(
-        "Duty Lots",
-        dutyLots.length,
-      );
+      field("Duty Lots", dutyLots.length);
 
-      field(
-        "Training Lots",
-        trainingLots.length,
-      );
-      if (availableReports.some((definition)=>definition.key==="ammunition-transactions")) {
-      section("AMMUNITION TRANSACTIONS");if(!ammunitionTransactions.length)write("No ammunition transactions returned.");for(const transaction of ammunitionTransactions){itemHeading(`${dateTimeText(transaction.created_at)} - ${clean(transaction.transaction_type)}`);field("Lot",transaction.lot?.lot_number ?? transaction.lot_id);field("Quantity",transaction.quantity);field("Actor",transaction.actor_name);field("Notes",transaction.notes);}
+      field("Training Lots", trainingLots.length);
+      if (
+        availableReports.some(
+          (definition) => definition.key === "ammunition-transactions",
+        )
+      ) {
+        section("AMMUNITION TRANSACTIONS");
+        if (!ammunitionTransactions.length)
+          write("No ammunition transactions returned.");
+        for (const transaction of ammunitionTransactions) {
+          const lot = isReportRecord(transaction.lot)
+            ? transaction.lot
+            : undefined;
+          itemHeading(
+            `${dateTimeText(transaction.created_at)} - ${clean(transaction.transaction_type)}`,
+          );
+          field("Lot", lot?.lot_number ?? transaction.lot_id);
+          field("Quantity", transaction.quantity);
+          field("Actor", transaction.actor_name);
+          field("Notes", transaction.notes);
+        }
       }
-      if (availableReports.some((definition)=>definition.key==="personal-rifles")) {
-      section("PERSONALLY OWNED RIFLES");if(!personalRifles.length)write("No personally owned rifle records returned.");for(const rifle of personalRifles){itemHeading(`${clean(rifle.owner_name)} - ${clean(rifle.manufacturer)} ${clean(rifle.model)}`);field("Serial",rifle.serial_number);field("Caliber",rifle.caliber);field("Status",rifle.status);field("Expiration",dateText(rifle.expiration_date));}
+      if (
+        availableReports.some(
+          (definition) => definition.key === "personal-rifles",
+        )
+      ) {
+        section("PERSONALLY OWNED RIFLES");
+        if (!personalRifles.length)
+          write("No personally owned rifle records returned.");
+        for (const rifle of personalRifles) {
+          itemHeading(
+            `${clean(rifle.owner_name)} - ${clean(rifle.manufacturer)} ${clean(rifle.model)}`,
+          );
+          field("Serial", rifle.serial_number);
+          field("Caliber", rifle.caliber);
+          field("Status", rifle.status);
+          field("Expiration", dateText(rifle.expiration_date));
+        }
       }
-
-      if (availableReports.some((definition)=>definition.key==="agency-training")) {
-      section("AGENCY TRAINING");
-      if (!agencyTraining.length) write("No agency training events returned.");
-      for (const event of agencyTraining) {
-        itemHeading(`${dateText(event.starts_at ?? event.start_date ?? event.startDate)} - ${clean(event.title ?? event.course_title)}`);
-        field("Status", event.status); field("Location", event.location); field("Attendees", event.attendee_count ?? event.attendeeCount);
-      }
-      }
-
-      if (availableReports.some((definition)=>definition.key==="fleet")) {
-      section("FLEET");
-      if (!fleet.length) write("No fleet vehicle records returned.");
-      for (const vehicle of fleet) {
-        itemHeading(`${clean(vehicle.unit_number ?? vehicle.unitNumber)} - ${clean(vehicle.year)} ${clean(vehicle.make)} ${clean(vehicle.model)}`);
-        field("Status", vehicle.status); field("Assignment", vehicle.assigned_to ?? vehicle.assignedTo); field("Mileage", vehicle.current_mileage ?? vehicle.currentMileage); field("Open Issues", vehicle.open_issue_count ?? vehicle.openIssueCount);
-      }
-      }
-
-      if (availableReports.some((definition)=>definition.key==="fleet-inspections")) {
-      section("FLEET INSPECTIONS");
-      if (!fleetInspections.length) write("No fleet inspection records returned.");
-      for (const inspection of fleetInspections) { itemHeading(`${dateTimeText(inspection.inspected_at)} - ${clean(inspection.result)}`); field("Inspector",inspection.inspector_name);field("Defects",inspection.defect_count);field("Critical Defects",inspection.critical_defect_count); }
-      }
-
-      if (availableReports.some((definition)=>definition.key==="fleet-maintenance")) {
-      section("FLEET MAINTENANCE AND WORK ORDERS");
-      if (!fleetWorkOrders.length) write("No fleet maintenance or work-order records returned.");
-      for (const order of fleetWorkOrders) { itemHeading(`${clean(order.record_type)} - ${clean(order.title)}`);field("Status",order.status);field("Priority",order.priority);field("Opened",dateText(order.opened_at));field("Completed",dateText(order.completed_at)); }
-      }
-
-      if (availableReports.some((definition)=>definition.key==="fleet-equipment")) {
-      section("VEHICLE-ASSOCIATED EQUIPMENT");
-      if (!fleetEquipment.length) write("No vehicle-associated equipment records returned.");
-      for (const item of fleetEquipment) { itemHeading(clean(item.item_name ?? item.name));field("Status",item.status);field("Quantity",item.quantity);field("Source",item.source_type); }
-      }
-
-      if (availableReports.some((definition)=>definition.key==="alerts")) {
-      section("CURRENT ALERTS AND UNRESOLVED ITEMS");
-      if (!alerts.length) write("No current alerts or unresolved readiness items returned.");
-      for (const alert of alerts) {
-        itemHeading(clean(alert.title)); field("Priority", alert.priority); field("Detail", alert.detail); field("Source", alert.source);
-      }
-      }
-
-      section(
-        "AUDIT HISTORY",
-      );
 
       if (
-        !filteredAudit.length
+        availableReports.some(
+          (definition) => definition.key === "agency-training",
+        )
       ) {
-        write(
-          "No matching audit events.",
-        );
+        section("AGENCY TRAINING");
+        if (!agencyTraining.length)
+          write("No agency training events returned.");
+        for (const event of agencyTraining) {
+          itemHeading(
+            `${dateText(event.starts_at ?? event.start_date ?? event.startDate)} - ${clean(event.title ?? event.course_title)}`,
+          );
+          field("Status", event.status);
+          field("Location", event.location);
+          field("Attendees", event.attendee_count ?? event.attendeeCount);
+        }
       }
 
-      for (
-        const event of
-        filteredAudit
+      if (availableReports.some((definition) => definition.key === "fleet")) {
+        section("FLEET");
+        if (!fleet.length) write("No fleet vehicle records returned.");
+        for (const vehicle of fleet) {
+          itemHeading(
+            `${clean(vehicle.unit_number ?? vehicle.unitNumber)} - ${clean(vehicle.year)} ${clean(vehicle.make)} ${clean(vehicle.model)}`,
+          );
+          field("Status", vehicle.status);
+          field("Assignment", vehicle.assigned_to ?? vehicle.assignedTo);
+          field("Mileage", vehicle.current_mileage ?? vehicle.currentMileage);
+          field(
+            "Open Issues",
+            vehicle.open_issue_count ?? vehicle.openIssueCount,
+          );
+        }
+      }
+
+      if (
+        availableReports.some(
+          (definition) => definition.key === "fleet-inspections",
+        )
       ) {
+        section("FLEET INSPECTIONS");
+        if (!fleetInspections.length)
+          write("No fleet inspection records returned.");
+        for (const inspection of fleetInspections) {
+          itemHeading(
+            `${dateTimeText(inspection.inspected_at)} - ${clean(inspection.result)}`,
+          );
+          field("Inspector", inspection.inspector_name);
+          field("Defects", inspection.defect_count);
+          field("Critical Defects", inspection.critical_defect_count);
+        }
+      }
+
+      if (
+        availableReports.some(
+          (definition) => definition.key === "fleet-maintenance",
+        )
+      ) {
+        section("FLEET MAINTENANCE AND WORK ORDERS");
+        if (!fleetWorkOrders.length)
+          write("No fleet maintenance or work-order records returned.");
+        for (const order of fleetWorkOrders) {
+          itemHeading(`${clean(order.record_type)} - ${clean(order.title)}`);
+          field("Status", order.status);
+          field("Priority", order.priority);
+          field("Opened", dateText(order.opened_at));
+          field("Completed", dateText(order.completed_at));
+        }
+      }
+
+      if (
+        availableReports.some(
+          (definition) => definition.key === "fleet-equipment",
+        )
+      ) {
+        section("VEHICLE-ASSOCIATED EQUIPMENT");
+        if (!fleetEquipment.length)
+          write("No vehicle-associated equipment records returned.");
+        for (const item of fleetEquipment) {
+          itemHeading(clean(item.item_name ?? item.name));
+          field("Status", item.status);
+          field("Quantity", item.quantity);
+          field("Source", item.source_type);
+        }
+      }
+
+      if (availableReports.some((definition) => definition.key === "alerts")) {
+        section("CURRENT ALERTS AND UNRESOLVED ITEMS");
+        if (!alerts.length)
+          write("No current alerts or unresolved readiness items returned.");
+        for (const alert of alerts) {
+          itemHeading(clean(alert.title));
+          field("Priority", alert.priority);
+          field("Detail", alert.detail);
+          field("Source", alert.source);
+        }
+      }
+
+      section("AUDIT HISTORY");
+
+      if (!filteredAudit.length) {
+        write("No matching audit events.");
+      }
+
+      for (const event of filteredAudit) {
         itemHeading(
-          `${dateTimeText(
-            event.created_at ??
-              event.createdAt,
-          )} - ${clean(
+          `${dateTimeText(event.created_at ?? event.createdAt)} - ${clean(
             event.action,
           )}`,
         );
 
-        field(
-          "Entity Type",
-          event.entity_type ??
-            event.entityType,
-        );
+        field("Entity Type", event.entity_type ?? event.entityType);
 
-        field(
-          "Entity ID",
-          event.entity_id ??
-            event.entityId,
-        );
+        field("Entity ID", event.entity_id ?? event.entityId);
 
         field(
           "Changed By User ID",
-          event.changed_by_user_id ??
-            event.changedByUserId,
+          event.changed_by_user_id ?? event.changedByUserId,
         );
 
-        if (
-          reportIncludeNotes &&
-          (
-            event.change_note ??
-            event.changeNote
-          )
-        ) {
-          field(
-            "Change Note",
-            event.change_note ??
-              event.changeNote,
-          );
+        if (reportIncludeNotes && (event.change_note ?? event.changeNote)) {
+          field("Change Note", event.change_note ?? event.changeNote);
         }
 
         y -= 4;
       }
 
-      const pages =
-        pdf.getPages();
+      const pages = pdf.getPages();
 
-      for (
-        let index = 0;
-        index <
-        pages.length;
-        index += 1
-      ) {
-        const footer =
-          pages[index];
+      for (let index = 0; index < pages.length; index += 1) {
+        const footer = pages[index];
 
         footer.drawLine({
           start: {
@@ -5256,83 +4635,46 @@ function ImportWizardContent() {
             y: 36,
           },
           end: {
-            x:
-              WIDTH -
-              RIGHT,
+            x: WIDTH - RIGHT,
             y: 36,
           },
           thickness: 0.5,
           color: border,
         });
 
-        footer.drawText(
-          "TracePoint - Operational Accountability. Verified.",
-          {
-            x: LEFT,
-            y: 21,
-            size: 7,
-            font: regular,
-            color: muted,
-          },
-        );
+        footer.drawText("TracePoint - Operational Accountability. Verified.", {
+          x: LEFT,
+          y: 21,
+          size: 7,
+          font: regular,
+          color: muted,
+        });
 
-        const pageNumber =
-          `Page ${
-            index + 1
-          } of ${
-            pages.length
-          }`;
+        const pageNumber = `Page ${index + 1} of ${pages.length}`;
 
-        footer.drawText(
-          pageNumber,
-          {
-            x:
-              WIDTH -
-              RIGHT -
-              regular.widthOfTextAtSize(
-                pageNumber,
-                7,
-              ),
-            y: 21,
-            size: 7,
-            font: regular,
-            color: muted,
-          },
-        );
+        footer.drawText(pageNumber, {
+          x: WIDTH - RIGHT - regular.widthOfTextAtSize(pageNumber, 7),
+          y: 21,
+          size: 7,
+          font: regular,
+          color: muted,
+        });
       }
 
-      const pdfBytes =
-        await pdf.save();
+      const pdfBytes = await pdf.save();
 
-      const blob =
-        new Blob(
-          [
-            new Uint8Array(
-              pdfBytes,
-            ),
-          ],
-          {
-            type: "application/pdf",
-          },
-        );
+      const blob = new Blob([new Uint8Array(pdfBytes)], {
+        type: "application/pdf",
+      });
 
-      const url =
-        URL.createObjectURL(
-          blob,
-        );
+      const url = URL.createObjectURL(blob);
 
-      const anchor =
-        document.createElement(
-          "a",
-        );
+      const anchor = document.createElement("a");
 
       anchor.href = url;
-      anchor.download =
-        `tracepoint-complete-report-${exportDate()}.pdf`;
+      anchor.download = `tracepoint-complete-report-${exportDate()}.pdf`;
 
-      document.body.appendChild(
-        anchor,
-      );
+      document.body.appendChild(anchor);
 
       await recordClientDataExport({
         exportType: "complete_department_report",
@@ -5342,22 +4684,11 @@ function ImportWizardContent() {
 
       anchor.click();
 
-      document.body.removeChild(
-        anchor,
-      );
+      document.body.removeChild(anchor);
 
-      window.setTimeout(
-        () =>
-          URL.revokeObjectURL(
-            url,
-          ),
-        1000,
-      );
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      console.error(
-        "Complete TracePoint Report failed:",
-        error,
-      );
+      console.error("Complete TracePoint Report failed:", error);
 
       setExportError(
         error instanceof Error
@@ -5372,16 +4703,39 @@ function ImportWizardContent() {
   function filteredReportRows(rows: Record<string, unknown>[]) {
     return rows.filter((row) => {
       if (selectedReportFilters.has("officer") && reportOfficerId !== "all") {
-        const ids = [row.officerId,row.officer_id,row.userId,row.user_id,row.owner_user_id,row.assigned_user_id];
-        if (!ids.some((value) => String(value ?? "") === reportOfficerId)) return false;
+        const ids = [
+          row.officerId,
+          row.officer_id,
+          row.userId,
+          row.user_id,
+          row.owner_user_id,
+          row.assigned_user_id,
+        ];
+        if (!ids.some((value) => String(value ?? "") === reportOfficerId))
+          return false;
       }
       if (selectedReportFilters.has("status") && reportStatus !== "all") {
-        const status = row.status ?? row.priority ?? row.requestStatus ?? row.request_status ?? row.lifecycle_status ?? row.result;
+        const status =
+          row.status ??
+          row.priority ??
+          row.requestStatus ??
+          row.request_status ??
+          row.lifecycle_status ??
+          row.result;
         if (String(status ?? "") !== reportStatus) return false;
       }
       if (selectedReportFilters.has("date") && reportDateMode === "custom") {
-        const value = row.date ?? row.starts_at ?? row.created_at ?? row.updated_at ?? row.submitted_at ?? row.submittedAt ?? row.issue_date ?? row.inspected_at ?? row.opened_at;
-        const date = String(value ?? "").slice(0,10);
+        const value =
+          row.date ??
+          row.starts_at ??
+          row.created_at ??
+          row.updated_at ??
+          row.submitted_at ??
+          row.submittedAt ??
+          row.issue_date ??
+          row.inspected_at ??
+          row.opened_at;
+        const date = String(value ?? "").slice(0, 10);
         if (date && reportStartDate && date < reportStartDate) return false;
         if (date && reportEndDate && date > reportEndDate) return false;
       }
@@ -5390,47 +4744,151 @@ function ImportWizardContent() {
   }
 
   async function handleGenerateModuleReport() {
-    if (!selectedReportDefinition?.endpoint) throw new Error("This report does not have a data source.");
+    if (!selectedReportDefinition?.endpoint)
+      throw new Error("This report does not have a data source.");
     setReportGenerating(true);
     try {
-      const payload = await fetchJson<Record<string, unknown>>(selectedReportDefinition.endpoint);
-      let sourceRows = reportCollection(payload, selectedReportDefinition.collectionPath);
+      const payload = await fetchJson<Record<string, unknown>>(
+        selectedReportDefinition.endpoint,
+      );
+      const sourceRows = reportCollection(
+        payload,
+        selectedReportDefinition.collectionPath,
+      );
       const rows = filteredReportRows(sourceRows);
       const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
       const pdf = await PDFDocument.create();
       const regular = await pdf.embedFont(StandardFonts.Helvetica);
       const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-      const width=612,height=792,left=44,bottom=48;
-      let page=pdf.addPage([width,height]); let y=730;
-      const addPage=()=>{page=pdf.addPage([width,height]);y=730;};
-      const line=(text:string,size=8,isBold=false)=>{if(y<bottom+18)addPage();const safe=text.replace(/[^\x20-\x7E]/g," ").slice(0,115);page.drawText(safe,{x:left,y,size,font:isBold?bold:regular,color:rgb(15/255,23/255,42/255)});y-=size+5;};
-      page.drawRectangle({x:0,y:650,width,height:142,color:rgb(2/255,6/255,23/255)});
-      page.drawText("TRACEPOINT",{x:left,y:742,size:20,font:bold,color:rgb(1,1,1)});
-      page.drawText(selectedReportDefinition.label.toUpperCase(),{x:left,y:700,size:14,font:bold,color:rgb(1,1,1)});
-      page.drawText(access.departmentName || "Current Agency",{x:left,y:678,size:10,font:regular,color:rgb(203/255,213/255,225/255)});y=625;
-      line(`Generated: ${new Date().toLocaleString()}`,8,false);
-      line(`Records: ${rows.length}`,9,true); y-=6;
-      if (!rows.length) line(`No matching ${selectedReportDefinition.label.toLowerCase()} records.`,9,false);
-      for (const [index,row] of rows.entries()) {
-        line(`${index+1}. ${String(row.title ?? row.name ?? row.displayName ?? row.unit_number ?? row.id ?? "Record")}`,9,true);
-        for (const [key,value] of Object.entries(row)) {
-          if (!reportIncludeNotes && key.toLowerCase().includes("note")) continue;
-          if (value === null || value === undefined || typeof value === "object") continue;
-          line(`  ${key.replaceAll("_"," ")}: ${String(value)}`,7.5,false);
+      const width = 612,
+        height = 792,
+        left = 44,
+        bottom = 48;
+      let page = pdf.addPage([width, height]);
+      let y = 730;
+      const addPage = () => {
+        page = pdf.addPage([width, height]);
+        y = 730;
+      };
+      const line = (text: string, size = 8, isBold = false) => {
+        if (y < bottom + 18) addPage();
+        const safe = text.replace(/[^\x20-\x7E]/g, " ").slice(0, 115);
+        page.drawText(safe, {
+          x: left,
+          y,
+          size,
+          font: isBold ? bold : regular,
+          color: rgb(15 / 255, 23 / 255, 42 / 255),
+        });
+        y -= size + 5;
+      };
+      page.drawRectangle({
+        x: 0,
+        y: 650,
+        width,
+        height: 142,
+        color: rgb(2 / 255, 6 / 255, 23 / 255),
+      });
+      page.drawText("TRACEPOINT", {
+        x: left,
+        y: 742,
+        size: 20,
+        font: bold,
+        color: rgb(1, 1, 1),
+      });
+      page.drawText(selectedReportDefinition.label.toUpperCase(), {
+        x: left,
+        y: 700,
+        size: 14,
+        font: bold,
+        color: rgb(1, 1, 1),
+      });
+      page.drawText(access.departmentName || "Current Agency", {
+        x: left,
+        y: 678,
+        size: 10,
+        font: regular,
+        color: rgb(203 / 255, 213 / 255, 225 / 255),
+      });
+      y = 625;
+      line(`Generated: ${new Date().toLocaleString()}`, 8, false);
+      line(`Records: ${rows.length}`, 9, true);
+      y -= 6;
+      if (!rows.length)
+        line(
+          `No matching ${selectedReportDefinition.label.toLowerCase()} records.`,
+          9,
+          false,
+        );
+      for (const [index, row] of rows.entries()) {
+        line(
+          `${index + 1}. ${String(row.title ?? row.name ?? row.displayName ?? row.unit_number ?? row.id ?? "Record")}`,
+          9,
+          true,
+        );
+        for (const [key, value] of Object.entries(row)) {
+          if (!reportIncludeNotes && key.toLowerCase().includes("note"))
+            continue;
+          if (
+            value === null ||
+            value === undefined ||
+            typeof value === "object"
+          )
+            continue;
+          line(`  ${key.replaceAll("_", " ")}: ${String(value)}`, 7.5, false);
         }
-        y-=5;
+        y -= 5;
       }
-      const bytes=await pdf.save();const blob=new Blob([new Uint8Array(bytes)],{type:"application/pdf"});const url=URL.createObjectURL(blob);const anchor=document.createElement("a");anchor.href=url;anchor.download=`tracepoint-${selectedReportDefinition.key}-${exportDate()}.pdf`;document.body.appendChild(anchor);
-      await recordClientDataExport({exportType:selectedReportDefinition.key,fileName:anchor.download,format:"pdf",recordCount:rows.length});anchor.click();anchor.remove();URL.revokeObjectURL(url);
-    } finally { setReportGenerating(false); }
+      const bytes = await pdf.save();
+      const blob = new Blob([new Uint8Array(bytes)], {
+        type: "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `tracepoint-${selectedReportDefinition.key}-${exportDate()}.pdf`;
+      document.body.appendChild(anchor);
+      await recordClientDataExport({
+        exportType: selectedReportDefinition.key,
+        fileName: anchor.download,
+        format: "pdf",
+        recordCount: rows.length,
+      });
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setReportGenerating(false);
+    }
   }
 
   async function handleExportDefinition(definitionKey: string) {
-    const definition=availableReports.find((item)=>item.key===definitionKey);
-    if(!definition?.endpoint)return;
-    setExporting(definitionKey);setExportError(null);
-    try { const payload=await fetchJson<Record<string,unknown>>(definition.endpoint);await downloadCsv(`tracepoint-${definition.key}-${exportDate()}.csv`,reportCollection(payload,definition.collectionPath) as Record<string,CsvValue>[]); }
-    catch(error){setExportError(error instanceof Error?error.message:`${definition.label} export failed.`);} finally{setExporting(null);}
+    const definition = availableReports.find(
+      (item) => item.key === definitionKey,
+    );
+    if (!definition?.endpoint) return;
+    setExporting(definitionKey);
+    setExportError(null);
+    try {
+      const payload = await fetchJson<Record<string, unknown>>(
+        definition.endpoint,
+      );
+      await downloadCsv(
+        `tracepoint-${definition.key}-${exportDate()}.csv`,
+        reportCollection(payload, definition.collectionPath) as Record<
+          string,
+          CsvValue
+        >[],
+      );
+    } catch (error) {
+      setExportError(
+        error instanceof Error
+          ? error.message
+          : `${definition.label} export failed.`,
+      );
+    } finally {
+      setExporting(null);
+    }
   }
 
   async function handleGenerateReport() {
@@ -5511,15 +4969,9 @@ function ImportWizardContent() {
           qualificationReason: string;
 
           inspectionStatus:
-            | "Not Inspected"
-            | "Current"
-            | "Due Soon"
-            | "Overdue";
+            "Not Inspected" | "Current" | "Due Soon" | "Overdue";
 
-          compliance:
-            | "Authorized"
-            | "At Risk"
-            | "Non-Compliant";
+          compliance: "Authorized" | "At Risk" | "Non-Compliant";
 
           auditTrail?: Array<{
             id: string;
@@ -5554,44 +5006,28 @@ function ImportWizardContent() {
 
       if (reportDateMode === "custom") {
         if (reportStartDate) {
-          const start = new Date(
-            `${reportStartDate}T00:00:00`,
-          ).getTime();
+          const start = new Date(`${reportStartDate}T00:00:00`).getTime();
 
           records = records.filter((record) => {
-            const submitted = new Date(
-              record.submittedAt,
-            ).getTime();
+            const submitted = new Date(record.submittedAt).getTime();
 
-            return (
-              Number.isFinite(submitted) &&
-              submitted >= start
-            );
+            return Number.isFinite(submitted) && submitted >= start;
           });
         }
 
         if (reportEndDate) {
-          const end = new Date(
-            `${reportEndDate}T23:59:59.999`,
-          ).getTime();
+          const end = new Date(`${reportEndDate}T23:59:59.999`).getTime();
 
           records = records.filter((record) => {
-            const submitted = new Date(
-              record.submittedAt,
-            ).getTime();
+            const submitted = new Date(record.submittedAt).getTime();
 
-            return (
-              Number.isFinite(submitted) &&
-              submitted <= end
-            );
+            return Number.isFinite(submitted) && submitted <= end;
           });
         }
       }
 
       records = [...records].sort((a, b) =>
-        String(a.submittedAt).localeCompare(
-          String(b.submittedAt),
-        ),
+        String(a.submittedAt).localeCompare(String(b.submittedAt)),
       );
 
       if (records.length === 0) {
@@ -5627,14 +5063,9 @@ function ImportWizardContent() {
                   inspectedByUserId: string;
                   createdAt: string;
                 }>;
-              }>(
-                `/api/off-duty-firearms/${record.id}/inspections`,
-              );
+              }>(`/api/off-duty-firearms/${record.id}/inspections`);
 
-              return [
-                record.id,
-                result.inspections ?? [],
-              ] as const;
+              return [record.id, result.inspections ?? []] as const;
             } catch {
               return [record.id, []] as const;
             }
@@ -5646,34 +5077,21 @@ function ImportWizardContent() {
         }
       }
 
-      const {
-        PDFDocument,
-        StandardFonts,
-        rgb,
-      } = await import("pdf-lib");
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
 
       const pdf = await PDFDocument.create();
 
-      const regularFont = await pdf.embedFont(
-        StandardFonts.Helvetica,
-      );
+      const regularFont = await pdf.embedFont(StandardFonts.Helvetica);
 
-      const boldFont = await pdf.embedFont(
-        StandardFonts.HelveticaBold,
-      );
+      const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-      let logo:
-        | Awaited<ReturnType<typeof pdf.embedPng>>
-        | null = null;
+      let logo: Awaited<ReturnType<typeof pdf.embedPng>> | null = null;
 
       try {
-        const logoResponse = await fetch(
-          "/tracepoint-logo-dark.png",
-        );
+        const logoResponse = await fetch("/tracepoint-logo-dark.png");
 
         if (logoResponse.ok) {
-          const logoBytes =
-            await logoResponse.arrayBuffer();
+          const logoBytes = await logoResponse.arrayBuffer();
 
           logo = await pdf.embedPng(logoBytes);
         }
@@ -5687,37 +5105,18 @@ function ImportWizardContent() {
       const TOP_Y = 735;
       const BOTTOM_Y = 52;
 
-      const textColor = rgb(
-        15 / 255,
-        23 / 255,
-        42 / 255,
-      );
+      const textColor = rgb(15 / 255, 23 / 255, 42 / 255);
 
-      const mutedColor = rgb(
-        71 / 255,
-        85 / 255,
-        105 / 255,
-      );
+      const mutedColor = rgb(71 / 255, 85 / 255, 105 / 255);
 
-      const lineColor = rgb(
-        203 / 255,
-        213 / 255,
-        225 / 255,
-      );
+      const lineColor = rgb(203 / 255, 213 / 255, 225 / 255);
 
-      let page = pdf.addPage([
-        PAGE_WIDTH,
-        PAGE_HEIGHT,
-      ]);
+      let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
       let y = TOP_Y;
 
       function clean(value: unknown) {
-        if (
-          value === null ||
-          value === undefined ||
-          value === ""
-        ) {
+        if (value === null || value === undefined || value === "") {
           return "-";
         }
 
@@ -5729,13 +5128,7 @@ function ImportWizardContent() {
           return "-";
         }
 
-        const parsed = new Date(value);
-
-        if (Number.isNaN(parsed.getTime())) {
-          return value;
-        }
-
-        return parsed.toLocaleString();
+        return formatDisplayDateTime(value, value);
       }
 
       function formatDate(value?: string) {
@@ -5743,17 +5136,7 @@ function ImportWizardContent() {
           return "-";
         }
 
-        const parsed = new Date(
-          value.length === 10
-            ? `${value}T00:00:00`
-            : value,
-        );
-
-        if (Number.isNaN(parsed.getTime())) {
-          return value;
-        }
-
-        return parsed.toLocaleDateString();
+        return formatDisplayDate(value, value);
       }
 
       function wrapText(
@@ -5768,16 +5151,9 @@ function ImportWizardContent() {
         let current = "";
 
         for (const word of words) {
-          const candidate = current
-            ? `${current} ${word}`
-            : word;
+          const candidate = current ? `${current} ${word}` : word;
 
-          if (
-            font.widthOfTextAtSize(
-              candidate,
-              fontSize,
-            ) <= maxWidth
-          ) {
+          if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
             current = candidate;
           } else {
             if (current) {
@@ -5792,9 +5168,7 @@ function ImportWizardContent() {
           lines.push(current);
         }
 
-        return lines.length > 0
-          ? lines
-          : [""];
+        return lines.length > 0 ? lines : [""];
       }
 
       function drawPageHeader() {
@@ -5803,9 +5177,7 @@ function ImportWizardContent() {
 
           const maxWidth = 125;
           const ratio =
-            dimensions.width > maxWidth
-              ? maxWidth / dimensions.width
-              : 1;
+            dimensions.width > maxWidth ? maxWidth / dimensions.width : 1;
 
           page.drawImage(logo, {
             x: MARGIN_X,
@@ -5823,16 +5195,13 @@ function ImportWizardContent() {
           });
         }
 
-        page.drawText(
-          "OFF-DUTY FIREARMS REPORT",
-          {
-            x: MARGIN_X,
-            y: 690,
-            size: 16,
-            font: boldFont,
-            color: textColor,
-          },
-        );
+        page.drawText("OFF-DUTY FIREARMS REPORT", {
+          x: MARGIN_X,
+          y: 690,
+          size: 16,
+          font: boldFont,
+          color: textColor,
+        });
 
         page.drawLine({
           start: {
@@ -5851,10 +5220,7 @@ function ImportWizardContent() {
       }
 
       function newPage() {
-        page = pdf.addPage([
-          PAGE_WIDTH,
-          PAGE_HEIGHT,
-        ]);
+        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
         drawPageHeader();
       }
@@ -5883,9 +5249,7 @@ function ImportWizardContent() {
           x: MARGIN_X + indent,
           y,
           size: fontSize,
-          font: options?.bold
-            ? boldFont
-            : regularFont,
+          font: options?.bold ? boldFont : regularFont,
           color: options?.color ?? textColor,
         });
 
@@ -5903,36 +5267,25 @@ function ImportWizardContent() {
       ) {
         const fontSize = options?.size ?? 9;
         const indent = options?.indent ?? 0;
-        const available =
-          PAGE_WIDTH -
-          MARGIN_X * 2 -
-          indent;
+        const available = PAGE_WIDTH - MARGIN_X * 2 - indent;
 
-        const prefix = options?.label
-          ? `${options.label}: `
-          : "";
+        const prefix = options?.label ? `${options.label}: ` : "";
 
         const lines = wrapText(
           `${prefix}${clean(value)}`,
           available,
           fontSize,
-          options?.bold
-            ? boldFont
-            : regularFont,
+          options?.bold ? boldFont : regularFont,
         );
 
-        ensureSpace(
-          lines.length * (fontSize + 4) + 3,
-        );
+        ensureSpace(lines.length * (fontSize + 4) + 3);
 
         for (const line of lines) {
           page.drawText(line, {
             x: MARGIN_X + indent,
             y,
             size: fontSize,
-            font: options?.bold
-              ? boldFont
-              : regularFont,
+            font: options?.bold ? boldFont : regularFont,
             color: textColor,
           });
 
@@ -5971,10 +5324,7 @@ function ImportWizardContent() {
         y -= 14;
       }
 
-      function labelValue(
-        label: string,
-        value: unknown,
-      ) {
+      function labelValue(label: string, value: unknown) {
         drawWrapped(value, {
           label,
           size: 9,
@@ -5986,102 +5336,64 @@ function ImportWizardContent() {
       const selectedOfficer =
         reportOfficerId === "all"
           ? "All Officers"
-          : reportOfficerOptions.find(
-              (officer) =>
-                officer.id === reportOfficerId,
-            )?.name ?? "Selected Officer";
+          : (reportOfficerOptions.find(
+              (officer) => officer.id === reportOfficerId,
+            )?.name ?? "Selected Officer");
 
       const reportingPeriod =
         reportDateMode === "all"
           ? "All Time"
           : `${
-              reportStartDate
-                ? formatDate(reportStartDate)
-                : "Beginning"
-            } through ${
-              reportEndDate
-                ? formatDate(reportEndDate)
-                : "Present"
-            }`;
+              reportStartDate ? formatDate(reportStartDate) : "Beginning"
+            } through ${reportEndDate ? formatDate(reportEndDate) : "Present"}`;
 
-      drawTextLine(
-        "REPORT INFORMATION",
-        {
-          bold: true,
-          size: 10,
-        },
-      );
+      drawTextLine("REPORT INFORMATION", {
+        bold: true,
+        size: 10,
+      });
 
-      labelValue(
-        "Officer",
-        selectedOfficer,
-      );
+      labelValue("Officer", selectedOfficer);
 
-      labelValue(
-        "Reporting Period",
-        reportingPeriod,
-      );
+      labelValue("Reporting Period", reportingPeriod);
 
       labelValue(
         "Request Status",
-        reportStatus === "all"
-          ? "All Statuses"
-          : reportStatus,
+        reportStatus === "all" ? "All Statuses" : reportStatus,
       );
 
-      labelValue(
-        "Generated",
-        new Date().toLocaleString(),
-      );
+      labelValue("Generated", new Date().toLocaleString());
 
       y -= 8;
 
       sectionHeading("SUMMARY");
 
       const approved = records.filter(
-        (record) =>
-          record.requestStatus === "Approved",
+        (record) => record.requestStatus === "Approved",
       ).length;
 
       const pending = records.filter(
-        (record) =>
-          record.requestStatus ===
-          "Pending Command Review",
+        (record) => record.requestStatus === "Pending Command Review",
       ).length;
 
       const denied = records.filter(
-        (record) =>
-          record.requestStatus === "Denied",
+        (record) => record.requestStatus === "Denied",
       ).length;
 
       const returned = records.filter(
-        (record) =>
-          record.requestStatus ===
-          "Returned for Correction",
+        (record) => record.requestStatus === "Returned for Correction",
       ).length;
 
       const authorized = records.filter(
-        (record) =>
-          record.authorizationStatus ===
-          "Authorized",
+        (record) => record.authorizationStatus === "Authorized",
       ).length;
 
-      labelValue(
-        "Matching Requests",
-        records.length,
-      );
+      labelValue("Matching Requests", records.length);
 
       labelValue("Approved", approved);
       labelValue("Pending", pending);
       labelValue("Denied", denied);
-      labelValue(
-        "Returned for Correction",
-        returned,
-      );
-      labelValue(
-        "Currently Authorized",
-        authorized,
-      );
+      labelValue("Returned for Correction", returned);
+      labelValue("Currently Authorized", authorized);
 
       y -= 8;
 
@@ -6094,184 +5406,99 @@ function ImportWizardContent() {
 
         ensureSpace(120);
 
-        sectionHeading(
-          `REQUEST ${recordIndex + 1} OF ${records.length}`,
-        );
+        sectionHeading(`REQUEST ${recordIndex + 1} OF ${records.length}`);
 
-        drawTextLine(
-          `${record.officer} - ${record.make} ${record.model}`,
-          {
-            bold: true,
-            size: 11,
-          },
-        );
+        drawTextLine(`${record.officer} - ${record.make} ${record.model}`, {
+          bold: true,
+          size: 11,
+        });
 
-        labelValue(
-          "Request ID",
-          record.id,
-        );
+        labelValue("Request ID", record.id);
 
-        labelValue(
-          "Badge",
-          record.badge,
-        );
+        labelValue("Badge", record.badge);
 
-        labelValue(
-          "Unit",
-          record.unit,
-        );
+        labelValue("Unit", record.unit);
 
-        labelValue(
-          "Submitted",
-          formatDateTime(record.submittedAt),
-        );
+        labelValue("Submitted", formatDateTime(record.submittedAt));
 
-        labelValue(
-          "Request Status",
-          record.requestStatus,
-        );
+        labelValue("Request Status", record.requestStatus);
 
-        labelValue(
-          "Authorization Status",
-          record.authorizationStatus,
-        );
+        labelValue("Authorization Status", record.authorizationStatus);
 
-        labelValue(
-          "Compliance Status",
-          record.compliance,
-        );
+        labelValue("Compliance Status", record.compliance);
 
         sectionHeading("FIREARM DETAILS");
 
-        labelValue(
-          "Make / Model",
-          `${record.make} ${record.model}`,
-        );
+        labelValue("Make / Model", `${record.make} ${record.model}`);
 
-        labelValue(
-          "Firearm Type",
-          record.firearmType,
-        );
+        labelValue("Firearm Type", record.firearmType);
 
-        labelValue(
-          "Serial Number",
-          record.serial,
-        );
+        labelValue("Serial Number", record.serial);
 
-        labelValue(
-          "Caliber",
-          record.caliber,
-        );
+        labelValue("Caliber", record.caliber);
 
-        labelValue(
-          "Capacity",
-          record.capacity,
-        );
+        labelValue("Capacity", record.capacity);
 
-        labelValue(
-          "Optic",
-          record.optic,
-        );
+        labelValue("Optic", record.optic);
 
-        labelValue(
-          "Weapon Light",
-          record.weaponLight,
-        );
+        labelValue("Weapon Light", record.weaponLight);
 
-        labelValue(
-          "Holster",
-          record.holster,
-        );
+        labelValue("Holster", record.holster);
 
         sectionHeading("COMPLIANCE REVIEW");
 
         labelValue(
           "Proof of Ownership",
-          record.proofOwnership
-            ? "Acknowledged"
-            : "Not Acknowledged",
+          record.proofOwnership ? "Acknowledged" : "Not Acknowledged",
         );
 
         labelValue(
           "Qualification Requirement Reviewed",
-          record.qualificationReviewed
-            ? "Yes"
-            : "No",
+          record.qualificationReviewed ? "Yes" : "No",
         );
 
         labelValue(
           "Inspection Requirement Reviewed",
-          record.inspectionReviewed
-            ? "Yes"
-            : "No",
+          record.inspectionReviewed ? "Yes" : "No",
         );
 
         labelValue(
           "Policy Acknowledged",
-          record.policyAcknowledged
-            ? "Yes"
-            : "No",
+          record.policyAcknowledged ? "Yes" : "No",
         );
 
-        labelValue(
-          "Qualification Status",
-          record.qualificationStatus,
-        );
+        labelValue("Qualification Status", record.qualificationStatus);
 
-        labelValue(
-          "Qualification Detail",
-          record.qualificationReason,
-        );
+        labelValue("Qualification Detail", record.qualificationReason);
 
-        labelValue(
-          "Inspection Status",
-          record.inspectionStatus,
-        );
+        labelValue("Inspection Status", record.inspectionStatus);
 
         sectionHeading("COMMAND REVIEW");
 
-        labelValue(
-          "Reviewed By",
-          record.reviewedBy,
-        );
+        labelValue("Reviewed By", record.reviewedBy);
 
         labelValue(
           "Reviewed",
-          record.reviewedAt
-            ? formatDateTime(record.reviewedAt)
-            : "-",
+          record.reviewedAt ? formatDateTime(record.reviewedAt) : "-",
         );
 
         labelValue(
           "Authorization Effective",
-          record.approvalDate
-            ? formatDate(record.approvalDate)
-            : "-",
+          record.approvalDate ? formatDate(record.approvalDate) : "-",
         );
 
         labelValue(
           "Authorization Expires",
-          record.approvalExpires
-            ? formatDate(record.approvalExpires)
-            : "-",
+          record.approvalExpires ? formatDate(record.approvalExpires) : "-",
         );
 
         if (reportIncludeNotes) {
-          labelValue(
-            "Decision Notes",
-            record.decisionNotes,
-          );
+          labelValue("Decision Notes", record.decisionNotes);
 
-          labelValue(
-            "Officer Notes",
-            record.officerNotes,
-          );
+          labelValue("Officer Notes", record.officerNotes);
         }
 
-        if (
-          reportIncludeWorkflow &&
-          (record.auditTrail?.length ?? 0) > 0
-        ) {
+        if (reportIncludeWorkflow && (record.auditTrail?.length ?? 0) > 0) {
           sectionHeading("WORKFLOW HISTORY");
 
           for (const event of record.auditTrail ?? []) {
@@ -6283,18 +5510,12 @@ function ImportWizardContent() {
               },
             );
 
-            drawWrapped(
-              `${event.actor} (${event.actorRole})`,
-              {
-                size: 8,
-                indent: 10,
-              },
-            );
+            drawWrapped(`${event.actor} (${event.actorRole})`, {
+              size: 8,
+              indent: 10,
+            });
 
-            if (
-              reportIncludeNotes &&
-              event.notes
-            ) {
+            if (reportIncludeNotes && event.notes) {
               drawWrapped(event.notes, {
                 size: 8,
                 indent: 10,
@@ -6306,20 +5527,15 @@ function ImportWizardContent() {
         }
 
         if (reportIncludeInspections) {
-          const inspections =
-            inspectionResults.get(record.id) ??
-            [];
+          const inspections = inspectionResults.get(record.id) ?? [];
 
           sectionHeading("INSPECTION HISTORY");
 
           if (inspections.length === 0) {
-            drawTextLine(
-              "No inspections recorded.",
-              {
-                size: 8,
-                color: mutedColor,
-              },
-            );
+            drawTextLine("No inspections recorded.", {
+              size: 8,
+              color: mutedColor,
+            });
           } else {
             for (const inspection of inspections) {
               drawTextLine(
@@ -6330,33 +5546,21 @@ function ImportWizardContent() {
                 },
               );
 
-              drawWrapped(
-                `Inspector: ${inspection.inspectedBy}`,
-                {
+              drawWrapped(`Inspector: ${inspection.inspectedBy}`, {
+                size: 8,
+                indent: 10,
+              });
+
+              drawWrapped(`Recorded: ${formatDateTime(inspection.createdAt)}`, {
+                size: 8,
+                indent: 10,
+              });
+
+              if (reportIncludeNotes && inspection.notes) {
+                drawWrapped(inspection.notes, {
                   size: 8,
                   indent: 10,
-                },
-              );
-
-              drawWrapped(
-                `Recorded: ${formatDateTime(inspection.createdAt)}`,
-                {
-                  size: 8,
-                  indent: 10,
-                },
-              );
-
-              if (
-                reportIncludeNotes &&
-                inspection.notes
-              ) {
-                drawWrapped(
-                  inspection.notes,
-                  {
-                    size: 8,
-                    indent: 10,
-                  },
-                );
+                });
               }
 
               y -= 3;
@@ -6368,14 +5572,9 @@ function ImportWizardContent() {
       }
 
       const pages = pdf.getPages();
-      const generatedAt =
-        new Date().toLocaleString();
+      const generatedAt = new Date().toLocaleString();
 
-      for (
-        let index = 0;
-        index < pages.length;
-        index += 1
-      ) {
+      for (let index = 0; index < pages.length; index += 1) {
         const footerPage = pages[index];
 
         footerPage.drawLine({
@@ -6402,59 +5601,40 @@ function ImportWizardContent() {
           },
         );
 
-        const pageLabel =
-          `Page ${index + 1} of ${pages.length}`;
+        const pageLabel = `Page ${index + 1} of ${pages.length}`;
 
-        const pageLabelWidth =
-          regularFont.widthOfTextAtSize(
-            pageLabel,
-            7,
-          );
+        const pageLabelWidth = regularFont.widthOfTextAtSize(pageLabel, 7);
 
-        footerPage.drawText(
-          pageLabel,
-          {
-            x:
-              PAGE_WIDTH -
-              MARGIN_X -
-              pageLabelWidth,
-            y: 22,
-            size: 7,
-            font: regularFont,
-            color: mutedColor,
-          },
-        );
+        footerPage.drawText(pageLabel, {
+          x: PAGE_WIDTH - MARGIN_X - pageLabelWidth,
+          y: 22,
+          size: 7,
+          font: regularFont,
+          color: mutedColor,
+        });
 
-        footerPage.drawText(
-          generatedAt,
-          {
-            x: MARGIN_X,
-            y: 11,
-            size: 6,
-            font: regularFont,
-            color: mutedColor,
-          },
-        );
+        footerPage.drawText(generatedAt, {
+          x: MARGIN_X,
+          y: 11,
+          size: 6,
+          font: regularFont,
+          color: mutedColor,
+        });
       }
 
       const bytes = await pdf.save();
 
-      const blob = new Blob(
-        [new Uint8Array(bytes)],
-        {
-          type: "application/pdf",
-        },
-      );
+      const blob = new Blob([new Uint8Array(bytes)], {
+        type: "application/pdf",
+      });
 
       const url = URL.createObjectURL(blob);
 
-      const link =
-        document.createElement("a");
+      const link = document.createElement("a");
 
       link.href = url;
 
-      link.download =
-        `tracepoint-off-duty-firearms-report-${exportDate()}.pdf`;
+      link.download = `tracepoint-off-duty-firearms-report-${exportDate()}.pdf`;
 
       document.body.appendChild(link);
 
@@ -6522,7 +5702,6 @@ function ImportWizardContent() {
     ]);
   }
 
-
   const steps: { id: ImportStep; label: string }[] = [
     { id: "type", label: "Type" },
     { id: "upload", label: "Upload" },
@@ -6532,7 +5711,10 @@ function ImportWizardContent() {
   ];
 
   return (
-    <TracePointShell activePage="Settings" accessEnabled={!platformDepartmentId}>
+    <TracePointShell
+      activePage="Settings"
+      accessEnabled={!platformDepartmentId}
+    >
       <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
         <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6">
           <section className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6 shadow-sm">
@@ -6546,9 +5728,9 @@ function ImportWizardContent() {
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
                   Upload CSV exports, map agency fields to TracePoint fields,
-                  preview validation issues, and import supported records. Firearms,
-                  personnel, and qualification history import directly into
-                  normalized TracePoint records.
+                  preview validation issues, and import supported records.
+                  Firearms, personnel, and qualification history import directly
+                  into normalized TracePoint records.
                 </p>
               </div>
 
@@ -6591,11 +5773,15 @@ function ImportWizardContent() {
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
                 Import options
               </p>
-              <h2 id="import-method-heading" className="mt-2 text-2xl font-bold text-white">
+              <h2
+                id="import-method-heading"
+                className="mt-2 text-2xl font-bold text-white"
+              >
                 Choose your import experience
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                Use the established manual workflow or try guided spreadsheet interpretation with the new beta importer.
+                Use the established manual workflow or try guided spreadsheet
+                interpretation with the new beta importer.
               </p>
             </div>
 
@@ -6608,9 +5794,14 @@ function ImportWizardContent() {
                   <span className="rounded-full border border-emerald-600/60 bg-emerald-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-emerald-200">
                     Stable
                   </span>
-                  <FileSpreadsheet className="h-7 w-7 text-emerald-300" aria-hidden="true" />
+                  <FileSpreadsheet
+                    className="h-7 w-7 text-emerald-300"
+                    aria-hidden="true"
+                  />
                 </div>
-                <h3 className="mt-5 text-xl font-bold text-white">Classic Import Mapper</h3>
+                <h3 className="mt-5 text-xl font-bold text-white">
+                  Classic Import Mapper
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
                   Existing stable manual mapping workflow.
                 </p>
@@ -6619,7 +5810,10 @@ function ImportWizardContent() {
                 </p>
                 <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-emerald-200">
                   Use Classic Import Mapper
-                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" />
+                  <ArrowRight
+                    className="h-4 w-4 transition group-hover:translate-x-1"
+                    aria-hidden="true"
+                  />
                 </span>
               </a>
 
@@ -6631,18 +5825,27 @@ function ImportWizardContent() {
                   <span className="rounded-full border border-blue-500/60 bg-blue-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-blue-200">
                     Beta
                   </span>
-                  <Shield className="h-7 w-7 text-blue-300" aria-hidden="true" />
+                  <Shield
+                    className="h-7 w-7 text-blue-300"
+                    aria-hidden="true"
+                  />
                 </div>
-                <h3 className="mt-5 text-xl font-bold text-white">AI-Assisted Importer</h3>
+                <h3 className="mt-5 text-xl font-bold text-white">
+                  AI-Assisted Importer
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
                   Automatically interprets spreadsheets and proposes mappings.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-400">
-                  An administrator reviews and approves every mapping and validation result before import.
+                  An administrator reviews and approves every mapping and
+                  validation result before import.
                 </p>
                 <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-blue-200">
                   Open AI-Assisted Importer
-                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" />
+                  <ArrowRight
+                    className="h-4 w-4 transition group-hover:translate-x-1"
+                    aria-hidden="true"
+                  />
                 </span>
               </Link>
               <Link
@@ -6650,18 +5853,37 @@ function ImportWizardContent() {
                 className="group flex min-h-56 flex-col rounded-3xl border border-violet-600/60 bg-violet-950/25 p-6 transition hover:border-violet-400 hover:bg-violet-950/40"
               >
                 <div className="flex items-start justify-between gap-4">
-                  <span className="rounded-full border border-violet-500/60 bg-violet-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-violet-200">Beta</span>
-                  <Files className="h-7 w-7 text-violet-300" aria-hidden="true" />
+                  <span className="rounded-full border border-violet-500/60 bg-violet-950 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-violet-200">
+                    Beta
+                  </span>
+                  <Files
+                    className="h-7 w-7 text-violet-300"
+                    aria-hidden="true"
+                  />
                 </div>
-                <h3 className="mt-5 text-xl font-bold text-white">Multi-File Migration</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-300">Organize a mixed batch into one migration plan across TracePoint modules.</p>
-                <p className="mt-2 text-sm leading-6 text-slate-400">Shared mappings, cross-file duplicate review, dependencies, and resumable progress.</p>
-                <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-violet-200">Open Migration Workspace<ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
+                <h3 className="mt-5 text-xl font-bold text-white">
+                  Multi-File Migration
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Organize a mixed batch into one migration plan across
+                  TracePoint modules.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Shared mappings, cross-file duplicate review, dependencies,
+                  and resumable progress.
+                </p>
+                <span className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-bold text-violet-200">
+                  Open Migration Workspace
+                  <ArrowRight
+                    className="h-4 w-4 transition group-hover:translate-x-1"
+                    aria-hidden="true"
+                  />
+                </span>
               </Link>
             </div>
 
             <p className="mt-4 rounded-2xl border border-amber-700/40 bg-amber-950/20 px-4 py-3 text-sm leading-6 text-amber-100">
-              AI-assisted import is currently in beta. Review all proposed mappings and validation results before importing.
+              {"AI-assisted import is currently in beta. Review all proposed mappings and validation results before importing."}
             </p>
           </section>
 
@@ -6669,217 +5891,222 @@ function ImportWizardContent() {
             <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6">
               <div className="flex items-center gap-3">
                 <div>
-                  
-            <div className="mb-8 rounded-2xl border border-slate-700 bg-slate-950 p-5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">
-                    TracePoint Report Builder
-                  </p>
-                  <h2 className="mt-1 text-lg font-bold text-white">
-                    Branded Reports
-                  </h2>
-                  <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
-                    Generate presentation-ready TracePoint reports using department records and selected reporting criteria.
-                  </p>
-                </div>
+                  <div className="mb-8 rounded-2xl border border-slate-700 bg-slate-950 p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">
+                          TracePoint Report Builder
+                        </p>
+                        <h2 className="mt-1 text-lg font-bold text-white">
+                          Branded Reports
+                        </h2>
+                        <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
+                          Generate presentation-ready TracePoint reports using
+                          department records and selected reporting criteria.
+                        </p>
+                      </div>
+                    </div>
 
+                    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <label className="space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                          Report Type
+                        </span>
+                        <select
+                          value={effectiveReportType}
+                          onChange={(event) =>
+                            setReportType(event.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                        >
+                          {Array.from(
+                            new Set(
+                              availableReports.map(
+                                (definition) => definition.group,
+                              ),
+                            ),
+                          ).map((group) => (
+                            <optgroup key={group} label={group}>
+                              {availableReports
+                                .filter(
+                                  (definition) => definition.group === group,
+                                )
+                                .map((definition) => (
+                                  <option
+                                    key={definition.key}
+                                    value={definition.key}
+                                  >
+                                    {definition.label}
+                                  </option>
+                                ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </label>
 
-              </div>
+                      {selectedReportFilters.has("officer") && (
+                        <label className="space-y-2">
+                          <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Officer
+                          </span>
+                          <select
+                            value={reportOfficerId}
+                            onChange={(event) =>
+                              setReportOfficerId(event.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                          >
+                            <option value="all">All Officers</option>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Report Type
-                  </span>
-                  <select
-                    value={effectiveReportType}
-                    onChange={(event) =>
-                      setReportType(event.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                  >
-                    {Array.from(new Set(availableReports.map((definition) => definition.group))).map((group) => (
-                      <optgroup key={group} label={group}>
-                        {availableReports.filter((definition) => definition.group === group).map((definition) => (
-                          <option key={definition.key} value={definition.key}>{definition.label}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </label>
+                            {reportOfficerOptions.map((officer) => (
+                              <option key={officer.id} value={officer.id}>
+                                {officer.name}
+                                {officer.badge ? ` - ${officer.badge}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
 
-                {selectedReportFilters.has("officer") && <label className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Officer
-                  </span>
-                  <select
-                    value={reportOfficerId}
-                    onChange={(event) =>
-                      setReportOfficerId(event.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                  >
-                    <option value="all">
-                      All Officers
-                    </option>
+                      {selectedReportFilters.has("date") && (
+                        <label className="space-y-2">
+                          <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Date Range
+                          </span>
+                          <select
+                            value={reportDateMode}
+                            onChange={(event) =>
+                              setReportDateMode(
+                                event.target.value as "all" | "custom",
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                          >
+                            <option value="all">All Time</option>
+                            <option value="custom">Custom Range</option>
+                          </select>
+                        </label>
+                      )}
 
-                    {reportOfficerOptions.map((officer) => (
-                      <option
-                        key={officer.id}
-                        value={officer.id}
+                      {selectedReportFilters.has("status") && (
+                        <label className="space-y-2">
+                          <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Request Status
+                          </span>
+                          <select
+                            value={reportStatus}
+                            onChange={(event) =>
+                              setReportStatus(event.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                          >
+                            <option value="all">All Statuses</option>
+                            {reportStatusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+
+                    {selectedReportFilters.has("date") &&
+                      reportDateMode === "custom" && (
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                          <label className="space-y-2">
+                            <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                              From
+                            </span>
+                            <input
+                              type="date"
+                              value={reportStartDate}
+                              onChange={(event) =>
+                                setReportStartDate(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                            />
+                          </label>
+
+                          <label className="space-y-2">
+                            <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                              Through
+                            </span>
+                            <input
+                              type="date"
+                              value={reportEndDate}
+                              onChange={(event) =>
+                                setReportEndDate(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                            />
+                          </label>
+                        </div>
+                      )}
+
+                    <div className="mt-5 flex flex-wrap gap-4">
+                      {selectedReportFilters.has("workflow") && (
+                        <label className="flex items-center gap-2 text-sm text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeWorkflow}
+                            onChange={(event) =>
+                              setReportIncludeWorkflow(event.target.checked)
+                            }
+                          />
+                          Workflow history
+                        </label>
+                      )}
+
+                      {selectedReportFilters.has("inspections") && (
+                        <label className="flex items-center gap-2 text-sm text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeInspections}
+                            onChange={(event) =>
+                              setReportIncludeInspections(event.target.checked)
+                            }
+                          />
+                          Inspection history
+                        </label>
+                      )}
+
+                      {selectedReportFilters.has("notes") && (
+                        <label className="flex items-center gap-2 text-sm text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeNotes}
+                            onChange={(event) =>
+                              setReportIncludeNotes(event.target.checked)
+                            }
+                          />
+                          Notes
+                        </label>
+                      )}
+                    </div>
+
+                    <div className="mt-5">
+                      <button
+                        type="button"
+                        onClick={() => void handleGenerateReport()}
+                        disabled={reportGenerating}
+                        className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {officer.name}
-                        {officer.badge
-                          ? ` - ${officer.badge}`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>}
+                        {reportGenerating
+                          ? "Generating Report..."
+                          : "Generate Report"}
+                      </button>
 
-                {selectedReportFilters.has("date") && <label className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Date Range
-                  </span>
-                  <select
-                    value={reportDateMode}
-                    onChange={(event) =>
-                      setReportDateMode(
-                        event.target.value as
-                          | "all"
-                          | "custom",
-                      )
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                  >
-                    <option value="all">
-                      All Time
-                    </option>
-                    <option value="custom">
-                      Custom Range
-                    </option>
-                  </select>
-                </label>}
-
-                {selectedReportFilters.has("status") && <label className="space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Request Status
-                  </span>
-                  <select
-                    value={reportStatus}
-                    onChange={(event) =>
-                      setReportStatus(event.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                  >
-                    <option value="all">
-                      All Statuses
-                    </option>
-                    {reportStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
-                  </select>
-                </label>}
-              </div>
-
-              {selectedReportFilters.has("date") && reportDateMode === "custom" && (
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <label className="space-y-2">
-                    <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                      From
-                    </span>
-                    <input
-                      type="date"
-                      value={reportStartDate}
-                      onChange={(event) =>
-                        setReportStartDate(
-                          event.target.value,
-                        )
-                      }
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                    />
-                  </label>
-
-                  <label className="space-y-2">
-                    <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                      Through
-                    </span>
-                    <input
-                      type="date"
-                      value={reportEndDate}
-                      onChange={(event) =>
-                        setReportEndDate(
-                          event.target.value,
-                        )
-                      }
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                    />
-                  </label>
-                </div>
-              )}
-
-              <div className="mt-5 flex flex-wrap gap-4">
-                {selectedReportFilters.has("workflow") && <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={reportIncludeWorkflow}
-                    onChange={(event) =>
-                      setReportIncludeWorkflow(
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  Workflow history
-                </label>}
-
-                {selectedReportFilters.has("inspections") && <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={reportIncludeInspections}
-                    onChange={(event) =>
-                      setReportIncludeInspections(
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  Inspection history
-                </label>}
-
-                {selectedReportFilters.has("notes") && <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={reportIncludeNotes}
-                    onChange={(event) =>
-                      setReportIncludeNotes(
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  Notes
-                </label>}
-              </div>
-
-              <div className="mt-5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    void handleGenerateReport()
-                  }
-                  disabled={reportGenerating}
-                  className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {reportGenerating
-                    ? "Generating Report..."
-                    : "Generate Report"}
-                </button>
-
-                {exportError ? (
-                  <div className="mt-3 rounded-xl border border-red-800 bg-red-950/40 px-3 py-2 text-sm font-medium text-red-200">
-                    {exportError}
+                      {exportError ? (
+                        <div className="mt-3 rounded-xl border border-red-800 bg-red-950/40 px-3 py-2 text-sm font-medium text-red-200">
+                          {exportError}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                ) : null}
-              </div>
-            </div>
-<h2 className="text-xl font-bold text-white">Export Center</h2>
+                  <h2 className="text-xl font-bold text-white">
+                    Export Center
+                  </h2>
                   <p className="mt-1 text-sm text-slate-300">
                     Download current TracePoint data as CSV files.
                   </p>
@@ -6904,7 +6131,9 @@ function ImportWizardContent() {
                     Export active department personnel records.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
-                    {exporting === "personnel" ? "Exporting..." : "Download CSV"}
+                    {exporting === "personnel"
+                      ? "Exporting..."
+                      : "Download CSV"}
                   </p>
                 </button>
 
@@ -6934,7 +6163,9 @@ function ImportWizardContent() {
                     Export duty and training ammunition lots.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
-                    {exporting === "ammunition" ? "Exporting..." : "Download CSV"}
+                    {exporting === "ammunition"
+                      ? "Exporting..."
+                      : "Download CSV"}
                   </p>
                 </button>
                 <button
@@ -6943,9 +6174,7 @@ function ImportWizardContent() {
                   disabled={exporting !== null}
                   className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <p className="text-sm font-bold text-white">
-                    Qualifications
-                  </p>
+                  <p className="text-sm font-bold text-white">Qualifications</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
                     Export saved qualification history from Range Day results.
                   </p>
@@ -6979,11 +6208,10 @@ function ImportWizardContent() {
                   disabled={exporting !== null}
                   className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <p className="text-sm font-bold text-white">
-                    Range Days
-                  </p>
+                  <p className="text-sm font-bold text-white">Range Days</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Export Range Day events, participation, drills, and result totals.
+                    Export Range Day events, participation, drills, and result
+                    totals.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
                     {exporting === "range-days"
@@ -6997,11 +6225,10 @@ function ImportWizardContent() {
                   disabled={exporting !== null}
                   className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <p className="text-sm font-bold text-white">
-                    Certifications
-                  </p>
+                  <p className="text-sm font-bold text-white">Certifications</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Export officer credentials, expiration data, and certification requirements.
+                    Export officer credentials, expiration data, and
+                    certification requirements.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
                     {exporting === "certifications"
@@ -7015,11 +6242,10 @@ function ImportWizardContent() {
                   disabled={exporting !== null}
                   className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <p className="text-sm font-bold text-white">
-                    Equipment
-                  </p>
+                  <p className="text-sm font-bold text-white">Equipment</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Export equipment assets, assignments, lifecycle status, expirations, inspections, and requirements.
+                    Export equipment assets, assignments, lifecycle status,
+                    expirations, inspections, and requirements.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
                     {exporting === "equipment"
@@ -7037,7 +6263,8 @@ function ImportWizardContent() {
                     Off-Duty Firearms
                   </p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Export off-duty firearm requests, authorization status, compliance data, and workflow history.
+                    Export off-duty firearm requests, authorization status,
+                    compliance data, and workflow history.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
                     {exporting === "off-duty-firearms"
@@ -7055,7 +6282,8 @@ function ImportWizardContent() {
                     Complete Audit History
                   </p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Export the complete retained department audit history, including entity references and before/after change data.
+                    Export the complete retained department audit history,
+                    including entity references and before/after change data.
                   </p>
                   <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
                     {exporting === "complete-audit-history"
@@ -7063,13 +6291,45 @@ function ImportWizardContent() {
                       : "Download CSV"}
                   </p>
                 </button>
-                {availableReports.filter((definition) => (["agency-training","ammunition-transactions","personal-rifles","firearm-inspections","readiness","certification-readiness","alerts"].includes(definition.key) || definition.key.startsWith("fleet")) && definition.csv).map((definition) => (
-                  <button key={definition.key} type="button" onClick={() => void handleExportDefinition(definition.key)} disabled={exporting !== null} className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60">
-                    <p className="text-sm font-bold text-white">{definition.label}</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">Export current agency-scoped {definition.label.toLowerCase()} records.</p>
-                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">{exporting === definition.key ? "Exporting..." : "Download CSV"}</p>
-                  </button>
-                ))}
+                {availableReports
+                  .filter(
+                    (definition) =>
+                      ([
+                        "agency-training",
+                        "ammunition-transactions",
+                        "personal-rifles",
+                        "firearm-inspections",
+                        "readiness",
+                        "certification-readiness",
+                        "alerts",
+                      ].includes(definition.key) ||
+                        definition.key.startsWith("fleet")) &&
+                      definition.csv,
+                  )
+                  .map((definition) => (
+                    <button
+                      key={definition.key}
+                      type="button"
+                      onClick={() =>
+                        void handleExportDefinition(definition.key)
+                      }
+                      disabled={exporting !== null}
+                      className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-emerald-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <p className="text-sm font-bold text-white">
+                        {definition.label}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-400">
+                        Export current agency-scoped{" "}
+                        {definition.label.toLowerCase()} records.
+                      </p>
+                      <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
+                        {exporting === definition.key
+                          ? "Exporting..."
+                          : "Download CSV"}
+                      </p>
+                    </button>
+                  ))}
               </div>
             </div>
 
@@ -7112,7 +6372,11 @@ function ImportWizardContent() {
             </div>
           </section>
 
-          <div id="classic-import-mapper" className="scroll-mt-6" aria-hidden="true" />
+          <div
+            id="classic-import-mapper"
+            className="scroll-mt-6"
+            aria-hidden="true"
+          />
           <section className="rounded-[2rem] border border-sky-900/70 bg-sky-950/20 p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -7124,9 +6388,10 @@ function ImportWizardContent() {
                 </div>
 
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                  Upload a TracePoint onboarding workbook or an existing structured
-                  agency CSV/Excel file. TracePoint will identify the datasets,
-                  inspect the columns, and prepare them for supervised mapping.
+                  Upload a TracePoint onboarding workbook or an existing
+                  structured agency CSV/Excel file. TracePoint will identify the
+                  datasets, inspect the columns, and prepare them for supervised
+                  mapping.
                 </p>
               </div>
 
@@ -7268,8 +6533,7 @@ function ImportWizardContent() {
                             onClick={() => {
                               setSelectedTypeId(definition.id);
                               setFileName(
-                                dataset.sourceSheet ||
-                                  dataset.sourceFile,
+                                dataset.sourceSheet || dataset.sourceFile,
                               );
                               setParsedCsv(dataset.parsed);
                               setMapping(
@@ -7326,7 +6590,9 @@ function ImportWizardContent() {
                       {type.supportStatus}
                     </span>
                   </div>
-                  <h2 className="mt-4 text-xl font-bold text-white">{type.label}</h2>
+                  <h2 className="mt-4 text-xl font-bold text-white">
+                    {type.label}
+                  </h2>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
                     {type.description}
                   </p>
@@ -7341,8 +6607,8 @@ function ImportWizardContent() {
                 Upload {selectedDefinition.label} CSV
               </h2>
               <p className="mt-2 text-sm text-slate-300">
-                CSV import is currently supported. Excel support can
-                be added after we lock the field mappings.
+                CSV import is currently supported. Excel support can be added
+                after we lock the field mappings.
               </p>
 
               <label className="mt-6 flex cursor-pointer flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-700 bg-slate-950/70 p-10 text-center transition hover:border-sky-500">
@@ -7377,9 +6643,11 @@ function ImportWizardContent() {
             <section className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-white">Field Mapping</h2>
+                  <h2 className="text-xl font-bold text-white">
+                    Field Mapping
+                  </h2>
                   <p className="mt-2 text-sm text-slate-300">
-                    {fileName}  |  {parsedCsv.rows.length} row
+                    {fileName} | {parsedCsv.rows.length} row
                     {parsedCsv.rows.length === 1 ? "" : "s"} detected.
                   </p>
                 </div>
@@ -7459,7 +6727,9 @@ function ImportWizardContent() {
             <section className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-white">Preview & Validate</h2>
+                  <h2 className="text-xl font-bold text-white">
+                    Preview & Validate
+                  </h2>
                   <p className="mt-2 text-sm text-slate-300">
                     Review mapped rows before importing.
                   </p>
@@ -7499,8 +6769,9 @@ function ImportWizardContent() {
                   </p>
                   <p className="mt-2 text-3xl font-bold text-amber-200">
                     {
-                      validationIssues.filter((issue) => issue.severity === "warning")
-                        .length
+                      validationIssues.filter(
+                        (issue) => issue.severity === "warning",
+                      ).length
                     }
                   </p>
                 </div>
@@ -7520,7 +6791,9 @@ function ImportWizardContent() {
                       )}
                       <div>
                         <p className="font-semibold text-slate-100">
-                          {issue.rowNumber === 0 ? "Mapping" : `Row ${issue.rowNumber}`}
+                          {issue.rowNumber === 0
+                            ? "Mapping"
+                            : `Row ${issue.rowNumber}`}
                         </p>
                         <p className="text-slate-300">{issue.message}</p>
                       </div>
@@ -7535,7 +6808,10 @@ function ImportWizardContent() {
                     <thead className="sticky top-0 bg-slate-950 text-xs uppercase tracking-[0.18em] text-slate-400">
                       <tr>
                         {selectedDefinition.fields.map((field) => (
-                          <th key={field.key} className="px-4 py-3 font-semibold">
+                          <th
+                            key={field.key}
+                            className="px-4 py-3 font-semibold"
+                          >
                             {field.label}
                           </th>
                         ))}
@@ -7545,7 +6821,10 @@ function ImportWizardContent() {
                       {filteredPreviewRows.map((row, rowIndex) => (
                         <tr key={rowIndex}>
                           {selectedDefinition.fields.map((field) => (
-                            <td key={field.key} className="px-4 py-3 text-slate-300">
+                            <td
+                              key={field.key}
+                              className="px-4 py-3 text-slate-300"
+                            >
                               {row[field.key] || (
                                 <span className="text-slate-600">-</span>
                               )}
@@ -7591,8 +6870,12 @@ function ImportWizardContent() {
               <div className="flex items-center gap-3">
                 <Shield className="h-7 w-7 text-sky-300" />
                 <div>
-                  <h2 className="text-xl font-bold text-white">Import Report</h2>
-                  <p className="mt-1 text-sm text-slate-300">{report.message}</p>
+                  <h2 className="text-xl font-bold text-white">
+                    Import Report
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-300">
+                    {report.message}
+                  </p>
                 </div>
               </div>
 
@@ -7690,13 +6973,13 @@ function ImportWizardContent() {
                     <ArrowRight className="h-4 w-4" />
                   </a>
                 ) : selectedDefinition.id === "firearms" ? (
-                  <a
+                  <Link
                     href="/firearms"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-bold text-slate-950 hover:bg-slate-200"
                   >
                     View Armory
                     <ArrowRight className="h-4 w-4" />
-                  </a>
+                  </Link>
                 ) : null}
               </div>
             </section>
@@ -7706,28 +6989,6 @@ function ImportWizardContent() {
     </TracePointShell>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export default function ImportWizardPage() {
   return (

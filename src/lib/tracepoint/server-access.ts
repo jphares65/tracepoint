@@ -5,8 +5,11 @@ import { NextResponse } from "next/server";
 
 import { readBearerToken } from "@/lib/authentication/request-bearer";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { resolveRuntimeCognitoMobileBearer } from "@/lib/authentication/cognito-mobile-session";
+import { parseUniqueBearerToken } from "@/lib/authentication/request-bearer-core";
+import { isDedicatedMobileApiPath, mobileDepartmentSelection, mobileSupportSelection } from "@/lib/authentication/mobile-route-policy-core";
 import { parseCognitoTargetConfiguration } from "@/lib/authentication/cognito-runtime-configuration-core";
-import { resolvePostgresAccess } from "@/lib/tracepoint/server-access-postgres";
+import { resolvePostgresAccess, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { resolveTenantContext } from "@/lib/tracepoint/tenant-context";
@@ -124,10 +127,34 @@ function uniqueStrings(values: unknown[]) {
   );
 }
 
-export async function resolveServerAccess(): Promise<ServerAccessResult> {
+export async function resolveServerAccess(request?: Request): Promise<ServerAccessResult> {
   if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
     try {
       parseCognitoTargetConfiguration(process.env);
+      // Only dedicated /api/mobile routes may resolve bearer credentials.
+      // Browser routes keep their cookie-only security boundary below.
+      if (request && isDedicatedMobileApiPath(request.url)) {
+        const token = parseUniqueBearerToken(request.headers.get("authorization"));
+        if (!token) return { ok: false, status: 401, error: "Authentication is required." };
+        const principal = await resolveRuntimeCognitoMobileBearer(token);
+        if (!principal) return { ok: false, status: 401, error: "Authentication is required." };
+        const department = mobileDepartmentSelection(request.headers.get("x-tracepoint-department-id"));
+        if (!department.ok) {
+          return { ok: false, status: 400, error: "The selected department is invalid." };
+        }
+        const support = mobileSupportSelection(department.selected, request.headers.get("x-tracepoint-support-mode"));
+        if (!support.ok) return { ok: false, status: 400, error: "The Support Mode context is invalid." };
+        // A caller-supplied flag never grants access: the resolver rechecks
+        // platform administrator status and the target agency on every request.
+        const resolved = await resolvePostgresAccess(principal, department.selected, support.support);
+        if (resolved.ok && support.support) {
+          // Audit every support context entry, including direct workflow calls.
+          // Never let a caller skip auditing by bypassing session establishment.
+          try { await recordPostgresMobileSupportEntry(principal, support.support); }
+          catch { return { ok: false, status: 500, error: "Support Mode could not be validated and audited." }; }
+        }
+        return resolved as ServerAccessResult;
+      }
       // Browser sessions are the only native application credential in this
       // release. A bearer token must never fall through to Supabase.
       if ((await headers()).has("authorization")) {

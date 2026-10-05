@@ -7,8 +7,8 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 
-export async function getEquipmentServerContext() {
-  const resolved = await resolveServerAccess();
+export async function getEquipmentServerContext(request?: Request) {
+  const resolved = await resolveServerAccess(request);
 
   if (!resolved.ok) {
     return {

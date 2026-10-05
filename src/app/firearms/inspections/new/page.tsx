@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
+import { formatDateTime } from "@/lib/format/date";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -257,20 +257,6 @@ function getFirearmName(firearm: ArmoryFirearm) {
   return "Unnamed firearm";
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "Not recorded";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
@@ -335,9 +321,8 @@ function NewInspectionContent() {
     useState<ChecklistItem[]>(DEFAULT_CHECKLIST);
 
   const [result, setResult] = useState<(typeof RESULTS)[number]>("Passed");
-  const [serviceRecommendation, setServiceRecommendation] = useState<
-    (typeof SERVICE_RECOMMENDATIONS)[number]
-  >("Remain In Service");
+  const [serviceRecommendation, setServiceRecommendation] =
+    useState<(typeof SERVICE_RECOMMENDATIONS)[number]>("Remain In Service");
   const [followUpDate, setFollowUpDate] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [notes, setNotes] = useState("");
@@ -352,8 +337,7 @@ function NewInspectionContent() {
       });
 
       const payload = (await response.json()) as
-        | ArmoryResponse
-        | { error?: string };
+        ArmoryResponse | { error?: string };
 
       if (!response.ok) {
         throw new Error(
@@ -376,7 +360,11 @@ function NewInspectionContent() {
   }, []);
 
   useEffect(() => {
-    void loadArmory();
+    const loadTimer = window.setTimeout(() => {
+      void loadArmory();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, [loadArmory]);
 
   const selectedFirearm = useMemo(
@@ -439,10 +427,9 @@ function NewInspectionContent() {
           inspectionReason,
           inspectionDate: inspectionDateTime,
           inspectionLocation,
-          assigneeName:
-            selectedFirearm.active_assignment
-              ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
-              : null,
+          assigneeName: selectedFirearm.active_assignment
+            ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
+            : null,
           weaponCleared,
           ammunitionRemoved: ammoRemoved,
           magazinesPresented,
@@ -599,13 +586,15 @@ function NewInspectionContent() {
                         label="Assigned To"
                         value={
                           selectedFirearm.active_assignment
-                            ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
+                            ? getAssignedOfficerDisplayName(
+                                selectedFirearm.active_assignment,
+                              )
                             : "Unassigned"
                         }
                       />
                       <DetailPill
                         label="Last Updated"
-                        value={formatDate(selectedFirearm.updated_at)}
+                        value={formatDateTime(selectedFirearm.updated_at)}
                       />
                       <DetailPill
                         label="Active"
@@ -851,28 +840,28 @@ function NewInspectionContent() {
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                              {(["Pass", "Fail", "N/A"] as ChecklistStatus[]).map(
-                                (status) => (
-                                  <button
-                                    key={status}
-                                    type="button"
-                                    onClick={() =>
-                                      updateChecklistStatus(item.id, status)
-                                    }
-                                    className={`rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition ${
-                                      item.status === status
-                                        ? status === "Fail"
-                                          ? "border-red-500 bg-red-500/10 text-red-200"
-                                          : status === "Pass"
-                                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-200"
-                                            : "border-slate-600 bg-slate-700/30 text-slate-200"
-                                        : "border-slate-700 text-slate-400 hover:border-blue-500/50 hover:text-white"
-                                    }`}
-                                  >
-                                    {status}
-                                  </button>
-                                ),
-                              )}
+                              {(
+                                ["Pass", "Fail", "N/A"] as ChecklistStatus[]
+                              ).map((status) => (
+                                <button
+                                  key={status}
+                                  type="button"
+                                  onClick={() =>
+                                    updateChecklistStatus(item.id, status)
+                                  }
+                                  className={`rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition ${
+                                    item.status === status
+                                      ? status === "Fail"
+                                        ? "border-red-500 bg-red-500/10 text-red-200"
+                                        : status === "Pass"
+                                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-200"
+                                          : "border-slate-600 bg-slate-700/30 text-slate-200"
+                                      : "border-slate-700 text-slate-400 hover:border-blue-500/50 hover:text-white"
+                                  }`}
+                                >
+                                  {status}
+                                </button>
+                              ))}
                             </div>
                           </div>
 
@@ -953,7 +942,9 @@ function NewInspectionContent() {
                 </label>
 
                 <label className="block">
-                  <FieldLabel>Corrective Action / Maintenance Needed</FieldLabel>
+                  <FieldLabel>
+                    Corrective Action / Maintenance Needed
+                  </FieldLabel>
                   <textarea
                     value={correctiveAction}
                     onChange={(event) =>

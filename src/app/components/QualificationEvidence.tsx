@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Archive, Camera, ChevronDown, Download, Image as ImageIcon, Loader2, Upload } from "lucide-react";
+import { formatDateTime } from "@/lib/format/date";
 
 type EvidenceAttachment = {
   id: string;
@@ -216,7 +217,7 @@ export default function QualificationEvidence({
                       {item.file_name}
                     </p>
                     <p className="text-[9px] text-slate-600">
-                      {formatSize(item.file_size)} · {new Date(item.uploaded_at).toLocaleDateString()}
+                      {formatSize(item.file_size)} · {formatDateTime(item.uploaded_at)}
                     </p>
                     {item.description && (
                       <p className="mt-0.5 truncate text-[10px] text-slate-500">{item.description}</p>

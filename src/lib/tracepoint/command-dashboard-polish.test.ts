@@ -89,10 +89,7 @@ test("dashboard and analytics expose permission-gated visual builders with secon
         "src/app/components/VisualCustomization.tsx",
         "utf8",
       ),
-      readFile(
-        "src/app/api/settings/visual-configuration/route.ts",
-        "utf8",
-      ),
+      readFile("src/app/api/settings/visual-configuration/route.ts", "utf8"),
       readFile(
         "src/app/settings/components/RangeQualificationRulesPanel.tsx",
         "utf8",
@@ -120,7 +117,8 @@ test("dashboard and analytics expose permission-gated visual builders with secon
   assert.doesNotMatch(rangePanel, /Dashboard & Analytics Presentation/);
   assert.doesNotMatch(rangePanel, /patchAnalyticsDashboard/);
 
-  assert.match(dashboard, /hasPermission\("administer_department"\)/);
+  assert.match(settings, /const canAdminister\s*=\s*hasPermission\("administer_department"\)/);
+  assert.match(settings, /<RangeQualificationRulesPanel[\s\S]*canAdminister=\{canAdminister\}/);
   assert.match(dashboard, /Customize Dashboard/);
   assert.match(dashboard, /Add Card \/ Section/);
   assert.match(dashboard, /command_dashboard_card_order/);

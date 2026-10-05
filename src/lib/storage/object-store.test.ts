@@ -81,6 +81,14 @@ test("pins attachment operations to the private bucket and preserves path format
     bytes,
     contentType: "video/mp4",
   });
+  const document = await store.uploadFleetDocument({
+    departmentId: "department-a",
+    recordId: "vehicle-a",
+    objectId: "object-f",
+    fileName: "registration card.pdf",
+    bytes,
+    contentType: "application/pdf",
+  });
   const drill = await store.uploadDrillDocument({
     departmentId: "department-a",
     recordId: "drill-template-a",
@@ -94,6 +102,7 @@ test("pins attachment operations to the private bucket and preserves path format
   assert.equal(training.path, "department-a/agency-training/event-a/object-b-lesson-plan.pdf");
   assert.equal(firearm.path, "department-a/firearm/firearm-a/object-c-receipt-signed-.pdf");
   assert.equal(inspection.path, "department-a/fleet-inspection/inspection-a/object-e-driver-side.mp4");
+  assert.equal(document.path, "department-a/fleet-document/vehicle-a/object-f-registration-card.pdf");
   assert.equal(drill.path, "department-a/drill-document/drill-template-a/object-d-range-diagram.webp");
   assert.deepEqual(
     calls.map(({ bucket, operation, options }) => ({ bucket, operation, options })),
@@ -102,6 +111,7 @@ test("pins attachment operations to the private bucket and preserves path format
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "video/mp4", upsert: false } },
+      { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "application/pdf", upsert: false } },
       { bucket: "tracepoint-attachments", operation: "upload", options: { contentType: "image/webp", upsert: false } },
     ],
   );
@@ -158,6 +168,13 @@ test("accepts only attachment paths rooted in the authorized department", () => 
       "department-a",
     ),
     "department-a/firearm/firearm-a/object.pdf",
+  );
+  assert.equal(
+    attachmentPathFromMetadata(
+      "department-a/fleet-document/vehicle-a/object.pdf",
+      "department-a",
+    ),
+    "department-a/fleet-document/vehicle-a/object.pdf",
   );
   assert.equal(
     attachmentPathFromMetadata(

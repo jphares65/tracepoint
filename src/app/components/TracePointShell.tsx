@@ -196,6 +196,14 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         icon: Boxes,
       },
       {
+        label: "Inventory",
+        href: "/inventory",
+        icon: Boxes,
+        requirement: {
+          anyOf: ["view_inventory", "manage_inventory", "adjust_inventory"],
+        },
+      },
+      {
         label: "Fleet Management",
         href: "/fleet-management",
         icon: Boxes,
@@ -210,7 +218,8 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         },
       },
     ],
-  },  {
+  },
+  {
     label: "Off-Duty Firearms",
     icon: Shield,
     requirement: {
@@ -272,10 +281,7 @@ function getVisibleChildren(
       return false;
     }
 
-    return meetsPermissionRequirement(
-      permissions,
-      child.requirement,
-    );
+    return meetsPermissionRequirement(permissions, child.requirement);
   });
 }
 
@@ -285,10 +291,7 @@ function getNavItems(
   isSuperAdmin: boolean,
 ) {
   return NAV_ITEMS.filter((item) => {
-    if (
-      !isNavigationGroup(item) &&
-      item.label === "Super Admin"
-    ) {
+    if (!isNavigationGroup(item) && item.label === "Super Admin") {
       return isSuperAdmin;
     }
 
@@ -301,12 +304,7 @@ function getNavItems(
       return false;
     }
 
-    if (
-      !meetsPermissionRequirement(
-        permissions,
-        item.requirement,
-      )
-    ) {
+    if (!meetsPermissionRequirement(permissions, item.requirement)) {
       return false;
     }
 
@@ -315,12 +313,8 @@ function getNavItems(
     }
 
     return (
-      getVisibleChildren(
-        item,
-        permissions,
-        enabledFeatures,
-        isSuperAdmin,
-      ).length > 0
+      getVisibleChildren(item, permissions, enabledFeatures, isSuperAdmin)
+        .length > 0
     );
   });
 }
@@ -339,7 +333,11 @@ function isActiveRoute(pathname: string, href: string) {
       "/firearms/ammunition",
     ];
 
-    if (armoryWorkspacePrefixes.some((prefix) => normalizedPath.startsWith(prefix))) {
+    if (
+      armoryWorkspacePrefixes.some((prefix) =>
+        normalizedPath.startsWith(prefix),
+      )
+    ) {
       return false;
     }
 
@@ -372,12 +370,9 @@ function groupContainsPath(
     permissions,
     enabledFeatures,
     isSuperAdmin,
-  ).some((child) =>
-    isActiveRoute(pathname, child.href),
-  );
+  ).some((child) => isActiveRoute(pathname, child.href));
 }
 function NavigationLinks({
-  activePage: _activePage,
   pathname,
   permissions,
   enabledFeatures,
@@ -393,14 +388,11 @@ function NavigationLinks({
 }) {
   const enabledFeatureSet = new Set(enabledFeatures);
 
-  const navItems = getNavItems(
-    permissions,
-    enabledFeatureSet,
-    isSuperAdmin,
-  );
+  const navItems = getNavItems(permissions, enabledFeatureSet, isSuperAdmin);
   const activeGroupLabel = navItems.find(
     (item): item is NavigationGroup =>
-      isNavigationGroup(item) && groupContainsPath(
+      isNavigationGroup(item) &&
+      groupContainsPath(
         pathname,
         item,
         permissions,
@@ -415,12 +407,16 @@ function NavigationLinks({
   useEffect(() => {
     if (!activeGroupLabel) return;
 
-    setOpenGroups((current) => {
-      if (current.has(activeGroupLabel)) return current;
-      const next = new Set(current);
-      next.add(activeGroupLabel);
-      return next;
-    });
+    const groupTimer = window.setTimeout(() => {
+      setOpenGroups((current) => {
+        if (current.has(activeGroupLabel)) return current;
+        const next = new Set(current);
+        next.add(activeGroupLabel);
+        return next;
+      });
+    }, 0);
+
+    return () => window.clearTimeout(groupTimer);
   }, [activeGroupLabel]);
 
   function toggleGroup(label: string) {
@@ -480,12 +476,12 @@ function NavigationLinks({
             isSuperAdmin,
           );
           const active = groupContainsPath(
-        pathname,
-        item,
-        permissions,
-        enabledFeatureSet,
-        isSuperAdmin,
-      );
+            pathname,
+            item,
+            permissions,
+            enabledFeatureSet,
+            isSuperAdmin,
+          );
           const open = openGroups.has(item.label);
 
           return (
@@ -591,17 +587,16 @@ function AgencyCard({
             className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 transition hover:border-blue-500/50"
           >
             {departmentPatchUrl ? (
-              <img
+              <Image
                 src={departmentPatchUrl}
                 alt={`${departmentName} patch`}
+                width={48}
+                height={48}
+                unoptimized
                 className="h-full w-full object-contain p-1"
               />
             ) : (
-              <Shield
-                size={20}
-                className="text-slate-500"
-                aria-hidden="true"
-              />
+              <Shield size={20} className="text-slate-500" aria-hidden="true" />
             )}
           </Link>
 
@@ -709,14 +704,15 @@ export default function TracePointShell({
 }: TracePointShellProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [switchingDepartmentId, setSwitchingDepartmentId] =
-    useState<string | null>(null);
-  const [departmentSelectionError, setDepartmentSelectionError] =
-    useState<string | null>(null);
-  const [appearance, setAppearance] =
-    useState<TracePointAppearancePreferences>(
-      getStoredAppearancePreferences,
-    );
+  const [switchingDepartmentId, setSwitchingDepartmentId] = useState<
+    string | null
+  >(null);
+  const [departmentSelectionError, setDepartmentSelectionError] = useState<
+    string | null
+  >(null);
+  const [appearance, setAppearance] = useState<TracePointAppearancePreferences>(
+    getStoredAppearancePreferences,
+  );
 
   const {
     loading,
@@ -775,7 +771,9 @@ export default function TracePointShell({
         JSON.stringify(next),
       );
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [accentColor, departmentId, loginTheme]);
 
   async function selectDepartment(nextDepartmentId: string) {
@@ -842,7 +840,8 @@ export default function TracePointShell({
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Your account belongs to more than one agency. Select the agency you want to work in.
+              Your account belongs to more than one agency. Select the agency
+              you want to work in.
             </p>
 
             {departmentSelectionError ? (
@@ -910,9 +909,7 @@ export default function TracePointShell({
               TracePoint Access Error
             </h1>
 
-            <p className="mt-2 text-sm text-red-100">
-              {accessError}
-            </p>
+            <p className="mt-2 text-sm text-red-100">{accessError}</p>
           </div>
         </div>
       </div>
@@ -926,7 +923,13 @@ export default function TracePointShell({
       <AppearanceStyleOverrides />
       <IdleSessionGuard />
       <div className="flex min-h-screen">
-        <aside className={compactNavigation ? "hidden" : "fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col"}>
+        <aside
+          className={
+            compactNavigation
+              ? "hidden"
+              : "fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-slate-800 bg-slate-950 lg:flex lg:flex-col"
+          }
+        >
           <div className="border-b border-slate-800 px-5 py-3.5">
             <BrandHeader />
           </div>
@@ -989,8 +992,12 @@ export default function TracePointShell({
           </div>
         )}
 
-        <main className={`min-h-screen min-w-0 flex-1 ${compactNavigation ? "lg:pl-0" : "lg:pl-72"}`}>
-          <header className={`sticky top-0 z-40 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden ${compactNavigation ? "hidden" : "flex"}`}>
+        <main
+          className={`min-h-screen min-w-0 flex-1 ${compactNavigation ? "lg:pl-0" : "lg:pl-72"}`}
+        >
+          <header
+            className={`sticky top-0 z-40 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden ${compactNavigation ? "hidden" : "flex"}`}
+          >
             <BrandHeader compact />
 
             <button
@@ -1011,19 +1018,3 @@ export default function TracePointShell({
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

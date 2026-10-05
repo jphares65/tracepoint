@@ -20,6 +20,7 @@ import {
 
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 import {
   EMPTY_AMMO_WORKSPACE,
   VERIFICATION_MODES,
@@ -41,13 +42,7 @@ import {
   type VerificationMode,
 } from "@/lib/tracepoint/ammunition-workspace";
 
-type ViewId =
-  | "overview"
-  | "types"
-  | "receive"
-  | "action"
-  | "count"
-  | "history";
+type ViewId = "overview" | "types" | "receive" | "action" | "count" | "history";
 
 type TypeDraft = {
   name: string;
@@ -80,7 +75,10 @@ type LotDraft = {
 type ActionDraft = {
   ammoTypeId: string;
   lotId: string;
-  kind: Exclude<AmmoActivityKind, "Type Created" | "Purchase Received" | "Physical Count">;
+  kind: Exclude<
+    AmmoActivityKind,
+    "Type Created" | "Purchase Received" | "Physical Count"
+  >;
   quantity: string;
   reference: string;
   notes: string;
@@ -163,22 +161,6 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
-function formatDate(value?: string) {
-  if (!value) return "Not recorded";
-
-  const date = value.includes("T")
-    ? new Date(value)
-    : new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function inputClass() {
   return "mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition focus:border-blue-500";
 }
@@ -198,7 +180,9 @@ function Field({
         {label}
       </span>
       {children}
-      {hint ? <span className="mt-1 block text-xs text-slate-600">{hint}</span> : null}
+      {hint ? (
+        <span className="mt-1 block text-xs text-slate-600">{hint}</span>
+      ) : null}
     </label>
   );
 }
@@ -240,8 +224,7 @@ export default function ArmoryAmmunitionPage() {
   const [lotDraft, setLotDraft] = useState<LotDraft>(EMPTY_LOT_DRAFT);
   const [actionDraft, setActionDraft] =
     useState<ActionDraft>(EMPTY_ACTION_DRAFT);
-  const [countDraft, setCountDraft] =
-    useState<CountDraft>(EMPTY_COUNT_DRAFT);
+  const [countDraft, setCountDraft] = useState<CountDraft>(EMPTY_COUNT_DRAFT);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -274,10 +257,7 @@ export default function ArmoryAmmunitionPage() {
       (sum, item) => sum + getCurrentInventoryValue(workspace, item.id),
       0,
     );
-    const spend = workspace.lots.reduce(
-      (sum, item) => sum + item.totalCost,
-      0,
-    );
+    const spend = workspace.lots.reduce((sum, item) => sum + item.totalCost, 0);
 
     return {
       rounds,
@@ -349,7 +329,11 @@ export default function ArmoryAmmunitionPage() {
   }
 
   useEffect(() => {
-    void loadWorkspace();
+    const loadTimer = window.setTimeout(() => {
+      void loadWorkspace();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, []);
 
   function addActivity(
@@ -437,9 +421,7 @@ export default function ArmoryAmmunitionPage() {
     setTypeDraft({
       ...EMPTY_TYPE_DRAFT,
       verificationMode: workspace.settings.defaultVerificationMode,
-      customIntervalDays: String(
-        workspace.settings.defaultCustomIntervalDays,
-      ),
+      customIntervalDays: String(workspace.settings.defaultCustomIntervalDays),
     });
   }
 
@@ -471,7 +453,9 @@ export default function ArmoryAmmunitionPage() {
     const quantity = asNonNegativeInteger(lotDraft.quantityReceived);
 
     if (!ammoType || quantity <= 0 || !lotDraft.lotNumber.trim()) {
-      setError("Select an ammunition type and enter a lot number and quantity.");
+      setError(
+        "Select an ammunition type and enter a lot number and quantity.",
+      );
       return;
     }
 
@@ -534,7 +518,10 @@ export default function ArmoryAmmunitionPage() {
       totalCost,
     });
 
-    await saveWorkspace(next, `${formatNumber(quantity)} ${ammoType.unitLabel} received.`);
+    await saveWorkspace(
+      next,
+      `${formatNumber(quantity)} ${ammoType.unitLabel} received.`,
+    );
     setLotDraft({ ...EMPTY_LOT_DRAFT, ammoTypeId: ammoType.id });
   }
 
@@ -679,9 +666,8 @@ export default function ArmoryAmmunitionPage() {
       ammoTypes: workspace.ammoTypes.map((item) =>
         item.verificationMode === "Manual" &&
         item.currentOnHand === 0 &&
-        workspace.activity.filter(
-          (activity) => activity.ammoTypeId === item.id,
-        ).length <= 1
+        workspace.activity.filter((activity) => activity.ammoTypeId === item.id)
+          .length <= 1
           ? {
               ...item,
               verificationMode: workspace.settings.defaultVerificationMode,
@@ -709,8 +695,16 @@ export default function ArmoryAmmunitionPage() {
     { id: "overview", label: "Inventory", icon: <Boxes size={15} /> },
     { id: "types", label: "Types & Rules", icon: <Settings size={15} /> },
     { id: "receive", label: "Receive Lot", icon: <PackagePlus size={15} /> },
-    { id: "action", label: "Record Use", icon: <SlidersHorizontal size={15} /> },
-    { id: "count", label: "Physical Count", icon: <ClipboardCheck size={15} /> },
+    {
+      id: "action",
+      label: "Record Use",
+      icon: <SlidersHorizontal size={15} />,
+    },
+    {
+      id: "count",
+      label: "Physical Count",
+      icon: <ClipboardCheck size={15} />,
+    },
     { id: "history", label: "History", icon: <History size={15} /> },
   ];
 
@@ -809,7 +803,8 @@ export default function ArmoryAmmunitionPage() {
                         Ammunition order required
                       </h3>
                       <p className="mt-1 text-sm text-amber-200/70">
-                        These standing totals have reached or crossed the reorder point.
+                        These standing totals have reached or crossed the
+                        reorder point.
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {lowStockTypes.map((item) => (
@@ -831,8 +826,8 @@ export default function ArmoryAmmunitionPage() {
                 <div className="border-b border-slate-800 px-5 py-4">
                   <h3 className="font-bold text-white">Current Inventory</h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    The standing total is authoritative. Lots support purchasing,
-                    cost history, and traceability.
+                    The standing total is authoritative. Lots support
+                    purchasing, cost history, and traceability.
                   </p>
                 </div>
 
@@ -910,7 +905,7 @@ export default function ArmoryAmmunitionPage() {
                               </td>
                               <td className="px-5 py-4 text-slate-400">
                                 {lastCount
-                                  ? formatDate(lastCount.completedAt)
+                                  ? formatDateTime(lastCount.completedAt)
                                   : "Not counted"}
                               </td>
                               <td className="px-5 py-4">
@@ -941,9 +936,12 @@ export default function ArmoryAmmunitionPage() {
                 <div className="flex items-center gap-3">
                   <Plus className="h-5 w-5 text-blue-300" />
                   <div>
-                    <h3 className="font-bold text-white">Add Ammunition Type</h3>
+                    <h3 className="font-bold text-white">
+                      Add Ammunition Type
+                    </h3>
                     <p className="text-sm text-slate-500">
-                      Agencies may create as many distinct inventories as needed.
+                      Agencies may create as many distinct inventories as
+                      needed.
                     </p>
                   </div>
                 </div>
@@ -1098,7 +1096,11 @@ export default function ArmoryAmmunitionPage() {
                     disabled={saving}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
                   >
-                    {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                    {saving ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <Save size={15} />
+                    )}
                     Create Type
                   </button>
                 </div>
@@ -1193,15 +1195,21 @@ export default function ArmoryAmmunitionPage() {
                   <div className="border-b border-slate-800 px-5 py-4">
                     <h3 className="font-bold text-white">Configured Types</h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      Reorder thresholds and verification schedules are set independently.
+                      Reorder thresholds and verification schedules are set
+                      independently.
                     </p>
                   </div>
 
                   <div className="divide-y divide-slate-800">
                     {activeTypes.map((item) => (
-                      <div key={item.id} className="grid gap-4 p-5 lg:grid-cols-[1fr_180px_210px_110px] lg:items-end">
+                      <div
+                        key={item.id}
+                        className="grid gap-4 p-5 lg:grid-cols-[1fr_180px_210px_110px] lg:items-end"
+                      >
                         <div>
-                          <p className="font-semibold text-white">{item.name}</p>
+                          <p className="font-semibold text-white">
+                            {item.name}
+                          </p>
                           <p className="mt-1 text-xs text-slate-500">
                             {[item.caliber, item.category, item.purpose]
                               .filter(Boolean)
@@ -1214,7 +1222,9 @@ export default function ArmoryAmmunitionPage() {
                             min={0}
                             defaultValue={item.reorderThreshold}
                             onBlur={(event) => {
-                              const value = asNonNegativeInteger(event.target.value);
+                              const value = asNonNegativeInteger(
+                                event.target.value,
+                              );
                               if (value !== item.reorderThreshold) {
                                 void handleUpdateType(
                                   item.id,
@@ -1230,20 +1240,21 @@ export default function ArmoryAmmunitionPage() {
                           <select
                             value={item.verificationMode}
                             onChange={(event) => {
-                              const mode = event.target.value as VerificationMode;
+                              const mode = event.target
+                                .value as VerificationMode;
                               void handleUpdateType(
                                 item.id,
                                 {
                                   verificationMode: mode,
                                   customIntervalDays:
                                     mode === "Custom Days"
-                                      ? item.customIntervalDays ?? 180
+                                      ? (item.customIntervalDays ?? 180)
                                       : null,
                                   nextVerificationDate:
                                     calculateNextVerificationDate(
                                       mode,
                                       mode === "Custom Days"
-                                        ? item.customIntervalDays ?? 180
+                                        ? (item.customIntervalDays ?? 180)
                                         : null,
                                     ),
                                 },
@@ -1291,9 +1302,12 @@ export default function ArmoryAmmunitionPage() {
               <div className="flex items-center gap-3">
                 <PackagePlus className="h-5 w-5 text-emerald-300" />
                 <div>
-                  <h3 className="font-bold text-white">Receive Ammunition Lot</h3>
+                  <h3 className="font-bold text-white">
+                    Receive Ammunition Lot
+                  </h3>
                   <p className="text-sm text-slate-500">
-                    Receiving a lot increases the standing total and preserves the full purchase and cost record.
+                    Receiving a lot increases the standing total and preserves
+                    the full purchase and cost record.
                   </p>
                 </div>
               </div>
@@ -1319,42 +1333,160 @@ export default function ArmoryAmmunitionPage() {
                   </select>
                 </Field>
                 <Field label="Manufacturer">
-                  <input value={lotDraft.manufacturer} onChange={(event) => setLotDraft((current) => ({ ...current, manufacturer: event.target.value }))} className={inputClass()} />
+                  <input
+                    value={lotDraft.manufacturer}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        manufacturer: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Product / Load">
-                  <input value={lotDraft.product} onChange={(event) => setLotDraft((current) => ({ ...current, product: event.target.value }))} className={inputClass()} />
+                  <input
+                    value={lotDraft.product}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        product: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Lot Number">
-                  <input value={lotDraft.lotNumber} onChange={(event) => setLotDraft((current) => ({ ...current, lotNumber: event.target.value }))} className={inputClass()} />
+                  <input
+                    value={lotDraft.lotNumber}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        lotNumber: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Vendor">
-                  <input value={lotDraft.vendor} onChange={(event) => setLotDraft((current) => ({ ...current, vendor: event.target.value }))} className={inputClass()} />
+                  <input
+                    value={lotDraft.vendor}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        vendor: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Purchase Date">
-                  <input type="date" value={lotDraft.purchaseDate} onChange={(event) => setLotDraft((current) => ({ ...current, purchaseDate: event.target.value }))} className={inputClass()} />
+                  <input
+                    type="date"
+                    value={lotDraft.purchaseDate}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        purchaseDate: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Invoice / PO">
-                  <input value={lotDraft.invoiceNumber} onChange={(event) => setLotDraft((current) => ({ ...current, invoiceNumber: event.target.value }))} className={inputClass()} />
+                  <input
+                    value={lotDraft.invoiceNumber}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        invoiceNumber: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Quantity Received">
-                  <input inputMode="numeric" value={lotDraft.quantityReceived} onChange={(event) => setLotDraft((current) => ({ ...current, quantityReceived: event.target.value }))} className={inputClass()} />
+                  <input
+                    inputMode="numeric"
+                    value={lotDraft.quantityReceived}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        quantityReceived: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Cost Per Round">
-                  <input inputMode="decimal" value={lotDraft.costPerRound} onChange={(event) => setLotDraft((current) => ({ ...current, costPerRound: event.target.value }))} className={inputClass()} />
+                  <input
+                    inputMode="decimal"
+                    value={lotDraft.costPerRound}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        costPerRound: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Shipping">
-                  <input inputMode="decimal" value={lotDraft.shippingCost} onChange={(event) => setLotDraft((current) => ({ ...current, shippingCost: event.target.value }))} className={inputClass()} />
+                  <input
+                    inputMode="decimal"
+                    value={lotDraft.shippingCost}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        shippingCost: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
                 <Field label="Tax">
-                  <input inputMode="decimal" value={lotDraft.taxCost} onChange={(event) => setLotDraft((current) => ({ ...current, taxCost: event.target.value }))} className={inputClass()} />
+                  <input
+                    inputMode="decimal"
+                    value={lotDraft.taxCost}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        taxCost: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
-                <Field label="Total Cost" hint="Optional; calculated from quantity, unit cost, shipping, and tax when blank.">
-                  <input inputMode="decimal" value={lotDraft.totalCost} onChange={(event) => setLotDraft((current) => ({ ...current, totalCost: event.target.value }))} className={inputClass()} />
+                <Field
+                  label="Total Cost"
+                  hint="Optional; calculated from quantity, unit cost, shipping, and tax when blank."
+                >
+                  <input
+                    inputMode="decimal"
+                    value={lotDraft.totalCost}
+                    onChange={(event) =>
+                      setLotDraft((current) => ({
+                        ...current,
+                        totalCost: event.target.value,
+                      }))
+                    }
+                    className={inputClass()}
+                  />
                 </Field>
               </div>
 
               <Field label="Notes">
-                <textarea value={lotDraft.notes} onChange={(event) => setLotDraft((current) => ({ ...current, notes: event.target.value }))} rows={3} className={inputClass()} />
+                <textarea
+                  value={lotDraft.notes}
+                  onChange={(event) =>
+                    setLotDraft((current) => ({
+                      ...current,
+                      notes: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className={inputClass()}
+                />
               </Field>
 
               <button
@@ -1363,7 +1495,11 @@ export default function ArmoryAmmunitionPage() {
                 disabled={saving}
                 className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <PackagePlus size={15} />}
+                {saving ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <PackagePlus size={15} />
+                )}
                 Receive Lot
               </button>
             </section>
@@ -1374,9 +1510,12 @@ export default function ArmoryAmmunitionPage() {
               <div className="flex items-center gap-3">
                 <SlidersHorizontal className="h-5 w-5 text-blue-300" />
                 <div>
-                  <h3 className="font-bold text-white">Record Inventory Activity</h3>
+                  <h3 className="font-bold text-white">
+                    Record Inventory Activity
+                  </h3>
                   <p className="text-sm text-slate-500">
-                    Users manage the standing total. TracePoint creates the historical transaction record automatically.
+                    Users manage the standing total. TracePoint creates the
+                    historical transaction record automatically.
                   </p>
                 </div>
               </div>
@@ -1453,7 +1592,8 @@ export default function ArmoryAmmunitionPage() {
                     <option value="">Standing total only</option>
                     {selectedActionLots.map((lot) => (
                       <option key={lot.id} value={lot.id}>
-                        {lot.lotNumber} · {formatNumber(lot.quantityRemaining)} estimated remaining
+                        {lot.lotNumber} · {formatNumber(lot.quantityRemaining)}{" "}
+                        estimated remaining
                       </option>
                     ))}
                   </select>
@@ -1491,7 +1631,11 @@ export default function ArmoryAmmunitionPage() {
                 disabled={saving}
                 className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                {saving ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <Save size={15} />
+                )}
                 Record Action
               </button>
             </section>
@@ -1502,9 +1646,12 @@ export default function ArmoryAmmunitionPage() {
               <div className="flex items-center gap-3">
                 <ClipboardCheck className="h-5 w-5 text-emerald-300" />
                 <div>
-                  <h3 className="font-bold text-white">Confirm Physical Inventory</h3>
+                  <h3 className="font-bold text-white">
+                    Confirm Physical Inventory
+                  </h3>
                   <p className="text-sm text-slate-500">
-                    The confirmed physical count becomes the new official standing total. The variance remains in history.
+                    The confirmed physical count becomes the new official
+                    standing total. The variance remains in history.
                   </p>
                 </div>
               </div>
@@ -1524,7 +1671,8 @@ export default function ArmoryAmmunitionPage() {
                     <option value="">Select type</option>
                     {activeTypes.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} · expected {formatNumber(item.currentOnHand)}
+                        {item.name} · expected{" "}
+                        {formatNumber(item.currentOnHand)}
                       </option>
                     ))}
                   </select>
@@ -1548,7 +1696,10 @@ export default function ArmoryAmmunitionPage() {
                       const selected = activeTypes.find(
                         (item) => item.id === countDraft.ammoTypeId,
                       );
-                      if (!selected || countDraft.physicalQuantity.trim() === "") {
+                      if (
+                        !selected ||
+                        countDraft.physicalQuantity.trim() === ""
+                      ) {
                         return "Calculated automatically";
                       }
                       const variance =
@@ -1580,7 +1731,11 @@ export default function ArmoryAmmunitionPage() {
                 disabled={saving}
                 className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
+                {saving ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <ShieldCheck size={15} />
+                )}
                 Confirm Count
               </button>
             </section>
@@ -1592,7 +1747,8 @@ export default function ArmoryAmmunitionPage() {
                 <div className="border-b border-slate-800 px-5 py-4">
                   <h3 className="font-bold text-white">Inventory History</h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    Immutable operational history generated by inventory actions.
+                    Immutable operational history generated by inventory
+                    actions.
                   </p>
                 </div>
                 <div className="max-h-[680px] divide-y divide-slate-800 overflow-y-auto">
@@ -1631,7 +1787,7 @@ export default function ArmoryAmmunitionPage() {
                                 {formatNumber(item.quantityChange)}
                               </p>
                               <p className="text-xs text-slate-600">
-                                {formatDate(item.createdAt)}
+                                {formatDateTime(item.createdAt)}
                               </p>
                             </div>
                           </div>
@@ -1658,9 +1814,12 @@ export default function ArmoryAmmunitionPage() {
 
               <section className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70">
                 <div className="border-b border-slate-800 px-5 py-4">
-                  <h3 className="font-bold text-white">Purchase & Cost History</h3>
+                  <h3 className="font-bold text-white">
+                    Purchase & Cost History
+                  </h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    Historical lots remain available for budgeting, invoices, and recall traceability.
+                    Historical lots remain available for budgeting, invoices,
+                    and recall traceability.
                   </p>
                 </div>
                 <div className="max-h-[680px] divide-y divide-slate-800 overflow-y-auto">
@@ -1682,7 +1841,11 @@ export default function ArmoryAmmunitionPage() {
                                 {type?.name ?? "Unknown type"}
                               </p>
                               <p className="mt-1 text-xs text-slate-500">
-                                {[lot.manufacturer, lot.product, `Lot ${lot.lotNumber}`]
+                                {[
+                                  lot.manufacturer,
+                                  lot.product,
+                                  `Lot ${lot.lotNumber}`,
+                                ]
                                   .filter(Boolean)
                                   .join(" · ")}
                               </p>
@@ -1691,23 +1854,39 @@ export default function ArmoryAmmunitionPage() {
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                             <div>
-                              <p className="text-xs uppercase tracking-wider text-slate-600">Received</p>
-                              <p className="mt-1 text-slate-300">{formatNumber(lot.quantityReceived)}</p>
+                              <p className="text-xs uppercase tracking-wider text-slate-600">
+                                Received
+                              </p>
+                              <p className="mt-1 text-slate-300">
+                                {formatNumber(lot.quantityReceived)}
+                              </p>
                             </div>
                             <div>
-                              <p className="text-xs uppercase tracking-wider text-slate-600">Total Cost</p>
-                              <p className="mt-1 text-slate-300">{formatMoney(lot.totalCost)}</p>
+                              <p className="text-xs uppercase tracking-wider text-slate-600">
+                                Total Cost
+                              </p>
+                              <p className="mt-1 text-slate-300">
+                                {formatMoney(lot.totalCost)}
+                              </p>
                             </div>
                             <div>
-                              <p className="text-xs uppercase tracking-wider text-slate-600">Cost / Round</p>
-                              <p className="mt-1 text-slate-300">{formatMoney(lot.costPerRound)}</p>
+                              <p className="text-xs uppercase tracking-wider text-slate-600">
+                                Cost / Round
+                              </p>
+                              <p className="mt-1 text-slate-300">
+                                {formatMoney(lot.costPerRound)}
+                              </p>
                             </div>
                             <div>
-                              <p className="text-xs uppercase tracking-wider text-slate-600">Purchase Date</p>
-                              <p className="mt-1 text-slate-300">{formatDate(lot.purchaseDate)}</p>
+                              <p className="text-xs uppercase tracking-wider text-slate-600">
+                                Purchase Date
+                              </p>
+                              <p className="mt-1 text-slate-300">
+                                {formatDate(lot.purchaseDate)}
+                              </p>
                             </div>
                           </div>
-                          {(lot.vendor || lot.invoiceNumber) ? (
+                          {lot.vendor || lot.invoiceNumber ? (
                             <p className="mt-3 text-xs text-slate-500">
                               {[lot.vendor, lot.invoiceNumber]
                                 .filter(Boolean)
@@ -1738,4 +1917,3 @@ export default function ArmoryAmmunitionPage() {
     </TracePointShell>
   );
 }
-

@@ -34,6 +34,17 @@ test("tenant-bound selects use one authorized transaction and parameterized filt
   assert.equal(value.calls[5].text, "commit");
 });
 
+test("accepts Cognito-era UUID layouts for a scoped support context", () => {
+  const pool = { async connect() { throw new Error("not used"); } };
+  assert.doesNotThrow(() => new PostgresDataClient(
+    pool as never,
+    "04a874b8-c0b1-700d-e816-26758473bde3",
+    "14a874b8-c0b1-700d-e816-26758473bde3",
+    null,
+    true,
+  ));
+});
+
 test("upserts keep explicit conflicts and all values parameterized", async () => {
   const value = fixture();
   const result = await value.client.from("department_features").upsert([

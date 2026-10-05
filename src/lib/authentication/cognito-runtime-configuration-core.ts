@@ -17,6 +17,18 @@ export type CognitoTargetConfiguration = {
   verification: CognitoVerificationConfig;
 };
 
+/** The native app is a separate Cognito public client, never the web client. */
+export function parseCognitoMobileTargetConfiguration(
+  environment: Record<string, string | undefined>,
+): CognitoTargetConfiguration {
+  const target = parseCognitoTargetConfiguration(environment);
+  const clientId = environment.TRACEPOINT_COGNITO_MOBILE_CLIENT_ID?.trim();
+  if (!clientId || clientId === target.verification.clientId || !/^[A-Za-z0-9]{1,128}$/.test(clientId)) {
+    throw new Error("Invalid Cognito mobile client boundary.");
+  }
+  return { verification: { ...target.verification, clientId, trustedClientIds: [clientId] } };
+}
+
 const keyIdPattern = /^[A-Za-z0-9_-]{1,32}$/;
 
 function parseKeyring(value: string | undefined, variable: string): CognitoEncryptionKeyring {

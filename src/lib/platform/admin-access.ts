@@ -181,13 +181,17 @@ export async function resolvePlatformAdminAccess(): Promise<PlatformAdminAccessR
   if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
     try {
       const principal = await resolveAuthenticatedPrincipal();
-      if (!principal) return { ok: false, status: 401 };
+      if (!principal) {
+        return { ok: false, status: 401 };
+      }
       const pool = getPostgresPool();
       const allowed = await withPostgresSubjectAuthorization(pool, { subjectId: principal.userId }, async client => {
         const result = await client.query("select public.is_platform_admin() as allowed") as { rows: Array<{ allowed?: unknown }> };
         return result.rows[0]?.allowed === true;
       });
-      if (!allowed) return { ok: false, status: 403 };
+      if (!allowed) {
+        return { ok: false, status: 403 };
+      }
       return { ok: true, userId: principal.userId, repository: new PostgresPlatformAdminRepository(pool, principal.userId) };
     } catch {
       return { ok: false, status: 500 };

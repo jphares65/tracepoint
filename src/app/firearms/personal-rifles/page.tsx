@@ -21,6 +21,7 @@ import {
 
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate, formatDateTime } from "@/lib/format/date";
 
 type Status =
   | "Draft"
@@ -192,19 +193,6 @@ function fieldClass() {
   return "mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none transition focus:border-blue-500";
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "Not recorded";
-  const date = value.includes("T")
-    ? new Date(value)
-    : new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "Not recorded";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 async function readError(response: Response) {
   try {
     const payload = (await response.json()) as { error?: string };
@@ -252,13 +240,7 @@ function Label({
   );
 }
 
-function Detail({
-  label,
-  value,
-}: {
-  label: string;
-  value?: string | null;
-}) {
+function Detail({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
@@ -349,9 +331,7 @@ export default function PersonalRiflesPage() {
         access: Access;
       };
 
-      const nextRifles = Array.isArray(payload.rifles)
-        ? payload.rifles
-        : [];
+      const nextRifles = Array.isArray(payload.rifles) ? payload.rifles : [];
       setRifles(nextRifles);
       setRules(payload.rules);
       setAccess(payload.access);
@@ -374,7 +354,7 @@ export default function PersonalRiflesPage() {
               selectedId &&
               nextRifles.some((rifle) => rifle.id === selectedId)
             ? selectedId
-            : nextRifles[0]?.id ?? null;
+            : (nextRifles[0]?.id ?? null);
 
       setSelectedId(nextSelected);
 
@@ -402,20 +382,28 @@ export default function PersonalRiflesPage() {
   }
 
   useEffect(() => {
-    void load(false);
+    const loadTimer = window.setTimeout(() => {
+      void load(false);
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    setReviewNotes("");
-    setInspectionDate(
-      selected?.inspection_date ?? new Date().toISOString().slice(0, 10),
-    );
-    setQualificationVerified(Boolean(selected?.qualification_verified));
-    setChecklist({
-      ...EMPTY_CHECKLIST,
-      ...(selected?.armorer_checklist ?? {}),
-    });
+    const formTimer = window.setTimeout(() => {
+      setReviewNotes("");
+      setInspectionDate(
+        selected?.inspection_date ?? new Date().toISOString().slice(0, 10),
+      );
+      setQualificationVerified(Boolean(selected?.qualification_verified));
+      setChecklist({
+        ...EMPTY_CHECKLIST,
+        ...(selected?.armorer_checklist ?? {}),
+      });
+    }, 0);
+
+    return () => window.clearTimeout(formTimer);
   }, [selected]);
 
   function beginNew() {
@@ -510,9 +498,13 @@ export default function PersonalRiflesPage() {
     if (!selected) return;
 
     if (
-      ["request_correction", "armorer_deny", "chief_deny", "suspend", "revoke"].includes(
-        action,
-      ) &&
+      [
+        "request_correction",
+        "armorer_deny",
+        "chief_deny",
+        "suspend",
+        "revoke",
+      ].includes(action) &&
       !reviewNotes.trim()
     ) {
       setError("Enter a reason before completing this action.");
@@ -561,14 +553,11 @@ export default function PersonalRiflesPage() {
     setMessage(null);
 
     try {
-      const response = await fetch(
-        "/api/armory/personal-rifles/rules",
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(rules),
-        },
-      );
+      const response = await fetch("/api/armory/personal-rifles/rules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rules),
+      });
       if (!response.ok) throw new Error(await readError(response));
 
       const payload = (await response.json()) as { rules: Rules };
@@ -590,11 +579,9 @@ export default function PersonalRiflesPage() {
     selected?.owner_user_id === currentUserId &&
     ["Draft", "Correction Requested"].includes(selected.status);
   const canArmorerAct =
-    access.canArmorerReview &&
-    selected?.status === "Pending Armorer Review";
+    access.canArmorerReview && selected?.status === "Pending Armorer Review";
   const canChiefAct =
-    access.canChiefReview &&
-    selected?.status === "Pending Chief Approval";
+    access.canChiefReview && selected?.status === "Pending Chief Approval";
 
   return (
     <TracePointShell activePage="Armory">
@@ -702,21 +689,42 @@ export default function PersonalRiflesPage() {
               <div className="flex items-center gap-3">
                 <Settings className="h-5 w-5 text-blue-300" />
                 <div>
-                  <h2 className="font-bold text-white">Program Configuration</h2>
+                  <h2 className="font-bold text-white">
+                    Program Configuration
+                  </h2>
                   <p className="text-sm text-slate-500">
-                    Each agency controls whether the program is available and which approval stages are required.
+                    Each agency controls whether the program is available and
+                    which approval stages are required.
                   </p>
                 </div>
               </div>
 
               <div className="mt-5 grid gap-3 md:grid-cols-2">
                 {[
-                  ["allow_personally_owned_rifles", "Enable personally owned rifles"],
-                  ["require_personal_rifle_armorer_inspection", "Require armorer inspection"],
-                  ["require_personal_rifle_chief_approval", "Require Chief approval"],
-                  ["require_personal_rifle_qualification", "Require qualification verification"],
-                  ["require_personal_rifle_annual_reinspection", "Set approval expiration"],
-                  ["require_personal_rifle_spec_acknowledgment", "Require officer policy acknowledgment"],
+                  [
+                    "allow_personally_owned_rifles",
+                    "Enable personally owned rifles",
+                  ],
+                  [
+                    "require_personal_rifle_armorer_inspection",
+                    "Require armorer inspection",
+                  ],
+                  [
+                    "require_personal_rifle_chief_approval",
+                    "Require Chief approval",
+                  ],
+                  [
+                    "require_personal_rifle_qualification",
+                    "Require qualification verification",
+                  ],
+                  [
+                    "require_personal_rifle_annual_reinspection",
+                    "Set approval expiration",
+                  ],
+                  [
+                    "require_personal_rifle_spec_acknowledgment",
+                    "Require officer policy acknowledgment",
+                  ],
                 ].map(([key, label]) => (
                   <label
                     key={key}
@@ -812,10 +820,13 @@ export default function PersonalRiflesPage() {
                       <FilePenLine className="h-5 w-5 text-blue-300" />
                       <div>
                         <h2 className="font-bold text-white">
-                          {editingId ? "Edit Rifle Submission" : "New Rifle Submission"}
+                          {editingId
+                            ? "Edit Rifle Submission"
+                            : "New Rifle Submission"}
                         </h2>
                         <p className="text-sm text-slate-500">
-                          Save a draft or submit it into the agency review workflow.
+                          Save a draft or submit it into the agency review
+                          workflow.
                         </p>
                       </div>
                     </div>
@@ -902,7 +913,8 @@ export default function PersonalRiflesPage() {
                         className="mt-1"
                       />
                       <span className="text-sm text-slate-300">
-                        I confirm lawful ownership and the accuracy of this record.
+                        I confirm lawful ownership and the accuracy of this
+                        record.
                       </span>
                     </label>
                     <label className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
@@ -918,7 +930,8 @@ export default function PersonalRiflesPage() {
                         className="mt-1"
                       />
                       <span className="text-sm text-slate-300">
-                        I acknowledge the department policy and rifle specifications.
+                        I acknowledge the department policy and rifle
+                        specifications.
                       </span>
                     </label>
                   </div>
@@ -937,8 +950,7 @@ export default function PersonalRiflesPage() {
                       type="button"
                       onClick={() => void saveRifle(true)}
                       disabled={
-                        Boolean(saving) ||
-                        !rules?.allow_personally_owned_rifles
+                        Boolean(saving) || !rules?.allow_personally_owned_rifles
                       }
                       className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
                     >
@@ -1033,7 +1045,8 @@ export default function PersonalRiflesPage() {
                               {selected.manufacturer} {selected.model}
                             </h2>
                             <p className="mt-1 text-sm text-slate-500">
-                              {selected.caliber} · Serial {selected.serial_number}
+                              {selected.caliber} · Serial{" "}
+                              {selected.serial_number}
                             </p>
                           </div>
                           <span
@@ -1051,18 +1064,48 @@ export default function PersonalRiflesPage() {
                         )}
 
                         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                          <Detail label="Barrel Length" value={selected.barrel_length} />
-                          <Detail label="Operating System" value={selected.operating_system} />
-                          <Detail label="Stock / Brace" value={selected.stock_brace_configuration} />
-                          <Detail label="Sights / Optic" value={selected.sights_optic} />
-                          <Detail label="Weapon Light" value={selected.weapon_mounted_light} />
+                          <Detail
+                            label="Barrel Length"
+                            value={selected.barrel_length}
+                          />
+                          <Detail
+                            label="Operating System"
+                            value={selected.operating_system}
+                          />
+                          <Detail
+                            label="Stock / Brace"
+                            value={selected.stock_brace_configuration}
+                          />
+                          <Detail
+                            label="Sights / Optic"
+                            value={selected.sights_optic}
+                          />
+                          <Detail
+                            label="Weapon Light"
+                            value={selected.weapon_mounted_light}
+                          />
                           <Detail label="Sling" value={selected.sling} />
                           <Detail label="Trigger" value={selected.trigger} />
-                          <Detail label="Muzzle Device" value={selected.muzzle_device} />
-                          <Detail label="Magazine Type" value={selected.magazine_type} />
-                          <Detail label="Submitted" value={formatDate(selected.submitted_at)} />
-                          <Detail label="Approved" value={formatDate(selected.approval_date)} />
-                          <Detail label="Expires" value={formatDate(selected.expiration_date)} />
+                          <Detail
+                            label="Muzzle Device"
+                            value={selected.muzzle_device}
+                          />
+                          <Detail
+                            label="Magazine Type"
+                            value={selected.magazine_type}
+                          />
+                          <Detail
+                            label="Submitted"
+                            value={formatDateTime(selected.submitted_at)}
+                          />
+                          <Detail
+                            label="Approved"
+                            value={formatDate(selected.approval_date)}
+                          />
+                          <Detail
+                            label="Expires"
+                            value={formatDate(selected.expiration_date)}
+                          />
                         </div>
 
                         {selected.other_modifications && (
@@ -1093,9 +1136,12 @@ export default function PersonalRiflesPage() {
                           <div className="flex items-center gap-3">
                             <ClipboardCheck className="h-5 w-5 text-amber-300" />
                             <div>
-                              <h3 className="font-bold text-white">Armorer Review</h3>
+                              <h3 className="font-bold text-white">
+                                Armorer Review
+                              </h3>
                               <p className="text-sm text-slate-500">
-                                Complete the inspection and determine whether the rifle advances to command approval.
+                                Complete the inspection and determine whether
+                                the rifle advances to command approval.
                               </p>
                             </div>
                           </div>
@@ -1162,7 +1208,9 @@ export default function PersonalRiflesPage() {
                           <div className="mt-4 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => void performAction("armorer_approve")}
+                              onClick={() =>
+                                void performAction("armorer_approve")
+                              }
                               disabled={Boolean(saving)}
                               className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                             >
@@ -1171,7 +1219,9 @@ export default function PersonalRiflesPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => void performAction("request_correction")}
+                              onClick={() =>
+                                void performAction("request_correction")
+                              }
                               disabled={Boolean(saving)}
                               className="inline-flex items-center gap-2 rounded-xl border border-orange-700 bg-orange-950/30 px-4 py-2.5 text-sm font-semibold text-orange-200 disabled:opacity-50"
                             >
@@ -1196,9 +1246,12 @@ export default function PersonalRiflesPage() {
                           <div className="flex items-center gap-3">
                             <ShieldCheck className="h-5 w-5 text-violet-300" />
                             <div>
-                              <h3 className="font-bold text-white">Chief Approval</h3>
+                              <h3 className="font-bold text-white">
+                                Chief Approval
+                              </h3>
                               <p className="text-sm text-slate-500">
-                                The armorer inspection is complete. Record the final agency decision.
+                                The armorer inspection is complete. Record the
+                                final agency decision.
                               </p>
                             </div>
                           </div>
@@ -1215,7 +1268,9 @@ export default function PersonalRiflesPage() {
                           <div className="mt-4 flex gap-2">
                             <button
                               type="button"
-                              onClick={() => void performAction("chief_approve")}
+                              onClick={() =>
+                                void performAction("chief_approve")
+                              }
                               disabled={Boolean(saving)}
                               className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                             >
@@ -1238,9 +1293,12 @@ export default function PersonalRiflesPage() {
                       {access.canChiefReview &&
                         ["Approved", "Suspended"].includes(selected.status) && (
                           <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-                            <h3 className="font-bold text-white">Command Controls</h3>
+                            <h3 className="font-bold text-white">
+                              Command Controls
+                            </h3>
                             <p className="mt-1 text-sm text-slate-500">
-                              Suspend, reinstate, or permanently revoke an existing approval.
+                              Suspend, reinstate, or permanently revoke an
+                              existing approval.
                             </p>
                             <Label text="Command Action Reason">
                               <textarea
@@ -1265,7 +1323,9 @@ export default function PersonalRiflesPage() {
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => void performAction("reinstate")}
+                                  onClick={() =>
+                                    void performAction("reinstate")
+                                  }
                                   disabled={Boolean(saving)}
                                   className="rounded-xl border border-emerald-700 bg-emerald-950/30 px-4 py-2 text-sm font-semibold text-emerald-200"
                                 >
@@ -1288,7 +1348,9 @@ export default function PersonalRiflesPage() {
                         <div className="flex items-center gap-3">
                           <History className="h-5 w-5 text-blue-300" />
                           <div>
-                            <h3 className="font-bold text-white">Decision History</h3>
+                            <h3 className="font-bold text-white">
+                              Decision History
+                            </h3>
                             <p className="text-sm text-slate-500">
                               Every workflow transition is retained.
                             </p>
@@ -1306,12 +1368,13 @@ export default function PersonalRiflesPage() {
                                     {entry.action}
                                   </p>
                                   <p className="mt-1 text-xs text-slate-500">
-                                    {entry.actor_name} · {entry.from_status ?? "New"} →{" "}
+                                    {entry.actor_name} ·{" "}
+                                    {entry.from_status ?? "New"} →{" "}
                                     {entry.to_status}
                                   </p>
                                 </div>
                                 <p className="text-xs text-slate-600">
-                                  {formatDate(entry.created_at)}
+                                  {formatDateTime(entry.created_at)}
                                 </p>
                               </div>
                               {entry.notes && (
@@ -1346,4 +1409,3 @@ export default function PersonalRiflesPage() {
     </TracePointShell>
   );
 }
-

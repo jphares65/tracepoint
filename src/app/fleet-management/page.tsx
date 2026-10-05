@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -18,6 +25,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { formatDate } from "@/lib/format/date";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import {
@@ -125,7 +133,12 @@ const EMPTY_FORM: VehicleForm = {
 
 const STATUSES: FleetStatus[] = [...FLEET_STATUSES];
 
-const FLEET_INVENTORY_GROUP_BY = ["none", "status", "vehicleType", "assignment"] as const;
+const FLEET_INVENTORY_GROUP_BY = [
+  "none",
+  "status",
+  "vehicleType",
+  "assignment",
+] as const;
 type FleetInventoryGroupBy = (typeof FLEET_INVENTORY_GROUP_BY)[number];
 type FleetGroupingPreferences = TableGroupingPreferences<FleetInventoryGroupBy>;
 const FLEET_GROUPING_STORAGE_KEY = "tracepoint:fleet:inventory-groups:v1";
@@ -137,18 +150,34 @@ const FLEET_GROUP_LABELS: Record<FleetInventoryGroupBy, string> = {
 };
 
 const PREVIEW_VEHICLE: FleetVehicle = {
-  id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001",
-  license_plate: "MG-3101", year: 2025, make: "Ford",
-  model: "Police Interceptor Utility", vehicle_type: "Patrol",
-  assignment_type: "Pool", assigned_to: "Patrol Division",
-  home_location: "Headquarters", current_mileage: 18422,
-  current_hours: 2167.4, status: "Attention", inspection_due_date: "2026-09-12",
-  registration_expiration_date: "2027-01-31", last_service_date: "2026-07-20",
-  insurance_expiration_date: "2027-01-31", in_service_date: "2025-02-01",
-  last_service_mileage: 16000, last_service_hours: 1900,
-  next_service_date: "2026-09-05", next_service_mileage: 20000,
-  next_service_hours: 2300, open_issue_count: 1, comments: null,
-  notes: "Local preview vehicle", updated_at: new Date().toISOString(),
+  id: "preview",
+  unit_number: "3101",
+  vin: "1FM5K8AR0NGA00001",
+  license_plate: "MG-3101",
+  year: 2025,
+  make: "Ford",
+  model: "Police Interceptor Utility",
+  vehicle_type: "Patrol",
+  assignment_type: "Pool",
+  assigned_to: "Patrol Division",
+  home_location: "Headquarters",
+  current_mileage: 18422,
+  current_hours: 2167.4,
+  status: "Attention",
+  inspection_due_date: "2026-09-12",
+  registration_expiration_date: "2027-01-31",
+  last_service_date: "2026-07-20",
+  insurance_expiration_date: "2027-01-31",
+  in_service_date: "2025-02-01",
+  last_service_mileage: 16000,
+  last_service_hours: 1900,
+  next_service_date: "2026-09-05",
+  next_service_mileage: 20000,
+  next_service_hours: 2300,
+  open_issue_count: 1,
+  comments: null,
+  notes: "Local preview vehicle",
+  updated_at: new Date().toISOString(),
 };
 
 function formForVehicle(vehicle: FleetVehicle): VehicleForm {
@@ -181,17 +210,6 @@ function formForVehicle(vehicle: FleetVehicle): VehicleForm {
     notes: vehicle.notes ?? "",
     reason: "",
   };
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function formatMileage(value: number | null) {
@@ -277,12 +295,7 @@ const SCHEDULE_LABELS: Record<ScheduleState, string> = {
 };
 
 type AdvancedFilterKey =
-  | "vehicle"
-  | "assignment"
-  | "location"
-  | "inspection"
-  | "service"
-  | "issues";
+  "vehicle" | "assignment" | "location" | "inspection" | "service" | "issues";
 
 function SortableHeader({
   column,
@@ -297,7 +310,9 @@ function SortableHeader({
 }) {
   const active = query.sort === column;
   const ariaSort = active
-    ? query.direction === "asc" ? "ascending" : "descending"
+    ? query.direction === "asc"
+      ? "ascending"
+      : "descending"
     : "none";
   return (
     <th className="px-2 py-1" aria-sort={ariaSort}>
@@ -309,9 +324,15 @@ function SortableHeader({
       >
         <span>{label}</span>
         {active ? (
-          query.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+          query.direction === "asc" ? (
+            <ArrowUp size={12} />
+          ) : (
+            <ArrowDown size={12} />
+          )
         ) : (
-          <span aria-hidden="true" className="text-[11px] text-slate-700">↕</span>
+          <span aria-hidden="true" className="text-[11px] text-slate-700">
+            ↕
+          </span>
         )}
       </button>
     </th>
@@ -337,11 +358,18 @@ function FleetManagementContent() {
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
   const [groupingPreferences, setGroupingPreferences] =
-    useState<FleetGroupingPreferences>({ groupBy: "none", collapsedGroupKeys: [] });
+    useState<FleetGroupingPreferences>({
+      groupBy: "none",
+      collapsedGroupKeys: [],
+    });
 
   function replaceQuery(next: InventoryQueryState) {
     const value = serializeInventoryQuery(next).toString();
-    window.history.replaceState(null, "", value ? `${pathname}?${value}` : pathname);
+    window.history.replaceState(
+      null,
+      "",
+      value ? `${pathname}?${value}` : pathname,
+    );
   }
 
   function updateQuery(patch: Partial<InventoryQueryState>) {
@@ -351,7 +379,8 @@ function FleetManagementContent() {
   function sortBy(column: InventorySortColumn) {
     updateQuery({
       sort: column,
-      direction: query.sort === column && query.direction === "asc" ? "desc" : "asc",
+      direction:
+        query.sort === column && query.direction === "asc" ? "desc" : "asc",
     });
   }
 
@@ -391,11 +420,16 @@ function FleetManagementContent() {
       setVehicles(payload.items ?? []);
       setCanManage(payload.canManage === true);
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : "Fleet records could not be loaded.";
+      const message =
+        loadError instanceof Error
+          ? loadError.message
+          : "Fleet records could not be loaded.";
       if (message.toLowerCase().includes("migration")) {
         setVehicles([PREVIEW_VEHICLE]);
         setCanManage(true);
-        setError("Local preview mode: the Fleet migration has not been applied, so the example vehicle is read-only.");
+        setError(
+          "Local preview mode: the Fleet migration has not been applied, so the example vehicle is read-only.",
+        );
       } else setError(message);
     } finally {
       setLoading(false);
@@ -403,28 +437,43 @@ function FleetManagementContent() {
   }
 
   useEffect(() => {
-    void loadFleet();
+    const loadTimer = window.setTimeout(() => {
+      void loadFleet();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, []);
 
   useEffect(() => {
-    setGroupingPreferences(
-      getStoredTableGroupingPreferences(
-        FLEET_GROUPING_STORAGE_KEY,
-        FLEET_INVENTORY_GROUP_BY,
-        "none",
-      ),
-    );
+    const preferenceTimer = window.setTimeout(() => {
+      setGroupingPreferences(
+        getStoredTableGroupingPreferences(
+          FLEET_GROUPING_STORAGE_KEY,
+          FLEET_INVENTORY_GROUP_BY,
+          "none",
+        ),
+      );
+    }, 0);
+
+    return () => window.clearTimeout(preferenceTimer);
   }, []);
 
   const summary = useMemo(() => {
-    const activeVehicles = vehicles.filter((vehicle) => vehicle.status !== "Retired");
+    const activeVehicles = vehicles.filter(
+      (vehicle) => vehicle.status !== "Retired",
+    );
     return {
       total: activeVehicles.length,
-      available: activeVehicles.filter((vehicle) => vehicle.status === "Available").length,
-      attention: activeVehicles.filter((vehicle) => vehicle.status === "Attention").length,
+      available: activeVehicles.filter(
+        (vehicle) => vehicle.status === "Available",
+      ).length,
+      attention: activeVehicles.filter(
+        (vehicle) => vehicle.status === "Attention",
+      ).length,
       unavailable: activeVehicles.filter(
         (vehicle) =>
-          vehicle.status === "Maintenance" || vehicle.status === "Out of Service",
+          vehicle.status === "Maintenance" ||
+          vehicle.status === "Out of Service",
       ).length,
     };
   }, [vehicles]);
@@ -436,20 +485,31 @@ function FleetManagementContent() {
 
   const vehicleGroups = useMemo(
     () =>
-      groupTableRows(filteredVehicles, groupingPreferences.groupBy, (vehicle, groupBy) => {
-        switch (groupBy) {
-          case "status":
-            return { key: vehicle.status, label: vehicle.status };
-          case "vehicleType": {
-            const label = vehicle.vehicle_type || "Unclassified";
-            return { key: vehicle.vehicle_type || "unclassified", label };
+      groupTableRows(
+        filteredVehicles,
+        groupingPreferences.groupBy,
+        (vehicle, groupBy) => {
+          switch (groupBy) {
+            case "status":
+              return { key: vehicle.status, label: vehicle.status };
+            case "vehicleType": {
+              const label = vehicle.vehicle_type || "Unclassified";
+              return { key: vehicle.vehicle_type || "unclassified", label };
+            }
+            case "assignment": {
+              const label =
+                vehicle.assigned_to || vehicle.assignment_type || "Unassigned";
+              return {
+                key:
+                  vehicle.assigned_to ||
+                  vehicle.assignment_type ||
+                  "unassigned",
+                label,
+              };
+            }
           }
-          case "assignment": {
-            const label = vehicle.assigned_to || vehicle.assignment_type || "Unassigned";
-            return { key: vehicle.assigned_to || vehicle.assignment_type || "unassigned", label };
-          }
-        }
-      }),
+        },
+      ),
     [filteredVehicles, groupingPreferences.groupBy],
   );
 
@@ -470,27 +530,61 @@ function FleetManagementContent() {
 
   function vehicleGroupSummary(groupVehicles: FleetVehicle[]) {
     const unavailable = groupVehicles.filter(
-      (vehicle) => vehicle.status === "Maintenance" || vehicle.status === "Out of Service",
+      (vehicle) =>
+        vehicle.status === "Maintenance" || vehicle.status === "Out of Service",
     ).length;
-    const assigned = groupVehicles.filter((vehicle) => Boolean(vehicle.assigned_to)).length;
+    const assigned = groupVehicles.filter((vehicle) =>
+      Boolean(vehicle.assigned_to),
+    ).length;
     const segments = [`${assigned} assigned`];
     if (unavailable) segments.push(`${unavailable} unavailable`);
     return segments.join(" · ");
   }
   const locations = useMemo(
-    () => [...new Set(vehicles.map((vehicle) => vehicle.home_location?.trim()).filter((value): value is string => Boolean(value)))]
-      .sort((left, right) => left.localeCompare(right, "en-US", { numeric: true, sensitivity: "base" })),
+    () =>
+      [
+        ...new Set(
+          vehicles
+            .map((vehicle) => vehicle.home_location?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ].sort((left, right) =>
+        left.localeCompare(right, "en-US", {
+          numeric: true,
+          sensitivity: "base",
+        }),
+      ),
     [vehicles],
   );
   const activeFilterCount = activeAdvancedFilterCount(query);
   const activeFilterChips: Array<{ key: AdvancedFilterKey; label: string }> = [
-    query.vehicle ? { key: "vehicle", label: `Vehicle: ${query.vehicle}` } : null,
-    query.assignment ? { key: "assignment", label: `Assignment: ${query.assignment}` } : null,
-    query.location ? { key: "location", label: `Location: ${query.location}` } : null,
-    query.inspection ? { key: "inspection", label: `Inspection: ${SCHEDULE_LABELS[query.inspection]}` } : null,
-    query.service ? { key: "service", label: `Service: ${SCHEDULE_LABELS[query.service]}` } : null,
-    query.issues ? { key: "issues", label: `Issues: ${query.issues === "open" ? "Has Open Issues" : "No Open Issues"}` } : null,
-  ].filter((chip): chip is { key: AdvancedFilterKey; label: string } => chip !== null);
+    query.vehicle
+      ? { key: "vehicle", label: `Vehicle: ${query.vehicle}` }
+      : null,
+    query.assignment
+      ? { key: "assignment", label: `Assignment: ${query.assignment}` }
+      : null,
+    query.location
+      ? { key: "location", label: `Location: ${query.location}` }
+      : null,
+    query.inspection
+      ? {
+          key: "inspection",
+          label: `Inspection: ${SCHEDULE_LABELS[query.inspection]}`,
+        }
+      : null,
+    query.service
+      ? { key: "service", label: `Service: ${SCHEDULE_LABELS[query.service]}` }
+      : null,
+    query.issues
+      ? {
+          key: "issues",
+          label: `Issues: ${query.issues === "open" ? "Has Open Issues" : "No Open Issues"}`,
+        }
+      : null,
+  ].filter(
+    (chip): chip is { key: AdvancedFilterKey; label: string } => chip !== null,
+  );
   const inventoryQueryString = serializeInventoryQuery(query).toString();
   const vehicleHref = (vehicleId: string) =>
     `/fleet-management/${vehicleId}${inventoryQueryString ? `?${inventoryQueryString}` : ""}`;
@@ -512,14 +606,18 @@ function FleetManagementContent() {
         method: editingVehicleId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify(editingVehicleId ? { ...form, id: editingVehicleId } : form),
+        body: JSON.stringify(
+          editingVehicleId ? { ...form, id: editingVehicleId } : form,
+        ),
       });
       if (!response.ok) throw new Error(await responseError(response));
       const wasEditing = Boolean(editingVehicleId);
       closeForm(true);
-      setMessage(wasEditing
-        ? "Vehicle changes saved and recorded in the audit log."
-        : "Vehicle added and recorded in the audit log.");
+      setMessage(
+        wasEditing
+          ? "Vehicle changes saved and recorded in the audit log."
+          : "Vehicle added and recorded in the audit log.",
+      );
       await loadFleet();
     } catch (saveError) {
       setError(
@@ -532,11 +630,14 @@ function FleetManagementContent() {
     }
   }
 
-  async function updateVehicleStatus(vehicle: FleetVehicle, status: FleetStatus) {
+  async function updateVehicleStatus(
+    vehicle: FleetVehicle,
+    status: FleetStatus,
+  ) {
     if (status === vehicle.status) return;
-    const reason = window.prompt(
-      `Why is Unit ${vehicle.unit_number} being changed to ${status}?`,
-    )?.trim();
+    const reason = window
+      .prompt(`Why is Unit ${vehicle.unit_number} being changed to ${status}?`)
+      ?.trim();
     if (!reason) return;
 
     setSaving(true);
@@ -575,7 +676,9 @@ function FleetManagementContent() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
                 Assets & Fleet
               </p>
-              <h1 className="mt-1 text-2xl font-bold text-white">Fleet Management</h1>
+              <h1 className="mt-1 text-2xl font-bold text-white">
+                Fleet Management
+              </h1>
               <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
                 Maintain vehicle inventory, assignment, mileage, service dates,
                 open issues, and current operational availability.
@@ -597,7 +700,10 @@ function FleetManagementContent() {
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-white disabled:opacity-50"
               >
-                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                <RefreshCw
+                  size={14}
+                  className={loading ? "animate-spin" : ""}
+                />
                 Refresh
               </button>
             </div>
@@ -616,7 +722,11 @@ function FleetManagementContent() {
         ) : null}
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <SummaryCard label="Fleet" value={summary.total} detail="Active vehicle records" />
+          <SummaryCard
+            label="Fleet"
+            value={summary.total}
+            detail="Active vehicle records"
+          />
           <SummaryCard
             label="Available"
             value={summary.available}
@@ -641,17 +751,25 @@ function FleetManagementContent() {
           <div className="border-b border-slate-800 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-sm font-bold text-white">Vehicle Inventory</h2>
+                <h2 className="text-sm font-bold text-white">
+                  Vehicle Inventory
+                </h2>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Current status is authoritative until automated inspection rules are enabled.
+                  Current status is authoritative until automated inspection
+                  rules are enabled.
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                 <div className="relative min-w-0 sm:min-w-[280px]">
-                  <Search size={14} className="absolute left-3 top-2.5 text-slate-600" />
+                  <Search
+                    size={14}
+                    className="absolute left-3 top-2.5 text-slate-600"
+                  />
                   <input
                     value={query.search}
-                    onChange={(event) => updateQuery({ search: event.target.value })}
+                    onChange={(event) =>
+                      updateQuery({ search: event.target.value })
+                    }
                     aria-label="Search vehicle inventory"
                     placeholder="Search unit, plate, make, assignment..."
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-xs text-white outline-none focus:border-blue-500"
@@ -659,13 +777,19 @@ function FleetManagementContent() {
                 </div>
                 <select
                   value={query.status}
-                  onChange={(event) => updateQuery({ status: event.target.value as "All" | FleetStatus })}
+                  onChange={(event) =>
+                    updateQuery({
+                      status: event.target.value as "All" | FleetStatus,
+                    })
+                  }
                   aria-label="Filter by status"
                   className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
                 >
                   <option value="All">All statuses</option>
                   {STATUSES.map((status) => (
-                    <option key={status} value={status}>{status}</option>
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
                   ))}
                 </select>
                 <button
@@ -678,7 +802,10 @@ function FleetManagementContent() {
                   <SlidersHorizontal size={14} />
                   Filters
                   {activeFilterCount > 0 ? (
-                    <span className="rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px]" aria-label={`${activeFilterCount} active filters`}>
+                    <span
+                      className="rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px]"
+                      aria-label={`${activeFilterCount} active filters`}
+                    >
                       {activeFilterCount}
                     </span>
                   ) : null}
@@ -705,14 +832,26 @@ function FleetManagementContent() {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: [] }))}
+                        onClick={() =>
+                          updateGroupingPreferences((current) => ({
+                            ...current,
+                            collapsedGroupKeys: [],
+                          }))
+                        }
                         className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
                       >
                         Expand All
                       </button>
                       <button
                         type="button"
-                        onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: vehicleGroups.map((group) => group.key) }))}
+                        onClick={() =>
+                          updateGroupingPreferences((current) => ({
+                            ...current,
+                            collapsedGroupKeys: vehicleGroups.map(
+                              (group) => group.key,
+                            ),
+                          }))
+                        }
                         className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
                       >
                         Collapse All
@@ -724,11 +863,16 @@ function FleetManagementContent() {
             </div>
 
             {showFilters ? (
-              <div id="fleet-inventory-filters" className="mt-3 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div
+                id="fleet-inventory-filters"
+                className="mt-3 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 sm:grid-cols-2 lg:grid-cols-3"
+              >
                 <Field label="Vehicle details or type">
                   <input
                     value={query.vehicle}
-                    onChange={(event) => updateQuery({ vehicle: event.target.value })}
+                    onChange={(event) =>
+                      updateQuery({ vehicle: event.target.value })
+                    }
                     placeholder="Year, make, model, or type"
                     className={inputClass}
                   />
@@ -736,47 +880,78 @@ function FleetManagementContent() {
                 <Field label="Assignment type">
                   <select
                     value={query.assignment}
-                    onChange={(event) => updateQuery({ assignment: event.target.value as "" | AssignmentType })}
+                    onChange={(event) =>
+                      updateQuery({
+                        assignment: event.target.value as "" | AssignmentType,
+                      })
+                    }
                     className={inputClass}
                   >
                     <option value="">Any assignment</option>
-                    {ASSIGNMENT_TYPES.map((assignment) => <option key={assignment}>{assignment}</option>)}
+                    {ASSIGNMENT_TYPES.map((assignment) => (
+                      <option key={assignment}>{assignment}</option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="Location">
                   <select
                     value={query.location}
-                    onChange={(event) => updateQuery({ location: event.target.value })}
+                    onChange={(event) =>
+                      updateQuery({ location: event.target.value })
+                    }
                     className={inputClass}
                   >
                     <option value="">Any location</option>
-                    {locations.map((location) => <option key={location}>{location}</option>)}
+                    {locations.map((location) => (
+                      <option key={location}>{location}</option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="Inspection state">
                   <select
                     value={query.inspection}
-                    onChange={(event) => updateQuery({ inspection: event.target.value as "" | ScheduleState })}
+                    onChange={(event) =>
+                      updateQuery({
+                        inspection: event.target.value as "" | ScheduleState,
+                      })
+                    }
                     className={inputClass}
                   >
                     <option value="">Any inspection state</option>
-                    {Object.entries(SCHEDULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    {Object.entries(SCHEDULE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="Service state">
                   <select
                     value={query.service}
-                    onChange={(event) => updateQuery({ service: event.target.value as "" | ScheduleState })}
+                    onChange={(event) =>
+                      updateQuery({
+                        service: event.target.value as "" | ScheduleState,
+                      })
+                    }
                     className={inputClass}
                   >
                     <option value="">Any service state</option>
-                    {Object.entries(SCHEDULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    {Object.entries(SCHEDULE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="Issues">
                   <select
                     value={query.issues}
-                    onChange={(event) => updateQuery({ issues: event.target.value as InventoryQueryState["issues"] })}
+                    onChange={(event) =>
+                      updateQuery({
+                        issues: event.target
+                          .value as InventoryQueryState["issues"],
+                      })
+                    }
                     className={inputClass}
                   >
                     <option value="">Any</option>
@@ -788,7 +963,10 @@ function FleetManagementContent() {
             ) : null}
 
             {activeFilterChips.length > 0 ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Active inventory filters">
+              <div
+                className="mt-3 flex flex-wrap items-center gap-2"
+                aria-label="Active inventory filters"
+              >
                 {activeFilterChips.map((chip) => (
                   <button
                     key={chip.key}
@@ -819,7 +997,9 @@ function FleetManagementContent() {
             <div className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
               <Car size={38} className="text-slate-600" />
               <p className="mt-3 font-semibold text-white">
-                {vehicles.length === 0 ? "No vehicles have been added" : "No matching vehicles"}
+                {vehicles.length === 0
+                  ? "No vehicles have been added"
+                  : "No matching vehicles"}
               </p>
               <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">
                 {vehicles.length === 0
@@ -841,14 +1021,54 @@ function FleetManagementContent() {
               <table className="w-full min-w-[1260px] text-left">
                 <thead className="border-b border-slate-800 bg-slate-950/40">
                   <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    <SortableHeader column="unit" label="Unit" query={query} onSort={sortBy} />
-                    <SortableHeader column="vehicle" label="Vehicle" query={query} onSort={sortBy} />
-                    <SortableHeader column="assignment" label="Assignment" query={query} onSort={sortBy} />
-                    <SortableHeader column="mileage" label="Mileage" query={query} onSort={sortBy} />
-                    <SortableHeader column="inspection" label="Inspection" query={query} onSort={sortBy} />
-                    <SortableHeader column="service" label="Next Service" query={query} onSort={sortBy} />
-                    <SortableHeader column="issues" label="Issues" query={query} onSort={sortBy} />
-                    <SortableHeader column="status" label="Status" query={query} onSort={sortBy} />
+                    <SortableHeader
+                      column="unit"
+                      label="Unit"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="vehicle"
+                      label="Vehicle"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="assignment"
+                      label="Assignment"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="mileage"
+                      label="Mileage"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="inspection"
+                      label="Inspection"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="service"
+                      label="Next Service"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="issues"
+                      label="Issues"
+                      query={query}
+                      onSort={sortBy}
+                    />
+                    <SortableHeader
+                      column="status"
+                      label="Status"
+                      query={query}
+                      onSort={sortBy}
+                    />
                     <th className="px-4 py-3" aria-label="Vehicle actions" />
                   </tr>
                 </thead>
@@ -857,7 +1077,10 @@ function FleetManagementContent() {
                     ? [{ key: "flat", label: "", items: filteredVehicles }]
                     : vehicleGroups
                   ).map((group) => {
-                    const expanded = !groupingPreferences.collapsedGroupKeys.includes(group.key);
+                    const expanded =
+                      !groupingPreferences.collapsedGroupKeys.includes(
+                        group.key,
+                      );
                     return (
                       <Fragment key={group.key}>
                         {groupingPreferences.groupBy !== "none" ? (
@@ -870,10 +1093,11 @@ function FleetManagementContent() {
                                 onToggle={() =>
                                   updateGroupingPreferences((current) => ({
                                     ...current,
-                                    collapsedGroupKeys: toggleCollapsedTableGroup(
-                                      current.collapsedGroupKeys,
-                                      group.key,
-                                    ),
+                                    collapsedGroupKeys:
+                                      toggleCollapsedTableGroup(
+                                        current.collapsedGroupKeys,
+                                        group.key,
+                                      ),
                                   }))
                                 }
                                 summary={vehicleGroupSummary(group.items)}
@@ -883,134 +1107,218 @@ function FleetManagementContent() {
                         ) : null}
                         {expanded
                           ? group.items.map((vehicle) => {
-                    const vehicleInspectionState = inspectionState(vehicle.inspection_due_date);
-                    const vehicleServiceState = serviceState(vehicle);
-                    const openIssueCount = vehicle.open_issue_count ?? 0;
-                    const href = vehicleHref(vehicle.id);
-                    return (
-                      <tr
-                        key={vehicle.id}
-                        role="link"
-                        tabIndex={0}
-                        onClick={() => router.push(href)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            router.push(href);
-                          }
-                        }}
-                        className="group cursor-pointer align-top transition hover:bg-slate-950/60 focus:bg-slate-950/60 focus:outline-none"
-                      >
-                        <td className="px-4 py-3">
-                          <Link
-                            href={href}
-                            className="text-sm font-bold text-white hover:text-blue-300"
-                          >
-                            Unit {vehicle.unit_number}
-                          </Link>
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            {vehicle.license_plate || "No plate recorded"}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-semibold text-slate-300">
-                            {[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle details pending"}
-                          </p>
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            {vehicle.vehicle_type || "Unclassified"}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-xs text-slate-300">{vehicle.assigned_to || vehicle.assignment_type}</p>
-                          <p className="mt-1 text-[10px] text-slate-500">{vehicle.home_location || "No location"}</p>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-300">
-                          <div>{formatMileage(vehicle.current_mileage)}</div>
-                          <div className="mt-1 text-[10px] text-slate-500">
-                            {(vehicle.current_hours ?? 0).toLocaleString("en-US")} hrs
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className={`text-xs ${vehicleInspectionState === "overdue" ? "font-semibold text-red-300" : vehicleInspectionState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
-                            {formatDate(vehicle.inspection_due_date)}
-                          </p>
-                          {vehicleInspectionState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
-                          {vehicleInspectionState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
-                          {vehicleInspectionState === "not-scheduled" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">Not scheduled</p> : null}
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className={`text-xs ${vehicleServiceState === "overdue" ? "font-semibold text-red-300" : vehicleServiceState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
-                            {formatDate(vehicle.next_service_date)}
-                          </p>
-                          <p className="mt-1 text-[10px] text-slate-500">
-                            {vehicle.next_service_mileage ? `or ${formatMileage(vehicle.next_service_mileage)}` : "No mileage interval"}
-                          </p>
-                          {vehicleServiceState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
-                          {vehicleServiceState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
-                          {vehicleServiceState === "not-scheduled" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">Not scheduled</p> : null}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={openIssueCount > 0 ? "inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-300" : "text-xs text-slate-500"}>
-                            {openIssueCount > 0 ? `${openIssueCount} open` : "None"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {canManage ? (
-                            <select
-                              value={vehicle.status}
-                              disabled={saving}
-                              onClick={(event) => event.stopPropagation()}
-                              onKeyDown={(event) => event.stopPropagation()}
-                              onChange={(event) =>
-                                void updateVehicleStatus(vehicle, event.target.value as FleetStatus)
-                              }
-                              className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide outline-none ${statusClasses(vehicle.status)}`}
-                            >
-                              {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-                            </select>
-                          ) : (
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(vehicle.status)}`}>
-                              {vehicle.status}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-2">
-                            <TracePointQrLabel
-                              kind="vehicle"
-                              id={vehicle.id}
-                              title={`Unit ${vehicle.unit_number}`}
-                              subtitle={
-                                [vehicle.year, vehicle.make, vehicle.model]
-                                  .filter(Boolean)
-                                  .join(" ") ||
-                                vehicle.license_plate ||
-                                "TracePoint vehicle"
-                              }
-                              compact
-                              viewOnly
-                            />
-                            {canManage ? (
-                              <button
-                                type="button"
-                                onClick={(event) => { event.stopPropagation(); openEditForm(vehicle); }}
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition hover:border-blue-500/40 hover:text-blue-300"
-                              >
-                                <Pencil size={12} /> Edit
-                              </button>
-                            ) : null}
-                            <Link
-                              href={href}
-                              onClick={(event) => event.stopPropagation()}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition group-hover:border-blue-500/40 group-hover:text-blue-300"
-                            >
-                              Open <ChevronRight size={13} />
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                          })
+                              const vehicleInspectionState = inspectionState(
+                                vehicle.inspection_due_date,
+                              );
+                              const vehicleServiceState = serviceState(vehicle);
+                              const openIssueCount =
+                                vehicle.open_issue_count ?? 0;
+                              const href = vehicleHref(vehicle.id);
+                              return (
+                                <tr
+                                  key={vehicle.id}
+                                  role="link"
+                                  tabIndex={0}
+                                  onClick={() => router.push(href)}
+                                  onKeyDown={(event) => {
+                                    if (
+                                      event.key === "Enter" ||
+                                      event.key === " "
+                                    ) {
+                                      event.preventDefault();
+                                      router.push(href);
+                                    }
+                                  }}
+                                  className="group cursor-pointer align-top transition hover:bg-slate-950/60 focus:bg-slate-950/60 focus:outline-none"
+                                >
+                                  <td className="px-4 py-3">
+                                    <Link
+                                      href={href}
+                                      className="text-sm font-bold text-white hover:text-blue-300"
+                                    >
+                                      Unit {vehicle.unit_number}
+                                    </Link>
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                      {vehicle.license_plate ||
+                                        "No plate recorded"}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <p className="text-xs font-semibold text-slate-300">
+                                      {[
+                                        vehicle.year,
+                                        vehicle.make,
+                                        vehicle.model,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ") || "Vehicle details pending"}
+                                    </p>
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                      {vehicle.vehicle_type || "Unclassified"}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <p className="text-xs text-slate-300">
+                                      {vehicle.assigned_to ||
+                                        vehicle.assignment_type}
+                                    </p>
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                      {vehicle.home_location || "No location"}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-slate-300">
+                                    <div>
+                                      {formatMileage(vehicle.current_mileage)}
+                                    </div>
+                                    <div className="mt-1 text-[10px] text-slate-500">
+                                      {(
+                                        vehicle.current_hours ?? 0
+                                      ).toLocaleString("en-US")}{" "}
+                                      hrs
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <p
+                                      className={`text-xs ${vehicleInspectionState === "overdue" ? "font-semibold text-red-300" : vehicleInspectionState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}
+                                    >
+                                      {formatDate(vehicle.inspection_due_date)}
+                                    </p>
+                                    {vehicleInspectionState === "overdue" ? (
+                                      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">
+                                        Overdue
+                                      </p>
+                                    ) : null}
+                                    {vehicleInspectionState === "due-soon" ? (
+                                      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">
+                                        Due soon
+                                      </p>
+                                    ) : null}
+                                    {vehicleInspectionState ===
+                                    "not-scheduled" ? (
+                                      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                                        Not scheduled
+                                      </p>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <p
+                                      className={`text-xs ${vehicleServiceState === "overdue" ? "font-semibold text-red-300" : vehicleServiceState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}
+                                    >
+                                      {formatDate(vehicle.next_service_date)}
+                                    </p>
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                      {vehicle.next_service_mileage
+                                        ? `or ${formatMileage(vehicle.next_service_mileage)}`
+                                        : "No mileage interval"}
+                                    </p>
+                                    {vehicleServiceState === "overdue" ? (
+                                      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">
+                                        Overdue
+                                      </p>
+                                    ) : null}
+                                    {vehicleServiceState === "due-soon" ? (
+                                      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">
+                                        Due soon
+                                      </p>
+                                    ) : null}
+                                    {vehicleServiceState === "not-scheduled" ? (
+                                      <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                                        Not scheduled
+                                      </p>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span
+                                      className={
+                                        openIssueCount > 0
+                                          ? "inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-300"
+                                          : "text-xs text-slate-500"
+                                      }
+                                    >
+                                      {openIssueCount > 0
+                                        ? `${openIssueCount} open`
+                                        : "None"}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {canManage ? (
+                                      <select
+                                        value={vehicle.status}
+                                        disabled={saving}
+                                        onClick={(event) =>
+                                          event.stopPropagation()
+                                        }
+                                        onKeyDown={(event) =>
+                                          event.stopPropagation()
+                                        }
+                                        onChange={(event) =>
+                                          void updateVehicleStatus(
+                                            vehicle,
+                                            event.target.value as FleetStatus,
+                                          )
+                                        }
+                                        className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide outline-none ${statusClasses(vehicle.status)}`}
+                                      >
+                                        {STATUSES.map((status) => (
+                                          <option key={status} value={status}>
+                                            {status}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <span
+                                        className={`inline-flex rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(vehicle.status)}`}
+                                      >
+                                        {vehicle.status}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <div className="flex justify-end gap-2">
+                                      <TracePointQrLabel
+                                        kind="vehicle"
+                                        id={vehicle.id}
+                                        title={`Unit ${vehicle.unit_number}`}
+                                        subtitle={
+                                          [
+                                            vehicle.year,
+                                            vehicle.make,
+                                            vehicle.model,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" ") ||
+                                          vehicle.license_plate ||
+                                          "TracePoint vehicle"
+                                        }
+                                        compact
+                                        viewOnly
+                                      />
+                                      {canManage ? (
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            openEditForm(vehicle);
+                                          }}
+                                          className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition hover:border-blue-500/40 hover:text-blue-300"
+                                        >
+                                          <Pencil size={12} /> Edit
+                                        </button>
+                                      ) : null}
+                                      <Link
+                                        href={href}
+                                        onClick={(event) =>
+                                          event.stopPropagation()
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition group-hover:border-blue-500/40 group-hover:text-blue-300"
+                                      >
+                                        Open <ChevronRight size={13} />
+                                      </Link>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
                           : null}
                       </Fragment>
                     );
@@ -1026,46 +1334,357 @@ function FleetManagementContent() {
             <div className="w-full max-w-3xl rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
                 <div>
-                  <h2 className="font-bold text-white">{editingVehicleId ? "Edit Fleet Vehicle" : "Add Fleet Vehicle"}</h2>
-                  <p className="mt-1 text-[11px] text-slate-500">{editingVehicleId ? "Update this vehicle without replacing its history or linked records." : "Create the authoritative inventory record for this unit."}</p>
+                  <h2 className="font-bold text-white">
+                    {editingVehicleId
+                      ? "Edit Fleet Vehicle"
+                      : "Add Fleet Vehicle"}
+                  </h2>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {editingVehicleId
+                      ? "Update this vehicle without replacing its history or linked records."
+                      : "Create the authoritative inventory record for this unit."}
+                  </p>
                 </div>
-                <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-lg p-2 text-slate-500 hover:bg-slate-800 hover:text-white disabled:opacity-50">
+                <button
+                  type="button"
+                  onClick={() => closeForm()}
+                  disabled={saving}
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-800 hover:text-white disabled:opacity-50"
+                >
                   <X size={18} />
                 </button>
               </div>
               <div className="grid gap-4 p-5 sm:grid-cols-2">
-                <Field label="Unit Number"><input value={form.unitNumber} onChange={(event) => setForm({ ...form, unitNumber: event.target.value })} className={inputClass} placeholder="e.g. 3101" /></Field>
-                <Field label="License Plate"><input value={form.licensePlate} onChange={(event) => setForm({ ...form, licensePlate: event.target.value })} className={inputClass} /></Field>
-                <Field label="Year"><input type="number" value={form.year} onChange={(event) => setForm({ ...form, year: event.target.value })} className={inputClass} /></Field>
-                <Field label="Make"><input value={form.make} onChange={(event) => setForm({ ...form, make: event.target.value })} className={inputClass} placeholder="Ford" /></Field>
-                <Field label="Model"><input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} className={inputClass} placeholder="Police Interceptor Utility" /></Field>
-                <Field label="Vehicle Type"><input value={form.vehicleType} onChange={(event) => setForm({ ...form, vehicleType: event.target.value })} className={inputClass} /></Field>
-                <Field label="VIN" span><input value={form.vin} onChange={(event) => setForm({ ...form, vin: event.target.value.toUpperCase() })} className={inputClass} maxLength={17} /></Field>
-                <Field label="Assignment Type"><select value={form.assignmentType} onChange={(event) => setForm({ ...form, assignmentType: event.target.value as AssignmentType })} className={inputClass}><option>Pool</option><option>Permanent</option><option>Specialized</option></select></Field>
-                <Field label="Assigned To"><input value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })} className={inputClass} placeholder="Officer, unit, or function" /></Field>
-                <Field label="Home Location"><input value={form.homeLocation} onChange={(event) => setForm({ ...form, homeLocation: event.target.value })} className={inputClass} placeholder="Headquarters" /></Field>
-                <Field label="Current Mileage"><input type="number" min="0" value={form.currentMileage} onChange={(event) => setForm({ ...form, currentMileage: event.target.value })} className={inputClass} /></Field>
-                <Field label="Current Hours"><input type="number" min="0" step="0.1" value={form.currentHours} onChange={(event) => setForm({ ...form, currentHours: event.target.value })} className={inputClass} /></Field>
-                <Field label="Status"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as FleetStatus })} className={inputClass}>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select></Field>
-                <Field label="Open Issues"><input type="number" min="0" value={form.openIssueCount} onChange={(event) => setForm({ ...form, openIssueCount: event.target.value })} className={inputClass} /></Field>
-                <Field label="Inspection Due"><input type="date" value={form.inspectionDueDate} onChange={(event) => setForm({ ...form, inspectionDueDate: event.target.value })} className={inputClass} /></Field>
-                <Field label="Registration Expires"><input type="date" value={form.registrationExpirationDate} onChange={(event) => setForm({ ...form, registrationExpirationDate: event.target.value })} className={inputClass} /></Field>
-                <Field label="Insurance Expires"><input type="date" value={form.insuranceExpirationDate} onChange={(event) => setForm({ ...form, insuranceExpirationDate: event.target.value })} className={inputClass} /></Field>
-                <Field label="In Service Date"><input type="date" value={form.inServiceDate} onChange={(event) => setForm({ ...form, inServiceDate: event.target.value })} className={inputClass} /></Field>
-                <Field label="Last Service"><input type="date" value={form.lastServiceDate} onChange={(event) => setForm({ ...form, lastServiceDate: event.target.value })} className={inputClass} /></Field>
-                <Field label="Last Service Mileage"><input type="number" min="0" value={form.lastServiceMileage} onChange={(event) => setForm({ ...form, lastServiceMileage: event.target.value })} className={inputClass} /></Field>
-                <Field label="Last Service Hours"><input type="number" min="0" step="0.1" value={form.lastServiceHours} onChange={(event) => setForm({ ...form, lastServiceHours: event.target.value })} className={inputClass} /></Field>
-                <Field label="Next Service Date"><input type="date" value={form.nextServiceDate} onChange={(event) => setForm({ ...form, nextServiceDate: event.target.value })} className={inputClass} /></Field>
-                <Field label="Next Service Mileage"><input type="number" min="0" value={form.nextServiceMileage} onChange={(event) => setForm({ ...form, nextServiceMileage: event.target.value })} className={inputClass} /></Field>
-                <Field label="Next Service Hours"><input type="number" min="0" step="0.1" value={form.nextServiceHours} onChange={(event) => setForm({ ...form, nextServiceHours: event.target.value })} className={inputClass} /></Field>
-                <Field label="Operational Comments" span><textarea value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} className={`${inputClass} min-h-20 resize-y`} /></Field>
-                <Field label="Notes" span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className={`${inputClass} min-h-24 resize-y`} /></Field>
-                {editingVehicleId ? <Field label="Reason for Change" span><textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-20 resize-y`} placeholder="Explain why these vehicle details are changing." /></Field> : null}
+                <Field label="Unit Number">
+                  <input
+                    value={form.unitNumber}
+                    onChange={(event) =>
+                      setForm({ ...form, unitNumber: event.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="e.g. 3101"
+                  />
+                </Field>
+                <Field label="License Plate">
+                  <input
+                    value={form.licensePlate}
+                    onChange={(event) =>
+                      setForm({ ...form, licensePlate: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Year">
+                  <input
+                    type="number"
+                    value={form.year}
+                    onChange={(event) =>
+                      setForm({ ...form, year: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Make">
+                  <input
+                    value={form.make}
+                    onChange={(event) =>
+                      setForm({ ...form, make: event.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Ford"
+                  />
+                </Field>
+                <Field label="Model">
+                  <input
+                    value={form.model}
+                    onChange={(event) =>
+                      setForm({ ...form, model: event.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Police Interceptor Utility"
+                  />
+                </Field>
+                <Field label="Vehicle Type">
+                  <input
+                    value={form.vehicleType}
+                    onChange={(event) =>
+                      setForm({ ...form, vehicleType: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="VIN" span>
+                  <input
+                    value={form.vin}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        vin: event.target.value.toUpperCase(),
+                      })
+                    }
+                    className={inputClass}
+                    maxLength={17}
+                  />
+                </Field>
+                <Field label="Assignment Type">
+                  <select
+                    value={form.assignmentType}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        assignmentType: event.target.value as AssignmentType,
+                      })
+                    }
+                    className={inputClass}
+                  >
+                    <option>Pool</option>
+                    <option>Permanent</option>
+                    <option>Specialized</option>
+                  </select>
+                </Field>
+                <Field label="Assigned To">
+                  <input
+                    value={form.assignedTo}
+                    onChange={(event) =>
+                      setForm({ ...form, assignedTo: event.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Officer, unit, or function"
+                  />
+                </Field>
+                <Field label="Home Location">
+                  <input
+                    value={form.homeLocation}
+                    onChange={(event) =>
+                      setForm({ ...form, homeLocation: event.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Headquarters"
+                  />
+                </Field>
+                <Field label="Current Mileage">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.currentMileage}
+                    onChange={(event) =>
+                      setForm({ ...form, currentMileage: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Current Hours">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={form.currentHours}
+                    onChange={(event) =>
+                      setForm({ ...form, currentHours: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Status">
+                  <select
+                    value={form.status}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        status: event.target.value as FleetStatus,
+                      })
+                    }
+                    className={inputClass}
+                  >
+                    {STATUSES.map((status) => (
+                      <option key={status}>{status}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Open Issues">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.openIssueCount}
+                    onChange={(event) =>
+                      setForm({ ...form, openIssueCount: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Inspection Due">
+                  <input
+                    type="date"
+                    value={form.inspectionDueDate}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        inspectionDueDate: event.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Registration Expires">
+                  <input
+                    type="date"
+                    value={form.registrationExpirationDate}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        registrationExpirationDate: event.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Insurance Expires">
+                  <input
+                    type="date"
+                    value={form.insuranceExpirationDate}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        insuranceExpirationDate: event.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="In Service Date">
+                  <input
+                    type="date"
+                    value={form.inServiceDate}
+                    onChange={(event) =>
+                      setForm({ ...form, inServiceDate: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Last Service">
+                  <input
+                    type="date"
+                    value={form.lastServiceDate}
+                    onChange={(event) =>
+                      setForm({ ...form, lastServiceDate: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Last Service Mileage">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.lastServiceMileage}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        lastServiceMileage: event.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Last Service Hours">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={form.lastServiceHours}
+                    onChange={(event) =>
+                      setForm({ ...form, lastServiceHours: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Next Service Date">
+                  <input
+                    type="date"
+                    value={form.nextServiceDate}
+                    onChange={(event) =>
+                      setForm({ ...form, nextServiceDate: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Next Service Mileage">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.nextServiceMileage}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        nextServiceMileage: event.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Next Service Hours">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={form.nextServiceHours}
+                    onChange={(event) =>
+                      setForm({ ...form, nextServiceHours: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Operational Comments" span>
+                  <textarea
+                    value={form.comments}
+                    onChange={(event) =>
+                      setForm({ ...form, comments: event.target.value })
+                    }
+                    className={`${inputClass} min-h-20 resize-y`}
+                  />
+                </Field>
+                <Field label="Notes" span>
+                  <textarea
+                    value={form.notes}
+                    onChange={(event) =>
+                      setForm({ ...form, notes: event.target.value })
+                    }
+                    className={`${inputClass} min-h-24 resize-y`}
+                  />
+                </Field>
+                {editingVehicleId ? (
+                  <Field label="Reason for Change" span>
+                    <textarea
+                      required
+                      value={form.reason}
+                      onChange={(event) =>
+                        setForm({ ...form, reason: event.target.value })
+                      }
+                      className={`${inputClass} min-h-20 resize-y`}
+                      placeholder="Explain why these vehicle details are changing."
+                    />
+                  </Field>
+                ) : null}
               </div>
               <div className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
-                <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white disabled:opacity-50">Cancel</button>
-                <button type="button" onClick={() => void saveVehicle()} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
-                  {saving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                <button
+                  type="button"
+                  onClick={() => closeForm()}
+                  disabled={saving}
+                  className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveVehicle()}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {saving ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <CheckCircle2 size={14} />
+                  )}
                   {editingVehicleId ? "Save Changes" : "Save Vehicle"}
                 </button>
               </div>
@@ -1080,13 +1699,13 @@ function FleetManagementContent() {
 export default function FleetManagementPage() {
   return (
     <Suspense
-      fallback={(
+      fallback={
         <TracePointShell activePage="Fleet Management">
           <div className="flex h-72 items-center justify-center">
             <RefreshCw className="animate-spin text-blue-300" />
           </div>
         </TracePointShell>
-      )}
+      }
     >
       <FleetManagementContent />
     </Suspense>

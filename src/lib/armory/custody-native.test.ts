@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
@@ -9,7 +9,6 @@ test("AWS-native custody migration keeps assignment availability independent of 
   assert.match(sql, /not exists \(select 1 from public\.firearm_assignments assignment/);
   assert.doesNotMatch(sql, /feature_catalog|firearm_custody',true|department_features/);
 });
-
 test("custody mutations are idempotent and append an audit event", async () => {
   const sql = await readFile("database/aws/028_firearm_custody_phase_a.sql", "utf8");
   assert.match(sql, /unique \(department_id, idempotency_key\)/);
@@ -19,11 +18,10 @@ test("custody mutations are idempotent and append an audit event", async () => {
   assert.match(sql, /create_firearm_possession_restriction/);
   assert.match(sql, /create_firearm_storage_location/);
 });
-
 test("custody API is server-authorized and never creates a Cognito identity", async () => {
   const route = await readFile("src/app/api/armory/firearms/[firearmId]/custody/route.ts", "utf8");
   assert.match(route, /resolveServerAccess\(\)/);
-  assert.match(route, /transfer_firearm_custody/);
+  assert.match(route, /operate_restricted_firearm_custody/);
   assert.doesNotMatch(route, /AdminCreateUser|AdminSetUserPassword|cognito/i);
 });
 
@@ -47,17 +45,17 @@ test("normal firearm inventory exposes the existing custody workflow", async () 
 });
 
 test("restricted use preserves assignment, uses existing custody, and keeps its history", async () => {
-  const sql = await readFile("database/aws/029_firearm_restricted_use.sql", "utf8");
+  const sql = await readFile("database/aws/030_firearm_restricted_use.sql", "utf8");
   const route = await readFile("src/app/api/armory/firearms/[firearmId]/custody/route.ts", "utf8");
   const page = await readFile("src/app/firearms/page.tsx", "utf8");
   assert.match(sql, /manage_restrictions'\) or public\.has_department_permission\(v_department_id, 'manage_firearms'/);
   assert.match(sql, /restricted use requires an active assignment/);
   assert.match(sql, /update public\.firearm_possession_restrictions set is_active=false/);
   assert.match(sql, /firearm_possession_restriction_cleared/);
-  assert.match(route, /set_firearm_restricted_use/);
-  assert.match(route, /clear_firearm_possession_restriction/);
-  assert.match(page, /RESTRICTED USE/);
-  assert.match(page, /Record in Storage/);
-  assert.match(page, /Return to Officer/);
+  assert.match(route, /set_firearm_restriction/);
+  assert.match(route, /clear_firearm_restriction/);
+  assert.match(page, /No Carry/);
+  assert.match(page, /Duty Only/);
+
   assert.match(page, /no_possession_permitted/);
 });

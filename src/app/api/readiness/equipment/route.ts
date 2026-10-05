@@ -3,7 +3,7 @@ import { createReadinessRepository } from "@/lib/readiness/read-repository";
 import { accessFailureResponse, hasAnyServerPermission, requireServerFeature, resolveServerAccess } from "@/lib/tracepoint/server-access";
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
-  const access = await resolveServerAccess();
+  const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
   const featureError = requireServerFeature(context, "equipment_readiness", "Equipment Readiness");
