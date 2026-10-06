@@ -1,3 +1,5 @@
+import { isImmutableRangeDay } from "./range-day-immutability";
+
 type WorkspaceRecord = Record<string, unknown>;
 
 export type RangeWorkspaceMutationDecision =
@@ -6,7 +8,6 @@ export type RangeWorkspaceMutationDecision =
 
 const MANAGE_PERMISSION = "manage_range_days";
 const SCORE_PERMISSIONS = new Set(["score_range_days", "manage_qualifications"]);
-const FINAL_STATUSES = new Set(["completed", "locked", "archived"]);
 
 function record(value: unknown): WorkspaceRecord {
   return value && typeof value === "object" ? value as WorkspaceRecord : {};
@@ -48,8 +49,7 @@ function relatedToRangeDay(items: WorkspaceRecord[], rangeDayId: string) {
 }
 
 function isFinalized(rangeDay: WorkspaceRecord) {
-  return FINAL_STATUSES.has(text(rangeDay.status).toLowerCase()) ||
-    field(rangeDay, "packetStatus", "packet_status").toLowerCase() === "ready";
+  return isImmutableRangeDay(rangeDay);
 }
 
 function validateTenantReferences(workspace: WorkspaceRecord, departmentId: string) {

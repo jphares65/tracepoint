@@ -71,6 +71,10 @@ import {
   getOpenAttendanceOfficerInputValue,
   getOpenAttendanceOfficerLabel,
 } from "@/lib/range/open-attendance-officers";
+import {
+  hydrateEditableRangeDay,
+  isImmutableRangeDay,
+} from "@/lib/range/range-day-immutability";
 
 type RangeDayType =
   "Qualification" | "Rifle" | "Low Light" | "Remedial" | "Make-Up" | "Training";
@@ -1109,36 +1113,38 @@ function normalizeRangeDaysForWorkspace(
   storedRangeDays: PlannedRangeDay[],
   currentUserId: string,
 ): PlannedRangeDay[] {
-  return storedRangeDays.map((rangeDay) => {
-    const storedInstructorIds = Array.isArray(rangeDay.instructorIds)
-      ? rangeDay.instructorIds
-      : [];
+  return storedRangeDays.map((rangeDay) =>
+    hydrateEditableRangeDay(rangeDay, (editableRangeDay) => {
+      const storedInstructorIds = Array.isArray(editableRangeDay.instructorIds)
+        ? editableRangeDay.instructorIds
+        : [];
 
-    const fallbackLeadInstructorId =
-      rangeDay.leadInstructorId || storedInstructorIds[0] || currentUserId;
+      const fallbackLeadInstructorId =
+        editableRangeDay.leadInstructorId || storedInstructorIds[0] || currentUserId;
 
-    const instructorIds = storedInstructorIds.includes(fallbackLeadInstructorId)
-      ? storedInstructorIds
-      : [fallbackLeadInstructorId, ...storedInstructorIds];
+      const instructorIds = storedInstructorIds.includes(fallbackLeadInstructorId)
+        ? storedInstructorIds
+        : [fallbackLeadInstructorId, ...storedInstructorIds];
 
-    return {
-      ...rangeDay,
-      leadInstructorId: fallbackLeadInstructorId,
-      instructorIds,
-      attendanceMode: normalizeRangeDayAttendanceMode(rangeDay.attendanceMode),
-      staffingNotes: rangeDay.staffingNotes ?? "",
-      outline:
-        Array.isArray(rangeDay.outline) && rangeDay.outline.length > 0
-          ? rangeDay.outline
-          : getDefaultOutlineForRangeType(rangeDay.rangeType),
-      equipmentChecklist:
-        Array.isArray(rangeDay.equipmentChecklist) &&
-        rangeDay.equipmentChecklist.length > 0
-          ? rangeDay.equipmentChecklist
-          : DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
-      aar: rangeDay.aar ?? { objectivesAchieved: "" },
-    };
-  });
+      return {
+        ...editableRangeDay,
+        leadInstructorId: fallbackLeadInstructorId,
+        instructorIds,
+        attendanceMode: normalizeRangeDayAttendanceMode(editableRangeDay.attendanceMode),
+        staffingNotes: editableRangeDay.staffingNotes ?? "",
+        outline:
+          Array.isArray(editableRangeDay.outline) && editableRangeDay.outline.length > 0
+            ? editableRangeDay.outline
+            : getDefaultOutlineForRangeType(editableRangeDay.rangeType),
+        equipmentChecklist:
+          Array.isArray(editableRangeDay.equipmentChecklist) &&
+          editableRangeDay.equipmentChecklist.length > 0
+            ? editableRangeDay.equipmentChecklist
+            : DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
+        aar: editableRangeDay.aar ?? { objectivesAchieved: "" },
+      };
+    }),
+  );
 }
 
 function parseOptionalNumber(value: string) {
@@ -1920,9 +1926,7 @@ export default function RangeDaysPage() {
     ? (rangeDays.find((item) => item.id === selectedRangeDayId) ?? null)
     : null;
   const selectedRangeDayFinalized = Boolean(
-    selectedRangeDay &&
-    (["Completed", "Locked", "Archived"].includes(selectedRangeDay.status) ||
-      selectedRangeDay.packetStatus === "Ready"),
+    selectedRangeDay && isImmutableRangeDay(selectedRangeDay),
   );
   const canEditSelectedRangeDay =
     canManageRangeDays && !selectedRangeDayFinalized;
@@ -2906,8 +2910,7 @@ export default function RangeDaysPage() {
     const currentDay = rangeDays.find((item) => item.id === rangeDayId);
     if (
       currentDay &&
-      (["Completed", "Locked", "Archived"].includes(currentDay.status) ||
-        currentDay.packetStatus === "Ready")
+      isImmutableRangeDay(currentDay)
     )
       return;
     setRangeDays((current) =>
