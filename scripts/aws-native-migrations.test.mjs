@@ -80,7 +80,9 @@ test("migration tasks use the distroless numeric nonroot user and report pre-sta
   assert.match(migrationTask, /NotePropertyValue '65532'/);
   assert.match(migrationTask, /\$user\.Value = '65532'/);
   assert.match(migrationTask, /function Get-MigrationTaskFailureDetails/);
+  assert.match(migrationTask, /function Get-ReportedValue/);
   assert.match(migrationTask, /Get-OptionalPropertyValue \$container 'exitCode'/);
+  assert.doesNotMatch(migrationTask, /\?\?/);
   assert.match(migrationTask, /stop code \$\(\$failure\.StopCode\); stopped reason \$\(\$failure\.StoppedReason\); container reason \$\(\$failure\.ContainerReason\); exit code \$\(\$failure\.ExitCode\)/);
 });
 

@@ -34,6 +34,10 @@ function Get-OptionalPropertyValue($Object, [string]$Name) {
   if ($null -eq $property) { return $null }
   return $property.Value
 }
+function Get-ReportedValue($Value) {
+  if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return 'not reported' }
+  return [string]$Value
+}
 function Set-MigrationTaskContainerUser($Container) {
   # The bootstrap definition uses the Node builder user's name. The migration
   # image runs from its distroless nonroot stage, where that name is absent.
@@ -46,10 +50,10 @@ function Get-MigrationTaskFailureDetails($Task, [string]$ContainerName) {
   $container = @((Get-OptionalPropertyValue $Task 'containers') | Where-Object { (Get-OptionalPropertyValue $_ 'name') -eq $ContainerName }) | Select-Object -First 1
   $exitCode = Get-OptionalPropertyValue $container 'exitCode'
   [pscustomobject]@{
-    StopCode = (Get-OptionalPropertyValue $Task 'stopCode') ?? 'not reported'
-    StoppedReason = (Get-OptionalPropertyValue $Task 'stoppedReason') ?? 'not reported'
-    ContainerReason = (Get-OptionalPropertyValue $container 'reason') ?? 'not reported'
-    ExitCode = if ($null -eq $exitCode) { 'not reported' } else { [string]$exitCode }
+    StopCode = Get-ReportedValue (Get-OptionalPropertyValue $Task 'stopCode')
+    StoppedReason = Get-ReportedValue (Get-OptionalPropertyValue $Task 'stoppedReason')
+    ContainerReason = Get-ReportedValue (Get-OptionalPropertyValue $container 'reason')
+    ExitCode = Get-ReportedValue $exitCode
     ExitCodeReported = $null -ne $exitCode
   }
 }
