@@ -1,0 +1,46 @@
+import { NextResponse } from "next/server";
+import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+
+type Context = { params: Promise<{ templateId: string }> };
+const VIEW = ["view_agency_documents", "generate_agency_documents", "manage_document_templates"] as const;
+const MANAGE = ["manage_document_templates"] as const;
+function response(error: string, status = 400) { return NextResponse.json({ error }, { status }); }
+
+export async function GET(_request: Request, route: Context) {
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  if (!hasAnyServerPermission(access.context, VIEW)) return permissionDeniedResponse("Agency Documents access is required.");
+  const { templateId } = await route.params;
+  const template = await access.context.admin.from("document_templates").select("*").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
+  if (template.error) return response(template.error.message, 500); if (!template.data) return response("Template not found.", 404);
+  const version = await access.context.admin.from("document_template_versions").select("id,version_number,source_storage_path").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", template.data.current_version).maybeSingle();
+  if (version.error || !version.data) return response(version.error?.message ?? "Template version not found.", 500);
+  const fields = await access.context.admin.from("document_template_fields").select("*").eq("template_version_id", version.data.id).eq("department_id", access.context.departmentId).order("created_at");
+  if (fields.error) return response(fields.error.message, 500);
+  return NextResponse.json({ template: template.data, version: version.data, fields: fields.data ?? [] });
+}
+
+export async function PATCH(request: Request, route: Context) {
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  if (!hasAnyServerPermission(access.context, MANAGE)) return permissionDeniedResponse("Template-management permission is required.");
+  const { templateId } = await route.params; const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+  const existing = await access.context.admin.from("document_templates").select("id,name,status,current_version,source_filename,source_storage_path,description,category").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
+  if (existing.error) return response(existing.error.message, 500); if (!existing.data) return response("Template not found.", 404);
+  if (body.action === "duplicate") {
+    const duplicate = await access.context.admin.from("document_templates").insert({ ...existing.data, id: crypto.randomUUID(), name: `${existing.data.name} copy`, status: "draft", created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId }).select("id").single();
+    if (duplicate.error) return response(duplicate.error.message, 500);
+    const oldVersion = await access.context.admin.from("document_template_versions").select("*").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", existing.data.current_version).single();
+    if (oldVersion.error) return response(oldVersion.error.message, 500);
+    const newVersion = await access.context.admin.from("document_template_versions").insert({ department_id: access.context.departmentId, template_id: duplicate.data.id, version_number: 1, source_filename: oldVersion.data.source_filename, source_storage_path: oldVersion.data.source_storage_path, created_by_user_id: access.context.userId }).select("id").single();
+    if (newVersion.error) return response(newVersion.error.message, 500);
+    const oldFields = await access.context.admin.from("document_template_fields").select("*").eq("template_version_id", oldVersion.data.id).eq("department_id", access.context.departmentId);
+    if (oldFields.error) return response(oldFields.error.message, 500);
+    if (oldFields.data?.length) await access.context.admin.from("document_template_fields").insert(oldFields.data.map(({ id, created_at, updated_at, ...field }: Record<string, unknown>) => ({ ...field, id: crypto.randomUUID(), template_version_id: newVersion.data.id })));
+    await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: "document_template_duplicated", entity_type: "document_template", entity_id: duplicate.data.id, summary: `Duplicated document template ${existing.data.name}.`, new_value: { source_template_id: templateId } });
+    return NextResponse.json({ id: duplicate.data.id });
+  }
+  const status = body.status; if (status !== "draft" && status !== "published" && status !== "archived") return response("A valid template status is required.");
+  const updated = await access.context.admin.from("document_templates").update({ status, updated_by_user_id: access.context.userId, updated_at: new Date().toISOString() }).eq("id", templateId).eq("department_id", access.context.departmentId);
+  if (updated.error) return response(updated.error.message, 500);
+  await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: `document_template_${status === "published" ? "published" : status === "draft" ? "unpublished" : "archived"}`, entity_type: "document_template", entity_id: templateId, summary: `${status === "published" ? "Published" : status === "draft" ? "Unpublished" : "Archived"} document template ${existing.data.name}.` });
+  return NextResponse.json({ ok: true });
+}

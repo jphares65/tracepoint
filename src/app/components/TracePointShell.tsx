@@ -12,6 +12,7 @@ import {
   CalendarRange,
   ChevronDown,
   CircleHelp,
+  FileText,
   Crosshair,
   House,
   LogOut,
@@ -211,6 +212,12 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       },
     ],
   },  {
+    label: "Agency Documents",
+    href: "/agency-documents",
+    icon: FileText,
+    requirement: { anyOf: ["view_agency_documents", "generate_agency_documents", "manage_document_templates"] },
+  },
+  {
     label: "Off-Duty Firearms",
     icon: Shield,
     requirement: {
