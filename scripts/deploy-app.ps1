@@ -245,7 +245,10 @@ function Publish-Image {
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'database/rehearsal', 'supabase/migrations', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/assert-production-lint-ratchet.mjs', 'scripts/aws-native-migrations.test.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
+    # The Docker build runs validation and TypeScript over scripts. Archive the
+    # complete scripts tree so a newly imported local validation dependency
+    # cannot be present locally yet absent from the CodeBuild context.
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'database/rehearsal', 'supabase/migrations', 'scripts', 'infra/lib/production-target.ts')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
