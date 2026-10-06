@@ -1817,7 +1817,9 @@ export default function RangeDaysPage() {
 
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
+  const [workspaceFeedback, setWorkspaceFeedback] = useState("");
+  const [isSavingRangeDay, setIsSavingRangeDay] = useState(false);
+  const [isRangeDayDirty, setIsRangeDayDirty] = useState(false);
   const [removingDrillId, setRemovingDrillId] = useState("");
   const [canManageRangeDays, setCanManageRangeDays] = useState(false);
   const [canScoreRangeDays, setCanScoreRangeDays] = useState(false);
@@ -2773,7 +2775,7 @@ export default function RangeDaysPage() {
           : item,
       ),
     );
-    setSaveMessage(
+    setWorkspaceFeedback(
       nextStatus === "Archived"
         ? `${template.name} archived. Existing range-day copies and results were preserved.`
         : `${template.name} restored to the drill library.`,
@@ -2809,7 +2811,7 @@ export default function RangeDaysPage() {
   function handleCreateRangeDay() {
     if (!canManageRangeDays) return;
     if (!departmentId) {
-      setSaveMessage("Department context could not be loaded.");
+      setWorkspaceFeedback("Department context could not be loaded.");
       return;
     }
 
@@ -2973,7 +2975,7 @@ export default function RangeDaysPage() {
 
   async function handleSaveRangeDayWorkspace() {
     if (!canManageRangeDays && !canScoreRangeDays) {
-      setSaveMessage("You do not have permission to update range records.");
+      setWorkspaceFeedback("You do not have permission to update range records.");
       return;
     }
     const workspace = {
@@ -2986,22 +2988,26 @@ export default function RangeDaysPage() {
     };
     writeStoredRangeDayWorkspace(workspace, departmentId);
 
-    setSaveMessage("Saving...");
+    setIsSavingRangeDay(true);
+    setWorkspaceFeedback("");
     try {
       await saveRemoteRangeDayWorkspace(workspace, departmentId);
-      setSaveMessage("Saved");
+      setIsRangeDayDirty(false);
+      setWorkspaceFeedback("Saved");
     } catch (error) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         error instanceof Error
           ? error.message
           : "The range workspace could not be saved.",
       );
+      setIsSavingRangeDay(false);
       return;
     }
 
     if (typeof window !== "undefined") {
-      window.setTimeout(() => setSaveMessage(""), 2000);
+      window.setTimeout(() => setWorkspaceFeedback(""), 2000);
     }
+    setIsSavingRangeDay(false);
   }
 
   function handleSetLeadInstructor(userId: string) {
@@ -3269,7 +3275,7 @@ export default function RangeDaysPage() {
     const rosterToScore = attendingRoster;
 
     if (rosterToScore.length === 0) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         "Mark at least one rostered officer present before scoring.",
       );
       return;
@@ -3295,7 +3301,7 @@ export default function RangeDaysPage() {
     });
 
     if (officersWithEntriesButNoFirearm.length > 0) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         `Select a firearm before saving results for: ${officersWithEntriesButNoFirearm.join(", ")}.`,
       );
       return;
@@ -3333,7 +3339,7 @@ export default function RangeDaysPage() {
         );
 
         if (!proceed) {
-          setSaveMessage(
+          setWorkspaceFeedback(
             "Results were not saved. Review the selected firearms.",
           );
           return;
@@ -3503,7 +3509,7 @@ export default function RangeDaysPage() {
       ...newMalfunctions,
     ]);
 
-    setSaveMessage(
+    setWorkspaceFeedback(
       `${savedResults.length} officer result${
         savedResults.length === 1 ? "" : "s"
       } saved for ${getRunLabel(selectedDrill, selectedRunNumber)}.`,
@@ -3541,7 +3547,7 @@ export default function RangeDaysPage() {
       (newQualificationComponents.length === 0 ||
         newQualificationComponents.some((component) => !component.name.trim()))
     ) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         "Qualification drills require at least one named scoring component.",
       );
       return;
@@ -3678,12 +3684,12 @@ export default function RangeDaysPage() {
       }
 
       writeStoredRangeDayWorkspace(workspace, departmentId);
-      setSaveMessage("Creating drill...");
+      setWorkspaceFeedback("Creating drill...");
 
       try {
         await saveRemoteRangeDayWorkspace(workspace, departmentId);
       } catch (error) {
-        setSaveMessage(
+        setWorkspaceFeedback(
           error instanceof Error
             ? error.message
             : "The drill could not be created.",
@@ -3760,7 +3766,7 @@ export default function RangeDaysPage() {
       );
     }
 
-    setSaveMessage(
+    setWorkspaceFeedback(
       editingDrillTemplateId
         ? `${newDrillName.trim()} updated in the drill library and active unscored range days.`
         : `${newDrillName.trim()} added to the drill library.`,
@@ -3782,7 +3788,7 @@ export default function RangeDaysPage() {
     );
 
     if (!copiedDrill) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         "The selected Drill Library record is no longer available. Reload and try again.",
       );
       return;
@@ -3841,16 +3847,17 @@ export default function RangeDaysPage() {
     // document-related workspace write cannot race and overwrite it.
     cancelPendingRemoteRangeDayWorkspaceSync();
     setAddingDrillTemplateId(templateId);
-    setSaveMessage("Adding drill...");
+    setWorkspaceFeedback("Adding drill...");
     try {
       await saveRemoteRangeDayWorkspace(workspace, departmentId);
       writeStoredRangeDayWorkspace(workspace, departmentId);
       setRangeDayDrills(workspace.rangeDayDrills);
       setSelectedDrillId(normalizedCopiedDrill.id);
       resetEntryForm(1);
-      setSaveMessage(`${normalizedCopiedDrill.name} added.`);
+      setIsRangeDayDirty(true);
+      setWorkspaceFeedback(`${normalizedCopiedDrill.name} added. Save Range Day when you are ready.`);
     } catch (error) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         error instanceof Error
           ? error.message
           : "The drill could not be added to this range day.",
@@ -3873,7 +3880,7 @@ export default function RangeDaysPage() {
       return;
 
     setRemovingDrillId(drill.id);
-    setSaveMessage("Removing drill...");
+    setWorkspaceFeedback("Removing drill...");
     try {
       const response = await fetch("/api/pilot/range-workspace/drills", {
         method: "DELETE",
@@ -3903,9 +3910,10 @@ export default function RangeDaysPage() {
             ?.id ?? "",
         );
       }
-      setSaveMessage(`${drill.name} removed.`);
+      setIsRangeDayDirty(true);
+      setWorkspaceFeedback(`${drill.name} removed. Save Range Day when you are ready.`);
     } catch (error) {
-      setSaveMessage(
+      setWorkspaceFeedback(
         error instanceof Error
           ? error.message
           : "The drill could not be removed.",
@@ -4582,15 +4590,21 @@ export default function RangeDaysPage() {
                     onClick={() => void handleSaveRangeDayWorkspace()}
                     disabled={
                       (!canManageRangeDays && !canScoreRangeDays) ||
-                      selectedRangeDayFinalized
+                      selectedRangeDayFinalized ||
+                      isSavingRangeDay
                     }
                     className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Save size={14} />
-                    {saveMessage || "Save Range Day"}
+                    {isSavingRangeDay ? "Saving…" : "Save Range Day"}
                   </button>
-                  <span className="sr-only" role="status" aria-live="polite">
-                    {saveMessage}
+                  <span
+                    className="self-center text-[12px] text-slate-400"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {workspaceFeedback ||
+                      (isRangeDayDirty ? "Unsaved changes" : "")}
                   </span>
                 </div>
               </div>
