@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
+import {
+  assertProductionLedgerAdoptionPostconditions,
+  productionLedgerAdoptionPostconditionsSql,
+  productionLedgerAdoptionVersions,
+} from "./aws-native-production-ledger-adoption.mjs";
 
 const ledger = "public.tracepoint_aws_schema_migrations";
 const lockName = "tracepoint:aws-native-schema-migrations:v1";
@@ -83,6 +88,14 @@ async function verifyBaselineAnchor(client) {
   const failed = Object.entries(checks.rows[0]).filter(([, value]) => value !== true).map(([key]) => key);
   if (failed.length) throw new Error(`AWS_NATIVE_BASELINE_UNVERIFIED: ${failed.join(", ")}`);
 }
+async function verifyProductionLedgerAdoptionAnchor(client) {
+  // 001–029 retain the audited Phase A anchor used by reconciliation.  The
+  // later changes are verified individually below before any ledger row is
+  // recorded; this path never executes historical migration SQL.
+  await verifyBaselineAnchor(client);
+  const checks = await client.query(productionLedgerAdoptionPostconditionsSql);
+  assertProductionLedgerAdoptionPostconditions(checks.rows[0]);
+}
 async function ensureLedger(client) {
   await client.query(`create table if not exists ${ledger} (
     version integer primary key check (version > 0), filename text not null unique,
@@ -122,6 +135,28 @@ try {
       } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
     } else if (action === "reconcile") {
       if (before?.length) throw new Error("AWS-native migration ledger already contains entries; reconciliation requires an unbaselined verified historical schema.");
+      if (requestedEnvironment === "production") {
+        await verifyProductionLedgerAdoptionAnchor(client);
+        const adopted = files.filter((file) => file.version <= productionLedgerAdoptionVersions.last);
+        const pending = files.filter((file) => file.version > productionLedgerAdoptionVersions.last);
+        if (
+          adopted.length !== productionLedgerAdoptionVersions.last
+          || !adopted.every((file, index) => file.version === index + 1)
+          || pending.length !== 1
+          || pending[0]?.version !== 38
+          || pending[0]?.filename !== "038_range_workspace_authenticated_writes.sql"
+        ) {
+          throw new Error("Production reconciliation requires the complete verified 001–037 migration chain.");
+        }
+        await client.query("begin");
+        try {
+          await ensureLedger(client);
+          for (const file of adopted) await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'reconcile',true)`, [file.version, file.filename, file.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
+          await client.query("commit");
+        } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+        console.log(JSON.stringify(await report(client, files)));
+        return;
+      }
       const historical = files.filter((file) => file.version <= 27);
       const phaseA = files.find((file) => file.version === 28);
       const reconciliation = files.find((file) => file.version === 29 && file.filename === "029_firearm_custody_phase_a_function_reconciliation.sql");

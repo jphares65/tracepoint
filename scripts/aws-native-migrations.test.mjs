@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import {
+  assertProductionLedgerAdoptionPostconditions,
+  productionLedgerAdoptionPostconditions,
+  productionLedgerAdoptionPostconditionsSql,
+} from "./aws-native-production-ledger-adoption.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -72,6 +77,23 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /replace\(\/commit;/);
   assert.match(runner, /AWS_NATIVE_BASELINE_UNVERIFIED/);
   assert.match(runner, /action === "baseline" && requestedEnvironment !== "staging"/);
+  assert.match(runner, /requestedEnvironment === "production"/);
+  assert.match(runner, /verifyProductionLedgerAdoptionAnchor/);
+  assert.match(runner, /file\.version <= productionLedgerAdoptionVersions\.last/);
+  assert.match(runner, /038_range_workspace_authenticated_writes\.sql/);
+});
+
+test("production reconciliation refuses to adopt a migration when a catalog postcondition is absent", () => {
+  const verified = Object.fromEntries(productionLedgerAdoptionPostconditions.map(key => [key, true]));
+  assert.doesNotThrow(() => assertProductionLedgerAdoptionPostconditions(verified));
+  assert.throws(
+    () => assertProductionLedgerAdoptionPostconditions({ ...verified, inventory_runtime_dml_grants: false }),
+    /AWS_NATIVE_PRODUCTION_ADOPTION_UNVERIFIED: inventory_runtime_dml_grants/,
+  );
+  assert.match(productionLedgerAdoptionPostconditionsSql, /audit_log_select_authorized/);
+  assert.match(productionLedgerAdoptionPostconditionsSql, /attachments_fleet_vehicle_document_active_idx/);
+  assert.match(productionLedgerAdoptionPostconditionsSql, /inventory_transactions_transaction_type_check/);
+  assert.match(productionLedgerAdoptionPostconditionsSql, /has_table_privilege\('authenticated', to_regclass\('public.inventory_items'\), 'insert'\)/);
 });
 
 test("migration tasks use the distroless numeric nonroot runtime contract and report pre-start failures", async () => {
