@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
+const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
 const generatedRuntimeImports = new Set(["scripts/start-tracepoint-container.mjs -> ./server.js"]);
 const normalize = value => value.replaceAll("\\", "/");
 
@@ -36,9 +37,12 @@ function archiveIncludes(archivePaths, file) {
   return archivePaths.some(entry => file === entry || file.startsWith(`${entry}/`));
 }
 
-async function assertArchivedScriptImportClosure({ root, archivePaths }) {
+async function assertArchivedScriptImportClosure({ root, archivePaths, validationScripts }) {
   const scripts = await sourceFiles(path.join(root, "scripts"));
-  const pending = scripts.map(file => normalize(path.relative(root, file)));
+  const pending = [
+    ...scripts.filter(file => typecheckExtensions.has(path.extname(file))).map(file => normalize(path.relative(root, file))),
+    ...validationScripts,
+  ];
   const visited = new Set();
   while (pending.length) {
     const file = pending.pop();
@@ -107,5 +111,6 @@ test("migration archives select the environment Dockerfile and include its valid
   await assertArchivedScriptImportClosure({
     root: path.resolve(import.meta.dirname, ".."),
     archivePaths: ["scripts", "src", "infra/lib/production-target.ts"],
+    validationScripts: environments.flatMap(environment => environment.validationScripts),
   });
 });
