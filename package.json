@@ -11,7 +11,8 @@
     "lint": "eslint",
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
-    "db:verify-staging": "node scripts/verify-staging-schema.mjs"
+    "db:verify-staging": "node scripts/verify-staging-schema.mjs",
+    "benchmark:document-analysis": "tsx scripts/benchmark-document-analysis.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "3.1127.0",
