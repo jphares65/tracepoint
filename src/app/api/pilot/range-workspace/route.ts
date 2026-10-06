@@ -10,6 +10,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
+import { parseRangeWorkspaceRequestBody } from "@/lib/range/workspace-request-body";
 import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
 
 type StoredRangeDayWorkspace = {
@@ -118,9 +119,14 @@ export async function PUT(request: NextRequest) {
     departmentId,
   } = resolved.context;
 
-  const body = (await request.json().catch(() => ({}))) as {
-    workspace?: unknown;
-  };
+  const parsedBody = await parseRangeWorkspaceRequestBody(request);
+  if (!parsedBody.ok) {
+    return NextResponse.json(
+      { error: parsedBody.error },
+      { status: parsedBody.status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  const body = parsedBody.value as { workspace?: unknown };
 
   const workspace = normalizeWorkspace(body.workspace);
 

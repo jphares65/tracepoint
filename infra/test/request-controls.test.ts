@@ -12,9 +12,10 @@ test('only exact approved uploads count the common body-size rule',()=>{
   const resources=Template.fromStack(new RequestControlsStack(new cdk.App(),'shadow-scope',production)).findResources('AWS::WAFv2::WebACL');
   const acl=Object.values(resources)[0].Properties;
   const rules=acl.Rules as Array<Record<string,any>>;
-  assert.deepEqual(rules.map(rule=>rule.Name),['RequestFlood','AwsCommonProtection','ShadowAmmunitionCommonProtection','AgencyPatchUploadCommonProtection','AwsKnownBadInputs','AwsIpReputation']);
+  assert.deepEqual(rules.map(rule=>rule.Name),['RequestFlood','AwsCommonProtection','ShadowAmmunitionCommonProtection','AgencyPatchUploadCommonProtection','RangeWorkspaceCommonProtection','AwsKnownBadInputs','AwsIpReputation']);
   const shadow=rules[2].Statement.ManagedRuleGroupStatement;
   const patch=rules[3].Statement.ManagedRuleGroupStatement;
+  const rangeWorkspace=rules[4].Statement.ManagedRuleGroupStatement;
   assert.deepEqual(shadow.ScopeDownStatement.AndStatement.Statements.map((statement:any)=>[statement.ByteMatchStatement.FieldToMatch,statement.ByteMatchStatement.SearchString]),[
     [{SingleHeader:{Name:'host'}},'shadow.tracepointhq.com'],
     [{Method:{}},'PUT'],
@@ -25,10 +26,16 @@ test('only exact approved uploads count the common body-size rule',()=>{
     [{Method:{}},'POST'],
     [{UriPath:{}},'/api/settings/department-patch'],
   ]);
-  assert.deepEqual(rules[1].Statement.ManagedRuleGroupStatement.ScopeDownStatement.NotStatement.Statement,{OrStatement:{Statements:[shadow.ScopeDownStatement,patch.ScopeDownStatement]}});
+  assert.deepEqual(rangeWorkspace.ScopeDownStatement.AndStatement.Statements.map((statement:any)=>[statement.ByteMatchStatement.FieldToMatch,statement.ByteMatchStatement.SearchString]),[
+    [{SingleHeader:{Name:'host'}},'tracepointhq.com'],
+    [{Method:{}},'PUT'],
+    [{UriPath:{}},'/api/pilot/range-workspace'],
+  ]);
+  assert.deepEqual(rules[1].Statement.ManagedRuleGroupStatement.ScopeDownStatement.NotStatement.Statement,{OrStatement:{Statements:[shadow.ScopeDownStatement,patch.ScopeDownStatement,rangeWorkspace.ScopeDownStatement]}});
   assert.deepEqual(shadow.RuleActionOverrides,[{Name:'SizeRestrictions_BODY',ActionToUse:{Count:{}}}]);
   assert.deepEqual(patch.RuleActionOverrides,[{Name:'SizeRestrictions_BODY',ActionToUse:{Count:{}}},{Name:'CrossSiteScripting_BODY',ActionToUse:{Count:{}}}]);
+  assert.deepEqual(rangeWorkspace.RuleActionOverrides,[{Name:'SizeRestrictions_BODY',ActionToUse:{Count:{}}}]);
   assert.equal(rules[1].Statement.ManagedRuleGroupStatement.RuleActionOverrides,undefined);
-  assert.deepEqual(rules[4].Statement.ManagedRuleGroupStatement,{VendorName:'AWS',Name:'AWSManagedRulesKnownBadInputsRuleSet'});
-  assert.deepEqual(rules[5].Statement.ManagedRuleGroupStatement,{VendorName:'AWS',Name:'AWSManagedRulesAmazonIpReputationList'});
+  assert.deepEqual(rules[5].Statement.ManagedRuleGroupStatement,{VendorName:'AWS',Name:'AWSManagedRulesKnownBadInputsRuleSet'});
+  assert.deepEqual(rules[6].Statement.ManagedRuleGroupStatement,{VendorName:'AWS',Name:'AWSManagedRulesAmazonIpReputationList'});
 });
