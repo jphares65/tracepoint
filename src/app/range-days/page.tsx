@@ -2360,7 +2360,9 @@ export default function RangeDaysPage() {
 
       setPersonnel(personnelPayload.personnel);
       setFirearms(armoryPayload.firearms);
-      setDepartmentId(armoryPayload.departmentId);
+      // The Range Workspace endpoint is the authority for the department used
+      // to serialize its PUT payload. Do not let this independent Armory
+      // request race and replace it with a stale context.
       setPersonnelMessage(
         personnelPayload.source === "error"
           ? "Department personnel could not be loaded."

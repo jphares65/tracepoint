@@ -15,9 +15,9 @@ const activeWorkspace = () => ({
   rangeDays: [{ id: "day-a", departmentId: "agency-a", status: "Planned" }],
   drillLibrary: [{ id: "template-a", departmentId: "agency-a", name: "Active template", documents: [{ id: "document-a" }] }],
   rangeDayDrills: [{ id: "assignment-a", rangeDayId: "day-a", sourceTemplateId: "template-a" }],
-  rangeRoster: [],
-  results: [],
-  malfunctions: [],
+  rangeRoster: [{ id: "roster-a", rangeDayId: "day-a", officerId: "officer-a" }],
+  results: [{ id: "result-a", rangeDayId: "day-a", drillId: "assignment-a", score: 95 }],
+  malfunctions: [{ id: "malfunction-a", rangeDayId: "day-a", drillRunResultId: "result-a" }],
 });
 
 const workspaceWithLegacyForeignRecords = () => ({
@@ -34,7 +34,18 @@ const workspaceWithLegacyForeignRecords = () => ({
     ...activeWorkspace().rangeDayDrills,
     { id: "assignment-b", rangeDayId: "day-b", sourceTemplateId: "template-b" },
   ],
-  results: [{ id: "result-b", rangeDayId: "day-b", drillId: "assignment-b", score: 100 }],
+  rangeRoster: [
+    ...activeWorkspace().rangeRoster,
+    { id: "roster-b", range_day_id: "day-b", officerId: "officer-b" },
+  ],
+  results: [
+    ...activeWorkspace().results,
+    { id: "result-b", rangeDayId: "day-b", drillId: "assignment-b", score: 100 },
+  ],
+  malfunctions: [
+    ...activeWorkspace().malfunctions,
+    { id: "malfunction-b", range_day_id: "day-b", drillRunResultId: "result-b" },
+  ],
 });
 
 test("active-department serialization excludes foreign records and their children", () => {
@@ -43,7 +54,21 @@ test("active-department serialization excludes foreign records and their childre
   assert.deepEqual(payload.rangeDays.map((item) => item.id), ["day-a"]);
   assert.deepEqual(payload.drillLibrary.map((item) => item.id), ["template-a"]);
   assert.deepEqual(payload.rangeDayDrills.map((item) => item.id), ["assignment-a"]);
-  assert.deepEqual(payload.results, []);
+  assert.deepEqual(payload.rangeRoster.map((item) => item.id), ["roster-a"]);
+  assert.deepEqual(payload.results.map((item) => item.id), ["result-a"]);
+  assert.deepEqual(payload.malfunctions.map((item) => item.id), ["malfunction-a"]);
+  const submittedRangeDayIds = new Set(payload.rangeDays.map((item) => item.id));
+  for (const child of [
+    ...payload.rangeDayDrills,
+    ...payload.rangeRoster,
+    ...payload.results,
+    ...payload.malfunctions,
+  ]) {
+    const record = child as { rangeDayId?: string; range_day_id?: string };
+    const parentId = record.rangeDayId ?? record.range_day_id;
+    assert.ok(parentId, "every submitted child must retain a parent Range Day ID");
+    assert.ok(submittedRangeDayIds.has(parentId));
+  }
 });
 
 test("a valid same-agency drill add survives the server preservation merge and reload", () => {
@@ -72,6 +97,18 @@ test("a valid same-agency drill add survives the server preservation merge and r
   assert.deepEqual((reloaded.rangeDayDrills as Array<{ id: string }>).map((item) => item.id), [
     "assignment-a", "assignment-b", "assignment-new",
   ]);
+  for (const [collection, recordId] of [
+    ["rangeDays", "day-b"],
+    ["drillLibrary", "template-b"],
+    ["rangeDayDrills", "assignment-b"],
+    ["rangeRoster", "roster-b"],
+    ["results", "result-b"],
+    ["malfunctions", "malfunction-b"],
+  ] as const) {
+    const before = (existing[collection] as Array<{ id: string }>).find((item) => item.id === recordId);
+    const after = (saved[collection] as Array<{ id: string }>).find((item) => item.id === recordId);
+    assert.deepEqual(after, before, `${collection}/${recordId} must remain server-owned and unchanged`);
+  }
   const foreignTemplate = (reloaded.drillLibrary as Array<{ id: string; documents?: unknown[] }>)
     .find((item) => item.id === "template-b");
   assert.deepEqual(foreignTemplate?.documents, [{ id: "document-b" }]);
