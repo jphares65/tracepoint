@@ -66,6 +66,39 @@ async function assertArchivedScriptImportClosure({ root, archivePaths, validatio
   }
 }
 
+async function localImportClosure({ root, entry }) {
+  const pending = [entry];
+  const visited = new Set();
+  while (pending.length) {
+    const file = pending.pop();
+    if (!file || visited.has(file)) continue;
+    visited.add(file);
+    const source = await readFile(path.join(root, file), "utf8");
+    for (const specifier of localSpecifiers(source)) {
+      const base = path.resolve(root, path.dirname(file), specifier);
+      const resolved = await firstExisting([base, ...sourceExtensions.map(extension => `${base}${extension}`), ...sourceExtensions.map(extension => path.join(base, `index${extension}`))]);
+      assert.ok(resolved, `${file} imports missing local runtime module ${specifier}`);
+      pending.push(normalize(path.relative(root, resolved)));
+    }
+  }
+  return visited;
+}
+
+function finalStageCopyDestinations(dockerfile) {
+  const finalStage = dockerfile.slice(dockerfile.lastIndexOf("\nFROM "));
+  return [...finalStage.matchAll(/^COPY(?:\s+--\S+)*\s+\S+\s+(\S+)\s*$/gm)]
+    .map(match => normalize(match[1].replace(/^\.\//, "").replace(/^\/app\//, "")));
+}
+
+async function assertFinalMigrationRuntimeClosure({ root, dockerfilePath }) {
+  const dockerfile = await readFile(dockerfilePath, "utf8");
+  const destinations = finalStageCopyDestinations(dockerfile);
+  const closure = await localImportClosure({ root, entry: "scripts/run-aws-native-migrations.mjs" });
+  for (const file of closure) {
+    assert.ok(archiveIncludes(destinations, file), `${path.basename(dockerfilePath)} final migration stage omits runtime module ${file}`);
+  }
+}
+
 test("AWS-native migration runner is ledgered, locked, hash-checked, and does not wrap file transactions", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   assert.match(runner, /tracepoint_aws_schema_migrations/);
@@ -151,4 +184,10 @@ test("migration archives select the environment Dockerfile and include its valid
     archivePaths: ["scripts", "src", "infra/lib/production-target.ts"],
     validationScripts: environments.flatMap(environment => environment.validationScripts),
   });
+});
+
+test("final migration stages contain the recursive local runtime dependency closure", async () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  await assertFinalMigrationRuntimeClosure({ root, dockerfilePath: path.join(root, "Dockerfile") });
+  await assertFinalMigrationRuntimeClosure({ root, dockerfilePath: path.join(root, "Dockerfile.aws-native-production") });
 });
