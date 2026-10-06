@@ -1,6 +1,61 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+
+const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
+const generatedRuntimeImports = new Set(["scripts/start-tracepoint-container.mjs -> ./server.js"]);
+const normalize = value => value.replaceAll("\\", "/");
+
+async function sourceFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(entries.map(async entry => {
+    const name = path.join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(name);
+    return sourceExtensions.includes(path.extname(entry.name)) ? [name] : [];
+  }));
+  return files.flat();
+}
+
+async function firstExisting(candidates) {
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+function localSpecifiers(source) {
+  return [...source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?:type\s+)?(?:[^"'\n]*?\s+from\s+)?["'](\.{1,2}\/[^"]+?)["']|\b(?:import|require)\(\s*["'](\.{1,2}\/[^"]+?)["']\s*\)/g)]
+    .map(match => match[1] ?? match[2]);
+}
+
+function archiveIncludes(archivePaths, file) {
+  return archivePaths.some(entry => file === entry || file.startsWith(`${entry}/`));
+}
+
+async function assertArchivedScriptImportClosure({ root, archivePaths }) {
+  const scripts = await sourceFiles(path.join(root, "scripts"));
+  const pending = scripts.map(file => normalize(path.relative(root, file)));
+  const visited = new Set();
+  while (pending.length) {
+    const file = pending.pop();
+    if (!file || visited.has(file)) continue;
+    visited.add(file);
+    const source = await readFile(path.join(root, file), "utf8");
+    for (const specifier of localSpecifiers(source)) {
+      const base = path.resolve(root, path.dirname(file), specifier);
+      const resolved = await firstExisting([base, ...sourceExtensions.map(extension => `${base}${extension}`), ...sourceExtensions.map(extension => path.join(base, `index${extension}`))]);
+      if (!resolved && generatedRuntimeImports.has(`${file} -> ${specifier}`)) continue;
+      assert.ok(resolved, `${file} imports missing local module ${specifier}`);
+      const relative = normalize(path.relative(root, resolved));
+      assert.ok(archiveIncludes(archivePaths, relative), `${file} imports ${relative}, which is absent from the migration archive`);
+      pending.push(relative);
+    }
+  }
+}
 
 test("AWS-native migration runner is ledgered, locked, hash-checked, and does not wrap file transactions", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
@@ -21,13 +76,13 @@ test("migration archives select the environment Dockerfile and include its valid
     {
       name: "staging",
       dockerfile: "../Dockerfile",
-      manifest: /\$paths = @[^\n]*'scripts'[^\n]*'Dockerfile'[^\n]*'buildspec\.staging-image\.yml'/,
+      manifest: /\$paths = @[^\n]*'scripts'[^\n]*'infra\/lib\/production-target\.ts'[^\n]*'Dockerfile'[^\n]*'buildspec\.staging-image\.yml'/,
       validationScripts: ["scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"],
     },
     {
       name: "production",
       dockerfile: "../Dockerfile.aws-native-production",
-      manifest: /if \(\$Environment -eq 'production'\) \{ \$paths = @[^\n]*'scripts'[^\n]*'Dockerfile\.aws-native-production'[^\n]*'buildspec\.production-image\.yml'/,
+      manifest: /if \(\$Environment -eq 'production'\) \{ \$paths = @[^\n]*'scripts'[^\n]*'infra\/lib\/production-target\.ts'[^\n]*'Dockerfile\.aws-native-production'[^\n]*'buildspec\.production-image\.yml'/,
       validationScripts: ["scripts/assert-production-lint-ratchet.mjs", "scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"],
     },
   ];
@@ -48,4 +103,9 @@ test("migration archives select the environment Dockerfile and include its valid
   for (const { environment, dockerfile } of currentArchiveDockerfiles) {
     for (const script of environment.validationScripts) assert.match(dockerfile, new RegExp(script.replaceAll(".", "\\.")));
   }
+
+  await assertArchivedScriptImportClosure({
+    root: path.resolve(import.meta.dirname, ".."),
+    archivePaths: ["scripts", "src", "infra/lib/production-target.ts"],
+  });
 });
