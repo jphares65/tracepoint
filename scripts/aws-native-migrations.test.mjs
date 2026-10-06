@@ -74,6 +74,16 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /action === "baseline" && requestedEnvironment !== "staging"/);
 });
 
+test("migration tasks use the distroless numeric nonroot user and report pre-start failures", async () => {
+  const migrationTask = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
+  assert.match(migrationTask, /function Set-MigrationTaskContainerUser/);
+  assert.match(migrationTask, /NotePropertyValue '65532'/);
+  assert.match(migrationTask, /\$user\.Value = '65532'/);
+  assert.match(migrationTask, /function Get-MigrationTaskFailureDetails/);
+  assert.match(migrationTask, /Get-OptionalPropertyValue \$container 'exitCode'/);
+  assert.match(migrationTask, /stop code \$\(\$failure\.StopCode\); stopped reason \$\(\$failure\.StoppedReason\); container reason \$\(\$failure\.ContainerReason\); exit code \$\(\$failure\.ExitCode\)/);
+});
+
 test("migration archives select the environment Dockerfile and include its validation dependencies", async () => {
   const archiveRunner = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
   const environments = [

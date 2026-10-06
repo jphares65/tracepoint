@@ -28,6 +28,31 @@ function Invoke-Aws([string[]]$Arguments) {
   if ($exitCode -ne 0) { throw "AWS command failed: aws $($Arguments -join ' ') :: $($output -join ' ')" }
   return ($output -join [Environment]::NewLine) | ConvertFrom-Json
 }
+function Get-OptionalPropertyValue($Object, [string]$Name) {
+  if ($null -eq $Object) { return $null }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) { return $null }
+  return $property.Value
+}
+function Set-MigrationTaskContainerUser($Container) {
+  # The bootstrap definition uses the Node builder user's name. The migration
+  # image runs from its distroless nonroot stage, where that name is absent.
+  # Keep least privilege while avoiding an image-local passwd-name lookup.
+  $user = $Container.PSObject.Properties['user']
+  if ($null -eq $user) { $Container | Add-Member -NotePropertyName user -NotePropertyValue '65532' }
+  else { $user.Value = '65532' }
+}
+function Get-MigrationTaskFailureDetails($Task, [string]$ContainerName) {
+  $container = @((Get-OptionalPropertyValue $Task 'containers') | Where-Object { (Get-OptionalPropertyValue $_ 'name') -eq $ContainerName }) | Select-Object -First 1
+  $exitCode = Get-OptionalPropertyValue $container 'exitCode'
+  [pscustomobject]@{
+    StopCode = (Get-OptionalPropertyValue $Task 'stopCode') ?? 'not reported'
+    StoppedReason = (Get-OptionalPropertyValue $Task 'stoppedReason') ?? 'not reported'
+    ContainerReason = (Get-OptionalPropertyValue $container 'reason') ?? 'not reported'
+    ExitCode = if ($null -eq $exitCode) { 'not reported' } else { [string]$exitCode }
+    ExitCodeReported = $null -ne $exitCode
+  }
+}
 function Require-CleanCommit {
   $sha = (& git.exe -C $root rev-parse HEAD).Trim().ToLowerInvariant()
   if ($LASTEXITCODE -ne 0 -or $sha -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve HEAD.' }
@@ -104,6 +129,7 @@ function Invoke-MigrationTask([string]$Commit) {
   $container = $registration.containerDefinitions[0]
   $container.image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
   $container.command = @('scripts/run-aws-native-migrations.mjs',$Action,$Environment)
+  Set-MigrationTaskContainerUser $container
   if ($settings.MigratorSecretArn) {
     # A migration task must use the existing database-owner credential, never
     # the web service's least-privileged runtime credential.  Deliberately
@@ -131,8 +157,10 @@ function Invoke-MigrationTask([string]$Commit) {
     & aws.exe ecs wait tasks-stopped --cluster $settings.Cluster --tasks $task.taskArn --profile $settings.Profile --region $settings.Region
     if ($LASTEXITCODE -ne 0) { throw 'Migration task did not stop cleanly.' }
     $finished = (Invoke-Aws @('ecs','describe-tasks','--cluster',$settings.Cluster,'--tasks',$task.taskArn)).tasks | Select-Object -First 1
-    $finishedContainer = $finished.containers | Where-Object name -eq $container.name | Select-Object -First 1
-    if ($finished.stopCode -ne 'EssentialContainerExited' -or $finishedContainer.exitCode -ne 0) { throw "Migration task failed (stop code $($finished.stopCode), exit code $($finishedContainer.exitCode))." }
+    $failure = Get-MigrationTaskFailureDetails $finished $container.name
+    if ($failure.StopCode -ne 'EssentialContainerExited' -or -not $failure.ExitCodeReported -or $failure.ExitCode -ne '0') {
+      throw "Migration task failed (stop code $($failure.StopCode); stopped reason $($failure.StoppedReason); container reason $($failure.ContainerReason); exit code $($failure.ExitCode))."
+    }
     Write-Host "AWS-native migration task succeeded: $($task.taskArn); image $($image.Digest)."
   } finally {
     if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload -Force }
