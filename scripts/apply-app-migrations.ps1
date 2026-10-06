@@ -46,6 +46,14 @@ function Set-MigrationTaskContainerUser($Container) {
   if ($null -eq $user) { $Container | Add-Member -NotePropertyName user -NotePropertyValue '65532' }
   else { $user.Value = '65532' }
 }
+function Set-MigrationTaskContainerEntryPoint($Container) {
+  # Bootstrap images may expose Node through PATH. The distroless migration
+  # image does not, but it provides this absolute executable for its health
+  # check and runtime. Never carry a bootstrap image entry point forward.
+  $entryPoint = $Container.PSObject.Properties['entryPoint']
+  if ($null -eq $entryPoint) { $Container | Add-Member -NotePropertyName entryPoint -NotePropertyValue @('/nodejs/bin/node') }
+  else { $entryPoint.Value = @('/nodejs/bin/node') }
+}
 function Get-MigrationTaskFailureDetails($Task, [string]$ContainerName) {
   $container = @((Get-OptionalPropertyValue $Task 'containers') | Where-Object { (Get-OptionalPropertyValue $_ 'name') -eq $ContainerName }) | Select-Object -First 1
   $exitCode = Get-OptionalPropertyValue $container 'exitCode'
@@ -134,6 +142,7 @@ function Invoke-MigrationTask([string]$Commit) {
   $container.image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
   $container.command = @('scripts/run-aws-native-migrations.mjs',$Action,$Environment)
   Set-MigrationTaskContainerUser $container
+  Set-MigrationTaskContainerEntryPoint $container
   if ($settings.MigratorSecretArn) {
     # A migration task must use the existing database-owner credential, never
     # the web service's least-privileged runtime credential.  Deliberately
