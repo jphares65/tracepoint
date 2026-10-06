@@ -171,6 +171,25 @@ test("inspection reports partial lineage without adopting absent migrations", ()
   assert.match(result.recommendation, /Do not adopt/);
 });
 
+test("Range Day hotfix is isolated from the ledger and missing 023–037 lineage", async () => {
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../database/aws/038_range_workspace_authenticated_writes.sql", import.meta.url), "utf8");
+  assert.match(runner, /action === "range-workspace-hotfix"/);
+  assert.match(runner, /Range workspace hotfix is production-only/);
+  assert.match(runner, /assertRangeWorkspaceContract\(before, \["SELECT"\]\)/);
+  assert.match(runner, /assertRangeWorkspaceContract\(after, \["INSERT", "SELECT", "UPDATE"\]\)/);
+  assert.match(runner, /pilot_range_workspaces_accountability_audit/);
+  const hotfixBody = runner.slice(runner.indexOf("async function applyRangeWorkspaceHotfix"), runner.indexOf("const files ="));
+  assert.doesNotMatch(hotfixBody, /ensureLedger|withLock|migrationSqlWithLedgerEntry|tracepoint_aws_schema_migrations/);
+  assert.match(migration, /grant insert, update on public\.pilot_range_workspaces to authenticated;/);
+  assert.doesNotMatch(migration, /\b(delete|create|alter|drop|revoke)\b/i);
+  for (let version = 23; version <= 37; version += 1) {
+    const file = (await readdir(new URL("../database/aws/", import.meta.url))).find(name => name.startsWith(`${String(version).padStart(3, "0")}_`));
+    assert.ok(file, `migration ${version}`);
+    assert.doesNotMatch(await readFile(new URL(`../database/aws/${file}`, import.meta.url), "utf8"), /pilot_range_workspaces/);
+  }
+});
+
 test("migration tasks use the distroless numeric nonroot runtime contract and report pre-start failures", async () => {
   const migrationTask = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
   assert.match(migrationTask, /function Set-MigrationTaskContainerUser/);

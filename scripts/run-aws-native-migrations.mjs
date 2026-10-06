@@ -14,7 +14,7 @@ const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
 
-if (!["status", "inspect", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|baseline|reconcile|apply> <staging|production>");
+if (!["status", "inspect", "range-workspace-hotfix", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|range-workspace-hotfix|baseline|reconcile|apply> <staging|production>");
 if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
 if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
 if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
@@ -119,6 +119,40 @@ async function inspect(client) {
   await client.query("COMMIT");
   return classifyMigrationInspection(snapshot);
 }
+async function rangeWorkspaceContract(client) {
+  const result = await client.query(`select
+    to_regclass('public.pilot_range_workspaces') is not null as table_present,
+    coalesce((select relrowsecurity from pg_class where oid=to_regclass('public.pilot_range_workspaces')), false) as rls_enabled,
+    exists(select 1 from pg_attribute where attrelid=to_regclass('public.pilot_range_workspaces') and attname='workspace' and atttypid='jsonb'::regtype and attnum>0 and not attisdropped) as workspace_jsonb,
+    exists(select 1 from pg_attribute where attrelid=to_regclass('public.pilot_range_workspaces') and attname='updated_by_user_id' and atttypid='uuid'::regtype and attnum>0 and not attisdropped) as updated_by_uuid,
+    exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('INSERT','ALL') and 'authenticated'=any(roles)) as insert_policy,
+    exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('UPDATE','ALL') and 'authenticated'=any(roles)) as update_policy,
+    coalesce((select jsonb_agg(jsonb_build_object('name',policyname,'command',cmd,'roles',roles,'using',qual,'check',with_check) order by policyname) from pg_policies where schemaname='public' and tablename='pilot_range_workspaces'),'[]'::jsonb) as policies,
+    coalesce((select jsonb_agg(jsonb_build_object('name',tgname,'definition',pg_get_triggerdef(oid,true)) order by tgname) from pg_trigger where tgrelid=to_regclass('public.pilot_range_workspaces') and not tgisinternal),'[]'::jsonb) as triggers,
+    coalesce((select array_agg(privilege_type order by privilege_type) from information_schema.role_table_grants where table_schema='public' and table_name='pilot_range_workspaces' and grantee='authenticated'),array[]::text[]) as privileges`);
+  return result.rows[0];
+}
+function assertRangeWorkspaceContract(contract, expectedPrivileges) {
+  const failures = [
+    ["table_present", contract.table_present], ["rls_enabled", contract.rls_enabled], ["workspace_jsonb", contract.workspace_jsonb], ["updated_by_uuid", contract.updated_by_uuid], ["insert_policy", contract.insert_policy], ["update_policy", contract.update_policy],
+  ].filter(([, value]) => value !== true).map(([key]) => key);
+  if (!Array.isArray(contract.policies) || contract.policies.length === 0) failures.push("range_workspace_policies_missing");
+  if (!Array.isArray(contract.triggers) || contract.triggers.length === 0 || !contract.triggers.some(trigger => trigger.name === "pilot_range_workspaces_accountability_audit")) failures.push("range_workspace_accountability_trigger_missing");
+  if (JSON.stringify(contract.privileges) !== JSON.stringify(expectedPrivileges)) failures.push(`authenticated_privileges=${JSON.stringify(contract.privileges)}`);
+  if (failures.length) throw new Error(`RANGE_WORKSPACE_HOTFIX_PRECONDITION_FAILED: ${failures.join(", ")}`);
+}
+async function applyRangeWorkspaceHotfix(client, files) {
+  if (requestedEnvironment !== "production") throw new Error("Range workspace hotfix is production-only.");
+  const migration = files.find(file => file.version === 38 && file.filename === "038_range_workspace_authenticated_writes.sql");
+  if (!migration || files.filter(file => file.version === 38).length !== 1 || !migration.ownsTransaction) throw new Error("Range workspace hotfix requires exactly the transaction-owned migration 038.");
+  const before = await rangeWorkspaceContract(client);
+  assertRangeWorkspaceContract(before, ["SELECT"]);
+  await client.query(migration.contents);
+  const after = await rangeWorkspaceContract(client);
+  assertRangeWorkspaceContract(after, ["INSERT", "SELECT", "UPDATE"]);
+  if (JSON.stringify(before.policies) !== JSON.stringify(after.policies) || JSON.stringify(before.triggers) !== JSON.stringify(after.triggers)) throw new Error("RANGE_WORKSPACE_HOTFIX_POSTCONDITION_FAILED: RLS policies or triggers changed.");
+  return { action: "range-workspace-hotfix", environment: requestedEnvironment, executed_at: new Date().toISOString(), filename: migration.filename, content_sha256: migration.sha256, application_git_sha: process.env.DEPLOYMENT_VERSION ?? "unknown", ledger_modified: false, before, after };
+}
 
 const files = await migrations();
 const client = await connect();
@@ -127,6 +161,8 @@ try {
     console.log(JSON.stringify(await report(client, files)));
   } else if (action === "inspect") {
     console.log(JSON.stringify(await inspect(client)));
+  } else if (action === "range-workspace-hotfix") {
+    console.log(JSON.stringify(await applyRangeWorkspaceHotfix(client, files)));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);
     if (before) verifyLedger(files, before);
