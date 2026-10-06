@@ -11,7 +11,11 @@ import {
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
 import { parseRangeWorkspaceRequestBody } from "@/lib/range/workspace-request-body";
-import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
+import {
+  authorizeRangeWorkspaceMutation,
+  hasValidRangeWorkspaceTenantBoundary,
+} from "@/lib/range/workspace-mutation";
+import { mergeProtectedWorkspaceRecords } from "@/lib/range/workspace-tenant-boundary";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -128,7 +132,7 @@ export async function PUT(request: NextRequest) {
   }
   const body = parsedBody.value as { workspace?: unknown };
 
-  const workspace = normalizeWorkspace(body.workspace);
+  const submittedWorkspace = normalizeWorkspace(body.workspace);
 
   try {
     const existingResult = await admin.from("pilot_range_workspaces")
@@ -139,6 +143,28 @@ export async function PUT(request: NextRequest) {
       throw new Error("The current range workspace could not be loaded.");
     }
 
+    // Validate the raw client payload before preserving any legacy records.
+    // This remains fail-closed for direct cross-agency mutation attempts.
+    const submittedBoundaryIsValid = hasValidRangeWorkspaceTenantBoundary({
+      existingWorkspace: existingResult.data?.workspace ?? {},
+      nextWorkspace: submittedWorkspace,
+      departmentId,
+    });
+    if (!submittedBoundaryIsValid) {
+      return NextResponse.json(
+        { error: "The range workspace contains records outside your agency." },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    // Historical tenant JSON can contain explicitly foreign records. They are
+    // never writable through this tenant's PUT: retain the exact server copy
+    // while applying only the validated active-agency workspace changes.
+    const workspace = normalizeWorkspace(mergeProtectedWorkspaceRecords(
+      existingResult.data?.workspace ?? {},
+      submittedWorkspace,
+      departmentId,
+    ));
     const decision = authorizeRangeWorkspaceMutation({
       existingWorkspace: existingResult.data?.workspace ?? {},
       nextWorkspace: workspace,

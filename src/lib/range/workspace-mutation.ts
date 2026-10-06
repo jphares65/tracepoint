@@ -1,5 +1,7 @@
 import { isImmutableRangeDay } from "./range-day-immutability";
 
+import { attemptsProtectedRecordMutation } from "./workspace-tenant-boundary";
+
 type WorkspaceRecord = Record<string, unknown>;
 
 export type RangeWorkspaceMutationDecision =
@@ -52,14 +54,23 @@ function isFinalized(rangeDay: WorkspaceRecord) {
   return isImmutableRangeDay(rangeDay);
 }
 
-function validateTenantReferences(workspace: WorkspaceRecord, departmentId: string) {
+function validateTenantReferences(
+  workspace: WorkspaceRecord,
+  departmentId: string,
+  existingWorkspace?: WorkspaceRecord,
+) {
   const rangeDays = collection(workspace, "rangeDays", "range_days");
   const library = collection(workspace, "drillLibrary", "drill_library");
   const rangeDayIds = new Set(rangeDays.map((item) => text(item.id)).filter(Boolean));
 
   const explicitlyCrossTenant = [...rangeDays, ...library].some((item) => {
     const owner = field(item, "departmentId", "department_id");
-    return Boolean(owner) && owner !== departmentId;
+    if (!owner || owner === departmentId) return false;
+    const existingCollection = rangeDays.includes(item)
+      ? collection(existingWorkspace ?? {}, "rangeDays", "range_days")
+      : collection(existingWorkspace ?? {}, "drillLibrary", "drill_library");
+    const existingItem = existingCollection.find((candidate) => text(candidate.id) === text(item.id));
+    return !existingItem || !same(existingItem, item);
   });
   if (explicitlyCrossTenant) return false;
 
@@ -72,6 +83,22 @@ function validateTenantReferences(workspace: WorkspaceRecord, departmentId: stri
     const rangeDayId = field(item, "rangeDayId", "range_day_id");
     return !rangeDayId || rangeDayIds.has(rangeDayId);
   });
+}
+
+/**
+ * The API uses this against the raw browser payload before it merges back
+ * protected legacy records. It intentionally checks only tenant ownership and
+ * parent references; immutable-history checks must run after that merge.
+ */
+export function hasValidRangeWorkspaceTenantBoundary(input: {
+  existingWorkspace: unknown;
+  nextWorkspace: unknown;
+  departmentId: string;
+}): boolean {
+  const existing = record(input.existingWorkspace);
+  const next = record(input.nextWorkspace);
+  return !attemptsProtectedRecordMutation(existing, next, input.departmentId) &&
+    validateTenantReferences(next, input.departmentId);
 }
 
 function finalizedHistoryChanged(existing: WorkspaceRecord, next: WorkspaceRecord) {
@@ -127,7 +154,8 @@ export function authorizeRangeWorkspaceMutation(input: {
   if (!canScore) {
     return { ok: false, status: 403, error: "You do not have permission to update range records." };
   }
-  if (!validateTenantReferences(next, input.departmentId)) {
+  if (attemptsProtectedRecordMutation(existing, next, input.departmentId) ||
+      !validateTenantReferences(next, input.departmentId, existing)) {
     return { ok: false, status: 403, error: "The range workspace contains records outside your agency." };
   }
   if (finalizedHistoryChanged(existing, next)) {

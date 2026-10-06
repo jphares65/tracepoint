@@ -75,6 +75,7 @@ import {
   hydrateEditableRangeDay,
   isImmutableRangeDay,
 } from "@/lib/range/range-day-immutability";
+import { workspaceForActiveDepartment } from "@/lib/range/workspace-tenant-boundary";
 
 type RangeDayType =
   "Qualification" | "Rifle" | "Low Light" | "Remedial" | "Make-Up" | "Training";
@@ -427,7 +428,7 @@ function createDefaultQualificationComponents(): QualificationDrillComponent[] {
   }));
 }
 
-const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v1";
+const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v2";
 
 type StoredRangeDayWorkspace = {
   rangeDays: PlannedRangeDay[];
@@ -438,12 +439,18 @@ type StoredRangeDayWorkspace = {
   malfunctions: FirearmMalfunction[];
 };
 
-function loadStoredRangeDayWorkspace(): Partial<StoredRangeDayWorkspace> | null {
+function rangeDayWorkspaceStorageKey(departmentId: string) {
+  return departmentId ? `${RANGE_DAY_WORKSPACE_STORAGE_KEY}.${departmentId}` : "";
+}
+
+function loadStoredRangeDayWorkspace(departmentId: string): Partial<StoredRangeDayWorkspace> | null {
   if (typeof window === "undefined") return null;
+  const storageKey = rangeDayWorkspaceStorageKey(departmentId);
+  if (!storageKey) return null;
 
   try {
     const storedWorkspace = window.localStorage.getItem(
-      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+      storageKey,
     );
 
     if (!storedWorkspace) return null;
@@ -455,12 +462,17 @@ function loadStoredRangeDayWorkspace(): Partial<StoredRangeDayWorkspace> | null 
   }
 }
 
-function writeStoredRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+function writeStoredRangeDayWorkspace(
+  workspace: StoredRangeDayWorkspace,
+  departmentId: string,
+) {
   if (typeof window === "undefined") return;
+  const storageKey = rangeDayWorkspaceStorageKey(departmentId);
+  if (!storageKey) return;
 
   try {
     window.localStorage.setItem(
-      RANGE_DAY_WORKSPACE_STORAGE_KEY,
+      storageKey,
       JSON.stringify(workspace),
     );
   } catch (error) {
@@ -468,8 +480,12 @@ function writeStoredRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 }
 
-async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWorkspace> | null> {
-  if (typeof window === "undefined") return null;
+type RemoteRangeDayWorkspace =
+  | { ok: true; departmentId: string; workspace: Partial<StoredRangeDayWorkspace> | null }
+  | { ok: false };
+
+async function loadRemoteRangeDayWorkspace(): Promise<RemoteRangeDayWorkspace> {
+  if (typeof window === "undefined") return { ok: false };
 
   try {
     const response = await fetch("/api/pilot/range-workspace", {
@@ -477,26 +493,39 @@ async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWork
       cache: "no-store",
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) return { ok: false };
 
     const payload = (await response.json()) as {
+      departmentId?: string;
       workspace?: Partial<StoredRangeDayWorkspace> | null;
     };
 
-    return payload.workspace ?? null;
+    return {
+      ok: true,
+      departmentId: typeof payload.departmentId === "string" ? payload.departmentId : "",
+      workspace: payload.workspace ?? null,
+    };
   } catch (error) {
     console.warn("Could not load range day workspace.", error);
-    return null;
+    return { ok: false };
   }
 }
 
 let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+async function saveRemoteRangeDayWorkspace(
+  workspace: StoredRangeDayWorkspace,
+  departmentId: string,
+) {
+  if (!departmentId) {
+    throw new Error("Your active agency could not be resolved. Reload before saving.");
+  }
   const response = await fetch("/api/pilot/range-workspace", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspace }),
+    body: JSON.stringify({
+      workspace: workspaceForActiveDepartment(workspace, departmentId),
+    }),
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as {
@@ -515,13 +544,16 @@ function cancelPendingRemoteRangeDayWorkspaceSync() {
   }
 }
 
-function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+function writeRemoteRangeDayWorkspace(
+  workspace: StoredRangeDayWorkspace,
+  departmentId: string,
+) {
   if (typeof window === "undefined") return;
 
   cancelPendingRemoteRangeDayWorkspaceSync();
 
   remoteWorkspaceSyncTimer = setTimeout(() => {
-    saveRemoteRangeDayWorkspace(workspace).catch((error) => {
+    saveRemoteRangeDayWorkspace(workspace, departmentId).catch((error) => {
       console.warn("Could not save range day workspace.", error);
     });
   }, 650);
@@ -2358,10 +2390,16 @@ export default function RangeDaysPage() {
     let isMounted = true;
 
     async function loadWorkspace() {
-      const remoteWorkspace = await loadRemoteRangeDayWorkspace();
-      const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace();
+      const remote = await loadRemoteRangeDayWorkspace();
+      const activeDepartmentId = remote.ok ? remote.departmentId : departmentId;
+      const remoteWorkspace = remote.ok ? remote.workspace : null;
+      const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace(activeDepartmentId);
 
       if (!isMounted) return;
+
+      if (remote.ok && remote.departmentId) {
+        setDepartmentId(remote.departmentId);
+      }
 
       if (remoteWorkspace) {
         writeStoredRangeDayWorkspace({
@@ -2388,40 +2426,44 @@ export default function RangeDaysPage() {
           malfunctions: Array.isArray(remoteWorkspace.malfunctions)
             ? remoteWorkspace.malfunctions
             : [],
-        });
+        }, activeDepartmentId);
       }
 
-      if (Array.isArray(storedWorkspace?.rangeDays)) {
+      const activeWorkspace = storedWorkspace && activeDepartmentId
+        ? workspaceForActiveDepartment(storedWorkspace, activeDepartmentId)
+        : storedWorkspace;
+
+      if (Array.isArray(activeWorkspace?.rangeDays)) {
         setRangeDays(
           normalizeRangeDaysForWorkspace(
-            storedWorkspace.rangeDays,
+            activeWorkspace.rangeDays,
             currentUserId,
           ),
         );
       }
 
-      if (Array.isArray(storedWorkspace?.drillLibrary)) {
+      if (Array.isArray(activeWorkspace?.drillLibrary)) {
         setDrillLibrary(
-          normalizeDrillLibraryForWorkspace(storedWorkspace.drillLibrary),
+          normalizeDrillLibraryForWorkspace(activeWorkspace.drillLibrary),
         );
       }
 
-      if (Array.isArray(storedWorkspace?.rangeDayDrills)) {
+      if (Array.isArray(activeWorkspace?.rangeDayDrills)) {
         setRangeDayDrills(
-          normalizeRangeDayDrillsForWorkspace(storedWorkspace.rangeDayDrills),
+          normalizeRangeDayDrillsForWorkspace(activeWorkspace.rangeDayDrills),
         );
       }
 
-      if (Array.isArray(storedWorkspace?.rangeRoster)) {
-        setRangeRoster(storedWorkspace.rangeRoster);
+      if (Array.isArray(activeWorkspace?.rangeRoster)) {
+        setRangeRoster(activeWorkspace.rangeRoster);
       }
 
-      if (Array.isArray(storedWorkspace?.results)) {
-        setResults(storedWorkspace.results);
+      if (Array.isArray(activeWorkspace?.results)) {
+        setResults(activeWorkspace.results);
       }
 
-      if (Array.isArray(storedWorkspace?.malfunctions)) {
-        setMalfunctions(storedWorkspace.malfunctions);
+      if (Array.isArray(activeWorkspace?.malfunctions)) {
+        setMalfunctions(activeWorkspace.malfunctions);
       }
 
       setHasLoadedStoredWorkspace(true);
@@ -2446,9 +2488,10 @@ export default function RangeDaysPage() {
       malfunctions,
     };
 
-    writeStoredRangeDayWorkspace(workspace);
+    if (!departmentId) return;
+    writeStoredRangeDayWorkspace(workspace, departmentId);
     if (canManageRangeDays || canScoreRangeDays) {
-      writeRemoteRangeDayWorkspace(workspace);
+      writeRemoteRangeDayWorkspace(workspace, departmentId);
     }
   }, [
     drillLibrary,
@@ -2460,6 +2503,7 @@ export default function RangeDaysPage() {
     results,
     canManageRangeDays,
     canScoreRangeDays,
+    departmentId,
   ]);
 
   useEffect(() => {
@@ -2938,11 +2982,11 @@ export default function RangeDaysPage() {
       results,
       malfunctions,
     };
-    writeStoredRangeDayWorkspace(workspace);
+    writeStoredRangeDayWorkspace(workspace, departmentId);
 
     setSaveMessage("Saving...");
     try {
-      await saveRemoteRangeDayWorkspace(workspace);
+      await saveRemoteRangeDayWorkspace(workspace, departmentId);
       setSaveMessage("Saved");
     } catch (error) {
       setSaveMessage(
@@ -3477,7 +3521,7 @@ export default function RangeDaysPage() {
       rangeRoster,
       results,
       malfunctions,
-    });
+    }, departmentId);
 
     window.requestAnimationFrame(() => window.print());
   }
@@ -3631,11 +3675,11 @@ export default function RangeDaysPage() {
         remoteWorkspaceSyncTimer = null;
       }
 
-      writeStoredRangeDayWorkspace(workspace);
+      writeStoredRangeDayWorkspace(workspace, departmentId);
       setSaveMessage("Creating drill...");
 
       try {
-        await saveRemoteRangeDayWorkspace(workspace);
+        await saveRemoteRangeDayWorkspace(workspace, departmentId);
       } catch (error) {
         setSaveMessage(
           error instanceof Error
@@ -3797,8 +3841,8 @@ export default function RangeDaysPage() {
     setAddingDrillTemplateId(templateId);
     setSaveMessage("Adding drill...");
     try {
-      await saveRemoteRangeDayWorkspace(workspace);
-      writeStoredRangeDayWorkspace(workspace);
+      await saveRemoteRangeDayWorkspace(workspace, departmentId);
+      writeStoredRangeDayWorkspace(workspace, departmentId);
       setRangeDayDrills(workspace.rangeDayDrills);
       setSelectedDrillId(normalizedCopiedDrill.id);
       resetEntryForm(1);
