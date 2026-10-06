@@ -99,6 +99,30 @@ async function assertFinalMigrationRuntimeClosure({ root, dockerfilePath }) {
   }
 }
 
+async function activeRuntimeDockerfiles(root) {
+  const environments = [
+    { name: "staging", filename: "Dockerfile" },
+    { name: "production", filename: "Dockerfile.aws-native-production" },
+  ];
+  const requestedEnvironment = process.env.TRACEPOINT_MIGRATION_TEST_ENVIRONMENT;
+  const candidates = requestedEnvironment
+    ? environments.filter(environment => environment.name === requestedEnvironment)
+    : environments;
+  assert.ok(candidates.length, `Unsupported migration test environment ${requestedEnvironment}`);
+  const existing = [];
+  for (const environment of candidates) {
+    const dockerfilePath = path.join(root, environment.filename);
+    try {
+      await access(dockerfilePath);
+      existing.push({ ...environment, dockerfilePath });
+    } catch {
+      if (requestedEnvironment) throw new Error(`${environment.filename} is required for the ${requestedEnvironment} migration image`);
+    }
+  }
+  assert.ok(existing.length, "the current migration image must include its environment Dockerfile");
+  return existing;
+}
+
 test("AWS-native migration runner is ledgered, locked, hash-checked, and does not wrap file transactions", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   assert.match(runner, /tracepoint_aws_schema_migrations/);
@@ -188,6 +212,7 @@ test("migration archives select the environment Dockerfile and include its valid
 
 test("final migration stages contain the recursive local runtime dependency closure", async () => {
   const root = path.resolve(import.meta.dirname, "..");
-  await assertFinalMigrationRuntimeClosure({ root, dockerfilePath: path.join(root, "Dockerfile") });
-  await assertFinalMigrationRuntimeClosure({ root, dockerfilePath: path.join(root, "Dockerfile.aws-native-production") });
+  for (const environment of await activeRuntimeDockerfiles(root)) {
+    await assertFinalMigrationRuntimeClosure({ root, dockerfilePath: environment.dockerfilePath });
+  }
 });
