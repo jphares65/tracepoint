@@ -15,18 +15,37 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /action === "baseline" && requestedEnvironment !== "staging"/);
 });
 
-test("migration image archives include the complete scripts tree for staging and production validation", async () => {
+test("migration archives select the environment Dockerfile and include its validation dependencies", async () => {
   const archiveRunner = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
-  const stagingDockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
-  const productionDockerfile = await readFile(new URL("../Dockerfile.aws-native-production", import.meta.url), "utf8");
+  const environments = [
+    {
+      name: "staging",
+      dockerfile: "../Dockerfile",
+      manifest: /\$paths = @[^\n]*'scripts'[^\n]*'Dockerfile'[^\n]*'buildspec\.staging-image\.yml'/,
+      validationScripts: ["scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"],
+    },
+    {
+      name: "production",
+      dockerfile: "../Dockerfile.aws-native-production",
+      manifest: /if \(\$Environment -eq 'production'\) \{ \$paths = @[^\n]*'scripts'[^\n]*'Dockerfile\.aws-native-production'[^\n]*'buildspec\.production-image\.yml'/,
+      validationScripts: ["scripts/assert-production-lint-ratchet.mjs", "scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"],
+    },
+  ];
 
-  assert.match(archiveRunner, /\$paths = @[^\n]*'scripts'/);
-  assert.match(archiveRunner, /if \(\$Environment -eq 'production'\) \{ \$paths = @[^\n]*'scripts'/);
+  for (const environment of environments) assert.match(archiveRunner, environment.manifest, `${environment.name} archive contract`);
 
-  for (const script of ["scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"]) {
-    assert.match(stagingDockerfile, new RegExp(script.replaceAll(".", "\\.")));
+  const currentArchiveDockerfiles = [];
+  for (const environment of environments) {
+    try {
+      currentArchiveDockerfiles.push({ environment, dockerfile: await readFile(new URL(environment.dockerfile, import.meta.url), "utf8") });
+    } catch (error) {
+      if (typeof error === "object" && error && "code" in error && error.code === "ENOENT") continue;
+      throw error;
+    }
   }
-  for (const script of ["scripts/assert-production-lint-ratchet.mjs", "scripts/run-application-tests.mjs", "scripts/aws-native-migrations.test.mjs"]) {
-    assert.match(productionDockerfile, new RegExp(script.replaceAll(".", "\\.")));
+
+  assert.ok(currentArchiveDockerfiles.length > 0, "the current migration archive must include its environment Dockerfile");
+  for (const { environment, dockerfile } of currentArchiveDockerfiles) {
+    for (const script of environment.validationScripts) assert.match(dockerfile, new RegExp(script.replaceAll(".", "\\.")));
   }
 });
