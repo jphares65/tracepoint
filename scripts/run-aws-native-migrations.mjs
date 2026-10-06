@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
+import { assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries } from "./aws-native-migration-inspection.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
@@ -13,7 +14,7 @@ const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
 
-if (!["status", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|baseline|reconcile|apply> <staging|production>");
+if (!["status", "inspect", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|baseline|reconcile|apply> <staging|production>");
 if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
 if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
 if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
@@ -110,12 +111,22 @@ async function withLock(client, fn) {
   await client.query("select pg_advisory_lock(hashtext($1))", [lockName]);
   try { return await fn(); } finally { await client.query("select pg_advisory_unlock(hashtext($1))", [lockName]).catch(() => undefined); }
 }
+async function inspect(client) {
+  const snapshot = {};
+  for (const sql of ["BEGIN TRANSACTION READ ONLY", "SET TRANSACTION READ ONLY"]) { assertInspectionSql(sql); await client.query(sql); }
+  for (const [section, sql] of inspectionCatalogQueries) { assertInspectionSql(sql); snapshot[section] = (await client.query(sql)).rows; }
+  assertInspectionSql("COMMIT");
+  await client.query("COMMIT");
+  return classifyMigrationInspection(snapshot);
+}
 
 const files = await migrations();
 const client = await connect();
 try {
   if (action === "status") {
     console.log(JSON.stringify(await report(client, files)));
+  } else if (action === "inspect") {
+    console.log(JSON.stringify(await inspect(client)));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);
     if (before) verifyLedger(files, before);

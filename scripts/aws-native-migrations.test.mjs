@@ -7,6 +7,7 @@ import {
   productionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
 } from "./aws-native-production-ledger-adoption.mjs";
+import { assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries } from "./aws-native-migration-inspection.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -151,6 +152,23 @@ test("production reconciliation refuses to adopt a migration when a catalog post
   assert.match(productionLedgerAdoptionPostconditionsSql, /attachments_fleet_vehicle_document_active_idx/);
   assert.match(productionLedgerAdoptionPostconditionsSql, /inventory_transactions_transaction_type_check/);
   assert.match(productionLedgerAdoptionPostconditionsSql, /has_table_privilege\('authenticated', to_regclass\('public.inventory_items'\), 'insert'\)/);
+});
+
+test("inspection is fixed catalog-only SQL and cannot mutate the ledger", async () => {
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  for (const [, sql] of inspectionCatalogQueries) assert.doesNotThrow(() => assertInspectionSql(sql));
+  for (const sql of ["insert into public.tracepoint_aws_schema_migrations values (1)", "update public.x set y=1", "create table public.x(id int)"]) assert.throws(() => assertInspectionSql(sql), /READ_ONLY_INSPECTION_SQL_REJECTED/);
+  assert.match(runner, /action === "inspect"/);
+  assert.match(runner, /BEGIN TRANSACTION READ ONLY/);
+  assert.doesNotMatch(runner.slice(runner.indexOf("async function inspect"), runner.indexOf("const files =")), /ensureLedger|withLock|migrationSqlWithLedgerEntry/);
+});
+
+test("inspection reports partial lineage without adopting absent migrations", () => {
+  const result = classifyMigrationInspection({ relations: [], columns: [], routines: [{ schema: "tracepoint_auth", name: "subject_id" }], indexes: [], constraints: [], policies: [], privileges: [], roles: [], triggers: [] });
+  assert.equal(result.migrations[0].status, "partial");
+  assert.equal(result.highestContiguousVersion, 0);
+  assert.ok(result.missingPhaseAObjects.length > 0);
+  assert.match(result.recommendation, /Do not adopt/);
 });
 
 test("migration tasks use the distroless numeric nonroot runtime contract and report pre-start failures", async () => {
