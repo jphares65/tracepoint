@@ -1,6 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { type AnalysisProposal, type AnalysisResult, validateProposal } from "./template-analyzer";
-export type VisualPage={page:number;width:number;height:number;renderScale:number};
+export type VisualPage={page:number;width:number;height:number;renderScale:number;imageBytes?:Uint8Array;mimeType?:"image/png"};
 export type VisualInput={pdfBytes:Uint8Array;pageCount:number;pageSizes:{width:number;height:number}[];pages?:VisualPage[]};
 export interface VisualTemplateAnalyzer { analyze(input:VisualInput):Promise<AnalysisProposal[]> }
 export type GeneralVisionFinding={kind:"scalar"|"structured";page:number;label:string;geometry:{x:number;y:number;width:number;height:number};semanticKey?:string;confidence:number;rationale?:string};
