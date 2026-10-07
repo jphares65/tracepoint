@@ -16,4 +16,13 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c
         with: { role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}, aws-region: us-east-1, allowed-account-ids: '559054714699', role-duration-seconds: 3600 }
       - shell: pwsh
-        run: ./scripts/renew-staging-database-lease.ps1 -ExpiresAfterUtc '${{ inputs.expires_after_utc }}' -LeaseOwner 'github-${{ github.actor }}' -LeaseReference 'github:${{ github.run_id }}:${{ github.run_attempt }}' -Execute
+        env:
+          LEASE_EXPIRES_AFTER_UTC: ${{ inputs.expires_after_utc }}
+          LEASE_OWNER: github-${{ github.actor }}
+          LEASE_REFERENCE: github:${{ github.run_id }}:${{ github.run_attempt }}
+        run: |
+          ./scripts/renew-staging-database-lease.ps1 `
+            -ExpiresAfterUtc $env:LEASE_EXPIRES_AFTER_UTC `
+            -LeaseOwner $env:LEASE_OWNER `
+            -LeaseReference $env:LEASE_REFERENCE `
+            -Execute

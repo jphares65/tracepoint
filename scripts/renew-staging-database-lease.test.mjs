@@ -16,5 +16,11 @@ test("lease renewal is protected, staging-only, and has no bootstrap/runtime sid
   assert.match(workflow, /allowed-account-ids: '559054714699'/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /renew-staging-database-lease\.ps1/);
+  assert.match(workflow, /LEASE_EXPIRES_AFTER_UTC: \$\{\{ inputs\.expires_after_utc \}\}/);
+  assert.match(workflow, /LEASE_OWNER: github-\$\{\{ github\.actor \}\}/);
+  assert.match(workflow, /LEASE_REFERENCE: github:\$\{\{ github\.run_id \}\}:\$\{\{ github\.run_attempt \}\}/);
+  assert.match(workflow, /-ExpiresAfterUtc \$env:LEASE_EXPIRES_AFTER_UTC/);
+  assert.match(workflow, /-LeaseOwner \$env:LEASE_OWNER/);
+  assert.match(workflow, /-LeaseReference \$env:LEASE_REFERENCE/);
   for (const forbidden of [/bootstrap/i, /migration/i, /publish/i, /DeployRuntime/i, /DeployFoundations/i]) assert.doesNotMatch(workflow, forbidden);
 });
