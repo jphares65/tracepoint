@@ -33,15 +33,22 @@ $archiveExcludes = @(
 $sourceBucket = 'tracepoint-staging-build-source-559054714699'
 $sourceKey = 'source/tracepoint-staging-source.zip'
 $projectName = 'tracepoint-staging-image-build'
+$nativeReleaseBranch = 'codex/staging-mobile-api-release-20261007'
+$nativeReleaseBaseline = '5672b0395ff7082840d508488a7af07835263fc6'
 
 $branch = (& git.exe -C $repositoryRoot branch --show-current).Trim()
 $commit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
 $authorizedBranches = @(
     'codex/aws-staging-readiness-20260902',
-    'codex/aws-staging-integration-20260908'
+    'codex/aws-staging-integration-20260908',
+    $nativeReleaseBranch
 )
 if ($branch -notin $authorizedBranches) { throw "Refusing branch '$branch'." }
 if ($commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA.' }
+if ($branch -eq $nativeReleaseBranch) {
+    & git.exe -C $repositoryRoot merge-base --is-ancestor $nativeReleaseBaseline $commit
+    if ($LASTEXITCODE -ne 0) { throw "Native staging release must descend from $nativeReleaseBaseline." }
+}
 
 $status = @(& git.exe -C $repositoryRoot status --short --untracked-files=all)
 $unexpected = @($status | Where-Object {
