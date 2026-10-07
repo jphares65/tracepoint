@@ -38,7 +38,7 @@ test("derives a bounded subsection instead of returning its enclosing table", ()
   assert.equal(result.findings[0]?.geometry.y, .5);
   assert.ok(Math.abs((result.findings[0]?.geometry.width ?? 0) - .7) < 1e-9);
   assert.ok(Math.abs((result.findings[0]?.geometry.height ?? 0) - .1) < 1e-9);
-  assert.equal(result.diagnostics[0]?.geometrySource, "TEXTRACT_TABLE_SUBSECTION");
+  assert.equal(result.diagnostics[0]?.geometrySource, "TEXTRACT_TABLE");
 });
 
 test("splits one Textract table into A/B/C Dates Fired subsections", () => {
@@ -50,7 +50,16 @@ test("splits one Textract table into A/B/C Dates Fired subsections", () => {
   }
   const result = combineSemanticFindingsWithLayoutDiagnostics([finding("Dates Fired - Section A", 2, "structured"), finding("Dates Fired - Section B", 2, "structured"), finding("Dates Fired - Section C", 2, "structured")], layout(nodes));
   assert.deepEqual(result.findings.map(value => Number(value.geometry.y.toFixed(2))), [.24, .49, .74]);
-  assert.deepEqual(result.diagnostics.map(value => value.geometrySource), ["TEXTRACT_TABLE_SUBSECTION", "TEXTRACT_TABLE_SUBSECTION", "TEXTRACT_TABLE_SUBSECTION"]);
+  assert.deepEqual(result.diagnostics.map(value => value.geometrySource), ["TEXTRACT_TABLE", "TEXTRACT_TABLE", "TEXTRACT_TABLE"]);
+});
+
+test("uses the nearest following ruled grid without crossing section boundaries", () => {
+  const page = layout([node("a", 2, "line", "A. Qualification", .1, .1, .2, .02), node("dates-a", 2, "line", "Dates Fired", .15, .18, .16, .02), node("b", 2, "line", "B. Qualification", .1, .45, .2, .02)]);
+  const grids = [{ id: "a-grid", page: 2, geometry: { x: .3, y: .23, width: .4, height: .12 }, horizontalLines: 5, verticalLines: 3, rows: 4, columns: 2, confidence: .9 }, { id: "b-grid", page: 2, geometry: { x: .3, y: .52, width: .4, height: .12 }, horizontalLines: 5, verticalLines: 3, rows: 4, columns: 2, confidence: .9 }];
+  const result = combineSemanticFindingsWithLayoutDiagnostics([finding("Dates Fired - Section A", 2, "structured")], page, grids);
+  assert.deepEqual(result.findings[0]?.geometry, grids[0]?.geometry);
+  assert.equal(result.diagnostics[0]?.geometrySource, "GRID_DETECTOR");
+  assert.equal(result.diagnostics[0]?.matchedSection, "A");
 });
 
 test("keeps unmatched semantic findings review-only and preserves semantic guardrails", () => {

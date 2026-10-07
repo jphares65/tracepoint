@@ -1,10 +1,11 @@
 import type { FieldGeometry } from "./template-core";
 import type { GeneralVisionFinding } from "./visual-template-analyzer";
 import { enclosingTable, matchLayoutLabel, protectedSemantic, type DocumentLayout, type LayoutCandidate, type LayoutNode, valueCandidatesForLabel } from "./document-layout-provider";
+import type { RuledGrid } from "./ruled-grid-layout-detector";
 
 const review = { x: .01, y: .01, width: .02, height: .02 };
-export type GeometrySource = "TEXTRACT_VALUE" | "TEXTRACT_CELL" | "TEXTRACT_TABLE_SUBSECTION" | "TEXTRACT_DERIVED_REGION" | "REVIEW";
-export type MatchDiagnostic = { label: string; page: number; chosenTextractCandidate?: string; candidateType?: string; matchScore?: number; matchingReasons: string[]; rejectedCandidateCount: number; geometrySource: GeometrySource };
+export type GeometrySource = "TEXTRACT_VALUE" | "TEXTRACT_CELL" | "TEXTRACT_TABLE" | "GRID_DETECTOR" | "REVIEW";
+export type MatchDiagnostic = { label: string; page: number; chosenTextractCandidate?: string; candidateType?: string; matchScore?: number; matchingReasons: string[]; rejectedCandidateCount: number; geometrySource: GeometrySource; matchedSection?: string; gridBounds?: FieldGeometry; lineCount?: number; inferredRowCount?: number; inferredColumnCount?: number; confidence?: number };
 export type CombinedLayoutResult = { findings: GeneralVisionFinding[]; diagnostics: MatchDiagnostic[] };
 
 function union(nodes: LayoutNode[]): FieldGeometry | undefined {
@@ -24,12 +25,17 @@ function subsectionCells(finding: GeneralVisionFinding, label: LayoutCandidate, 
   const bottom = Math.min(nextDateAnchor?.geometry.y ?? 1, nextSection?.geometry.y ?? 1, table ? table.geometry.y + table.geometry.height : 1);
   return layout.nodes.filter(node => node.page === finding.page && node.kind === "cell" && node.geometry.y >= anchor.geometry.y - .008 && node.geometry.y + node.geometry.height <= bottom + .004 && (!table || node.geometry.x >= table.geometry.x - .004 && node.geometry.x + node.geometry.width <= table.geometry.x + table.geometry.width + .004));
 }
+function nearestGrid(finding: GeneralVisionFinding, label: LayoutCandidate, layout: DocumentLayout, grids: RuledGrid[], owned: Set<string>) {
+  const anchor = label.node, nextSection = layout.nodes.filter(node => node.page === finding.page && node.kind === "line" && node.geometry.y > anchor.geometry.y + .01 && sectionMarker(node.text)).sort((a, b) => a.geometry.y - b.geometry.y)[0];
+  const boundary = nextSection?.geometry.y ?? 1, section = finding.label.match(/section\s+([abc])/i)?.[1]?.toUpperCase();
+  return grids.filter(grid => grid.page === finding.page && !owned.has(grid.id) && grid.geometry.y >= anchor.geometry.y + anchor.geometry.height - .01 && grid.geometry.y < boundary && grid.geometry.x <= anchor.geometry.x + anchor.geometry.width + .1).map(grid => ({ grid, score: grid.confidence - (grid.geometry.y - anchor.geometry.y) * .8, section })).sort((a, b) => b.score - a.score)[0];
+}
 
 function reviewFinding(finding: GeneralVisionFinding, semanticKey: string | undefined, reasons: string[], rejectedCandidateCount: number): { finding: GeneralVisionFinding; diagnostic: MatchDiagnostic } {
   return { finding: { ...finding, semanticKey, geometry: review, rationale: `REVIEW GEOMETRY: ${reasons.join("; ")}` }, diagnostic: { label: finding.label, page: finding.page, matchingReasons: reasons, rejectedCandidateCount, geometrySource: "REVIEW" } };
 }
 
-export function combineSemanticFindingsWithLayoutDiagnostics(findings: GeneralVisionFinding[], layout: DocumentLayout): CombinedLayoutResult {
+export function combineSemanticFindingsWithLayoutDiagnostics(findings: GeneralVisionFinding[], layout: DocumentLayout, grids: RuledGrid[] = []): CombinedLayoutResult {
   const owned = new Set<string>();
   const diagnostics: MatchDiagnostic[] = [];
   const matched = findings.map(finding => {
@@ -44,12 +50,18 @@ export function combineSemanticFindingsWithLayoutDiagnostics(findings: GeneralVi
       const cells = subsectionCells(finding, label, layout).filter(cell => !owned.has(cell.id));
       const geometry = union(cells);
       if (!geometry) {
-        const result = reviewFinding(finding, semanticKey, [...label.reasons, "no bounded writable cell subsection"], 0);
+        const grid = nearestGrid(finding, label, layout, grids, owned);
+        if (grid) {
+          owned.add(grid.grid.id);
+          diagnostics.push({ label: finding.label, page: finding.page, chosenTextractCandidate: grid.grid.id, candidateType: "ruled grid", matchScore: grid.score, matchingReasons: [...label.reasons, "nearest following ruled grid"], rejectedCandidateCount: grids.filter(candidate => candidate.page === finding.page).length - 1, geometrySource: "GRID_DETECTOR", matchedSection: grid.section, gridBounds: grid.grid.geometry, lineCount: grid.grid.horizontalLines + grid.grid.verticalLines, inferredRowCount: grid.grid.rows, inferredColumnCount: grid.grid.columns, confidence: grid.grid.confidence });
+          return { ...finding, semanticKey, geometry: grid.grid.geometry, rationale: "GRID_DETECTOR: bounded ruled grid" };
+        }
+        const result = reviewFinding(finding, semanticKey, [...label.reasons, "no bounded writable cell subsection or ruled grid"], grids.filter(candidate => candidate.page === finding.page).length);
         diagnostics.push(result.diagnostic);
         return result.finding;
       }
       cells.forEach(cell => owned.add(cell.id));
-      const source: GeometrySource = "TEXTRACT_TABLE_SUBSECTION";
+      const source: GeometrySource = "TEXTRACT_TABLE";
       diagnostics.push({ label: finding.label, page: finding.page, chosenTextractCandidate: cells.map(cell => cell.id).join(","), candidateType: "cell subsection", matchScore: label.score, matchingReasons: [...label.reasons, "bounded following table cells"], rejectedCandidateCount: 0, geometrySource: source });
       return { ...finding, semanticKey, geometry, rationale: `${source}: bounded Textract cells` };
     }
