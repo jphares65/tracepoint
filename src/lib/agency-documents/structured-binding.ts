@@ -1,7 +1,7 @@
 import type { FieldGeometry } from "./template-core";
 
 export type QualificationRecord = { id: string; date: string; courseName?: string; result?: string; score?: number; instructor?: string; firearmType?: string };
-export type StructuredBinding = { sourceType: "qualification_history"; fillMode: "rows" | "columns" | "sequential_cells"; ordering: "date_asc" | "date_desc"; maxRows: number; overflowBehavior: "truncate_with_warning" | "require_review" | "error"; columnMappings: { target: "date" | "course_name" | "result" | "score" | "instructor"; dateFormat?: "MM/DD/YYYY" | "MM/DD/YY" | "YYYY-MM-DD" }[]; filters?: { reportYear?: number; courseNameIncludes?: string; firearmType?: string; mostRecent?: number } };
+export type StructuredBinding = { sourceType: "qualification_history"; fillMode: "rows" | "columns" | "sequential_cells"; ordering: "date_asc" | "date_desc"; maxRows: number; overflowBehavior: "truncate_with_warning" | "require_review" | "error"; columnMappings: { target: "date" | "course_name" | "result" | "score" | "instructor"; dateFormat?: "MM/DD/YYYY" | "MM/DD/YY" | "YYYY-MM-DD" }[]; filters?: { reportYear?: number; reportYearMode?: "document" | "specific" | "none"; courseNameIncludes?: string; firearmType?: string; mostRecent?: number } };
 export type StructuredCell = { geometry: FieldGeometry; row: number; column: number };
 export type StructuredResolution = { values: { geometry: FieldGeometry; value: string }[]; warnings: string[]; requiresReview: boolean };
 

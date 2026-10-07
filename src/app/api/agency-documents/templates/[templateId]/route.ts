@@ -16,7 +16,7 @@ export async function GET(_request: Request, route: Context) {
   if (version.error || !version.data) return response(version.error?.message ?? "Template version not found.", 500);
   const fields = await access.context.admin.from("document_template_fields").select("*").eq("template_version_id", version.data.id).eq("department_id", access.context.departmentId).order("created_at");
   if (fields.error) return response(fields.error.message, 500);
-  return NextResponse.json({ template: template.data, version: version.data, fields: fields.data ?? [] });
+  return NextResponse.json({ template: template.data, version: version.data, fields: fields.data ?? [], canManage: hasAnyServerPermission(access.context, MANAGE) });
 }
 
 export async function PATCH(request: Request, route: Context) {
