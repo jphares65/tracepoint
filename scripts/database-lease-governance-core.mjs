@@ -14,6 +14,7 @@ export function validateLease({ expiresAfterUtc, leaseOwner, leaseReference }, n
 }
 
 export function assertLeaseOnlyChangeSet(changes) {
+  assert.ok(Array.isArray(changes) && changes.length > 0, "LEASE_CHANGESET_EMPTY");
   for (const item of changes ?? []) {
     const change = item.ResourceChange ?? item;
     assert.equal(change.Action, "Modify", "LEASE_CHANGE_MUST_MODIFY_ONLY");
