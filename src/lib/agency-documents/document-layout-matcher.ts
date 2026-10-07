@@ -2,6 +2,7 @@ import type { FieldGeometry } from "./template-core";
 import type { GeneralVisionFinding } from "./visual-template-analyzer";
 import { enclosingTable, matchLayoutLabel, protectedSemantic, type DocumentLayout, type LayoutCandidate, type LayoutNode, valueCandidatesForLabel } from "./document-layout-provider";
 import type { RuledGrid } from "./ruled-grid-layout-detector";
+import type { StructuredTargetCell } from "./template-analyzer";
 
 const review = { x: .01, y: .01, width: .02, height: .02 };
 export type GeometrySource = "TEXTRACT_VALUE" | "TEXTRACT_CELL" | "TEXTRACT_TABLE" | "GRID_DETECTOR" | "REVIEW";
@@ -14,6 +15,8 @@ function union(nodes: LayoutNode[]): FieldGeometry | undefined {
   const right = Math.max(...nodes.map(node => node.geometry.x + node.geometry.width)), bottom = Math.max(...nodes.map(node => node.geometry.y + node.geometry.height));
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
+function orderedCells(cells: Array<{ page: number; geometry: FieldGeometry; row?: number; column?: number }>, source: "textract" | "grid_detector"): StructuredTargetCell[] { const sorted = [...cells].sort((a, b) => (a.row ?? 0) - (b.row ?? 0) || (a.column ?? 0) - (b.column ?? 0) || a.geometry.y - b.geometry.y || a.geometry.x - b.geometry.x); const positions = new Map<number, number>(); return sorted.map((cell, index) => { const row = cell.row ?? index + 1, column = cell.column ?? (positions.get(row) ?? 0) + 1; positions.set(row, column); return { page: cell.page, order: index + 1, row, column, geometry: cell.geometry, source }; }); }
+function gridCells(grid: RuledGrid): StructuredTargetCell[] { const cells: Array<{ page: number; geometry: FieldGeometry; row: number; column: number }> = []; for (let row = 0; row < grid.rows; row++) for (let column = 0; column < grid.columns; column++) cells.push({ page: grid.page, row: row + 1, column: column + 1, geometry: { x: grid.geometry.x + grid.geometry.width * column / grid.columns, y: grid.geometry.y + grid.geometry.height * row / grid.rows, width: grid.geometry.width / grid.columns, height: grid.geometry.height / grid.rows } }); return orderedCells(cells, "grid_detector"); }
 function sectionMarker(text: string) { return text.trim().match(/^([abc])[. )]/i)?.[1]?.toLowerCase(); }
 function datesFiredAnchorCandidates(page: number, layout: DocumentLayout) { return layout.nodes.filter(node => node.page === page && node.kind === "line" && /dates\s+fired/i.test(node.text)).sort((a, b) => a.geometry.y - b.geometry.y); }
 
@@ -54,7 +57,7 @@ export function combineSemanticFindingsWithLayoutDiagnostics(findings: GeneralVi
         if (grid) {
           owned.add(grid.grid.id);
           diagnostics.push({ label: finding.label, page: finding.page, chosenTextractCandidate: grid.grid.id, candidateType: "ruled grid", matchScore: grid.score, matchingReasons: [...label.reasons, "nearest following ruled grid"], rejectedCandidateCount: grids.filter(candidate => candidate.page === finding.page).length - 1, geometrySource: "GRID_DETECTOR", matchedSection: grid.section, gridBounds: grid.grid.geometry, lineCount: grid.grid.horizontalLines + grid.grid.verticalLines, inferredRowCount: grid.grid.rows, inferredColumnCount: grid.grid.columns, confidence: grid.grid.confidence });
-          return { ...finding, semanticKey, geometry: grid.grid.geometry, rationale: "GRID_DETECTOR: bounded ruled grid" };
+          return { ...finding, semanticKey, geometry: grid.grid.geometry, rationale: "GRID_DETECTOR: bounded ruled grid", targetCells: gridCells(grid.grid) };
         }
         const result = reviewFinding(finding, semanticKey, [...label.reasons, "no bounded writable cell subsection or ruled grid"], grids.filter(candidate => candidate.page === finding.page).length);
         diagnostics.push(result.diagnostic);
@@ -63,7 +66,7 @@ export function combineSemanticFindingsWithLayoutDiagnostics(findings: GeneralVi
       cells.forEach(cell => owned.add(cell.id));
       const source: GeometrySource = "TEXTRACT_TABLE";
       diagnostics.push({ label: finding.label, page: finding.page, chosenTextractCandidate: cells.map(cell => cell.id).join(","), candidateType: "cell subsection", matchScore: label.score, matchingReasons: [...label.reasons, "bounded following table cells"], rejectedCandidateCount: 0, geometrySource: source });
-      return { ...finding, semanticKey, geometry, rationale: `${source}: bounded Textract cells` };
+      return { ...finding, semanticKey, geometry, rationale: `${source}: bounded Textract cells`, targetCells: orderedCells(cells, "textract") };
     }
     const candidates = valueCandidatesForLabel(label.node, layout, label.score);
     const selected = candidates.find(candidate => !owned.has(candidate.node.id));

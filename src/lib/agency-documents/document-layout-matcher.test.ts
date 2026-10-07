@@ -39,6 +39,7 @@ test("derives a bounded subsection instead of returning its enclosing table", ()
   assert.ok(Math.abs((result.findings[0]?.geometry.width ?? 0) - .7) < 1e-9);
   assert.ok(Math.abs((result.findings[0]?.geometry.height ?? 0) - .1) < 1e-9);
   assert.equal(result.diagnostics[0]?.geometrySource, "TEXTRACT_TABLE");
+  assert.deepEqual(result.findings[0]?.targetCells?.map(cell => [cell.row, cell.column, cell.order]), [[8, 1, 1], [8, 2, 2], [9, 1, 3], [9, 2, 4]]);
 });
 
 test("splits one Textract table into A/B/C Dates Fired subsections", () => {
@@ -60,6 +61,8 @@ test("uses the nearest following ruled grid without crossing section boundaries"
   assert.deepEqual(result.findings[0]?.geometry, grids[0]?.geometry);
   assert.equal(result.diagnostics[0]?.geometrySource, "GRID_DETECTOR");
   assert.equal(result.diagnostics[0]?.matchedSection, "A");
+  assert.equal(result.findings[0]?.targetCells?.length, 8);
+  assert.deepEqual(result.findings[0]?.targetCells?.map(cell => [cell.row, cell.column, cell.order]), [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4], [3, 1, 5], [3, 2, 6], [4, 1, 7], [4, 2, 8]]);
 });
 
 test("keeps unmatched semantic findings review-only and preserves semantic guardrails", () => {
