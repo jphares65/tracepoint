@@ -98,6 +98,8 @@ Assert-TracePointStagingIdentity | Out-Null
 Assert-NoProtectedChanges
 Assert-CostGate
 
+if ($Action -eq 'DeployRuntime') { Assert-TracePointStagingDatabaseReleaseLease | Out-Null }
+
 if ($Action -eq 'Verify') {
     Write-Host 'Staging runtime gates verified. Image publication remains separate in publish-tracepoint-staging-image.ps1; no image was built and no runtime was deployed.'
     return
