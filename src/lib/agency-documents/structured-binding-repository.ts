@@ -1,0 +1,17 @@
+import { isValidFieldGeometry } from "./template-core";
+import type { StructuredBinding, StructuredCell, QualificationRecord } from "./structured-binding";
+
+export type PersistedStructuredBinding = StructuredBinding & { id: string; agencyId: string; templateId: string; templateVersionId: string; sectionKey: string; targetCells: (StructuredCell & { page: number; order: number; source?: string })[]; createdAt: string; updatedAt: string };
+type Query = { data?: any; error?: any; select: (columns: string) => Query; eq: (column: string, value: unknown) => Query; order: (column: string, options?: { ascending?: boolean }) => Query; maybeSingle: () => Promise<{ data: any; error: any }>; insert: (row: any) => Query; update: (row: any) => Query; delete: () => Query };
+export type AgencyDocumentsData = { from: (table: string) => Query };
+export function validateStructuredBinding(binding: Omit<PersistedStructuredBinding, "id" | "agencyId" | "templateId" | "templateVersionId" | "createdAt" | "updatedAt">) {
+  if (!binding.sectionKey || binding.sourceType !== "qualification_history" || !["rows", "columns", "sequential_cells"].includes(binding.fillMode) || !["date_asc", "date_desc"].includes(binding.ordering) || !["truncate_with_warning", "require_review", "error"].includes(binding.overflowBehavior) || !Number.isInteger(binding.maxRows) || binding.maxRows < 1) throw new Error("Unsupported structured binding configuration.");
+  const previous = new Set<number>(); for (const cell of binding.targetCells) { if (!Number.isInteger(cell.order) || cell.order < 1 || previous.has(cell.order) || !Number.isInteger(cell.page) || cell.page < 1 || !isValidFieldGeometry(cell.geometry)) throw new Error("Target cells must have unique stable order and valid geometry."); previous.add(cell.order); }
+  if (binding.columnMappings.some(mapping => mapping.dateFormat && !["MM/DD/YYYY", "MM/DD/YY", "YYYY-MM-DD"].includes(mapping.dateFormat))) throw new Error("Unsupported date format.");
+}
+export class StructuredBindingRepository {
+  constructor(private readonly data: AgencyDocumentsData, private readonly agencyId: string) {}
+  async list(templateVersionId: string) { const result = await this.data.from("document_template_structured_bindings").select("*").eq("department_id", this.agencyId).eq("template_version_id", templateVersionId).order("section_key"); if (result.error) throw new Error("Structured bindings could not be loaded."); return result.data ?? []; }
+  async get(templateVersionId: string, sectionKey: string) { const result = await this.data.from("document_template_structured_bindings").select("*").eq("department_id", this.agencyId).eq("template_version_id", templateVersionId).eq("section_key", sectionKey).maybeSingle(); if (result.error) throw new Error("Structured binding could not be loaded."); return result.data; }
+}
+export function qualificationRecordFromDocumentRow(row: { id: string; qualification_date?: string | null; historical_course_name?: string | null; passed?: boolean | null; score?: number | null; instructor_name?: string | null; historical_qualification_type?: string | null }): QualificationRecord { return { id: row.id, date: row.qualification_date ?? "", courseName: row.historical_course_name ?? undefined, result: row.passed == null ? undefined : row.passed ? "Pass" : "Fail", score: row.score ?? undefined, instructor: row.instructor_name ?? undefined, firearmType: row.historical_qualification_type ?? undefined }; }
