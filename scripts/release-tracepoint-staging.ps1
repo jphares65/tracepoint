@@ -11,6 +11,7 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Assert-TracePointStagingIdentity | Out-Null
+Assert-TracePointStagingDatabaseReleaseLease | Out-Null
 function Invoke-StagingNodeGate {
     param([string[]]$Arguments)
     # Native stderr under Windows PowerShell must not interrupt the child before

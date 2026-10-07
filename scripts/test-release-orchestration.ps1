@@ -8,6 +8,7 @@ $global:ReleaseTestCalls=@()
 function global:aws.exe {
  $global:LASTEXITCODE=0
  if (($args -join ' ') -like 'sts get-caller-identity*') { return '{"Account":"559054714699","Arn":"arn:aws:sts::559054714699:assumed-role/TracePointMigrationStaging/test"}' }
+ if (($args -join ' ') -like 'ssm get-parameter*') { return (@{Parameter=@{Value=('{"expiresAfterUtc":"'+[DateTime]::UtcNow.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ssZ")+'","leaseOwner":"github-release","leaseReference":"github:123:1"}')}} | ConvertTo-Json -Compress) }
  if (($args -join ' ') -like 'ecs describe-services*') {return "arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:$global:ReleaseTestRevision"}
  if (($args -join ' ') -like 'ecs wait services-stable*') {return}
  throw 'Unexpected AWS call; real AWS is unavailable to this test.'
@@ -16,6 +17,7 @@ function global:node {
  $global:LASTEXITCODE=0
  $command=$args -join ' '
  $global:ReleaseTestCalls+= $command
+ if($command -match 'validate-staging-database-release-lease\.mjs') {Write-Output ('{"expiresAfterUtc":"'+[DateTime]::UtcNow.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ssZ")+'","leaseOwner":"github-release","leaseReference":"github:123:1"}');return}
  if($global:ReleaseTestScenario -eq 'stderr' -and $command -match '--range-documents') {Write-Error 'Synthetic child error before finally';$global:ReleaseTestCalls+='child-cleanup';$global:LASTEXITCODE=1;return}
  if (($global:ReleaseTestScenario -eq 'preflight' -and $command -match '--fixtures-only') -or
      ($global:ReleaseTestScenario -eq 'acceptance' -and $command -match '--range-documents') -or
