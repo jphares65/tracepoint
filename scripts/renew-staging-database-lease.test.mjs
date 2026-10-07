@@ -30,6 +30,7 @@ test("lease renewal is protected, staging-only, and has no bootstrap/runtime sid
   assert.match(script, /tracepoint-staging-database/);
   assert.match(script, /cloudformation get-template .*--template-stage Original/);
   assert.match(script, /create-change-set/);
+  assert.match(script, /tracepoint-staging-database-lease-/);
   assert.match(script, /--use-previous-template/);
   assert.match(script, /UsePreviousValue=true/);
   assert.match(script, /validate-database-lease-changeset/);

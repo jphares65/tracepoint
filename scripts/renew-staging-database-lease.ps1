@@ -23,7 +23,7 @@ $parameters=@($existing.Stacks[0].Parameters | ForEach-Object {"ParameterKey=$($
 $capabilities=@()
 if($templateText -match 'AWS::IAM::'){$capabilities += 'CAPABILITY_NAMED_IAM'}
 if($templateText -match '(?m)^\s*Transform\s*:|"Transform"\s*:'){$capabilities += 'CAPABILITY_AUTO_EXPAND'}
-$name=('lease-'+[guid]::NewGuid().ToString('N'))
+$name=('tracepoint-staging-database-lease-'+[guid]::NewGuid().ToString('N'))
 $args=@('cloudformation','create-change-set','--stack-name',$stack,'--change-set-name',$name,'--change-set-type','UPDATE','--use-previous-template','--tags') + ($tags | ForEach-Object {"Key=$($_.Key),Value=$($_.Value)"})
 if($parameters.Count -gt 0){$args += @('--parameters') + $parameters}
 if($capabilities.Count -gt 0){$args += @('--capabilities') + $capabilities}
