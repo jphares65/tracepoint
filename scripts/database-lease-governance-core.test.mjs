@@ -10,5 +10,15 @@ test("rejects bounded-invalid lease inputs", () => {
 const lease = name => ({ ResourceChange: { Action: "Modify", Replacement: "False", ResourceType: "AWS::CloudFormation::Stack", LogicalResourceId: "tracepoint-staging-database", Details: [{ Target: { Attribute: "Tags", Name: name } }] } });
 test("accepts only the three lease tags", () => assert.doesNotThrow(() => assertLeaseOnlyChangeSet([lease("ExpiresAfterUTC"), lease("LeaseOwner"), lease("LeaseReference")] )));
 test("rejects non-lease changes and replacements", () => {
-  for (const candidate of [[{ ResourceChange: { ...lease("LeaseOwner").ResourceChange, Action: "Add" } }], [{ ResourceChange: { ...lease("LeaseOwner").ResourceChange, Replacement: "True" } }], [lease("Backup")]]) assert.throws(() => assertLeaseOnlyChangeSet(candidate));
+  const nonTag = attribute => [{ ResourceChange: { ...lease("LeaseOwner").ResourceChange, Details: [{ Target: { Attribute: attribute, Name: "DatabaseClass" } }] } }];
+  for (const candidate of [
+    [],
+    [{ ResourceChange: { ...lease("LeaseOwner").ResourceChange, Action: "Add" } }],
+    [{ ResourceChange: { ...lease("LeaseOwner").ResourceChange, Action: "Remove" } }],
+    [{ ResourceChange: { ...lease("LeaseOwner").ResourceChange, Replacement: "True" } }],
+    [lease("Backup")],
+    nonTag("Properties"),
+    nonTag("Parameters"),
+    nonTag("Policy"),
+  ]) assert.throws(() => assertLeaseOnlyChangeSet(candidate));
 });
