@@ -28,6 +28,22 @@ function Assert-TracePointStagingHostname {
     }
 }
 
+function Assert-TracePointStagingDatabaseReleaseLease {
+    $parameter = '/tracepoint/staging/database-release-lease'
+    Assert-TracePointStagingIdentity | Out-Null
+    $result = & aws.exe ssm get-parameter --name $parameter --region $script:ExpectedRegion --output json 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'The staging database release lease parameter is unavailable.' }
+    try {
+        $raw = (($result -join [Environment]::NewLine) | ConvertFrom-Json).Parameter.Value
+    }
+    catch { throw 'The staging database release lease parameter response is invalid.' }
+    if ([string]::IsNullOrWhiteSpace([string]$raw)) { throw 'The staging database release lease parameter is empty.' }
+    $validated = $raw | & node (Join-Path $PSScriptRoot 'validate-staging-database-release-lease.mjs')
+    if ($LASTEXITCODE -ne 0) { throw 'The staging database release lease is invalid or expired.' }
+    try { return (($validated -join [Environment]::NewLine) | ConvertFrom-Json) }
+    catch { throw 'The staging database release lease validation response is invalid.' }
+}
+
 function ConvertFrom-TracePointSecureString {
     param([Parameter(Mandatory)][Security.SecureString]$Value)
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
@@ -43,4 +59,4 @@ function Assert-TracePointImageScan {
     }
 }
 
-Export-ModuleMember -Function Assert-TracePointImageScan, Assert-TracePointStagingIdentity, Assert-TracePointStagingHostname, ConvertFrom-TracePointSecureString
+Export-ModuleMember -Function Assert-TracePointImageScan, Assert-TracePointStagingIdentity, Assert-TracePointStagingHostname, Assert-TracePointStagingDatabaseReleaseLease, ConvertFrom-TracePointSecureString
