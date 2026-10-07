@@ -15,10 +15,12 @@ test('rejects unrelated branches and stale native lineage', () => {
 test('publisher and workflow bind the exact branch and ancestry guard', () => {
   const publisher = readFileSync(new URL('./publish-tracepoint-staging-image.ps1', import.meta.url), 'utf8');
   const workflow = readFileSync(new URL('../.github/workflows/aws-staging-runtime.yml', import.meta.url), 'utf8');
+  const previewGate = readFileSync(new URL('./wait-for-staging-preview.mjs', import.meta.url), 'utf8');
   assert.match(publisher, new RegExp(NATIVE_RELEASE_BRANCH));
   assert.match(publisher, new RegExp(NATIVE_RELEASE_BASELINE));
   assert.match(publisher, /merge-base --is-ancestor/);
   assert.match(workflow, new RegExp(NATIVE_RELEASE_BRANCH));
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /environment: aws-staging/);
+  assert.match(previewGate, new RegExp(NATIVE_RELEASE_BRANCH));
 });
