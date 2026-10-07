@@ -11,6 +11,9 @@ export class GitHubStagingStack extends cdk.Stack {
   const arn=(service:string,resource:string)=>`arn:aws:${service}:${region}:${account}:${resource}`;
   allow(['cloudformation:DescribeStacks','cloudformation:DescribeStackEvents','cloudformation:DescribeStackResources','cloudformation:GetTemplate','cloudformation:GetTemplateSummary'],[arn('cloudformation','stack/tracepoint-staging-*/*')]);
   allow(['cloudformation:CreateChangeSet','cloudformation:DescribeChangeSet','cloudformation:DeleteChangeSet','cloudformation:ExecuteChangeSet'],[arn('cloudformation','stack/tracepoint-staging-runtime/*'),arn('cloudformation','changeSet/cdk-deploy-change-set/*')]);
+  // The protected lease workflow can operate only on the existing staging database
+  // stack and only on change sets it creates with this fixed, auditable prefix.
+  allow(['cloudformation:CreateChangeSet','cloudformation:DescribeChangeSet','cloudformation:DeleteChangeSet','cloudformation:ExecuteChangeSet'],[arn('cloudformation','stack/tracepoint-staging-database/*'),arn('cloudformation','changeSet/tracepoint-staging-database-lease-*/*')]);
   allow(['cloudformation:ListExports','cloudformation:ValidateTemplate'],['*'],{StringEquals:{'aws:RequestedRegion':region}});
   allow(['iam:PassRole'],[`arn:aws:iam::${account}:role/cdk-hnb659fds-cfn-exec-role-${account}-${region}`],{StringEquals:{'iam:PassedToService':'cloudformation.amazonaws.com'}});
   allow(['iam:PassRole'],['arn:aws:iam::559054714699:role/tracepoint-staging-ecs-execution','arn:aws:iam::559054714699:role/tracepoint-staging-ecs-task'],{StringEquals:{'iam:PassedToService':'ecs-tasks.amazonaws.com'}});
