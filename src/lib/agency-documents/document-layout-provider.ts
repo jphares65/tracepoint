@@ -35,6 +35,7 @@ export class TextractDocumentLayoutProvider implements DocumentLayoutProvider {
     return { provider: "textract", version: "AnalyzeDocument/FORMS+TABLES", nodes };
   }
 }
+export function configuredDocumentLayoutProvider(environment: Record<string, string | undefined> = process.env): DocumentLayoutProvider | undefined { const provider = environment.TRACEPOINT_DOCUMENT_LAYOUT_PROVIDER?.trim().toLowerCase(); const region = environment.TRACEPOINT_DOCUMENT_TEXTRACT_REGION?.trim(); return provider === "textract" && region ? new TextractDocumentLayoutProvider(region) : undefined; }
 
 function words(value: string) { return value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean); }
 function verticalOverlap(a: FieldGeometry, b: FieldGeometry) { return Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)) / Math.min(a.height, b.height); }
