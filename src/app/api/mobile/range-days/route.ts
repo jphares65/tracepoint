@@ -3,7 +3,7 @@ import { accessFailureResponse, hasAnyServerPermission, hasServerFeature, resolv
 import { createRangeReadRepository } from "@/lib/range/read-repository";
 import { rangeDayPayload } from "@/lib/tracepoint/mobile-workflows";
 export const dynamic = "force-dynamic";
-export async function GET(request: Request) {
+export async function GET() {
   const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved);
   if (!hasServerFeature(resolved.context, "range_training") && !hasServerFeature(resolved.context, "qualifications")) return NextResponse.json({ error: "Range & Training is not enabled for this agency." }, { status: 403 });
   if (!hasAnyServerPermission(resolved.context, ["manage_range_days", "score_range_days", "manage_qualifications"])) return NextResponse.json({ error: "You are not authorized to view Range Days." }, { status: 403 });

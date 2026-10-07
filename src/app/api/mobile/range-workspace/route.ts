@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { accessFailureResponse, hasAnyServerPermission, hasServerFeature, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { accessFailureResponse, hasAnyServerPermission, hasServerFeature, resolveServerAccess, type ServerAccessContext } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
 import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
 export const dynamic = "force-dynamic";
-function permitted(context: any) { return (hasServerFeature(context, "range_training") || hasServerFeature(context, "qualifications")) && hasAnyServerPermission(context, ["manage_range_days", "score_range_days", "manage_qualifications"]); }
-export async function GET(request: Request) {
+function permitted(context: ServerAccessContext) { return (hasServerFeature(context, "range_training") || hasServerFeature(context, "qualifications")) && hasAnyServerPermission(context, ["manage_range_days", "score_range_days", "manage_qualifications"]); }
+export async function GET() {
   const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved); if (!permitted(resolved.context)) return NextResponse.json({ error: "You are not authorized to access live scoring." }, { status: 403 });
   try {
     const repository = createRangeReadRepository(resolved.context.admin, resolved.context.departmentId);
     const [workspace, people] = await Promise.all([repository.getWorkspace(resolved.context.departmentId), repository.getPersonnel(resolved.context.departmentId)]);
-    const labels = new Map(people.profiles.map((profile: any) => [String(profile.id), profile]));
-    return NextResponse.json({ userId: resolved.context.userId, workspace: workspace.workspace ?? {}, personnel: people.memberships.map((membership: any) => { const person = labels.get(String(membership.user_id)); return { id: String(membership.user_id), userId: String(membership.user_id), displayName: String(person?.full_name ?? person?.email ?? "TracePoint officer"), badgeNumber: membership.badge_number ?? null }; }) }, { headers: { "Cache-Control": "no-store" } });
+    const labels = new Map<string, Record<string, unknown>>(people.profiles.map((profile) => [String(profile.id), profile]));
+    return NextResponse.json({ userId: resolved.context.userId, workspace: workspace.workspace ?? {}, personnel: people.memberships.map((membership) => { const person = labels.get(String(membership.user_id)); return { id: String(membership.user_id), userId: String(membership.user_id), displayName: String(person?.full_name ?? person?.email ?? "TracePoint officer"), badgeNumber: membership.badge_number ?? null }; }) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Live scoring could not be loaded." }, { status: 500 }); }
 }
 export async function PUT(request: Request) {
