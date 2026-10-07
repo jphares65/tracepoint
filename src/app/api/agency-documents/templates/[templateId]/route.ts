@@ -34,7 +34,7 @@ export async function PATCH(request: Request, route: Context) {
     if (newVersion.error) return response(newVersion.error.message, 500);
     const oldFields = await access.context.admin.from("document_template_fields").select("*").eq("template_version_id", oldVersion.data.id).eq("department_id", access.context.departmentId);
     if (oldFields.error) return response(oldFields.error.message, 500);
-    if (oldFields.data?.length) await access.context.admin.from("document_template_fields").insert(oldFields.data.map(({ id, created_at, updated_at, ...field }: Record<string, unknown>) => ({ ...field, id: crypto.randomUUID(), template_version_id: newVersion.data.id })));
+    if (oldFields.data?.length) await access.context.admin.from("document_template_fields").insert(oldFields.data.map((stored: Record<string, unknown>) => { const field = { ...stored }; delete field.id; delete field.created_at; delete field.updated_at; return { ...field, id: crypto.randomUUID(), template_version_id: newVersion.data.id }; }));
     await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: "document_template_duplicated", entity_type: "document_template", entity_id: duplicate.data.id, summary: `Duplicated document template ${existing.data.name}.`, new_value: { source_template_id: templateId } });
     return NextResponse.json({ id: duplicate.data.id });
   }
