@@ -10,7 +10,11 @@ test('the fixed rehearsal invite repair is packaged with its pinned SQL', () => 
   const sql = readFileSync(new URL('../database/aws/026_cognito_invite_profile_trigger_reconciliation.sql', import.meta.url), 'utf8')
     .replaceAll('\r\n', '\n');
   const hash = createHash('sha256').update(sql).digest('hex');
-  assert.match(ignore, /^!database\/aws\/026_cognito_invite_profile_trigger_reconciliation\.sql$/m);
+  assert.match(
+    ignore,
+    /^!database\/aws\/(?:026_cognito_invite_profile_trigger_reconciliation\.sql|\*\.sql)$/m,
+    'the fixed SQL must remain available to the Docker build',
+  );
   assert.match(dockerfile, /esbuild scripts\/phase3c-invite-profile-schema\.mjs --bundle --platform=node --format=cjs/);
   assert.match(dockerfile, /COPY --from=builder .*\/app\/database\/aws\/026_cognito_invite_profile_trigger_reconciliation\.sql/);
   assert.ok(runner.includes(hash), 'runner must require the exact reviewed migration hash');
