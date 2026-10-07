@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 const identifier = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 2048) : "";
 const opaqueHandle = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 export async function POST(request: Request) {
-  const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved);
+  const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved);
   const value = identifier((await request.json().catch(() => ({})) as { identifier?: unknown }).identifier);
   if (!opaqueHandle.test(value)) return NextResponse.json({ status: "unknown", message: "This QR code is not valid." }, { status: 400 });
   const { admin, departmentId, ...access } = resolved.context;

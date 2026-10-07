@@ -20,6 +20,7 @@ $repository = 'tracepoint-staging'
 $runtimeStack = 'tracepoint-staging-runtime'
 $budgetName = 'tracepoint-staging-monthly-75'
 $budgetLimit = 75
+$stagingStorageKeyArn = 'arn:aws:kms:us-east-1:559054714699:key/8a158690-ddbc-4887-8f61-0927dc279701'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $infraRoot = Join-Path $repositoryRoot 'infra'
 $protectedPaths = @('scripts/seed-demo-fleet-equipment.mjs', 'src/app/integration-demo')
@@ -120,7 +121,8 @@ if ($StorageProvider -eq 's3') {
     $versioning = Invoke-AwsJson @('s3api','get-bucket-versioning','--bucket',$bucket,'--expected-bucket-owner',$account)
     if ($versioning.Status -ne 'Enabled') { throw 'Private storage versioning gate failed.' }
     $encryption = Invoke-AwsJson @('s3api','get-bucket-encryption','--bucket',$bucket,'--expected-bucket-owner',$account)
-    if ($encryption.ServerSideEncryptionConfiguration.Rules[0].ApplyServerSideEncryptionByDefault.SSEAlgorithm -ne 'AES256') { throw 'Private storage encryption gate failed.' }
+    $defaultEncryption = $encryption.ServerSideEncryptionConfiguration.Rules[0]
+    if ($defaultEncryption.ApplyServerSideEncryptionByDefault.SSEAlgorithm -ne 'aws:kms' -or $defaultEncryption.ApplyServerSideEncryptionByDefault.KMSMasterKeyID -ne $stagingStorageKeyArn -or $defaultEncryption.BucketKeyEnabled -ne $true) { throw 'Private storage KMS encryption gate failed.' }
 }
 $validationRoot = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-runtime-review-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $validationRoot | Out-Null

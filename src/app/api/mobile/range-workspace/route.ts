@@ -5,7 +5,7 @@ import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation"
 export const dynamic = "force-dynamic";
 function permitted(context: any) { return (hasServerFeature(context, "range_training") || hasServerFeature(context, "qualifications")) && hasAnyServerPermission(context, ["manage_range_days", "score_range_days", "manage_qualifications"]); }
 export async function GET(request: Request) {
-  const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved); if (!permitted(resolved.context)) return NextResponse.json({ error: "You are not authorized to access live scoring." }, { status: 403 });
+  const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved); if (!permitted(resolved.context)) return NextResponse.json({ error: "You are not authorized to access live scoring." }, { status: 403 });
   try {
     const repository = createRangeReadRepository(resolved.context.admin, resolved.context.departmentId);
     const [workspace, people] = await Promise.all([repository.getWorkspace(resolved.context.departmentId), repository.getPersonnel(resolved.context.departmentId)]);
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   } catch { return NextResponse.json({ error: "Live scoring could not be loaded." }, { status: 500 }); }
 }
 export async function PUT(request: Request) {
-  const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved); if (!permitted(resolved.context)) return NextResponse.json({ error: "You are not authorized to save live scores." }, { status: 403 });
+  const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved); if (!permitted(resolved.context)) return NextResponse.json({ error: "You are not authorized to save live scores." }, { status: 403 });
   const body = await request.json().catch(() => ({})) as { workspace?: unknown }; const workspace = body.workspace;
   if (!workspace || typeof workspace !== "object") return NextResponse.json({ error: "A scoring workspace is required." }, { status: 400 });
   const existing = await resolved.context.admin.from("pilot_range_workspaces").select("workspace,updated_at").eq("department_id", resolved.context.departmentId).maybeSingle();
