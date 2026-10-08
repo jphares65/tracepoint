@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
+import { verifyLedger } from "./aws-native-migration-ledger-core.mjs";
 
 const ledger = "public.tracepoint_aws_schema_migrations";
 const lockName = "tracepoint:aws-native-schema-migrations:v1";
@@ -53,13 +54,6 @@ async function ledgerRows(client) {
   const exists = (await client.query("select to_regclass($1) as name", [ledger])).rows[0].name;
   if (!exists) return null;
   return (await client.query(`select version, filename, content_sha256, applied_at, application_git_sha, environment, application_context, is_baseline from ${ledger} order by version`)).rows;
-}
-function verifyLedger(files, rows) {
-  const byVersion = new Map(files.map((file) => [file.version, file]));
-  for (const row of rows) {
-    const file = byVersion.get(Number(row.version));
-    if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
-  }
 }
 async function report(client, files) {
   const rows = await ledgerRows(client);
