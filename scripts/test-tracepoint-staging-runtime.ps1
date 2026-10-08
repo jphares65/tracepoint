@@ -1,4 +1,7 @@
-param([ValidateRange(0,900)][int]$WaitSeconds = 0)
+param(
+    [ValidateRange(0,900)][int]$WaitSeconds = 0,
+    [ValidateRange(0,60)][int]$PollSeconds = 15
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
@@ -22,9 +25,17 @@ if ($service.loadBalancers.Count) {
     $targetArn = $service.loadBalancers[0].targetGroupArn
     $health = & aws.exe elbv2 describe-target-health --target-group-arn $targetArn --region us-east-1 --output json 2>&1
     if ($LASTEXITCODE -ne 0) { throw 'Unable to query staging target health.' }
-    $states = @((($health -join [Environment]::NewLine) | ConvertFrom-Json).TargetHealthDescriptions.TargetHealth.State)
+    $states = @((($health -join [Environment]::NewLine) | ConvertFrom-Json).TargetHealthDescriptions.TargetHealth.State | ForEach-Object { [string]$_ })
     Write-Host "Target states: $($states -join ', ')"
-    if ($states.Count -ne 1 -or $states[0] -ne 'healthy') { throw 'Expected exactly one healthy ALB target.' }
+    $healthyCount=@($states | Where-Object { $_ -eq 'healthy' }).Count
+    $drainingCount=@($states | Where-Object { $_ -eq 'draining' }).Count
+    $initialCount=@($states | Where-Object { $_ -eq 'initial' }).Count
+    $unexpected=@($states | Where-Object { $_ -notin @('healthy','draining','initial') })
+    if($unexpected.Count){throw "ALB has unhealthy or unsupported target state(s): $($unexpected -join ', ')"}
+    if($healthyCount -ne 1){throw "Expected exactly one healthy ALB target; observed $healthyCount."}
+    if($drainingCount -gt 0 -or $initialCount -gt 0){
+        return [pscustomobject]@{NeedsTargetConvergence=$true;DrainingCount=$drainingCount;InitialCount=$initialCount}
+    }
 }
 $logs = & aws.exe logs describe-log-streams --log-group-name /tracepoint/staging/application --order-by LastEventTime --descending --limit 5 --region us-east-1 --output json 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'Unable to query staging log streams.' }
@@ -34,10 +45,9 @@ Write-Host "Recent CloudWatch log streams returned: $streamCount"
 }
 $deadline=[DateTimeOffset]::UtcNow.AddSeconds($WaitSeconds)
 do {
- try { Test-SettledRuntime; break }
- catch {
-  if([DateTimeOffset]::UtcNow -ge $deadline){throw}
-  Write-Host 'Waiting for completed rollout and target deregistration before strict health verification.'
-  Start-Sleep -Seconds 15
- }
+ $assessment=Test-SettledRuntime
+ if(-not $assessment -or -not $assessment.NeedsTargetConvergence){break}
+ if([DateTimeOffset]::UtcNow -ge $deadline){throw "ALB target convergence timed out with $($assessment.DrainingCount) draining and $($assessment.InitialCount) initial target(s)."}
+ Write-Host 'Waiting for draining/initial ALB targets to converge after the completed rollout.'
+ Start-Sleep -Seconds $PollSeconds
 } while($true)

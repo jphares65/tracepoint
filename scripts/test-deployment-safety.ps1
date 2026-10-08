@@ -4,6 +4,13 @@ $global:TracePointTestScenario = 'healthy'
 $global:TracePointTestAccount = '559054714699'
 $global:TracePointTestRole = 'TracePointMigrationStaging'
 $global:TracePointTestMutations = 0
+$global:TracePointTargetStateSequence = @('healthy')
+$global:TracePointTargetStateIndex = 0
+function Set-TargetStates([string[]]$Sequence) {
+    $global:TracePointTargetStateSequence=$Sequence
+    $global:TracePointTargetStateIndex=0
+}
+function global:Start-Sleep { param([int]$Seconds) }
 function global:aws.exe {
     $global:LASTEXITCODE = 0
     $command = $args -join ' '
@@ -15,8 +22,10 @@ function global:aws.exe {
         return (@{services=@(@{status='ACTIVE';desiredCount=1;runningCount=$count;pendingCount=0;taskDefinition='arn:aws:ecs:us-east-1:559054714699:task-definition/tracepoint:7';deployments=@(@{rolloutState=$rollout});loadBalancers=@(@{targetGroupArn='test-target'})})} | ConvertTo-Json -Depth 8 -Compress)
     }
     if ($command -like 'elbv2 describe-target-health*') {
-        $state=if($global:TracePointTestScenario -eq 'unhealthy'){'unhealthy'}else{'healthy'}
-        return (@{TargetHealthDescriptions=@(@{TargetHealth=@{State=$state}})} | ConvertTo-Json -Depth 5 -Compress)
+        $index=[Math]::Min($global:TracePointTargetStateIndex,$global:TracePointTargetStateSequence.Count-1)
+        $states=@($global:TracePointTargetStateSequence[$index] -split ',')
+        $global:TracePointTargetStateIndex++
+        return (@{TargetHealthDescriptions=@($states | ForEach-Object {@{TargetHealth=@{State=$_}}})} | ConvertTo-Json -Depth 5 -Compress)
     }
     if ($command -like 'logs describe-log-streams*') {return '{"logStreams":[{}]}'}
     throw 'Unexpected mocked AWS query'
@@ -37,7 +46,18 @@ try {
     Must-Reject {Assert-TracePointStagingIdentity | Out-Null}
     $global:TracePointTestRole='TracePointMigrationStaging'
     Must-Reject {Assert-TracePointStagingHostname -Hostname 'tracepointhq.com'}
+    Set-TargetStates @('healthy')
     & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
+    Set-TargetStates @('healthy,draining','healthy')
+    & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 1 -PollSeconds 0
+    foreach($states in @('draining','unhealthy','healthy,unhealthy','','healthy,healthy')) {
+        Set-TargetStates @($states)
+        Must-Reject {& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')}
+    }
+    Set-TargetStates @('healthy,initial')
+    Must-Reject {& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')}
+    Set-TargetStates @('healthy,draining')
+    Must-Reject {& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')}
     foreach($scenario in @('zero','rolling','unhealthy')) {
         $global:TracePointTestScenario=$scenario
         Must-Reject {& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')}
@@ -54,5 +74,5 @@ try {
         Must-Reject {Assert-TracePointImageScan -Scan $scan}
     }
     Must-Reject {Assert-TracePointImageScan -Scan ([pscustomobject]@{})}
-    Write-Host 'Passed 19 staging identity/hostname/runtime safety cases; zero AWS API calls.'
-} finally {Remove-Item Function:/aws.exe}
+    Write-Host 'Passed staging identity, runtime, and ALB convergence safety cases; zero AWS API calls.'
+} finally {Remove-Item Function:/aws.exe,Function:/Start-Sleep}
