@@ -130,7 +130,10 @@ test('staging accepts only its exact HTTPS-forwarded container hop for login sta
  const api=createCognitoTransport(config,{pkce,async establish(){throw Error('not reached')},async rotate(){throw Error('not reached')},async revoke(){}},{enabled:true});
  const headers={host:'staging.tracepointhq.com','x-forwarded-host':'staging.tracepointhq.com','x-forwarded-proto':'https',origin,'sec-fetch-site':'same-origin'};
  const begin=(url:string,overrides:Record<string,string>={})=>api.begin(new Request(url,{method:'POST',headers:{...headers,...overrides}}));
- for(const authority of ['http://0.0.0.0:3000','https://0.0.0.0:3000','http://staging.tracepointhq.com']){
+ // The private ECS hostname is intentionally not a fixed contract. Safari's
+ // form POST arrives with the external Host and ALB HTTPS assertion, but Next
+ // may expose that internal hostname in Request.url.
+ for(const authority of ['http://0.0.0.0:3000','https://0.0.0.0:3000','http://staging.tracepointhq.com','http://tracepoint-staging-target.internal:3000']){
   const response=await begin(authority+'/api/auth/cognito/login');
   assert.equal(response.status,303);
   assert.equal(new URL(response.headers.get('location')!).searchParams.get('redirect_uri'),origin+'/api/auth/cognito/callback');
@@ -138,6 +141,8 @@ test('staging accepts only its exact HTTPS-forwarded container hop for login sta
   for(const override of ([{host:'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
    assert.equal((await begin(authority+'/api/auth/cognito/login',override)).status,400);
   assert.equal((await begin(authority+'/api/auth/cognito/login',{origin:'https://evil.invalid'})).status,403);
+  assert.equal((await begin(authority+'/api/auth/cognito/login',{origin:''})).status,403);
+  assert.equal((await begin(authority+'/api/auth/cognito/login?next=%2F&next=%2Fagency-documents')).status,403);
  }
  for(const url of ['http://0.0.0.0:3001/api/auth/cognito/login','http://evil.invalid/api/auth/cognito/login'])
   assert.equal((await begin(url)).status,400);

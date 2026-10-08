@@ -59,15 +59,14 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
    (url.hostname==='0.0.0.0'||/^ip-(?:\d{1,3}-){3}\d{1,3}\.ec2\.internal$/.test(url.hostname))&&
    url.protocol==='https:'&&url.port==='3000'&&
    exactProxyHeaders;
-  // The normal-environment ALB terminates TLS and forwards HTTP to the private
-  // ECS container. Next can expose that internal hop in Request.url. This
-  // exception is valid only with the exact external Host and HTTPS proxy
-  // assertions; the separate CSRF Origin check below still requires the exact
-  // staging or production site origin.
+  // The normal-environment ALB terminates TLS and forwards to a private ECS
+  // target. Its private hostname is not stable across those internal hops, so
+  // it is not an authentication boundary. The internal target port, exact
+  // external Host, and ALB HTTPS assertion are the boundary; state, PKCE,
+  // nonce, and the separate exact-origin CSRF check still protect the flow.
   const normalProxyOrigin=config.notificationMode==='normal'&&
-   normalProxyHeaders&&((url.hostname==='0.0.0.0'&&url.port==='3000'&&
-     (url.protocol==='http:'||url.protocol==='https:'))||
-    (url.origin===`http://${new URL(origin).host}`));
+   normalProxyHeaders&&((url.port==='3000'&&(url.protocol==='http:'||url.protocol==='https:'))||
+    url.origin===`http://${new URL(origin).host}`);
   if((url.origin!==origin&&!shadowProxyOrigin&&!normalProxyOrigin)||url.pathname!==path){
    if(config.notificationMode==='shadow')console.warn(JSON.stringify({event:'shadow-cognito-request-mismatch',
     actualOrigin:url.origin,expectedOrigin:origin,pathMatches:url.pathname===path,
