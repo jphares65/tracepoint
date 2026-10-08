@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ImageTag,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}-aws-native-staging$')][string]$ImageTag,
     [Parameter(Mandatory)][string]$CertificateArn,
     [ValidateSet('s3')][string]$StorageProvider = 's3'
 )

@@ -51,8 +51,8 @@ jobs:
         run: node scripts/collect-production-account-readiness.mjs
       - name: Collect sanitized live runtime evidence
         env:
-          ACCEPTED_IMAGE: ${{ steps.request.outputs.imageCommit }}
-        run: node scripts/collect-staging-release-evidence.mjs --image $env:ACCEPTED_IMAGE
+          ACCEPTED_COMMIT: ${{ steps.request.outputs.imageCommit }}
+        run: node scripts/collect-staging-release-evidence.mjs --image "$env:ACCEPTED_COMMIT-aws-native-staging"
       - name: Correlate historical log window without message content
         run: node scripts/investigate-staging-historical-logs.mjs
       - name: Verify Brevo delivery prerequisites without sending

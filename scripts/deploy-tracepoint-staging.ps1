@@ -53,8 +53,8 @@ function Assert-CostGate {
 }
 
 function Get-ImmutableImage {
-    if ([string]::IsNullOrWhiteSpace($ImageTag) -or $ImageTag -eq 'latest' -or $ImageTag -notmatch '^[0-9a-f]{40}$') {
-        throw 'ImageTag must be the full lowercase commit SHA produced by the separate publishing workflow.'
+    if ([string]::IsNullOrWhiteSpace($ImageTag) -or $ImageTag -eq 'latest' -or $ImageTag -notmatch '^[0-9a-f]{40}-aws-native-staging$') {
+        throw 'ImageTag must be the exact immutable <commit>-aws-native-staging tag produced by the separate publishing workflow.'
     }
     $repositoryState = Invoke-AwsJson @('ecr', 'describe-repositories', '--repository-names', $repository)
     if ($repositoryState.repositories[0].imageTagMutability -ne 'IMMUTABLE') { throw 'The staging ECR repository is not immutable.' }

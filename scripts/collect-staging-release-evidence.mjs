@@ -3,9 +3,9 @@ import {classifyStagingLogs} from './staging-log-classification.mjs';
 import { execFileSync } from 'node:child_process';
 const account='559054714699',region='us-east-1',base='https://staging.tracepointhq.com';
 const args=process.argv.slice(2),tag=args[args.indexOf('--image')+1];
-if(!args.includes('--image')||!/^[0-9a-f]{40}$/.test(tag))throw Error('Explicit immutable --image SHA required.');
+if(!args.includes('--image')||!/^[0-9a-f]{40}-aws-native-staging$/.test(tag))throw Error('Explicit immutable native staging --image tag required.');
 const env={...process.env,AWS_REGION:region,AWS_DEFAULT_REGION:region,AWS_CLI_OUTPUT_ENCODING:'UTF-8'};
-const report={account,region,imageTag:tag,checkedAt:new Date().toISOString()};
+const report={account,region,imageTag:tag,sourceCommit:tag.slice(0,40),checkedAt:new Date().toISOString()};
 function aws(args){return JSON.parse(execFileSync(process.platform==='win32'?'aws.exe':'aws',[...args,'--region',region,'--output','json'],{env,encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:8*1024*1024}));}
 try {
  const identity=aws(['sts','get-caller-identity']);
