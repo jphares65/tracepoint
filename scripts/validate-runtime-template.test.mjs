@@ -36,6 +36,22 @@ test('importer secret alias must reference the existing Supabase secret field ex
  for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets[1].ValueFrom={'Fn::Join':['',['other-secret',':SUPABASE_SECRET_KEY::']]},t=>t.Resources.Task.Properties.ContainerDefinitions[0].Secrets.push({Name:'UNREVIEWED',ValueFrom:'secret'})]){const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,imageDigest,{allowImporterSecretAlias:true}));}
 });
 
+test('native notification-mode reconciliation admits only the missing normal mode on an existing AWS-native task',()=>{
+ const before=structuredClone(old);before.Resources.Task.Properties.ContainerDefinitions[0].Environment=[
+  {Name:'TRACEPOINT_RUNTIME_PROVIDER_MODE',Value:'aws-native'},
+  {Name:'TRACEPOINT_DATA_PROVIDER',Value:'postgres'},
+  {Name:'TRACEPOINT_AUTH_PROVIDER',Value:'cognito'},
+  {Name:'TRACEPOINT_EMAIL_PROVIDER',Value:'ses'},
+  {Name:'TRACEPOINT_STORAGE_PROVIDER',Value:'s3'}
+ ];
+ const after=updated();after.Resources.Task.Properties.ContainerDefinitions[0].Environment=[...before.Resources.Task.Properties.ContainerDefinitions[0].Environment,{Name:'TRACEPOINT_NOTIFICATION_MODE',Value:'normal'}];
+ assert.throws(()=>validateRuntimeTemplate(before,after,imageDigest));
+ assert.equal(validateRuntimeTemplate(before,after,imageDigest,{allowReviewedNativeNotificationMode:true}).safe,true);
+ for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.at(-1).Value='disabled',t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'UNREVIEWED',Value:'1'}),t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment[0].Value='bridge']){
+  const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,imageDigest,{allowReviewedNativeNotificationMode:true}));
+ }
+});
+
 test('CDK telemetry can vary across runners without admitting resource changes',()=>{
  const before=structuredClone(old);before.Resources.CDKMetadata={Type:'AWS::CDK::Metadata',Properties:{Analytics:'node24.15'},Condition:'TelemetryEnabled'};
  const after=updated();after.Resources.CDKMetadata=structuredClone(before.Resources.CDKMetadata);after.Resources.CDKMetadata.Properties.Analytics='node24.19';

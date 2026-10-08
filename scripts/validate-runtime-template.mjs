@@ -1,7 +1,7 @@
 ﻿import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {canonical} from './migration-manifest.mjs';
-export function validateRuntimeTemplate(before,after,imageDigest,{allowReviewedControls=false,allowPrivateStorage=false,allowImporterSecretAlias=false}={}) {
+export function validateRuntimeTemplate(before,after,imageDigest,{allowReviewedControls=false,allowPrivateStorage=false,allowImporterSecretAlias=false,allowReviewedNativeNotificationMode=false}={}) {
  if(!/^sha256:[0-9a-f]{64}$/.test(imageDigest))throw new Error('Exact immutable image digest required');
  for(const [id,resource] of Object.entries(before.Resources)) {
   const candidate=after.Resources[id];if(!candidate)throw new Error('Runtime resource removal refused');
@@ -53,6 +53,15 @@ export function validateRuntimeTemplate(before,after,imageDigest,{allowReviewedC
    if(source.length!==1||aliases.length!==1||oldSecrets.some(secret=>secret.Name==='SUPABASE_SERVICE_ROLE_KEY')||canonical(aliases[0].ValueFrom)!==canonical(source[0].ValueFrom))throw new Error('Unexpected importer secret alias');
    newContainers[0].Secrets=newSecrets.filter(secret=>secret.Name!=='SUPABASE_SERVICE_ROLE_KEY');
   }
+  if(allowReviewedNativeNotificationMode) {
+   const oldEnv=oldContainers[0].Environment??[],newEnv=newContainers[0].Environment??[];
+   const nativeRequirements={TRACEPOINT_RUNTIME_PROVIDER_MODE:'aws-native',TRACEPOINT_DATA_PROVIDER:'postgres',TRACEPOINT_AUTH_PROVIDER:'cognito',TRACEPOINT_EMAIL_PROVIDER:'ses',TRACEPOINT_STORAGE_PROVIDER:'s3'};
+   for(const [name,value] of Object.entries(nativeRequirements))if(oldEnv.filter(entry=>entry.Name===name).length!==1||oldEnv.find(entry=>entry.Name===name)?.Value!==value)throw new Error('Notification-mode reconciliation requires the existing AWS-native runtime');
+   const oldMode=oldEnv.filter(entry=>entry.Name==='TRACEPOINT_NOTIFICATION_MODE');
+   const newMode=newEnv.filter(entry=>entry.Name==='TRACEPOINT_NOTIFICATION_MODE');
+   if(oldMode.length!==0||newMode.length!==1||newMode[0].Value!=='normal')throw new Error('Unexpected native notification-mode reconciliation');
+   newContainers[0].Environment=newEnv.filter(entry=>entry.Name!=='TRACEPOINT_NOTIFICATION_MODE');
+  }
   if(canonical(oldCopy)!==canonical(newCopy))throw new Error('Only the container image may change in a runtime release');
  }
  for(const [id,resource] of Object.entries(after.Resources))if(!before.Resources[id]&&resource.Type!=='AWS::CloudWatch::Alarm')throw new Error('Only additional alarms are permitted in a runtime release');
@@ -65,5 +74,5 @@ export function validateRuntimeTemplate(before,after,imageDigest,{allowReviewedC
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const [a,b,imageDigest]=process.argv.slice(2);
  const parse=async p=>JSON.parse((await readFile(p,'utf8')).replace(/^\uFEFF/,''));
- console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),imageDigest,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls'),allowPrivateStorage:process.argv.includes('--allow-reviewed-private-storage'),allowImporterSecretAlias:process.argv.includes('--allow-reviewed-importer-secret-alias')})));
+ console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),imageDigest,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls'),allowPrivateStorage:process.argv.includes('--allow-reviewed-private-storage'),allowImporterSecretAlias:process.argv.includes('--allow-reviewed-importer-secret-alias'),allowReviewedNativeNotificationMode:process.argv.includes('--allow-reviewed-native-notification-mode')})));
 }
