@@ -1,6 +1,12 @@
 ﻿name: AWS staging runtime release
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic_recovery:
+        description: One-time Cognito login diagnostic recovery
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [codex/aws-staging-readiness-20260902, codex/staging-mobile-api-release-20261007]
     paths: [.github/staging-release.json]
@@ -59,6 +65,18 @@ jobs:
           foreach ($name in @('CERTIFICATE_ARN')) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing $name" }
           }
+      - name: Authorize one-time Cognito diagnostic recovery
+        if: inputs.diagnostic_recovery == true
+        shell: pwsh
+        run: |
+          if ('${{ github.ref }}' -ne 'refs/heads/codex/staging-mobile-api-release-20261007') { throw 'Diagnostic recovery is restricted to the approved staging branch.' }
+          $baseline='84fbe95e44134ea9d53ceb7d7feafd9be8044196'
+          git merge-base --is-ancestor $baseline '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic recovery requires the approved diagnostic provenance.' }
+          $allowed=@('.github/workflows/aws-staging-runtime.yml','scripts/release-tracepoint-staging.ps1','scripts/test-staging-native-login.mjs','scripts/test-staging-native-login.test.mjs','scripts/test-release-orchestration.ps1')
+          $changed=@(git diff --name-only $baseline '${{ github.sha }}')
+          if (@($changed | Where-Object { $_ -notin $allowed }).Count) { throw 'Diagnostic recovery candidate contains unapproved changes.' }
+          'TRACEPOINT_ONE_TIME_COGNITO_DIAGNOSTIC=true' >> $env:GITHUB_ENV
       - name: Bind deliberate push request to reviewed source
         id: request
         if: github.event_name == 'push'
@@ -89,7 +107,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_COMMIT: ${{ steps.request.outputs.imageCommit || github.sha }}
-        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag "$env:RELEASE_COMMIT-aws-native-staging" -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3 -AuthenticationProvider cognito -IncludeReviewedNativeNotificationMode
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag "$env:RELEASE_COMMIT-aws-native-staging" -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3 -AuthenticationProvider cognito -IncludeReviewedNativeNotificationMode -AllowKnownStagingLoginDiagnostic:$([Environment]::GetEnvironmentVariable('TRACEPOINT_ONE_TIME_COGNITO_DIAGNOSTIC') -eq 'true')
 
       - name: Controlled staging rollback and return to accepted image
         if: steps.request.outputs.rollbackPriorTaskArn != ''
