@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   BarChart3,
@@ -722,7 +722,7 @@ function BrandHeader({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export default function TracePointShell({
+function TracePointShellContent({
   activePage,
   children,
   accessEnabled = true,
@@ -1046,6 +1046,14 @@ export default function TracePointShell({
         </main>
       </div>
     </div>
+  );
+}
+
+export default function TracePointShell(props: TracePointShellProps) {
+  return (
+    <Suspense fallback={null}>
+      <TracePointShellContent {...props} />
+    </Suspense>
   );
 }
 
