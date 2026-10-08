@@ -79,6 +79,21 @@ function Test-CleanImageScan {
     return $true
 }
 
+function Wait-CleanImageScan {
+    param([Parameter(Mandatory)][string]$ImageTag)
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(15)
+    do {
+        $scan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
+        if ($scan.imageScanStatus.status -eq 'COMPLETE') {
+            if (-not (Test-CleanImageScan $scan)) { throw 'The application image scan is not clean.' }
+            return $scan
+        }
+        if ($scan.imageScanStatus.status -ne 'IN_PROGRESS') { throw "The application image scan ended with $($scan.imageScanStatus.status)." }
+        Start-Sleep -Seconds 15
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw 'The application image scan timed out.'
+}
+
 function Assert-ReviewedCommit {
     $sha = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
     if ($LASTEXITCODE -ne 0 -or $sha -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve the reviewed HEAD commit.' }
@@ -145,8 +160,7 @@ function Publish-Image {
         $existingImage = $null
     }
     if ($null -ne $existingImage -and -not [string]::IsNullOrWhiteSpace([string]$existingImage.imageDigest)) {
-        $existingScan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
-        if (-not (Test-CleanImageScan $existingScan)) { throw 'The existing application image scan is not clean.' }
+        $null = Wait-CleanImageScan -ImageTag $ImageTag
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
@@ -179,8 +193,7 @@ function Publish-Image {
     }
     $image = (Invoke-Aws @('ecr', 'describe-images', '--repository-name', $configuration.Repository, '--image-ids', "imageTag=$ImageTag")).imageDetails | Select-Object -First 1
     if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The immutable application image was not pushed to ECR.' }
-    $scan = Invoke-Aws @('ecr', 'describe-image-scan-findings', '--repository-name', $configuration.Repository, '--image-id', "imageTag=$ImageTag")
-    if (-not (Test-CleanImageScan $scan)) { throw 'The application image scan is not clean.' }
+    $null = Wait-CleanImageScan -ImageTag $ImageTag
     return $image
 }
 
