@@ -47,6 +47,8 @@ test('native notification-mode reconciliation admits only the missing normal mod
  const after=updated();after.Resources.Task.Properties.ContainerDefinitions[0].Environment=[...before.Resources.Task.Properties.ContainerDefinitions[0].Environment,{Name:'TRACEPOINT_NOTIFICATION_MODE',Value:'normal'}];
  assert.throws(()=>validateRuntimeTemplate(before,after,imageDigest));
  assert.equal(validateRuntimeTemplate(before,after,imageDigest,{allowReviewedNativeNotificationMode:true}).safe,true);
+ const reconciled=structuredClone(after);
+ assert.equal(validateRuntimeTemplate(reconciled,reconciled,imageDigest,{allowReviewedNativeNotificationMode:true}).safe,true);
  for(const mutate of [t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.at(-1).Value='disabled',t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment.push({Name:'UNREVIEWED',Value:'1'}),t=>t.Resources.Task.Properties.ContainerDefinitions[0].Environment[0].Value='bridge']){
   const bad=structuredClone(after);mutate(bad);assert.throws(()=>validateRuntimeTemplate(before,bad,imageDigest,{allowReviewedNativeNotificationMode:true}));
  }

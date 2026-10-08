@@ -55,12 +55,16 @@ export function validateRuntimeTemplate(before,after,imageDigest,{allowReviewedC
   }
   if(allowReviewedNativeNotificationMode) {
    const oldEnv=oldContainers[0].Environment??[],newEnv=newContainers[0].Environment??[];
-   const nativeRequirements={TRACEPOINT_RUNTIME_PROVIDER_MODE:'aws-native',TRACEPOINT_DATA_PROVIDER:'postgres',TRACEPOINT_AUTH_PROVIDER:'cognito',TRACEPOINT_EMAIL_PROVIDER:'ses',TRACEPOINT_STORAGE_PROVIDER:'s3'};
-   for(const [name,value] of Object.entries(nativeRequirements))if(oldEnv.filter(entry=>entry.Name===name).length!==1||oldEnv.find(entry=>entry.Name===name)?.Value!==value)throw new Error('Notification-mode reconciliation requires the existing AWS-native runtime');
    const oldMode=oldEnv.filter(entry=>entry.Name==='TRACEPOINT_NOTIFICATION_MODE');
    const newMode=newEnv.filter(entry=>entry.Name==='TRACEPOINT_NOTIFICATION_MODE');
-   if(oldMode.length!==0||newMode.length!==1||newMode[0].Value!=='normal')throw new Error('Unexpected native notification-mode reconciliation');
-   newContainers[0].Environment=newEnv.filter(entry=>entry.Name!=='TRACEPOINT_NOTIFICATION_MODE');
+   if(oldMode.length===1&&newMode.length===1&&oldMode[0].Value==='normal'&&newMode[0].Value==='normal') {
+    // A normal release after reconciliation has no notification-mode delta to waive.
+   } else {
+    const nativeRequirements={TRACEPOINT_RUNTIME_PROVIDER_MODE:'aws-native',TRACEPOINT_DATA_PROVIDER:'postgres',TRACEPOINT_AUTH_PROVIDER:'cognito',TRACEPOINT_EMAIL_PROVIDER:'ses',TRACEPOINT_STORAGE_PROVIDER:'s3'};
+    for(const [name,value] of Object.entries(nativeRequirements))if(oldEnv.filter(entry=>entry.Name===name).length!==1||oldEnv.find(entry=>entry.Name===name)?.Value!==value)throw new Error('Notification-mode reconciliation requires the existing AWS-native runtime');
+    if(oldMode.length!==0||newMode.length!==1||newMode[0].Value!=='normal')throw new Error('Unexpected native notification-mode reconciliation');
+    newContainers[0].Environment=newEnv.filter(entry=>entry.Name!=='TRACEPOINT_NOTIFICATION_MODE');
+   }
   }
   if(canonical(oldCopy)!==canonical(newCopy))throw new Error('Only the container image may change in a runtime release');
  }
