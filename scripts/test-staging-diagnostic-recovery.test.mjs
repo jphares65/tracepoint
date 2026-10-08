@@ -13,8 +13,8 @@ test('one-shot diagnostic provenance is staging-only and branch-bound', () => {
   assert.doesNotMatch(workflow, /production.*diagnostic/i);
 });
 
-test('baseline 404 diagnostic is pinned to the exact verified recovery image and not normal releases', () => {
-  assert.match(release, /\$knownDiagnosticRecoveryDigest = 'sha256:863c6ada9551deac6cb312a9e80408541202a10f2e339aafca499b60051236a0'/);
+test('baseline 404 diagnostic is pinned to the exact recovery image and not normal releases', () => {
+  assert.match(release, /\$knownDiagnosticRecoveryDigest = 'sha256:fadaab8088e37f4b3a3285eb773533d8d51d8dc091105a46e29f7309c63ff1ee'/);
   assert.match(release, /if \(\$digest -ne \$knownDiagnosticRecoveryDigest\) \{ throw 'Diagnostic baseline is not the approved recovery image\.' \}/);
   assert.match(release, /--allow-known-diagnostic-baseline-mobile-404/);
   assert.match(release, /if \(\$AllowKnownStagingLoginDiagnostic\) \{[\s\S]*--verify-mobile-bearer-only[\s\S]*automatic rollback is required/s);
