@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -729,6 +729,7 @@ export default function TracePointShell({
   compactNavigation = false,
 }: TracePointShellProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [switchingDepartmentId, setSwitchingDepartmentId] =
     useState<string | null>(null);
@@ -753,8 +754,17 @@ export default function TracePointShell({
     permissions,
     enabledFeatures,
     isSuperAdmin,
+    isSupportMode,
     refresh: refreshAccess,
   } = useTracePointAccess({ enabled: accessEnabled });
+  const navigationDiagnostic = process.env.NEXT_PUBLIC_SITE_URL !== "https://tracepointhq.com" && searchParams.get("navdiag") === "1" && isSupportMode && isSuperAdmin;
+  const administration = NAV_ITEMS.find((item): item is NavigationGroup => isNavigationGroup(item) && item.label === "Administration");
+  const diagnosticChildren = administration ? administration.children.map((child) => ({
+    label: child.label, href: child.href, requirement: child.requirement ?? null, featureCode: child.featureCode ?? null,
+    permissionResult: meetsPermissionRequirement(permissions, child.requirement),
+    featureResult: !child.featureCode || isSuperAdmin || enabledFeatures.includes(child.featureCode),
+    finalVisible: getVisibleChildren(administration, permissions, new Set(enabledFeatures), isSuperAdmin).some((visible) => visible.href === child.href),
+  })) : [];
 
   useEffect(() => {
     applyAppearanceToDocument(appearance);
@@ -944,6 +954,12 @@ export default function TracePointShell({
     <div
       className={`tracepoint-app tracepoint-accent-${appearance.accentColor} tracepoint-brightness-${appearance.brightness} min-h-screen bg-slate-950 text-white`}
     >
+      {navigationDiagnostic ? <pre className="fixed bottom-2 right-2 z-[100] max-h-[45vh] max-w-[min(96vw,760px)] overflow-auto rounded border border-amber-400 bg-slate-950 p-3 text-[11px] text-amber-100">{JSON.stringify({
+        deploymentId: typeof document === "undefined" ? null : document.documentElement.dataset.dplId ?? null,
+        pathname, departmentId: departmentId || null, permissions, isSuperAdmin, isSupportMode, enabledFeatures,
+        administrationRawChildren: diagnosticChildren,
+        administrationFinalChildren: diagnosticChildren.filter((child) => child.finalVisible).map(({ label, href }) => ({ label, href })),
+      }, null, 2)}</pre> : null}
       <AppearanceStyleOverrides />
       <IdleSessionGuard />
       <div className="flex min-h-screen">
