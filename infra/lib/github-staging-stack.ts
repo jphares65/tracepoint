@@ -28,7 +28,7 @@ export class GitHubStagingStack extends cdk.Stack {
   allow(['ecs:DescribeTaskDefinition','elasticloadbalancing:DescribeTargetGroups','elasticloadbalancing:DescribeTargetHealth','elasticloadbalancing:DescribeLoadBalancers','cloudwatch:DescribeAlarms'],['*'],{StringEquals:{'aws:RequestedRegion':region}});
   allow(['acm:DescribeCertificate'],[arn('acm','certificate/90d7c1b4-3d71-4168-a908-8678501f5e5a')]);
   allow(['logs:DescribeLogStreams','logs:FilterLogEvents','logs:GetLogEvents'],[arn('logs','log-group:/tracepoint/staging/*'),arn('logs','log-group:/aws/codebuild/tracepoint-staging-image-build:*')]);
-  allow(['secretsmanager:GetSecretValue','secretsmanager:DescribeSecret'],[arn('secretsmanager','secret:tracepoint/staging/application-p4ZFsw')]);
+  allow(['secretsmanager:GetSecretValue','secretsmanager:DescribeSecret'],[arn('secretsmanager','secret:tracepoint/staging/application-p4ZFsw'),arn('secretsmanager','secret:tracepoint/staging/application/aws-native-bAnyoy')]);
   allow(['kms:Decrypt'],[arn('kms','key/8a158690-ddbc-4887-8f61-0927dc279701')],{StringEquals:{'kms:ViaService':`secretsmanager.${region}.amazonaws.com`}});
   // Disposable acceptance cleanup is server-side and constrained to staging
   // prefixes. The browser never receives these AWS credentials or admin secret.
