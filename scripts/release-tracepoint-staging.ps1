@@ -15,6 +15,20 @@ $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Assert-TracePointStagingIdentity | Out-Null
 Assert-TracePointStagingDatabaseReleaseLease | Out-Null
+$knownDiagnosticRecoveryDigest = 'sha256:fadaab8088e37f4b3a3285eb773533d8d51d8dc091105a46e29f7309c63ff1ee'
+
+function Assert-KnownDiagnosticRecoveryBaseline {
+    # The only baseline exception is tied to the exact fail-closed recovery image.
+    # It is never a general allowance for a missing mobile route.
+    $taskArn = & aws.exe ecs list-tasks --cluster tracepoint-staging --service-name tracepoint-staging --desired-status RUNNING --region us-east-1 --query 'taskArns[0]' --output text
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($taskArn) -or $taskArn -eq 'None') { throw 'Known diagnostic recovery task is unavailable.' }
+    $taskText = & aws.exe ecs describe-tasks --cluster tracepoint-staging --tasks $taskArn --region us-east-1 --output json
+    if ($LASTEXITCODE -ne 0) { throw 'Known diagnostic recovery task cannot be described.' }
+    $task = ($taskText | ConvertFrom-Json).tasks | Select-Object -First 1
+    $digest = [string]($task.containers | Select-Object -First 1).imageDigest
+    if ($digest -ne $knownDiagnosticRecoveryDigest) { throw 'Diagnostic baseline is not the approved recovery image.' }
+    Write-Host 'Verified exact fail-closed recovery baseline for the one-shot diagnostic.'
+}
 function Invoke-StagingNodeGate {
     param([string[]]$Arguments)
     # Native stderr under Windows PowerShell must not interrupt the child before
@@ -28,7 +42,11 @@ if ($AuthenticationProvider -eq 'bridge') {
     Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--fixtures-only')
 } else {
     $nativeArguments=@((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'))
-    if($AllowKnownStagingLoginDiagnostic){$nativeArguments+='--allow-known-diagnostic-rejection'}
+    if($AllowKnownStagingLoginDiagnostic){
+        Assert-KnownDiagnosticRecoveryBaseline
+        $nativeArguments+='--allow-known-diagnostic-rejection'
+        $nativeArguments+='--allow-known-diagnostic-baseline-mobile-404'
+    }
     Invoke-StagingNodeGate -Arguments $nativeArguments
 }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
@@ -47,6 +65,13 @@ try {
         Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--range-documents','--extended-workflows')
         Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-brevo-delivery.mjs'),'--send-to-account-owner')
     } else {
+        if ($AllowKnownStagingLoginDiagnostic) {
+            # The exception ends once the candidate is serving: mobile bearer routes
+            # must exist and reject invalid credentials before diagnostic capture.
+            Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'),'--verify-mobile-bearer-only')
+            Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'),'--allow-known-diagnostic-rejection')
+            throw 'One-shot Cognito diagnostic evidence captured; automatic rollback is required.'
+        }
         Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot '..\infra\scripts\rehearse-cognito.mts'),'--execute')
     }
     Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs'),'--image',$ImageTag)
