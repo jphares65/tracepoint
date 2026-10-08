@@ -15,6 +15,7 @@ export class GitHubStagingStack extends cdk.Stack {
   allow(['iam:PassRole'],[`arn:aws:iam::${account}:role/cdk-hnb659fds-cfn-exec-role-${account}-${region}`],{StringEquals:{'iam:PassedToService':'cloudformation.amazonaws.com'}});
   allow(['iam:PassRole'],['arn:aws:iam::559054714699:role/tracepoint-staging-ecs-execution','arn:aws:iam::559054714699:role/tracepoint-staging-ecs-task'],{StringEquals:{'iam:PassedToService':'ecs-tasks.amazonaws.com'}});
   allow(['ssm:GetParameter'],[arn('ssm','parameter/cdk-bootstrap/hnb659fds/version')]);
+  allow(['ssm:GetParameter'],[arn('ssm','parameter/tracepoint/staging/database-release-lease')]);
   allow(['s3:GetBucketLocation','s3:ListBucket','s3:GetBucketVersioning'],[`arn:aws:s3:::tracepoint-staging-build-source-${account}`,`arn:aws:s3:::cdk-hnb659fds-assets-${account}-${region}`]);
   allow(['s3:PutObject','s3:GetObject','s3:GetObjectVersion'],[`arn:aws:s3:::tracepoint-staging-build-source-${account}/source/tracepoint-staging-source.zip`,`arn:aws:s3:::cdk-hnb659fds-assets-${account}-${region}/*`]);
   allow(['kms:GenerateDataKey','kms:Decrypt'],[arn('kms','key/e1fa82f6-045b-41a8-bfff-d3f57b17e710')],{StringEquals:{'kms:ViaService':'s3.us-east-1.amazonaws.com'},ArnEquals:{'kms:EncryptionContext:aws:s3:arn':[`arn:aws:s3:::tracepoint-staging-build-source-${account}`,`arn:aws:s3:::tracepoint-staging-build-source-${account}/source/tracepoint-staging-source.zip`]}});
