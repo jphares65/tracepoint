@@ -120,6 +120,19 @@ test("invalid identifiers and database failures return non-sensitive errors", as
   assert.equal(JSON.stringify(result).includes("secret SQL detail"), false);
 });
 
+test("accepts RFC UUIDv7 identities from Cognito while retaining strict UUID validation", () => {
+  const pool = { async connect() { throw new Error("not reached"); } };
+  const uuidV7 = "018f4f0d-5ca0-7c48-8c12-123456789abc";
+
+  assert.doesNotThrow(
+    () => new PostgresDataClient(pool as never, uuidV7, departmentId),
+  );
+  assert.throws(
+    () => new PostgresDataClient(pool as never, "not-a-uuid", departmentId),
+    /Valid PostgreSQL request identity/,
+  );
+});
+
 test("notification dispatcher is cross-tenant only for its two reviewed tables", async () => {
   const calls: Array<{ text: string; values?: readonly unknown[] }> = [];
   const dispatcher = PostgresDataClient.forNotificationDispatch({

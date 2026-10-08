@@ -66,6 +66,19 @@ test("rejects malformed identity or tenant context before taking a connection", 
   assert.equal(connected, false);
 });
 
+test("accepts UUIDv7 authorization contexts used by Cognito-linked identities", async () => {
+  const value = fixture();
+  const uuidV7 = "018f4f0d-5ca0-7c48-8c12-123456789abc";
+
+  await withPostgresAuthorization(
+    value.pool,
+    { subjectId: uuidV7, departmentId: context.departmentId, supportMode: true },
+    client => client.query("select synthetic"),
+  );
+
+  assert.equal(value.calls.some(call => call.text === "select synthetic"), true);
+});
+
 test("sets only subject context for platform operations", async () => {
   const value = fixture();
   await withPostgresSubjectAuthorization(value.pool, { subjectId: context.subjectId }, client => client.query("select synthetic"));
