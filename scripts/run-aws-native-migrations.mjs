@@ -58,9 +58,14 @@ async function ledgerRows(client) {
 async function report(client, files) {
   const rows = await ledgerRows(client);
   if (!rows) return { ledger: "absent", applied: [], pending: files.map(publicMigration), latestAppliedVersion: null };
-  verifyLedger(files, rows);
+  const appliedRows = rows.map((row) => ({ ...row, content_sha256: String(row.content_sha256) }));
+  try { verifyLedger(files, rows); } catch (error) {
+    // Ledger metadata is safe to emit for a failed status check and is needed to reconcile immutable history.
+    console.error(JSON.stringify({ ledger: "drift", applied: appliedRows, latestAppliedVersion: rows.at(-1)?.version ?? null }));
+    throw error;
+  }
   const applied = new Set(rows.map((row) => Number(row.version)));
-  return { ledger: "present", applied: rows.map((row) => ({ ...row, content_sha256: String(row.content_sha256) })), pending: files.filter((file) => !applied.has(file.version)).map(publicMigration), latestAppliedVersion: rows.at(-1)?.version ?? null };
+  return { ledger: "present", applied: appliedRows, pending: files.filter((file) => !applied.has(file.version)).map(publicMigration), latestAppliedVersion: rows.at(-1)?.version ?? null };
 }
 function publicMigration(file) { return { version: file.version, filename: file.filename, content_sha256: file.sha256 }; }
 async function verifyBaselineAnchor(client) {
