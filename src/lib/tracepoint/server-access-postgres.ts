@@ -16,6 +16,15 @@ const priority=["administrator","department_admin","admin","chief","command_staf
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
 const unique=(values:unknown[])=>[...new Set(values.map(clean).filter(Boolean))];
 
+// TEMPORARY staging incident diagnostic. This records only a fixed operation
+// stage and non-sensitive error shape; it never serializes identities, cookies,
+// tokens, database values, or error messages.
+function emitStagingAccessFailure(stage:string,error:unknown){
+ if(process.env.NEXT_PUBLIC_SITE_URL==="https://tracepointhq.com")return;
+ const code=typeof error==="object"&&error&&"code" in error?String((error as {code:unknown}).code):null;
+ console.warn(JSON.stringify({event:"staging-postgres-access-failure",stage,errorName:error instanceof Error?error.name:"unknown",postgresCode:code}));
+}
+
 async function beginSubject(client:PoolClient,subjectId:string){
  await client.query("begin");
  await client.query("set local role authenticated");
@@ -63,8 +72,10 @@ export async function resolvePostgresPlatformLanding(principal:AuthenticatedPrin
 
 export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,selectedDepartmentId:string,supportDepartmentId:string,diagnostic?:ProductionSessionDiagnostic){
  const client=await getPostgresPool().connect();
+ let stage="begin_subject";
  try{
   await beginSubject(client,principal.userId);
+  stage="platform_admin_check";
   const platform=(await client.query("select public.is_platform_admin() as allowed")).rows[0]?.allowed===true;
   const support=Boolean(supportDepartmentId)&&supportDepartmentId===selectedDepartmentId;
   if(support){
@@ -73,6 +84,7 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
     if(diagnostic)emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:false,supportModeConsideredActive:true,finalAuthorizationBranch:"support_mode_platform_admin_denied"});
     return {ok:false as const,status:403,error:"Platform administrator access is required for Support Mode."};
    }
+   stage="support_context_query";
    const result=await client.query("select * from public.platform_support_context($1)",[supportDepartmentId]);
    const department=result.rows[0];
    if(!department){
@@ -80,8 +92,10 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
     if(diagnostic)emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:true,supportModeConsideredActive:true,finalAuthorizationBranch:"support_mode_department_not_found"});
     return {ok:false as const,status:404,error:"Support Mode agency was not found."};
    }
+   stage="support_context_commit";
    await client.query("commit");
    if(diagnostic)emitProductionSessionDiagnostic({...diagnostic,isPlatformAdmin:true,supportModeConsideredActive:true,finalAuthorizationBranch:"support_mode_authorized"});
+   stage="support_context_payload";
    const email=principal.email,fullName=principal.fullName||email.split("@")[0]||"TracePoint Platform Administrator";
    const dataClient=new PostgresDataClient(getPostgresPool(),principal.userId,supportDepartmentId,null,true);
    return {ok:true as const,context:{
@@ -128,5 +142,5 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
    permissions:effectiveDepartmentPermissions(roleCodes,permissionRows.rows.map(row=>row.permission_code)) as TracePointPermission[],isSuperAdmin:platform,isSupportMode:false,
    enabledFeatures:unique(features.rows.map(row=>row.feature_code)),
   }};
- }catch(error){await client.query("rollback").catch(()=>{});throw error;}finally{client.release();}
+ }catch(error){emitStagingAccessFailure(stage,error);await client.query("rollback").catch(()=>{});throw error;}finally{try{client.release();}catch(error){emitStagingAccessFailure("client_release",error);throw error;}}
 }
