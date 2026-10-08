@@ -99,6 +99,7 @@ export class RuntimeStack extends cdk.Stack {
       TRACEPOINT_AUTH_PROVIDER: "cognito",
       TRACEPOINT_EMAIL_PROVIDER: "ses",
       TRACEPOINT_STORAGE_PROVIDER: "s3",
+      TRACEPOINT_NOTIFICATION_MODE: "normal",
       TRACEPOINT_S3_BUCKET: props.storageBucketName!,
       TRACEPOINT_S3_EXPECTED_OWNER: this.account,
       TRACEPOINT_DATABASE_CA_PATH: "/app/rds-ca.pem",
