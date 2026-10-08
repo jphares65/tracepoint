@@ -29,6 +29,8 @@ $archiveIncludes = @(
     # npm run build invokes this checked-in prebuild validator inside the builder.
     'scripts/assert-aws-native-provider-reachability.mjs',
     'scripts/run-application-tests.mjs',
+    # The runtime image copies its migration runner; including it does not invoke it.
+    'scripts/run-aws-native-migrations.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'
 )
