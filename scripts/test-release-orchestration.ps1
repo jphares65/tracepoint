@@ -42,19 +42,22 @@ if($TaskDefinitionArn -notmatch ':1$' -or !$Execute){throw 'Wrong rollback targe
 $global:ReleaseTestCalls+='rollback'
 $global:ReleaseTestRevision=1
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')
- foreach($scenario in @('success','preflight','acceptance','brevo','evidence','stderr')) {
+ foreach($scenario in @('success','preflight','acceptance','evidence','stderr')) {
   $global:ReleaseTestScenario=$scenario;$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
   try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider cognito} catch {$failed=$true}
   if($scenario -eq 'success') {
    if($failed -or $global:ReleaseTestRevision -ne 2 -or $global:ReleaseTestCalls -contains 'rollback'){throw 'Successful release incorrectly rolled back'}
    if(-not ($global:ReleaseTestCalls -match 'rehearse-cognito')){throw 'Successful release skipped real Cognito authentication rehearsal'}
-   if(-not ($global:ReleaseTestCalls -match 'test-staging-brevo-delivery')){throw 'Successful release skipped live Brevo delivery'}
+   if($global:ReleaseTestCalls -match 'test-staging-brevo-delivery'){throw 'AWS-native release invoked the bridge-only Brevo delivery gate'}
   }
   elseif($scenario -eq 'preflight') {if(!$failed -or $global:ReleaseTestCalls -contains 'deploy'){throw 'Failed authentication preflight deployed'}}
   elseif(!$failed -or $global:ReleaseTestRevision -ne 1 -or $global:ReleaseTestCalls -notcontains 'rollback'){throw 'Failed release did not restore prior revision'}
   if($scenario -eq 'stderr' -and $global:ReleaseTestCalls -notcontains 'child-cleanup'){throw 'Native error interrupted child cleanup'}
  }
- Write-Host 'Passed six release orchestration cases: success, preflight denial, acceptance rollback, Brevo rollback, evidence rollback, stderr cleanup. Zero network calls.'
+ $global:ReleaseTestScenario='success';$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
+ try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider bridge} catch {$failed=$true}
+ if($failed -or -not (($global:ReleaseTestCalls -join "`n") -match 'test-staging-brevo-delivery')){throw 'Bridge release skipped live Brevo delivery'}
+ Write-Host 'Passed native and bridge release orchestration cases: native success, preflight denial, acceptance rollback, evidence rollback, stderr cleanup, and bridge Brevo delivery. Zero network calls.'
 } finally {
  Remove-Item Function:/aws.exe,Function:/node
  $resolved=[IO.Path]::GetFullPath($temporaryRoot)
