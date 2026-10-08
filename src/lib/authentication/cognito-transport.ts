@@ -50,10 +50,11 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
  function guard(request:Request,path:string,method:string,csrf=true){
   if(!enabled)return response(503,'provider_disabled');const url=new URL(request.url);
   // Next may expose the ECS container origin in Request.url behind the shadow ALB.
-  // Accept it only with the exact external HTTPS host attested by both proxy headers.
-  const exactProxyHeaders=request.headers.get('host')===new URL(origin).host&&
-   request.headers.get('x-forwarded-host')===new URL(origin).host&&
-   request.headers.get('x-forwarded-proto')==='https';
+  // Accept it only with the exact external HTTPS host and the ALB's HTTPS
+  // forwarding assertion. ALB preserves Host but does not emit X-Forwarded-Host.
+  const expectedHost=new URL(origin).host;
+  const normalProxyHeaders=request.headers.get('host')===expectedHost&&request.headers.get('x-forwarded-proto')==='https';
+  const exactProxyHeaders=normalProxyHeaders&&request.headers.get('x-forwarded-host')===expectedHost;
   const shadowProxyOrigin=config.notificationMode==='shadow'&&
    (url.hostname==='0.0.0.0'||/^ip-(?:\d{1,3}-){3}\d{1,3}\.ec2\.internal$/.test(url.hostname))&&
    url.protocol==='https:'&&url.port==='3000'&&
@@ -64,7 +65,7 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   // assertions; the separate CSRF Origin check below still requires the exact
   // staging or production site origin.
   const normalProxyOrigin=config.notificationMode==='normal'&&
-   exactProxyHeaders&&((url.hostname==='0.0.0.0'&&url.port==='3000'&&
+   normalProxyHeaders&&((url.hostname==='0.0.0.0'&&url.port==='3000'&&
      (url.protocol==='http:'||url.protocol==='https:'))||
     (url.origin===`http://${new URL(origin).host}`));
   if((url.origin!==origin&&!shadowProxyOrigin&&!normalProxyOrigin)||url.pathname!==path){

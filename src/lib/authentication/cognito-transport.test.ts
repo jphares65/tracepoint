@@ -115,7 +115,8 @@ test('production accepts only the exact HTTPS-forwarded container hop for login 
   const response=await begin(authority+'/api/auth/cognito/login');
   assert.equal(response.status,303);
   assert.equal(new URL(response.headers.get('location')!).searchParams.get('redirect_uri'),site+'/api/auth/cognito/callback');
-  for(const override of ([{host:'evil.invalid'},{'x-forwarded-host':'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
+  assert.equal((await begin(authority+'/api/auth/cognito/login',{'x-forwarded-host':''})).status,303);
+  for(const override of ([{host:'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
    assert.equal((await begin(authority+'/api/auth/cognito/login',override)).status,400);
   assert.equal((await begin(authority+'/api/auth/cognito/login',{origin:'https://evil.invalid'})).status,403);
   const callback=await api.callback(new Request(authority+'/api/auth/cognito/callback?state=a&code=b',{headers}));
@@ -133,7 +134,8 @@ test('staging accepts only its exact HTTPS-forwarded container hop for login sta
   const response=await begin(authority+'/api/auth/cognito/login');
   assert.equal(response.status,303);
   assert.equal(new URL(response.headers.get('location')!).searchParams.get('redirect_uri'),origin+'/api/auth/cognito/callback');
-  for(const override of ([{host:'evil.invalid'},{'x-forwarded-host':'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
+  assert.equal((await begin(authority+'/api/auth/cognito/login',{'x-forwarded-host':''})).status,303);
+  for(const override of ([{host:'evil.invalid'},{'x-forwarded-proto':'http'}] as Record<string,string>[]))
    assert.equal((await begin(authority+'/api/auth/cognito/login',override)).status,400);
   assert.equal((await begin(authority+'/api/auth/cognito/login',{origin:'https://evil.invalid'})).status,403);
  }
