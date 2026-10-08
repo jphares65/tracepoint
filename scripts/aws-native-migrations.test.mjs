@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { FIREARM_RESTRICTED_USE_CRLF_SHA256, FIREARM_RESTRICTED_USE_FILENAME, FIREARM_RESTRICTED_USE_LF_SHA256, verifyLedger } from "./aws-native-migration-ledger-core.mjs";
+import { verifyLedger } from "./aws-native-migration-ledger-core.mjs";
 
 const sha256 = (contents) => createHash("sha256").update(contents).digest("hex");
 const ledgerRow = (version, filename, content_sha256) => ({ version, filename, content_sha256 });
@@ -27,28 +27,12 @@ test("AWS-native migration ledger accepts ordinary exact hashes", () => {
   assert.doesNotThrow(() => verifyLedger([file], [ledgerRow(30, file.filename, file.sha256)]));
 });
 
-test("AWS-native migration ledger accepts only the frozen migration 029 LF/CRLF pair", async () => {
-  const checkedOutContents = await readFile(new URL("../database/aws/029_firearm_restricted_use.sql", import.meta.url), "utf8");
-  const lfContents = checkedOutContents.replace(/\r\n/g, "\n");
-  const file = migration(29, FIREARM_RESTRICTED_USE_FILENAME, lfContents);
-  assert.equal(file.sha256, FIREARM_RESTRICTED_USE_LF_SHA256);
-  assert.equal(sha256(lfContents.replace(/\r?\n/g, "\r\n")), FIREARM_RESTRICTED_USE_CRLF_SHA256);
-  assert.doesNotThrow(() => verifyLedger([file], [ledgerRow(29, FIREARM_RESTRICTED_USE_FILENAME, FIREARM_RESTRICTED_USE_CRLF_SHA256)]));
-});
-
-test("AWS-native migration ledger rejects substantive migration 029 changes", async () => {
-  const checkedOutContents = await readFile(new URL("../database/aws/029_firearm_restricted_use.sql", import.meta.url), "utf8");
-  const file = migration(29, FIREARM_RESTRICTED_USE_FILENAME, `${checkedOutContents.replace(/\r\n/g, "\n")} `);
-  assert.throws(() => verifyLedger([file], [ledgerRow(29, FIREARM_RESTRICTED_USE_FILENAME, FIREARM_RESTRICTED_USE_CRLF_SHA256)]), /MIGRATION_DRIFT/);
-});
-
-test("AWS-native migration ledger rejects an unexpected migration 029 historical hash or filename", async () => {
-  const checkedOutContents = await readFile(new URL("../database/aws/029_firearm_restricted_use.sql", import.meta.url), "utf8");
-  const contents = checkedOutContents.replace(/\r\n/g, "\n");
-  const file = migration(29, FIREARM_RESTRICTED_USE_FILENAME, contents);
-  assert.throws(() => verifyLedger([file], [ledgerRow(29, FIREARM_RESTRICTED_USE_FILENAME, "0".repeat(64))]), /MIGRATION_DRIFT/);
-  assert.throws(() => verifyLedger([file], [ledgerRow(29, "029_renamed.sql", FIREARM_RESTRICTED_USE_CRLF_SHA256)]), /MIGRATION_DRIFT/);
-  assert.throws(() => verifyLedger([{ ...file, filename: "029_renamed.sql" }], [ledgerRow(29, "029_renamed.sql", FIREARM_RESTRICTED_USE_CRLF_SHA256)]), /MIGRATION_DRIFT/);
+test("AWS-native migration ledger keeps restored historical migration 029 exact", async () => {
+  const contents = await readFile(new URL("../database/aws/029_firearm_custody_phase_a_function_reconciliation.sql", import.meta.url), "utf8");
+  const file = migration(29, "029_firearm_custody_phase_a_function_reconciliation.sql", contents);
+  assert.doesNotThrow(() => verifyLedger([file], [ledgerRow(29, file.filename, file.sha256)]));
+  assert.throws(() => verifyLedger([{ ...file, contents: `${contents} `, sha256: sha256(`${contents} `) }], [ledgerRow(29, file.filename, file.sha256)]), /MIGRATION_DRIFT/);
+  assert.throws(() => verifyLedger([file], [ledgerRow(29, "029_renamed.sql", file.sha256)]), /MIGRATION_DRIFT/);
 });
 
 test("AWS-native migration ledger keeps all other versions exact", () => {
