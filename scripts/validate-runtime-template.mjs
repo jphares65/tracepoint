@@ -1,8 +1,8 @@
 ﻿import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {canonical} from './migration-manifest.mjs';
-export function validateRuntimeTemplate(before,after,commit,{allowReviewedControls=false,allowPrivateStorage=false,allowImporterSecretAlias=false}={}) {
- if(!/^[0-9a-f]{40}$/.test(commit))throw new Error('Full commit SHA required');
+export function validateRuntimeTemplate(before,after,imageTag,{allowReviewedControls=false,allowPrivateStorage=false,allowImporterSecretAlias=false}={}) {
+ if(!/^[0-9a-f]{40}-aws-native-staging$/.test(imageTag))throw new Error('Exact native staging image tag required');
  for(const [id,resource] of Object.entries(before.Resources)) {
   const candidate=after.Resources[id];if(!candidate)throw new Error('Runtime resource removal refused');
   if(canonical(resource)===canonical(candidate)&&resource.Type!=='AWS::ECS::TaskDefinition')continue;
@@ -17,12 +17,12 @@ export function validateRuntimeTemplate(before,after,commit,{allowReviewedContro
   const oldContainers=oldCopy.Properties.ContainerDefinitions;const newContainers=newCopy.Properties.ContainerDefinitions;
   if(oldContainers.length!==1||newContainers.length!==1||newContainers[0].Name!=='tracepoint')throw new Error('Unexpected container layout');
   const image=newContainers[0].Image;
-  // CDK joins an account-bound imported repository URI and the immutable commit tag.
+  // CDK joins an account-bound imported repository URI and the immutable native tag.
   const expected=structuredClone(oldContainers[0].Image);
   const parts=expected?.['Fn::Join']?.[1];
-  if(!Array.isArray(parts)||!/^:[0-9a-f]{40}$/.test(parts.at(-1)))throw new Error('Unsupported existing image reference');
-  parts[parts.length-1]=':'+commit;
-  if(canonical(image)!==canonical(expected))throw new Error('Image must retain the staging repository and select the exact commit');
+  if(!Array.isArray(parts)||!/^:[0-9a-f]{40}-aws-native-staging$/.test(parts.at(-1)))throw new Error('Unsupported existing image reference');
+  parts[parts.length-1]=':'+imageTag;
+  if(canonical(image)!==canonical(expected))throw new Error('Image must retain the staging repository and select the exact native image tag');
   newContainers[0].Image=oldContainers[0].Image;
   if(allowPrivateStorage) {
    const oldEnv=oldContainers[0].Environment??[], newEnv=newContainers[0].Environment??[];
@@ -63,7 +63,7 @@ export function validateRuntimeTemplate(before,after,commit,{allowReviewedContro
  return {safe:true,scope:allowPrivateStorage?'exact staging private storage activation and immutable image':allowReviewedControls?'image, verified sender addition, task retention and additive alarms':'image replacement and additive alarms only'};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- const [a,b,commit]=process.argv.slice(2);
+ const [a,b,imageTag]=process.argv.slice(2);
  const parse=async p=>JSON.parse((await readFile(p,'utf8')).replace(/^\uFEFF/,''));
- console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),commit,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls'),allowPrivateStorage:process.argv.includes('--allow-reviewed-private-storage'),allowImporterSecretAlias:process.argv.includes('--allow-reviewed-importer-secret-alias')})));
+ console.log(JSON.stringify(validateRuntimeTemplate(await parse(a),await parse(b),imageTag,{allowReviewedControls:process.argv.includes('--allow-reviewed-runtime-controls'),allowPrivateStorage:process.argv.includes('--allow-reviewed-private-storage'),allowImporterSecretAlias:process.argv.includes('--allow-reviewed-importer-secret-alias')})));
 }

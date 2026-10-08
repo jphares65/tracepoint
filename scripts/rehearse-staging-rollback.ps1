@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
- [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$CurrentImageTag,
+ [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}-aws-native-staging$')][string]$CurrentImageTag,
  [Parameter(Mandatory)][ValidatePattern('^arn:aws:ecs:us-east-1:559054714699:task-definition/[^:]+:[0-9]+$')][string]$PriorTaskDefinitionArn,
  [switch]$Execute
 )
