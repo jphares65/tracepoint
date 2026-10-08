@@ -14,6 +14,7 @@ export interface ComputeFoundationStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   dataKey: kms.IKey;
   logRetention?: logs.RetentionDays;
+  containerInsights?: ecs.ContainerInsights;
 }
 
 export class ComputeFoundationStack extends cdk.Stack {
@@ -21,8 +22,11 @@ export class ComputeFoundationStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly appLogGroup: logs.LogGroup;
   public readonly appSecrets: secretsmanager.Secret;
+  public readonly awsNativeAppSecrets: secretsmanager.Secret;
   public readonly executionRole: iam.Role;
   public readonly taskRole: iam.Role;
+  public readonly awsNativeExecutionRole: iam.Role;
+  public readonly awsNativeTaskRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: ComputeFoundationStackProps) {
     super(scope, id, props);
@@ -37,29 +41,21 @@ export class ComputeFoundationStack extends cdk.Stack {
       encryptionKey: dataKey,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       lifecycleRules: [
-        ...(props.environmentName === "production"
-          ? [
-              {
-                description: "Retain the active public bridge rollback image",
-                tagPrefixList: ["ae3d2a4ce87b2085e251b1995f51a7b07058ec4d"],
-                maxImageCount: 1,
-              },
-              {
-                description: "Retain the reviewed AWS-native production candidate",
-                tagPrefixList: ["2a92bccd04060785c95b18fdc6bfa90505c26c7a-aws-native-production"],
-                maxImageCount: 1,
-              },
-            ]
-          : []),
-        { description: "Keep the latest 30 other images", maxImageCount: 30 },
+        { description: "Keep the latest 30 images", maxImageCount: 30 },
       ],
     });
 
     this.cluster = new ecs.Cluster(this, "Cluster", {
       vpc: props.vpc,
       clusterName: `tracepoint-${props.environmentName}`,
-      containerInsightsV2: props.environmentName === "production" ? ecs.ContainerInsights.ENHANCED : ecs.ContainerInsights.DISABLED,
+      containerInsightsV2: props.containerInsights ?? (props.environmentName === "production" ? ecs.ContainerInsights.ENHANCED : ecs.ContainerInsights.DISABLED),
     });
+    if (props.environmentName === "production" && props.containerInsights === ecs.ContainerInsights.DISABLED) {
+      NagSuppressions.addResourceSuppressions(this.cluster, [{
+        id: "AwsSolutions-ECS4",
+        reason: "The explicitly selected initial-production tier retains ECS service CPU/memory metrics, ALB metrics, alarms and encrypted logs; paid per-container Enhanced Container Insights returns at the documented growth trigger.",
+      }]);
+    }
 
     this.appLogGroup = new logs.LogGroup(this, "AppLogGroup", {
       logGroupName: `/tracepoint/${props.environmentName}/application`,
@@ -73,6 +69,17 @@ export class ComputeFoundationStack extends cdk.Stack {
     this.appSecrets = new secretsmanager.Secret(this, "AppSecrets", {
       secretName: `tracepoint/${props.environmentName}/application`,
       description: "TracePoint application secrets. Populate manually/through approved deployment workflow.",
+      encryptionKey: dataKey,
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({ initialized: false }),
+        generateStringKey: "bootstrapNonce",
+        excludePunctuation: true,
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    this.awsNativeAppSecrets = new secretsmanager.Secret(this, "AwsNativeAppSecrets", {
+      secretName: `tracepoint/${props.environmentName}/application/aws-native`,
+      description: "TracePoint AWS-native application secrets; deliberately separate from the rollback bridge secret.",
       encryptionKey: dataKey,
       generateSecretString: {
         secretStringTemplate: JSON.stringify({ initialized: false }),
@@ -99,65 +106,73 @@ export class ComputeFoundationStack extends cdk.Stack {
       assumedBy: ecsTasksPrincipal,
       description: `Pulls the immutable TracePoint image, writes application logs, and injects the ${props.environmentName} secret`,
     });
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["ecr:GetAuthorizationToken"],
-        resources: ["*"],
-      }),
-    );
-
-    if (props.environmentName === "production") {
-      NagSuppressions.addResourceSuppressions(this.appSecrets, [{
-        id: "AwsSolutions-SMG4",
-        reason: "This JSON secret contains Supabase and Brevo credentials whose vendor-side rotation must be coordinated and rehearsed before automatic rotation can be enabled.",
-      }]);
-      const executionPolicy = this.executionRole.node.findChild("DefaultPolicy");
-      NagSuppressions.addResourceSuppressions(executionPolicy, [{
-        id: "AwsSolutions-IAM5",
-        reason: "ECR authorization is not resource-scoped and CloudWatch Logs requires only the retained application log group's generated stream suffix.",
-        appliesTo:["Resource::*","Resource::<AppLogGroup7D8CD952.Arn>:*"]
-      }]);
-    }
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-        ],
+    this.awsNativeExecutionRole = new iam.Role(this, "AwsNativeTaskExecutionRole", {
+      roleName: `tracepoint-${props.environmentName}-aws-native-ecs-execution`,
+      assumedBy: ecsTasksPrincipal,
+      description: "Pulls the immutable AWS-native image, writes logs, and injects only AWS-native secrets",
+    });
+    const configureExecutionRole = (role: iam.Role, applicationSecret: secretsmanager.ISecret) => {
+      role.addToPolicy(new iam.PolicyStatement({ actions: ["ecr:GetAuthorizationToken"], resources: ["*"] }));
+      role.addToPolicy(new iam.PolicyStatement({
+        actions: ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
         resources: [this.repository.repositoryArn],
-      }),
-    );
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
+      }));
+      role.addToPolicy(new iam.PolicyStatement({
         actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
         resources: [`${this.appLogGroup.logGroupArn}:*`],
-      }),
-    );
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
+      }));
+      role.addToPolicy(new iam.PolicyStatement({
         actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        resources: [this.appSecrets.secretArn],
-      }),
-    );
-    this.executionRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["kms:Decrypt"],
-        resources: [dataKey.keyArn],
-      }),
-    );
+        resources: [applicationSecret.secretArn],
+      }));
+      role.addToPolicy(new iam.PolicyStatement({ actions: ["kms:Decrypt"], resources: [dataKey.keyArn] }));
+    };
+    configureExecutionRole(this.executionRole, this.appSecrets);
+    configureExecutionRole(this.awsNativeExecutionRole, this.awsNativeAppSecrets);
+
+    if (props.environmentName === "production") {
+      NagSuppressions.addResourceSuppressions([this.appSecrets, this.awsNativeAppSecrets], [{
+        id: "AwsSolutions-SMG4",
+        reason: "This provider-neutral JSON secret contains independent application encryption keyrings and non-provider secrets; rotation is performed by the versioned application-key workflow rather than one Secrets Manager database rotation schedule.",
+      }]);
+      for (const role of [this.executionRole, this.awsNativeExecutionRole]) {
+        const executionPolicy = role.node.findChild("DefaultPolicy");
+        NagSuppressions.addResourceSuppressions(executionPolicy, [{
+          id: "AwsSolutions-IAM5",
+          reason: "ECR authorization is not resource-scoped and CloudWatch Logs requires only the retained application log group's generated stream suffix.",
+          appliesTo:["Resource::*","Resource::<AppLogGroup7D8CD952.Arn>:*"]
+        }]);
+      }
+    }
 
     this.taskRole = new iam.Role(this, "TaskRole", {
       roleName: `tracepoint-${props.environmentName}-ecs-task`,
       assumedBy: ecsTasksPrincipal,
       description: "Least-privilege runtime role for the TracePoint application",
     });
+    this.awsNativeTaskRole = new iam.Role(this, "AwsNativeTaskRole", {
+      roleName: `tracepoint-${props.environmentName}-aws-native-ecs-task`,
+      assumedBy: ecsTasksPrincipal,
+      description: "Least-privilege AWS-native runtime role isolated from the retained bridge task",
+    });
 
     new cdk.CfnOutput(this, "EcrRepositoryUri", { value: this.repository.repositoryUri });
     new cdk.CfnOutput(this, "EcsClusterName", { value: this.cluster.clusterName });
     new cdk.CfnOutput(this, "ApplicationLogGroupName", { value: this.appLogGroup.logGroupName });
     new cdk.CfnOutput(this, "ApplicationSecretArn", { value: this.appSecrets.secretArn });
+    new cdk.CfnOutput(this, "AwsNativeApplicationSecretArn", { value: this.awsNativeAppSecrets.secretArn });
     new cdk.CfnOutput(this, "TaskExecutionRoleArn", { value: this.executionRole.roleArn });
     new cdk.CfnOutput(this, "TaskRoleArn", { value: this.taskRole.roleArn });
+    // Keep the legacy-only cross-stack exports during the staged provider
+    // transition. The already-deployed runtime and storage stacks import them
+    // until those stacks are updated to isolated AWS-native resources.
+    this.exportValue(this.appSecrets.secretArn);
+    this.exportValue(this.executionRole.roleArn);
+    // IAM Policy `roles` cross-stack wiring imports the physical role name
+    // (`Ref`), while runtime task wiring imports the ARN. Retain both forms.
+    this.exportValue(this.taskRole.roleName);
+    this.exportValue(this.taskRole.roleArn);
+    new cdk.CfnOutput(this, "AwsNativeTaskExecutionRoleArn", { value: this.awsNativeExecutionRole.roleArn });
+    new cdk.CfnOutput(this, "AwsNativeTaskRoleArn", { value: this.awsNativeTaskRole.roleArn });
   }
 }

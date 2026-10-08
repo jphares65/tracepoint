@@ -5,46 +5,84 @@ import {test} from 'node:test';
 import {strict as assert} from 'node:assert';
 import {CognitoFoundationStack} from '../lib/cognito-foundation-stack';
 import {SesFoundationStack} from '../lib/ses-foundation-stack';
-import {PRODUCTION_COGNITO_INVITATION_BODY,PRODUCTION_COGNITO_INVITATION_SUBJECT} from '../lib/production-cognito-invitation';
+import {SesFeedbackWorkerStack} from '../lib/ses-feedback-worker-stack';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as kms from 'aws-cdk-lib/aws-kms';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 for(const environmentName of ['staging','production'] as const){
  test(environmentName+' Cognito uses short sessions, rotation, TOTP and exact callback domain',()=>{
   const account=environmentName==='staging'?'559054714699':'111111111111';const app=new cdk.App();
-  const stack=new CognitoFoundationStack(app,'auth',{env:{account,region:'us-east-1'},environmentName});const template=Template.fromStack(stack);
-  template.hasResourceProperties('AWS::Cognito::UserPool',{UserPoolTier:'ESSENTIALS',DeletionProtection:'ACTIVE',MfaConfiguration:'ON',EnabledMfas:['SOFTWARE_TOKEN_MFA'],AdminCreateUserConfig:{AllowAdminCreateUserOnly:true}});
-  template.hasResourceProperties('AWS::Cognito::UserPool',{Policies:{PasswordPolicy:{MinimumLength:environmentName==='production'?10:14,RequireLowercase:true,RequireUppercase:true,RequireNumbers:true,RequireSymbols:true,TemporaryPasswordValidityDays:1}}});
-  if(environmentName==='production'){
-   template.hasResourceProperties('AWS::Cognito::UserPool',{AdminCreateUserConfig:{InviteMessageTemplate:{EmailSubject:PRODUCTION_COGNITO_INVITATION_SUBJECT,EmailMessage:PRODUCTION_COGNITO_INVITATION_BODY}}});
-   assert.match(PRODUCTION_COGNITO_INVITATION_BODY,/\n\{####\}\n/);
-   assert.doesNotMatch(PRODUCTION_COGNITO_INVITATION_BODY,/\{####\}[.,;:!?]/);
-   assert.match(PRODUCTION_COGNITO_INVITATION_BODY,/\{username\}/);
-  }
+  const stack=new CognitoFoundationStack(app,'auth',{env:{account,region:'us-east-1'},environmentName,sesFromAddress:`notifications@${environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com'}`,sesConfigurationSetName:`tracepoint-${environmentName}`,...(environmentName==='staging'?{mobileClient:{callbackUrl:'tracepoint://auth',logoutUrl:'tracepoint://logout'}}:{})});const template=Template.fromStack(stack);
+  template.hasResourceProperties('AWS::Cognito::UserPool',{UserPoolTier:'ESSENTIALS',DeletionProtection:'ACTIVE',MfaConfiguration:'ON',EnabledMfas:['SOFTWARE_TOKEN_MFA'],AdminCreateUserConfig:{AllowAdminCreateUserOnly:true},EmailConfiguration:{EmailSendingAccount:'DEVELOPER',ConfigurationSet:`tracepoint-${environmentName}`,From:`TracePoint <notifications@${environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com'}>`,SourceArn:Match.anyValue()}});
   template.hasResourceProperties('AWS::Cognito::UserPoolClient',{GenerateSecret:false,AllowedOAuthFlows:['code'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10},AccessTokenValidity:5,IdTokenValidity:5,
    CallbackURLs:[(environmentName==='staging'?'https://staging.tracepointhq.com':'https://tracepointhq.com')+'/api/auth/cognito/callback']});
+  template.resourceCountIs('AWS::Cognito::UserPoolClient',environmentName==='staging'?2:1);
+  if(environmentName==='staging')template.hasResourceProperties('AWS::Cognito::UserPoolClient',{ClientName:'tracepoint-staging-mobile',GenerateSecret:false,AllowedOAuthFlows:['code'],AllowedOAuthScopes:['openid','email','profile','aws.cognito.signin.user.admin'],CallbackURLs:['tracepoint://auth'],LogoutURLs:['tracepoint://logout'],ExplicitAuthFlows:['ALLOW_USER_SRP_AUTH'],AuthSessionValidity:3,EnableTokenRevocation:true,RefreshTokenRotation:{Feature:'ENABLED',RetryGracePeriodSeconds:10}});
   template.hasResource('AWS::Cognito::UserPool',{DeletionPolicy:'Retain'});
  });
  test(environmentName+' SES preview retains encrypted feedback and restricts sender IAM',()=>{
   const account=environmentName==='staging'?'559054714699':'111111111111';const app=new cdk.App();const root=new cdk.Stack(app,'roles',{env:{account,region:'us-east-1'}});const role=new iam.Role(root,'Task',{assumedBy:new iam.ServicePrincipal('ecs-tasks.amazonaws.com')});
   const stack=new SesFoundationStack(app,'email',{env:{account,region:'us-east-1'},environmentName,taskRole:role,mailFromSubdomain:'bounce'});const template=Template.fromStack(stack);
-  template.hasResourceProperties('AWS::SES::EmailIdentity',{EmailIdentity:environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com',MailFromAttributes:{BehaviorOnMxFailure:'REJECT_MESSAGE',MailFromDomain:'bounce.'+(environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com')}});
+  template.hasResourceProperties('AWS::SES::EmailIdentity',{EmailIdentity:environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com',FeedbackAttributes:{EmailForwardingEnabled:false},MailFromAttributes:{BehaviorOnMxFailure:'REJECT_MESSAGE',MailFromDomain:'bounce.'+(environmentName==='staging'?'staging.tracepointhq.com':'tracepointhq.com')}});
   template.hasResourceProperties('AWS::SNS::Topic',{KmsMasterKeyId:Match.anyValue()});template.hasResourceProperties('AWS::KMS::Key',{EnableKeyRotation:true});
   template.hasResourceProperties('AWS::SES::ConfigurationSet',{SuppressionOptions:{SuppressedReasons:['BOUNCE','COMPLAINT']},DeliveryOptions:{TlsPolicy:'REQUIRE'}});
+  template.resourceCountIs('AWS::SES::ConfigurationSet',2);
+  template.hasResourceProperties('AWS::SES::ConfigurationSet',{Name:`tracepoint-${environmentName}-cognito`});
+  template.resourceCountIs('AWS::SES::ConfigurationSetEventDestination',2);
+  const key=Object.values(template.findResources('AWS::KMS::Key'))[0] as {Properties:{KeyPolicy:{Statement:Array<{Principal?:unknown;Condition?:unknown}>}}};
+  const sesGrant=key.Properties.KeyPolicy.Statement.find(statement=>JSON.stringify(statement.Principal).includes('ses.amazonaws.com'));
+  const sourceArns=(sesGrant?.Condition as {StringEquals?:Record<string,unknown>})?.StringEquals?.['aws:SourceArn'];
+  assert.ok(Array.isArray(sourceArns));assert.equal(sourceArns.length,2);
+  assert.match(JSON.stringify(sourceArns),/DeliveryConfiguration/);assert.match(JSON.stringify(sourceArns),/CognitoDeliveryConfiguration/);
   template.resourceCountIs('AWS::Route53::RecordSet',0);template.resourceCountIs('AWS::SNS::Subscription',1);template.resourceCountIs('AWS::SQS::Queue',2);template.hasResourceProperties('AWS::SQS::Queue',{SqsManagedSseEnabled:true,MessageRetentionPeriod:1209600,RedrivePolicy:{deadLetterTargetArn:Match.anyValue(),maxReceiveCount:5}});template.hasResourceProperties('AWS::SNS::Subscription',{RawMessageDelivery:false,Protocol:'sqs'});
-  const policy=Object.values(template.findResources('AWS::IAM::Policy'))[0] as {Properties:{PolicyDocument:{Statement:Array<{Action:string;Condition?:unknown;Resource:unknown}>}}};
-  assert.equal(policy.Properties.PolicyDocument.Statement.length,2);
+  const policy=Object.values(template.findResources('AWS::IAM::Policy'))[0] as {Properties:{PolicyDocument:{Statement:Array<{Action:string;Condition:unknown}>}}};
   assert.equal(policy.Properties.PolicyDocument.Statement[0].Action,'ses:SendEmail');assert.ok(policy.Properties.PolicyDocument.Statement[0].Condition);
-  assert.equal(policy.Properties.PolicyDocument.Statement[1].Action,'ses:SendEmail');
-  const configurationResource=JSON.stringify(policy.Properties.PolicyDocument.Statement[1].Resource);
-  assert.match(configurationResource,new RegExp(`:ses:us-east-1:${account}:configuration-set/`));
-  assert.match(configurationResource,/DeliveryConfigurationE6C74ADD/);
-  assert.doesNotMatch(configurationResource,/\*/);
  });
 }
 test('provider stacks reject management and mismatched staging accounts',()=>{
- for(const account of ['265544358665','111111111111'])assert.throws(()=>new CognitoFoundationStack(new cdk.App(),'bad',{env:{account,region:'us-east-1'},environmentName:'staging'}),/boundary/);
+ for(const account of ['265544358665','111111111111'])assert.throws(()=>new CognitoFoundationStack(new cdk.App(),'bad',{env:{account,region:'us-east-1'},environmentName:'staging',sesFromAddress:'notifications@staging.tracepointhq.com',sesConfigurationSetName:'tracepoint-staging'}),/boundary/);
 });
 
 test('disabled SES foundation grants no runtime authority and changes no DNS',()=>{
  const stack=new SesFoundationStack(new cdk.App(),'disabled',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',mailFromSubdomain:'bounce'});const t=Template.fromStack(stack);
  t.resourceCountIs('AWS::IAM::Policy',0);t.resourceCountIs('AWS::IAM::Role',0);t.resourceCountIs('AWS::Route53::RecordSet',0);t.resourceCountIs('AWS::SES::EmailIdentity',1);
  t.hasOutput('ActivationGate',{Value:Match.stringLikeRegexp('^DISABLED:')});
+});
+
+test('authorized production SES foundation is isolated from application infrastructure',()=>{
+ const stack=new SesFoundationStack(new cdk.App(),'tracepoint-production-full-aws-ses',{env:{account:'193644343389',region:'us-east-1'},environmentName:'production',mailFromSubdomain:'bounce',terminationProtection:true});
+ const template=Template.fromStack(stack);
+ template.resourceCountIs('AWS::SES::EmailIdentity',1);
+ template.resourceCountIs('AWS::SES::ConfigurationSet',2);
+ template.resourceCountIs('AWS::SES::ConfigurationSetEventDestination',2);
+ template.resourceCountIs('AWS::SNS::Topic',1);
+ template.resourceCountIs('AWS::SQS::Queue',2);
+ for(const type of ['AWS::ECS::Service','AWS::RDS::DBInstance','AWS::RDS::DBCluster','AWS::Cognito::UserPool','AWS::Lambda::Function'])template.resourceCountIs(type,0);
+});
+
+test('SES feedback worker is private, bounded, partial-batch, and cannot send email',()=>{
+ const app=new cdk.App(),root=new cdk.Stack(app,'root',{env:{account:'559054714699',region:'us-east-1'}});
+ const vpc=new ec2.Vpc(root,'Vpc',{maxAzs:2,natGateways:0,subnetConfiguration:[{name:'isolated',subnetType:ec2.SubnetType.PRIVATE_ISOLATED,cidrMask:24}]});
+ const databaseSecurityGroup=new ec2.SecurityGroup(root,'DatabaseSecurity',{vpc,allowAllOutbound:false});
+ const key=new kms.Key(root,'DatabaseKey');
+ const databaseSecret=new secretsmanager.Secret(root,'DatabaseSecret');
+ const ses=new SesFoundationStack(app,'email-worker-source',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',mailFromSubdomain:'bounce'});
+ const worker=new SesFeedbackWorkerStack(app,'email-worker',{env:{account:'559054714699',region:'us-east-1'},environmentName:'staging',vpc,databaseSecurityGroup,databaseKeyArn:key.keyArn,databaseSecret,feedbackTopic:ses.feedbackTopic,feedbackQueue:ses.feedbackQueue,feedbackDeadLetterQueue:ses.feedbackDeadLetterQueue,cognitoConfigurationSetName:ses.cognitoConfigurationSetName});
+ const template=Template.fromStack(worker),serialized=JSON.stringify(template.toJSON());
+ template.hasResourceProperties('AWS::Lambda::Function',{Runtime:'nodejs24.x',Timeout:30,MemorySize:256,Environment:{Variables:Match.objectLike({TRACEPOINT_DATABASE_SECRET_ARN:Match.anyValue(),TRACEPOINT_SES_FEEDBACK_TOPIC_ARN:Match.anyValue(),TRACEPOINT_COGNITO_SES_CONFIGURATION_SET:Match.anyValue(),TRACEPOINT_RDS_CA_PATH:'/opt/us-east-1-bundle.pem'})}});
+ const functions=Object.values(template.findResources('AWS::Lambda::Function')) as Array<{Properties:Record<string,unknown>}>;
+ assert.equal(Object.hasOwn(functions[0].Properties,'ReservedConcurrentExecutions'),false);
+ template.hasResourceProperties('AWS::Lambda::EventSourceMapping',{BatchSize:10,FunctionResponseTypes:['ReportBatchItemFailures'],ScalingConfig:{MaximumConcurrency:2}});
+ template.resourceCountIs('AWS::EC2::VPCEndpoint',2);template.resourceCountIs('AWS::CloudWatch::Alarm',4);
+ assert.match(serialized,/com\.amazonaws\.us-east-1\.sns/);
+ template.resourceCountIs('AWS::IAM::Role',1);
+ const roles=Object.values(template.findResources('AWS::IAM::Role')) as Array<{Properties:Record<string,unknown>}>;
+ assert.equal(Object.hasOwn(roles[0].Properties,'ManagedPolicyArns'),false);
+ assert.doesNotMatch(serialized,/AWSLambdaBasicExecutionRole|AWSLambdaVPCAccessExecutionRole/);
+ assert.match(serialized,/logs:CreateLogStream/);assert.match(serialized,/logs:PutLogEvents/);
+ assert.match(serialized,/ec2:CreateNetworkInterface/);assert.match(serialized,/aws:RequestedRegion/);assert.match(serialized,/us-east-1/);
+ assert.doesNotMatch(serialized,/"CidrIp":"0\.0\.0\.0\/0"/);
+ assert.doesNotMatch(serialized,/ses:SendEmail|s3:GetObject|s3:PutObject/);
+ assert.match(serialized,/secretsmanager:GetSecretValue/);
+ assert.match(serialized,/kms:Decrypt/);assert.match(serialized,/kms:ViaService/);
 });

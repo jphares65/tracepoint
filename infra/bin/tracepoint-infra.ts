@@ -8,6 +8,13 @@ import { ImageBuildStack } from "../lib/image-build-stack";
 import { directStagingSynthesizer } from "../lib/staging-synthesizer";
 
 import { PrivateStorageStack } from "../lib/private-storage-stack";
+import { StagingDatabaseStack } from "../lib/staging-database-stack";
+import { CognitoFoundationStack } from "../lib/cognito-foundation-stack";
+import { SesFoundationStack } from "../lib/ses-foundation-stack";
+import { AlertDeliveryStack } from "../lib/alert-delivery-stack";
+import { SesFeedbackWorkerStack } from "../lib/ses-feedback-worker-stack";
+import { DatabaseBootstrapRunnerStack } from "../lib/database-bootstrap-runner-stack";
+import { BackupRecoveryStack } from "../lib/backup-recovery-stack";
 
 const app = new cdk.App();
 
@@ -18,6 +25,7 @@ const account = productionPreview ? "111111111111" : app.node.tryGetContext("acc
 const region = app.node.tryGetContext("region");
 const workloadEnvironment = productionPreview ? "production" : "staging";
 const directDeployment=app.node.tryGetContext('directDeployment')==='true';
+const providerMode = app.node.tryGetContext("providerMode") === "aws-native" ? "aws-native" : "bridge";
 if(productionPreview&&directDeployment)throw Error('Direct GitHub deployment is staging-only');
 if (app.node.tryGetContext("account") === "265544358665") throw new Error("Management account is forbidden");
 if (region !== "us-east-1") throw new Error("Region must equal us-east-1");
@@ -75,21 +83,112 @@ const compute = new ComputeFoundationStack(app, `${environmentName}-compute`, {
 compute.addStackDependency(network);
 compute.addStackDependency(security);
 
-const imageBuild = new ImageBuildStack(app, `${environmentName}-image-build`, {
+const imageBuildQualifier = providerMode === "aws-native" ? "aws-native" : undefined;
+const imageBuild = new ImageBuildStack(app, `${environmentName}${imageBuildQualifier ? `-${imageBuildQualifier}` : ""}-image-build`, {
   ...commonProps,
-  stackName: `${environmentName}-image-build`,
+  stackName: `${environmentName}${imageBuildQualifier ? `-${imageBuildQualifier}` : ""}-image-build`,
   environmentName: workloadEnvironment,
   repository: compute.repository,
-  appSecrets: compute.appSecrets,
+  appSecrets: providerMode === "aws-native" ? compute.awsNativeAppSecrets : compute.appSecrets,
+  providerMode,
+  resourceQualifier: imageBuildQualifier,
 });
 imageBuild.addStackDependency(compute);
 
 const storageEnabled = app.node.tryGetContext("privateStorageEnabled") === "true";
 const storage = storageEnabled ? new PrivateStorageStack(app, `${environmentName}-storage`, {
- ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:compute.taskRole,
+ ...commonProps, stackName: `${environmentName}-storage`, environmentName:workloadEnvironment,taskRole:providerMode === "aws-native" ? compute.awsNativeTaskRole : compute.taskRole,dataKey:security.dataKey,
 }) : undefined;
+if (storage) storage.addStackDependency(security);
 const storageProvider = app.node.tryGetContext("storageProvider") || "supabase";
 if(!['supabase','s3'].includes(storageProvider)||storageProvider==='s3'&&!storage)throw new Error('Private storage must be explicitly provisioned before activation');
+const databaseEnabled = app.node.tryGetContext("databaseEnabled") === "true";
+const database = databaseEnabled ? new StagingDatabaseStack(app, `${environmentName}-database`, {
+  ...commonProps,
+  stackName: `${environmentName}-database`,
+  environmentName: "staging",
+  vpc: network.vpc,
+  dataKey: security.dataKey,
+  securityGroup: network.databaseSecurityGroup,
+  expiresAfterUtc: app.node.tryGetContext("databaseExpiresAfterUtc"),
+  leaseOwner: app.node.tryGetContext("databaseLeaseOwner"),
+  leaseReference: app.node.tryGetContext("databaseLeaseReference"),
+}) : undefined;
+if (database) {
+  database.addStackDependency(network);
+  database.addStackDependency(security);
+}
+const backup = providerMode === "aws-native" && database ? new BackupRecoveryStack(app, `${environmentName}-backup`, {
+  ...commonProps,
+  stackName: `${environmentName}-backup`,
+  environmentName: "staging",
+}) : undefined;
+if (backup) backup.addStackDependency(database!);
+const ses = providerMode === "aws-native" ? new SesFoundationStack(app, `${environmentName}-ses-foundation`, {
+  ...commonProps,
+  stackName: `${environmentName}-ses-foundation`,
+  environmentName: workloadEnvironment,
+  mailFromSubdomain: "bounce",
+  taskRole: compute.awsNativeTaskRole,
+}) : undefined;
+if (ses) ses.addStackDependency(compute);
+const cognito = providerMode === "aws-native" && ses ? new CognitoFoundationStack(app, `${environmentName}-cognito`, {
+  ...commonProps,
+  stackName: `${environmentName}-cognito`,
+  environmentName: workloadEnvironment,
+  taskRole: compute.awsNativeTaskRole,
+  sesFromAddress: ses.fromAddress,
+  sesConfigurationSetName: ses.cognitoConfigurationSetName,
+  mobileClient: productionPreview ? undefined : { callbackUrl: "tracepoint://auth", logoutUrl: "tracepoint://logout" },
+}) : undefined;
+if (cognito) { cognito.addStackDependency(compute); cognito.addStackDependency(ses!); }
+const sesFeedbackWorker = providerMode === "aws-native" && database && ses ? new SesFeedbackWorkerStack(app, `${environmentName}-ses-feedback-worker`, {
+  ...commonProps,
+  stackName: `${environmentName}-ses-feedback-worker`,
+  environmentName: workloadEnvironment,
+  vpc: network.vpc,
+  databaseSecurityGroup: network.databaseSecurityGroup,
+  databaseKeyArn: security.dataKey.keyArn,
+  databaseSecret: database.runtimeSecret,
+  feedbackTopic: ses.feedbackTopic,
+  feedbackQueue: ses.feedbackQueue,
+  feedbackDeadLetterQueue: ses.feedbackDeadLetterQueue,
+  cognitoConfigurationSetName: ses.cognitoConfigurationSetName,
+}) : undefined;
+if (sesFeedbackWorker) {
+  sesFeedbackWorker.addStackDependency(network);
+  sesFeedbackWorker.addStackDependency(database!);
+  sesFeedbackWorker.addStackDependency(ses!);
+}
+const databaseBootstrapEnabled = app.node.tryGetContext("databaseBootstrapEnabled") === "true";
+if (databaseBootstrapEnabled && (!database || providerMode !== "aws-native")) {
+  throw new Error("Database bootstrap requires the AWS-native staging database target");
+}
+const databaseBootstrap = databaseBootstrapEnabled && database ? new DatabaseBootstrapRunnerStack(app, `${environmentName}-database-bootstrap`, {
+  ...commonProps,
+  stackName: `${environmentName}-database-bootstrap`,
+  environmentName: "staging",
+  vpc: network.vpc,
+  databaseSecurityGroup: network.databaseSecurityGroup,
+  repository: compute.repository,
+  logGroup: compute.appLogGroup,
+  databaseKeyArn: security.dataKey.keyArn,
+  migratorSecret: database.database.secret!,
+  runtimeSecret: database.runtimeSecret,
+  sourceCommit: app.node.tryGetContext("bootstrapSourceCommit"),
+  imageDigest: app.node.tryGetContext("bootstrapImageDigest"),
+}) : undefined;
+if (databaseBootstrap) {
+  databaseBootstrap.addStackDependency(network);
+  databaseBootstrap.addStackDependency(compute);
+  databaseBootstrap.addStackDependency(database!);
+}
+const alertDelivery = new AlertDeliveryStack(app, `${environmentName}-alert-delivery`, {
+  ...commonProps,
+  stackName: `${environmentName}-alert-delivery`,
+  environment: workloadEnvironment,
+  expectedAccount: account,
+});
 const runtimeEnabled = app.node.tryGetContext("runtimeEnabled") === "true";
 if (runtimeEnabled) {
   const certificateArn = app.node.tryGetContext("certificateArn");
@@ -115,18 +214,30 @@ if (runtimeEnabled) {
     repository: compute.repository,
     cluster: compute.cluster,
     appLogGroup: compute.appLogGroup,
-    appSecrets: compute.appSecrets,
-    executionRole: compute.executionRole,
-    taskRole: compute.taskRole,
+    appSecrets: providerMode === "aws-native" ? compute.awsNativeAppSecrets : compute.appSecrets,
+    executionRole: providerMode === "aws-native" ? compute.awsNativeExecutionRole : compute.executionRole,
+    taskRole: providerMode === "aws-native" ? compute.awsNativeTaskRole : compute.taskRole,
     certificateArn,
     imageTag,
-    storageBucketName: storageProvider === "s3" ? `tracepoint-${workloadEnvironment}-private-${account}` : undefined,
-    emailFromAddress: app.node.tryGetContext("emailFromAddress"),
+    imageDigest: app.node.tryGetContext("imageDigest"),
+    storageBucketName: storageProvider === "s3" ? storage?.bucket.bucketName : undefined,
+    providerMode,
+    databaseSecret: database?.runtimeSecret,
+    databaseSecurityGroup: network.databaseSecurityGroup,
+    cognitoUserPoolId: cognito?.userPool.userPoolId,
+    cognitoClientId: cognito?.userPoolClient.userPoolClientId,
+    cognitoMobileClientId: cognito?.mobileUserPoolClient?.userPoolClientId,
+    sesConfigurationSet: ses?.configurationSetName,
+    emailFromAddress: ses?.fromAddress ?? app.node.tryGetContext("emailFromAddress"),
     desiredCount: productionPreview ? 2 : 1,
     maxCapacity: productionPreview ? 4 : undefined,
     deletionProtection: productionPreview,
   });
   if(storage && storageProvider === "s3") runtime.addStackDependency(storage);
+  if(database) runtime.addStackDependency(database);
+  if(cognito) runtime.addStackDependency(cognito);
+  if(ses) runtime.addStackDependency(ses);
   runtime.addStackDependency(network);
   runtime.addStackDependency(compute);
+  alertDelivery.addStackDependency(runtime);
 }

@@ -1,0 +1,154 @@
+import * as path from "node:path";
+import * as cdk from "aws-cdk-lib";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as sources from "aws-cdk-lib/aws-lambda-event-sources";
+import * as logs from "aws-cdk-lib/aws-logs";
+import * as kms from "aws-cdk-lib/aws-kms";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as sqs from "aws-cdk-lib/aws-sqs";
+import { NagSuppressions } from "cdk-nag";
+import { Construct } from "constructs";
+
+export interface SesFeedbackWorkerProps extends cdk.StackProps {
+  environmentName: "staging" | "production";
+  vpc: ec2.IVpc;
+  databaseSecurityGroup: ec2.ISecurityGroup;
+  databaseKeyArn: string;
+  logEncryptionKey?: kms.IKey;
+  databaseSecret: secretsmanager.ISecret;
+  feedbackTopic: sns.ITopic;
+  feedbackQueue: sqs.IQueue;
+  feedbackDeadLetterQueue: sqs.IQueue;
+  cognitoConfigurationSetName: string;
+  singleAzEndpoints?: boolean;
+}
+
+export class SesFeedbackWorkerStack extends cdk.Stack {
+  readonly worker: lambda.Function;
+  readonly alarms: cloudwatch.Alarm[];
+
+  constructor(scope: Construct, id: string, props: SesFeedbackWorkerProps) {
+    super(scope, id, props);
+    const stagingAccount = "559054714699";
+    if (this.region !== "us-east-1" || this.account === "265544358665" ||
+        (props.environmentName === "staging" ? this.account !== stagingAccount : this.account === stagingAccount)) {
+      throw new Error("SES feedback worker account/environment boundary");
+    }
+
+    const workerSecurityGroup = new ec2.SecurityGroup(this, "WorkerSecurity", {
+      vpc: props.vpc, allowAllOutbound: false, description: "SES feedback worker has only RDS and AWS PrivateLink egress",
+    });
+    const endpointSecurityGroup = new ec2.SecurityGroup(this, "EndpointSecurity", {
+      vpc: props.vpc, allowAllOutbound: false, description: "Private AWS API endpoints accept only the SES feedback worker",
+    });
+    new ec2.CfnSecurityGroupIngress(this, "EndpointFromFeedbackWorker", {
+      groupId: endpointSecurityGroup.securityGroupId,
+      sourceSecurityGroupId: workerSecurityGroup.securityGroupId,
+      ipProtocol: "tcp", fromPort: 443, toPort: 443,
+      description: "Worker HTTPS to AWS APIs",
+    });
+    NagSuppressions.addResourceSuppressions(endpointSecurityGroup, [{
+      id: "CdkNagValidationFailure",
+      reason: "AwsSolutions-EC23 cannot resolve this generated VPC intrinsic during synthesis; the only endpoint ingress is the explicit worker security-group rule above, with no CIDR source.",
+    }]);
+    workerSecurityGroup.addEgressRule(endpointSecurityGroup, ec2.Port.tcp(443), "AWS API PrivateLink only");
+    workerSecurityGroup.addEgressRule(props.databaseSecurityGroup, ec2.Port.tcp(5432), "PostgreSQL feedback persistence only");
+    new ec2.CfnSecurityGroupIngress(this, "DatabaseFromFeedbackWorker", {
+      groupId: props.databaseSecurityGroup.securityGroupId,
+      sourceSecurityGroupId: workerSecurityGroup.securityGroupId,
+      ipProtocol: "tcp", fromPort: 5432, toPort: 5432,
+      description: "SES feedback persistence",
+    });
+
+    // The Lambda event-source mapping polls SQS on the worker's behalf. The
+    // worker downloads the SNS signing certificate over PrivateLink before it
+    // verifies the signed envelope locally.
+    const endpointSubnets: ec2.SubnetSelection = props.singleAzEndpoints
+      ? { subnets: [props.vpc.isolatedSubnets[0]] }
+      : { subnetType: ec2.SubnetType.PRIVATE_ISOLATED };
+    new ec2.InterfaceVpcEndpoint(this, "SecretsEndpoint", {
+      vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER, privateDnsEnabled: true,
+      securityGroups: [endpointSecurityGroup],
+      subnets: endpointSubnets,
+    });
+    new ec2.InterfaceVpcEndpoint(this, "SnsEndpoint", {
+      vpc: props.vpc, service: ec2.InterfaceVpcEndpointAwsService.SNS, privateDnsEnabled: true,
+      securityGroups: [endpointSecurityGroup],
+      subnets: endpointSubnets,
+    });
+
+    const caLayer = new lambda.LayerVersion(this, "RdsCaLayer", {
+      code: lambda.Code.fromAsset(path.join(__dirname, "../assets/rds-ca")),
+      description: "Official AWS RDS us-east-1 trust roots",
+      compatibleRuntimes: [lambda.Runtime.NODEJS_24_X],
+    });
+    const logGroup = new logs.LogGroup(this, "WorkerLogs", {
+      logGroupName: props.environmentName === "production" ? "/tracepoint/production/ses-feedback-worker" : undefined,
+      encryptionKey: props.logEncryptionKey,
+      retention: props.environmentName === "production" ? logs.RetentionDays.THREE_MONTHS : logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    const workerRole = new iam.Role(this, "WorkerRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      description: "Least-privilege SES feedback worker execution role",
+    });
+    workerRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+      resources: [`${logGroup.logGroupArn}:*`],
+    }));
+    workerRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses",
+      ],
+      resources: ["*"],
+      conditions: { StringEquals: { "aws:RequestedRegion": this.region } },
+    }));
+    NagSuppressions.addResourceSuppressions(workerRole, [{
+      id: "AwsSolutions-IAM5",
+      reason: "CloudWatch Logs requires a stream suffix below this worker's dedicated retained log group, and Lambda VPC ENI lifecycle APIs do not support resource-level ARNs. The ENI statement is limited to the five required actions and the stack region.",
+      appliesTo: [`Resource::<${this.getLogicalId(logGroup.node.defaultChild as cdk.CfnResource)}.Arn>:*`, "Resource::*"],
+    }], true);
+    this.worker = new lambdaNode.NodejsFunction(this, "Worker", {
+      entry: path.resolve(__dirname, "../../src/lib/email/ses-feedback-handler.ts").replaceAll("\\", "/"),
+      handler: "handler", runtime: lambda.Runtime.NODEJS_24_X, role: workerRole,
+      depsLockFilePath: path.join(__dirname, "../../package-lock.json"),
+      projectRoot: path.resolve(__dirname, "../.."),
+      // The SQS mapping is the workload concurrency boundary. Do not reserve
+      // account concurrency: small staging accounts must retain Lambda's
+      // service-required unreserved pool.
+      timeout: cdk.Duration.seconds(30), memorySize: 256,
+      vpc: props.vpc, vpcSubnets: endpointSubnets, securityGroups: [workerSecurityGroup],
+      layers: [caLayer], logGroup,
+      environment: {
+        TRACEPOINT_AWS_ACCOUNT: this.account,
+        TRACEPOINT_DATABASE_SECRET_ARN: props.databaseSecret.secretArn,
+        TRACEPOINT_RDS_CA_PATH: "/opt/us-east-1-bundle.pem",
+        TRACEPOINT_SES_FEEDBACK_TOPIC_ARN: props.feedbackTopic.topicArn,
+        TRACEPOINT_COGNITO_SES_CONFIGURATION_SET: props.cognitoConfigurationSetName,
+      },
+      bundling: { minify: true, sourceMap: true, nodeModules: ["pg"] },
+    });
+    props.databaseSecret.grantRead(this.worker);
+    this.worker.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["kms:Decrypt"],
+      resources: [props.databaseKeyArn],
+      conditions: { StringEquals: { "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com" } },
+    }));
+    this.worker.addEventSource(new sources.SqsEventSource(props.feedbackQueue, {
+      batchSize: 10, reportBatchItemFailures: true, maxConcurrency: 2,
+    }));
+
+    this.alarms = [
+      new cloudwatch.Alarm(this, "QueueAgeAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-queue-age`, alarmDescription: "Feedback remains queued for five minutes; idle queues legitimately emit no samples.", metric: props.feedbackQueue.metricApproximateAgeOfOldestMessage(), threshold: 300, evaluationPeriods: 3, datapointsToAlarm: 2, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+      new cloudwatch.Alarm(this, "DeadLetterAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-dead-letter`, alarmDescription: "At least one feedback event exhausted retries; an empty DLQ legitimately emits no samples.", metric: props.feedbackDeadLetterQueue.metricApproximateNumberOfMessagesVisible(), threshold: 1, evaluationPeriods: 1, datapointsToAlarm: 1, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+      new cloudwatch.Alarm(this, "WorkerErrorsAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-errors`, alarmDescription: "The feedback worker reported an execution error; idle Lambda periods legitimately emit no samples.", metric: this.worker.metricErrors(), threshold: 1, evaluationPeriods: 2, datapointsToAlarm: 1, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+      new cloudwatch.Alarm(this, "WorkerThrottlesAlarm", { alarmName: `tracepoint-${props.environmentName}-ses-feedback-worker-throttles`, alarmDescription: "The feedback worker was throttled; idle Lambda periods legitimately emit no samples.", metric: this.worker.metricThrottles(), threshold: 1, evaluationPeriods: 2, datapointsToAlarm: 1, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING }),
+    ];
+  }
+}

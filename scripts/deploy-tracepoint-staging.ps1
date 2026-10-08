@@ -69,27 +69,15 @@ function Get-ImmutableImage {
 
 function Assert-RuntimeSecretConfiguration {
     # Capture and inspect only required names; never emit the secret value.
-    $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application --query SecretString --output text --region $region 2>&1
-    if ($LASTEXITCODE -ne 0) { throw 'The retained staging application secret cannot be retrieved and decrypted.' }
+    $secretText = & aws.exe secretsmanager get-secret-value --secret-id tracepoint/staging/application/aws-native --query SecretString --output text --region $region 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'The AWS-native staging application secret cannot be retrieved and decrypted.' }
     try {
         $secret = ($secretText -join [Environment]::NewLine) | ConvertFrom-Json
-        if ($secret.NEXT_PUBLIC_SUPABASE_URL -ne 'https://wztqqqashilusoppddxi.supabase.co') { throw 'Only the isolated staging Supabase project is allowed.' }
-        $required = @('NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SITE_URL', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', 'SUPABASE_SECRET_KEY', 'BREVO_API_KEY', 'NOTIFICATION_DISPATCH_SECRET', 'CONFIGURATION_ENVIRONMENT')
+        $required = @('NEXT_PUBLIC_SITE_URL', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', 'TRACEPOINT_IMPORT_APPROVAL_SECRET', 'TRACEPOINT_AUTH_STATE_KEYS', 'TRACEPOINT_AUTH_REFRESH_KEYS', 'NOTIFICATION_DISPATCH_SECRET', 'CONFIGURATION_ENVIRONMENT')
         $missing = @($required | Where-Object { $null -eq $secret.PSObject.Properties[$_] -or [string]::IsNullOrWhiteSpace([string]$secret.PSObject.Properties[$_].Value) })
-        if ($missing.Count) { throw "The retained staging secret is missing required names: $($missing -join ', ')." }
+        if ($missing.Count) { throw "The AWS-native staging application secret is missing required names: $($missing -join ', ')." }
         if ($secret.CONFIGURATION_ENVIRONMENT -ne 'staging' -or $secret.NEXT_PUBLIC_SITE_URL -ne 'https://staging.tracepointhq.com') {
-            throw 'The retained secret fails the staging/production-safety gate.'
-        }
-        $secret | ConvertTo-Json -Compress | & node (Join-Path $PSScriptRoot 'validate-staging-provider-config.mjs')
-        if ($LASTEXITCODE -ne 0) { throw 'Staging provider credentials failed validation; deployment is blocked.' }
-        if ($StorageProvider -eq 's3') {
-            $currentService=Invoke-AwsJson @('ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging')
-            $currentTask=Invoke-AwsJson @('ecs','describe-task-definition','--task-definition',$currentService.services[0].taskDefinition)
-            $currentProvider=@($currentTask.taskDefinition.containerDefinitions[0].environment | Where-Object name -eq 'TRACEPOINT_STORAGE_PROVIDER')[0].value
-            if ($currentProvider -ne 's3') {
-                $secret | ConvertTo-Json -Compress | & node (Join-Path $PSScriptRoot 'validate-staging-storage-activation.mjs')
-                if ($LASTEXITCODE -ne 0) { throw 'Storage activation requires an empty staging source or a separately reviewed data migration.' }
-            }
+            throw 'The AWS-native secret fails the staging/production-safety gate.'
         }
     }
     finally { $secretText = $null; $secret = $null }
@@ -99,7 +87,8 @@ Assert-TracePointStagingIdentity | Out-Null
 Assert-NoProtectedChanges
 Assert-CostGate
 
-if ($Action -eq 'DeployRuntime') { Assert-TracePointStagingDatabaseReleaseLease | Out-Null }
+$databaseLease = $null
+if ($Action -eq 'DeployRuntime') { $databaseLease = Assert-TracePointStagingDatabaseReleaseLease }
 
 if ($Action -eq 'Verify') {
     Write-Host 'Staging runtime gates verified. Image publication remains separate in publish-tracepoint-staging-image.ps1; no image was built and no runtime was deployed.'
@@ -113,7 +102,7 @@ if ($CertificateArn -notmatch "^arn:aws:acm:$region`:$account`:certificate/[0-9a
 $digest = Get-ImmutableImage
 Assert-RuntimeSecretConfiguration
 
-$context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '--lookups=false')
+$context = @('-c', "account=$account", '-c', "region=$region", '-c', "environment=$environment", '-c', 'runtimeEnabled=true', '-c', 'providerMode=aws-native', '-c', 'databaseEnabled=true', '-c', "databaseExpiresAfterUtc=$($databaseLease.expiresAfterUtc)", '-c', "databaseLeaseOwner=$($databaseLease.leaseOwner)", '-c', "databaseLeaseReference=$($databaseLease.leaseReference)", '-c', "certificateArn=$CertificateArn", '-c', "imageTag=$ImageTag", '-c', "imageDigest=$digest", '--lookups=false')
 if($env:TRACEPOINT_DIRECT_STAGING_DEPLOYMENT -eq 'true'){$context+=@('-c','directDeployment=true')}
 if ($StorageProvider -eq 's3') {
     $context += @('-c', 'privateStorageEnabled=true', '-c', 'storageProvider=s3')
@@ -145,7 +134,7 @@ $structuralOptions = @()
 if ($IncludeReviewedRuntimeControls) { $structuralOptions += '--allow-reviewed-runtime-controls' }
 if ($IncludeReviewedImporterSecretAlias) { $structuralOptions += '--allow-reviewed-importer-secret-alias' }
 if ($StorageProvider -eq 's3') { $structuralOptions += '--allow-reviewed-private-storage' }
-& node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $ImageTag @structuralOptions
+& node (Join-Path $PSScriptRoot 'validate-runtime-template.mjs') $oldTemplatePath (Join-Path $validationRoot "$runtimeStack.template.json") $digest @structuralOptions
 if ($LASTEXITCODE -ne 0) { throw 'Runtime template changes exceed the reviewed image/alarms scope.' }
 
 Push-Location $infraRoot
