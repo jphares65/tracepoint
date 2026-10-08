@@ -16,6 +16,7 @@ test('native staging application images use exactly the suffixed immutable tag c
  assert.match(publisher,/name=IMAGE_TAG,value=\$imageTag,type=PLAINTEXT/);
  assert.match(publisher,/imageTag=\$imageTag/);
  assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
+ assert.match(publisher,/'scripts\/assert-aws-native-provider-reachability\.mjs'/);
  assert.match(publisher,/'scripts\/run-application-tests\.mjs'/);
  assert.match(publisher,/'database\/aws'/);
  assert.match(publisher,/'database\/rehearsal'/);

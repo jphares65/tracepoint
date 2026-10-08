@@ -26,6 +26,8 @@ $archiveIncludes = @(
     'database/aws',
     'database/rehearsal',
     'supabase/migrations',
+    # npm run build invokes this checked-in prebuild validator inside the builder.
+    'scripts/assert-aws-native-provider-reachability.mjs',
     'scripts/run-application-tests.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'
