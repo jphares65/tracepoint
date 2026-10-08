@@ -10,7 +10,7 @@ function global:aws.exe {
  if (($args -join ' ') -like 'sts get-caller-identity*') { return '{"Account":"559054714699","Arn":"arn:aws:sts::559054714699:assumed-role/TracePointMigrationStaging/test"}' }
  if (($args -join ' ') -like 'ssm get-parameter*') { return (@{Parameter=@{Value=('{"expiresAfterUtc":"'+[DateTime]::UtcNow.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ssZ")+'","leaseOwner":"github-release","leaseReference":"github:123:1"}')}} | ConvertTo-Json -Compress) }
  if (($args -join ' ') -like 'ecs list-tasks*') { return 'arn:aws:ecs:us-east-1:559054714699:task/tracepoint-staging/synthetic' }
- if (($args -join ' ') -like 'ecs describe-tasks*') { return '{"tasks":[{"containers":[{"imageDigest":"sha256:863c6ada9551deac6cb312a9e80408541202a10f2e339aafca499b60051236a0"}]}]}' }
+ if (($args -join ' ') -like 'ecs describe-tasks*') { return '{"tasks":[{"containers":[{"imageDigest":"sha256:cd1ccf7cd76a4e2a666e03609501a8096937536e56a53f45580d3fcef6ab1a53"}]}]}' }
  if (($args -join ' ') -like 'ecs describe-services*') {return "arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:$global:ReleaseTestRevision"}
  if (($args -join ' ') -like 'ecs wait services-stable*') {return}
  throw 'Unexpected AWS call; real AWS is unavailable to this test.'
