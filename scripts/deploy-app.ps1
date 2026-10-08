@@ -222,13 +222,21 @@ function Register-ApplicationTaskRevision {
 
 function Test-Deployment {
     param([Parameter(Mandatory)][string]$ExpectedTaskArn, [Parameter(Mandatory)][string]$ExpectedImageDigest, [Parameter(Mandatory)][string]$ExpectedImageUri, [Parameter(Mandatory)][string]$Invariant)
-    & aws.exe ecs wait services-stable --cluster $configuration.Cluster --services $configuration.Service --profile $configuration.Profile --region $configuration.Region
-    if ($LASTEXITCODE -ne 0) { throw 'ECS did not reach a steady state.' }
-    $service = Get-Service
-    if ((Get-ServiceInvariant -Service $service) -ne $Invariant) { throw 'Unexpected ECS service infrastructure change detected.' }
-    $primaryDeployment = @($service.deployments | Where-Object { $_.status -eq 'PRIMARY' }) | Select-Object -First 1
-    if ($service.taskDefinition -ne $ExpectedTaskArn -or $null -eq $primaryDeployment -or $primaryDeployment.taskDefinition -ne $ExpectedTaskArn -or $primaryDeployment.rolloutState -ne 'COMPLETED') { throw 'ECS rollout did not complete the expected task revision.' }
-    if ($service.runningCount -ne $service.desiredCount -or $service.pendingCount -ne 0) { throw 'ECS service task counts are unhealthy.' }
+    # The AWS waiter can return while ECS still reports a PRIMARY deployment as
+    # IN_PROGRESS. Poll the same explicit release invariants used below so a
+    # healthy rollout is never rolled back merely because that state lags.
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(15)
+    do {
+        $service = Get-Service
+        if ((Get-ServiceInvariant -Service $service) -ne $Invariant) { throw 'Unexpected ECS service infrastructure change detected.' }
+        $primaryDeployment = @($service.deployments | Where-Object { $_.status -eq 'PRIMARY' }) | Select-Object -First 1
+        $expectedPrimary = $service.taskDefinition -eq $ExpectedTaskArn -and $null -ne $primaryDeployment -and $primaryDeployment.taskDefinition -eq $ExpectedTaskArn -and $primaryDeployment.rolloutState -eq 'COMPLETED'
+        $healthyCounts = $service.runningCount -eq $service.desiredCount -and $service.pendingCount -eq 0
+        if ($expectedPrimary -and $healthyCounts) { break }
+        Start-Sleep -Seconds 15
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    if (-not $expectedPrimary) { throw 'ECS rollout did not complete the expected task revision.' }
+    if (-not $healthyCounts) { throw 'ECS service task counts are unhealthy.' }
     $targetGroup = @($service.loadBalancers)[0].targetGroupArn
     if ([string]::IsNullOrWhiteSpace([string]$targetGroup)) { throw 'The ECS application service has no existing ALB target group.' }
     $targets = (Invoke-Aws @('elbv2', 'describe-target-health', '--target-group-arn', $targetGroup)).TargetHealthDescriptions
