@@ -12,8 +12,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $settings = @{
-  staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; Repository='tracepoint-staging'; Bucket='tracepoint-staging-build-source-559054714699'; Key='source/tracepoint-staging-source.zip'; Build='tracepoint-staging-image-build' }
-  production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build' }
+  staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; Repository='tracepoint-staging'; Bucket='tracepoint-staging-build-source-559054714699'; Key='source/tracepoint-staging-source.zip'; Build='tracepoint-staging-image-build'; MigrationSecret='arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/database/migrator-GqXXWG'; MigrationExecutionRole='arn:aws:iam::559054714699:role/tracepoint-staging-database-b-ExecutionRole605A040B-GlGTvUMuuERD'; MigrationTaskRole='arn:aws:iam::559054714699:role/tracepoint-staging-database-bootst-TaskRole30FC0FBB-ShizPcltAtFS' }
+  production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build'; MigrationSecret='arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT'; MigrationExecutionRole='arn:aws:iam::193644343389:role/tracepoint-production-databas-ExecutionRole605A040B-ifxXmYcgWwlh'; MigrationTaskRole='arn:aws:iam::193644343389:role/tracepoint-production-database-boo-TaskRole30FC0FBB-TGr1IQExOM1o' }
 }[$Environment]
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -75,6 +75,11 @@ function Invoke-MigrationTask([string]$Commit) {
     if ($null -ne $property -and $null -ne $property.Value) { $registration[$field] = $property.Value }
   }
   $registration.containerDefinitions[0].image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
+  $registration.executionRoleArn = $settings.MigrationExecutionRole
+  $registration.taskRoleArn = $settings.MigrationTaskRole
+  $runtimeDatabaseSecret = @($registration.containerDefinitions[0].secrets | Where-Object name -eq 'TRACEPOINT_DATABASE_SECRET_JSON')
+  if ($runtimeDatabaseSecret.Count -ne 1) { throw 'Expected exactly one runtime database secret in the application task definition.' }
+  $registration.containerDefinitions[0].secrets = @($registration.containerDefinitions[0].secrets | Where-Object name -ne 'TRACEPOINT_DATABASE_SECRET_JSON') + @(@{ name='TRACEPOINT_DATABASE_SECRET_JSON'; valueFrom=$settings.MigrationSecret })
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
