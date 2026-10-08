@@ -124,6 +124,7 @@ test("accepts RFC UUID identities from Cognito and legacy records while retainin
   const pool = { async connect() { throw new Error("not reached"); } };
   const uuidV7 = "018f4f0d-5ca0-7c48-8c12-123456789abc";
   const legacyUuid = "018f4f0d-5ca0-0c48-8c12-123456789abc";
+  const postgresUuidWithoutHyphens = "018f4f0d5ca00c488c12123456789abc";
 
   assert.doesNotThrow(
     () => new PostgresDataClient(pool as never, uuidV7, departmentId),
@@ -131,6 +132,8 @@ test("accepts RFC UUID identities from Cognito and legacy records while retainin
   assert.doesNotThrow(
     () => new PostgresDataClient(pool as never, legacyUuid, departmentId),
   );
+  const normalized = new PostgresDataClient(pool as never, postgresUuidWithoutHyphens, departmentId);
+  assert.equal(normalized.subjectId, legacyUuid);
   assert.throws(
     () => new PostgresDataClient(pool as never, "not-a-uuid", departmentId),
     /Valid PostgreSQL request identity/,

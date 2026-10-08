@@ -2,6 +2,7 @@ import "server-only";
 import type { PoolClient } from "pg";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { PostgresDataClient } from "@/lib/database/postgres-data-client";
+import { normalizePostgresUuid } from "@/lib/database/postgres-uuid";
 import type { AuthenticatedPrincipal } from "@/lib/authentication/request-session-core";
 import {
  emitProductionSessionDiagnostic,
@@ -10,7 +11,6 @@ import {
 import { effectiveDepartmentPermissions } from "./permission-authority";
 import { TRACEPOINT_PERMISSIONS, type TracePointPermission } from "./permissions";
 
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const labels:Record<string,string>={administrator:"Administrator",department_admin:"Department Administrator",admin:"Administrator",chief:"Chief",command_staff:"Command Staff",supervisor:"Supervisor",range_master:"Range Master",armorer:"Armorer",instructor:"Instructor",officer:"Officer"};
 const priority=["administrator","department_admin","admin","chief","command_staff","supervisor","range_master","armorer","instructor","officer"];
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -117,7 +117,7 @@ export async function resolvePostgresAccess(principal:AuthenticatedPrincipal,sel
   if(!membership&&memberships.rowCount===1)membership=memberships.rows[0];
   if(!membership){await client.query("rollback");return {ok:false as const,status:409,error:"Multiple active department memberships were found. Select an active agency before access can continue."};}
   const departmentId=String(membership.department_id);
-  if(!uuid.test(departmentId))throw new Error("Invalid department identity.");
+  if(!normalizePostgresUuid(departmentId))throw new Error("Invalid department identity.");
   await client.query("select set_config('tracepoint.department_id',$1,true)",[departmentId]);
   const department=(await client.query("select name,short_name,patch_url,accent_color,login_theme from public.departments where id=$1",[departmentId])).rows[0];
   const profile=(await client.query("select full_name,email from public.profiles where id=$1",[principal.userId])).rows[0];

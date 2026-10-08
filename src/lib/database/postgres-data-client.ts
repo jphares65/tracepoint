@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { withPostgresAuthorization } from "./postgres-authorization-core.ts";
+import { normalizePostgresUuid } from "./postgres-uuid.ts";
 
 type Operation = "select" | "insert" | "update" | "delete" | "upsert";
 type Filter = { column: string; operator: string; value: unknown };
@@ -7,9 +8,6 @@ type Result<T = unknown> = { data: T | null; error: null | { message: string; co
 type Relation = { alias: string; table: string; local: string; foreign: string; cardinality: "one" | "many" };
 
 const identifier = /^[a-z][a-z0-9_]*$/;
-// PostgreSQL accepts RFC UUIDs regardless of version. Keep the RFC variant and
-// complete UUID shape checks, but do not reject valid legacy or newer versions.
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const jsonColumns = new Set([
   "ai_migration_workspaces.state", "audit_events.details", "audit_events.new_value", "audit_events.previous_value",
   "fleet_rules.inspection_checklist", "fleet_vehicle_inspections.checklist", "notification_preferences.source_preferences",
@@ -141,10 +139,12 @@ export class PostgresDataClient {
   private readonly supportMode: boolean;
 
   constructor(pool: Pool, subjectId: string, departmentId: string, systemTables: ReadonlySet<string> | null = null, supportMode = false) {
-    if (!uuid.test(subjectId) || !uuid.test(departmentId)) throw new Error("Valid PostgreSQL request identity is required.");
+    const normalizedSubjectId = normalizePostgresUuid(subjectId);
+    const normalizedDepartmentId = normalizePostgresUuid(departmentId);
+    if (!normalizedSubjectId || !normalizedDepartmentId) throw new Error("Valid PostgreSQL request identity is required.");
     this.pool = pool;
-    this.subjectId = subjectId;
-    this.departmentId = departmentId;
+    this.subjectId = normalizedSubjectId;
+    this.departmentId = normalizedDepartmentId;
     this.systemTables = systemTables;
     this.supportMode = supportMode;
   }

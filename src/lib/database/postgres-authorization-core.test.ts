@@ -70,6 +70,7 @@ test("accepts RFC UUID authorization contexts used by Cognito-linked and legacy 
   const value = fixture();
   const uuidV7 = "018f4f0d-5ca0-7c48-8c12-123456789abc";
   const legacyUuid = "018f4f0d-5ca0-0c48-8c12-123456789abc";
+  const postgresUuidWithoutHyphens = "018f4f0d5ca00c488c12123456789abc";
 
   await withPostgresAuthorization(
     value.pool,
@@ -86,6 +87,14 @@ test("accepts RFC UUID authorization contexts used by Cognito-linked and legacy 
     client => client.query("select synthetic"),
   );
   assert.equal(legacy.calls.some(call => call.text === "select synthetic"), true);
+
+  const normalized = fixture();
+  await withPostgresAuthorization(
+    normalized.pool,
+    { subjectId: postgresUuidWithoutHyphens, departmentId: context.departmentId, supportMode: true },
+    client => client.query("select synthetic"),
+  );
+  assert.deepEqual(normalized.calls.find(call => call.text.includes("tracepoint.subject_id"))?.values, [legacyUuid]);
 });
 
 test("sets only subject context for platform operations", async () => {

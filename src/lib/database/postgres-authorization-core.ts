@@ -1,3 +1,5 @@
+import { normalizePostgresUuid } from "./postgres-uuid.ts";
+
 export type PostgresAuthorizationClient = {
   query(text: string, values?: readonly unknown[]): Promise<unknown>;
   release(): void;
@@ -17,13 +19,13 @@ export type PostgresSubjectContext = {
   subjectId: string;
 };
 
-// PostgreSQL UUID columns accept valid RFC UUIDs regardless of their version.
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function assertContext(context: PostgresAuthorizationContext) {
-  if (!uuidPattern.test(context.subjectId) || !uuidPattern.test(context.departmentId)) {
+function normalizeContext(context: PostgresAuthorizationContext): PostgresAuthorizationContext {
+  const subjectId = normalizePostgresUuid(context.subjectId);
+  const departmentId = normalizePostgresUuid(context.departmentId);
+  if (!subjectId || !departmentId) {
     throw new Error("Valid authorization subject and department are required.");
   }
+  return { ...context, subjectId, departmentId };
 }
 
 export async function withPostgresAuthorization<T>(
@@ -31,15 +33,15 @@ export async function withPostgresAuthorization<T>(
   context: PostgresAuthorizationContext,
   operation: (client: PostgresAuthorizationClient) => Promise<T>,
 ): Promise<T> {
-  assertContext(context);
+  const normalizedContext = normalizeContext(context);
   const client = await pool.connect();
   try {
     await client.query("begin");
     await client.query("set local role authenticated");
-    await client.query("select set_config('tracepoint.subject_id', $1, true)", [context.subjectId]);
-    await client.query("select set_config('tracepoint.department_id', $1, true)", [context.departmentId]);
-    if (context.supportMode === true) {
-      await client.query("select set_config('tracepoint.support_department_id', $1, true)", [context.departmentId]);
+    await client.query("select set_config('tracepoint.subject_id', $1, true)", [normalizedContext.subjectId]);
+    await client.query("select set_config('tracepoint.department_id', $1, true)", [normalizedContext.departmentId]);
+    if (normalizedContext.supportMode === true) {
+      await client.query("select set_config('tracepoint.support_department_id', $1, true)", [normalizedContext.departmentId]);
     }
     const result = await operation(client);
     await client.query("commit");
@@ -57,14 +59,15 @@ export async function withPostgresSubjectAuthorization<T>(
   context: PostgresSubjectContext,
   operation: (client: PostgresAuthorizationClient) => Promise<T>,
 ): Promise<T> {
-  if (!uuidPattern.test(context.subjectId)) {
+  const subjectId = normalizePostgresUuid(context.subjectId);
+  if (!subjectId) {
     throw new Error("Valid authorization subject is required.");
   }
   const client = await pool.connect();
   try {
     await client.query("begin");
     await client.query("set local role authenticated");
-    await client.query("select set_config('tracepoint.subject_id', $1, true)", [context.subjectId]);
+    await client.query("select set_config('tracepoint.subject_id', $1, true)", [subjectId]);
     const result = await operation(client);
     await client.query("commit");
     return result;
