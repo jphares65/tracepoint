@@ -79,7 +79,11 @@ function Invoke-MigrationTask([string]$Commit) {
   $registration.taskRoleArn = $settings.MigrationTaskRole
   $runtimeDatabaseSecret = @($registration.containerDefinitions[0].secrets | Where-Object name -eq 'TRACEPOINT_DATABASE_SECRET_JSON')
   if ($runtimeDatabaseSecret.Count -ne 1) { throw 'Expected exactly one runtime database secret in the application task definition.' }
-  $registration.containerDefinitions[0].secrets = @($registration.containerDefinitions[0].secrets | Where-Object name -ne 'TRACEPOINT_DATABASE_SECRET_JSON') + @(@{ name='TRACEPOINT_DATABASE_SECRET_JSON'; valueFrom=$settings.MigrationSecret })
+  $requiredEnvironmentNames = @('TRACEPOINT_DATA_PROVIDER','TRACEPOINT_RUNTIME_PROVIDER_MODE','TRACEPOINT_DATABASE_CA_PATH')
+  $requiredEnvironment = @($registration.containerDefinitions[0].environment | Where-Object name -in $requiredEnvironmentNames)
+  if ($requiredEnvironment.Count -ne $requiredEnvironmentNames.Count) { throw 'Expected AWS-native migration runtime configuration is missing from the application task definition.' }
+  $registration.containerDefinitions[0].environment = $requiredEnvironment + @(@{ name='CONFIGURATION_ENVIRONMENT'; value=$Environment })
+  $registration.containerDefinitions[0].secrets = @(@{ name='TRACEPOINT_DATABASE_SECRET_JSON'; valueFrom=$settings.MigrationSecret })
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
@@ -95,7 +99,14 @@ function Invoke-MigrationTask([string]$Commit) {
     if ($LASTEXITCODE -ne 0) { throw 'Migration task did not stop cleanly.' }
     $finished = (Invoke-Aws @('ecs','describe-tasks','--cluster',$settings.Cluster,'--tasks',$task.taskArn)).tasks | Select-Object -First 1
     $container = $finished.containers | Where-Object name -eq 'tracepoint' | Select-Object -First 1
-    if ($finished.stopCode -ne 'EssentialContainerExited' -or $container.exitCode -ne 0) { throw "Migration task failed (stop code $($finished.stopCode), exit code $($container.exitCode))." }
+    $stopCode = if ($null -ne $finished.PSObject.Properties['stopCode']) { $finished.stopCode } else { 'unavailable' }
+    $stoppedReason = if ($null -ne $finished.PSObject.Properties['stoppedReason']) { $finished.stoppedReason } else { 'unavailable' }
+    $exitCode = if ($null -ne $container -and $null -ne $container.PSObject.Properties['exitCode']) { $container.exitCode } else { $null }
+    if ($stopCode -eq 'TaskFailedToStart') { throw "Migration task failed to start (stop code $stopCode, stopped reason $stoppedReason)." }
+    if ($stopCode -ne 'EssentialContainerExited' -or $exitCode -ne 0) {
+      $exitDetail = if ($null -eq $exitCode) { 'unavailable' } else { $exitCode }
+      throw "Migration task failed (stop code $stopCode, stopped reason $stoppedReason, exit code $exitDetail)."
+    }
     Write-Host "AWS-native migration task succeeded: $($task.taskArn); image $($image.Digest)."
   } finally {
     if (Test-Path -LiteralPath $payload) { Remove-Item -LiteralPath $payload -Force }
