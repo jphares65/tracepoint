@@ -19,6 +19,24 @@ export function assertNativeLoginRedirect(response) {
   assert.match(target.searchParams.get('state') ?? '', /^[A-Za-z0-9_-]{16,512}$/);
 }
 
+export function assertInvalidBearerDenied(response, path) {
+  assert.ok([401, 403].includes(response.status), `${path} must deny an invalid bearer token.`);
+}
+
+export async function verifyBaselineInvalidBearer(fetchImpl = fetch) {
+  const denied = await fetchImpl(`${stagingOrigin}/api/access`, {
+    headers: { authorization: 'Bearer invalid-staging-token' }, redirect: 'manual', signal: AbortSignal.timeout(20_000),
+  });
+  assertInvalidBearerDenied(denied, '/api/access');
+}
+
+export async function verifyCandidateMobileInvalidBearer(fetchImpl = fetch) {
+  for (const [path, method] of [['/api/mobile/session', 'POST'], ['/api/mobile/range-days', 'GET'], ['/api/mobile/range-workspace', 'GET']]) {
+    const denied = await fetchImpl(`${stagingOrigin}${path}`, { method, headers: { authorization: 'Bearer invalid-staging-token' }, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    assertInvalidBearerDenied(denied, path);
+  }
+}
+
 export async function verifyNativeLogin(fetchImpl = fetch) {
   const login = await fetchImpl(`${stagingOrigin}/login`, { redirect: 'manual', signal: AbortSignal.timeout(20_000) });
   assert.equal(login.status, 200);
@@ -33,13 +51,12 @@ export async function verifyNativeLogin(fetchImpl = fetch) {
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin: stagingOrigin }, body: new URLSearchParams({ next: '/' }),
   });
   assertNativeLoginRedirect(started);
-  for (const [path, method] of [['/api/mobile/session', 'POST'], ['/api/mobile/range-days', 'GET'], ['/api/mobile/range-workspace', 'GET']]) {
-    const denied = await fetchImpl(`${stagingOrigin}${path}`, { method, headers: { authorization: 'Bearer invalid-staging-token' }, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
-    assert.ok([401, 403].includes(denied.status), `${path} must deny an invalid bearer token.`);
-  }
+  await verifyBaselineInvalidBearer(fetchImpl);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  await verifyNativeLogin();
-  console.log(JSON.stringify({ stagingOrigin, cognitoOrigin, nativeLogin: 'verified', invalidBearer: 'denied' }));
+  const phase = process.argv.includes('--post-deploy') ? 'post-deploy' : 'baseline';
+  if (phase === 'post-deploy') await verifyCandidateMobileInvalidBearer();
+  else await verifyNativeLogin();
+  console.log(JSON.stringify({ stagingOrigin, cognitoOrigin, phase, invalidBearer: 'denied' }));
 }
