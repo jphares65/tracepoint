@@ -15,7 +15,10 @@ $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Assert-TracePointStagingIdentity | Out-Null
 Assert-TracePointStagingDatabaseReleaseLease | Out-Null
-$knownDiagnosticRecoveryDigest = 'sha256:fadaab8088e37f4b3a3285eb773533d8d51d8dc091105a46e29f7309c63ff1ee'
+# The recovery lane advanced from 8599a3b to abb60e2b without adding mobile routes.
+# Keep this exception pinned to the exact deployed recovery digest, rather than
+# treating any old image or any 404 as acceptable.
+$knownDiagnosticRecoveryDigest = 'sha256:863c6ada9551deac6cb312a9e80408541202a10f2e339aafca499b60051236a0'
 
 function Assert-KnownDiagnosticRecoveryBaseline {
     # The only baseline exception is tied to the exact fail-closed recovery image.
