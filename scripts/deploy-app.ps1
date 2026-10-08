@@ -264,7 +264,7 @@ function Invoke-RequiredLocalValidation {
     # Workstation checks are intentionally non-authoritative. CodeBuild runs
     # lint, the application suite, and migration-runner integrity checks with
     # bounded timeouts before this script receives an image to deploy.
-    Write-Host 'LOCAL DIAGNOSTICS OPTIONAL — CodeBuild is the authoritative validation environment.'
+    Write-Host 'LOCAL DIAGNOSTICS OPTIONAL - CodeBuild is the authoritative validation environment.'
 }
 
 function Invoke-PostDeploymentDiagnostics {
@@ -302,7 +302,7 @@ $commit = Assert-ReviewedCommit
 try {
     Invoke-RequiredLocalValidation
 } catch {
-    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED — ECS unchanged: $($_.Exception.Message)"
+    Write-Host "PRE-DEPLOYMENT VALIDATION FAILED - ECS unchanged: $($_.Exception.Message)"
     throw
 }
 $imageTag = "$commit$($configuration.ImageSuffix)"
@@ -322,7 +322,7 @@ try {
 catch {
     $failure = $_
     if ($deploymentStarted) {
-        Write-Host "DEPLOYMENT FAILED — rollback initiated: $($failure.Exception.Message)"
+        Write-Host "DEPLOYMENT FAILED - rollback initiated: $($failure.Exception.Message)"
         try {
             $null = Invoke-Aws @('ecs', 'update-service', '--cluster', $configuration.Cluster, '--service', $configuration.Service, '--task-definition', $previousHealthyTaskArn)
             $previousTask = Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn
@@ -332,7 +332,7 @@ catch {
             Write-Warning "Rollback completed: restored previously healthy task revision $previousHealthyTaskArn."
         }
         catch {
-            throw "Deployment failed and automatic rollback also failed. Original failure: $($failure.Exception.Message). Rollback failure: $($_.Exception.Message)"
+            throw ("Deployment failed and automatic rollback also failed. Original failure: {0}. Rollback failure: {1}" -f $failure.Exception.Message, $_.Exception.Message)
         }
     }
     throw $failure
