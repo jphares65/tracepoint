@@ -19,7 +19,7 @@ export function assertNativeLoginRedirect(response) {
   assert.match(target.searchParams.get('state') ?? '', /^[A-Za-z0-9_-]{16,512}$/);
 }
 
-export async function verifyNativeLogin(fetchImpl = fetch, { allowKnownDiagnosticRejection = false } = {}) {
+export async function verifyNativeLogin(fetchImpl = fetch) {
   const login = await fetchImpl(`${stagingOrigin}/login`, { redirect: 'manual', signal: AbortSignal.timeout(20_000) });
   assert.equal(login.status, 200);
   const document = await login.text();
@@ -32,9 +32,7 @@ export async function verifyNativeLogin(fetchImpl = fetch, { allowKnownDiagnosti
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(20_000),
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin: stagingOrigin }, body: new URLSearchParams({ next: '/' }),
   });
-  if (allowKnownDiagnosticRejection && started.status === 400 && (await started.clone().json()).code === 'invalid_request') {
-    console.log(JSON.stringify({ stagingLoginDiagnostic: 'known_invalid_request_only' }));
-  } else assertNativeLoginRedirect(started);
+  assertNativeLoginRedirect(started);
   for (const [path, method] of [['/api/mobile/session', 'POST'], ['/api/mobile/range-days', 'GET'], ['/api/mobile/range-workspace', 'GET']]) {
     const denied = await fetchImpl(`${stagingOrigin}${path}`, { method, headers: { authorization: 'Bearer invalid-staging-token' }, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
     assert.ok([401, 403].includes(denied.status), `${path} must deny an invalid bearer token.`);
@@ -42,6 +40,6 @@ export async function verifyNativeLogin(fetchImpl = fetch, { allowKnownDiagnosti
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  await verifyNativeLogin(fetch, { allowKnownDiagnosticRejection: process.argv.includes('--allow-known-diagnostic-rejection') });
+  await verifyNativeLogin();
   console.log(JSON.stringify({ stagingOrigin, cognitoOrigin, nativeLogin: 'verified', invalidBearer: 'denied' }));
 }

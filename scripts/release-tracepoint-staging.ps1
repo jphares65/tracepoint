@@ -3,7 +3,6 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}-aws-native-staging$')][string]$ImageTag,
     [Parameter(Mandatory)][string]$CertificateArn,
     [switch]$IncludeReviewedNativeNotificationMode,
-    [switch]$AllowKnownStagingLoginDiagnostic,
     [ValidateSet('bridge','cognito')][string]$AuthenticationProvider = 'cognito',
     [ValidateSet('s3')][string]$StorageProvider = 's3'
 )
@@ -27,9 +26,7 @@ function Invoke-StagingNodeGate {
 if ($AuthenticationProvider -eq 'bridge') {
     Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--fixtures-only')
 } else {
-    $nativeArguments=@((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'))
-    if($AllowKnownStagingLoginDiagnostic){$nativeArguments+='--allow-known-diagnostic-rejection'}
-    Invoke-StagingNodeGate -Arguments $nativeArguments
+    Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'))
 }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A previous task revision is required for automatic rollback.' }
