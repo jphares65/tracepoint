@@ -33,7 +33,7 @@ $global:ReleaseTestRevision=2
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'deploy-tracepoint-staging.ps1')
  @'
 param($WaitSeconds)
-if($global:ReleaseTestRevision -eq 2 -and $WaitSeconds -ne 900){throw 'Rollout settling wait missing'}
+if($WaitSeconds -ne 900){throw 'Each ALB convergence phase must start with a fresh bounded settling window'}
 $global:ReleaseTestCalls+='runtime'
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'test-tracepoint-staging-runtime.ps1')
  @'

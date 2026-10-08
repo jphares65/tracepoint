@@ -30,7 +30,11 @@ if ($AuthenticationProvider -eq 'bridge') {
 }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A previous task revision is required for automatic rollback.' }
-& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
+# A preceding rolling replacement can leave a deregistering target behind even
+# after ECS reports a completed rollout. Start a fresh bounded convergence window
+# for this pre-deploy baseline rather than treating that normal state as an
+# immediate failure.
+& (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 900
 try {
     & (Join-Path $PSScriptRoot 'deploy-tracepoint-staging.ps1') -Action DeployRuntime -ImageTag $ImageTag -CertificateArn $CertificateArn -StorageProvider $StorageProvider -IncludeReviewedNativeNotificationMode:$IncludeReviewedNativeNotificationMode
     & aws.exe ecs wait services-stable --cluster tracepoint-staging --services tracepoint-staging --region us-east-1
