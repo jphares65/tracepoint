@@ -20,6 +20,12 @@ $archiveIncludes = @(
     'tsconfig.json',
     'public',
     'src',
+    # The Docker build runs the checked-in application suite. These are test-only
+    # schema fixtures; they are copied into the builder stage and never executed
+    # by the staging release process or included in the runtime image.
+    'database/aws',
+    'database/rehearsal',
+    'supabase/migrations',
     'scripts/run-application-tests.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'
@@ -106,7 +112,9 @@ try {
             throw "Archive contains paths not tracked by commit ${commit}: $($untrackedEntries -join ', ')"
         }
         $prohibitedEntries = @($entryNames | Where-Object {
-            $_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.(dump|sql)$|(^|/)[^/]*(credential|secret)[^/]*$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)'
+            $isApprovedSchemaFixture = $_ -like 'database/aws/*.sql' -or $_ -like 'database/rehearsal/*.sql' -or $_ -like 'supabase/migrations/*.sql'
+            ($_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.dump$|(^|/)[^/]*(credential|secret)[^/]*$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)') -or
+            (($_ -match '\.sql$') -and -not $isApprovedSchemaFixture)
         })
         if ($prohibitedEntries.Count) {
             throw "Prohibited secret, environment, credential, dump, or generated paths entered the archive: $($prohibitedEntries -join ', ')"

@@ -17,6 +17,11 @@ test('native staging application images use exactly the suffixed immutable tag c
  assert.match(publisher,/imageTag=\$imageTag/);
  assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
  assert.match(publisher,/'scripts\/run-application-tests\.mjs'/);
+ assert.match(publisher,/'database\/aws'/);
+ assert.match(publisher,/'database\/rehearsal'/);
+ assert.match(publisher,/'supabase\/migrations'/);
+ assert.match(publisher,/\$isApprovedSchemaFixture/);
+ assert.match(publisher,/never executed\s+# by the staging release process/i);
  assert.match(workflow,/RELEASE_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \|\| github\.sha \}\}/);
  assert.match(workflow,/ImageTag "\$env:RELEASE_COMMIT-aws-native-staging"/);
 });
