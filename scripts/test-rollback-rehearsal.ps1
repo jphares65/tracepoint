@@ -7,7 +7,7 @@ function global:aws.exe {
  $global:LASTEXITCODE=0;$command=$args -join ' '
  if($command -like 'sts get-caller-identity*'){return '{"Account":"559054714699","Arn":"arn:aws:sts::559054714699:assumed-role/TracePointMigrationStaging/test"}'}
  if($command -like 'ecs describe-services*'){return '{"services":[{"taskDefinition":"arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:2"}]}'}
- if($command -like 'ecs describe-task-definition*'){return ('{"taskDefinition":{"status":"ACTIVE","containerDefinitions":[{"image":"559054714699.dkr.ecr.us-east-1.amazonaws.com/tracepoint-staging:'+('a'*40)+'"}]}}')}
+ if($command -like 'ecs describe-task-definition*'){return ('{"taskDefinition":{"status":"ACTIVE","containerDefinitions":[{"image":"559054714699.dkr.ecr.us-east-1.amazonaws.com/tracepoint-staging:'+('a'*40)+'-aws-native-staging"}]}}')}
  if($command -like 'ecs update-service*'){
   if($command -notmatch 'synthetic:2'){throw 'Incorrect restoration ARN'}
   $global:RehearsalRestored=$true
@@ -28,7 +28,7 @@ if($global:RehearsalScenario -eq 'rollback-failure'){throw 'Synthetic rollback h
  'param($WaitSeconds)' | Set-Content -LiteralPath (Join-Path $temporaryRoot 'test-tracepoint-staging-runtime.ps1')
  foreach($scenario in @('success','baseline','rollback-failure','restore-failure')) {
   $global:RehearsalScenario=$scenario;$global:RehearsalChanged=$false;$global:RehearsalRestored=$false;$failed=$false
-  try {& (Join-Path $temporaryRoot 'rehearse-staging-rollback.ps1') -CurrentImageTag ('a'*40) -PriorTaskDefinitionArn 'arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:1' -Execute | Out-Null} catch {$failed=$true}
+  try {& (Join-Path $temporaryRoot 'rehearse-staging-rollback.ps1') -CurrentImageTag (('a'*40)+'-aws-native-staging') -PriorTaskDefinitionArn 'arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:1' -Execute | Out-Null} catch {$failed=$true}
   if($scenario -eq 'success'){if($failed -or !$global:RehearsalChanged -or !$global:RehearsalRestored){throw 'Successful rehearsal did not return current revision'}}
   elseif($scenario -eq 'baseline'){if(!$failed -or $global:RehearsalChanged -or $global:RehearsalRestored){throw 'Failed baseline mutated runtime'}}
   elseif(!$failed -or !$global:RehearsalRestored){throw 'Failure did not attempt restoration or was hidden'}

@@ -40,7 +40,7 @@ jobs:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
       TRACEPOINT_DIRECT_STAGING_DEPLOYMENT: 'true'
-      ACCEPTED_IMAGE: 5a511edbf2d1543fd384f0ed11734a548d6272e7
+      ACCEPTED_IMAGE: fa4adae11db1448fa048a368edfa02c26139657f-aws-native-staging
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

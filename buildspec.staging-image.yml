@@ -10,8 +10,7 @@ phases:
       - set +x
       - test "$AWS_ACCOUNT_ID" = "559054714699"
       - test "$AWS_DEFAULT_REGION" = "us-east-1"
-      - test "$IMAGE_TAG" = "$SOURCE_COMMIT"
-      - echo "$IMAGE_TAG" | grep -Eq '^[0-9a-f]{40}$'
+      - echo "$IMAGE_TAG" | grep -Eq '^(migration-)?[0-9a-f]{40}-aws-native-staging$'
       - test -n "$NEXT_PUBLIC_SUPABASE_URL"
       - test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
       - test "$NEXT_PUBLIC_SITE_URL" = "https://staging.tracepointhq.com"

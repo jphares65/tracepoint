@@ -38,6 +38,7 @@ $nativeReleaseBaseline = '5672b0395ff7082840d508488a7af07835263fc6'
 
 $branch = (& git.exe -C $repositoryRoot branch --show-current).Trim()
 $commit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
+$imageTag = "$commit-aws-native-staging"
 $authorizedBranches = @(
     'codex/aws-staging-readiness-20260902',
     'codex/aws-staging-integration-20260908',
@@ -119,7 +120,7 @@ try {
     $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --region us-east-1 --query VersionId --output text
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceVersion) -or $sourceVersion -eq 'None') { throw 'Versioned source upload failed.' }
     Assert-TracePointStagingIdentity | Out-Null
-    $overrides = "name=IMAGE_TAG,value=$commit,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
+    $overrides = "name=IMAGE_TAG,value=$imageTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
     $buildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --environment-variables-override $overrides.Split(' ') --region us-east-1 --query build.id --output text
     if ($LASTEXITCODE -ne 0) { throw 'CodeBuild start failed.' }
     Write-Host "Started immutable source build $buildId."
@@ -138,11 +139,11 @@ try {
         $scanErrorPreference = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
-            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$commit" --region us-east-1
+            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$imageTag" --region us-east-1
             $scanExitCode = $LASTEXITCODE
         } finally { $ErrorActionPreference = $scanErrorPreference }
         if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
-        Write-Host "Build and scan completed for $commit; deployment separately requires zero findings at every severity."
+        Write-Host "Build and scan completed for $imageTag (source commit $commit); deployment separately requires zero findings at every severity."
     }
 }
 finally {

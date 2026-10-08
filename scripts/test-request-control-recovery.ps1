@@ -14,7 +14,7 @@ if($global:RequestRecoveryCase -eq 'deploy' -and $Mode -eq 'enforce'){throw 'Syn
 '@ | Set-Content (Join-Path $directory 'deploy-staging-request-controls.ps1')
  foreach($case in @('success','probe','auth','logs','deploy')){
   $global:RequestRecoveryCase=$case;$global:RequestRecoveryModes=@();$failed=$false
-  try{& (Join-Path $directory 'enforce-staging-request-controls.ps1') -ImageTag ('a'*40)}catch{$failed=$true}
+  try{& (Join-Path $directory 'enforce-staging-request-controls.ps1') -ImageTag (('a'*40)+'-aws-native-staging')}catch{$failed=$true}
   if($case -eq 'success'){if($failed -or $global:RequestRecoveryModes -contains 'count'){throw 'Valid enforcement was reverted'}}
   elseif(!$failed -or $global:RequestRecoveryModes[-1] -ne 'count'){throw 'Failed enforcement did not recover Count mode'}
  }

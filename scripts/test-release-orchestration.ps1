@@ -44,7 +44,7 @@ $global:ReleaseTestRevision=1
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')
  foreach($scenario in @('success','preflight','acceptance','brevo','evidence','stderr')) {
   $global:ReleaseTestScenario=$scenario;$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
-  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag ('a'*40) -CertificateArn 'synthetic'} catch {$failed=$true}
+  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic'} catch {$failed=$true}
   if($scenario -eq 'success') {
    if($failed -or $global:ReleaseTestRevision -ne 2 -or $global:ReleaseTestCalls -contains 'rollback'){throw 'Successful release incorrectly rolled back'}
    if(-not ($global:ReleaseTestCalls -match 'test-staging-brevo-delivery')){throw 'Successful release skipped live Brevo delivery'}
