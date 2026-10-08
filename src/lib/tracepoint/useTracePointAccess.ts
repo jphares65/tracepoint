@@ -39,6 +39,7 @@ export type TracePointAccess = {
   primaryRoleLabel: string;
   permissions: TracePointPermission[];
   isSuperAdmin: boolean;
+  isSupportMode: boolean;
   enabledFeatures: string[];
   hasPermission: (permission: TracePointPermission) => boolean;
   isFeatureEnabled: (featureCode: string) => boolean;
@@ -78,6 +79,7 @@ const EMPTY_ACCESS: AccessPayload = {
   primaryRoleLabel: "Member",
   permissions: [],
   isSuperAdmin: false,
+  isSupportMode: false,
   enabledFeatures: [],
 };
 

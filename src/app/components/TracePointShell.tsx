@@ -65,7 +65,7 @@ type NavigationGroup = {
 
 type NavigationEntry = NavigationLeaf | NavigationGroup;
 
-const NAV_ITEMS: readonly NavigationEntry[] = [
+export const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
   {
     label: "Command",
@@ -278,7 +278,7 @@ function isNavigationGroup(item: NavigationEntry): item is NavigationGroup {
   return "children" in item;
 }
 
-function getVisibleChildren(
+export function getVisibleChildren(
   group: NavigationGroup,
   permissions: TracePointPermission[],
   enabledFeatures: Set<string>,
@@ -300,7 +300,7 @@ function getVisibleChildren(
   });
 }
 
-function getNavItems(
+export function getNavItems(
   permissions: TracePointPermission[],
   enabledFeatures: Set<string>,
   isSuperAdmin: boolean,
