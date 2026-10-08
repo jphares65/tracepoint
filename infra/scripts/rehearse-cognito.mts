@@ -3,13 +3,15 @@ import { randomUUID, randomBytes, createHmac } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 import { CognitoIdentityProviderClient, DescribeUserPoolCommand, DescribeUserPoolClientCommand, AdminCreateUserCommand, AdminSetUserPasswordCommand, AdminGetUserCommand, AdminDeleteUserCommand, RevokeTokenCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { fromIni } from '@aws-sdk/credential-provider-ini';
 import { CognitoUserPool, CognitoUser, AuthenticationDetails, type IAuthenticationCallback } from 'amazon-cognito-identity-js';
 import { createCognitoPkce, createCognitoPkceTokenVerifier, type AuthorizationTransaction, type CognitoTokens } from '../../src/lib/authentication/cognito-pkce.ts';
 import { createCognitoAuthenticationProvider } from '../../src/lib/authentication/cognito-verifier.ts';
 async function main() {
     assert.ok(process.argv.includes('--execute'), 'Explicit disposable staging rehearsal required');
     function aws(args: string[]) { try {
-        return JSON.parse(execFileSync('aws.exe', [...args, '--region', 'us-east-1', '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+        const profile = process.env.TRACEPOINT_REHEARSAL_AWS_PROFILE;
+        return JSON.parse(execFileSync('aws.exe', [...args, ...(profile ? ['--profile', profile] : []), '--region', 'us-east-1', '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     }
     catch {
         throw Error('Staging metadata unavailable');
@@ -25,7 +27,10 @@ async function main() {
     }) => [x.OutputKey, x.OutputValue]));
     const poolId = outputs.UserPoolId, clientId = outputs.ClientId, domain = 'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com';
     assert.equal(outputs.ManagedDomain, domain);
-    const client = new CognitoIdentityProviderClient({ region: 'us-east-1', maxAttempts: 1 });
+    // OIDC supplies ambient credentials in CI; local SSO rehearsal explicitly
+    // resolves the selected shared profile without changing any AWS authority.
+    const client = new CognitoIdentityProviderClient({ region: 'us-east-1', maxAttempts: 1,
+        credentials: process.env.AWS_ACCESS_KEY_ID ? undefined : (process.env.AWS_PROFILE ? fromIni({ profile: process.env.AWS_PROFILE }) : undefined) });
     const pool = (await client.send(new DescribeUserPoolCommand({ UserPoolId: poolId }))).UserPool!;
     assert.equal(pool.Arn, 'arn:aws:cognito-idp:us-east-1:559054714699:userpool/' + poolId);
     assert.equal(pool.MfaConfiguration, 'ON');
@@ -206,4 +211,11 @@ async function main() {
         console.log(JSON.stringify(results, null, 2));
     }
 }
-await main().catch((error: Error) => { console.error(JSON.stringify({ errorCode: error.name, stage: 'preflight' })); process.exitCode = 1; });
+await main().catch((error: Error) => {
+    // Preflight happens before any disposable user is created. Surface an assertion
+    // identifier for release diagnostics, but never include tokens, passwords, or AWS
+    // response payloads.
+    const assertion = error instanceof assert.AssertionError ? 'cognito-metadata-contract' : 'staging-metadata-available';
+    console.error(JSON.stringify({ errorCode: error.name, stage: 'preflight', assertion }));
+    process.exitCode = 1;
+});
