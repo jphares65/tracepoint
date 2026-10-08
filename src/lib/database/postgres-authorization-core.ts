@@ -17,7 +17,8 @@ export type PostgresSubjectContext = {
   subjectId: string;
 };
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL UUID columns accept valid RFC UUIDs regardless of their version.
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function assertContext(context: PostgresAuthorizationContext) {
   if (!uuidPattern.test(context.subjectId) || !uuidPattern.test(context.departmentId)) {

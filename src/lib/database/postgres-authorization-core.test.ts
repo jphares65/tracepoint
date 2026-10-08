@@ -66,9 +66,10 @@ test("rejects malformed identity or tenant context before taking a connection", 
   assert.equal(connected, false);
 });
 
-test("accepts UUIDv7 authorization contexts used by Cognito-linked identities", async () => {
+test("accepts RFC UUID authorization contexts used by Cognito-linked and legacy identities", async () => {
   const value = fixture();
   const uuidV7 = "018f4f0d-5ca0-7c48-8c12-123456789abc";
+  const legacyUuid = "018f4f0d-5ca0-0c48-8c12-123456789abc";
 
   await withPostgresAuthorization(
     value.pool,
@@ -77,6 +78,14 @@ test("accepts UUIDv7 authorization contexts used by Cognito-linked identities", 
   );
 
   assert.equal(value.calls.some(call => call.text === "select synthetic"), true);
+
+  const legacy = fixture();
+  await withPostgresAuthorization(
+    legacy.pool,
+    { subjectId: legacyUuid, departmentId: context.departmentId, supportMode: true },
+    client => client.query("select synthetic"),
+  );
+  assert.equal(legacy.calls.some(call => call.text === "select synthetic"), true);
 });
 
 test("sets only subject context for platform operations", async () => {
