@@ -9,11 +9,14 @@ const tag='a'.repeat(40)+'-aws-native-staging';
 test('native staging application images use exactly the suffixed immutable tag contract',()=>{
  const buildspec=read('buildspec.staging-image.yml');
  const publisher=read('scripts/publish-tracepoint-staging-image.ps1');
+ const dockerfile=read('Dockerfile');
  const workflow=read('.github/workflows/aws-staging-runtime.yml');
  assert.match(buildspec,/\^\(migration-\)\?\[0-9a-f\]\{40\}-aws-native-staging\$/);
  assert.match(publisher,/\$imageTag = "\$commit-aws-native-staging"/);
  assert.match(publisher,/name=IMAGE_TAG,value=\$imageTag,type=PLAINTEXT/);
  assert.match(publisher,/imageTag=\$imageTag/);
+ assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
+ assert.match(publisher,/'scripts\/run-application-tests\.mjs'/);
  assert.match(workflow,/RELEASE_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \|\| github\.sha \}\}/);
  assert.match(workflow,/ImageTag "\$env:RELEASE_COMMIT-aws-native-staging"/);
 });

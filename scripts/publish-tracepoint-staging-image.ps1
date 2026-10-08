@@ -20,6 +20,7 @@ $archiveIncludes = @(
     'tsconfig.json',
     'public',
     'src',
+    'scripts/run-application-tests.mjs',
     'scripts/start-tracepoint-container.mjs',
     'scripts/validate-tracepoint-runtime-config.mjs'
 )
