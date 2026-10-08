@@ -18,9 +18,9 @@ function global:node {
  $command=$args -join ' '
  $global:ReleaseTestCalls+= $command
  if($command -match 'validate-staging-database-release-lease\.mjs') {Write-Output ('{"expiresAfterUtc":"'+[DateTime]::UtcNow.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ssZ")+'","leaseOwner":"github-release","leaseReference":"github:123:1"}');return}
- if($global:ReleaseTestScenario -eq 'stderr' -and $command -match '--range-documents') {Write-Error 'Synthetic child error before finally';$global:ReleaseTestCalls+='child-cleanup';$global:LASTEXITCODE=1;return}
- if (($global:ReleaseTestScenario -eq 'preflight' -and $command -match '--fixtures-only') -or
-     ($global:ReleaseTestScenario -eq 'acceptance' -and $command -match '--range-documents') -or
+ if($global:ReleaseTestScenario -eq 'stderr' -and $command -match 'rehearse-cognito') {Write-Error 'Synthetic child error before finally';$global:ReleaseTestCalls+='child-cleanup';$global:LASTEXITCODE=1;return}
+ if (($global:ReleaseTestScenario -eq 'preflight' -and $command -match 'test-staging-native-login') -or
+     ($global:ReleaseTestScenario -eq 'acceptance' -and $command -match 'rehearse-cognito') -or
      ($global:ReleaseTestScenario -eq 'brevo' -and $command -match 'test-staging-brevo-delivery') -or
      ($global:ReleaseTestScenario -eq 'evidence' -and $command -match 'collect-staging-release-evidence')) {$global:LASTEXITCODE=1}
 }
@@ -44,9 +44,10 @@ $global:ReleaseTestRevision=1
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')
  foreach($scenario in @('success','preflight','acceptance','brevo','evidence','stderr')) {
   $global:ReleaseTestScenario=$scenario;$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
-  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic'} catch {$failed=$true}
+  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider cognito} catch {$failed=$true}
   if($scenario -eq 'success') {
    if($failed -or $global:ReleaseTestRevision -ne 2 -or $global:ReleaseTestCalls -contains 'rollback'){throw 'Successful release incorrectly rolled back'}
+   if(-not ($global:ReleaseTestCalls -match 'rehearse-cognito')){throw 'Successful release skipped real Cognito authentication rehearsal'}
    if(-not ($global:ReleaseTestCalls -match 'test-staging-brevo-delivery')){throw 'Successful release skipped live Brevo delivery'}
   }
   elseif($scenario -eq 'preflight') {if(!$failed -or $global:ReleaseTestCalls -contains 'deploy'){throw 'Failed authentication preflight deployed'}}

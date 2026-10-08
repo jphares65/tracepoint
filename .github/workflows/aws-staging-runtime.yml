@@ -89,7 +89,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_COMMIT: ${{ steps.request.outputs.imageCommit || github.sha }}
-        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag "$env:RELEASE_COMMIT-aws-native-staging" -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3 -IncludeReviewedNativeNotificationMode
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag "$env:RELEASE_COMMIT-aws-native-staging" -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3 -AuthenticationProvider cognito -IncludeReviewedNativeNotificationMode
 
       - name: Controlled staging rollback and return to accepted image
         if: steps.request.outputs.rollbackPriorTaskArn != ''

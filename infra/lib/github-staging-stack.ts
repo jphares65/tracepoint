@@ -31,6 +31,9 @@ export class GitHubStagingStack extends cdk.Stack {
   allow(['logs:DescribeLogStreams','logs:FilterLogEvents','logs:GetLogEvents'],[arn('logs','log-group:/tracepoint/staging/*'),arn('logs','log-group:/aws/codebuild/tracepoint-staging-image-build:*')]);
   allow(['secretsmanager:GetSecretValue','secretsmanager:DescribeSecret'],[arn('secretsmanager','secret:tracepoint/staging/application-p4ZFsw'),arn('secretsmanager','secret:tracepoint/staging/application/aws-native-bAnyoy')]);
   allow(['kms:Decrypt'],[arn('kms','key/8a158690-ddbc-4887-8f61-0927dc279701')],{StringEquals:{'kms:ViaService':`secretsmanager.${region}.amazonaws.com`}});
+  // Guarded releases exercise the actual staging Cognito SRP/MFA/PKCE flow
+  // using one disposable user. Scope lifecycle access to that pool alone.
+  allow(['cognito-idp:DescribeUserPool','cognito-idp:DescribeUserPoolClient','cognito-idp:AdminCreateUser','cognito-idp:AdminSetUserPassword','cognito-idp:AdminGetUser','cognito-idp:AdminDeleteUser','cognito-idp:RevokeToken'],[arn('cognito-idp','userpool/us-east-1_Y9GiDA5Zy')]);
   // Disposable acceptance cleanup is server-side and constrained to staging
   // prefixes. The browser never receives these AWS credentials or admin secret.
   allow(['s3:ListBucketVersions'],[`arn:aws:s3:::tracepoint-staging-private-${account}`],{StringLike:{'s3:prefix':['attachments/*','department-assets/*']}});

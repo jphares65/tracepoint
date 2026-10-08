@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}-aws-native-staging$')][string]$ImageTag,
     [Parameter(Mandatory)][string]$CertificateArn,
     [switch]$IncludeReviewedNativeNotificationMode,
+    [ValidateSet('bridge','cognito')][string]$AuthenticationProvider = 'cognito',
     [ValidateSet('s3')][string]$StorageProvider = 's3'
 )
 Set-StrictMode -Version Latest
@@ -22,7 +23,11 @@ function Invoke-StagingNodeGate {
     finally { $ErrorActionPreference=$previousPreference }
     if($code -ne 0){throw 'Staging Node gate failed after child cleanup completed.'}
 }
-Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--fixtures-only')
+if ($AuthenticationProvider -eq 'bridge') {
+    Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--fixtures-only')
+} else {
+    Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'))
+}
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A previous task revision is required for automatic rollback.' }
 & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1')
@@ -31,7 +36,11 @@ try {
     & aws.exe ecs wait services-stable --cluster tracepoint-staging --services tracepoint-staging --region us-east-1
     if ($LASTEXITCODE -ne 0) { throw 'ECS failed to stabilize.' }
     & (Join-Path $PSScriptRoot 'test-tracepoint-staging-runtime.ps1') -WaitSeconds 900
-    Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--range-documents','--extended-workflows')
+    if ($AuthenticationProvider -eq 'bridge') {
+        Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--range-documents','--extended-workflows')
+    } else {
+        Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot '..\infra\scripts\rehearse-cognito.mts'),'--execute')
+    }
     Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-brevo-delivery.mjs'),'--send-to-account-owner')
     Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs'),'--image',$ImageTag)
 } catch {
