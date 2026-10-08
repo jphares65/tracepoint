@@ -37,6 +37,23 @@ test('callback consumes PKCE and returns opaque session without provider tokens 
 test('callback duplicate cookies or query values cannot reach token exchange',async()=>{
  const f=fixture();for(const query of ['state=a&state=b&code=c','state=a&code=b&error=denied','state=a&code=b']){const request=new Request(origin+'/api/auth/cognito/callback?'+query,{headers:{cookie:'__Host-tracepoint-cognito-flow='+handle+'; __Host-tracepoint-cognito-flow='+nextHandle}});assert.equal((await f.api.callback(request)).status,401);}assert.equal(f.calls.exchange,0);
 });
+test('staging callback diagnostics expose only the failed stage and flow-cookie shape',async()=>{
+ const environment=process.env.CONFIGURATION_ENVIRONMENT,original=console.error,lines:string[]=[];
+ console.error=(line:string)=>{lines.push(line);};
+ try{
+  process.env.CONFIGURATION_ENVIRONMENT='staging';
+  const f=fixture();
+  const response=await f.api.callback(new Request(origin+'/api/auth/cognito/callback?state=a&code=b'));
+  assert.equal(response.status,401);
+  assert.deepEqual(JSON.parse(lines[0]),{
+   event:'staging-cognito-callback-failure',branch:'flow_cookie',flowCookiePresent:false,flowCookieCount:0,
+   flowCookieEmpty:false,flowCookieMalformed:false,flowCookieValid:false,
+  });
+ }finally{
+  console.error=original;
+  if(environment===undefined)delete process.env.CONFIGURATION_ENVIRONMENT;else process.env.CONFIGURATION_ENVIRONMENT=environment;
+ }
+});
 test('refresh rejects CSRF and malformed cookies; successful rotation issues a new opaque handle',async()=>{
  const f=fixture(),cookie='__Host-tracepoint-cognito-session='+handle;assert.equal((await f.api.refresh(post('refresh',{cookie,origin:'https://evil.invalid'}))).status,403);assert.equal(f.calls.rotate,0);
  assert.equal((await f.api.refresh(post('refresh',{cookie:'__Host-tracepoint-cognito-session=../bad'}))).status,401);assert.equal(f.calls.rotate,0);

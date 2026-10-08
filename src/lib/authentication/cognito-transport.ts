@@ -30,6 +30,15 @@ function readCookie(request:Request,name:string){
  const matches=(request.headers.get('cookie')??'').split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));
  if(matches.length!==1)throw Error();const value=matches[0].slice(name.length+1);if(!handlePattern.test(value))throw Error();return value;
 }
+function reportStagingCallbackFailure(request: Request, branch: string) {
+ if (process.env.CONFIGURATION_ENVIRONMENT !== 'staging') return;
+ const flow = inspectFlowCookie(request, flowCookie);
+ console.error(JSON.stringify({
+  event: 'staging-cognito-callback-failure', branch,
+  flowCookiePresent: flow.present, flowCookieCount: flow.count,
+  flowCookieEmpty: flow.empty, flowCookieMalformed: flow.malformed, flowCookieValid: flow.valid,
+ }));
+}
 const cookie=(name:string,value:string,maxAge:number)=>`${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 
 // Disabled route factory. No Next route or active provider imports this module.
@@ -121,7 +130,7 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
     branch='identity_receipt_match';if(!established||identity.userId!==established.userId)throw Error();
     branch='session_cookie';shadowCognitoDiagnostic('callback_success');
     return response(303,'authenticated',{location:origin+'/',cookies:[cleared,session(established)]});
-   }catch{shadowCognitoDiagnostic(branch);return response(401,'authorization_rejected',{cookies:[cleared]});}
+   }catch{shadowCognitoDiagnostic(branch);reportStagingCallbackFailure(request,branch);return response(401,'authorization_rejected',{cookies:[cleared]});}
   },
   async refresh(request:Request){
    const rejected=guard(request,'/api/auth/cognito/refresh','POST');if(rejected)return rejected;
