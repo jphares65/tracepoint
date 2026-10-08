@@ -211,11 +211,6 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         },
       },
     ],
-  },  {
-    label: "Agency Documents",
-    href: "/agency-documents",
-    icon: FileText,
-    requirement: { anyOf: ["view_agency_documents", "generate_agency_documents", "manage_document_templates"] },
   },
   {
     label: "Off-Duty Firearms",
@@ -241,7 +236,14 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
     label: "Administration",
     icon: Settings,
     requirement: {
-      anyOf: ["manage_users", "view_audit_log", "administer_department"],
+      anyOf: [
+        "manage_users",
+        "view_audit_log",
+        "administer_department",
+        "view_agency_documents",
+        "generate_agency_documents",
+        "manage_document_templates",
+      ],
     },
     children: [
       {
@@ -254,6 +256,18 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         href: "/settings/import-export",
         icon: BarChart3,
         requirement: { anyOf: ["administer_department"] },
+      },
+      {
+        label: "Agency Documents",
+        href: "/agency-documents",
+        icon: FileText,
+        requirement: {
+          anyOf: [
+            "view_agency_documents",
+            "generate_agency_documents",
+            "manage_document_templates",
+          ],
+        },
       },
     ],
   },
