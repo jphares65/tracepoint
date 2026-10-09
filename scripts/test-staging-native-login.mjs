@@ -20,7 +20,7 @@ export function assertNativeLoginRedirect(response) {
 }
 
 export function assertInvalidBearerDenied(response, path) {
-  assert.ok([401, 403].includes(response.status), `${path} must deny an invalid bearer token.`);
+  assert.ok([401, 403].includes(response.status), `${path} must deny an invalid bearer token; received HTTP ${response.status}.`);
 }
 
 export async function verifyBaselineInvalidBearer(fetchImpl = fetch) {

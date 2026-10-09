@@ -39,6 +39,14 @@ if ($AuthenticationProvider -eq 'bridge') {
 }
 $previous = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
 if ($LASTEXITCODE -ne 0 -or $previous -notmatch '^arn:aws:ecs:us-east-1:559054714699:task-definition/') { throw 'A previous task revision is required for automatic rollback.' }
+$previousDefinition = & aws.exe ecs describe-task-definition --task-definition $previous --region us-east-1 --output json
+if ($LASTEXITCODE -ne 0) { throw 'The pre-rollout task definition cannot be read for rollback pinning.' }
+$previousDefinition = ($previousDefinition -join [Environment]::NewLine) | ConvertFrom-Json
+$previousContainers = @($previousDefinition.taskDefinition.containerDefinitions)
+if ($previousContainers.Count -ne 1 -or $previousContainers[0].name -ne 'tracepoint') { throw 'The pre-rollout task definition has an unexpected container shape.' }
+$previousImage = [string]$previousContainers[0].image
+if ($previousImage -notmatch '^559054714699\.dkr\.ecr\.us-east-1\.amazonaws\.com/tracepoint-staging@(?<digest>sha256:[0-9a-f]{64})$') { throw 'The pre-rollout image must be digest-pinned for automatic recovery.' }
+$previousImageDigest = $Matches.digest
 # A preceding rolling replacement can leave a deregistering target behind even
 # after ECS reports a completed rollout. Start a fresh bounded convergence window
 # for this pre-deploy baseline rather than treating that normal state as an
@@ -67,6 +75,6 @@ try {
     Set-ReleasePhase 'recovery'
     $current = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
     if ($LASTEXITCODE -ne 0) { throw 'Release failed and current revision cannot be verified. Manual staging recovery is required.' }
-    if ($current -ne $previous) { & (Join-Path $PSScriptRoot 'invoke-tracepoint-staging-rollback.ps1') -TaskDefinitionArn $previous -Execute }
+    if ($current -ne $previous) { & (Join-Path $PSScriptRoot 'invoke-tracepoint-staging-rollback.ps1') -TaskDefinitionArn $previous -ExpectedImageDigest $previousImageDigest -Execute }
     throw $failure
 }

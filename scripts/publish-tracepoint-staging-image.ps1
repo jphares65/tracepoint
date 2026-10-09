@@ -28,6 +28,8 @@ $archiveIncludes = @(
     'supabase/migrations',
     # npm run build invokes this checked-in prebuild validator inside the builder.
     'scripts/assert-aws-native-provider-reachability.mjs',
+    'scripts/mobile-route-image-contract-core.mjs',
+    'scripts/test-staging-image-mobile-routes.sh',
     'scripts/run-application-tests.mjs',
     # The runtime image copies its migration runner; including it does not invoke it.
     'scripts/run-aws-native-migrations.mjs',

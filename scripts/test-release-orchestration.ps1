@@ -10,6 +10,7 @@ function global:aws.exe {
  if (($args -join ' ') -like 'sts get-caller-identity*') { return '{"Account":"559054714699","Arn":"arn:aws:sts::559054714699:assumed-role/TracePointMigrationStaging/test"}' }
  if (($args -join ' ') -like 'ssm get-parameter*') { return (@{Parameter=@{Value=('{"expiresAfterUtc":"'+[DateTime]::UtcNow.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ssZ")+'","leaseOwner":"github-release","leaseReference":"github:123:1"}')}} | ConvertTo-Json -Compress) }
  if (($args -join ' ') -like 'ecs describe-services*') {return "arn:aws:ecs:us-east-1:559054714699:task-definition/synthetic:$global:ReleaseTestRevision"}
+ if (($args -join ' ') -like 'ecs describe-task-definition*') {return '{"taskDefinition":{"containerDefinitions":[{"name":"tracepoint","image":"559054714699.dkr.ecr.us-east-1.amazonaws.com/tracepoint-staging@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}}'}
  if (($args -join ' ') -like 'ecs wait services-stable*') {return}
  throw 'Unexpected AWS call; real AWS is unavailable to this test.'
 }
@@ -37,8 +38,8 @@ if($WaitSeconds -ne 900){throw 'Each ALB convergence phase must start with a fre
 $global:ReleaseTestCalls+='runtime'
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'test-tracepoint-staging-runtime.ps1')
  @'
-param($TaskDefinitionArn,[switch]$Execute)
-if($TaskDefinitionArn -notmatch ':1$' -or !$Execute){throw 'Wrong rollback target'}
+param($TaskDefinitionArn,$ExpectedImageDigest,[switch]$Execute)
+if($TaskDefinitionArn -notmatch ':1$' -or $ExpectedImageDigest -ne ('sha256'+':'+'a'*64) -or !$Execute){throw 'Wrong rollback target'}
 $global:ReleaseTestCalls+='rollback'
 $global:ReleaseTestRevision=1
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')

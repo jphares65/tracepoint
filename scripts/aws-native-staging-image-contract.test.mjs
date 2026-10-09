@@ -16,6 +16,9 @@ test('native staging application images use exactly the suffixed immutable tag c
  assert.match(publisher,/name=IMAGE_TAG,value=\$imageTag,type=PLAINTEXT/);
  assert.match(publisher,/imageTag=\$imageTag/);
  assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
+ assert.match(dockerfile,/mobile-route-image-contract-core\.mjs --source-root \/app --next-root \/app\/\.next/);
+ assert.match(buildspec,/test-staging-image-mobile-routes\.sh/);
+ assert.match(buildspec,/mobile-route-image-contract-core\.mjs --next-root \/app\/\.next/);
  assert.match(publisher,/'scripts\/assert-aws-native-provider-reachability\.mjs'/);
  assert.match(publisher,/'scripts\/run-application-tests\.mjs'/);
  assert.match(publisher,/'scripts\/run-aws-native-migrations\.mjs'/);
@@ -28,13 +31,18 @@ test('native staging application images use exactly the suffixed immutable tag c
  assert.match(workflow,/ImageTag "\$env:RELEASE_COMMIT-aws-native-staging"/);
 });
 
-test('release, deploy, evidence, and rollback consumers reject bare or mutable tags',()=>{
- const files=['scripts/release-tracepoint-staging.ps1','scripts/deploy-tracepoint-staging.ps1','scripts/collect-staging-release-evidence.mjs','scripts/rehearse-staging-rollback.ps1','scripts/invoke-tracepoint-staging-rollback.ps1'];
+test('normal release consumers reject bare or mutable tags while rollback is pinned by the captured digest',()=>{
+ const files=['scripts/release-tracepoint-staging.ps1','scripts/deploy-tracepoint-staging.ps1','scripts/collect-staging-release-evidence.mjs','scripts/rehearse-staging-rollback.ps1'];
  for(const file of files){
   const text=read(file);
   assert.match(text,/\[0-9a-f\]\{40\}-aws-native-staging/);
   assert.doesNotMatch(text,/ValidatePattern\('\^\[0-9a-f\]\{40\}\$'\)/);
  }
+ const rollback=read('scripts/invoke-tracepoint-staging-rollback.ps1');
+ assert.match(rollback,/ExpectedImageDigest/);
+ assert.match(rollback,/tracepoint-staging@\(\?<digest>sha256/);
+ assert.match(rollback,/does not match the pre-rollout task definition/);
+ assert.doesNotMatch(rollback,/imageTag=\$tag/);
  assert.match(read('scripts/collect-staging-release-evidence.mjs'),/sourceCommit:tag\.slice\(0,40\)/);
  assert.match(tag,/^[0-9a-f]{40}-aws-native-staging$/);
  for(const invalid of ['a'.repeat(40),'latest','migration-'+tag,'A'.repeat(40)+'-aws-native-staging'])assert.doesNotMatch(invalid,/^[0-9a-f]{40}-aws-native-staging$/);

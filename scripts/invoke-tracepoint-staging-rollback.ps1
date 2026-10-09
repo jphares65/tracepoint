@@ -1,6 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^arn:aws:ecs:us-east-1:559054714699:task-definition/[^:]+:[0-9]+$')][string]$TaskDefinitionArn,
+    [Parameter(Mandatory)][ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ExpectedImageDigest,
     [switch]$Execute
 )
 Set-StrictMode -Version Latest
@@ -19,11 +20,14 @@ if ($target.family -ne $current.family -or $target.revision -ge $current.revisio
 $containers = @($target.containerDefinitions)
 if ($containers.Count -ne 1 -or $containers[0].name -ne 'tracepoint') { throw 'Unexpected rollback container definition.' }
 $image = [string]$containers[0].image
-if ($image -notmatch '^559054714699\.dkr\.ecr\.us-east-1\.amazonaws\.com/tracepoint-staging:(?<tag>[0-9a-f]{40}-aws-native-staging)$') { throw 'Rollback image must be an immutable native staging image tag.' }
-$tag = $Matches.tag
-$scan = Read-Aws @('ecr','describe-image-scan-findings','--repository-name','tracepoint-staging','--image-id',"imageTag=$tag")
-    Assert-TracePointImageScan -Scan $scan
-Write-Host "Validated rollback revision $($target.revision), image $tag."
+if ($image -notmatch '^559054714699\.dkr\.ecr\.us-east-1\.amazonaws\.com/tracepoint-staging@(?<digest>sha256:[0-9a-f]{64})$') { throw 'Rollback image must be a digest-pinned tracepoint-staging artifact.' }
+$digest = $Matches.digest
+if ($digest -ne $ExpectedImageDigest) { throw 'Rollback image digest does not match the pre-rollout task definition.' }
+$imageDetail = (Read-Aws @('ecr','describe-images','--repository-name','tracepoint-staging','--image-ids',"imageDigest=$digest")).imageDetails | Select-Object -First 1
+if (-not $imageDetail -or [string]$imageDetail.imageDigest -ne $digest) { throw 'Rollback image digest is not present in the staging repository.' }
+$scan = Read-Aws @('ecr','describe-image-scan-findings','--repository-name','tracepoint-staging','--image-id',"imageDigest=$digest")
+Assert-TracePointImageScan -Scan $scan
+Write-Host "Validated pre-rollout rollback revision $($target.revision), image digest $digest."
 if (-not $Execute) { return }
 Assert-TracePointStagingIdentity | Out-Null
 $null = Read-Aws @('ecs','update-service','--cluster','tracepoint-staging','--service','tracepoint-staging','--task-definition',$TaskDefinitionArn)

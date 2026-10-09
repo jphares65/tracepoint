@@ -28,7 +28,7 @@ RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
 # JSON key that ECS injects when the task starts.
 RUN --mount=type=secret,id=next_server_actions_encryption_key,required=true \
     NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/next_server_actions_encryption_key)" \
-    npm run build
+    npm run build && node scripts/mobile-route-image-contract-core.mjs --source-root /app --next-root /app/.next
 
 # Empty, owned volume seeds: Fargate otherwise initializes bind mounts as root.
 RUN mkdir -p /runtime-volumes/cache /runtime-volumes/tmp && \
@@ -49,6 +49,7 @@ COPY --from=builder --chown=nonroot:nonroot /app/database/aws ./database/aws
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/run-aws-native-migrations.mjs ./scripts/run-aws-native-migrations.mjs
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/mobile-route-image-contract-core.mjs ./scripts/mobile-route-image-contract-core.mjs
 COPY --from=builder --chown=nonroot:nonroot /runtime-volumes/cache /app/.next/cache
 COPY --from=builder --chown=nonroot:nonroot /runtime-volumes/tmp /tmp
 USER nonroot
