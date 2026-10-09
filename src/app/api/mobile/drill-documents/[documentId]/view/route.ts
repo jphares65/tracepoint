@@ -4,7 +4,7 @@ import { accessFailureResponse, hasAnyServerPermission, hasServerFeature, resolv
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ documentId: string }> };
 export async function GET(request: Request, context: Context) {
-  const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved);
+  const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved);
   if ((!hasServerFeature(resolved.context, "range_training") && !hasServerFeature(resolved.context, "qualifications")) || !hasAnyServerPermission(resolved.context, ["manage_range_days", "score_range_days", "manage_qualifications"])) return NextResponse.json({ error: "Drill document not found." }, { status: 404 });
   const { documentId } = await context.params; const { admin, departmentId } = resolved.context;
   const found = await admin.from("drill_documents").select("storage_path,original_filename").eq("id", documentId).eq("department_id", departmentId).maybeSingle();

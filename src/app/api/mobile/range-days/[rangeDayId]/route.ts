@@ -5,7 +5,7 @@ import { rangeDayDetailPayload } from "@/lib/tracepoint/mobile-workflows";
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ rangeDayId: string }> };
 export async function GET(request: Request, context: Context) {
-  const resolved = await resolveServerAccess(); if (!resolved.ok) return accessFailureResponse(resolved);
+  const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved);
   if (!hasServerFeature(resolved.context, "range_training") && !hasServerFeature(resolved.context, "qualifications")) return NextResponse.json({ error: "Range & Training is not enabled for this agency." }, { status: 403 });
   if (!hasAnyServerPermission(resolved.context, ["manage_range_days", "score_range_days", "manage_qualifications"])) return NextResponse.json({ error: "You are not authorized to view Range Days." }, { status: 403 });
   try {
