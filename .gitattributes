@@ -1,1 +1,2 @@
 infra/changesets/production-maintenance-response-20260926/maintenance.json text eol=lf
+scripts/test-staging-image-mobile-routes.sh text eol=lf

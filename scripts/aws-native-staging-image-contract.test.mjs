@@ -18,6 +18,8 @@ test('native staging application images use exactly the suffixed immutable tag c
  assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
  assert.match(dockerfile,/mobile-route-image-contract-core\.mjs --source-root \/app --next-root \/app\/\.next/);
  assert.match(buildspec,/test-staging-image-mobile-routes\.sh/);
+ assert.match(buildspec,/grep -q \$'\\\\r' scripts\/test-staging-image-mobile-routes\.sh/);
+ assert.match(read('.gitattributes'),/scripts\/test-staging-image-mobile-routes\.sh text eol=lf/);
  assert.match(buildspec,/mobile-route-image-contract-core\.mjs --next-root \/app\/\.next/);
  assert.match(publisher,/'scripts\/assert-aws-native-provider-reachability\.mjs'/);
  assert.match(publisher,/'scripts\/run-application-tests\.mjs'/);
