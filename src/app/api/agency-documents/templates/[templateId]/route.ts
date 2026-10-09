@@ -26,7 +26,7 @@ export async function PATCH(request: Request, route: Context) {
   const existing = await access.context.admin.from("document_templates").select("id,name,status,current_version,source_filename,source_storage_path,description,category").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
   if (existing.error) return response(existing.error.message, 500); if (!existing.data) return response("Template not found.", 404);
   if (body.action === "duplicate") {
-    const duplicate = await access.context.admin.from("document_templates").insert({ ...existing.data, id: crypto.randomUUID(), name: `${existing.data.name} copy`, status: "draft", created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId }).select("id").single();
+    const duplicate = await access.context.admin.from("document_templates").insert({ id: crypto.randomUUID(), department_id: access.context.departmentId, name: `${existing.data.name} copy`, description: existing.data.description, category: existing.data.category, status: "draft", current_version: 1, source_filename: existing.data.source_filename, source_storage_path: existing.data.source_storage_path, created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId }).select("id").single();
     if (duplicate.error) return response(duplicate.error.message, 500);
     const oldVersion = await access.context.admin.from("document_template_versions").select("*").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", existing.data.current_version).single();
     if (oldVersion.error) return response(oldVersion.error.message, 500);
@@ -34,7 +34,16 @@ export async function PATCH(request: Request, route: Context) {
     if (newVersion.error) return response(newVersion.error.message, 500);
     const oldFields = await access.context.admin.from("document_template_fields").select("*").eq("template_version_id", oldVersion.data.id).eq("department_id", access.context.departmentId);
     if (oldFields.error) return response(oldFields.error.message, 500);
-    if (oldFields.data?.length) await access.context.admin.from("document_template_fields").insert(oldFields.data.map((stored: Record<string, unknown>) => { const field = { ...stored }; delete field.id; delete field.created_at; delete field.updated_at; return { ...field, id: crypto.randomUUID(), template_version_id: newVersion.data.id }; }));
+    if (oldFields.data?.length) {
+      const copiedFields = await access.context.admin.from("document_template_fields").insert(oldFields.data.map((stored: Record<string, unknown>) => { const field = { ...stored }; delete field.id; delete field.created_at; delete field.updated_at; return { ...field, id: crypto.randomUUID(), department_id: access.context.departmentId, template_version_id: newVersion.data.id }; }));
+      if (copiedFields.error) return response(copiedFields.error.message, 500);
+    }
+    const bindings = await access.context.admin.from("document_template_structured_bindings").select("*").eq("template_version_id", oldVersion.data.id).eq("department_id", access.context.departmentId);
+    if (bindings.error) return response(bindings.error.message, 500);
+    if (bindings.data?.length) {
+      const copiedBindings = await access.context.admin.from("document_template_structured_bindings").insert(bindings.data.map((stored: Record<string, unknown>) => { const binding = { ...stored }; delete binding.id; delete binding.created_at; delete binding.updated_at; return { ...binding, id: crypto.randomUUID(), department_id: access.context.departmentId, template_id: duplicate.data.id, template_version_id: newVersion.data.id, created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId }; }));
+      if (copiedBindings.error) return response(copiedBindings.error.message, 500);
+    }
     await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: "document_template_duplicated", entity_type: "document_template", entity_id: duplicate.data.id, summary: `Duplicated document template ${existing.data.name}.`, new_value: { source_template_id: templateId } });
     return NextResponse.json({ id: duplicate.data.id });
   }
