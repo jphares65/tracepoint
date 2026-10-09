@@ -4,6 +4,8 @@ $temporaryRoot=Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-release-test-'+
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release-tracepoint-staging.ps1') -Destination $temporaryRoot
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Destination $temporaryRoot
+$summaryPath=Join-Path $temporaryRoot 'test-summary.md';$resultPath=Join-Path $temporaryRoot 'test-result.json'
+$ambientSummary=Join-Path $temporaryRoot 'ambient-summary.md';Set-Content -LiteralPath $ambientSummary -Value 'ambient-summary-must-remain-unchanged';$env:GITHUB_STEP_SUMMARY=$ambientSummary
 $global:ReleaseTestCalls=@()
 function global:aws.exe {
  $global:LASTEXITCODE=0
@@ -45,7 +47,7 @@ $global:ReleaseTestRevision=1
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')
  foreach($scenario in @('success','preflight','acceptance','evidence','stderr')) {
   $global:ReleaseTestScenario=$scenario;$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
-  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider cognito} catch {$failed=$true}
+  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider cognito -SummaryPath $summaryPath -ResultPath $resultPath} catch {$failed=$true}
   if($scenario -eq 'success') {
    if($failed -or $global:ReleaseTestRevision -ne 2 -or $global:ReleaseTestCalls -contains 'rollback'){throw 'Successful release incorrectly rolled back'}
    if(-not ($global:ReleaseTestCalls -match 'rehearse-cognito')){throw 'Successful release skipped real Cognito authentication rehearsal'}
@@ -55,9 +57,11 @@ $global:ReleaseTestRevision=1
   elseif(!$failed -or $global:ReleaseTestRevision -ne 1 -or $global:ReleaseTestCalls -notcontains 'rollback'){throw 'Failed release did not restore prior revision'}
   if($scenario -eq 'evidence' -and (($global:ReleaseTestCalls -join "`n") -notmatch 'collect-staging-release-evidence')){throw 'Evidence collector was not invoked during the evidence phase'}
   if($scenario -eq 'stderr' -and $global:ReleaseTestCalls -notcontains 'child-cleanup'){throw 'Native error interrupted child cleanup'}
+  if((Get-Content -Raw $ambientSummary) -ne "ambient-summary-must-remain-unchanged`r`n"){throw 'Test release contaminated the ambient GitHub step summary'}
+  if($scenario -notin @('success','preflight') -and -not ((Get-Content -Raw $resultPath | ConvertFrom-Json).failedPhase)){throw 'Failed test release did not retain its original failure in the isolated result'}
  }
  $global:ReleaseTestScenario='success';$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
- try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider bridge} catch {$failed=$true}
+ try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider bridge -SummaryPath $summaryPath -ResultPath $resultPath} catch {$failed=$true}
  if($failed -or -not (($global:ReleaseTestCalls -join "`n") -match 'test-staging-brevo-delivery')){throw 'Bridge release skipped live Brevo delivery'}
  Write-Host 'Passed native and bridge release orchestration cases: native success, preflight denial, acceptance rollback, evidence rollback, stderr cleanup, and bridge Brevo delivery. Zero network calls.'
 } finally {

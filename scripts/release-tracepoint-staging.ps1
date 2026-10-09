@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory)][string]$CertificateArn,
     [switch]$IncludeReviewedNativeNotificationMode,
     [ValidateSet('bridge','cognito')][string]$AuthenticationProvider = 'cognito',
-    [ValidateSet('s3')][string]$StorageProvider = 's3'
+    [ValidateSet('s3')][string]$StorageProvider = 's3',
+    [string]$SummaryPath = $env:GITHUB_STEP_SUMMARY,
+    [string]$ResultPath = $(if ($env:RUNNER_TEMP) { Join-Path $env:RUNNER_TEMP 'release-result.json' } else { Join-Path ([IO.Path]::GetTempPath()) 'release-result.json' })
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -15,12 +17,17 @@ $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Assert-TracePointStagingIdentity | Out-Null
 Assert-TracePointStagingDatabaseReleaseLease | Out-Null
 $script:ReleasePhase = 'baseline-health'
+$script:ReleaseResult = [ordered]@{candidateSha=$ImageTag.Substring(0,40);phase='baseline-health';status='running';failedPhase=$null;failedAssertion=$null;recoveryAttempted=$false;recoverySucceeded=$false}
+if ($SummaryPath) { Set-Content -LiteralPath $SummaryPath -Value '' -NoNewline }
+function Write-ReleaseResult { $script:ReleaseResult | ConvertTo-Json -Compress | Set-Content -LiteralPath $ResultPath -NoNewline }
+Write-ReleaseResult
 function Set-ReleasePhase([string]$Phase) { $script:ReleasePhase=$Phase; Write-Host "RELEASE_PHASE=$Phase" }
 function Write-ReleaseFailure([System.Management.Automation.ErrorRecord]$Failure) {
     $reason=($Failure.Exception.Message -replace '[\r\n]+',' ')
+    $script:ReleaseResult.phase=$script:ReleasePhase;$script:ReleaseResult.status='failed';$script:ReleaseResult.failedPhase=$script:ReleasePhase;$script:ReleaseResult.failedAssertion=$reason;Write-ReleaseResult
     Write-Host "FAILED_PHASE=$script:ReleasePhase"
     Write-Host "FAILED_ASSERTION=$reason"
-    if ($env:GITHUB_STEP_SUMMARY) { "## Staging release failure`n`nFAILED_PHASE=$script:ReleasePhase`n`nFAILED_ASSERTION=$reason" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
+    if ($SummaryPath) { "## Staging release failure`n`nFAILED_PHASE=$script:ReleasePhase`n`nFAILED_ASSERTION=$reason" | Add-Content -LiteralPath $SummaryPath }
 }
 function Invoke-StagingNodeGate {
     param([string[]]$Arguments,[string]$Phase)
@@ -72,9 +79,12 @@ try {
 } catch {
     $failure = $_
     Write-ReleaseFailure $failure
+    $script:ReleaseResult.recoveryAttempted=$true;Write-ReleaseResult
     Set-ReleasePhase 'recovery'
     $current = & aws.exe ecs describe-services --cluster tracepoint-staging --services tracepoint-staging --region us-east-1 --query 'services[0].taskDefinition' --output text
     if ($LASTEXITCODE -ne 0) { throw 'Release failed and current revision cannot be verified. Manual staging recovery is required.' }
     if ($current -ne $previous) { & (Join-Path $PSScriptRoot 'invoke-tracepoint-staging-rollback.ps1') -TaskDefinitionArn $previous -ExpectedImageDigest $previousImageDigest -Execute }
+    $script:ReleaseResult.recoverySucceeded=$true;Write-ReleaseResult
     throw $failure
 }
+$script:ReleaseResult.phase='complete';$script:ReleaseResult.status='success';Write-ReleaseResult

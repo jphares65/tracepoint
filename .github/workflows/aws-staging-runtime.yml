@@ -91,6 +91,14 @@ jobs:
           RELEASE_COMMIT: ${{ steps.request.outputs.imageCommit || github.sha }}
         run: ./scripts/release-tracepoint-staging.ps1 -ImageTag "$env:RELEASE_COMMIT-aws-native-staging" -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3 -AuthenticationProvider cognito -IncludeReviewedNativeNotificationMode
 
+      - name: Upload sanitized release result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-release-result
+          path: ${{ runner.temp }}/release-result.json
+          if-no-files-found: error
+
       - name: Controlled staging rollback and return to accepted image
         if: steps.request.outputs.rollbackPriorTaskArn != ''
         shell: pwsh
