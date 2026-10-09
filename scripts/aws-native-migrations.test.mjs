@@ -43,3 +43,13 @@ test("AWS-native migration ledger keeps all other versions exact", () => {
   assert.throws(() => verifyLedger([version28], [ledgerRow(28, version28.filename, sha256(version28.contents.replace(/\n/g, "\r\n")))]), /MIGRATION_DRIFT/);
   assert.throws(() => verifyLedger([version30], [ledgerRow(30, version30.filename, sha256(version30.contents.replace(/\n/g, "\r\n")))]), /MIGRATION_DRIFT/);
 });
+
+test("Agency Documents migration grants only manager writes and generation inserts", async () => {
+  const contents = await readFile(new URL("../database/aws/041_document_template_write_authority.sql", import.meta.url), "utf8");
+  assert.match(contents, /grant insert, update, delete on public\.document_templates/);
+  assert.match(contents, /document_templates_manage[\s\S]*manage_document_templates/);
+  assert.match(contents, /document_template_structured_bindings_manage[\s\S]*manage_document_templates/);
+  assert.match(contents, /grant insert on public\.generated_documents to authenticated/);
+  assert.match(contents, /generated_documents_create[\s\S]*generate_agency_documents/);
+  assert.doesNotMatch(contents, /grant all on public\.generated_documents/i);
+});
