@@ -53,6 +53,7 @@ $global:ReleaseTestRevision=1
   }
   elseif($scenario -eq 'preflight') {if(!$failed -or $global:ReleaseTestCalls -contains 'deploy'){throw 'Failed authentication preflight deployed'}}
   elseif(!$failed -or $global:ReleaseTestRevision -ne 1 -or $global:ReleaseTestCalls -notcontains 'rollback'){throw 'Failed release did not restore prior revision'}
+  if($scenario -eq 'evidence' -and (($global:ReleaseTestCalls -join "`n") -notmatch 'collect-staging-release-evidence')){throw 'Evidence collector was not invoked during the evidence phase'}
   if($scenario -eq 'stderr' -and $global:ReleaseTestCalls -notcontains 'child-cleanup'){throw 'Native error interrupted child cleanup'}
  }
  $global:ReleaseTestScenario='success';$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false

@@ -68,7 +68,7 @@ try {
         Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'test-staging-native-login.mjs'),'--post-deploy') -Phase 'mobile-invalid-bearer-postdeploy'
         Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot '..\infra\scripts\rehearse-cognito.mts'),'--execute') -Phase 'authenticated-smoke'
     }
-    Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs'),'--image',$ImageTag)
+    Invoke-StagingNodeGate -Arguments @((Join-Path $PSScriptRoot 'collect-staging-release-evidence.mjs'),'--image',$ImageTag) -Phase 'evidence-collection'
 } catch {
     $failure = $_
     Write-ReleaseFailure $failure

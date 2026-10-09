@@ -1,5 +1,6 @@
 import {stagingQueueHealth} from './staging-queue-health.mjs';
 import {classifyStagingLogs} from './staging-log-classification.mjs';
+import {matchesImmutableRuntimeImage} from './staging-release-evidence-core.mjs';
 import { execFileSync } from 'node:child_process';
 const account='559054714699',region='us-east-1',base='https://staging.tracepointhq.com';
 const args=process.argv.slice(2),tag=args[args.indexOf('--image')+1];
@@ -19,7 +20,7 @@ try {
  const taskArns=aws(['ecs','list-tasks','--cluster','tracepoint-staging','--service-name','tracepoint-staging','--desired-status','RUNNING']).taskArns;
  if(taskArns.length!==1)throw Error('Task count');
  const task=aws(['ecs','describe-tasks','--cluster','tracepoint-staging','--tasks',taskArns[0]]).tasks[0];
- report.runningDigest=task.containers[0].imageDigest;report.imageMatches=task.containers[0].image.endsWith(':'+tag)&&report.expectedDigest===report.runningDigest;
+ report.runningDigest=task.containers[0].imageDigest;report.imageMatches=matchesImmutableRuntimeImage({expectedDigest:report.expectedDigest,runningDigest:report.runningDigest});
  const target=service.loadBalancers[0].targetGroupArn;
  report.targets=aws(['elbv2','describe-target-health','--target-group-arn',target]).TargetHealthDescriptions.map(x=>x.TargetHealth.State);
  const alarms=aws(['cloudwatch','describe-alarms','--alarm-name-prefix','tracepoint-staging','--alarm-types','MetricAlarm','CompositeAlarm']);
