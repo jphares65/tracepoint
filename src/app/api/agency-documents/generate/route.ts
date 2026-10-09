@@ -9,14 +9,16 @@ import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse
 
 type StoredField = { page_number: number; field_type: string; canonical_key: string | null; label: string | null; static_text: string | null; geometry: { x: number; y: number; width: number; height: number }; formatting: { fontSize?: number; bold?: boolean; align?: "left" | "center" | "right"; autoFit?: boolean } | null };
 function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
+function documentDate() { const date = new Date(); return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}/${date.getFullYear()}`; }
 function fieldValue(field: StoredField, manual: Record<string, string>, access: { fullName: string; badgeNumber: string; rankTitle: string; email: string; departmentName: string; departmentShortName: string }) {
   if (field.field_type === "static_text") return field.static_text ?? "";
-  if (field.field_type === "generated_date") return new Date().toLocaleDateString("en-US");
+  if (field.field_type === "generated_date") return documentDate();
   if (field.field_type === "manual") return manual[field.label ?? ""] ?? "";
   switch (field.canonical_key) {
     case "person.full_name": return access.fullName; case "person.first_name": return access.fullName.split(/\s+/)[0] ?? ""; case "person.last_name": return access.fullName.split(/\s+/).at(-1) ?? "";
     case "person.badge_number": return access.badgeNumber; case "person.rank": return access.rankTitle; case "person.email": return access.email;
     case "agency.name": return access.departmentName; case "agency.short_name": return access.departmentShortName;
+    case "document.report_year": return manual["document.report_year"] ?? ""; case "document.report_date": return manual["document.report_date"] ?? documentDate();
     default: return manual[field.canonical_key ?? ""] ?? "";
   }
 }
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
   let contextValues: Record<string, string> = {}; let references: Record<string, string> = {};
   try { const context = await resolveGenerationContext(access.context.admin, access.context.departmentId, body.context ?? {}); contextValues = context.values; references = context.references; } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Selected context is unavailable." }, { status: 409 }); }
   const bindings = (bindingRows.data ?? []).map((row: Record<string, unknown>) => ({ id: String(row.id), sectionKey: String(row.section_key), sourceType: row.source_type, fillMode: row.fill_mode, ordering: row.ordering, maxRows: row.max_rows, overflowBehavior: row.overflow_behavior, filters: row.filters, columnMappings: row.column_mappings, targetCells: row.target_cells })) as DocumentStructuredBinding[];
-  const needsPerson = bindings.some(binding => binding.sourceType === "qualification_history"); const needsReportYear = bindings.some(binding => binding.filters?.reportYearMode === "document"); const reportYear = typeof body.reportYear === "number" ? body.reportYear : Number(body.reportYear);
+  const needsPerson = bindings.some(binding => binding.sourceType === "qualification_history"); const needsReportYear = (fields.data as StoredField[]).some(field => field.canonical_key === "document.report_year") || bindings.some(binding => binding.filters?.reportYearMode === "document"); const reportYear = typeof body.reportYear === "number" ? body.reportYear : Number(body.reportYear);
   if (needsPerson && !body.context?.personId) return NextResponse.json({ error: "Select an officer to resolve qualification-history bindings." }, { status: 400 });
   if (needsReportYear && (!Number.isInteger(reportYear) || reportYear < 1900)) return NextResponse.json({ error: "A document report year is required." }, { status: 400 });
   let structured = { fields: [] as Array<{ pageNumber: number; value: string; geometry: StoredField["geometry"] }>, warnings: [] as string[], requiresReview: false, bindingIds: [] as string[] };
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
   const sourcePath = attachmentPathFromMetadata(version.data.source_storage_path, access.context.departmentId); if (!sourcePath) return NextResponse.json({ error: "Template source is unavailable." }, { status: 404 });
   const signed = await createObjectStore(access.context.admin, access.context.departmentId).createAttachmentView(sourcePath); if (signed.error || !signed.signedUrl) return NextResponse.json({ error: "Template source could not be opened." }, { status: 500 });
   const sourceResponse = await fetch(signed.signedUrl); if (!sourceResponse.ok) return NextResponse.json({ error: "Template source could not be read." }, { status: 502 });
-  const resolvedValues = { ...values, ...contextValues };
+  const resolvedValues = { ...values, ...contextValues, "document.report_year": needsReportYear ? String(reportYear) : values["document.report_year"] ?? "", "document.report_date": values["document.report_date"] ?? documentDate() };
   const unsupported = (fields.data as StoredField[]).find((field) => field.field_type === "tracepoint_data" && !fieldValue(field, resolvedValues, access.context));
   if (unsupported) return NextResponse.json({ error: "This template uses a data field that is not currently available." }, { status: 409 });
   const rendered = await renderAgencyDocument(new Uint8Array(await sourceResponse.arrayBuffer()), [...(fields.data as StoredField[]).map((field) => ({ pageNumber: field.page_number, value: fieldValue(field, resolvedValues, access.context), geometry: field.geometry, formatting: field.formatting ?? undefined })), ...structured.fields]);

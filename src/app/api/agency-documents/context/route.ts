@@ -1,5 +1,36 @@
 import { NextResponse } from "next/server";
 import { analyzeDocumentContext } from "@/lib/agency-documents/context-analysis";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+
 function clean(value: string | null) { return value?.trim() ?? ""; }
-export async function GET(request: Request) { const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); if (!hasAnyServerPermission(access.context, ["generate_agency_documents", "manage_document_templates"])) return permissionDeniedResponse("Document-generation permission is required."); const url = new URL(request.url), templateId = clean(url.searchParams.get("templateId")), kind = clean(url.searchParams.get("kind")), search = clean(url.searchParams.get("search")); if (!templateId) return NextResponse.json({ error: "A template is required." }, { status: 400 }); const template = await access.context.admin.from("document_templates").select("current_version").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle(); if (template.error || !template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 }); const version = await access.context.admin.from("document_template_versions").select("id").eq("department_id", access.context.departmentId).eq("template_id", templateId).eq("version_number", template.data.current_version).single(); if (version.error) return NextResponse.json({ error: "Template could not be read." }, { status: 500 }); const [fieldRows, bindingRows] = await Promise.all([access.context.admin.from("document_template_fields").select("canonical_key").eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id), access.context.admin.from("document_template_structured_bindings").select("source_type,filters").eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id)]); if (fieldRows.error || bindingRows.error) return NextResponse.json({ error: "Template context could not be read." }, { status: 500 }); const analysis = analyzeDocumentContext((fieldRows.data ?? []).map((row: { canonical_key: string | null }) => row.canonical_key)); const bindings = (bindingRows.data ?? []) as Array<{ source_type?: string; filters?: { reportYearMode?: string } | null }>; const context = { ...analysis, requiresPerson: analysis.required.includes("person") || bindings.some(binding => binding.source_type === "qualification_history"), requiresReportYear: bindings.some(binding => binding.filters?.reportYearMode === "document") }; if (kind !== "person") return NextResponse.json({ analysis: context }); let query = access.context.admin.from("department_memberships").select("user_id,badge_number,rank_title,profiles!inner(full_name,email)").eq("department_id", access.context.departmentId).eq("is_active", true).limit(25); if (search) query = query.or(`badge_number.ilike.%${search}%,profiles.full_name.ilike.%${search}%`); const rows = await query; if (rows.error) return NextResponse.json({ error: "Officers could not be loaded." }, { status: 500 }); return NextResponse.json({ analysis: context, items: (rows.data ?? []).map((row: { user_id: string; badge_number?: string; rank_title?: string; profiles?: { full_name?: string } }) => ({ id: row.user_id, label: row.profiles?.full_name ?? "Officer", detail: [row.rank_title, row.badge_number ? `#${row.badge_number}` : ""].filter(Boolean).join(" · ") })) }); }
+
+export async function GET(request: Request) {
+  const access = await resolveServerAccess();
+  if (!access.ok) return accessFailureResponse(access);
+  if (!hasAnyServerPermission(access.context, ["generate_agency_documents", "manage_document_templates"])) return permissionDeniedResponse("Document-generation permission is required.");
+  const url = new URL(request.url), templateId = clean(url.searchParams.get("templateId")), kind = clean(url.searchParams.get("kind")), search = clean(url.searchParams.get("search"));
+  if (!templateId) return NextResponse.json({ error: "A template is required." }, { status: 400 });
+  const template = await access.context.admin.from("document_templates").select("current_version").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
+  if (template.error || !template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
+  const version = await access.context.admin.from("document_template_versions").select("id").eq("department_id", access.context.departmentId).eq("template_id", templateId).eq("version_number", template.data.current_version).single();
+  if (version.error) return NextResponse.json({ error: "Template could not be read." }, { status: 500 });
+  const [fieldRows, bindingRows] = await Promise.all([
+    access.context.admin.from("document_template_fields").select("canonical_key").eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id),
+    access.context.admin.from("document_template_structured_bindings").select("source_type,filters").eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id),
+  ]);
+  if (fieldRows.error || bindingRows.error) return NextResponse.json({ error: "Template context could not be read." }, { status: 500 });
+  const fieldKeys = (fieldRows.data ?? []).map((row: { canonical_key: string | null }) => row.canonical_key);
+  const analysis = analyzeDocumentContext(fieldKeys);
+  const bindings = (bindingRows.data ?? []) as Array<{ source_type?: string; filters?: { reportYearMode?: string } | null }>;
+  const context = {
+    ...analysis,
+    requiresPerson: analysis.required.includes("person") || bindings.some(binding => binding.source_type === "qualification_history"),
+    requiresReportYear: fieldKeys.includes("document.report_year") || bindings.some(binding => binding.filters?.reportYearMode === "document"),
+  };
+  if (kind !== "person") return NextResponse.json({ analysis: context });
+  let query = access.context.admin.from("department_memberships").select("user_id,badge_number,rank_title,profiles!inner(full_name,email)").eq("department_id", access.context.departmentId).eq("is_active", true).limit(25);
+  if (search) query = query.or(`badge_number.ilike.%${search}%,profiles.full_name.ilike.%${search}%`);
+  const rows = await query;
+  if (rows.error) return NextResponse.json({ error: "Officers could not be loaded." }, { status: 500 });
+  return NextResponse.json({ analysis: context, items: (rows.data ?? []).map((row: { user_id: string; badge_number?: string; rank_title?: string; profiles?: { full_name?: string } }) => ({ id: row.user_id, label: row.profiles?.full_name ?? "Officer", detail: [row.rank_title, row.badge_number ? `#${row.badge_number}` : ""].filter(Boolean).join(" · ") })) });
+}

@@ -11,3 +11,9 @@ test("template builder exposes an explicit analysis and direct-placement workflo
   assert.match(source, /onPointerMove/);
   assert.match(source, /Click the PDF where the new field belongs/);
 });
+
+test("only date-only structured cells offer the qualification-history binding", async () => {
+  const source = await readFile(new URL("./page.tsx", import.meta.url), "utf8");
+  assert.match(source, /const canBindQualificationHistory = \/dates fired\/i\.test\(label\)/);
+  assert.match(source, /mixed table, so it remains Needs Review/);
+});

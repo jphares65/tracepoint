@@ -1,4 +1,4 @@
-export type DocumentFieldCategory = "People" | "Agency" | "Firearms" | "Qualifications / Range";
+export type DocumentFieldCategory = "People" | "Agency" | "Firearms" | "Qualifications / Range" | "Document";
 
 export type DocumentFieldDefinition = {
   key: string;
@@ -22,6 +22,8 @@ export const DOCUMENT_FIELD_REGISTRY: readonly DocumentFieldDefinition[] = [
   { key: "agency.ori", label: "ORI", category: "Agency", description: "The agency ORI when configured.", dataType: "text", supportsFormatting: true },
   { key: "agency.address", label: "Address", category: "Agency", description: "The agency address when configured.", dataType: "text", supportsFormatting: true },
   { key: "agency.chief_name", label: "Chief / Director name", category: "Agency", description: "The agency leader when configured.", dataType: "text", supportsFormatting: true },
+  { key: "document.report_year", label: "Document report year", category: "Document", description: "The report year selected when generating this document.", dataType: "number", supportsFormatting: true },
+  { key: "document.report_date", label: "Document report date", category: "Document", description: "The date the document is generated, unless a value is supplied when generating.", dataType: "date", supportsFormatting: true },
   { key: "firearm.manufacturer", label: "Manufacturer", category: "Firearms", description: "The selected firearm manufacturer.", dataType: "text", supportsFormatting: true },
   { key: "firearm.model", label: "Model", category: "Firearms", description: "The selected firearm model.", dataType: "text", supportsFormatting: true },
   { key: "firearm.serial_number", label: "Serial number", category: "Firearms", description: "The selected firearm serial number.", dataType: "text", supportsFormatting: true },
