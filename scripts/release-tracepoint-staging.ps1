@@ -39,6 +39,10 @@ function Invoke-StagingNodeGate {
     finally { $ErrorActionPreference=$previousPreference }
     if($code -ne 0){throw "Node gate exited $code after child cleanup completed."}
 }
+trap {
+    if ($script:ReleaseResult.status -ne 'failed') { Write-ReleaseFailure $_ }
+    throw
+}
 if ($AuthenticationProvider -eq 'bridge') {
     Invoke-StagingNodeGate -Arguments @('--import','tsx',(Join-Path $PSScriptRoot 'run-disposable-staging-acceptance.mjs'),'--execute','--fixtures-only')
 } else {

@@ -58,7 +58,7 @@ $global:ReleaseTestRevision=1
   if($scenario -eq 'evidence' -and (($global:ReleaseTestCalls -join "`n") -notmatch 'collect-staging-release-evidence')){throw 'Evidence collector was not invoked during the evidence phase'}
   if($scenario -eq 'stderr' -and $global:ReleaseTestCalls -notcontains 'child-cleanup'){throw 'Native error interrupted child cleanup'}
   if((Get-Content -Raw $ambientSummary) -ne "ambient-summary-must-remain-unchanged`r`n"){throw 'Test release contaminated the ambient GitHub step summary'}
-  if($scenario -notin @('success','preflight') -and -not ((Get-Content -Raw $resultPath | ConvertFrom-Json).failedPhase)){throw 'Failed test release did not retain its original failure in the isolated result'}
+  if($scenario -ne 'success' -and -not ((Get-Content -Raw $resultPath | ConvertFrom-Json).failedPhase)){throw 'Failed test release did not retain its original failure in the isolated result'}
  }
  $global:ReleaseTestScenario='success';$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic' -AuthenticationProvider bridge -SummaryPath $summaryPath -ResultPath $resultPath} catch {$failed=$true}
