@@ -43,7 +43,7 @@ export function rangeDayDetailPayload(workspaceValue: unknown, rangeDayId: strin
   return { rangeDay, drills, roster };
 }
 
-export function qrDecision(input: { identifier: string; access: Pick<ServerAccessContext, "permissions" | "enabledFeatures">; vehicle?: Row | null; equipment?: Row | null; firearm?: Row | null }) {
+export function qrDecision(input: { identifier: string; access: Pick<ServerAccessContext, "permissions" | "enabledFeatures">; vehicle?: Row | null; equipment?: Row | null; firearm?: Row | null; inventory?: Row | null }) {
   const identifier = input.identifier.trim();
   if (!identifier || identifier.length > 2048) return { status: "unknown", message: "This QR code is not valid." };
   const permissions = new Set(input.access.permissions);
@@ -57,5 +57,8 @@ export function qrDecision(input: { identifier: string; access: Pick<ServerAcces
   if (input.firearm) return allowed("firearm_custody.check_out", "firearm_custody.check_in", "manage_firearms")
     ? { entityType: "firearm", entityId: text(input.firearm.id), workflow: "firearm_custody", allowed: true }
     : { status: "denied", message: "You are not authorized to use firearm custody." };
+  if (input.inventory) return allowed("view_inventory", "manage_inventory", "adjust_inventory")
+    ? { entityType: "inventory", entityId: text(input.inventory.id), displayName: text(input.inventory.name), workflow: "inventory", allowed: true }
+    : { status: "denied", message: "You are not authorized to view inventory." };
   return { status: "unknown", message: "This QR code is unknown, inactive, or unavailable." };
 }

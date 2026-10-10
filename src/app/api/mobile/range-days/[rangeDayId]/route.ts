@@ -19,6 +19,12 @@ export async function GET(request: Request, context: Context) {
     if (documents.error) return NextResponse.json({ error: "Drill documents could not be loaded." }, { status: 500 });
     const ids = new Map<string, string[]>(); for (const document of documents.data ?? []) { const key = String(document.drill_template_id); ids.set(key, [...(ids.get(key) ?? []), String(document.id)]); }
     const detail = rangeDayDetailPayload(data.workspace, rangeDayId, ids); if (!detail) return NextResponse.json({ error: "Range Day not found." }, { status: 404 });
-    return NextResponse.json(detail, { headers: { "Cache-Control": "no-store" } });
+    const people = await createRangeReadRepository(resolved.context.admin, resolved.context.departmentId).getPersonnel(resolved.context.departmentId);
+    const profiles = new Map<string, Record<string, unknown>>(people.profiles.map((profile) => [String(profile.id), profile]));
+    const personnel = people.memberships.map((membership) => {
+      const profile = profiles.get(String(membership.user_id));
+      return { id: String(membership.user_id), userId: String(membership.user_id), displayName: String(profile?.full_name ?? profile?.email ?? "TracePoint officer"), badgeNumber: membership.badge_number ?? null };
+    });
+    return NextResponse.json({ ...detail, personnel, canManageAttendance: hasAnyServerPermission(resolved.context, ["manage_range_days"]) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Range Day could not be loaded." }, { status: 500 }); }
 }
