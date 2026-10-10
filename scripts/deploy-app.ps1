@@ -248,6 +248,7 @@ function Publish-Image {
     $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'database/rehearsal/001_readington_officer_first_login.sql', 'database/rehearsal/002_montville_officer_first_login.sql', 'supabase/migrations', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-application-tests.mjs', 'scripts/mobile-route-image-contract-core.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
+    if ($Environment -eq 'staging') { $archivePaths += @('scripts/test-staging-image-mobile-routes.sh', 'scripts/validate-clean-bootstrap.mjs', 'scripts/validate-lineage-upgrades.mjs', 'scripts/verify-staging-schema.mjs') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
     $archive = Join-Path $temporaryDirectory 'source.zip'
     New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
