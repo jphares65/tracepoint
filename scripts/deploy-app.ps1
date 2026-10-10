@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
     [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
@@ -245,7 +245,7 @@ function Publish-Image {
         Write-Host "Reusing existing immutable application image $ImageTag."
         return $existingImage
     }
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'database/rehearsal/001_readington_officer_first_login.sql', 'database/rehearsal/002_montville_officer_first_login.sql', 'supabase/migrations', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'database/rehearsal/001_readington_officer_first_login.sql', 'database/rehearsal/002_montville_officer_first_login.sql', 'supabase/migrations', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-application-tests.mjs', 'scripts/mobile-route-image-contract-core.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
