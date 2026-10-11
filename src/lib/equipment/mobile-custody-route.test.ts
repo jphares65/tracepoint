@@ -21,7 +21,7 @@ test("custody actions preserve condition notes and return a bounded history", as
 
   assert.match(route, /VALID_CONDITIONS/);
   assert.match(route, /Only serviceable equipment can be checked out/);
-  assert.match(route, /lifecycle_status: condition === "serviceable" \? "active" : "out_of_service"/);
+  assert.match(route, /lifecycle_status: asset\.lifecycle_status === "out_of_service" \|\| condition !== "serviceable" \? "out_of_service" : "active"/);
   assert.match(route, /custodyNote\(condition, notes\)/);
   assert.match(route, /equipment_asset_assignments/);
   assert.match(route, /\.limit\(10\)/);
