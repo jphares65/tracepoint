@@ -25,6 +25,6 @@ export async function GET(request: Request, context: Context) {
       const profile = profiles.get(String(membership.user_id));
       return { id: String(membership.user_id), userId: String(membership.user_id), displayName: String(profile?.full_name ?? profile?.email ?? "TracePoint officer"), badgeNumber: membership.badge_number ?? null };
     });
-    return NextResponse.json({ ...detail, personnel, canManageAttendance: hasAnyServerPermission(resolved.context, ["manage_range_days"]) }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ...detail, updatedAt: data.updatedAt, personnel, canManageAttendance: hasAnyServerPermission(resolved.context, ["manage_range_days"]) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Range Day could not be loaded." }, { status: 500 }); }
 }

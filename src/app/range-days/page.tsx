@@ -450,38 +450,26 @@ function writeStoredRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
 
 async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWorkspace> | null> {
   if (typeof window === "undefined") return null;
-
-  try {
-    const response = await fetch("/api/pilot/range-workspace", {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    if (!response.ok) return null;
-
-    const payload = (await response.json()) as {
-      workspace?: Partial<StoredRangeDayWorkspace> | null;
-    };
-
-    return payload.workspace ?? null;
-  } catch (error) {
-    console.warn("Could not load range day workspace.", error);
-    return null;
+  // Server errors must not silently turn into local-only data. A stale local
+  // roster displayed as saved is particularly dangerous during Range Day prep.
+  const response = await fetch("/api/pilot/range-workspace", {
+    method: "GET",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Range Day server data could not be loaded (${response.status}).`);
   }
+  const payload = (await response.json()) as {
+    workspace?: Partial<StoredRangeDayWorkspace> | null;
+  };
+  return payload.workspace ?? null;
 }
 
 let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let remoteWorkspaceWriteInFlight: Promise<void> | null = null;
-
-// Wait for any older full-workspace save before applying a targeted delete.
-// Otherwise the stale autosave could resurrect a removed drill.
-async function finishPendingRangeWorkspaceWrite() {
-  if (remoteWorkspaceSyncTimer) {
-    clearTimeout(remoteWorkspaceSyncTimer);
-    remoteWorkspaceSyncTimer = null;
-  }
-  if (remoteWorkspaceWriteInFlight) await remoteWorkspaceWriteInFlight;
-}
+let remoteWorkspacePendingSnapshot: StoredRangeDayWorkspace | null = null;
+let remoteWorkspaceSequence = 0;
+let remoteWorkspaceStatusListener: ((message: string) => void) | null = null;
 
 async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   const response = await fetch("/api/pilot/range-workspace", {
@@ -495,25 +483,49 @@ async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 }
 
-function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
-  if (typeof window === "undefined") return;
+// Serialize every workspace save. Targeted delete must never race a pending
+// full-workspace PUT or silently discard the last 650ms of edits.
+function enqueueRemoteRangeDayWorkspaceWrite(workspace: StoredRangeDayWorkspace, sequence: number) {
+  const prior = remoteWorkspaceWriteInFlight ?? Promise.resolve();
+  const pending = prior.catch(() => undefined).then(() => saveRemoteRangeDayWorkspace(workspace));
+  remoteWorkspaceWriteInFlight = pending;
+  void pending.then(() => {
+    if (sequence === remoteWorkspaceSequence) remoteWorkspaceStatusListener?.("All Range Day changes saved.");
+  }).catch((error) => {
+    console.error("Range Day workspace save failed.", error);
+    if (sequence === remoteWorkspaceSequence) {
+      remoteWorkspaceStatusListener?.(`Changes NOT saved: ${error instanceof Error ? error.message : "Unable to save the Range Day."}`);
+    }
+  }).finally(() => {
+    if (remoteWorkspaceWriteInFlight === pending) remoteWorkspaceWriteInFlight = null;
+  });
+  return pending;
+}
 
+async function finishPendingRangeWorkspaceWrite() {
   if (remoteWorkspaceSyncTimer) {
     clearTimeout(remoteWorkspaceSyncTimer);
+    remoteWorkspaceSyncTimer = null;
   }
+  if (remoteWorkspacePendingSnapshot) {
+    const snapshot = remoteWorkspacePendingSnapshot;
+    remoteWorkspacePendingSnapshot = null;
+    enqueueRemoteRangeDayWorkspaceWrite(snapshot, remoteWorkspaceSequence);
+  }
+  if (remoteWorkspaceWriteInFlight) await remoteWorkspaceWriteInFlight;
+}
 
+function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
+  if (typeof window === "undefined") return;
+  remoteWorkspacePendingSnapshot = workspace;
+  const sequence = ++remoteWorkspaceSequence;
+  remoteWorkspaceStatusListener?.("Saving Range Day changes...");
+  if (remoteWorkspaceSyncTimer) clearTimeout(remoteWorkspaceSyncTimer);
   remoteWorkspaceSyncTimer = setTimeout(() => {
     remoteWorkspaceSyncTimer = null;
-    // A failed save remains visible in the developer log. Targeted mutations
-    // must not race an outstanding save, even if it fails.
-    const previous = remoteWorkspaceWriteInFlight ?? Promise.resolve();
-    const pending = previous.catch(() => undefined).then(() => saveRemoteRangeDayWorkspace(workspace));
-    remoteWorkspaceWriteInFlight = pending;
-    void pending.catch((error) => {
-      console.warn("Could not save range day workspace.", error);
-    }).finally(() => {
-      if (remoteWorkspaceWriteInFlight === pending) remoteWorkspaceWriteInFlight = null;
-    });
+    const snapshot = remoteWorkspacePendingSnapshot;
+    remoteWorkspacePendingSnapshot = null;
+    if (snapshot) void enqueueRemoteRangeDayWorkspaceWrite(snapshot, sequence).catch(() => undefined);
   }, 650);
 }
 
@@ -1823,6 +1835,12 @@ export default function RangeDaysPage() {
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  useEffect(() => {
+    remoteWorkspaceStatusListener = setSaveMessage;
+    return () => {
+      if (remoteWorkspaceStatusListener === setSaveMessage) remoteWorkspaceStatusListener = null;
+    };
+  }, []);
   const [removingDrillId, setRemovingDrillId] = useState("");
   const [canManageRangeDays, setCanManageRangeDays] = useState(false);
   const [canScoreRangeDays, setCanScoreRangeDays] = useState(false);
@@ -2459,7 +2477,9 @@ export default function RangeDaysPage() {
       setHasLoadedStoredWorkspace(true);
     }
 
-    void loadWorkspace();
+    void loadWorkspace().catch((error) => {
+      if (isMounted) setSaveMessage(`Range Day synchronization unavailable: ${error instanceof Error ? error.message : "Try reloading the page."}`);
+    });
 
     return () => {
       isMounted = false;
@@ -2949,6 +2969,9 @@ export default function RangeDaysPage() {
 
     setSaveMessage("Saving...");
     try {
+      // Manual save must finish older debounced writes before persisting the
+      // exact workspace currently shown to this instructor.
+      await finishPendingRangeWorkspaceWrite();
       await saveRemoteRangeDayWorkspace(workspace);
       setSaveMessage("Saved");
     } catch (error) {
@@ -3753,6 +3776,9 @@ export default function RangeDaysPage() {
 
     const normalizedCopiedDrill: ExtendedRangeDayDrill = {
       ...copiedDrill,
+      // This is an assignment ID, not a template ID. Each appearance of the
+      // same library drill must be independently addressable for deletion.
+      id: crypto.randomUUID(),
       runCount: isQualificationDrill(copiedDrill)
         ? sourceTemplate?.qualificationComponents?.length ??
           Math.max(copiedDrill.runCount ?? 1, 2)
@@ -3800,8 +3826,12 @@ export default function RangeDaysPage() {
       const payload = await response.json().catch(() => ({})) as {
         error?: string;
         workspace?: Partial<StoredRangeDayWorkspace>;
+        removedRangeDayDrillId?: string;
       };
       if (!response.ok) throw new Error(payload.error || "The drill could not be removed.");
+      if (payload.removedRangeDayDrillId !== drill.id) {
+        throw new Error("The server did not confirm the selected drill's removal. Reload before continuing.");
+      }
 
       const nextDrills = payload.workspace?.rangeDayDrills ??
         rangeDayDrills.filter((item) => item.id !== drill.id);
@@ -4459,7 +4489,7 @@ export default function RangeDaysPage() {
                 <Save size={14} />
                 {saveMessage || "Save Range Day"}
               </button>
-              <span className="sr-only" role="status" aria-live="polite">{saveMessage}</span>
+              <span role="status" aria-live="polite" className={`text-xs ${saveMessage.startsWith("Changes NOT saved") ? "text-red-300" : "text-slate-400"}`}>{saveMessage}</span>
             </div>
           </div>
         </header>

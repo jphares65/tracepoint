@@ -53,3 +53,24 @@ test("supports persisted snake-case workspace collections and association identi
   assert.equal(result.ok, true);
   if (result.ok) assert.deepEqual(result.workspace.range_day_drills, []);
 });
+
+
+test("deletes only the selected assignment when two drills have the same name", () => {
+  const sameName = workspace({ rangeDayDrills: [
+    { id: "assignment-a", rangeDayId: "day-1", name: "Barricade Drill" },
+    { id: "assignment-b", rangeDayId: "day-1", name: "Barricade Drill" },
+  ] });
+  const result = removeRangeDayDrill(sameName, { rangeDayId: "day-1", drillId: "assignment-b", departmentId: "agency-a" });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.deepEqual((result.workspace.rangeDayDrills as {id:string}[]).map(x => x.id), ["assignment-a"]);
+});
+
+test("fails closed when old records have duplicate assignment identifiers", () => {
+  const duplicate = workspace({ rangeDayDrills: [
+    { id: "same-id", rangeDayId: "day-1", name: "First" },
+    { id: "same-id", rangeDayId: "day-1", name: "Second" },
+  ] });
+  const result = removeRangeDayDrill(duplicate, { rangeDayId: "day-1", drillId: "same-id", departmentId: "agency-a" });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.status, 409);
+});

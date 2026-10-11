@@ -32,12 +32,16 @@ export function removeRangeDayDrill(
     return { ok: false, status: 404, error: "Range day was not found in your agency." };
   }
 
-  const drill = drills.find((item) =>
+  const matches = drills.filter((item) =>
     text(item.id) === input.drillId && field(item, "rangeDayId", "range_day_id") === input.rangeDayId,
   );
-  if (!drill) {
+  if (matches.length === 0) {
     return { ok: false, status: 404, error: "Drill was not found on this range day." };
   }
+  if (matches.length !== 1) {
+    return { ok: false, status: 409, error: "Multiple drill assignments share one identifier. A range administrator must repair their IDs before deletion; no records were changed." };
+  }
+  const drill = matches[0];
 
   const status = text(rangeDay.status).toLowerCase();
   const packetStatus = field(rangeDay, "packetStatus", "packet_status").toLowerCase();
