@@ -471,6 +471,17 @@ async function loadRemoteRangeDayWorkspace(): Promise<Partial<StoredRangeDayWork
 }
 
 let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let remoteWorkspaceWriteInFlight: Promise<void> | null = null;
+
+// Wait for any older full-workspace save before applying a targeted delete.
+// Otherwise the stale autosave could resurrect a removed drill.
+async function finishPendingRangeWorkspaceWrite() {
+  if (remoteWorkspaceSyncTimer) {
+    clearTimeout(remoteWorkspaceSyncTimer);
+    remoteWorkspaceSyncTimer = null;
+  }
+  if (remoteWorkspaceWriteInFlight) await remoteWorkspaceWriteInFlight;
+}
 
 async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   const response = await fetch("/api/pilot/range-workspace", {
@@ -492,8 +503,16 @@ function writeRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   }
 
   remoteWorkspaceSyncTimer = setTimeout(() => {
-    saveRemoteRangeDayWorkspace(workspace).catch((error) => {
+    remoteWorkspaceSyncTimer = null;
+    // A failed save remains visible in the developer log. Targeted mutations
+    // must not race an outstanding save, even if it fails.
+    const previous = remoteWorkspaceWriteInFlight ?? Promise.resolve();
+    const pending = previous.catch(() => undefined).then(() => saveRemoteRangeDayWorkspace(workspace));
+    remoteWorkspaceWriteInFlight = pending;
+    void pending.catch((error) => {
       console.warn("Could not save range day workspace.", error);
+    }).finally(() => {
+      if (remoteWorkspaceWriteInFlight === pending) remoteWorkspaceWriteInFlight = null;
     });
   }, 650);
 }
@@ -3772,6 +3791,7 @@ export default function RangeDaysPage() {
     setRemovingDrillId(drill.id);
     setSaveMessage("Removing drill...");
     try {
+      await finishPendingRangeWorkspaceWrite();
       const response = await fetch("/api/pilot/range-workspace/drills", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },

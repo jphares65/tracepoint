@@ -27,7 +27,7 @@ export async function DELETE(request: NextRequest) {
 
   const { admin, departmentId, user } = resolved.context;
   const { data, error } = await admin.from("pilot_range_workspaces")
-    .select("workspace").eq("department_id", departmentId).maybeSingle();
+    .select("workspace,updated_at").eq("department_id", departmentId).maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const result = removeRangeDayDrill(data?.workspace, { rangeDayId, drillId, departmentId });
@@ -36,11 +36,19 @@ export async function DELETE(request: NextRequest) {
 
   if (result.ok) {
     drillName = result.drillName;
+    // Use the same optimistic concurrency guard as the normal workspace PUT.
+    // An instructor saving from another browser must not have edits overwritten.
+    if (!data?.updated_at) {
+      return NextResponse.json({ error: "The Range Day workspace revision is missing. Reload before deleting this drill." }, { status: 409 });
+    }
+    const nextTime = new Date(Math.max(Date.now(), Date.parse(data.updated_at) + 1)).toISOString();
     const updated = await admin.from("pilot_range_workspaces").update({
       workspace: result.workspace,
       updated_by_user_id: user.id,
-      updated_at: new Date().toISOString(),
-    }).eq("department_id", departmentId).select("workspace").maybeSingle();
+      updated_at: nextTime,
+    }).eq("department_id", departmentId)
+      .eq("updated_at", data.updated_at)
+      .select("workspace").maybeSingle();
     if (updated.error) return NextResponse.json({ error: updated.error.message }, { status: 500 });
     if (!updated.data) return NextResponse.json({ error: "The range workspace changed before the drill could be removed. Reload and try again." }, { status: 409 });
     confirmedWorkspace = updated.data.workspace as Record<string, unknown>;

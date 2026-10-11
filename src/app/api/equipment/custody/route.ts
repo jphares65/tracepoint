@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy dynamic database boundary */
 import { NextRequest, NextResponse } from "next/server";
+import { validateConditionReport } from "@/lib/equipment/condition-report-policy";
 
 import {
   getEquipmentServerContext,
@@ -18,6 +19,7 @@ const ASSET_FIELDS = [
   "assigned_user_id",
   "assigned_vehicle_id",
   "assigned_location",
+  "notes",
 ].join(",");
 
 type EquipmentAsset = {
@@ -30,6 +32,7 @@ type EquipmentAsset = {
   assigned_user_id: string | null;
   assigned_vehicle_id: string | null;
   assigned_location: string | null;
+  notes: string | null;
 };
 
 const VALID_CONDITIONS = new Set([
@@ -88,7 +91,7 @@ export async function POST(request: NextRequest) {
   const condition = text(body.condition) || "serviceable";
   const notes = text(body.notes).slice(0, 1000);
 
-  if (!id || !["check-in", "check-out"].includes(action)) {
+  if (!id || !["check-in", "check-out", "report-condition"].includes(action)) {
     return errorResponse("A valid equipment ID and custody action are required.", 400);
   }
   if (!VALID_CONDITIONS.has(condition)) {
@@ -96,6 +99,9 @@ export async function POST(request: NextRequest) {
   }
   if (condition !== "serviceable" && !notes) {
     return errorResponse("Add a short note for equipment that is not serviceable.", 400);
+  }
+  if (action === "report-condition" && condition === "serviceable") {
+    return errorResponse("Select a non-serviceable condition to report a problem.", 400);
   }
   if (action === "check-out" && condition !== "serviceable") {
     return errorResponse("Only serviceable equipment can be checked out.", 409);
@@ -112,8 +118,66 @@ export async function POST(request: NextRequest) {
   if (!existing) return errorResponse("Equipment was not found in your agency.", 404);
 
   const asset = existing as EquipmentAsset;
-  if (asset.lifecycle_status !== "active") {
-    return errorResponse("Only active equipment can be checked in or out.", 409);
+  if (action === "report-condition") {
+    const custody = asset.assigned_user_id === context.user.id
+      ? "mine"
+      : asset.assigned_user_id || asset.assigned_vehicle_id || asset.assigned_location
+        ? "assigned"
+        : "available";
+    const decision = validateConditionReport({
+      condition, notes, lifecycle: asset.lifecycle_status, custody, canManage: context.canManage,
+    });
+    if (!decision.ok) return errorResponse(decision.message, decision.status);
+
+    // No custody transfer occurs when reporting defective equipment. The
+    // conditioned asset becomes unavailable until a manager repairs it.
+    const recordedAt = new Date().toISOString();
+    const reportLine = `[${recordedAt}][condition=${condition}][reported_by=${context.user.id}] ${notes}`;
+    const previousNotes = asset.notes ?? "";
+    const updatedNotes = [previousNotes, reportLine].filter(Boolean).join("\n");
+    if (updatedNotes.length > 15000) {
+      return errorResponse("The equipment record has reached its notes limit. Ask an equipment manager to review it.", 409);
+    }
+
+    let query = context.admin.from("equipment_assets")
+      .update({ lifecycle_status: "out_of_service", notes: updatedNotes, updated_by: context.user.id })
+      .eq("department_id", context.departmentId)
+      .eq("id", id)
+      .eq("lifecycle_status", "active");
+    query = asset.notes === null ? query.is("notes", null) : query.eq("notes", asset.notes);
+    if (!context.canManage) {
+      query = custody === "mine"
+        ? query.eq("assigned_user_id", context.user.id)
+        : query.is("assigned_user_id", null).is("assigned_vehicle_id", null).is("assigned_location", null);
+    }
+    const updated = await query.select(ASSET_FIELDS).maybeSingle();
+    if (updated.error) return custodyWriteFailure("report_condition_asset_update", updated.error);
+    if (!updated.data) return errorResponse("Equipment was changed before this report could be saved. Refresh and try again.", 409);
+
+    const audit = await context.admin.from("audit_events").insert({
+      department_id: context.departmentId,
+      actor_user_id: context.user.id,
+      action: "report",
+      entity_type: "equipment_asset",
+      summary: `Reported equipment ${condition} and removed asset from service.`,
+      previous_value: { equipment_asset_id: id, lifecycle_status: asset.lifecycle_status },
+      new_value: { equipment_asset_id: id, condition, notes, lifecycle_status: "out_of_service", recorded_at: recordedAt },
+    });
+    if (audit.error) {
+      console.error("tracepoint_equipment_condition_audit_failure", {
+        databaseCode: audit.error.code ?? "unknown", message: audit.error.message ?? "unknown",
+      });
+      return NextResponse.json({
+        error: "Equipment was taken out of service, but the audit entry could not be confirmed. Ask a supervisor to review the record before another action.",
+        code: "EQUIPMENT_CONDITION_AUDIT_UNCONFIRMED",
+      }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    }
+    return custodyResponse(context.admin, context.departmentId, updated.data as EquipmentAsset, context.user.id, "condition-reported");
+  }
+
+  if (asset.lifecycle_status !== "active" &&
+      !(action === "check-in" && asset.lifecycle_status === "out_of_service" && asset.assigned_user_id === context.user.id)) {
+    return errorResponse("Only active equipment can be checked out. An out-of-service asset can only be returned by its current custodian.", 409);
   }
 
   if (action === "check-out") {
@@ -139,7 +203,7 @@ export async function POST(request: NextRequest) {
       .select(ASSET_FIELDS)
       .maybeSingle();
 
-    if (error) return errorResponse(error.message, 500);
+    if (error) return custodyWriteFailure("checkout_asset_update", error);
     if (!data) return errorResponse("This equipment was checked out by someone else.", 409);
     await annotateAssignment(
       context.admin,
@@ -165,7 +229,7 @@ export async function POST(request: NextRequest) {
     .from("equipment_assets")
     .update({
       assigned_user_id: null,
-      lifecycle_status: condition === "serviceable" ? "active" : "out_of_service",
+      lifecycle_status: asset.lifecycle_status === "out_of_service" || condition !== "serviceable" ? "out_of_service" : "active",
       updated_by: context.user.id,
     })
     .eq("department_id", context.departmentId)
@@ -174,14 +238,14 @@ export async function POST(request: NextRequest) {
     .select(ASSET_FIELDS)
     .maybeSingle();
 
-  if (error) return errorResponse(error.message, 500);
+  if (error) return custodyWriteFailure("checkin_asset_update", error);
   if (!data) return errorResponse("Equipment custody changed before check-in completed.", 409);
   await annotateAssignment(
     context.admin,
     context.departmentId,
     id,
     "return_notes",
-    custodyNote(condition, notes),
+    custodyNote(asset.lifecycle_status === "out_of_service" ? "out_of_service" : condition, notes),
   );
   return custodyResponse(
     context.admin,
@@ -344,4 +408,19 @@ function errorResponse(message: string, status: number) {
     status,
     headers: { "Cache-Control": "no-store" },
   });
+}
+
+// Preserve database details in restricted server logs, never in the mobile UI.
+// Do not retry ambiguous writes automatically: the device must reload custody first.
+function custodyWriteFailure(stage: "checkout_asset_update" | "checkin_asset_update" | "report_condition_asset_update", error: { code?: string; message?: string }) {
+  console.error("tracepoint_equipment_custody_write_failure", {
+    stage, databaseCode: error.code ?? "unknown",
+    // Provider errors are not exposed to clients; review restricted runtime logs.
+    message: error.message ?? "unknown",
+  });
+  return NextResponse.json({
+    error: "Equipment custody could not be confirmed. Refresh this asset before attempting another action.",
+    code: "EQUIPMENT_CUSTODY_UNCONFIRMED",
+    operation: stage,
+  }, { status: 500, headers: { "Cache-Control": "no-store" } });
 }
