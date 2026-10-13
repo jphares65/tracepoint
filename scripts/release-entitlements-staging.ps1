@@ -37,14 +37,32 @@ function Invoke-AwsRead {
 }
 function Invoke-ReleaseScript {
     param(
-        [Parameter(Mandatory, Position=0)][string]$Path,
-        [Parameter(Mandatory, Position=1)][string[]]$ScriptArguments
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string[]]$ScriptArguments
     )
-    try {
-        $result = @(& $Path @ScriptArguments)
-        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-            throw "Nested script exited with code $LASTEXITCODE"
+    $named = @{}
+    $positional = @()
+    $allowed = @('Commit','Wait','Action','ImageCommit','ExpectedImageDigest','RollbackTaskDefinitionArn')
+    for ($i = 0; $i -lt $ScriptArguments.Count; $i++) {
+        $arg = $ScriptArguments[$i]
+        if ($arg.StartsWith('-')) {
+            $name = $arg.Substring(1)
+            if ($allowed -cnotcontains $name) { throw "Unexpected release argument: $arg" }
+            if ($named.ContainsKey($name)) { throw "Duplicate release argument: $arg" }
+            if ($name -eq 'Wait') {
+                $named[$name] = $true
+            } else {
+                $i++
+                if ($i -ge $ScriptArguments.Count) { throw "Missing value for $arg" }
+                $named[$name] = $ScriptArguments[$i]
+            }
+        } else {
+            $positional += $arg
         }
+    }
+    try {
+        $result = @(& $Path @positional @named)
+        if (-not $?) { throw 'Nested script reported failure.' }
         return $result
     }
     catch { throw "$Path failed: $($_.Exception.Message)" }
@@ -122,14 +140,14 @@ try {
     $null = Assert-RdsPitr
 
     Write-Host "Building and scanning application image for $ApplicationCommit; no ECS service update occurs in this step."
-    Invoke-ReleaseScript (Join-Path $PSScriptRoot 'publish-tracepoint-staging-image.ps1') @('-Commit',$ApplicationCommit,'-Wait') | Out-Null
+    Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'publish-tracepoint-staging-image.ps1') -ScriptArguments @('-Commit',$ApplicationCommit,'-Wait') | Out-Null
     $imageTag = Get-ReviewedImageTag -Environment staging -Commit $ApplicationCommit
     $image = @((Invoke-AwsRead @('ecr','describe-images','--repository-name','tracepoint-staging','--image-ids',"imageTag=$imageTag")).imageDetails) | Select-Object -First 1
     if ($null -eq $image -or @($image.imageTags) -cnotcontains $imageTag) { throw 'Reviewed application image was not published with its exact immutable tag.' }
     $imageDigest = [string]$image.imageDigest
     if ($imageDigest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Reviewed application image digest is invalid.' }
 
-    $statusOutput = Invoke-ReleaseScript (Join-Path $PSScriptRoot 'migrate-db.ps1') @('staging','-Action','status','-ImageCommit',$ApplicationCommit)
+    $statusOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit)
     $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'before-apply' -ExpectedDigest $imageDigest
     if (@($status.pending).Count -ne 1 -or $status.pending[0].version -ne 38 -or $status.pending[0].filename -cne '038_default_module_entitlements.sql') { throw 'Pre-apply status must show exactly migration 038 pending.' }
     $null = Assert-RdsPitr
@@ -139,10 +157,10 @@ try {
     $confirmation = Read-Host "Type APPLY 038 to mutate staging account $account database using image $imageDigest"
     if ($confirmation -cne 'APPLY 038') { throw 'Database apply was not confirmed; no migration was started.' }
     $migrationApplyStarted = $true
-    $applyOutput = Invoke-ReleaseScript (Join-Path $PSScriptRoot 'migrate-db.ps1') @('staging','-Action','apply','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
+    $applyOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','apply','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
     $applied = Get-VerifiedLedgerReport -Output $applyOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
     if (@($applied.pending).Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
-    $finalOutput = Invoke-ReleaseScript (Join-Path $PSScriptRoot 'migrate-db.ps1') @('staging','-Action','status','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
+    $finalOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
     $finalStatus = Get-VerifiedLedgerReport -Output $finalOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
     if (@($finalStatus.pending).Count -ne 0) { throw 'Final migration status did not verify an empty pending set.' }
 
@@ -151,7 +169,7 @@ try {
     $currentService = Get-StagingService
     if ($currentService.taskDefinition -cne $previousTaskDefinition) { throw 'Staging application task changed after migration; do not deploy this release.' }
     $deploymentStarted = $true
-    Invoke-ReleaseScript (Join-Path $PSScriptRoot 'deploy-app.ps1') @('staging','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest) | Out-Null
+    Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest) | Out-Null
     $null = Assert-StagingRuntimeHealth
     Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); migration 038 applied; prior task $previousTaskDefinition."
 }
@@ -166,7 +184,7 @@ catch {
             $service = @($serviceResult.services) | Select-Object -First 1
             if ($null -ne $service -and $service.taskDefinition -cne $previousTaskDefinition) {
                 Write-Warning 'Application release failed after migration; restoring the prior ECS task revision. Migration 038 remains applied.'
-                Invoke-ReleaseScript (Join-Path $PSScriptRoot 'deploy-app.ps1') @('staging','-RollbackTaskDefinitionArn',$previousTaskDefinition) | Out-Null
+                Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-RollbackTaskDefinitionArn',$previousTaskDefinition) | Out-Null
             }
         } catch { throw "Release failed: $($failure.Exception.Message). Application rollback also failed: $($_.Exception.Message). Migration 038 was not reversed; stop and recover forward." }
     }
