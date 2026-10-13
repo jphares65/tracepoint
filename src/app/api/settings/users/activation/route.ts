@@ -2,7 +2,6 @@ import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
-import { provisionExistingCognitoUser } from "@/lib/authentication/cognito-existing-user-migration";
 import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -34,38 +33,50 @@ export async function POST(request: NextRequest) {
     if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
       const access = await resolveServerAccess();
       if (!access.ok) return accessFailureResponse(access);
-      if (access.context.departmentId !== departmentId) return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
-      if (!hasServerPermission(access.context, "manage_users")) return NextResponse.json({ error: "You do not have permission to activate users." }, { status: 403 });
-      const [membershipResult, profileResult, identityResult] = await Promise.all([
-        access.context.admin.from("department_memberships").select("user_id,activation_status,is_active").eq("department_id", departmentId).eq("user_id", userId).maybeSingle(),
-        access.context.admin.from("profiles").select("email,full_name").eq("id", userId).maybeSingle(),
-        access.context.admin.from("authentication_identity_links").select("state").eq("tracepoint_user_id", userId).eq("provider", "cognito").maybeSingle(),
-      ]);
-      if (membershipResult.error || profileResult.error || identityResult.error) throw new Error("Activation account lookup failed.");
-      const membership = membershipResult.data;
-      if (!membership) return NextResponse.json({ error: "Department membership was not found." }, { status: 404 });
-      if (!membership.is_active) return NextResponse.json({ error: "Inactive users cannot be activated." }, { status: 400 });
-      const email = cleanText(profileResult.data?.email).toLowerCase();
-      if (!email) return NextResponse.json({ error: "This user does not have an email address." }, { status: 400 });
-      const identityState = cleanText(identityResult.data?.state);
-      if (!identityState) {
-        if (!hasServerPermission(access.context, "administer_department")) {
-          return NextResponse.json({ error: "Department-administration permission is required to migrate an existing identity." }, { status: 403 });
-        }
-        await provisionExistingCognitoUser({
+
+      if (access.context.departmentId !== departmentId) {
+        return NextResponse.json(
+          { error: "The active agency does not match this request." },
+          { status: 403 },
+        );
+      }
+
+      if (!hasServerPermission(access.context, "manage_users")) {
+        return NextResponse.json(
+          { error: "You do not have permission to activate users." },
+          { status: 403 },
+        );
+      }
+
+      // The database function validates tenant, actor permissions,
+      // active membership, activation status, and pending identity link.
+      // Never create another Cognito identity from a resend request.
+      try {
+        await resendPendingCognitoActivation({
           actorUserId: access.context.userId,
           departmentId,
           targetUserId: userId,
-          siteUrl,
           supportMode: access.context.isSupportMode,
         });
-        return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "P0002"
+        ) {
+          return NextResponse.json(
+            { error: "No eligible pending Cognito activation was found. Verify the user's identity link and agency membership." },
+            { status: 409 },
+          );
+        }
+        throw error;
       }
-      if (identityState !== "pending") {
-        return NextResponse.json({ error: "This account does not require activation." }, { status: 400 });
-      }
-      await resendPendingCognitoActivation({actorUserId:access.context.userId,departmentId,targetUserId:userId,supportMode:access.context.isSupportMode});
-      return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
+
+      return NextResponse.json({
+        ok: true,
+        message: "Cognito activation email requested.",
+      });
     }
 
     const server = await (await import("@/lib/supabase/server")).createClient();
