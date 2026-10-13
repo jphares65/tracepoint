@@ -105,7 +105,7 @@ try {
 
     Invoke-NativeChecked (Join-Path $repositoryRoot 'node_modules/.bin/tsc.cmd') @('--noEmit') | Out-Null
     Invoke-NativeChecked 'node.exe' @((Join-Path $repositoryRoot 'scripts/assert-aws-native-provider-reachability.mjs')) | Out-Null
-    Invoke-NativeChecked 'pwsh.exe' @('-NoProfile','-File',(Join-Path $PSScriptRoot 'migration-release-core.tests.ps1')) | Out-Null
+    Invoke-NativeChecked 'powershell.exe' @('-NoProfile','-File',(Join-Path $PSScriptRoot 'migration-release-core.tests.ps1')) | Out-Null
 
     $previousService = Assert-StagingRuntimeHealth
     $previousTaskDefinition = [string]$previousService.taskDefinition
