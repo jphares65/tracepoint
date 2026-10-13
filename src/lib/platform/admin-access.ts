@@ -3,6 +3,7 @@ import "server-only";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { withPostgresSubjectAuthorization, type PostgresAuthorizationPool } from "@/lib/database/postgres-authorization-core";
+import { listPostgresPlatformEntitlements, setPostgresPlatformEntitlement } from "./postgres-entitlements";
 
 export type PlatformAgency = {
   id: string;
@@ -140,23 +141,20 @@ class PostgresPlatformAdminRepository implements PlatformAdminRepository {
 
   async listEntitlements() {
     return withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
-      const result = await client.query("select public.get_platform_entitlements() as value") as { rows: Array<{ value?: unknown }> };
-      const value = result.rows[0]?.value as { departments?: unknown; features?: unknown; entitlements?: unknown } | undefined;
-      if (!value || !Array.isArray(value.departments) || !Array.isArray(value.features) || !Array.isArray(value.entitlements)) {
-        throw new PlatformAdminOperationError();
+      try {
+        return await listPostgresPlatformEntitlements((sql, values) =>
+          client.query(sql, values) as Promise<{ rows: Array<Record<string, unknown>> }>,
+        );
+      } catch (error) {
+        throw new PlatformAdminOperationError(databaseCode(error));
       }
-      return {
-        departments: value.departments as Record<string, unknown>[],
-        features: value.features as Record<string, unknown>[],
-        entitlements: value.entitlements as Record<string, unknown>[],
-      };
     });
   }
 
   async setEntitlement(input: { departmentId: string; featureCode: string; isEnabled: boolean; reason?: string }) {
     try {
       await withPostgresSubjectAuthorization(this.pool, { subjectId: this.subjectId }, async client => {
-        await client.query("select public.set_platform_entitlement($1,$2,$3,$4)", [input.departmentId, input.featureCode, input.isEnabled, input.reason ?? null]);
+        await setPostgresPlatformEntitlement((sql, values) => client.query(sql, values) as Promise<{ rows: Array<Record<string, unknown>> }>, input);
       });
     } catch (error) {
       throw new PlatformAdminOperationError(databaseCode(error));
@@ -207,8 +205,11 @@ export async function resolvePlatformAdminAccess(): Promise<PlatformAdminAccessR
   if (userResult.error || !user) return { ok: false, status: 401 };
   const admin = await client.rpc("is_platform_admin");
   if (admin.error || admin.data !== true) return { ok: false, status: 403 };
-  const reads = createPlatformReadRepository(client, true);
   const bridgeAdmin = createAdminClient();
+  // Platform-wide reads are performed only after the authenticated platform
+  // admin check, and use the server-owned provider so tenant RLS does not
+  // silently truncate the control-plane view.
+  const reads = createPlatformReadRepository(bridgeAdmin, true);
   const repository: PlatformAdminRepository = {
     async listAgencies() {
       const { departments, accounts } = await reads.listAgencies();

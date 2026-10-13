@@ -1,57 +1,44 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
 import {
-  accessFailureResponse,
-  resolveServerAccess,
-} from "@/lib/tracepoint/server-access";
-import { createPlatformReadRepository } from "@/lib/platform/read-repository";
+  PlatformAdminOperationError,
+  resolvePlatformAdminAccess,
+} from "@/lib/platform/admin-access";
+import { PlatformReadRepositoryError } from "@/lib/platform/read-repository-core";
 
 export const dynamic = "force-dynamic";
 
-async function resolveSuperAdmin() {
-  const result = await resolveServerAccess();
-
-  if (!result.ok) {
-    return {
-      ok: false as const,
-      response: accessFailureResponse(result),
-    };
-  }
-
-  if (!result.context.isSuperAdmin) {
-    return {
-      ok: false as const,
-      response: NextResponse.json(
-        {
-          error:
-            "TracePoint platform administrator access is required.",
-        },
-        {
-          status: 403,
-          headers: { "Cache-Control": "no-store" },
-        },
-      ),
-    };
-  }
-
-  return {
-    ok: true as const,
-    context: result.context,
-  };
+function logEntitlementFailure(operation: "read" | "write", error: unknown) {
+  console.error(JSON.stringify({
+    event: "platform_entitlement_operation_failed",
+    operation,
+    code: error instanceof PlatformAdminOperationError
+      ? error.code ?? "unknown"
+      : error instanceof PlatformReadRepositoryError
+        ? error.code ?? "unknown"
+        : "unknown",
+  }));
 }
 
 export async function GET() {
-  const access = await resolveSuperAdmin();
-
+  const access = await resolvePlatformAdminAccess();
   if (!access.ok) {
-    return access.response;
+    return NextResponse.json(
+      { error: access.status === 500 ? "Platform administrator access could not be verified." : "TracePoint platform administrator access is required." },
+      { status: access.status, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
-  const { admin } = access.context;
-
   let data;
-  try { data = await createPlatformReadRepository(admin, true).listEntitlements(); }
-  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Platform entitlements could not be loaded." }, { status: 500 }); }
+  try {
+    data = await access.repository.listEntitlements();
+  } catch (error) {
+    logEntitlementFailure("read", error);
+    return NextResponse.json(
+      { error: "Platform entitlements could not be loaded." },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   return NextResponse.json(
     {
@@ -66,13 +53,13 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  const access = await resolveSuperAdmin();
-
+  const access = await resolvePlatformAdminAccess();
   if (!access.ok) {
-    return access.response;
+    return NextResponse.json(
+      { error: access.status === 500 ? "Platform administrator access could not be verified." : "TracePoint platform administrator access is required." },
+      { status: access.status, headers: { "Cache-Control": "no-store" } },
+    );
   }
-
-  const { admin, user } = access.context;
 
   const body = await request.json().catch(() => ({}));
 
@@ -101,122 +88,22 @@ export async function PATCH(request: NextRequest) {
   }
 
   const isEnabled = body.isEnabled as boolean;
-
-  const [
-    departmentResult,
-    featureResult,
-    currentResult,
-  ] = await Promise.all([
-    admin
-      .from("departments")
-      .select("id")
-      .eq("id", departmentId)
-      .maybeSingle(),
-
-    admin
-      .from("feature_catalog")
-      .select("code,is_active")
-      .eq("code", featureCode)
-      .maybeSingle(),
-
-    admin
-      .from("department_features")
-      .select("is_enabled")
-      .eq("department_id", departmentId)
-      .eq("feature_code", featureCode)
-      .maybeSingle(),
-  ]);
-
-  if (departmentResult.error) {
+  try {
+    await access.repository.setEntitlement({
+      departmentId,
+      featureCode,
+      isEnabled,
+      reason:
+        typeof body.reason === "string"
+          ? body.reason.trim() || undefined
+          : undefined,
+    });
+  } catch (error) {
+    logEntitlementFailure("write", error);
     return NextResponse.json(
-      { error: departmentResult.error.message },
-      { status: 500 },
+      { error: "Platform entitlement could not be updated." },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
-  }
-
-  if (!departmentResult.data) {
-    return NextResponse.json(
-      { error: "Department was not found." },
-      { status: 404 },
-    );
-  }
-
-  if (featureResult.error) {
-    return NextResponse.json(
-      { error: featureResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  if (
-    !featureResult.data ||
-    featureResult.data.is_active !== true
-  ) {
-    return NextResponse.json(
-      { error: "Feature was not found or is inactive." },
-      { status: 404 },
-    );
-  }
-
-  if (currentResult.error) {
-    return NextResponse.json(
-      { error: currentResult.error.message },
-      { status: 500 },
-    );
-  }
-
-  const previousEnabled =
-    currentResult.data?.is_enabled ?? true;
-
-  const now = new Date().toISOString();
-
-  const { error: entitlementError } = await admin
-    .from("department_features")
-    .upsert(
-      {
-        department_id: departmentId,
-        feature_code: featureCode,
-        is_enabled: isEnabled,
-        enabled_at: isEnabled ? now : null,
-        disabled_at: isEnabled ? null : now,
-        updated_at: now,
-        updated_by: user.id,
-      },
-      {
-        onConflict: "department_id,feature_code",
-      },
-    );
-
-  if (entitlementError) {
-    return NextResponse.json(
-      { error: entitlementError.message },
-      { status: 500 },
-    );
-  }
-
-  if (previousEnabled !== isEnabled) {
-    const reason =
-      typeof body.reason === "string"
-        ? body.reason.trim() || null
-        : null;
-
-    const { error: eventError } = await admin
-      .from("department_feature_events")
-      .insert({
-        department_id: departmentId,
-        feature_code: featureCode,
-        previous_enabled: previousEnabled,
-        new_enabled: isEnabled,
-        actor_user_id: user.id,
-        reason,
-      });
-
-    if (eventError) {
-      return NextResponse.json(
-        { error: eventError.message },
-        { status: 500 },
-      );
-    }
   }
 
   return NextResponse.json(

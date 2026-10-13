@@ -16,6 +16,23 @@ export async function POST(request: Request) {
     admin.from("firearms").select("id,serial_number,asset_number,is_active").eq("department_id", departmentId).eq("is_active", true).or(`id.eq.${value},asset_number.eq.${value},serial_number.eq.${value}`).maybeSingle(),
   ]);
   if (vehicle.error || equipment.error || firearm.error) return NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
+  let permittedInspectionRoleCodes: string[] = [];
+  if (vehicle.data) {
+    const { data: fleetRules, error: fleetRulesError } = await admin
+      .from("fleet_rules")
+      .select("inspection_role_codes")
+      .eq("department_id", departmentId)
+      .maybeSingle();
+    if (fleetRulesError) {
+      return NextResponse.json(
+        { error: "Vehicle workflow authorization could not be verified." },
+        { status: 500 },
+      );
+    }
+    permittedInspectionRoleCodes = Array.isArray(fleetRules?.inspection_role_codes)
+      ? fleetRules.inspection_role_codes.filter((roleCode: unknown): roleCode is string => typeof roleCode === "string")
+      : [];
+  }
   let inventory: Record<string, unknown> | null = null;
   if (!vehicle.data && !equipment.data && !firearm.data &&
       access.permissions.some((p: string) => ["view_inventory", "manage_inventory", "adjust_inventory", "administer_department"].includes(p))) {
@@ -23,5 +40,5 @@ export async function POST(request: Request) {
     if (candidate.error) return NextResponse.json({ error: "Inventory QR lookup is unavailable." }, { status: 503 });
     inventory = candidate.data;
   }
-  return NextResponse.json(qrDecision({ identifier: value, access, vehicle: vehicle.data, equipment: equipment.data, firearm: firearm.data, inventory }), { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(qrDecision({ identifier: value, access, vehicle: vehicle.data, equipment: equipment.data, firearm: firearm.data, inventory, permittedInspectionRoleCodes }), { headers: { "Cache-Control": "no-store" } });
 }

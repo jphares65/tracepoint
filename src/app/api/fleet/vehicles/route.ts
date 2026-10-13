@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  featureDisabledResponse,
+  hasServerFeature,
+  permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { canReadFleet } from "@/lib/tracepoint/fleet-access";
 import { canManageFleet } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 import { FleetReadRepositoryError } from "@/lib/fleet/read-repository-core";
@@ -116,6 +120,8 @@ export async function GET(request: NextRequest) {
   if (!access.ok) return accessFailureResponse(access);
 
   const resolved = access.context;
+  if (!hasServerFeature(resolved, "fleet")) return featureDisabledResponse("Fleet");
+  if (!canReadFleet(resolved)) return permissionDeniedResponse("Fleet access is required.");
   try {
     const { rules, items } = await createFleetReadRepository(resolved.admin, resolved.departmentId).getVehicleList({ departmentId: resolved.departmentId, vehicleFields: VEHICLE_SELECT });
     return NextResponse.json({ items, canManage: canManageFleet(resolved, rules) });

@@ -4,7 +4,8 @@ import {
   attachmentPathFromMetadata,
   createObjectStore,
 } from "@/lib/storage/object-store";
-import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { accessFailureResponse, featureDisabledResponse, hasServerFeature, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { canReadFleet } from "@/lib/tracepoint/fleet-access";
 import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
@@ -14,6 +15,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
+  if (!hasServerFeature(context, "fleet")) return featureDisabledResponse("Fleet");
+  if (!canReadFleet(context)) return permissionDeniedResponse("Fleet access is required.");
   const { vehicleId } = await params;
   const mobile = request.nextUrl.pathname.startsWith("/api/mobile/");
   const attachmentBase = mobile ? "/api/mobile/attachments" : "/api/attachments";

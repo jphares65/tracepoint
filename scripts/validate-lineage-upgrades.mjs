@@ -61,7 +61,7 @@ try {
   // The checked-in legacy baseline already has 75 migrations. Keep the
   // lineage validator pinned to that reviewed baseline; AWS-native additions
   // are applied through database/aws, not this retired Supabase ledger.
-  assert.equal(currentFiles.length, 75);
+  assert.equal(currentFiles.length, 79);
   assert.equal(new Set(currentVersions).size, currentVersions.length);
 
   const common = currentFiles.filter(

@@ -1,4 +1,6 @@
 import type { ServerAccessContext } from "./server-access";
+import { canUseVehicleInspectionQr } from "./fleet-access.ts";
+import { MODULE_FEATURE } from "./module-catalog.ts";
 
 type Row = Record<string, unknown>;
 const row = (value: unknown): Row => value && typeof value === "object" ? value as Row : {};
@@ -43,22 +45,22 @@ export function rangeDayDetailPayload(workspaceValue: unknown, rangeDayId: strin
   return { rangeDay, drills, roster };
 }
 
-export function qrDecision(input: { identifier: string; access: Pick<ServerAccessContext, "permissions" | "enabledFeatures">; vehicle?: Row | null; equipment?: Row | null; firearm?: Row | null; inventory?: Row | null }) {
+export function qrDecision(input: { identifier: string; access: Pick<ServerAccessContext, "permissions" | "enabledFeatures"> & Partial<Pick<ServerAccessContext, "roleCodes">>; permittedInspectionRoleCodes?: readonly string[]; vehicle?: Row | null; equipment?: Row | null; firearm?: Row | null; inventory?: Row | null }) {
   const identifier = input.identifier.trim();
   if (!identifier || identifier.length > 2048) return { status: "unknown", message: "This QR code is not valid." };
   const permissions = new Set(input.access.permissions);
   const allowed = (...values: string[]) => permissions.has("administer_department") || values.some((value) => permissions.has(value as never));
-  if (input.vehicle) return allowed("perform_fleet_inspections", "view_fleet", "manage_fleet") && input.access.enabledFeatures.includes("fleet")
+  if (input.vehicle) return canUseVehicleInspectionQr({ ...input.access, roleCodes: input.access.roleCodes ?? [] }, input.permittedInspectionRoleCodes ?? [])
     ? { entityType: "vehicle", entityId: text(input.vehicle.id), displayName: `Unit ${text(input.vehicle.unit_number) || "vehicle"}`, workflow: "vehicle_inspection", allowed: true }
     : { status: "denied", message: "You are not authorized to use this vehicle workflow." };
-  if (input.equipment) return input.access.enabledFeatures.includes("equipment_readiness")
+  if (input.equipment) return input.access.enabledFeatures.includes(MODULE_FEATURE.EQUIPMENT_READINESS)
     ? { entityType: "equipment", entityId: text(input.equipment.id), displayName: [text(input.equipment.manufacturer), text(input.equipment.model)].filter(Boolean).join(" ") || "Equipment", workflow: "equipment_custody", allowed: true }
     : { status: "denied", message: "Equipment Readiness is not enabled for this agency." };
-  if (input.firearm) return allowed("firearm_custody.check_out", "firearm_custody.check_in", "manage_firearms")
+  if (input.firearm) return input.access.enabledFeatures.includes(MODULE_FEATURE.FIREARMS) && allowed("firearm_custody.check_out", "firearm_custody.check_in", "manage_firearms")
     ? { entityType: "firearm", entityId: text(input.firearm.id), workflow: "firearm_custody", allowed: true }
-    : { status: "denied", message: "You are not authorized to use firearm custody." };
-  if (input.inventory) return allowed("view_inventory", "manage_inventory", "adjust_inventory")
+    : { status: "denied", message: input.access.enabledFeatures.includes(MODULE_FEATURE.FIREARMS) ? "You are not authorized to use firearm custody." : "Firearms are not enabled for this agency." };
+  if (input.inventory) return input.access.enabledFeatures.includes(MODULE_FEATURE.INVENTORY) && allowed("view_inventory", "manage_inventory", "adjust_inventory")
     ? { entityType: "inventory", entityId: text(input.inventory.id), displayName: text(input.inventory.name), workflow: "inventory", allowed: true }
-    : { status: "denied", message: "You are not authorized to view inventory." };
+    : { status: "denied", message: input.access.enabledFeatures.includes(MODULE_FEATURE.INVENTORY) ? "You are not authorized to view inventory." : "Inventory is not enabled for this agency." };
   return { status: "unknown", message: "This QR code is unknown, inactive, or unavailable." };
 }

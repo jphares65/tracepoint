@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 
 import {
+  hasAnyServerPermission,
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
@@ -15,6 +16,10 @@ export default async function AnalyticsLayout({
 
   if (!resolved.ok) {
     redirect("/");
+  }
+
+  if (!hasAnyServerPermission(resolved.context, ["view_analytics"])) {
+    redirect("/unauthorized?from=/analytics");
   }
 
   const analyticsError = requireServerFeature(

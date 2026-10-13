@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import type { TracePointPermission } from "./permissions";
+import { isAgencyFeatureEnabled } from "./module-access";
+import type { ModuleFeatureCode } from "./module-catalog";
 
 export type TracePointAccess = {
   loading: boolean;
@@ -41,7 +43,7 @@ export type TracePointAccess = {
   isSuperAdmin: boolean;
   enabledFeatures: string[];
   hasPermission: (permission: TracePointPermission) => boolean;
-  isFeatureEnabled: (featureCode: string) => boolean;
+  isFeatureEnabled: (featureCode: ModuleFeatureCode) => boolean;
   hasAnyPermission: (
     permissions: readonly TracePointPermission[],
   ) => boolean;
@@ -170,7 +172,7 @@ export function useTracePointAccess(options?: { enabled?: boolean }): TracePoint
   }, [enabled]);
 
   useEffect(() => {
-    void loadAccess();
+    void Promise.resolve().then(loadAccess);
   }, [loadAccess]);
 
   useEffect(() => {
@@ -201,9 +203,8 @@ export function useTracePointAccess(options?: { enabled?: boolean }): TracePoint
   );
 
   const isFeatureEnabled = useCallback(
-    (featureCode: string) =>
-      access.isSuperAdmin || featureSet.has(featureCode),
-    [access.isSuperAdmin, featureSet],
+    (featureCode: ModuleFeatureCode) => isAgencyFeatureEnabled(featureSet, featureCode),
+    [featureSet],
   );
   const hasPermission = useCallback(
     (permission: TracePointPermission) =>

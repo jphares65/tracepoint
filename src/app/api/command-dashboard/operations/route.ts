@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  featureDisabledResponse,
   hasAnyServerPermission,
+  hasServerFeature,
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { MODULE_FEATURE } from "@/lib/tracepoint/module-catalog";
 import { createOperationsReadRepository } from "@/lib/operations/read-repository";
 import {
   createCurrentRulesRepository,
@@ -33,6 +36,9 @@ export async function GET() {
   if (!resolved.ok) return accessFailureResponse(resolved);
 
   const context = resolved.context;
+  if (!hasServerFeature(context, MODULE_FEATURE.COMMAND_DASHBOARD)) {
+    return featureDisabledResponse("Command Dashboard");
+  }
   if (
     !hasAnyServerPermission(context, [
       "view_command_dashboard",

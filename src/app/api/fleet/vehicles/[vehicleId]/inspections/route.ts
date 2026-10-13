@@ -3,8 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   accessFailureResponse,
+  featureDisabledResponse,
+  hasServerFeature,
+  permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { canPerformFleetInspection } from "@/lib/tracepoint/fleet-access";
 import {
   auditFleet,
   numeric,
@@ -31,8 +35,27 @@ export async function POST(
   const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
+  if (!hasServerFeature(context, "fleet")) return featureDisabledResponse("Fleet");
   const { vehicleId } = await params;
   const body = (await request.json().catch(() => ({}))) as any;
+
+  const { data: rules, error: rulesError } = await context.admin
+    .from("fleet_rules")
+    .select("inspection_role_codes")
+    .eq("department_id", context.departmentId)
+    .maybeSingle();
+  if (rulesError) {
+    return NextResponse.json(
+      { error: "Fleet inspection authorization could not be verified." },
+      { status: 500 },
+    );
+  }
+  const permittedRoles = Array.isArray(rules?.inspection_role_codes)
+    ? rules.inspection_role_codes
+    : [];
+  if (!canPerformFleetInspection(context, permittedRoles)) {
+    return permissionDeniedResponse("You are not authorized to perform vehicle inspections.");
+  }
 
   const { data: vehicle, error: vehicleError } = await context.admin
     .from("fleet_vehicles")
@@ -45,42 +68,6 @@ export async function POST(
       { error: vehicleError?.message ?? "Vehicle was not found." },
       { status: vehicleError ? 500 : 404 },
     );
-
-  const { data: rules } = await context.admin
-    .from("fleet_rules")
-    .select("*")
-    .eq("department_id", context.departmentId)
-    .maybeSingle();
-  const permittedRoles = Array.isArray(rules?.inspection_role_codes)
-    ? rules.inspection_role_codes
-    : [];
-
-  const userRoles = Array.isArray(context.roleCodes) ? context.roleCodes : [];
-
-  const userPermissions = Array.isArray(context.permissions)
-    ? context.permissions
-    : [];
-
-  const hasInspectionPermission =
-    context.isSuperAdmin ||
-    userPermissions.includes("administer_department") ||
-    userPermissions.includes("perform_fleet_inspections") ||
-    userPermissions.includes("manage_fleet") ||
-    userPermissions.includes("manage_fleet_rules");
-
-  if (
-    permittedRoles.length &&
-    !hasInspectionPermission &&
-    !userRoles.some((role: string) => permittedRoles.includes(role))
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "Your agency role or permissions do not allow vehicle inspections.",
-      },
-      { status: 403 },
-    );
-  }
 
   const rawChecklist = Array.isArray(body.checklist)
     ? body.checklist.slice(0, 200)

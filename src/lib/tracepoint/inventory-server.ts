@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
-import { accessFailureResponse, hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { accessFailureResponse, featureDisabledResponse, hasAnyServerPermission, hasServerFeature, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { MODULE_FEATURE } from "@/lib/tracepoint/module-catalog";
 
 export async function getInventoryServerContext() {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return { error: accessFailureResponse(resolved) } as const;
   const context = resolved.context;
+  if (!hasServerFeature(context, MODULE_FEATURE.INVENTORY)) {
+    return { error: featureDisabledResponse("Inventory") } as const;
+  }
   return {
     // The generated schema types are refreshed with the migration deployment;
     // keep this module independently buildable while Phase 1 is unreleased.

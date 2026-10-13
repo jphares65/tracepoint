@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createObjectStore } from "@/lib/storage/object-store";
 import {
   accessFailureResponse,
+  featureDisabledResponse,
+  hasServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { auditFleet, text } from "@/lib/tracepoint/fleet-server";
@@ -25,6 +27,7 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   const access = await resolveServerAccess(request);
   if (!access.ok) return accessFailureResponse(access);
   const context = access.context;
+  if (!hasServerFeature(context, "fleet")) return featureDisabledResponse("Fleet");
   const { vehicleId, inspectionId } = await routeContext.params;
 
   const [{ data: inspection, error: inspectionError }, { data: rules }] =

@@ -17,6 +17,7 @@ import {
 import { resolvePostgresAccess, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
+import type { ModuleFeatureCode } from "@/lib/tracepoint/module-catalog";
 import { resolveTenantContext } from "@/lib/tracepoint/tenant-context";
 
 type AccessFailure = {
@@ -654,7 +655,7 @@ export function permissionDeniedResponse(
 
 export function hasServerFeature(
   context: ServerAccessContext,
-  featureCode: string,
+  featureCode: ModuleFeatureCode,
 ) {
   return context.enabledFeatures.includes(featureCode);
 }
@@ -676,7 +677,7 @@ export function featureDisabledResponse(
 
 export function requireServerFeature(
   context: ServerAccessContext,
-  featureCode: string,
+  featureCode: ModuleFeatureCode,
   featureName?: string,
 ) {
   if (hasServerFeature(context, featureCode)) {

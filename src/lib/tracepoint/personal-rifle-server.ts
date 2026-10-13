@@ -1,5 +1,6 @@
 import { resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
+import { MODULE_FEATURE } from "@/lib/tracepoint/module-catalog";
 
 export type PersonalRifleRules = {
   allow_personally_owned_rifles: boolean;
@@ -99,7 +100,7 @@ export async function getPersonalRifleRequestContext() {
     enabledFeatures,
   } = access.context;
 
-  if (!enabledFeatures.includes("firearms")) {
+  if (!enabledFeatures.includes(MODULE_FEATURE.FIREARMS)) {
     return {
       user,
       admin,
