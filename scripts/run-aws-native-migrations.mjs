@@ -61,6 +61,18 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
+function requireStagingEntitlementMigrationOnly(report, files) {
+  const versions = files.map((file) => file.version);
+  if (report.ledger !== "present" || versions.length !== 38 || versions.some((version, index) => version !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present contiguous AWS ledger through migration 038.");
+  }
+  if (report.pending.length !== 1 || report.pending[0].version !== 38 || report.pending[0].filename !== "038_default_module_entitlements.sql") {
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 038_default_module_entitlements.sql pending.");
+  }
+  if (report.applied.length !== 37 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001–037 must all be accounted for before 038.");
+  }
+}
 async function report(client, files) {
   const rows = await ledgerRows(client);
   if (!rows) return { ledger: "absent", applied: [], pending: files.map(publicMigration), latestAppliedVersion: null };
@@ -137,6 +149,10 @@ try {
       await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'baseline',true)`, [phaseA.version, phaseA.filename, phaseA.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
     } else {
       if (!before) throw new Error("AWS-native migration ledger is absent; run the verified staging baseline first.");
+      if (requestedEnvironment === "staging" && action === "apply") {
+        const current = await report(client, files);
+        requireStagingEntitlementMigrationOnly(current, files);
+      }
       const applied = new Set(before.map((row) => Number(row.version)));
       for (const file of files.filter((entry) => !applied.has(entry.version))) {
         console.log(JSON.stringify({ applying: publicMigration(file) }));

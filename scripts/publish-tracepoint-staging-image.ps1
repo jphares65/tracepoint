@@ -1,10 +1,15 @@
 [CmdletBinding()]
-param([switch]$ValidateArchiveOnly, [switch]$Wait)
+param(
+    [switch]$ValidateArchiveOnly,
+    [switch]$Wait,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$Commit
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'migration-release-core.psm1') -Force
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $protectedUntrackedPaths = @('scripts/seed-demo-fleet-equipment.mjs', 'src/app/integration-demo/page.tsx')
@@ -50,14 +55,18 @@ $nativeReleaseBranch = 'codex/staging-mobile-api-release-20261007'
 $nativeReleaseBaseline = '5672b0395ff7082840d508488a7af07835263fc6'
 
 $branch = (& git.exe -C $repositoryRoot branch --show-current).Trim()
-$commit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
-$imageTag = "$commit-aws-native-staging"
-$authorizedBranches = @(
-    'codex/aws-staging-readiness-20260902',
-    'codex/aws-staging-integration-20260908',
-    $nativeReleaseBranch
-)
-if ($branch -notin $authorizedBranches) { throw "Refusing branch '$branch'." }
+if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve the staging release branch.' }
+Assert-ReleaseBranch -Branch $branch | Out-Null
+$headCommit = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
+if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve the staging image commit.' }
+$commit = if ($Commit) { $Commit } else { $headCommit }
+if ($commit -cne $headCommit) {
+    $resolved = (& git.exe -C $repositoryRoot rev-parse "$commit^{commit}").Trim().ToLowerInvariant()
+    if ($LASTEXITCODE -ne 0 -or $resolved -cne $commit) { throw 'Requested staging image source is not an exact local commit.' }
+    & git.exe -C $repositoryRoot merge-base --is-ancestor $commit $headCommit
+    if ($LASTEXITCODE -ne 0) { throw 'Requested staging image source must be an ancestor of the current reviewed release commit.' }
+}
+$imageTag = Get-ReviewedImageTag -Environment staging -Commit $commit
 if ($commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA.' }
 if ($branch -eq $nativeReleaseBranch) {
     & git.exe -C $repositoryRoot merge-base --is-ancestor $nativeReleaseBaseline $commit
@@ -65,6 +74,7 @@ if ($branch -eq $nativeReleaseBranch) {
 }
 
 $status = @(& git.exe -C $repositoryRoot status --short --untracked-files=all)
+if ($LASTEXITCODE -ne 0) { throw 'Unable to verify staging image source cleanliness.' }
 $unexpected = @($status | Where-Object {
     $path = $_.Substring(3).Replace('\', '/')
     $path -notin $protectedUntrackedPaths
@@ -113,6 +123,7 @@ try {
     try {
         $entryNames = @($archiveEntries.Entries.FullName | Where-Object { -not $_.EndsWith('/') })
         $trackedPaths = @(& git.exe -C $repositoryRoot ls-tree -r --name-only $commit)
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to verify tracked staging image source files.' }
         $untrackedEntries = @($entryNames | Where-Object { $_ -notin $trackedPaths })
         if ($untrackedEntries.Count) {
             throw "Archive contains paths not tracked by commit ${commit}: $($untrackedEntries -join ', ')"
@@ -128,7 +139,7 @@ try {
     }
     finally { $archiveEntries.Dispose() }
 
-    Write-Host "Validated $($entryNames.Count) tracked build-source files for commit $commit."
+        Write-Host "Validated $($entryNames.Count) tracked build-source files for application commit $commit (release branch HEAD $headCommit)."
     if ($ValidateArchiveOnly) { return }
 
     Assert-TracePointStagingIdentity | Out-Null

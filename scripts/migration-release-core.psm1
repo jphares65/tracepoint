@@ -1,0 +1,145 @@
+Set-StrictMode -Version Latest
+
+$script:StagingAccount = '559054714699'
+$script:StagingRegion = 'us-east-1'
+$script:StagingRole = 'TracePointMigrationStaging'
+$script:StagingReleaseBranches = @(
+    'codex/aws-staging-readiness-20260902',
+    'codex/aws-staging-integration-20260908',
+    'codex/staging-mobile-api-release-20261007',
+    'codex/demo-pd-module-visibility'
+)
+
+function Get-ReviewedImageTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
+        [Parameter(Mandatory)][string]$Commit
+    )
+    if ($Commit -notmatch '^[0-9a-f]{40}$') { throw 'Reviewed commit must be a full lowercase Git SHA.' }
+    if ($Environment -eq 'staging') { return "$Commit-aws-native-staging" }
+    return "$Commit-aws-native-production"
+}
+
+function Assert-ReviewedImageTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Environment,
+        [Parameter(Mandatory)][string]$Commit,
+        [Parameter(Mandatory)][string]$Tag
+    )
+    $expected = Get-ReviewedImageTag -Environment $Environment -Commit $Commit
+    if ($Tag -cne $expected) { throw "Image tag '$Tag' does not match reviewed tag '$expected'." }
+    return $expected
+}
+
+function Assert-ReleaseBranch {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Branch)
+    if ($Branch -cnotin $script:StagingReleaseBranches) { throw "Refusing staging build from unapproved branch '$Branch'." }
+    return $Branch
+}
+
+function Assert-StagingIdentity {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Identity)
+    if ([string]$Identity.Account -cne $script:StagingAccount) { throw "Wrong AWS account '$($Identity.Account)'; staging account is $script:StagingAccount." }
+    if ([string]$Identity.Arn -notmatch "^arn:aws:sts::$($script:StagingAccount):assumed-role/[^/]*$($script:StagingRole)[^/]*/[^/]+$") { throw 'AWS identity is not an assumed TracePointMigrationStaging role.' }
+    return $Identity
+}
+
+function Assert-ImageDigest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Actual,
+        [Parameter(Mandatory)][string]$Expected
+    )
+    if ($Actual -notmatch '^sha256:[0-9a-f]{64}$' -or $Expected -notmatch '^sha256:[0-9a-f]{64}$' -or $Actual -cne $Expected) {
+        throw "Image digest '$Actual' does not match the reviewed digest '$Expected'."
+    }
+    return $Actual
+}
+
+function ConvertFrom-MigrationRunnerLog {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Messages)
+    if ($Messages.Count -eq 0) { throw 'Migration task logs are missing.' }
+    $reports = [System.Collections.Generic.List[object]]::new()
+    foreach ($message in $Messages) {
+        $line = ([string]$message).Trim()
+        if (-not $line.StartsWith('{')) { continue }
+        try { $parsed = $line | ConvertFrom-Json -ErrorAction Stop }
+        catch { throw 'Migration task emitted malformed JSON.' }
+        if ($null -ne $parsed.PSObject.Properties['ledger']) { $reports.Add($parsed) }
+    }
+    if ($reports.Count -ne 1) { throw "Expected one migration ledger JSON report, found $($reports.Count)." }
+    return $reports[0]
+}
+
+function Assert-MigrationLedgerReport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Report,
+        [Parameter(Mandatory)][string[]]$MigrationFiles,
+        [ValidateSet('before-apply','after-apply','status')][string]$Expectation = 'status'
+    )
+    if ([string]$Report.ledger -cne 'present' -or $null -eq $Report.applied -or $null -eq $Report.pending) {
+        throw 'Migration ledger is absent or the status report is incomplete.'
+    }
+    $filesByVersion = @{}
+    $hashesByVersion = @{}
+    foreach ($file in $MigrationFiles) {
+        $name = [IO.Path]::GetFileName($file)
+        if ($name -notmatch '^(?<version>[0-9]{3})_[a-z0-9_]+\.sql$') { throw "Invalid AWS migration filename '$name'." }
+        $version = [int]$Matches.version
+        if ($filesByVersion.ContainsKey($version)) { throw "Duplicate AWS migration version $version." }
+        $filesByVersion[$version] = $name
+        $hashesByVersion[$version] = (Get-FileHash -LiteralPath $file -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    }
+    $expectedVersions = @(1..$filesByVersion.Count)
+    foreach ($expectedVersion in $expectedVersions) {
+        if (-not $filesByVersion.ContainsKey($expectedVersion)) { throw 'AWS migration files contain a historical version gap.' }
+    }
+
+    $appliedByVersion = @{}
+    foreach ($row in @($Report.applied)) {
+        $version = 0
+        if (-not [int]::TryParse([string]$row.version, [ref]$version) -or $appliedByVersion.ContainsKey($version)) { throw 'Migration ledger has a duplicate or invalid applied version.' }
+        if (-not $filesByVersion.ContainsKey($version) -or [string]$row.filename -cne $filesByVersion[$version]) { throw "Migration ledger filename drift at version $version." }
+        if ([string]$row.content_sha256 -notmatch '^[0-9a-f]{64}$') { throw "Migration ledger hash is invalid at version $version." }
+        if ([string]$row.content_sha256 -cne $hashesByVersion[$version]) { throw "Migration ledger content drift at version $version." }
+        $appliedByVersion[$version] = $row
+    }
+    $pendingByVersion = @{}
+    foreach ($row in @($Report.pending)) {
+        $version = 0
+        if (-not [int]::TryParse([string]$row.version, [ref]$version) -or $pendingByVersion.ContainsKey($version)) { throw 'Migration report has a duplicate or invalid pending version.' }
+        if (-not $filesByVersion.ContainsKey($version) -or [string]$row.filename -cne $filesByVersion[$version]) { throw "Pending migration filename drift at version $version." }
+        if ([string]$row.content_sha256 -notmatch '^[0-9a-f]{64}$') { throw "Pending migration hash is invalid at version $version." }
+        if ([string]$row.content_sha256 -cne $hashesByVersion[$version]) { throw "Pending migration hash drift at version $version." }
+        $pendingByVersion[$version] = $row
+    }
+    foreach ($version in $expectedVersions) {
+        if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
+    }
+    if ($filesByVersion.Count -ne 38 -or $filesByVersion[38] -cne '038_default_module_entitlements.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 038.' }
+    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(38))) { throw 'Apply requires exactly 038_default_module_entitlements.sql pending.' }
+    if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
+    return $Report
+}
+
+function Assert-EntitlementMigrationRecord {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Report,
+        [Parameter(Mandatory)][string]$ApplicationCommit,
+        [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment
+    )
+    $record = @($Report.applied | Where-Object { [int]$_.version -eq 38 }) | Select-Object -First 1
+    if ($null -eq $record -or [string]$record.filename -cne '038_default_module_entitlements.sql' -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
+        throw 'Migration 038 ledger entry does not match this application commit and release environment.'
+    }
+    return $record
+}
+
+Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord

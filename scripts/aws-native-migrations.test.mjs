@@ -13,4 +13,7 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /replace\(\/commit;/);
   assert.match(runner, /AWS_NATIVE_BASELINE_UNVERIFIED/);
   assert.match(runner, /action === "baseline" && requestedEnvironment !== "staging"/);
+  assert.match(runner, /requireStagingEntitlementMigrationOnly/);
+  assert.match(runner, /STAGING_RELEASE_PENDING_INVALID/);
+  assert.match(runner, /STAGING_RELEASE_LEDGER_GAP/);
 });

@@ -13,12 +13,11 @@ The required SSO roles are `TracePointMigrationStaging` and `TracePointMigration
 
 ## Staging application release
 
-From a clean, reviewed commit:
+For the controlled entitlement release, use the reviewed application commit while running the reviewed release-tooling commit from its clean descendant checkout. The consolidated script builds and verifies the exact application image, requires exactly migration 038 pending, prompts before database mutation, checks the post-migration ledger, then prompts before changing the application service:
 
 ```powershell
-.\scripts\deploy-app.ps1 staging
-.\scripts\migrate-db.ps1 staging -Action status
-.\scripts\smoke-staging.ps1
+$toolingCommit = (git rev-parse HEAD).Trim()
+.\scripts\release-entitlements-staging.ps1 -ToolingCommit $toolingCommit -ApplicationCommit '353933a6b98ad7e6c3ac082b786c6a8c7b7aedb8'
 ```
 
 `deploy-app.ps1` runs reliable local application checks before ECS changes, builds and scan-checks a SHA-tagged ECR image, registers a task revision copied from the current application definition with only that image changed, and updates only the application ECS service. It then requires ECS steady state, expected desired/running/pending counts, healthy non-draining ALB targets, a `200` TracePoint health response, and exact running image digest before declaring success. Deployment-safe remote smoke failures roll back to the preceding healthy task revision.
@@ -27,7 +26,9 @@ Post-deployment workstation/sandbox diagnostics are reported as `DEPLOYMENT SUCC
 
 ## Database lane
 
-`migrate-db.ps1 staging -Action status` first verifies the final SHA-tagged application image and its scan, then launches the established one-off ECS migration task from a separate immutable `SHA-aws-native-migration` image built from that same commit. The task receives the existing RDS secret and CA only through its copied live task definition. It validates the `public.tracepoint_aws_schema_migrations` ledger against the numeric, SHA-256 checked files in `database/aws/`; drift stops the task. `-Action apply` runs only pending files, each in its own file-owned transaction with an advisory lock and ledger insertion. `baseline` is staging-only. A successful status with no pending entries is the safe no-op release evidence.
+The staging application image tag is `<application-sha>-aws-native-staging`. `migrate-db.ps1` requires that exact tag, a clean completed scan, and the same pinned application image digest through status and apply. The separate migration runner is built from the reviewed release-tooling HEAD, pinned by its immutable migration tag and digest, and records the reviewed application SHA in the ledger. Its one-off ECS task receives the existing RDS secret and CA only through its copied task definition. The task returns a machine-readable report through its configured CloudWatch log stream; missing logs, malformed JSON, version gaps, filename/hash drift, or an unrecognized migration set stop the release. Before apply, status must account for migrations 001–037 with exactly `038_default_module_entitlements.sql` pending. The runner repeats that check under its PostgreSQL advisory lock, applies only 038 in its own transaction, and verifies an empty pending set afterward. `baseline` remains staging-only.
+
+`scripts/release-entitlements-staging.ps1` is the consolidated interactive migration-first release procedure. It checks the staging account and role, clean reviewed commits, TypeScript and AWS-native boundaries, current ECS/ALB/health state, RDS PITR freshness, exact pending migration, and the built image digest. It requires typed confirmation before applying migration 038 and again before changing the application ECS service. If migration execution or its report fails, application deployment is skipped. A committed additive migration is never reversed automatically.
 
 Production status is supported, but production migration application is deliberately rejected by the wrapper pending separate production release authorization.
 

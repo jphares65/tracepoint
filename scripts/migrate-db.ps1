@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','baseline','apply')][string]$Action = 'status'
+    [ValidateSet('status','baseline','apply')][string]$Action = 'status',
+    [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ExpectedImageDigest,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit
 )
 
 # Database-release wrapper.  Database credentials remain injected by ECS from
@@ -10,6 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+Import-Module (Join-Path $PSScriptRoot 'migration-release-core.psm1') -Force
 
 $settings = @{
     staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Repository='tracepoint-staging' }
@@ -28,18 +31,31 @@ function Invoke-Aws([string[]]$Arguments) {
 function Assert-Identity {
     if (-not (Get-Command aws.exe -ErrorAction SilentlyContinue)) { throw 'aws.exe is required; this script will not install it.' }
     $identity = Invoke-Aws @('sts','get-caller-identity')
+    if ($Environment -eq 'staging') { Assert-StagingIdentity -Identity $identity | Out-Null; return }
     if ($identity.Account -ne $settings.Account -or $identity.Arn -notmatch "^arn:aws:sts::$($settings.Account):assumed-role/[^/]*$($settings.Role)[^/]*/[^/]+$") { throw 'AWS identity does not match the requested environment.' }
 }
 function Get-ReviewedCommit {
     $commit = (& git.exe -C $root rev-parse HEAD).Trim().ToLowerInvariant()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve the reviewed HEAD commit.' }
-    if (@(& git.exe -C $root status --porcelain --untracked-files=all).Count -ne 0) { throw 'Database release requires a clean reviewed commit.' }
+    $status = @(& git.exe -C $root status --porcelain --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to verify the database release working tree.' }
+    if ($status.Count -ne 0) { throw 'Database release requires a clean reviewed commit.' }
     return $commit
 }
+function Resolve-ApplicationCommit([string]$ToolingCommit) {
+    if (-not $ImageCommit) { return $ToolingCommit }
+    $resolved = (& git.exe -C $root rev-parse "$ImageCommit^{commit}").Trim().ToLowerInvariant()
+    if ($LASTEXITCODE -ne 0 -or $resolved -cne $ImageCommit) { throw 'Requested application image commit is not an exact local commit.' }
+    & git.exe -C $root merge-base --is-ancestor $resolved $ToolingCommit
+    if ($LASTEXITCODE -ne 0) { throw 'Requested application commit must be an ancestor of the reviewed release tooling commit.' }
+    return $resolved
+}
 function Assert-ApplicationImage([string]$Commit) {
-    $tag = if ($Environment -eq 'production') { "$Commit-aws-native-production" } else { $Commit }
+    $tag = Get-ReviewedImageTag -Environment $Environment -Commit $Commit
+    Assert-ReviewedImageTag -Environment $Environment -Commit $Commit -Tag $tag | Out-Null
     $image = (Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails | Select-Object -First 1
-    if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The reviewed application image is not present in the target ECR repository. Deploy the final application image first.' }
+    if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The reviewed application image is not present in the target ECR repository. Build and publish the exact reviewed commit first.' }
+    if (@($image.imageTags) -cnotcontains $tag) { throw 'ECR did not attest the exact reviewed image tag.' }
     $scan = Invoke-Aws @('ecr','describe-image-scan-findings','--repository-name',$settings.Repository,'--image-id',"imageDigest=$($image.imageDigest)")
     if ($scan.imageScanStatus.status -ne 'COMPLETE' -or @($scan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The reviewed application image scan is not clean.' }
     return $image.imageDigest
@@ -49,8 +65,26 @@ if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is
 if ($Action -eq 'apply' -and $Environment -eq 'production') { throw 'Production migration application requires separately authorized production release execution; this command permits production status only.' }
 
 Assert-Identity
-$commit = Get-ReviewedCommit
+$toolingCommit = Get-ReviewedCommit
+$commit = Resolve-ApplicationCommit $toolingCommit
 $digest = Assert-ApplicationImage $commit
-& (Join-Path $PSScriptRoot 'apply-app-migrations.ps1') -Environment $Environment -Action $Action -ImageCommit $commit
+if ($ExpectedImageDigest) { Assert-ImageDigest -Actual $digest -Expected $ExpectedImageDigest | Out-Null }
+$migrationOutput = @(& (Join-Path $PSScriptRoot 'apply-app-migrations.ps1') -Environment $Environment -Action $Action -ImageCommit $commit -MigrationSourceCommit $toolingCommit -ApplicationImageDigest $digest)
 if ($LASTEXITCODE -ne 0) { throw 'Ledgered ECS migration task failed.' }
-Write-Host "MIGRATION $($Action.ToUpperInvariant()) SUCCEEDED: $Environment application commit $commit, verified image $digest."
+$digestAfter = Assert-ApplicationImage $commit
+Assert-ImageDigest -Actual $digestAfter -Expected $digest | Out-Null
+if ($Action -in @('status','apply')) {
+    $report = @($migrationOutput | Where-Object { $null -ne $_.PSObject.Properties['ledger'] } | Select-Object -Last 1)
+    if ($report.Count -ne 1) { throw 'Migration runner ledger report was not returned to the release wrapper.' }
+    $files = @(Get-ChildItem (Join-Path $root 'database/aws') -File | Where-Object { $_.Name -match '^[0-9]{3}_[a-z0-9_]+\.sql$' } | Sort-Object Name | ForEach-Object FullName)
+    $expectation = if ($Action -eq 'apply') { 'after-apply' } else { 'status' }
+    Assert-MigrationLedgerReport -Report $report[0] -MigrationFiles $files -Expectation $expectation | Out-Null
+    $report[0] | Add-Member -NotePropertyName application_commit -NotePropertyValue $commit -Force
+    $report[0] | Add-Member -NotePropertyName application_image_tag -NotePropertyValue (Get-ReviewedImageTag -Environment $Environment -Commit $commit) -Force
+    $report[0] | Add-Member -NotePropertyName application_image_digest -NotePropertyValue $digest -Force
+    Write-Host "MIGRATION $($Action.ToUpperInvariant()) VERIFIED: $Environment application commit $commit, tooling commit $toolingCommit, image $digest, applied $(@($report[0].applied).Count), pending $(@($report[0].pending).Count)."
+    $report[0]
+} else {
+    Write-Host "MIGRATION $($Action.ToUpperInvariant()) SUCCEEDED: $Environment application commit $commit, verified image $digest."
+    $migrationOutput
+}

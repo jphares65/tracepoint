@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
     [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
     [ValidatePattern('^[0-9a-fA-F]{40}$')][string]$ImageCommit,
+    [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ExpectedImageDigest,
     [switch]$SkipLocalValidation
 )
 
@@ -32,6 +33,7 @@ $configuration = @{
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'deploy-app-rollout-core.ps1')
+Import-Module (Join-Path $PSScriptRoot 'migration-release-core.psm1') -Force
 $imageRepository = "$($configuration.Account).dkr.ecr.$($configuration.Region).amazonaws.com/$($configuration.Repository)"
 $script:DeploymentWarnings = [System.Collections.Generic.List[string]]::new()
 $deploymentLockDirectory = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TracePoint\deployment-locks'
@@ -183,6 +185,7 @@ function Assert-ReviewedCommit {
     $sha = (& git.exe -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
     if ($LASTEXITCODE -ne 0 -or $sha -notmatch '^[0-9a-f]{40}$') { throw 'Unable to resolve the reviewed HEAD commit.' }
     $changes = @(& git.exe -C $repositoryRoot status --porcelain --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to verify the reviewed deployment working tree.' }
     if ($changes.Count -ne 0) { throw 'Refusing to deploy a working tree with uncommitted or untracked files.' }
     return $sha
 }
@@ -426,6 +429,7 @@ if ($SkipLocalValidation) {
 }
 $imageTag = "$commit$($configuration.ImageSuffix)"
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
+if ($ExpectedImageDigest) { Assert-ImageDigest -Actual $image.imageDigest -Expected $ExpectedImageDigest | Out-Null }
 $imageUri = "${imageRepository}@$($image.imageDigest)"
 $registered = Register-ApplicationTaskRevision -CurrentTask (Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn) -ImageUri $imageUri
 $deploymentStarted = $false
