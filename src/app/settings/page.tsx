@@ -2105,14 +2105,24 @@ export default function AdminSettingsPage() {
         }),
       });
 
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-        error?: string;
-      };
+      const payload: unknown = await response.json().catch(() => ({}));
+      const result =
+        payload && typeof payload === "object"
+          ? (payload as {
+              ok?: boolean;
+              message?: string;
+              error?: string;
+            })
+          : {};
 
-      if (!response.ok) {
-        throw new Error(result.error ?? "Activation email could not be sent.");
+      const activationAccepted = result.ok === true;
+
+      if (!response.ok || !activationAccepted) {
+        throw new Error(
+          result.error ??
+            result.message ??
+            "Activation email could not be sent.",
+        );
       }
 
       showNotice(
