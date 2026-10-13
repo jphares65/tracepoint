@@ -12,7 +12,7 @@ test('native staging application images use exactly the suffixed immutable tag c
  const dockerfile=read('Dockerfile');
  const workflow=read('.github/workflows/aws-staging-runtime.yml');
  assert.match(buildspec,/\^\(migration-\)\?\[0-9a-f\]\{40\}-aws-native-staging\$/);
- assert.match(publisher,/\$imageTag = "\$commit-aws-native-staging"/);
+ assert.match(publisher,/\$imageTag = Get-ReviewedImageTag -Environment staging -Commit \$commit/);
  assert.match(publisher,/name=IMAGE_TAG,value=\$imageTag,type=PLAINTEXT/);
  assert.match(publisher,/imageTag=\$imageTag/);
  assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
@@ -53,6 +53,9 @@ test('normal release consumers reject bare or mutable tags while rollback is pin
 test('migration tags remain distinct and retain the buildspec migration exception',()=>{
  const migrations=read('scripts/apply-app-migrations.ps1');
  const buildspec=read('buildspec.staging-image.yml');
- assert.match(migrations,/\$tag = "migration-\$Commit-aws-native-\$Environment"/);
+ assert.match(migrations,/\$tag = "migration-\$MigrationCommit-aws-native-\$Environment"/);
  assert.match(buildspec,/\^\(migration-\)\?\[0-9a-f\]\{40\}-aws-native-staging\$/);
+ const stagingArchivePaths=migrations.slice(migrations.indexOf("if ($Environment -eq 'staging')"),migrations.indexOf("if ($Environment -eq 'production')"));
+ assert.match(stagingArchivePaths,/scripts\/mobile-route-image-contract-core\.mjs/);
+ assert.match(stagingArchivePaths,/scripts\/test-staging-image-mobile-routes\.sh/);
 });

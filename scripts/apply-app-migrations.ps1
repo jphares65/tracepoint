@@ -84,6 +84,7 @@ function Publish-MigrationImage([string]$MigrationCommit) {
   New-Item -ItemType Directory -Path $dir | Out-Null
   try {
     $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts/assert-aws-native-provider-reachability.mjs','scripts/run-aws-native-migrations.mjs','scripts/validate-tracepoint-runtime-config.mjs','scripts/start-tracepoint-container.mjs','scripts/run-application-tests.mjs','Dockerfile','buildspec.staging-image.yml')
+    if ($Environment -eq 'staging') { $paths += @('scripts/mobile-route-image-contract-core.mjs','scripts/test-staging-image-mobile-routes.sh') }
     if ($Environment -eq 'production') { $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts/assert-aws-native-provider-reachability.mjs','scripts/run-aws-native-migrations.mjs','scripts/validate-tracepoint-runtime-config.mjs','scripts/start-tracepoint-container.mjs','scripts/run-application-tests.mjs','Dockerfile.aws-native-production','buildspec.production-image.yml') }
     & git.exe -C $root archive --format=zip "--output=$zip" $MigrationCommit -- @paths
     if ($LASTEXITCODE -ne 0) { throw 'Unable to create the immutable migration image source archive.' }
