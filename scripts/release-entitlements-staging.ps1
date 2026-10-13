@@ -36,8 +36,17 @@ function Invoke-AwsRead {
     catch { throw "AWS returned invalid JSON for '$($Arguments -join ' ')'." }
 }
 function Invoke-ReleaseScript {
-    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string[]]$Arguments)
-    try { return @(& $Path @Arguments) }
+    param(
+        [Parameter(Mandatory, Position=0)][string]$Path,
+        [Parameter(Mandatory, Position=1)][string[]]$ScriptArguments
+    )
+    try {
+        $result = @(& $Path @ScriptArguments)
+        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+            throw "Nested script exited with code $LASTEXITCODE"
+        }
+        return $result
+    }
     catch { throw "$Path failed: $($_.Exception.Message)" }
 }
 function Get-VerifiedLedgerReport {
