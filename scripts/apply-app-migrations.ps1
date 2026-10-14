@@ -22,6 +22,7 @@ if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is
 if ($Action -eq 'diagnose' -and $Environment -ne 'staging') { throw 'Database diagnostics are staging-only.' }
 if ($Action -eq 'diagnose' -and $ImageCommit -cne 'a3fa9855f4c797dfb7b4dd16144cf6c85a445946') { throw 'Migration 038 diagnostics require the already-built application commit a3fa9855f4c797dfb7b4dd16144cf6c85a445946.' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$migrationFiles = @(Get-AwsMigrationFiles -Directory (Join-Path $root 'database/aws'))
 
 function Invoke-Aws([string[]]$Arguments) {
   $previousErrorActionPreference = $ErrorActionPreference
@@ -184,7 +185,6 @@ function Invoke-MigrationTask([string]$ApplicationCommit,[string]$ApplicationDig
     $taskId = [string]$task.taskArn.Split('/')[-1]
     $streamName = "$logPrefix/$($container.name)/$taskId"
     $report = Read-MigrationTaskReport -LogGroup $logGroup -StreamName $streamName
-    $migrationFiles = @(Get-ChildItem (Join-Path $root 'database/aws') -File | Where-Object { $_.Name -match '^[0-9]{3}_[a-z0-9_]+\.sql$' } | Sort-Object Name | ForEach-Object FullName)
     if ($TaskAction -ne 'diagnose') {
       $expectation = if ($TaskAction -eq 'apply') { 'after-apply' } else { 'status' }
       Assert-MigrationLedgerReport -Report $report -MigrationFiles $migrationFiles -Expectation $expectation | Out-Null
@@ -214,7 +214,6 @@ $applicationDigest = Assert-ReviewedApplicationImage -Commit $applicationCommit 
 $migrationImage = Publish-MigrationImage $toolingCommit
 if ($Action -eq 'apply') {
   $before = Invoke-MigrationTask -ApplicationCommit $applicationCommit -ApplicationDigest $applicationDigest -TaskAction 'status' -MigrationDigest $migrationImage.Digest
-  $migrationFiles = @(Get-ChildItem (Join-Path $root 'database/aws') -File | Where-Object { $_.Name -match '^[0-9]{3}_[a-z0-9_]+\.sql$' } | Sort-Object Name | ForEach-Object FullName)
   Assert-MigrationLedgerReport -Report $before -MigrationFiles $migrationFiles -Expectation 'before-apply' | Out-Null
   $result = Invoke-MigrationTask -ApplicationCommit $applicationCommit -ApplicationDigest $applicationDigest -TaskAction 'apply' -MigrationDigest $migrationImage.Digest
   Assert-MigrationLedgerReport -Report $result -MigrationFiles $migrationFiles -Expectation 'after-apply' | Out-Null

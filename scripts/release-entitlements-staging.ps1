@@ -14,13 +14,14 @@ $region = 'us-east-1'
 $account = '559054714699'
 $profile = 'tracepoint-member-staging'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+Import-Module (Join-Path $PSScriptRoot 'migration-release-core.psm1') -Force
+$migrationFiles = @(Get-AwsMigrationFiles -Directory (Join-Path $repositoryRoot 'database/aws'))
 $oldAwsProfile = $env:AWS_PROFILE
 $oldAwsRegion = $env:AWS_REGION
 $oldAwsDefaultRegion = $env:AWS_DEFAULT_REGION
 $env:AWS_PROFILE = $profile
 $env:AWS_REGION = $region
 $env:AWS_DEFAULT_REGION = $region
-Import-Module (Join-Path $PSScriptRoot 'migration-release-core.psm1') -Force
 
 function Invoke-NativeChecked {
     param([Parameter(Mandatory)][string]$File,[Parameter(Mandatory)][string[]]$Arguments)
@@ -71,8 +72,7 @@ function Get-VerifiedLedgerReport {
     param([Parameter(Mandatory)][object[]]$Output,[Parameter(Mandatory)][ValidateSet('before-apply','after-apply','status')][string]$Expectation,[Parameter(Mandatory)][string]$ExpectedDigest)
     $reports = @($Output | Where-Object { $null -ne $_.PSObject.Properties['ledger'] })
     if ($reports.Count -ne 1) { throw "Expected one validated migration report; received $($reports.Count)." }
-    $files = @(Get-ChildItem (Join-Path $repositoryRoot 'database/aws') -File | Where-Object { $_.Name -match '^[0-9]{3}_[a-z0-9_]+\.sql$' } | Sort-Object Name | ForEach-Object FullName)
-    Assert-MigrationLedgerReport -Report $reports[0] -MigrationFiles $files -Expectation $Expectation | Out-Null
+    Assert-MigrationLedgerReport -Report $reports[0] -MigrationFiles $migrationFiles -Expectation $Expectation | Out-Null
     Assert-ImageDigest -Actual $reports[0].application_image_digest -Expected $ExpectedDigest | Out-Null
     if ($reports[0].application_commit -cne $ApplicationCommit) { throw 'Migration report does not refer to the reviewed application commit.' }
     return $reports[0]
@@ -149,13 +149,13 @@ try {
 
     $statusOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit)
     $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'before-apply' -ExpectedDigest $imageDigest
-    if (@($status.pending).Count -ne 1 -or $status.pending[0].version -ne 38 -or $status.pending[0].filename -cne '038_default_module_entitlements.sql') { throw 'Pre-apply status must show exactly migration 038 pending.' }
+    if (@($status.pending).Count -ne 1 -or $status.pending[0].version -ne 42 -or $status.pending[0].filename -cne '042_default_module_entitlements.sql') { throw 'Pre-apply status must show exactly migration 042 pending, after the complete 038–041 lineage is verified applied.' }
     $null = Assert-RdsPitr
     $currentService = Get-StagingService
     if ($currentService.taskDefinition -cne $previousTaskDefinition) { throw 'Staging application task changed during migration preparation; stop for review.' }
 
-    $confirmation = Read-Host "Type APPLY 038 to mutate staging account $account database using image $imageDigest"
-    if ($confirmation -cne 'APPLY 038') { throw 'Database apply was not confirmed; no migration was started.' }
+    $confirmation = Read-Host "Type APPLY 042 to mutate staging account $account database using image $imageDigest"
+    if ($confirmation -cne 'APPLY 042') { throw 'Database apply was not confirmed; no migration was started.' }
     $migrationApplyStarted = $true
     $applyOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','apply','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
     $applied = Get-VerifiedLedgerReport -Output $applyOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
@@ -171,7 +171,7 @@ try {
     $deploymentStarted = $true
     Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest) | Out-Null
     $null = Assert-StagingRuntimeHealth
-    Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); migration 038 applied; prior task $previousTaskDefinition."
+        Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); migration 042 applied; prior task $previousTaskDefinition."
 }
 catch {
     $failure = $_

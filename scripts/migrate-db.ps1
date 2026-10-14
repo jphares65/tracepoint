@@ -19,6 +19,7 @@ $settings = @{
     production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Repository='tracepoint-production' }
 }[$Environment]
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$migrationFiles = @(Get-AwsMigrationFiles -Directory (Join-Path $root 'database/aws'))
 
 function Invoke-Aws([string[]]$Arguments) {
     $prior = $ErrorActionPreference
@@ -78,9 +79,8 @@ Assert-ImageDigest -Actual $digestAfter -Expected $digest | Out-Null
 if ($Action -in @('status','apply')) {
     $report = @($migrationOutput | Where-Object { $null -ne $_.PSObject.Properties['ledger'] } | Select-Object -Last 1)
     if ($report.Count -ne 1) { throw 'Migration runner ledger report was not returned to the release wrapper.' }
-    $files = @(Get-ChildItem (Join-Path $root 'database/aws') -File | Where-Object { $_.Name -match '^[0-9]{3}_[a-z0-9_]+\.sql$' } | Sort-Object Name | ForEach-Object FullName)
     $expectation = if ($Action -eq 'apply') { 'after-apply' } else { 'status' }
-    Assert-MigrationLedgerReport -Report $report[0] -MigrationFiles $files -Expectation $expectation | Out-Null
+    Assert-MigrationLedgerReport -Report $report[0] -MigrationFiles $migrationFiles -Expectation $expectation | Out-Null
     $report[0] | Add-Member -NotePropertyName application_commit -NotePropertyValue $commit -Force
     $report[0] | Add-Member -NotePropertyName application_image_tag -NotePropertyValue (Get-ReviewedImageTag -Environment $Environment -Commit $commit) -Force
     $report[0] | Add-Member -NotePropertyName application_image_digest -NotePropertyValue $digest -Force

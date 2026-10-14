@@ -64,14 +64,14 @@ function verifyLedger(files, rows) {
 }
 function requireStagingEntitlementMigrationOnly(report, files) {
   const versions = files.map((file) => file.version);
-  if (report.ledger !== "present" || versions.length !== 38 || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present contiguous AWS ledger through migration 038.");
+  if (report.ledger !== "present" || versions.length !== 42 || versions.some((version, index) => version !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present contiguous AWS ledger through migration 042.");
   }
-  if (report.pending.length !== 1 || report.pending[0].version !== 38 || report.pending[0].filename !== "038_default_module_entitlements.sql") {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 038_default_module_entitlements.sql pending.");
+  if (report.pending.length !== 1 || report.pending[0].version !== 42 || report.pending[0].filename !== "042_default_module_entitlements.sql") {
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 042_default_module_entitlements.sql pending.");
   }
-  if (report.applied.length !== 37 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001–037 must all be accounted for before 038.");
+  if (report.applied.length !== 41 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001–041, including the Agency Documents lineage, must all be accounted for before 042.");
   }
 }
 async function report(client, files) {

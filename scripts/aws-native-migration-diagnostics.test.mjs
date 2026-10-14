@@ -14,8 +14,8 @@ function fakeClient() {
       if (/^rollback$/i.test(String(sql).trim())) return { rows: [] };
       if (/from unnest\(/i.test(sql)) return { rows: parameters[0].map((relation_name) => ({ relation_name, present: true })) };
       if (/from public\.tracepoint_aws_schema_migrations/i.test(sql)) return { rows: [{
-        filename: "038_previous_module_entitlements.sql",
-        content_sha256: "0".repeat(64),
+        filename: "038_agency_documents_template_builder.sql",
+        content_sha256: "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a",
         applied_at: "2026-10-13T12:00:00.000Z",
         application_git_sha: "a".repeat(40),
         application_context: "apply",
@@ -39,14 +39,14 @@ function fakeClient() {
   return { client, statements };
 }
 
-test("migration 038 diagnostics report the ledger mismatch and schema state in read-only mode", async () => {
+test("migration 038 diagnostics verify restored Agency Documents lineage and module state read-only", async () => {
   const { client, statements } = fakeClient();
   const report = await readMigration038Diagnostics(client);
 
   assert.equal(report.ledger, "present");
-  assert.equal(report.recorded.filename, "038_previous_module_entitlements.sql");
-  assert.equal(report.filename_matches, false);
-  assert.equal(report.checksum_matches, false);
+  assert.equal(report.recorded.filename, "038_agency_documents_template_builder.sql");
+  assert.equal(report.filename_matches, true);
+  assert.equal(report.checksum_matches, true);
   assert.equal(report.catalog.status, "verified");
   assert.equal(report.catalog.records.length, 11);
   assert.equal(report.triggers.status, "verified");
@@ -62,14 +62,19 @@ test("migration 038 diagnostics report the ledger mismatch and schema state in r
   assert.ok(statements.slice(1, -1).every(({ sql }) => /^select\b/i.test(sql)), "all statements inside the transaction are SELECT queries");
 });
 
-test("diagnostic expectations stay aligned with the committed AWS migration catalog and checksum", async () => {
-  const migration = await readFile(new URL("../database/aws/038_default_module_entitlements.sql", import.meta.url), "utf8");
+test("diagnostic expectations stay aligned with the restored 038 source and version 042 catalog migration", async () => {
+  const historicalMigration = await readFile(new URL("../database/aws/038_agency_documents_template_builder.sql", import.meta.url), "utf8");
+  assert.equal(createHash("sha256").update(historicalMigration).digest("hex"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a");
+
+  const migration = await readFile(new URL("../database/aws/042_default_module_entitlements.sql", import.meta.url), "utf8");
   const digest = createHash("sha256").update(migration).digest("hex");
   assert.equal(digest, "857baa4ab02f99acb046a71a820c9d54bd0d69fd56cf6048fba22945685adff1");
 
   const seededRows = [...migration.matchAll(/^\s*\('([a-z_]+)', '([^']+)', '([^']*)', (\d+), true\),?$/gm)]
     .map(([, code, display_name, description, sort_order]) => ({ code, display_name, description, sort_order: Number(sort_order) }));
   assert.deepEqual(seededRows, EXPECTED_MODULE_CATALOG);
+  assert.match(migration, /Existing[\s\S]*?rows, including disabled rows, are deliberately preserved by DO NOTHING/);
+  assert.match(migration, /on conflict \(department_id, feature_code\) do nothing/);
 });
 
 test("diagnose is staging-only and leaves normal migration drift checks in place", async () => {
@@ -82,6 +87,8 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /action === "diagnose"/);
   assert.match(runner, /requestedEnvironment !== "staging"/);
   assert.match(runner, /MIGRATION_DRIFT/);
+  assert.match(runner, /versions\.length !== 42/);
+  assert.match(runner, /pending\[0\]\.version !== 42/);
   assert.match(runner, /await import\("\.\/aws-native-migration-diagnostics\.mjs"\)/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed/);
@@ -91,6 +98,7 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(taskWrapper, /ValidateSet\('status','baseline','reconcile','apply','diagnose'\)/);
   assert.match(taskWrapper, /if \(\$TaskAction -ne 'diagnose'\)/);
   assert.match(taskWrapper, /scripts\/aws-native-migration-diagnostics\.mjs/);
+  assert.match(taskWrapper, /'database\/aws'/);
   assert.match(taskWrapper, /\$container\.command = @\('scripts\/run-aws-native-migrations\.mjs',\$TaskAction,\$Environment\)/);
   assert.match(releaseWrapper, /ValidateSet\('status','baseline','apply','diagnose'\)/);
   assert.match(releaseWrapper, /apply-app-migrations\.ps1'\) -Environment \$Environment -Action \$Action/);
@@ -100,4 +108,5 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(taskWrapper, /\$applicationCommit = if \(\$ImageCommit\) \{ \$ImageCommit \} else \{ \$toolingCommit \}/);
   assert.match(taskWrapper, /Migration image must use the exact reviewed release-tooling commit/);
   assert.match(dockerfile, /aws-native-migration-diagnostics\.mjs/);
+  assert.match(dockerfile, /\/app\/database\/aws \.\/database\/aws/);
 });

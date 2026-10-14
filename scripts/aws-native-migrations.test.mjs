@@ -17,3 +17,9 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /STAGING_RELEASE_PENDING_INVALID/);
   assert.match(runner, /STAGING_RELEASE_LEDGER_GAP/);
 });
+
+test("duplicate migration versions fail before the runner connects to PostgreSQL", async () => {
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  assert.match(runner, /result\[index - 1\]\.version >= result\[index\]\.version/);
+  assert.ok(runner.indexOf("const files = await migrations();") < runner.indexOf("client = await connect();"));
+});

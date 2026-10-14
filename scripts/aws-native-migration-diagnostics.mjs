@@ -1,5 +1,6 @@
 const VERSION = 38;
-const FILENAME = "038_default_module_entitlements.sql";
+const FILENAME = "038_agency_documents_template_builder.sql";
+const CHECKSUM = "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a";
 
 export const EXPECTED_MODULE_CATALOG = Object.freeze([
   { code: "ammunition", display_name: "Ammunition", description: "Ammunition inventory and transactions.", sort_order: 10 },
@@ -207,10 +208,10 @@ export async function readMigration038Diagnostics(client) {
       read_only: true,
       inspected_version: VERSION,
       expected_filename: FILENAME,
-      expected_content_sha256: "857baa4ab02f99acb046a71a820c9d54bd0d69fd56cf6048fba22945685adff1",
+      expected_content_sha256: CHECKSUM,
       recorded: record,
       filename_matches: record?.filename === FILENAME,
-      checksum_matches: record?.content_sha256 === "857baa4ab02f99acb046a71a820c9d54bd0d69fd56cf6048fba22945685adff1",
+      checksum_matches: record?.content_sha256 === CHECKSUM,
       relations: relationPresence,
       catalog,
       triggers,

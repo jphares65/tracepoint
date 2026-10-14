@@ -76,6 +76,24 @@ function ConvertFrom-MigrationRunnerLog {
     return $reports[0]
 }
 
+function Get-AwsMigrationFiles {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Directory)
+    $files = @(Get-ChildItem -LiteralPath $Directory -File -Filter '*.sql' -ErrorAction Stop | Sort-Object Name)
+    if ($files.Count -eq 0) { throw 'No AWS migration files were found.' }
+    $versions = @{}
+    foreach ($file in $files) {
+        if ($file.Name -notmatch '^(?<version>[0-9]{3})_[a-z0-9_]+\.sql$') { throw "Invalid AWS migration filename '$($file.Name)'." }
+        $version = [int]$Matches.version
+        if ($versions.ContainsKey($version)) { throw "Duplicate AWS migration version $version." }
+        $versions[$version] = $file.FullName
+    }
+    foreach ($expectedVersion in 1..$versions.Count) {
+        if (-not $versions.ContainsKey($expectedVersion)) { throw 'AWS migration files contain a historical version gap.' }
+    }
+    return @($files | ForEach-Object FullName)
+}
+
 function Assert-MigrationLedgerReport {
     [CmdletBinding()]
     param(
@@ -122,8 +140,8 @@ function Assert-MigrationLedgerReport {
     foreach ($version in $expectedVersions) {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
-    if ($filesByVersion.Count -ne 38 -or $filesByVersion[38] -cne '038_default_module_entitlements.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 038.' }
-    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(38))) { throw 'Apply requires exactly 038_default_module_entitlements.sql pending.' }
+    if ($filesByVersion.Count -ne 42 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 042, preserving the Agency Documents lineage.' }
+    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(42))) { throw 'Apply requires exactly 042_default_module_entitlements.sql pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -135,11 +153,11 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)][string]$ApplicationCommit,
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment
     )
-    $record = @($Report.applied | Where-Object { [int]$_.version -eq 38 }) | Select-Object -First 1
-    if ($null -eq $record -or [string]$record.filename -cne '038_default_module_entitlements.sql' -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
-        throw 'Migration 038 ledger entry does not match this application commit and release environment.'
+    $record = @($Report.applied | Where-Object { [int]$_.version -eq 42 }) | Select-Object -First 1
+    if ($null -eq $record -or [string]$record.filename -cne '042_default_module_entitlements.sql' -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
+        throw 'Migration 042 ledger entry does not match this application commit and release environment.'
     }
     return $record
 }
 
-Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord
+Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord
