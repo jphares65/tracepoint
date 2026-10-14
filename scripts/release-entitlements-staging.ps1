@@ -72,7 +72,7 @@ function Get-VerifiedLedgerReport {
     param([Parameter(Mandatory)][object[]]$Output,[Parameter(Mandatory)][ValidateSet('before-apply','after-apply','status')][string]$Expectation,[Parameter(Mandatory)][string]$ExpectedDigest)
     $reports = @($Output | Where-Object { $null -ne $_.PSObject.Properties['ledger'] })
     if ($reports.Count -ne 1) { throw "Expected one validated migration report; received $($reports.Count)." }
-    Assert-MigrationLedgerReport -Report $reports[0] -MigrationFiles $migrationFiles -Expectation $Expectation | Out-Null
+    Assert-MigrationLedgerReport -Report $reports[0] -MigrationFiles $migrationFiles -RepositoryRoot $repositoryRoot -MigrationCommit $ToolingCommit -Expectation $Expectation | Out-Null
     Assert-ImageDigest -Actual $reports[0].application_image_digest -Expected $ExpectedDigest | Out-Null
     if ($reports[0].application_commit -cne $ApplicationCommit) { throw 'Migration report does not refer to the reviewed application commit.' }
     return $reports[0]

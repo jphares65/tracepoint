@@ -10,11 +10,18 @@ function Assert-Throws {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $migrationFiles = @(Get-AwsMigrationFiles -Directory (Join-Path $repoRoot 'database/aws') | ForEach-Object { Get-Item -LiteralPath $_ })
+$testCommit = (& git.exe -C $repoRoot rev-parse HEAD).Trim().ToLowerInvariant()
+if ($LASTEXITCODE -ne 0 -or $testCommit -notmatch '^[0-9a-f]{40}$') { throw 'Could not resolve the reviewed migration test commit.' }
+$archiveHashes = Get-AwsMigrationArchiveHashes -RepositoryRoot $repoRoot -Commit $testCommit
+if ($archiveHashes['038_agency_documents_template_builder.sql'] -cne '83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a') { throw 'Migration 038 canonical archive checksum changed.' }
+if ($archiveHashes['042_default_module_entitlements.sql'] -cne 'f24425f5370f1ab32ec7074b13dd56f5b00afa5ab757039ca431f7312c27a4b4') { throw 'Migration 042 canonical archive checksum changed.' }
+$local42Hash = (Get-FileHash (Join-Path $repoRoot 'database/aws/042_default_module_entitlements.sql') -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($local42Hash -ceq $archiveHashes['042_default_module_entitlements.sql']) { throw 'Expected Windows working-tree line endings to differ from canonical migration 042 archive bytes.' }
 $applied = @($migrationFiles | Select-Object -First 41 | ForEach-Object {
-    [pscustomobject]@{ version=[int]$_.Name.Substring(0,3); filename=$_.Name; content_sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+    [pscustomobject]@{ version=[int]$_.Name.Substring(0,3); filename=$_.Name; content_sha256=$archiveHashes[$_.Name] }
 })
 $pending42 = @($migrationFiles | Select-Object -Last 1 | ForEach-Object {
-    [pscustomobject]@{ version=42; filename=$_.Name; content_sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+    [pscustomobject]@{ version=42; filename=$_.Name; content_sha256=$archiveHashes[$_.Name] }
 })
 $before = [pscustomobject]@{ ledger='present'; applied=$applied; pending=$pending42 }
 $entitlementRecord = [pscustomobject]@{ version=42; filename='042_default_module_entitlements.sql'; content_sha256=$pending42[0].content_sha256; application_git_sha='b' * 40; environment='staging'; application_context='apply'; is_baseline=$false }
@@ -41,20 +48,22 @@ Assert-Throws { ConvertFrom-MigrationRunnerLog -Messages @() } 'logs are missing
 Assert-Throws { ConvertFrom-MigrationRunnerLog -Messages @('{malformed json') } 'malformed JSON'
 Assert-Throws { ConvertFrom-MigrationRunnerLog -Messages @((ConvertTo-Json -Compress $before),(ConvertTo-Json -Compress $before)) } 'found 2'
 
-Assert-MigrationLedgerReport -Report $before -MigrationFiles @($migrationFiles.FullName) -Expectation before-apply | Out-Null
-Assert-MigrationLedgerReport -Report $after -MigrationFiles @($migrationFiles.FullName) -Expectation after-apply | Out-Null
+Assert-MigrationLedgerReport -Report $before -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply | Out-Null
+Assert-MigrationLedgerReport -Report $after -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation after-apply | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging | Out-Null
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('c' * 40) -Environment staging } 'does not match'
 $wrongEnvironmentRecord = [pscustomobject]@{ ledger='present'; applied=@($applied + [pscustomobject]@{ version=42; filename=$entitlementRecord.filename; content_sha256=$entitlementRecord.content_sha256; application_git_sha=$entitlementRecord.application_git_sha; environment='production'; application_context='apply'; is_baseline=$false }); pending=@() }
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $wrongEnvironmentRecord -ApplicationCommit ('b' * 40) -Environment staging } 'does not match'
 $gap = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -ne 37); pending=$pending42 }
-Assert-Throws { Assert-MigrationLedgerReport -Report $gap -MigrationFiles @($migrationFiles.FullName) -Expectation before-apply } 'gap or overlap at version 37'
+Assert-Throws { Assert-MigrationLedgerReport -Report $gap -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'gap or overlap at version 37'
 $driftApplied = @($applied | ForEach-Object { if ($_.version -eq 7) { [pscustomobject]@{ version=$_.version; filename=$_.filename; content_sha256=('0' * 64) } } else { $_ } })
 $drift = [pscustomobject]@{ ledger='present'; applied=$driftApplied; pending=$pending42 }
-Assert-Throws { Assert-MigrationLedgerReport -Report $drift -MigrationFiles @($migrationFiles.FullName) -Expectation before-apply } 'content drift at version 7'
-$multiple = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -le 40); pending=@($migrationFiles | Select-Object -Last 2 | ForEach-Object { [pscustomobject]@{ version=[int]$_.Name.Substring(0,3); filename=$_.Name; content_sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }) }
-Assert-Throws { Assert-MigrationLedgerReport -Report $multiple -MigrationFiles @($migrationFiles.FullName) -Expectation before-apply } 'exactly 042_default_module_entitlements.sql pending'
-Assert-Throws { Assert-MigrationLedgerReport -Report $before -MigrationFiles @($migrationFiles.FullName + $migrationFiles[0].FullName) } 'Duplicate AWS migration version 1.'
+Assert-Throws { Assert-MigrationLedgerReport -Report $drift -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'content drift at version 7'
+$badPending = [pscustomobject]@{ ledger='present'; applied=$applied; pending=@([pscustomobject]@{ version=42; filename='042_default_module_entitlements.sql'; content_sha256=('0' * 64) }) }
+Assert-Throws { Assert-MigrationLedgerReport -Report $badPending -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Pending migration hash drift at version 42.'
+$multiple = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -le 40); pending=@($migrationFiles | Select-Object -Last 2 | ForEach-Object { [pscustomobject]@{ version=[int]$_.Name.Substring(0,3); filename=$_.Name; content_sha256=$archiveHashes[$_.Name] } }) }
+Assert-Throws { Assert-MigrationLedgerReport -Report $multiple -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'exactly 042_default_module_entitlements.sql pending'
+Assert-Throws { Assert-MigrationLedgerReport -Report $before -MigrationFiles @($migrationFiles.FullName + $migrationFiles[0].FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit } 'Duplicate AWS migration version 1.'
 
 $duplicateDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-duplicate-migration-test-' + [guid]::NewGuid().ToString('N'))
 try {
@@ -77,6 +86,6 @@ foreach ($scriptName in @('migrate-db.ps1','apply-app-migrations.ps1','release-e
 }
 
 $absent = [pscustomobject]@{ ledger='absent'; applied=@(); pending=@() }
-Assert-Throws { Assert-MigrationLedgerReport -Report $absent -MigrationFiles @($migrationFiles.FullName) } 'ledger is absent'
+Assert-Throws { Assert-MigrationLedgerReport -Report $absent -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit } 'ledger is absent'
 
 Write-Host 'migration release core tests passed.'

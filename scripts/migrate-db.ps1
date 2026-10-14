@@ -80,7 +80,7 @@ if ($Action -in @('status','apply')) {
     $report = @($migrationOutput | Where-Object { $null -ne $_.PSObject.Properties['ledger'] } | Select-Object -Last 1)
     if ($report.Count -ne 1) { throw 'Migration runner ledger report was not returned to the release wrapper.' }
     $expectation = if ($Action -eq 'apply') { 'after-apply' } else { 'status' }
-    Assert-MigrationLedgerReport -Report $report[0] -MigrationFiles $migrationFiles -Expectation $expectation | Out-Null
+    Assert-MigrationLedgerReport -Report $report[0] -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation $expectation | Out-Null
     $report[0] | Add-Member -NotePropertyName application_commit -NotePropertyValue $commit -Force
     $report[0] | Add-Member -NotePropertyName application_image_tag -NotePropertyValue (Get-ReviewedImageTag -Environment $Environment -Commit $commit) -Force
     $report[0] | Add-Member -NotePropertyName application_image_digest -NotePropertyValue $digest -Force

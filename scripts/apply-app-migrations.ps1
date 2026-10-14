@@ -187,7 +187,7 @@ function Invoke-MigrationTask([string]$ApplicationCommit,[string]$ApplicationDig
     $report = Read-MigrationTaskReport -LogGroup $logGroup -StreamName $streamName
     if ($TaskAction -ne 'diagnose') {
       $expectation = if ($TaskAction -eq 'apply') { 'after-apply' } else { 'status' }
-      Assert-MigrationLedgerReport -Report $report -MigrationFiles $migrationFiles -Expectation $expectation | Out-Null
+      Assert-MigrationLedgerReport -Report $report -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation $expectation | Out-Null
     }
     Write-Host "AWS-native migration task succeeded: $($task.taskArn); image $($image.Digest)."
     return $report
@@ -219,12 +219,12 @@ $applicationDigest = Assert-ReviewedApplicationImage -Commit $applicationCommit 
 $migrationImage = Publish-MigrationImage $toolingCommit
 if ($Action -eq 'apply') {
   $before = Invoke-MigrationTask -ApplicationCommit $applicationCommit -ApplicationDigest $applicationDigest -TaskAction 'status' -MigrationDigest $migrationImage.Digest
-  Assert-MigrationLedgerReport -Report $before -MigrationFiles $migrationFiles -Expectation 'before-apply' | Out-Null
+  Assert-MigrationLedgerReport -Report $before -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation 'before-apply' | Out-Null
   $result = Invoke-MigrationTask -ApplicationCommit $applicationCommit -ApplicationDigest $applicationDigest -TaskAction 'apply' -MigrationDigest $migrationImage.Digest
-  Assert-MigrationLedgerReport -Report $result -MigrationFiles $migrationFiles -Expectation 'after-apply' | Out-Null
+  Assert-MigrationLedgerReport -Report $result -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation 'after-apply' | Out-Null
   Assert-EntitlementMigrationRecord -Report $result -ApplicationCommit $applicationCommit -Environment $Environment | Out-Null
   $after = Invoke-MigrationTask -ApplicationCommit $applicationCommit -ApplicationDigest $applicationDigest -TaskAction 'status' -MigrationDigest $migrationImage.Digest
-  Assert-MigrationLedgerReport -Report $after -MigrationFiles $migrationFiles -Expectation 'after-apply' | Out-Null
+  Assert-MigrationLedgerReport -Report $after -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation 'after-apply' | Out-Null
   Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $applicationCommit -Environment $Environment | Out-Null
   return $after
 }

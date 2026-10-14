@@ -94,11 +94,52 @@ function Get-AwsMigrationFiles {
     return @($files | ForEach-Object FullName)
 }
 
+function Get-AwsMigrationArchiveHashes {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit
+    )
+    $resolvedCommit = (& git.exe -C $RepositoryRoot rev-parse "$Commit^{commit}").Trim().ToLowerInvariant()
+    if ($LASTEXITCODE -ne 0 -or $resolvedCommit -cne $Commit) { throw 'Migration archive commit is not an exact reviewed commit.' }
+
+    $archivePath = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-hashes-' + [guid]::NewGuid().ToString('N') + '.zip')
+    try {
+        & git.exe -C $RepositoryRoot -c core.autocrlf=true archive --format=zip "--output=$archivePath" $Commit -- database/aws
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to create canonical migration source archive.' }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+        try {
+            $hashes = @{}
+            $versions = @{}
+            foreach ($entry in $archive.Entries) {
+                if ($entry.FullName -notlike 'database/aws/*.sql') { continue }
+                if ($entry.FullName -notmatch '^database/aws/(?<name>[0-9]{3}_[a-z0-9_]+\.sql)$') { throw "Invalid AWS migration archive path '$($entry.FullName)'." }
+                $name = $Matches.name
+                $version = [int]$name.Substring(0,3)
+                if ($versions.ContainsKey($version)) { throw "Duplicate AWS migration version $version in source archive." }
+                $versions[$version] = $name
+                $stream = $entry.Open()
+                $sha = [Security.Cryptography.SHA256]::Create()
+                try { $hashes[$name] = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+                finally { $stream.Dispose(); $sha.Dispose() }
+            }
+            if ($hashes.Count -eq 0) { throw 'Canonical migration archive contains no AWS migration files.' }
+            foreach ($expectedVersion in 1..$versions.Count) {
+                if (-not $versions.ContainsKey($expectedVersion)) { throw 'Canonical AWS migration archive contains a historical version gap.' }
+            }
+            return $hashes
+        } finally { $archive.Dispose() }
+    } finally { if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force } }
+}
+
 function Assert-MigrationLedgerReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$Report,
         [Parameter(Mandatory)][string[]]$MigrationFiles,
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$MigrationCommit,
         [ValidateSet('before-apply','after-apply','status')][string]$Expectation = 'status'
     )
     if ([string]$Report.ledger -cne 'present' -or $null -eq $Report.applied -or $null -eq $Report.pending) {
@@ -112,12 +153,16 @@ function Assert-MigrationLedgerReport {
         $version = [int]$Matches.version
         if ($filesByVersion.ContainsKey($version)) { throw "Duplicate AWS migration version $version." }
         $filesByVersion[$version] = $name
-        $hashesByVersion[$version] = (Get-FileHash -LiteralPath $file -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
     }
     $expectedVersions = @(1..$filesByVersion.Count)
     foreach ($expectedVersion in $expectedVersions) {
         if (-not $filesByVersion.ContainsKey($expectedVersion)) { throw 'AWS migration files contain a historical version gap.' }
     }
+    $archiveHashes = Get-AwsMigrationArchiveHashes -RepositoryRoot $RepositoryRoot -Commit $MigrationCommit
+    $localNames = @($filesByVersion.Values | Sort-Object)
+    $archiveNames = @($archiveHashes.Keys | Sort-Object)
+    if (($localNames -join "`n") -cne ($archiveNames -join "`n")) { throw 'Local AWS migration filenames do not match the reviewed source archive.' }
+    foreach ($version in $expectedVersions) { $hashesByVersion[$version] = $archiveHashes[$filesByVersion[$version]] }
 
     $appliedByVersion = @{}
     foreach ($row in @($Report.applied)) {
@@ -160,4 +205,4 @@ function Assert-EntitlementMigrationRecord {
     return $record
 }
 
-Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord
+Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Get-AwsMigrationArchiveHashes,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord
