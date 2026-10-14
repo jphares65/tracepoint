@@ -47,6 +47,7 @@ COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
 COPY --from=builder --chown=nonroot:nonroot /app/rds-ca.pem /app/rds-ca.pem
 COPY --from=builder --chown=nonroot:nonroot /app/database/aws ./database/aws
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/run-aws-native-migrations.mjs ./scripts/run-aws-native-migrations.mjs
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-migration-diagnostics.mjs ./scripts/aws-native-migration-diagnostics.mjs
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/mobile-route-image-contract-core.mjs ./scripts/mobile-route-image-contract-core.mjs

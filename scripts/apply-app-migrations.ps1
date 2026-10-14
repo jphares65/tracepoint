@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','baseline','reconcile','apply')][string]$Action = 'status',
+    [ValidateSet('status','baseline','reconcile','apply','diagnose')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit,
     [ValidatePattern('^[0-9a-f]{40}$')][string]$MigrationSourceCommit,
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ApplicationImageDigest
@@ -19,6 +19,8 @@ $settings = @{
   production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build' }
 }[$Environment]
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
+if ($Action -eq 'diagnose' -and $Environment -ne 'staging') { throw 'Database diagnostics are staging-only.' }
+if ($Action -eq 'diagnose' -and $ImageCommit -cne 'a3fa9855f4c797dfb7b4dd16144cf6c85a445946') { throw 'Migration 038 diagnostics require the already-built application commit a3fa9855f4c797dfb7b4dd16144cf6c85a445946.' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 function Invoke-Aws([string[]]$Arguments) {
@@ -83,9 +85,9 @@ function Publish-MigrationImage([string]$MigrationCommit) {
   $dir = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-' + [guid]::NewGuid().ToString('N')); $zip = Join-Path $dir 'source.zip'
   New-Item -ItemType Directory -Path $dir | Out-Null
   try {
-    $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts/assert-aws-native-provider-reachability.mjs','scripts/run-aws-native-migrations.mjs','scripts/validate-tracepoint-runtime-config.mjs','scripts/start-tracepoint-container.mjs','scripts/run-application-tests.mjs','Dockerfile','buildspec.staging-image.yml')
+    $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts/assert-aws-native-provider-reachability.mjs','scripts/run-aws-native-migrations.mjs','scripts/aws-native-migration-diagnostics.mjs','scripts/validate-tracepoint-runtime-config.mjs','scripts/start-tracepoint-container.mjs','scripts/run-application-tests.mjs','Dockerfile','buildspec.staging-image.yml')
     if ($Environment -eq 'staging') { $paths += @('scripts/mobile-route-image-contract-core.mjs','scripts/test-staging-image-mobile-routes.sh') }
-    if ($Environment -eq 'production') { $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts/assert-aws-native-provider-reachability.mjs','scripts/run-aws-native-migrations.mjs','scripts/validate-tracepoint-runtime-config.mjs','scripts/start-tracepoint-container.mjs','scripts/run-application-tests.mjs','Dockerfile.aws-native-production','buildspec.production-image.yml') }
+    if ($Environment -eq 'production') { $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts/assert-aws-native-provider-reachability.mjs','scripts/run-aws-native-migrations.mjs','scripts/aws-native-migration-diagnostics.mjs','scripts/validate-tracepoint-runtime-config.mjs','scripts/start-tracepoint-container.mjs','scripts/run-application-tests.mjs','Dockerfile.aws-native-production','buildspec.production-image.yml') }
     & git.exe -C $root archive --format=zip "--output=$zip" $MigrationCommit -- @paths
     if ($LASTEXITCODE -ne 0) { throw 'Unable to create the immutable migration image source archive.' }
     $version = (Invoke-Aws @('s3api','put-object','--bucket',$settings.Bucket,'--key',$settings.Key,'--body',$zip,'--expected-bucket-owner',$settings.Account)).VersionId
@@ -183,8 +185,10 @@ function Invoke-MigrationTask([string]$ApplicationCommit,[string]$ApplicationDig
     $streamName = "$logPrefix/$($container.name)/$taskId"
     $report = Read-MigrationTaskReport -LogGroup $logGroup -StreamName $streamName
     $migrationFiles = @(Get-ChildItem (Join-Path $root 'database/aws') -File | Where-Object { $_.Name -match '^[0-9]{3}_[a-z0-9_]+\.sql$' } | Sort-Object Name | ForEach-Object FullName)
-    $expectation = if ($TaskAction -eq 'apply') { 'after-apply' } else { 'status' }
-    Assert-MigrationLedgerReport -Report $report -MigrationFiles $migrationFiles -Expectation $expectation | Out-Null
+    if ($TaskAction -ne 'diagnose') {
+      $expectation = if ($TaskAction -eq 'apply') { 'after-apply' } else { 'status' }
+      Assert-MigrationLedgerReport -Report $report -MigrationFiles $migrationFiles -Expectation $expectation | Out-Null
+    }
     Write-Host "AWS-native migration task succeeded: $($task.taskArn); image $($image.Digest)."
     return $report
   } finally {

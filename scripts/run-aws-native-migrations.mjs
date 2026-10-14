@@ -8,8 +8,9 @@ const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
 
-if (!["status", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|baseline|reconcile|apply> <staging|production>");
+if (!["status", "baseline", "reconcile", "apply", "diagnose"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|baseline|reconcile|apply|diagnose> <staging|production>");
 if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
+if (action === "diagnose" && requestedEnvironment !== "staging") throw new Error("Migration diagnostics are staging-only.");
 if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
 if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
 
@@ -111,10 +112,23 @@ async function withLock(client, fn) {
 }
 
 const files = await migrations();
-const client = await connect();
+let client;
+try {
+  client = await connect();
+} catch (error) {
+  if (action === "diagnose") throw new Error("STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed.");
+  throw error;
+}
 try {
   if (action === "status") {
     console.log(JSON.stringify(await report(client, files)));
+  } else if (action === "diagnose") {
+    try {
+      const { readMigration038Diagnostics } = await import("./aws-native-migration-diagnostics.mjs");
+      console.log(JSON.stringify(await readMigration038Diagnostics(client)));
+    } catch {
+      throw new Error("STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed.");
+    }
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);
     if (before) verifyLedger(files, before);
@@ -161,4 +175,7 @@ try {
     }
     console.log(JSON.stringify(await report(client, files)));
   });
-} finally { await client.end(); }
+} finally {
+  if (action === "diagnose") await client.end().catch(() => undefined);
+  else await client.end();
+}

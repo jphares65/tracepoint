@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','baseline','apply')][string]$Action = 'status',
+    [ValidateSet('status','baseline','apply','diagnose')][string]$Action = 'status',
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ExpectedImageDigest,
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit
 )
@@ -62,6 +62,8 @@ function Assert-ApplicationImage([string]$Commit) {
 }
 
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
+if ($Action -eq 'diagnose' -and $Environment -ne 'staging') { throw 'Database diagnostics are staging-only.' }
+if ($Action -eq 'diagnose' -and $ImageCommit -cne 'a3fa9855f4c797dfb7b4dd16144cf6c85a445946') { throw 'Migration 038 diagnostics require the already-built application commit a3fa9855f4c797dfb7b4dd16144cf6c85a445946.' }
 if ($Action -eq 'apply' -and $Environment -eq 'production') { throw 'Production migration application requires separately authorized production release execution; this command permits production status only.' }
 
 Assert-Identity
