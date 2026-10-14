@@ -5,7 +5,7 @@ import test from "node:test";
 import { MODULE_FEATURE_CODES } from "./module-catalog.ts";
 
 const migrations = [
-  "database/aws/038_default_module_entitlements.sql",
+  "database/aws/042_default_module_entitlements.sql",
   "supabase/migrations/202610120001_default_module_entitlements.sql",
 ];
 
