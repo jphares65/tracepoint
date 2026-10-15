@@ -30,6 +30,15 @@ test("production preflight pins account, role, and profile before any task launc
   assert.ok(script.indexOf("if (-not $AuthorizeOneOffInspection") < script.indexOf("Invoke-AwsRead @('sts','get-caller-identity')"));
 });
 
+test("inspection task carries only the expected RDS host identity for in-task validation", () => {
+  assert.match(script, /production database must expose the expected PostgreSQL endpoint and port/);
+  assert.match(script, /TRACEPOINT_EXPECTED_DATABASE_HOST'; value=\[string\]\$db\.Endpoint\.Address/);
+  assert.match(runner, /assertExpectedDatabaseHost\(secret\.host, process\.env\.TRACEPOINT_EXPECTED_DATABASE_HOST\)/);
+  assert.match(runner, /current_database\(\)[\s\S]*inet_server_addr\(\)[\s\S]*inet_server_port\(\)[\s\S]*current_setting\('search_path'\)[\s\S]*current_user[\s\S]*session_user/);
+  assert.match(runner, /DATABASE_TARGET_MISMATCH/);
+  assert.doesNotMatch(runner, /console\.(?:error|log)\([^\n]*secret(?:\.host|\.password)/i);
+});
+
 test("database preflight is isolated from ECS Exec and injects only the runtime DB secret", () => {
   assert.doesNotMatch(script, /ecs execute-command|enableExecuteCommand|session-manager-plugin/i);
   assert.match(script, /tracepoint-production-mobile-inspection/);

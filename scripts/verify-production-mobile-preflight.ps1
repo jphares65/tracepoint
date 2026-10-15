@@ -190,6 +190,7 @@ try {
     Require-True (@($dbInstanceResult.DBInstances).Count -eq 1) 'named production database instance must exist exactly once'
     $db = $dbInstanceResult.DBInstances[0]
     Require-True ($db.DBInstanceIdentifier -eq $DatabaseInstanceIdentifier -and $db.DBInstanceStatus -eq 'available' -and $db.Engine -match 'postgres' -and -not (Get-OptionalPropertyValue $db 'DBClusterIdentifier')) 'production standalone PostgreSQL database instance must be available'
+    Require-True (-not [string]::IsNullOrWhiteSpace([string]$db.Endpoint.Address) -and [int]$db.Endpoint.Port -eq 5432) 'production database must expose the expected PostgreSQL endpoint and port'
     Require-True (@($InspectionSubnetIds | Select-Object -Unique).Count -eq $InspectionSubnetIds.Count -and @($InspectionSecurityGroupIds | Select-Object -Unique).Count -eq $InspectionSecurityGroupIds.Count) 'inspection network inputs must contain unique subnet and security-group ids'
     $network = [pscustomobject]@{ subnets = @($InspectionSubnetIds); securityGroups = @($InspectionSecurityGroupIds); assignPublicIp = $InspectionAssignPublicIp }
     $subnetArguments = @('ec2','describe-subnets','--subnet-ids') + @($InspectionSubnetIds)
@@ -272,7 +273,8 @@ try {
         @{ name='CONFIGURATION_ENVIRONMENT'; value='production' },
         @{ name='TRACEPOINT_DATA_PROVIDER'; value='postgres' },
         @{ name='TRACEPOINT_RUNTIME_PROVIDER_MODE'; value='aws-native' },
-        @{ name='TRACEPOINT_DATABASE_CA_PATH'; value='/app/rds-ca.pem' }
+        @{ name='TRACEPOINT_DATABASE_CA_PATH'; value='/app/rds-ca.pem' },
+        @{ name='TRACEPOINT_EXPECTED_DATABASE_HOST'; value=[string]$db.Endpoint.Address }
         )
         secrets = $dbSecrets
         logConfiguration = $awsLogs

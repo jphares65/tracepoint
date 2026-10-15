@@ -7,7 +7,7 @@ import {
   productionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
 } from "./aws-native-production-ledger-adoption.mjs";
-import { assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, migrationInspectionManifest } from "./aws-native-migration-inspection.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -194,6 +194,61 @@ test("inspection is fixed catalog-only SQL and cannot mutate the ledger", async 
   assert.match(runner, /pilot_range_workspaces_accountability_audit/);
 });
 
+test("column and trigger discovery uses explicit catalogs independent of runtime visibility", async () => {
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  const columnsSql = inspectionCatalogQueries.find(([name]) => name === "columns")?.[1] ?? "";
+  const privilegesSql = inspectionCatalogQueries.find(([name]) => name === "privileges")?.[1] ?? "";
+  const triggersSql = inspectionCatalogQueries.find(([name]) => name === "triggers")?.[1] ?? "";
+  const mobileDependencyQuery = runner.match(/const mobileApiDependenciesSql = `([\s\S]*?)`;/)?.[1] ?? "";
+  assert.match(columnsSql, /from pg_attribute[\s\S]*join pg_class[\s\S]*join pg_namespace/);
+  assert.match(columnsSql, /n\.nspname in \('public','tracepoint_auth'\)/);
+  assert.doesNotMatch(columnsSql, /information_schema\.columns/);
+  assert.match(mobileDependencyQuery, /from pg_attribute actual[\s\S]*join pg_class relation[\s\S]*join pg_namespace relation_schema/);
+  assert.match(mobileDependencyQuery, /to_regclass\(format\('public\.%I', required\.relation_name\)\) is not null as relation_present/);
+  assert.match(mobileDependencyQuery, /runtime_select_privilege_present/);
+  assert.match(mobileDependencyQuery, /authenticated_select_privilege_present/);
+  assert.match(privilegesSql, /has_table_privilege/);
+  assert.match(triggersSql, /from pg_trigger[\s\S]*join pg_class[\s\S]*join pg_namespace/);
+  assert.doesNotMatch(triggersSql, /information_schema\.triggers/);
+
+  const runtimeWithoutTableGrants = classifyMigrationInspection({
+    schemas: [],
+    relations: [{ schema: "public", name: "authentication_refresh_sessions" }],
+    columns: [
+      { schema: "public", relation: "authentication_refresh_sessions", column_name: "last_seen_at" },
+      { schema: "public", relation: "authentication_refresh_sessions", column_name: "idle_expires_at" },
+    ],
+    routines: [],
+    indexes: [{ name: "authentication_refresh_ready_session" }],
+    constraints: [],
+    policies: [],
+    privileges: [],
+    roles: [{ name: "tracepoint_runtime" }],
+    triggers: [],
+  });
+  assert.equal(runtimeWithoutTableGrants.migrations.find(({ version }) => version === 2)?.status, "present");
+  assert.equal(runtimeWithoutTableGrants.migrations.find(({ version }) => version === 35)?.status, "absent");
+  assert.deepEqual(runtimeWithoutTableGrants.migrations[1].evidence.filter(({ check }) => check.includes("authentication_refresh_sessions")).map(({ present }) => present), [true, true]);
+});
+
+test("inspection target identity rejects wrong host, database, server, or principal", () => {
+  assert.equal(assertExpectedDatabaseHost("TRACEPOINT-PROD.ABC.us-east-1.rds.amazonaws.com.", "tracepoint-prod.abc.us-east-1.rds.amazonaws.com"), true);
+  assert.throws(() => assertExpectedDatabaseHost("tracepoint-staging.abc.us-east-1.rds.amazonaws.com", "tracepoint-prod.abc.us-east-1.rds.amazonaws.com"), /DATABASE_TARGET_MISMATCH/);
+  const identity = {
+    database_name: "tracepoint",
+    server_address: "10.0.1.25",
+    server_port: 5432,
+    search_path: '"$user", public',
+    effective_schemas: ["pg_catalog", "public"],
+    database_user: "tracepoint_runtime",
+    session_user: "tracepoint_runtime",
+  };
+  assert.equal(assertDatabaseTargetIdentity(identity), true);
+  assert.throws(() => assertDatabaseTargetIdentity({ ...identity, database_name: "staging" }), /DATABASE_TARGET_MISMATCH/);
+  assert.throws(() => assertDatabaseTargetIdentity({ ...identity, server_port: 5433 }), /DATABASE_TARGET_MISMATCH/);
+  assert.throws(() => assertDatabaseTargetIdentity({ ...identity, session_user: "postgres" }), /DATABASE_TARGET_MISMATCH/);
+});
+
 test("mobile production preflight reads ledger and schema in one explicit read-only transaction", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   assert.match(runner, /"mobile-preflight"/);
@@ -209,6 +264,8 @@ test("mobile production preflight reads ledger and schema in one explicit read-o
   assert.match(body, /appliedVersions:/);
   assert.match(body, /mobileApiDependencies:/);
   assert.match(body, /migrations: catalog\.migrations\.map\(\(\{ version, status \}\) => \(\{ version, status \}\)\)/);
+  assert.match(body, /current_database\(\)[\s\S]*inet_server_addr\(\)[\s\S]*inet_server_port\(\)[\s\S]*current_setting\('search_path'\)[\s\S]*current_user[\s\S]*session_user/);
+  assert.match(body, /expectedRdsHostMatched: true/);
 });
 
 test("Cognito password operations fail closed for global admins and cross-department identities", async () => {
@@ -244,6 +301,9 @@ test("Cognito password operations fail closed for global admins and cross-depart
   assert.match(integration, /compensation_required and release after commit/);
   const inspection = await readFile(new URL("./aws-native-migration-inspection.mjs", import.meta.url), "utf8");
   assert.match(inspection, /\[39, \[routine\("tracepoint_auth\.guard_cognito_password_global_scope"\)/);
+  assert.match(inspection, /\[39,[\s\S]*trigger\("public\.authentication_lifecycle_operations\.authentication_lifecycle_password_global_scope"\)/);
+  assert.match(inspectionCatalogQueries.find(([name]) => name === "triggers")?.[1] ?? "", /pg_trigger/);
+  assert.ok(migrationInspectionManifest.some(({ version }) => version === 39));
   assert.match(runner, /pending\.length !== 2[\s\S]*pending\[0\]\?\.version !== 38[\s\S]*pending\[1\]\?\.version !== 39/);
 });
 test("mobile preflight separates immutable pre-039 evidence from the 039 release gate", async () => {

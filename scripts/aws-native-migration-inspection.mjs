@@ -55,17 +55,39 @@ export const migrationInspectionManifest = [
   [39, [routine("tracepoint_auth.guard_cognito_password_global_scope"), routine("tracepoint_auth.guard_cognito_scope_membership_write"), routine("tracepoint_auth.guard_cognito_scope_platform_admin_write"), trigger("public.authentication_lifecycle_operations.authentication_lifecycle_password_global_scope"), trigger("public.department_memberships.department_memberships_password_scope_guard"), trigger("public.platform_admins.platform_admins_password_scope_guard")]],
 ].map(([version, checks]) => ({ version, checks }));
 
+export function assertExpectedDatabaseHost(actualHost, expectedHost) {
+  const normalize = value => String(value ?? "").trim().toLowerCase().replace(/\.$/, "");
+  const actual = normalize(actualHost);
+  const expected = normalize(expectedHost);
+  if (!actual || !expected || actual !== expected) throw new Error("DATABASE_TARGET_MISMATCH");
+  return true;
+}
+
+export function assertDatabaseTargetIdentity(identity, { expectedDatabase = "tracepoint", expectedUser = "tracepoint_runtime" } = {}) {
+  if (
+    identity?.database_name !== expectedDatabase
+    || typeof identity?.server_address !== "string"
+    || identity.server_address.length === 0
+    || Number(identity?.server_port) !== 5432
+    || identity?.database_user !== expectedUser
+    || identity?.session_user !== expectedUser
+    || typeof identity?.search_path !== "string"
+    || !Array.isArray(identity?.effective_schemas)
+  ) throw new Error("DATABASE_TARGET_MISMATCH");
+  return true;
+}
+
 export const inspectionCatalogQueries = Object.freeze([
   ["schemas", "select nspname as name from pg_namespace where nspname in ('public','tracepoint_auth') order by nspname"],
   ["relations", "select n.nspname as schema, c.relname as name, c.relkind as kind, c.relrowsecurity as rls from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('public','tracepoint_auth') and c.relkind in ('r','p','v','m') order by n.nspname,c.relname"],
-  ["columns", "select table_schema as schema, table_name as relation, column_name, data_type, udt_name, is_nullable from information_schema.columns where table_schema in ('public','tracepoint_auth') order by table_schema,table_name,ordinal_position"],
+  ["columns", "select n.nspname as schema, c.relname as relation, a.attname as column_name, format_type(a.atttypid,a.atttypmod) as data_type, a.atttypid::regtype::text as udt_name, not a.attnotnull as is_nullable from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('public','tracepoint_auth') and c.relkind in ('r','p','v','m') and a.attnum>0 and not a.attisdropped order by n.nspname,c.relname,a.attnum"],
   ["routines", "select n.nspname as schema, p.proname as name, pg_get_function_identity_arguments(p.oid) as identity_arguments, p.prosecdef as security_definer from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','tracepoint_auth') order by n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)"],
-  ["indexes", "select schemaname as schema, tablename as relation, indexname as name, indexdef from pg_indexes where schemaname in ('public','tracepoint_auth') order by schemaname,tablename,indexname"],
+  ["indexes", "select n.nspname as schema, t.relname as relation, i.relname as name, pg_get_indexdef(i.oid) as indexdef from pg_index x join pg_class t on t.oid=x.indrelid join pg_class i on i.oid=x.indexrelid join pg_namespace n on n.oid=t.relnamespace where n.nspname in ('public','tracepoint_auth') order by n.nspname,t.relname,i.relname"],
   ["constraints", "select n.nspname as schema, c.relname as relation, con.conname as name, con.contype as type, pg_get_constraintdef(con.oid,true) as definition from pg_constraint con join pg_class c on c.oid=con.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('public','tracepoint_auth') order by n.nspname,c.relname,con.conname"],
   ["policies", "select schemaname as schema, tablename as relation, policyname as name, roles, cmd from pg_policies where schemaname in ('public','tracepoint_auth') order by schemaname,tablename,policyname"],
-  ["privileges", "select table_schema as schema, table_name as relation, grantee, privilege_type from information_schema.role_table_grants where table_schema in ('public','tracepoint_auth') and grantee in ('authenticated','tracepoint_runtime','anon','service_role') order by table_schema,table_name,grantee,privilege_type"],
+  ["privileges", "select n.nspname as schema, c.relname as relation, grantee.name as grantee, privilege.privilege_type from pg_class c join pg_namespace n on n.oid=c.relnamespace cross join (values ('authenticated'::text),('tracepoint_runtime'::text),('anon'::text),('service_role'::text)) as grantee(name) cross join (values ('SELECT'::text),('INSERT'::text),('UPDATE'::text),('DELETE'::text),('TRUNCATE'::text),('REFERENCES'::text),('TRIGGER'::text)) as privilege(privilege_type) where n.nspname in ('public','tracepoint_auth') and c.relkind in ('r','p','v','m') and exists(select 1 from pg_roles r where r.rolname=grantee.name) and has_table_privilege(grantee.name,c.oid,privilege.privilege_type) order by n.nspname,c.relname,grantee.name,privilege.privilege_type"],
   ["roles", "select rolname as name from pg_roles where rolname in ('authenticated','tracepoint_runtime','anon','service_role') order by rolname"],
-  ["triggers", "select event_object_schema as schema, event_object_table as relation, trigger_name as name from information_schema.triggers where event_object_schema in ('public','tracepoint_auth') order by event_object_schema,event_object_table,trigger_name"],
+  ["triggers", "select n.nspname as schema, c.relname as relation, t.tgname as name from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('public','tracepoint_auth') and not t.tgisinternal order by n.nspname,c.relname,t.tgname"],
 ]);
 
 export function assertInspectionSql(sql) {

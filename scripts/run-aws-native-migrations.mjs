@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
-import { assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries } from "./aws-native-migration-inspection.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
@@ -47,12 +47,16 @@ async function connect() {
   let secret;
   try { secret = JSON.parse(process.env.TRACEPOINT_DATABASE_SECRET_JSON ?? ""); } catch { throw new Error("AWS-native database secret is invalid."); }
   if (!secret || typeof secret.host !== "string" || secret.port !== 5432 || secret.dbname !== "tracepoint" || typeof secret.username !== "string" || typeof secret.password !== "string") throw new Error("AWS-native database secret is invalid.");
+  const expectedRdsHostMatched = action === "mobile-preflight"
+    ? assertExpectedDatabaseHost(secret.host, process.env.TRACEPOINT_EXPECTED_DATABASE_HOST)
+    : false;
   const caPath = process.env.TRACEPOINT_DATABASE_CA_PATH;
   if (!caPath?.startsWith("/app/") || !caPath.endsWith(".pem")) throw new Error("AWS-native database CA path is invalid.");
   const ca = await readFile(caPath, "utf8");
   if (!ca.includes("BEGIN CERTIFICATE")) throw new Error("AWS-native database CA is invalid.");
   const client = new Client({ host: secret.host, port: secret.port, user: secret.username, password: secret.password, database: secret.dbname, ssl: { ca, rejectUnauthorized: true, servername: secret.host }, connectionTimeoutMillis: 10_000, statement_timeout: 60_000, application_name: "tracepoint-aws-native-migrations" });
   await client.connect();
+  client.expectedRdsHostMatched = expectedRdsHostMatched;
   return client;
 }
 
@@ -143,9 +147,17 @@ async function inspect(client, { transactionAlreadyOpen = false } = {}) {
     to_regclass(format('public.%I', required.relation_name)) is not null as relation_present,
     not exists (
       select 1 from unnest(required.required_columns) as expected(column_name)
-      where not exists (select 1 from information_schema.columns actual where actual.table_schema='public' and actual.table_name=required.relation_name and actual.column_name=expected.column_name)
+      where not exists (
+        select 1 from pg_attribute actual
+        join pg_class relation on relation.oid=actual.attrelid
+        join pg_namespace relation_schema on relation_schema.oid=relation.relnamespace
+        where relation_schema.nspname='public' and relation.relname=required.relation_name
+          and actual.attname=expected.column_name and actual.attnum>0 and not actual.attisdropped
+      )
     ) as required_columns_present,
     not required.require_rls or coalesce((select relrowsecurity from pg_class where oid=to_regclass(format('public.%I', required.relation_name))), false) as rls_enabled,
+    case when to_regclass(format('public.%I', required.relation_name)) is not null then has_table_privilege('tracepoint_runtime', to_regclass(format('public.%I', required.relation_name)), 'select') else false end as runtime_select_privilege_present,
+    case when to_regclass(format('public.%I', required.relation_name)) is not null then has_table_privilege('authenticated', to_regclass(format('public.%I', required.relation_name)), 'select') else false end as authenticated_select_privilege_present,
     case when required.relation_name='pilot_range_workspaces' then has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'select') else true end as read_privilege_present,
     case when required.relation_name='pilot_range_workspaces' then
       has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'insert')
@@ -171,9 +183,17 @@ async function inspect(client, { transactionAlreadyOpen = false } = {}) {
 
 async function mobilePreflight(client, files) {
   if (requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
+  if (client.expectedRdsHostMatched !== true) throw new Error("DATABASE_TARGET_MISMATCH");
   assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   try {
+    const databaseIdentitySql = `select current_database() as database_name,
+      inet_server_addr()::text as server_address, inet_server_port() as server_port,
+      current_setting('search_path') as search_path, current_schemas(true) as effective_schemas,
+      current_user as database_user, session_user as session_user`;
+    assertInspectionSql(databaseIdentitySql);
+    const databaseIdentity = (await client.query(databaseIdentitySql)).rows[0];
+    assertDatabaseTargetIdentity(databaseIdentity);
     const databasePrincipalSql = `select current_user as database_user,
       current_setting('transaction_read_only') as transaction_read_only,
       current_setting('transaction_isolation') as transaction_isolation,
@@ -192,6 +212,7 @@ async function mobilePreflight(client, files) {
       status: "PASSED",
       inspection: "read-only",
       transaction: { isolation: "repeatable read", readOnly: true },
+      connectionIdentity: { ...databaseIdentity, expectedRdsHostMatched: true },
       databasePrincipal,
       ledger: migrationStatus.ledger,
       latestAppliedVersion: migrationStatus.latestAppliedVersion,
