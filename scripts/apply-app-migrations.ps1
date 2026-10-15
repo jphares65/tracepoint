@@ -10,6 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 
 $settings = @{
   staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; Repository='tracepoint-staging'; Bucket='tracepoint-staging-build-source-559054714699'; Key='source/tracepoint-staging-source.zip'; Build='tracepoint-staging-image-build'; MigrationTaskDefinition='tracepoint-staging-database-bootstrap:27'; MigratorSecretArn='arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/database/migrator-GqXXWG' }
@@ -81,7 +82,34 @@ function Test-EcrImageNotFoundError {
   param([Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord)
   return ([string]$ErrorRecord.Exception.Message -match '(?i)\(ImageNotFoundException\)\s+when calling the DescribeImages operation:')
 }
-function Publish-MigrationImage([string]$Commit) {
+function Wait-MigrationImageScan {
+  param(
+    [Parameter(Mandatory)][ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$Digest,
+    [ValidateRange(1,30)][int]$TimeoutMinutes = 15,
+    [scriptblock]$Now = { [DateTimeOffset]::UtcNow },
+    [scriptblock]$Sleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
+  )
+  $deadline = (& $Now).AddMinutes($TimeoutMinutes)
+  do {
+    $scan = Invoke-Aws @('ecr','describe-image-scan-findings','--repository-name',$settings.Repository,'--image-id',"imageDigest=$Digest")
+    if ([string]$scan.imageId.imageDigest -ne $Digest) { throw 'Migration image scan returned a different digest than the image being verified.' }
+    $status = [string]$scan.imageScanStatus.status
+    if ($status -eq 'COMPLETE') {
+      Assert-TracePointImageScan -Scan $scan
+      return $Digest
+    }
+    if ($status -ne 'IN_PROGRESS') { throw "Migration image scan ended with $status." }
+    if ((& $Now) -ge $deadline) { break }
+    & $Sleep 10
+  } while ((& $Now) -lt $deadline)
+  throw "Migration image scan did not complete within $TimeoutMinutes minutes."
+}
+function Publish-MigrationImage {
+  param(
+    [Parameter(Mandatory)][string]$Commit,
+    [scriptblock]$ScanNow = { [DateTimeOffset]::UtcNow },
+    [scriptblock]$ScanSleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
+  )
   # The web image intentionally excludes the migration entry point.  Keep the
   # migration task's image immutable and tied to the same source commit, but
   # never reuse the application's SHA tag.
@@ -90,7 +118,10 @@ function Publish-MigrationImage([string]$Commit) {
     if (-not (Test-EcrImageNotFoundError -ErrorRecord $_)) { throw }
     $existing = $null
   }
-  if ($existing -and $existing.imageDigest) { return @{ Tag=$tag; Digest=$existing.imageDigest } }
+  if ($existing -and $existing.imageDigest) {
+    $digest = Wait-MigrationImageScan -Digest ([string]$existing.imageDigest) -Now $ScanNow -Sleep $ScanSleep
+    return @{ Tag=$tag; Digest=$digest }
+  }
   $dir = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-' + [guid]::NewGuid().ToString('N')); $zip = Join-Path $dir 'source.zip'
   New-Item -ItemType Directory -Path $dir | Out-Null
   try {
@@ -132,16 +163,22 @@ function Publish-MigrationImage([string]$Commit) {
     if ($state -ne 'SUCCEEDED') { throw "Migration image build ended with $state." }
   } finally { if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force } }
   $image = (Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails | Select-Object -First 1
-  if (!$image.imageDigest) { throw 'Migration image was not published.' }
-  return @{ Tag=$tag; Digest=$image.imageDigest }
+  if ([string]$image.imageDigest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Migration image was not published with a valid immutable digest.' }
+  $digest = Wait-MigrationImageScan -Digest ([string]$image.imageDigest) -Now $ScanNow -Sleep $ScanSleep
+  return @{ Tag=$tag; Digest=$digest }
 }
-function Invoke-MigrationTask([string]$Commit) {
+function Invoke-MigrationTask {
+  param(
+    [Parameter(Mandatory)][string]$Commit,
+    [scriptblock]$ScanNow = { [DateTimeOffset]::UtcNow },
+    [scriptblock]$ScanSleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
+  )
   $service = (Invoke-Aws @('ecs','describe-services','--cluster',$settings.Cluster,'--services',$settings.Service)).services | Select-Object -First 1
   if (!$service -or $service.status -ne 'ACTIVE') { throw 'Expected ECS application service is not active.' }
   $sourceTaskDefinition = if ($settings.MigrationTaskDefinition) { $settings.MigrationTaskDefinition } else { $service.taskDefinition }
   $current = (Invoke-Aws @('ecs','describe-task-definition','--task-definition',$sourceTaskDefinition)).taskDefinition
   if ($current.networkMode -ne 'awsvpc' -or @($current.requiresCompatibilities) -notcontains 'FARGATE' -or @($current.containerDefinitions).Count -ne 1) { throw 'Unexpected ECS task pattern.' }
-  $image = Publish-MigrationImage $Commit
+  $image = Publish-MigrationImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep
   $registration = [ordered]@{}
   foreach ($field in @('family','taskRoleArn','executionRoleArn','networkMode','containerDefinitions','volumes','placementConstraints','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) {
     $property = $current.PSObject.Properties[$field]
