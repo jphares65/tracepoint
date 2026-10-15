@@ -2,9 +2,10 @@ begin;
 
 -- Password reset and global sign-out affect every use of a Cognito identity.
 -- Lock the identity while preparing the operation, and prevent its global
--- scope from changing until the provider call has been finalized. If the app
--- crashes after prepare, the prepared operation remains a fail-closed hold
--- until an operator resolves its lifecycle state.
+-- scope from changing until the provider call has been finalized. A crash or
+-- ambiguous provider failure can leave the operation non-committed; the app
+-- has no automatic reconciliation path, so that state remains held. Do not
+-- clear the hold without independently resolving the Cognito outcome.
 create or replace function tracepoint_auth.guard_cognito_password_global_scope()
 returns trigger
 language plpgsql
@@ -54,10 +55,10 @@ begin
     from public.authentication_lifecycle_operations operation
     where operation.tracepoint_user_id = new.user_id
       and operation.operation_kind in ('assign_password','reset_password')
-      and operation.state = 'prepared'
+      and operation.state <> 'committed'
       and operation.department_id <> new.department_id
   ) then
-    raise exception 'membership scope change conflicts with a prepared password operation'
+    raise exception 'membership scope change conflicts with an unresolved password operation'
       using errcode='42501';
   end if;
 
@@ -80,9 +81,9 @@ begin
       from public.authentication_lifecycle_operations operation
       where operation.tracepoint_user_id = new.user_id
         and operation.operation_kind in ('assign_password','reset_password')
-        and operation.state = 'prepared'
+        and operation.state <> 'committed'
     ) then
-      raise exception 'platform administrator scope change conflicts with a prepared password operation'
+      raise exception 'platform administrator scope change conflicts with an unresolved password operation'
         using errcode='42501';
     end if;
   end if;

@@ -228,8 +228,8 @@ test("Cognito password operations fail closed for global admins and cross-depart
   assert.match(guard, /password operation target is a platform administrator/);
   assert.match(guard, /password operation target has another department membership/);
   assert.match(guard, /pg_advisory_xact_lock\(hashtextextended\(new\.tracepoint_user_id::text, 0\)\)/);
-  assert.match(guard, /guard_cognito_scope_membership_write[\s\S]*state = 'prepared'[\s\S]*operation\.department_id <> new\.department_id/);
-  assert.match(guard, /guard_cognito_scope_platform_admin_write[\s\S]*state = 'prepared'/);
+  assert.match(guard, /guard_cognito_scope_membership_write[\s\S]*operation\.state <> 'committed'[\s\S]*operation\.department_id <> new\.department_id/);
+  assert.match(guard, /guard_cognito_scope_platform_admin_write[\s\S]*operation\.state <> 'committed'/);
   assert.match(guard, /before insert or update on public\.department_memberships/);
   assert.match(guard, /before insert or update on public\.platform_admins/);
   const passwordGuard = guard.slice(guard.indexOf("function tracepoint_auth.guard_cognito_password_global_scope"), guard.indexOf("function tracepoint_auth.guard_cognito_scope_membership_write"));
@@ -238,6 +238,10 @@ test("Cognito password operations fail closed for global admins and cross-depart
   assert.ok(passwordGuard.indexOf("pg_advisory_xact_lock") < passwordGuard.indexOf("from public.department_memberships"));
   assert.ok(membershipGuard.indexOf("pg_advisory_xact_lock") < membershipGuard.indexOf("from public.authentication_lifecycle_operations"));
   assert.ok(platformAdminGuard.indexOf("pg_advisory_xact_lock") < platformAdminGuard.indexOf("from public.authentication_lifecycle_operations"));
+  const integration = await readFile(new URL("../src/lib/authentication/cognito-password-scope.test.ts", import.meta.url), "utf8");
+  assert.match(integration, /scope-write-first serializes and denies password preparation/);
+  assert.match(integration, /operation-first serializes and denies a new department membership/);
+  assert.match(integration, /compensation_required and release after commit/);
   const inspection = await readFile(new URL("./aws-native-migration-inspection.mjs", import.meta.url), "utf8");
   assert.match(inspection, /\[39, \[routine\("tracepoint_auth\.guard_cognito_password_global_scope"\)/);
   assert.match(runner, /pending\.length !== 2[\s\S]*pending\[0\]\?\.version !== 38[\s\S]*pending\[1\]\?\.version !== 39/);
