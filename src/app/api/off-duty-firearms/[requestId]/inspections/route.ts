@@ -7,6 +7,8 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import type { ServerAccessContext } from "@/lib/tracepoint/server-access";
+import type { Database } from "@/lib/supabase/database.types";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,9 @@ import { createOffDutyReadRepository } from "@/lib/off-duty-firearms/read-reposi
 type RouteContext = {
   params: Promise<{ requestId: string }>;
 };
+
+type ProfileNameRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name">;
+type InspectionRow = Pick<Database["public"]["Tables"]["off_duty_firearm_inspections"]["Row"], "id" | "inspection_date" | "result" | "notes" | "inspected_by_user_id" | "created_at">;
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -40,14 +45,14 @@ async function loadProfileNames(
   const data = await repository.listProfiles(departmentId, uniqueIds);
 
   return new Map(
-    data.map((row: any) => [
+    data.map((row: ProfileNameRow) => [
       String(row.id),
       cleanText(row.full_name) ?? "Unknown User",
     ]),
   );
 }
 
-function isInspectionManager(context: any) {
+function isInspectionManager(context: ServerAccessContext) {
   return hasAnyServerPermission(context, [
     "manage_inspections",
     "manage_firearms",
@@ -56,7 +61,7 @@ function isInspectionManager(context: any) {
   ]);
 }
 
-async function loadOffDutyRequest(context: any, requestId: string) {
+async function loadOffDutyRequest(context: ServerAccessContext, requestId: string) {
   const { data, error } = await context.admin
     .from("off_duty_firearm_requests")
     .select("id,department_id,officer_user_id,make,model,serial_number")
@@ -114,19 +119,19 @@ export async function GET(
     );
   }
 
-  let data;
+  let data: InspectionRow[];
   try { data = await repository.listRequestInspections(context.departmentId, requestId); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Inspections could not be loaded." }, { status: 500 }); }
 
     const inspectorNames = await loadProfileNames(
     repository,
     context.departmentId,
-    (data ?? []).map((row: any) =>
+    data.map((row: InspectionRow) =>
       String(row.inspected_by_user_id ?? ""),
     ),
   );
 
-  const inspections = (data ?? []).map((row: any) => ({
+  const inspections = data.map((row: InspectionRow) => ({
     id: String(row.id),
     inspectionDate: row.inspection_date,
     result: row.result,

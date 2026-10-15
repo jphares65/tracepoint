@@ -200,8 +200,7 @@ test("inspection is fixed catalog-only SQL and cannot mutate the ledger", async 
   assert.match(runner, /pilot_range_workspaces_accountability_audit/);
 });
 
-test("column and trigger discovery uses explicit catalogs independent of runtime visibility", async () => {
-  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+test("column and trigger discovery uses explicit catalogs independent of runtime visibility", () => {
   const columnsSql = inspectionCatalogQueries.find(([name]) => name === "columns")?.[1] ?? "";
   const privilegesSql = inspectionCatalogQueries.find(([name]) => name === "privileges")?.[1] ?? "";
   const triggersSql = inspectionCatalogQueries.find(([name]) => name === "triggers")?.[1] ?? "";

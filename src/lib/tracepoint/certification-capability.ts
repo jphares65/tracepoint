@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createReadinessRepository } from "@/lib/readiness/read-repository";
 import { hasAnyServerPermission } from "@/lib/tracepoint/server-access";
+import type { ServerAccessContext } from "@/lib/tracepoint/server-access";
 import {
   evaluateCertificationCapabilityRows,
   type CertificationCapabilityCode,
@@ -24,7 +25,7 @@ export async function evaluateCertificationCapability({
   context,
   capabilityCode,
 }: {
-  context: any;
+  context: ServerAccessContext;
   capabilityCode: CertificationCapabilityCode;
 }): Promise<CertificationCapabilityResult> {
   const { data: requirement, error } = await context.admin

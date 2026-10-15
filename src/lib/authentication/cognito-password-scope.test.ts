@@ -80,6 +80,8 @@ after(async () => {
 });
 
 const pause = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const hasSqlState = (error: unknown, expectedCode: string) =>
+  typeof error === "object" && error !== null && "code" in error && error.code === expectedCode;
 const operation = (id: string, user: string, department: string) =>
   first.query(
     "insert into public.authentication_lifecycle_operations(id,operation_kind,tracepoint_user_id,department_id,state) values($1,'reset_password',$2,$3,'prepared')",
@@ -98,12 +100,12 @@ test("scope-write-first serializes and denies password preparation", async () =>
   const insertion = second.query(
     "insert into public.authentication_lifecycle_operations(id,operation_kind,tracepoint_user_id,department_id,state) values($1,'reset_password',$2,$3,'prepared')",
     ["30000000-0000-4000-8000-000000000001", user, departmentA],
-  ).then(() => ({ error: null as any }), (error: any) => ({ error }));
+  ).then(() => ({ error: null }), (error: unknown) => ({ error }));
   void insertion.then(() => { settled = true; });
   await pause(100);
   assert.equal(settled, false, "password preparation waits on the same identity lock");
   await first.query("commit");
-  assert.equal((await insertion).error?.code, "42501");
+  assert.equal(hasSqlState((await insertion).error, "42501"), true);
   await second.query("rollback");
 });
 
@@ -119,12 +121,12 @@ test("operation-first serializes and denies a new department membership", async 
   const insertion = second.query(
     "insert into public.department_memberships(department_id,user_id) values($1,$2)",
     [departmentB, user],
-  ).then(() => ({ error: null as any }), (error: any) => ({ error }));
+  ).then(() => ({ error: null }), (error: unknown) => ({ error }));
   void insertion.then(() => { settled = true; });
   await pause(100);
   assert.equal(settled, false, "scope addition waits on the same identity lock");
   await first.query("commit");
-  assert.equal((await insertion).error?.code, "42501");
+  assert.equal(hasSqlState((await insertion).error, "42501"), true);
   await second.query("rollback");
 });
 
@@ -138,11 +140,11 @@ test("unresolved password operations hold scope through compensation_required an
   const assertHeld = async () => {
     await assert.rejects(
       first.query("insert into public.department_memberships(department_id,user_id) values($1,$2)", [departmentB, user]),
-      (error: any) => error.code === "42501",
+      (error: unknown) => hasSqlState(error, "42501"),
     );
     await assert.rejects(
       first.query("insert into public.platform_admins(user_id,is_active) values($1,true)", [user]),
-      (error: any) => error.code === "42501",
+      (error: unknown) => hasSqlState(error, "42501"),
     );
   };
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const baselineCommit = "7ba11188dc8eb9fae119e131bd8053150b666ee7";
 const encodedFiles = process.env.TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64;
@@ -26,8 +27,8 @@ if (!Array.isArray(changedFiles) || !changedFiles.every((file) =>
 // repository-wide backlog has been remediated.
 console.log(`Lint ratchet baseline ${baselineCommit}; checking ${changedFiles.length} changed source/test file(s).`);
 if (changedFiles.length > 0) {
-  execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["eslint", ...changedFiles], {
+  const eslintEntrypoint = fileURLToPath(new URL("../node_modules/eslint/bin/eslint.js", import.meta.url));
+  execFileSync(process.execPath, [eslintEntrypoint, ...changedFiles], {
     stdio: "inherit",
-    shell: process.platform === "win32",
   });
 }
