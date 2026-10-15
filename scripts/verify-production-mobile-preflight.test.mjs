@@ -120,7 +120,9 @@ test("migration preflight uses a production-only fixed read-only action", () => 
   const body = runner.slice(start, end);
   assert.match(body, /requestedEnvironment !== "production"/);
   assert.match(body, /BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY/);
-  assert.match(body, /await report\(client, files\)/);
+  assert.match(body, /await inspectMigrationLedgerEvidence\(client, files\)/);
+  assert.match(body, /migrationLineage\.blocked/);
+  assert.match(body, /ledgerEvidence: migrationLineage/);
   assert.match(body, /current_user as database_user/);
   assert.match(body, /current_setting\('transaction_read_only'\)/);
   assert.match(body, /rolsuper as is_superuser/);
@@ -130,11 +132,11 @@ test("migration preflight uses a production-only fixed read-only action", () => 
   assert.match(body, /await client\.query\("COMMIT"\)/);
   assert.match(body, /await client\.query\("ROLLBACK"\)/);
   assert.doesNotMatch(body, /ensureLedger|withLock|migrationSqlWithLedgerEntry|applyRangeWorkspaceHotfix/);
-  assert.ok(body.indexOf('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY') < body.indexOf('await report(client, files)'));
-  assert.ok(body.indexOf('await report(client, files)') < body.indexOf('await client.query("COMMIT")'));
+  assert.ok(body.indexOf('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY') < body.indexOf('await inspectMigrationLedgerEvidence(client, files)'));
+  assert.ok(body.indexOf('await inspectMigrationLedgerEvidence(client, files)') < body.indexOf('await client.query("COMMIT")'));
   assert.match(runner, /action === "mobile-preflight" && requestedEnvironment !== "production"/);
   assert.ok(runner.indexOf('action === "mobile-preflight" && requestedEnvironment !== "production"') < runner.indexOf('client = await connect()'));
-  assert.match(runner, /console\.error\(JSON\.stringify\(\{\s*status: "BLOCKED",\s*inspection: "read-only",\s*reason: "DATABASE_INSPECTION_FAILED",\s*failure: mobilePreflightFailureDetails\(mobilePreflightFailureStage, error\),\s*\}\)\)/);
+  assert.match(runner, /console\.error\(JSON\.stringify\(\{\s*status: "BLOCKED",\s*inspection: "read-only",\s*reason: "DATABASE_INSPECTION_FAILED",\s*failure: mobilePreflightFailureDetails\(mobilePreflightFailureStage, error\),\s*\.\.\.\(error\?\.migrationLineageEvidence \? \{ migrationLineage: error\.migrationLineageEvidence \} : \{\}\),\s*\}\)\)/);
   assert.doesNotMatch(runner, /console\.(?:error|log)\([^\n]*(?:error\.message|JSON\.stringify\(error\))/);
 });
 

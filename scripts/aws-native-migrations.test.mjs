@@ -12,7 +12,7 @@ import {
   productionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
 } from "./aws-native-production-ledger-adoption.mjs";
-import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, inspectionSearchPathSql, migrationInspectionManifest, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, migrationInspectionManifest, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql, migrationLedgerTransactionSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
 
@@ -188,18 +188,21 @@ test("inspection is fixed catalog-only SQL and cannot mutate the ledger", async 
   const mobileDependencyQuery = mobileApiDependenciesSql;
   assert.ok(mobileDependencyQuery);
   assert.doesNotThrow(() => assertInspectionSql(mobileDependencyQuery));
+  for (const sql of [migrationLedgerTransactionSql, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql]) assert.doesNotThrow(() => assertInspectionSql(sql));
   const databasePrincipalQuery = runner.match(/const databasePrincipalSql = `([\s\S]*?)`;/)?.[1];
   assert.ok(databasePrincipalQuery);
   assert.doesNotThrow(() => assertInspectionSql(databasePrincipalQuery));
   assert.doesNotThrow(() => assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"));
   assert.doesNotThrow(() => assertInspectionSql(inspectionSearchPathSql));
   assert.throws(() => assertInspectionSql("SET LOCAL search_path = public"), /READ_ONLY_INSPECTION_SQL_REJECTED/);
-  for (const sql of ["insert into public.tracepoint_aws_schema_migrations values (1)", "update public.x set y=1", "create table public.x(id int)"]) assert.throws(() => assertInspectionSql(sql), /READ_ONLY_INSPECTION_SQL_REJECTED/);
+  for (const sql of ["insert into public.tracepoint_aws_schema_migrations values (1)", "insert into tracepoint_migrations.applied_migrations values ('aws','001_test.sql','hash')", "update public.x set y=1", "create table public.x(id int)"]) assert.throws(() => assertInspectionSql(sql), /READ_ONLY_INSPECTION_SQL_REJECTED/);
   assert.match(runner, /action === "inspect"/);
   assert.match(runner, /BEGIN TRANSACTION READ ONLY/);
   const inspectionBody = runner.slice(runner.indexOf("async function inspect"), runner.indexOf("async function rangeWorkspaceContract"));
   assert.doesNotMatch(inspectionBody, /ensureLedger|withLock|migrationSqlWithLedgerEntry/);
   assert.match(runner, /mobileApiDependencies/);
+  assert.match(runner, /inspectMigrationLedgerEvidence\(client, files\)/);
+  assert.doesNotMatch(runner.slice(runner.indexOf("async function mobilePreflight"), runner.indexOf("async function rangeWorkspaceContract")), /await report\(client, files\)/);
   assert.match(runner, /pilot_range_workspaces_accountability_audit/);
 });
 
@@ -358,6 +361,172 @@ test("embedded Postgres confirms catalog columns despite NOINHERIT visibility an
   }
 });
 
+test("embedded Postgres reconciles both migration ledgers without writes or count-based lineage claims", { timeout: 120_000 }, async () => {
+  let server;
+  let owner;
+  let reader;
+  let directory;
+  let transactionOpen = false;
+  try {
+    directory = await mkdtemp(path.join(tmpdir(), "tp-dual-migration-ledger-"));
+    const port = await localPostgresPort();
+    server = new EmbeddedPostgres({
+      databaseDir: directory,
+      user: "postgres",
+      password: "local-ledger-only",
+      port,
+      persistent: true,
+      postgresFlags: ["-h", "127.0.0.1"],
+      initdbFlags: ["--encoding=UTF8", "--locale=C"],
+      onLog: () => {},
+      onError: () => {},
+    });
+    await server.initialise();
+    await server.start();
+    const config = { host: "127.0.0.1", port, database: "postgres" };
+    owner = new pg.Client({ ...config, user: "postgres", password: "local-ledger-only" });
+    await owner.connect();
+    await owner.query("CREATE DATABASE tracepoint");
+    await owner.end();
+    config.database = "tracepoint";
+    owner = new pg.Client({ ...config, user: "postgres", password: "local-ledger-only" });
+    await owner.connect();
+    await owner.query("create role migration_ledger_reader login noinherit password 'ledger-reader-local-only'");
+    reader = new pg.Client({ ...config, user: "migration_ledger_reader", password: "ledger-reader-local-only" });
+    await reader.connect();
+
+    const files = [
+      { version: 1, filename: "001_first.sql", sha256: "a".repeat(64) },
+      { version: 2, filename: "002_second.sql", sha256: "b".repeat(64) },
+      { version: 3, filename: "003_third.sql", sha256: "c".repeat(64) },
+      { version: 4, filename: "004_fourth.sql", sha256: "d".repeat(64) },
+    ];
+    const importedFor = versions => versions.map(version => ({
+      kind: "aws",
+      filename: files[version - 1].filename,
+      sha256: files[version - 1].sha256,
+    }));
+    const nativeFor = (versions, overrides = {}) => versions.map(version => ({
+      version,
+      filename: files[version - 1].filename,
+      sha256: overrides[version] ?? files[version - 1].sha256,
+    }));
+    async function replaceLedgers({ awsNativeRows = null, importedRows = null, grantImportedSelect = true } = {}) {
+      await owner.query("drop table if exists public.tracepoint_aws_schema_migrations");
+      await owner.query("drop schema if exists tracepoint_migrations cascade");
+      if (awsNativeRows !== null) {
+        await owner.query("create table public.tracepoint_aws_schema_migrations (version integer, filename text, content_sha256 text)");
+        for (const row of awsNativeRows) await owner.query(
+          "insert into public.tracepoint_aws_schema_migrations(version, filename, content_sha256) values ($1, $2, $3)",
+          [row.version, row.filename, row.sha256],
+        );
+        await owner.query("grant select on public.tracepoint_aws_schema_migrations to migration_ledger_reader");
+      }
+      if (importedRows !== null) {
+        await owner.query("create schema tracepoint_migrations");
+        await owner.query("create table tracepoint_migrations.applied_migrations (kind text, name text, sha256 text)");
+        for (const row of importedRows) await owner.query(
+          "insert into tracepoint_migrations.applied_migrations(kind, name, sha256) values ($1, $2, $3)",
+          [row.kind, row.filename, row.sha256],
+        );
+        await owner.query("grant usage on schema tracepoint_migrations to migration_ledger_reader");
+        if (grantImportedSelect) await owner.query("grant select on tracepoint_migrations.applied_migrations to migration_ledger_reader");
+      }
+    }
+    async function inspectReadOnly() {
+      await reader.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      transactionOpen = true;
+      try {
+        const result = await inspectMigrationLedgerEvidence(reader, files);
+        await reader.query("COMMIT");
+        transactionOpen = false;
+        return result;
+      } catch (error) {
+        await reader.query("ROLLBACK");
+        transactionOpen = false;
+        throw error;
+      }
+    }
+
+    await replaceLedgers();
+    const noLedger = await inspectReadOnly();
+    assert.equal(noLedger.status, "unknown");
+    assert.equal(noLedger.blocked, true);
+    assert.equal(noLedger.appliedVersions, null);
+    assert.equal(noLedger.pending, null, "absence of both ledgers must not be reported as every migration pending");
+
+    await replaceLedgers({ importedRows: importedFor([1, 2]) });
+    const alternateOnly = await inspectReadOnly();
+    assert.equal(alternateOnly.status, "verified");
+    assert.equal(alternateOnly.source, "tracepoint_migrations.applied_migrations");
+    assert.deepEqual(alternateOnly.appliedVersions, [1, 2]);
+    assert.deepEqual(alternateOnly.pending.map(row => row.version), [3, 4]);
+    assert.deepEqual(alternateOnly.ledgers.imported.entries.map(({ filename, sha256, expectedFilename, expectedSha256 }) => ({ filename, sha256, expectedFilename, expectedSha256 })), [
+      { filename: files[0].filename, sha256: files[0].sha256, expectedFilename: files[0].filename, expectedSha256: files[0].sha256 },
+      { filename: files[1].filename, sha256: files[1].sha256, expectedFilename: files[1].filename, expectedSha256: files[1].sha256 },
+    ]);
+    await owner.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    await assert.rejects(owner.query("insert into tracepoint_migrations.applied_migrations(kind, name, sha256) values ('aws', '003_third.sql', 'x')"), error => error.code === "25006");
+    await owner.query("ROLLBACK");
+    assert.equal((await owner.query("select count(*)::int as count from tracepoint_migrations.applied_migrations")).rows[0].count, 2, "read-only transaction must leave ledger rows unchanged");
+
+    await replaceLedgers({ awsNativeRows: nativeFor([1, 2, 3]) });
+    const nativeOnly = await inspectReadOnly();
+    assert.equal(nativeOnly.status, "verified");
+    assert.equal(nativeOnly.source, "public.tracepoint_aws_schema_migrations");
+    assert.deepEqual(nativeOnly.appliedVersions, [1, 2, 3]);
+    assert.deepEqual(nativeOnly.pending.map(row => row.version), [4]);
+
+    const sharedRows = importedFor([1, 2, 3, 4]);
+    await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4]) });
+    const bothAgree = await inspectReadOnly();
+    assert.equal(bothAgree.status, "verified");
+    assert.equal(bothAgree.source, "both");
+    assert.equal(bothAgree.comparison, "both-agree");
+    assert.deepEqual(bothAgree.appliedVersions, [1, 2, 3, 4]);
+    assert.deepEqual(bothAgree.pending, []);
+
+    await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4], { 2: "f".repeat(64) }) });
+    const disagree = await inspectReadOnly();
+    assert.equal(disagree.status, "divergent");
+    assert.equal(disagree.blocked, true);
+    assert.equal(disagree.pending, null);
+    assert.ok(disagree.ledgers.awsNative.issues.some(issue => issue.code === "REPOSITORY_MISMATCH" && issue.expectedSha256 === files[1].sha256));
+    assert.equal(disagree.comparison, "conflicts");
+
+    await replaceLedgers({ importedRows: importedFor([1, 2]), awsNativeRows: nativeFor([1, 2, 3]) });
+    const coverageMismatch = await inspectReadOnly();
+    assert.equal(coverageMismatch.status, "partial");
+    assert.equal(coverageMismatch.blocked, true);
+    assert.equal(coverageMismatch.comparison, "coverage-differs");
+    assert.equal(coverageMismatch.appliedVersions, null);
+    assert.equal(coverageMismatch.pending, null, "different ledger coverage must not be collapsed into one guessed pending list");
+
+    await replaceLedgers({ importedRows: importedFor([1, 3]) });
+    const partial = await inspectReadOnly();
+    assert.equal(partial.status, "partial");
+    assert.equal(partial.blocked, true);
+    assert.equal(partial.highestContiguousVersion, 1);
+    assert.deepEqual(partial.ledgers.imported.outOfOrderVersions, [3]);
+    assert.equal(partial.appliedVersions, null);
+    assert.equal(partial.pending, null, "a gap must not be converted into a guessed pending list");
+
+    await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4]), grantImportedSelect: false });
+    await assert.rejects(inspectReadOnly(), error => error.code === "42501", "permission failure on one present ledger must block rather than fall back to the readable ledger");
+    await reader.query("BEGIN");
+    transactionOpen = true;
+    await assert.rejects(inspectMigrationLedgerEvidence(reader, files), /MIGRATION_LEDGER_READ_ONLY_TRANSACTION_REQUIRED/);
+    await reader.query("ROLLBACK");
+    transactionOpen = false;
+  } finally {
+    if (transactionOpen) await reader?.query("ROLLBACK").catch(() => undefined);
+    await reader?.end().catch(() => undefined);
+    await owner?.end().catch(() => undefined);
+    await server?.stop().catch(() => undefined);
+    if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }).catch(() => undefined);
+  }
+});
+
 test("mobile production preflight reads ledger and schema in one explicit read-only transaction", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   assert.match(runner, /"mobile-preflight"/);
@@ -367,7 +536,9 @@ test("mobile production preflight reads ledger and schema in one explicit read-o
   assert.match(body, /BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY/);
   assert.ok(body.indexOf("await client.query(inspectionSearchPathSql)") < body.indexOf("const databaseIdentitySql"));
   assert.match(body, /array_to_json\(current_schemas\(true\)\) as effective_schemas/);
-  assert.match(body, /await report\(client, files\)/);
+  assert.match(body, /await inspectMigrationLedgerEvidence\(client, files\)/);
+  assert.match(body, /migrationLineage\.blocked/);
+  assert.match(body, /ledgerEvidence: migrationLineage/);
   assert.match(body, /inspect\(client, \{ transactionAlreadyOpen: true \}\)/);
   assert.match(body, /await client\.query\("COMMIT"\)/);
   assert.match(body, /await client\.query\("ROLLBACK"\)/);

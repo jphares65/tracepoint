@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
-import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, inspectionSearchPathSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
@@ -171,7 +171,12 @@ async function mobilePreflight(client, files) {
     const databasePrincipal = (await client.query(databasePrincipalSql)).rows[0];
     if (!databasePrincipal) throw new Error("DATABASE_PRINCIPAL_UNAVAILABLE");
     setMobilePreflightStage("MIGRATION_LEDGER_READ");
-    const migrationStatus = await report(client, files);
+    const migrationLineage = await inspectMigrationLedgerEvidence(client, files);
+    if (migrationLineage.blocked) {
+      const error = new Error("MIGRATION_LEDGER_LINEAGE_UNVERIFIED");
+      error.migrationLineageEvidence = migrationLineage;
+      throw error;
+    }
     setMobilePreflightStage("SCHEMA_CATALOG_READ");
     const catalog = await inspect(client, { transactionAlreadyOpen: true });
     setMobilePreflightStage("READ_ONLY_TRANSACTION_COMMIT");
@@ -183,10 +188,11 @@ async function mobilePreflight(client, files) {
       transaction: { isolation: "repeatable read", readOnly: true },
       connectionIdentity: { ...databaseIdentity, expectedRdsHostMatched: true },
       databasePrincipal,
-      ledger: migrationStatus.ledger,
-      latestAppliedVersion: migrationStatus.latestAppliedVersion,
-      appliedVersions: migrationStatus.applied.map(row => Number(row.version)),
-      pending: migrationStatus.pending.map(({ version, filename, content_sha256 }) => ({ version, filename, content_sha256 })),
+      ledger: "present",
+      latestAppliedVersion: migrationLineage.latestAppliedVersion,
+      appliedVersions: migrationLineage.appliedVersions,
+      pending: migrationLineage.pending,
+      ledgerEvidence: migrationLineage,
       migrations: catalog.migrations.map(({ version, status }) => ({ version, status })),
       highestContiguousVersion: catalog.highestContiguousVersion,
       outOfOrderPresent: catalog.outOfOrderPresent,
@@ -325,6 +331,7 @@ try {
       inspection: "read-only",
       reason: "DATABASE_INSPECTION_FAILED",
       failure: mobilePreflightFailureDetails(mobilePreflightFailureStage, error),
+        ...(error?.migrationLineageEvidence ? { migrationLineage: error.migrationLineageEvidence } : {}),
     }));
     process.exitCode = 1;
   } else {

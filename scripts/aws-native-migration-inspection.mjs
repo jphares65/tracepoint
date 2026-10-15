@@ -81,6 +81,154 @@ export function assertDatabaseTargetIdentity(identity, { expectedDatabase = "tra
 
 export const inspectionSearchPathSql = "SET LOCAL search_path = pg_catalog";
 
+export const migrationLedgerDiscoverySql = `select
+  to_regclass('public.tracepoint_aws_schema_migrations')::text as aws_native_relation,
+  to_regclass('tracepoint_migrations.applied_migrations')::text as imported_relation`;
+
+export const awsNativeMigrationLedgerSql = `select version::int as version, filename, content_sha256 as sha256
+  from public.tracepoint_aws_schema_migrations order by version, filename`;
+
+export const importedAwsMigrationLedgerSql = `select kind, name as filename, sha256
+  from tracepoint_migrations.applied_migrations where kind = 'aws' order by name`;
+
+export const migrationLedgerTransactionSql = `select current_setting('transaction_read_only') as read_only,
+  current_setting('transaction_isolation') as isolation`;
+
+const migrationLedgerSources = Object.freeze({
+  awsNative: "public.tracepoint_aws_schema_migrations",
+  imported: "tracepoint_migrations.applied_migrations",
+});
+
+function normalizedLedgerSource(source, rows, files) {
+  if (rows === null) return { relation: source, status: "absent", entries: [], issues: [] };
+  if (!rows.length) return { relation: source, status: "empty", entries: [], issues: [] };
+
+  const expectedByVersion = new Map(files.map(file => [Number(file.version), file]));
+  const entries = [];
+  const issues = [];
+  const seenVersions = new Set();
+  for (const row of rows) {
+    const filename = String(row.filename ?? "");
+    const parsedVersion = source === migrationLedgerSources.imported
+      ? Number(filename.match(/^(\d{3})_[a-z0-9_]+\.sql$/)?.[1] ?? NaN)
+      : Number(row.version);
+    const sha256 = String(row.sha256 ?? "");
+    const expected = expectedByVersion.get(parsedVersion);
+    if (!Number.isInteger(parsedVersion) || parsedVersion < 1 || !expected) {
+      issues.push({ code: "UNKNOWN_MIGRATION", version: Number.isFinite(parsedVersion) ? parsedVersion : null, filename, sha256 });
+      continue;
+    }
+    if (seenVersions.has(parsedVersion)) {
+      issues.push({ code: "DUPLICATE_VERSION", version: parsedVersion, filename, sha256 });
+      continue;
+    }
+    seenVersions.add(parsedVersion);
+    if (filename !== expected.filename || sha256.toLowerCase() !== String(expected.sha256).toLowerCase()) {
+      issues.push({ code: "REPOSITORY_MISMATCH", version: parsedVersion, filename, sha256, expectedFilename: expected.filename, expectedSha256: expected.sha256 });
+    }
+    entries.push({ version: parsedVersion, filename, sha256, expectedFilename: expected.filename, expectedSha256: expected.sha256 });
+  }
+  entries.sort((left, right) => left.version - right.version);
+  let highestContiguousVersion = 0;
+  for (const entry of entries) {
+    if (entry.version !== highestContiguousVersion + 1) break;
+    highestContiguousVersion = entry.version;
+  }
+  const gaps = entries.filter(entry => entry.version > highestContiguousVersion).map(entry => entry.version);
+  const status = issues.length ? "divergent" : gaps.length ? "partial" : "verified";
+  return { relation: source, status, entries, issues, highestContiguousVersion, outOfOrderVersions: gaps };
+}
+
+function sameLedgerEntries(left, right) {
+  return left.length === right.length && left.every((entry, index) => entry.version === right[index].version
+    && entry.filename === right[index].filename && entry.sha256.toLowerCase() === right[index].sha256.toLowerCase());
+}
+
+function conflictingLedgerEntries(left, right) {
+  const rightByVersion = new Map(right.map(entry => [entry.version, entry]));
+  return left.some(entry => {
+    const other = rightByVersion.get(entry.version);
+    return other && (entry.filename !== other.filename || entry.sha256.toLowerCase() !== other.sha256.toLowerCase());
+  });
+}
+
+export function classifyMigrationLedgerEvidence({ awsNativeRows = null, importedRows = null }, files) {
+  const awsNative = normalizedLedgerSource(migrationLedgerSources.awsNative, awsNativeRows, files);
+  const imported = normalizedLedgerSource(migrationLedgerSources.imported, importedRows, files);
+  const present = [awsNative, imported].filter(source => source.status !== "absent");
+  let status = "unknown";
+  let source = null;
+  let appliedVersions = null;
+  let pending = null;
+  let latestAppliedVersion = null;
+  let highestContiguousVersion = null;
+  let comparison = "no-recognized-ledger";
+
+  if (present.length === 1) {
+    const only = present[0];
+    source = only.relation;
+    status = only.status;
+    comparison = "single-ledger";
+    highestContiguousVersion = only.highestContiguousVersion ?? (only.status === "empty" ? 0 : null);
+    if (only.status === "verified") {
+      appliedVersions = only.entries.map(entry => entry.version);
+      highestContiguousVersion = only.highestContiguousVersion;
+      latestAppliedVersion = only.entries.at(-1)?.version ?? null;
+      pending = files.filter(file => !appliedVersions.includes(Number(file.version))).map(file => ({ version: Number(file.version), filename: file.filename, content_sha256: file.sha256 }));
+      if (!appliedVersions.length) status = "empty";
+    }
+  } else if (present.length === 2) {
+    comparison = "coverage-differs";
+    if (awsNative.status === "divergent" || imported.status === "divergent"
+      || conflictingLedgerEntries(awsNative.entries, imported.entries)) {
+      status = "divergent";
+      comparison = "conflicts";
+    } else if (awsNative.status === "empty" && imported.status === "empty") {
+      status = "empty";
+      comparison = "both-agree";
+    } else if (sameLedgerEntries(awsNative.entries, imported.entries)) {
+      source = "both";
+      comparison = "both-agree";
+      status = awsNative.status === "verified" && imported.status === "verified" ? "verified" : "partial";
+      if (status === "verified") {
+        appliedVersions = awsNative.entries.map(entry => entry.version);
+        highestContiguousVersion = awsNative.highestContiguousVersion;
+        latestAppliedVersion = awsNative.entries.at(-1)?.version ?? null;
+        pending = files.filter(file => !appliedVersions.includes(Number(file.version))).map(file => ({ version: Number(file.version), filename: file.filename, content_sha256: file.sha256 }));
+        if (!appliedVersions.length) status = "empty";
+      }
+    } else {
+      status = "partial";
+    }
+  }
+
+  return {
+    status,
+    source,
+    comparison,
+    blocked: status !== "verified",
+    latestAppliedVersion,
+    appliedVersions,
+    pending,
+    highestContiguousVersion,
+    ledgers: { awsNative, imported },
+  };
+}
+
+export async function inspectMigrationLedgerEvidence(client, files) {
+  for (const sql of [migrationLedgerTransactionSql, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql]) {
+    assertInspectionSql(sql);
+  }
+  const transaction = (await client.query(migrationLedgerTransactionSql)).rows[0];
+  if (transaction?.read_only !== "on" || transaction?.isolation !== "repeatable read") {
+    throw new Error("MIGRATION_LEDGER_READ_ONLY_TRANSACTION_REQUIRED");
+  }
+  const relations = (await client.query(migrationLedgerDiscoverySql)).rows[0] ?? {};
+  const awsNativeRows = relations.aws_native_relation ? (await client.query(awsNativeMigrationLedgerSql)).rows : null;
+  const importedRows = relations.imported_relation ? (await client.query(importedAwsMigrationLedgerSql)).rows : null;
+  return classifyMigrationLedgerEvidence({ awsNativeRows, importedRows }, files);
+}
+
 export const mobileApiDependenciesSql = `with required(relation_name, required_columns, require_rls) as (values
   ('fleet_vehicles', array['id','department_id','unit_number','vin','status']::text[], false),
   ('fleet_rules', array['department_id','inspection_role_codes']::text[], false),
