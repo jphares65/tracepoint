@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import EmbeddedPostgres from "embedded-postgres";
+import pg from "pg";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
 } from "./aws-native-production-ledger-adoption.mjs";
-import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, migrationInspectionManifest } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, inspectionSearchPathSql, migrationInspectionManifest, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -178,13 +182,15 @@ test("production reconciliation refuses to adopt a migration when a catalog post
 test("inspection is fixed catalog-only SQL and cannot mutate the ledger", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   for (const [, sql] of inspectionCatalogQueries) assert.doesNotThrow(() => assertInspectionSql(sql));
-  const mobileDependencyQuery = runner.match(/const mobileApiDependenciesSql = `([\s\S]*?)`;/)?.[1];
+  const mobileDependencyQuery = mobileApiDependenciesSql;
   assert.ok(mobileDependencyQuery);
   assert.doesNotThrow(() => assertInspectionSql(mobileDependencyQuery));
   const databasePrincipalQuery = runner.match(/const databasePrincipalSql = `([\s\S]*?)`;/)?.[1];
   assert.ok(databasePrincipalQuery);
   assert.doesNotThrow(() => assertInspectionSql(databasePrincipalQuery));
   assert.doesNotThrow(() => assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"));
+  assert.doesNotThrow(() => assertInspectionSql(inspectionSearchPathSql));
+  assert.throws(() => assertInspectionSql("SET LOCAL search_path = public"), /READ_ONLY_INSPECTION_SQL_REJECTED/);
   for (const sql of ["insert into public.tracepoint_aws_schema_migrations values (1)", "update public.x set y=1", "create table public.x(id int)"]) assert.throws(() => assertInspectionSql(sql), /READ_ONLY_INSPECTION_SQL_REJECTED/);
   assert.match(runner, /action === "inspect"/);
   assert.match(runner, /BEGIN TRANSACTION READ ONLY/);
@@ -199,7 +205,7 @@ test("column and trigger discovery uses explicit catalogs independent of runtime
   const columnsSql = inspectionCatalogQueries.find(([name]) => name === "columns")?.[1] ?? "";
   const privilegesSql = inspectionCatalogQueries.find(([name]) => name === "privileges")?.[1] ?? "";
   const triggersSql = inspectionCatalogQueries.find(([name]) => name === "triggers")?.[1] ?? "";
-  const mobileDependencyQuery = runner.match(/const mobileApiDependenciesSql = `([\s\S]*?)`;/)?.[1] ?? "";
+  const mobileDependencyQuery = mobileApiDependenciesSql;
   assert.match(columnsSql, /from pg_attribute[\s\S]*join pg_class[\s\S]*join pg_namespace/);
   assert.match(columnsSql, /n\.nspname in \('public','tracepoint_auth'\)/);
   assert.doesNotMatch(columnsSql, /information_schema\.columns/);
@@ -238,8 +244,8 @@ test("inspection target identity rejects wrong host, database, server, or princi
     database_name: "tracepoint",
     server_address: "10.0.1.25",
     server_port: 5432,
-    search_path: '"$user", public',
-    effective_schemas: ["pg_catalog", "public"],
+    search_path: "pg_catalog",
+    effective_schemas: ["pg_catalog"],
     database_user: "tracepoint_runtime",
     session_user: "tracepoint_runtime",
   };
@@ -249,6 +255,107 @@ test("inspection target identity rejects wrong host, database, server, or princi
   assert.throws(() => assertDatabaseTargetIdentity({ ...identity, session_user: "postgres" }), /DATABASE_TARGET_MISMATCH/);
 });
 
+test("embedded Postgres confirms catalog columns despite NOINHERIT visibility and preserves local search path", { timeout: 120_000 }, async () => {
+  let server;
+  let owner;
+  let runtime;
+  let directory;
+  let transactionOpen = false;
+  try {
+    directory = await mkdtemp(path.join(tmpdir(), "tp-inspection-noinherit-"));
+    const port = await localPostgresPort();
+    server = new EmbeddedPostgres({
+      databaseDir: directory,
+      user: "postgres",
+      password: "local-inspection-only",
+      port,
+      persistent: true,
+      postgresFlags: ["-h", "127.0.0.1"],
+      initdbFlags: ["--encoding=UTF8", "--locale=C"],
+      onLog: () => {},
+      onError: () => {},
+    });
+    await server.initialise();
+    await server.start();
+    const config = { host: "127.0.0.1", port, database: "postgres" };
+    owner = new pg.Client({ ...config, user: "postgres", password: "local-inspection-only" });
+    await owner.connect();
+    await owner.query("CREATE DATABASE tracepoint");
+    await owner.end();
+    config.database = "tracepoint";
+    owner = new pg.Client({ ...config, user: "postgres", password: "local-inspection-only" });
+    await owner.connect();
+    await owner.query(`
+      create role authenticated nologin noinherit;
+      create role tracepoint_runtime login noinherit password 'runtime-local-only';
+      grant authenticated to tracepoint_runtime;
+      alter role tracepoint_runtime set search_path = public, pg_catalog;
+      create table public.fleet_vehicles (
+        id uuid, department_id uuid, unit_number text, vin text, status text
+      );
+      grant select on public.fleet_vehicles to authenticated;
+      create function public.format_type(oid, integer) returns text
+        language sql immutable as $$ select 'SHADOWED'::text $$;
+    `);
+    runtime = new pg.Client({ ...config, user: "tracepoint_runtime", password: "runtime-local-only" });
+    await runtime.connect();
+
+    const rolePrivileges = (await runtime.query(`
+      select current_user as current_user, session_user as session_user, role.rolinherit,
+        has_table_privilege(current_user, 'public.fleet_vehicles', 'select') as runtime_select,
+        has_table_privilege('authenticated', 'public.fleet_vehicles', 'select') as authenticated_select
+      from pg_roles role where role.rolname=current_user
+    `)).rows[0];
+    assert.deepEqual(rolePrivileges, {
+      current_user: "tracepoint_runtime",
+      session_user: "tracepoint_runtime",
+      rolinherit: false,
+      runtime_select: false,
+      authenticated_select: true,
+    });
+    assert.equal((await runtime.query(`select format_type('uuid'::regtype, 0) as rendered_type`)).rows[0].rendered_type, "SHADOWED");
+    const legacyColumns = await runtime.query("select column_name from information_schema.columns where table_schema='public' and table_name='fleet_vehicles'");
+    assert.equal(legacyColumns.rowCount, 0, "information_schema hides columns from the NOINHERIT member without direct table grants");
+
+    await runtime.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    await runtime.query(inspectionSearchPathSql);
+    const identity = (await runtime.query(`select current_database() as database_name,
+      inet_server_addr()::text as server_address, inet_server_port() as server_port,
+      current_setting('search_path') as search_path, array_to_json(current_schemas(true)) as effective_schemas,
+      current_user as database_user, session_user as session_user`)).rows[0];
+    assert.equal(assertDatabaseTargetIdentity(identity, { expectedPort: port }), true);
+
+    const columnsQuery = inspectionCatalogQueries.find(([name]) => name === "columns")?.[1];
+    assert.ok(columnsQuery);
+    const columns = await runtime.query(columnsQuery);
+    const fleetColumns = columns.rows.filter(row => row.schema === "public" && row.relation === "fleet_vehicles");
+    assert.deepEqual(fleetColumns.map(row => row.column_name), ["id", "department_id", "unit_number", "vin", "status"]);
+    assert.equal(fleetColumns.find(row => row.column_name === "id")?.data_type, "uuid", "pg_catalog format_type must win over the shadowed public function");
+
+    assert.doesNotThrow(() => assertInspectionSql(mobileApiDependenciesSql));
+    const dependencies = await runtime.query(mobileApiDependenciesSql);
+    const fleet = dependencies.rows.find(row => row.relation_name === "fleet_vehicles");
+    assert.equal(fleet.relation_present, true);
+    assert.equal(fleet.required_columns_present, true);
+    assert.equal(fleet.runtime_select_privilege_present, false);
+    assert.equal(fleet.authenticated_select_privilege_present, true);
+    const missingInventory = dependencies.rows.find(row => row.relation_name === "inventory_items");
+    assert.equal(missingInventory.relation_present, false);
+    assert.equal(missingInventory.required_columns_present, false);
+    assert.equal(missingInventory.runtime_select_privilege_present, false);
+    await runtime.query("COMMIT");
+    transactionOpen = false;
+    assert.equal((await runtime.query("select current_setting('search_path') as search_path")).rows[0].search_path, "public, pg_catalog", "SET LOCAL must not change the runtime role's normal session search path");
+  } finally {
+    if (transactionOpen) await runtime?.query("ROLLBACK").catch(() => undefined);
+    await runtime?.end().catch(() => undefined);
+    await owner?.end().catch(() => undefined);
+    await server?.stop().catch(() => undefined);
+    if (directory) await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }).catch(() => undefined);
+  }
+});
+
 test("mobile production preflight reads ledger and schema in one explicit read-only transaction", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   assert.match(runner, /"mobile-preflight"/);
@@ -256,6 +363,8 @@ test("mobile production preflight reads ledger and schema in one explicit read-o
   assert.match(runner, /requestedEnvironment !== "production"\) throw new Error\("Mobile production preflight is production-only/);
   const body = runner.slice(runner.indexOf("async function mobilePreflight"), runner.indexOf("async function rangeWorkspaceContract"));
   assert.match(body, /BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY/);
+  assert.ok(body.indexOf("await client.query(inspectionSearchPathSql)") < body.indexOf("const databaseIdentitySql"));
+  assert.match(body, /array_to_json\(current_schemas\(true\)\) as effective_schemas/);
   assert.match(body, /await report\(client, files\)/);
   assert.match(body, /inspect\(client, \{ transactionAlreadyOpen: true \}\)/);
   assert.match(body, /await client\.query\("COMMIT"\)/);

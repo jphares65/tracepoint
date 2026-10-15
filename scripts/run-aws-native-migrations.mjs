@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
-import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, inspectionSearchPathSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
@@ -120,58 +120,10 @@ async function inspect(client, { transactionAlreadyOpen = false } = {}) {
   const snapshot = {};
   if (!transactionAlreadyOpen) {
     for (const sql of ["BEGIN TRANSACTION READ ONLY", "SET TRANSACTION READ ONLY"]) { assertInspectionSql(sql); await client.query(sql); }
+    assertInspectionSql(inspectionSearchPathSql);
+    await client.query(inspectionSearchPathSql);
   }
   for (const [section, sql] of inspectionCatalogQueries) { assertInspectionSql(sql); snapshot[section] = (await client.query(sql)).rows; }
-  const mobileApiDependenciesSql = `with required(relation_name, required_columns, require_rls) as (values
-    ('fleet_vehicles', array['id','department_id','unit_number','vin','status']::text[], false),
-    ('fleet_rules', array['department_id','inspection_role_codes']::text[], false),
-    ('equipment_assets', array['id','department_id','manufacturer','model','serial_number','asset_number','lifecycle_status']::text[], false),
-    ('firearms', array['id','department_id','make','model','serial_number','asset_number','condition_status','is_active']::text[], false),
-    ('inventory_items', array['id','department_id','name','category','sku','tracking_mode','unit_of_measure','is_active']::text[], false),
-    ('inventory_balances', array['id','department_id','inventory_item_id','inventory_location_id','on_hand_quantity']::text[], false),
-    ('inventory_locations', array['id','department_id','name']::text[], false),
-    ('notification_events', array['id','department_id','user_id','notification_key','title','detail','href','priority','source','kind','source_created_at','acknowledged_at','snoozed_until','last_seen_at','resolved_at']::text[], false),
-    ('drill_documents', array['id','department_id','drill_template_id','storage_path','original_filename']::text[], false),
-    ('pilot_range_workspaces', array['department_id','workspace','updated_by_user_id','updated_at']::text[], true),
-    ('department_memberships', array['department_id','user_id','is_active','badge_number']::text[], false),
-    ('profiles', array['id','full_name','email']::text[], false),
-    ('range_days', array['id','department_id','title','range_date','status','range_type','packet_status']::text[], false),
-    ('range_day_drills', array['id','department_id','range_day_id','name','category','scoring_format','passing_score','max_score','passing_time_seconds']::text[], false),
-    ('drill_run_results', array['id','department_id','range_day_id','range_day_drill_id','officer_user_id','run_number','completed','score','time_seconds','hit_count','passed','notes']::text[], false),
-    ('range_day_roster', array['id','department_id','range_day_id','officer_user_id','attendance_status']::text[], false),
-    ('department_qualification_standards', array['id','department_id','name','firearm_type','is_active']::text[], false),
-    ('department_qualification_standard_components', array['department_id','qualification_standard_id','name','scoring_basis','passing_score','passing_time_seconds','minimum_hits','is_required','is_active','sort_order']::text[], false),
-    ('department_membership_roles', array['department_id','user_id','role_code']::text[], false)
-  )
-  select required.relation_name,
-    to_regclass(format('public.%I', required.relation_name)) is not null as relation_present,
-    not exists (
-      select 1 from unnest(required.required_columns) as expected(column_name)
-      where not exists (
-        select 1 from pg_attribute actual
-        join pg_class relation on relation.oid=actual.attrelid
-        join pg_namespace relation_schema on relation_schema.oid=relation.relnamespace
-        where relation_schema.nspname='public' and relation.relname=required.relation_name
-          and actual.attname=expected.column_name and actual.attnum>0 and not actual.attisdropped
-      )
-    ) as required_columns_present,
-    not required.require_rls or coalesce((select relrowsecurity from pg_class where oid=to_regclass(format('public.%I', required.relation_name))), false) as rls_enabled,
-    case when to_regclass(format('public.%I', required.relation_name)) is not null then has_table_privilege('tracepoint_runtime', to_regclass(format('public.%I', required.relation_name)), 'select') else false end as runtime_select_privilege_present,
-    case when to_regclass(format('public.%I', required.relation_name)) is not null then has_table_privilege('authenticated', to_regclass(format('public.%I', required.relation_name)), 'select') else false end as authenticated_select_privilege_present,
-    case when required.relation_name='pilot_range_workspaces' then has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'select') else true end as read_privilege_present,
-    case when required.relation_name='pilot_range_workspaces' then
-      has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'insert')
-      and has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'update')
-      else true end as write_privileges_present,
-    case when required.relation_name='pilot_range_workspaces' then
-      exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('SELECT','ALL') and 'authenticated'=any(roles))
-      and exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('INSERT','ALL') and 'authenticated'=any(roles))
-      and exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('UPDATE','ALL') and 'authenticated'=any(roles))
-      else true end as policies_present,
-    case when required.relation_name='pilot_range_workspaces' then
-      exists(select 1 from pg_trigger where tgrelid=to_regclass('public.pilot_range_workspaces') and tgname='pilot_range_workspaces_accountability_audit' and not tgisinternal)
-      else true end as accountability_trigger_present
-  from required order by required.relation_name`;
   assertInspectionSql(mobileApiDependenciesSql);
   const mobileApiDependencies = (await client.query(mobileApiDependenciesSql)).rows;
   if (!transactionAlreadyOpen) {
@@ -187,9 +139,11 @@ async function mobilePreflight(client, files) {
   assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   try {
+    assertInspectionSql(inspectionSearchPathSql);
+    await client.query(inspectionSearchPathSql);
     const databaseIdentitySql = `select current_database() as database_name,
       inet_server_addr()::text as server_address, inet_server_port() as server_port,
-      current_setting('search_path') as search_path, current_schemas(true) as effective_schemas,
+      current_setting('search_path') as search_path, array_to_json(current_schemas(true)) as effective_schemas,
       current_user as database_user, session_user as session_user`;
     assertInspectionSql(databaseIdentitySql);
     const databaseIdentity = (await client.query(databaseIdentitySql)).rows[0];
