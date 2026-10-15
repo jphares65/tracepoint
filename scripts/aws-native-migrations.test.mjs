@@ -208,11 +208,13 @@ test("mobile production preflight reads ledger and schema in one explicit read-o
   assert.doesNotMatch(body, /ensureLedger|withLock|migrationSqlWithLedgerEntry|applyRangeWorkspaceHotfix/);
   assert.match(body, /appliedVersions:/);
   assert.match(body, /mobileApiDependencies:/);
+  assert.match(body, /migrations: catalog\.migrations\.map\(\(\{ version, status \}\) => \(\{ version, status \}\)\)/);
 });
 
 test("Cognito password operations fail closed for global admins and cross-department identities", async () => {
   const guard = await readFile(new URL("../database/aws/039_cognito_password_global_scope.sql", import.meta.url), "utf8");
   const lifecycle = await readFile(new URL("../database/aws/006_cognito_lifecycle_state.sql", import.meta.url), "utf8");
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   const prepare = lifecycle.slice(
     lifecycle.indexOf("create or replace function tracepoint_auth.prepare_cognito_password_operation"),
     lifecycle.indexOf("create or replace function tracepoint_auth.finish_cognito_password_operation"),
@@ -225,6 +227,30 @@ test("Cognito password operations fail closed for global admins and cross-depart
   assert.match(guard, /public\.department_memberships membership[\s\S]*membership\.department_id <> new\.department_id/);
   assert.match(guard, /password operation target is a platform administrator/);
   assert.match(guard, /password operation target has another department membership/);
+  assert.match(guard, /pg_advisory_xact_lock\(hashtextextended\(new\.tracepoint_user_id::text, 0\)\)/);
+  assert.match(guard, /guard_cognito_scope_membership_write[\s\S]*state = 'prepared'[\s\S]*operation\.department_id <> new\.department_id/);
+  assert.match(guard, /guard_cognito_scope_platform_admin_write[\s\S]*state = 'prepared'/);
+  assert.match(guard, /before insert or update on public\.department_memberships/);
+  assert.match(guard, /before insert or update on public\.platform_admins/);
+  const passwordGuard = guard.slice(guard.indexOf("function tracepoint_auth.guard_cognito_password_global_scope"), guard.indexOf("function tracepoint_auth.guard_cognito_scope_membership_write"));
+  const membershipGuard = guard.slice(guard.indexOf("function tracepoint_auth.guard_cognito_scope_membership_write"), guard.indexOf("function tracepoint_auth.guard_cognito_scope_platform_admin_write"));
+  const platformAdminGuard = guard.slice(guard.indexOf("function tracepoint_auth.guard_cognito_scope_platform_admin_write"), guard.indexOf("revoke all on function"));
+  assert.ok(passwordGuard.indexOf("pg_advisory_xact_lock") < passwordGuard.indexOf("from public.department_memberships"));
+  assert.ok(membershipGuard.indexOf("pg_advisory_xact_lock") < membershipGuard.indexOf("from public.authentication_lifecycle_operations"));
+  assert.ok(platformAdminGuard.indexOf("pg_advisory_xact_lock") < platformAdminGuard.indexOf("from public.authentication_lifecycle_operations"));
+  const inspection = await readFile(new URL("./aws-native-migration-inspection.mjs", import.meta.url), "utf8");
+  assert.match(inspection, /\[39, \[routine\("tracepoint_auth\.guard_cognito_password_global_scope"\)/);
+  assert.match(runner, /pending\.length !== 2[\s\S]*pending\[0\]\?\.version !== 38[\s\S]*pending\[1\]\?\.version !== 39/);
+});
+test("mobile preflight separates immutable pre-039 evidence from the 039 release gate", async () => {
+  const preflight = await readFile(new URL("./verify-production-mobile-preflight.ps1", import.meta.url), "utf8");
+  assert.match(preflight, /\$pre039InspectorCommit = 'b22eba426de42417931184ea3a25aebcf81cf3d7'/);
+  assert.match(preflight, /ReleaseReady' -and \[string\]::IsNullOrWhiteSpace\(\$ExpectedProductionMobileClientId\)/);
+  assert.match(preflight, /immutable b22 inspector is accepted only for exact pre-039 evidence through version 038/);
+  assert.match(preflight, /candidate inspector prerequisite phase requires exact 001-038 applied and only 039 pending/);
+  assert.match(preflight, /ReleaseReady requires a candidate inspector that includes migration 039/);
+  assert.match(preflight, /complete repository migration chain through version 039/);
+  assert.match(preflight, /Dedicated production Cognito mobile client exists but its reviewed id was not supplied/);
 });
 test("inspection reports partial lineage without adopting absent migrations", () => {
   const result = classifyMigrationInspection({ relations: [], columns: [], routines: [{ schema: "tracepoint_auth", name: "subject_id" }], indexes: [], constraints: [], policies: [], privileges: [], roles: [], triggers: [] });

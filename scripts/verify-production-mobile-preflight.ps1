@@ -31,6 +31,7 @@ $poolId = 'us-east-1_diFmWDMe9'
 $poolDomain = 'tracepoint-production-193644343389'
 $expectedMfaConfiguration = 'ON'
 $expectedProductionMobileCallbackUrl = 'tracepoint://auth'
+$pre039InspectorCommit = 'b22eba426de42417931184ea3a25aebcf81cf3d7'
 $taskFamily = 'tracepoint-production-consolidated-aws-native-20260929'
 $inspectionTaskFamilyPrefix = 'tracepoint-production-mobile-inspection'
 $clusterName = 'tracepoint-production'
@@ -120,6 +121,7 @@ function Read-ReviewedProductionTarget {
 }
 
 try {
+    if ($Phase -eq 'ReleaseReady' -and [string]::IsNullOrWhiteSpace($ExpectedProductionMobileClientId)) { throw '-ExpectedProductionMobileClientId is required for ReleaseReady and must be the reviewed dedicated production client id.' }
     if (-not (Get-Command aws.exe -ErrorAction SilentlyContinue)) { throw 'AWS CLI v2 is required.' }
     if (-not $AuthorizeOneOffInspection) { throw 'Supply -AuthorizeOneOffInspection only after the one-off inspection has been explicitly approved.' }
     $productionTarget = Read-ReviewedProductionTarget
@@ -169,8 +171,11 @@ try {
     Require-True ($webDetails.UserPoolClient.ClientId -eq $web.ClientId -and $webDetails.UserPoolClient.AllowedOAuthFlowsUserPoolClient -eq $true) 'existing web OAuth client must remain present and enabled'
     $mobileClients = @($clients | Where-Object { $_.ClientName -eq 'tracepoint-production-mobile' })
     if ([string]::IsNullOrWhiteSpace($ExpectedProductionMobileClientId)) {
-        if ($mobileClients.Count -ne 0) { throw 'A production mobile client exists but its reviewed client id was not supplied.' }
-        $script:Blockers.Add('Dedicated production Cognito mobile client is not yet provisioned.')
+        if ($mobileClients.Count -ne 0) {
+            $script:Blockers.Add('Dedicated production Cognito mobile client exists but its reviewed id was not supplied.')
+        } else {
+            $script:Blockers.Add('Dedicated production Cognito mobile client is not yet provisioned.')
+        }
     } else {
         Require-True ($mobileClients.Count -eq 1 -and $mobileClients[0].ClientId -eq $ExpectedProductionMobileClientId) 'dedicated Cognito mobile client id/name must match reviewed configuration'
         $mobileDetails = Invoke-AwsRead @('cognito-idp','describe-user-pool-client','--user-pool-id',$poolId,'--client-id',$ExpectedProductionMobileClientId)
@@ -420,16 +425,29 @@ try {
     if ($Phase -eq 'Prerequisites') {
         $pendingVersions = @($status.pending | ForEach-Object { [int]$_.version })
         $appliedVersions = @($status.appliedVersions | ForEach-Object { [int]$_ })
-        $exactAppliedChain = $appliedVersions.Count -eq 37
-        if ($exactAppliedChain) { for ($index = 0; $index -lt 37; $index++) { if ($appliedVersions[$index] -ne ($index + 1)) { $exactAppliedChain = $false; break } } }
-        Require-True ($status.ledger -eq 'present' -and [int]$status.latestAppliedVersion -eq 37 -and $exactAppliedChain -and $pendingVersions.Count -eq 1 -and $pendingVersions[0] -eq 38) 'migration prerequisite phase requires the exact reviewed production 001–037 ledger and only migration 038 pending'
-        Require-True ([int]$status.highestContiguousVersion -eq 37 -and @($status.outOfOrderPresent).Count -eq 0) 'production catalog must prove a contiguous 001–037 prerequisite chain'
-    } else {
-        $appliedVersions = @($status.appliedVersions | ForEach-Object { [int]$_ })
         $exactAppliedChain = $appliedVersions.Count -eq 38
         if ($exactAppliedChain) { for ($index = 0; $index -lt 38; $index++) { if ($appliedVersions[$index] -ne ($index + 1)) { $exactAppliedChain = $false; break } } }
-        Require-True ($status.ledger -eq 'present' -and [int]$status.latestAppliedVersion -eq 38 -and $exactAppliedChain -and @($status.pending).Count -eq 0) 'production migration ledger must match the complete repository migration chain through version 038'
-        Require-True ([int]$status.highestContiguousVersion -ge 38 -and @($status.outOfOrderPresent).Count -eq 0) 'production catalog must prove contiguous migration lineage through version 038'
+        if ($InspectionImageSourceCommit -eq $pre039InspectorCommit) {
+            $legacyPre039State = ([int]$status.latestAppliedVersion -eq 37 -and $appliedVersions.Count -eq 37 -and $pendingVersions.Count -eq 1 -and $pendingVersions[0] -eq 38 -and [int]$status.highestContiguousVersion -eq 37) -or
+                ([int]$status.latestAppliedVersion -eq 38 -and $exactAppliedChain -and $pendingVersions.Count -eq 0 -and [int]$status.highestContiguousVersion -eq 38)
+            Require-True ($legacyPre039State) 'immutable b22 inspector is accepted only for exact pre-039 evidence through version 038'
+            $script:Evidence.checks.databaseInspectorContract = @{ passed = $true; sourceCommit = $InspectionImageSourceCommit; supportsThroughVersion = 38; evidenceScope = 'pre-039-only' }
+        } else {
+            $candidatePrerequisiteState = [int]$status.latestAppliedVersion -eq 38 -and $exactAppliedChain -and $pendingVersions.Count -eq 1 -and $pendingVersions[0] -eq 39 -and [int]$status.highestContiguousVersion -eq 38
+            Require-True ($candidatePrerequisiteState) 'candidate inspector prerequisite phase requires exact 001-038 applied and only 039 pending'
+            $migration39 = @($status.migrations | Where-Object { [int]$_.version -eq 39 })
+            Require-True ($migration39.Count -eq 1 -and $migration39[0].status -eq 'absent') 'candidate inspector must explicitly recognize migration 039 and prove it is not partially installed'
+            $script:Evidence.checks.databaseInspectorContract = @{ passed = $true; sourceCommit = $InspectionImageSourceCommit; supportsThroughVersion = 39; evidenceScope = '039-pending' }
+        }
+        Require-True (@($status.outOfOrderPresent).Count -eq 0) 'production catalog must not contain out-of-order migration anchors'
+    } else {
+        Require-True ($InspectionImageSourceCommit -ne $pre039InspectorCommit) 'ReleaseReady requires a candidate inspector that includes migration 039; immutable b22 is pre-039 only'
+        $appliedVersions = @($status.appliedVersions | ForEach-Object { [int]$_ })
+        $exactAppliedChain = $appliedVersions.Count -eq 39
+        if ($exactAppliedChain) { for ($index = 0; $index -lt 39; $index++) { if ($appliedVersions[$index] -ne ($index + 1)) { $exactAppliedChain = $false; break } } }
+        Require-True ($status.ledger -eq 'present' -and [int]$status.latestAppliedVersion -eq 39 -and $exactAppliedChain -and @($status.pending).Count -eq 0) 'production migration ledger must match the complete repository migration chain through version 039'
+        $migration39 = @($status.migrations | Where-Object { [int]$_.version -eq 39 -and $_.status -eq 'present' })
+        Require-True ([int]$status.highestContiguousVersion -ge 39 -and @($status.outOfOrderPresent).Count -eq 0 -and $migration39.Count -eq 1) 'production catalog must prove contiguous migration lineage through version 039'
     }
     $failedDependencies = @($status.mobileApiDependencies | Where-Object {
         $_.relation_present -ne $true -or $_.required_columns_present -ne $true -or $_.rls_enabled -ne $true -or

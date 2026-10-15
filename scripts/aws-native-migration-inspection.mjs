@@ -52,6 +52,7 @@ export const migrationInspectionManifest = [
   [36, [relation("public.inventory_checkouts"), relation("public.inventory_checkout_returns"), routine("public.checkout_inventory"), routine("public.return_inventory_checkout")]],
   [37, [privilege("public.inventory_items.authenticated.INSERT"), privilege("public.inventory_items.authenticated.UPDATE"), privilege("public.inventory_locations.authenticated.INSERT"), privilege("public.inventory_locations.authenticated.UPDATE")]],
   [38, [relation("public.pilot_range_workspaces"), column("public.pilot_range_workspaces.workspace"), column("public.pilot_range_workspaces.updated_by_user_id"), privilege("public.pilot_range_workspaces.authenticated.INSERT"), privilege("public.pilot_range_workspaces.authenticated.UPDATE")]],
+  [39, [routine("tracepoint_auth.guard_cognito_password_global_scope"), routine("tracepoint_auth.guard_cognito_scope_membership_write"), routine("tracepoint_auth.guard_cognito_scope_platform_admin_write"), trigger("public.authentication_lifecycle_operations.authentication_lifecycle_password_global_scope"), trigger("public.department_memberships.department_memberships_password_scope_guard"), trigger("public.platform_admins.platform_admins_password_scope_guard")]],
 ].map(([version, checks]) => ({ version, checks }));
 
 export const inspectionCatalogQueries = Object.freeze([
@@ -115,7 +116,9 @@ export function classifyMigrationInspection(snapshot) {
   const phaseA = migrations.find(migration => migration.version === 28);
   const later = migrations.filter(migration => migration.version >= 30 && migration.version <= 37).map(({ version, status }) => ({ version, status }));
   const recommendation = highestContiguousVersion === 37
-    ? "Adopt the verified 001–037 ledger and leave only 038 pending."
+    ? "Adopt the verified 001-037 ledger only; apply migrations 038 and 039 in order."
+    : highestContiguousVersion === 38
+      ? "Apply migration 039 after verifying the complete 001-038 chain."
     : "Do not adopt beyond the highest contiguous verified version. Reconcile against a production-specific anchor only after every missing or partial migration has a reviewed, dependency-ordered, idempotency-validated plan.";
   return { migrations, highestContiguousVersion, outOfOrderPresent, missingPhaseAObjects: phaseA.evidence.filter(item => !item.present).map(item => item.check), migrations030to037: later, recommendation };
 }

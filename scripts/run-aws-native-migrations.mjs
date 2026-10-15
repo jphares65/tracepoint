@@ -197,6 +197,7 @@ async function mobilePreflight(client, files) {
       latestAppliedVersion: migrationStatus.latestAppliedVersion,
       appliedVersions: migrationStatus.applied.map(row => Number(row.version)),
       pending: migrationStatus.pending.map(({ version, filename, content_sha256 }) => ({ version, filename, content_sha256 })),
+      migrations: catalog.migrations.map(({ version, status }) => ({ version, status })),
       highestContiguousVersion: catalog.highestContiguousVersion,
       outOfOrderPresent: catalog.outOfOrderPresent,
       mobileApiDependencies: catalog.mobileApiDependencies,
@@ -280,11 +281,13 @@ try {
         if (
           adopted.length !== productionLedgerAdoptionVersions.last
           || !adopted.every((file, index) => file.version === index + 1)
-          || pending.length !== 1
+          || pending.length !== 2
           || pending[0]?.version !== 38
           || pending[0]?.filename !== "038_range_workspace_authenticated_writes.sql"
+          || pending[1]?.version !== 39
+          || pending[1]?.filename !== "039_cognito_password_global_scope.sql"
         ) {
-          throw new Error("Production reconciliation requires the complete verified 001–037 migration chain.");
+          throw new Error("Production reconciliation requires the verified 001-037 chain followed by pending migrations 038 and 039.");
         }
         await client.query("begin");
         try {
