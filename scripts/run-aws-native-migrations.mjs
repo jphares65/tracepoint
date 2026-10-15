@@ -14,8 +14,9 @@ const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
 
-if (!["status", "inspect", "range-workspace-hotfix", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|range-workspace-hotfix|baseline|reconcile|apply> <staging|production>");
+if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply> <staging|production>");
 if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
+if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
 if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
 if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
 
@@ -111,13 +112,99 @@ async function withLock(client, fn) {
   await client.query("select pg_advisory_lock(hashtext($1))", [lockName]);
   try { return await fn(); } finally { await client.query("select pg_advisory_unlock(hashtext($1))", [lockName]).catch(() => undefined); }
 }
-async function inspect(client) {
+async function inspect(client, { transactionAlreadyOpen = false } = {}) {
   const snapshot = {};
-  for (const sql of ["BEGIN TRANSACTION READ ONLY", "SET TRANSACTION READ ONLY"]) { assertInspectionSql(sql); await client.query(sql); }
+  if (!transactionAlreadyOpen) {
+    for (const sql of ["BEGIN TRANSACTION READ ONLY", "SET TRANSACTION READ ONLY"]) { assertInspectionSql(sql); await client.query(sql); }
+  }
   for (const [section, sql] of inspectionCatalogQueries) { assertInspectionSql(sql); snapshot[section] = (await client.query(sql)).rows; }
-  assertInspectionSql("COMMIT");
-  await client.query("COMMIT");
-  return classifyMigrationInspection(snapshot);
+  const mobileApiDependenciesSql = `with required(relation_name, required_columns, require_rls) as (values
+    ('fleet_vehicles', array['id','department_id','unit_number','vin','status']::text[], false),
+    ('fleet_rules', array['department_id','inspection_role_codes']::text[], false),
+    ('equipment_assets', array['id','department_id','manufacturer','model','serial_number','asset_number','lifecycle_status']::text[], false),
+    ('firearms', array['id','department_id','make','model','serial_number','asset_number','condition_status','is_active']::text[], false),
+    ('inventory_items', array['id','department_id','name','category','sku','tracking_mode','unit_of_measure','is_active']::text[], false),
+    ('inventory_balances', array['id','department_id','inventory_item_id','inventory_location_id','on_hand_quantity']::text[], false),
+    ('inventory_locations', array['id','department_id','name']::text[], false),
+    ('notification_events', array['id','department_id','user_id','notification_key','title','detail','href','priority','source','kind','source_created_at','acknowledged_at','snoozed_until','last_seen_at','resolved_at']::text[], false),
+    ('drill_documents', array['id','department_id','drill_template_id','storage_path','original_filename']::text[], false),
+    ('pilot_range_workspaces', array['department_id','workspace','updated_by_user_id','updated_at']::text[], true),
+    ('department_memberships', array['department_id','user_id','is_active','badge_number']::text[], false),
+    ('profiles', array['id','full_name','email']::text[], false),
+    ('range_days', array['id','department_id','title','range_date','status','range_type','packet_status']::text[], false),
+    ('range_day_drills', array['id','department_id','range_day_id','name','category','scoring_format','passing_score','max_score','passing_time_seconds']::text[], false),
+    ('drill_run_results', array['id','department_id','range_day_id','range_day_drill_id','officer_user_id','run_number','completed','score','time_seconds','hit_count','passed','notes']::text[], false),
+    ('range_day_roster', array['id','department_id','range_day_id','officer_user_id','attendance_status']::text[], false),
+    ('department_qualification_standards', array['id','department_id','name','firearm_type','is_active']::text[], false),
+    ('department_qualification_standard_components', array['department_id','qualification_standard_id','name','scoring_basis','passing_score','passing_time_seconds','minimum_hits','is_required','is_active','sort_order']::text[], false),
+    ('department_membership_roles', array['department_id','user_id','role_code']::text[], false)
+  )
+  select required.relation_name,
+    to_regclass(format('public.%I', required.relation_name)) is not null as relation_present,
+    not exists (
+      select 1 from unnest(required.required_columns) as expected(column_name)
+      where not exists (select 1 from information_schema.columns actual where actual.table_schema='public' and actual.table_name=required.relation_name and actual.column_name=expected.column_name)
+    ) as required_columns_present,
+    not required.require_rls or coalesce((select relrowsecurity from pg_class where oid=to_regclass(format('public.%I', required.relation_name))), false) as rls_enabled,
+    case when required.relation_name='pilot_range_workspaces' then has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'select') else true end as read_privilege_present,
+    case when required.relation_name='pilot_range_workspaces' then
+      has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'insert')
+      and has_table_privilege('authenticated', to_regclass('public.pilot_range_workspaces'), 'update')
+      else true end as write_privileges_present,
+    case when required.relation_name='pilot_range_workspaces' then
+      exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('SELECT','ALL') and 'authenticated'=any(roles))
+      and exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('INSERT','ALL') and 'authenticated'=any(roles))
+      and exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('UPDATE','ALL') and 'authenticated'=any(roles))
+      else true end as policies_present,
+    case when required.relation_name='pilot_range_workspaces' then
+      exists(select 1 from pg_trigger where tgrelid=to_regclass('public.pilot_range_workspaces') and tgname='pilot_range_workspaces_accountability_audit' and not tgisinternal)
+      else true end as accountability_trigger_present
+  from required order by required.relation_name`;
+  assertInspectionSql(mobileApiDependenciesSql);
+  const mobileApiDependencies = (await client.query(mobileApiDependenciesSql)).rows;
+  if (!transactionAlreadyOpen) {
+    assertInspectionSql("COMMIT");
+    await client.query("COMMIT");
+  }
+  return { ...classifyMigrationInspection(snapshot), mobileApiDependencies };
+}
+
+async function mobilePreflight(client, files) {
+  if (requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
+  assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  try {
+    const databasePrincipalSql = `select current_user as database_user,
+      current_setting('transaction_read_only') as transaction_read_only,
+      current_setting('transaction_isolation') as transaction_isolation,
+      principal_role.rolsuper as is_superuser, principal_role.rolcreatedb as can_create_database,
+      principal_role.rolcreaterole as can_create_roles, principal_role.rolreplication as can_replicate,
+      principal_role.rolbypassrls as can_bypass_rls
+      from pg_roles principal_role where principal_role.rolname = current_user`;
+    assertInspectionSql(databasePrincipalSql);
+    const databasePrincipal = (await client.query(databasePrincipalSql)).rows[0];
+    if (!databasePrincipal) throw new Error("DATABASE_PRINCIPAL_UNAVAILABLE");
+    const migrationStatus = await report(client, files);
+    const catalog = await inspect(client, { transactionAlreadyOpen: true });
+    assertInspectionSql("COMMIT");
+    await client.query("COMMIT");
+    return {
+      status: "PASSED",
+      inspection: "read-only",
+      transaction: { isolation: "repeatable read", readOnly: true },
+      databasePrincipal,
+      ledger: migrationStatus.ledger,
+      latestAppliedVersion: migrationStatus.latestAppliedVersion,
+      appliedVersions: migrationStatus.applied.map(row => Number(row.version)),
+      pending: migrationStatus.pending.map(({ version, filename, content_sha256 }) => ({ version, filename, content_sha256 })),
+      highestContiguousVersion: catalog.highestContiguousVersion,
+      outOfOrderPresent: catalog.outOfOrderPresent,
+      mobileApiDependencies: catalog.mobileApiDependencies,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
 }
 async function rangeWorkspaceContract(client) {
   const result = await client.query(`select
@@ -154,13 +241,17 @@ async function applyRangeWorkspaceHotfix(client, files) {
   return { action: "range-workspace-hotfix", environment: requestedEnvironment, executed_at: new Date().toISOString(), filename: migration.filename, content_sha256: migration.sha256, application_git_sha: process.env.DEPLOYMENT_VERSION ?? "unknown", ledger_modified: false, before, after };
 }
 
-const files = await migrations();
-const client = await connect();
+let files;
+let client;
 try {
+  files = await migrations();
+  client = await connect();
   if (action === "status") {
     console.log(JSON.stringify(await report(client, files)));
   } else if (action === "inspect") {
     console.log(JSON.stringify(await inspect(client)));
+  } else if (action === "mobile-preflight") {
+    console.log(JSON.stringify(await mobilePreflight(client, files)));
   } else if (action === "range-workspace-hotfix") {
     console.log(JSON.stringify(await applyRangeWorkspaceHotfix(client, files)));
   } else await withLock(client, async () => {
@@ -227,4 +318,13 @@ try {
     }
     console.log(JSON.stringify(await report(client, files)));
   });
-} finally { await client.end(); }
+} catch (error) {
+  if (action === "mobile-preflight") {
+    console.error(JSON.stringify({ status: "BLOCKED", inspection: "read-only", reason: "DATABASE_INSPECTION_FAILED" }));
+    process.exitCode = 1;
+  } else {
+    throw error;
+  }
+} finally {
+  if (client) await client.end().catch(() => undefined);
+}

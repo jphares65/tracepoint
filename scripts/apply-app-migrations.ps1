@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','inspect','range-workspace-hotfix','baseline','reconcile','apply')][string]$Action = 'status',
+    [ValidateSet('status','inspect','publish-only','range-workspace-hotfix','baseline','reconcile','apply')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit
 )
 
@@ -16,6 +16,8 @@ $settings = @{
   production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build'; MigrationTaskDefinition='tracepoint-production-database-bootstrap:3'; MigratorSecretArn='arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT' }
 }[$Environment]
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
+if ($Action -eq 'publish-only' -and $Environment -ne 'production') { throw 'Publish-only is reserved for an explicitly reviewed production inspection image.' }
+if ($Action -eq 'publish-only' -and -not $ImageCommit) { throw 'Publish-only requires an explicit immutable -ImageCommit.' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 function Invoke-Aws([string[]]$Arguments) {
@@ -186,6 +188,12 @@ $commit = Require-CleanCommit
 if ($ImageCommit) {
   $resolved = (& git.exe -C $root rev-parse "$ImageCommit^{commit}").Trim().ToLowerInvariant()
   if ($LASTEXITCODE -ne 0 -or $resolved -ne $ImageCommit) { throw 'Migration image commit is not a local immutable commit.' }
+  if ($Action -eq 'publish-only' -and $resolved -ne $commit) { throw 'Publish-only requires -ImageCommit to match the clean reviewed HEAD.' }
   $commit = $resolved
 }
-Invoke-MigrationTask $commit
+if ($Action -eq 'publish-only') {
+  $published = Publish-MigrationImage $commit
+  Write-Output (ConvertTo-Json $published -Compress)
+} else {
+  Invoke-MigrationTask $commit
+}

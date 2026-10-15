@@ -102,3 +102,25 @@ test("accepts a production GovCloud target without exposing runtime keyrings", (
   assert.throws(() => parseCognitoTargetConfiguration({ ...gov, TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_Synthetic" }), /provider target/);
   assert.throws(() => parseCognitoTargetConfiguration({ ...valid, AWS_REGION: "us-gov-west-1", TRACEPOINT_COGNITO_USER_POOL_ID: "us-gov-west-1_Synthetic" }), /provider target/);
 });
+
+test("production mobile client is pinned to the reviewed pool and distinct from the web client", () => {
+  const production = {
+    ...valid,
+    CONFIGURATION_ENVIRONMENT: "production",
+    TRACEPOINT_AWS_ACCOUNT_ID: "193644343389",
+    TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_diFmWDMe9",
+    TRACEPOINT_COGNITO_CLIENT_ID: "9tfp383dgjuvanhnh94bstafr",
+    TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: "syntheticproductionmobile",
+    NEXT_PUBLIC_SITE_URL: "https://tracepointhq.com",
+  };
+  const mobile = parseCognitoMobileTargetConfiguration(production).verification;
+  assert.equal(mobile.account, "193644343389");
+  assert.equal(mobile.userPoolId, "us-east-1_diFmWDMe9");
+  assert.equal(mobile.clientId, "syntheticproductionmobile");
+  assert.deepEqual(mobile.trustedClientIds, ["syntheticproductionmobile"]);
+  for (const invalid of [
+    { ...production, TRACEPOINT_COGNITO_MOBILE_CLIENT_ID: production.TRACEPOINT_COGNITO_CLIENT_ID },
+    { ...production, TRACEPOINT_AWS_ACCOUNT_ID: "559054714699" },
+    { ...production, TRACEPOINT_COGNITO_USER_POOL_ID: "us-east-1_Other" },
+  ]) assert.throws(() => parseCognitoMobileTargetConfiguration(invalid));
+});

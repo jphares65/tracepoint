@@ -141,6 +141,27 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /038_range_workspace_authenticated_writes\.sql/);
 });
 
+test("production publish-only action stops after immutable image publication", async () => {
+  const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
+  assert.match(publisher, /ValidateSet\([^\n]*'publish-only'/);
+  assert.match(publisher, /publish-only' -and \$Environment -ne 'production'/);
+  assert.match(publisher, /publish-only' -and -not \$ImageCommit/);
+  assert.match(publisher, /publish-only' -and \$resolved -ne \$commit/);
+  const branchStart = publisher.lastIndexOf("if ($Action -eq 'publish-only') {");
+  const branchEnd = publisher.indexOf("Invoke-MigrationTask $commit", branchStart);
+  assert.ok(branchStart >= 0 && branchEnd > branchStart);
+  const branch = publisher.slice(branchStart, branchEnd);
+  assert.match(branch, /Publish-MigrationImage \$commit/);
+  assert.match(branch, /ConvertTo-Json \$published/);
+  assert.match(publisher.slice(branchStart), /}\s+else\s+\{\s+Invoke-MigrationTask \$commit/);
+  assert.doesNotMatch(branch, /Invoke-MigrationTask|ecs|rds|MigratorSecretArn|TRACEPOINT_DATABASE/);
+  const imagePublisher = publisher.slice(publisher.indexOf("function Publish-MigrationImage"), publisher.indexOf("function Invoke-MigrationTask"));
+  assert.match(imagePublisher, /'s3api','put-object'/);
+  assert.match(imagePublisher, /'codebuild','start-build'/);
+  assert.match(imagePublisher, /'ecr','describe-images'/);
+  assert.doesNotMatch(imagePublisher, /'ecs'|'rds'|MigratorSecretArn|TRACEPOINT_DATABASE/);
+});
+
 test("production reconciliation refuses to adopt a migration when a catalog postcondition is absent", () => {
   const verified = Object.fromEntries(productionLedgerAdoptionPostconditions.map(key => [key, true]));
   assert.doesNotThrow(() => assertProductionLedgerAdoptionPostconditions(verified));
@@ -157,10 +178,36 @@ test("production reconciliation refuses to adopt a migration when a catalog post
 test("inspection is fixed catalog-only SQL and cannot mutate the ledger", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   for (const [, sql] of inspectionCatalogQueries) assert.doesNotThrow(() => assertInspectionSql(sql));
+  const mobileDependencyQuery = runner.match(/const mobileApiDependenciesSql = `([\s\S]*?)`;/)?.[1];
+  assert.ok(mobileDependencyQuery);
+  assert.doesNotThrow(() => assertInspectionSql(mobileDependencyQuery));
+  const databasePrincipalQuery = runner.match(/const databasePrincipalSql = `([\s\S]*?)`;/)?.[1];
+  assert.ok(databasePrincipalQuery);
+  assert.doesNotThrow(() => assertInspectionSql(databasePrincipalQuery));
+  assert.doesNotThrow(() => assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"));
   for (const sql of ["insert into public.tracepoint_aws_schema_migrations values (1)", "update public.x set y=1", "create table public.x(id int)"]) assert.throws(() => assertInspectionSql(sql), /READ_ONLY_INSPECTION_SQL_REJECTED/);
   assert.match(runner, /action === "inspect"/);
   assert.match(runner, /BEGIN TRANSACTION READ ONLY/);
-  assert.doesNotMatch(runner.slice(runner.indexOf("async function inspect"), runner.indexOf("const files =")), /ensureLedger|withLock|migrationSqlWithLedgerEntry/);
+  const inspectionBody = runner.slice(runner.indexOf("async function inspect"), runner.indexOf("async function rangeWorkspaceContract"));
+  assert.doesNotMatch(inspectionBody, /ensureLedger|withLock|migrationSqlWithLedgerEntry/);
+  assert.match(runner, /mobileApiDependencies/);
+  assert.match(runner, /pilot_range_workspaces_accountability_audit/);
+});
+
+test("mobile production preflight reads ledger and schema in one explicit read-only transaction", async () => {
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  assert.match(runner, /"mobile-preflight"/);
+  assert.match(runner, /async function mobilePreflight\(client, files\)/);
+  assert.match(runner, /requestedEnvironment !== "production"\) throw new Error\("Mobile production preflight is production-only/);
+  const body = runner.slice(runner.indexOf("async function mobilePreflight"), runner.indexOf("async function rangeWorkspaceContract"));
+  assert.match(body, /BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY/);
+  assert.match(body, /await report\(client, files\)/);
+  assert.match(body, /inspect\(client, \{ transactionAlreadyOpen: true \}\)/);
+  assert.match(body, /await client\.query\("COMMIT"\)/);
+  assert.match(body, /await client\.query\("ROLLBACK"\)/);
+  assert.doesNotMatch(body, /ensureLedger|withLock|migrationSqlWithLedgerEntry|applyRangeWorkspaceHotfix/);
+  assert.match(body, /appliedVersions:/);
+  assert.match(body, /mobileApiDependencies:/);
 });
 
 test("inspection reports partial lineage without adopting absent migrations", () => {
@@ -179,7 +226,7 @@ test("Range Day hotfix is isolated from the ledger and missing 023–037 lineage
   assert.match(runner, /assertRangeWorkspaceContract\(before, \["SELECT"\]\)/);
   assert.match(runner, /assertRangeWorkspaceContract\(after, \["INSERT", "SELECT", "UPDATE"\]\)/);
   assert.match(runner, /pilot_range_workspaces_accountability_audit/);
-  const hotfixBody = runner.slice(runner.indexOf("async function applyRangeWorkspaceHotfix"), runner.indexOf("const files ="));
+  const hotfixBody = runner.slice(runner.indexOf("async function applyRangeWorkspaceHotfix"), runner.indexOf("let files;"));
   assert.doesNotMatch(hotfixBody, /ensureLedger|withLock|migrationSqlWithLedgerEntry|tracepoint_aws_schema_migrations/);
   assert.match(migration, /grant insert, update on public\.pilot_range_workspaces to authenticated;/);
   assert.doesNotMatch(migration, /\b(delete|create|alter|drop|revoke)\b/i);

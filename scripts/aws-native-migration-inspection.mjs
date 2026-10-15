@@ -51,6 +51,7 @@ export const migrationInspectionManifest = [
   [35, [relation("public.inventory_items"), relation("public.inventory_locations"), relation("public.inventory_balances"), relation("public.inventory_transactions"), routine("public.record_inventory_transaction")]],
   [36, [relation("public.inventory_checkouts"), relation("public.inventory_checkout_returns"), routine("public.checkout_inventory"), routine("public.return_inventory_checkout")]],
   [37, [privilege("public.inventory_items.authenticated.INSERT"), privilege("public.inventory_items.authenticated.UPDATE"), privilege("public.inventory_locations.authenticated.INSERT"), privilege("public.inventory_locations.authenticated.UPDATE")]],
+  [38, [relation("public.pilot_range_workspaces"), column("public.pilot_range_workspaces.workspace"), column("public.pilot_range_workspaces.updated_by_user_id"), privilege("public.pilot_range_workspaces.authenticated.INSERT"), privilege("public.pilot_range_workspaces.authenticated.UPDATE")]],
 ].map(([version, checks]) => ({ version, checks }));
 
 export const inspectionCatalogQueries = Object.freeze([
@@ -68,8 +69,10 @@ export const inspectionCatalogQueries = Object.freeze([
 
 export function assertInspectionSql(sql) {
   const normalized = sql.trim().replace(/\s+/g, " ").toLowerCase();
-  if (/^(begin transaction read only|set transaction read only|commit)$/.test(normalized)) return;
-  if (!/^select\b/.test(normalized) || /\b(insert|update|delete|merge|truncate|create|alter|drop|grant|revoke|call|do|copy|vacuum|analyze|lock)\b/.test(normalized)) throw new Error("READ_ONLY_INSPECTION_SQL_REJECTED");
+  if (/^(begin transaction read only|begin transaction isolation level repeatable read read only|set transaction read only|commit)$/.test(normalized)) return;
+  const withoutStringLiterals = normalized.replace(/'(?:''|[^'])*'/g, "''");
+  const fixedReadOnlyCte = /^with required\s*\(relation_name, required_columns, require_rls\) as \(values\b/.test(withoutStringLiterals);
+  if (!(/^select\b/.test(withoutStringLiterals) || fixedReadOnlyCte) || /\b(insert|update|delete|merge|truncate|create|alter|drop|grant|revoke|call|do|copy|vacuum|analyze|lock)\b/.test(withoutStringLiterals)) throw new Error("READ_ONLY_INSPECTION_SQL_REJECTED");
 }
 
 function catalogMaps(snapshot) {
