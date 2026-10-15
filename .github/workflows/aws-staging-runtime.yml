@@ -73,6 +73,7 @@ jobs:
           ./scripts/test-migration-image-publication.ps1
           ./scripts/test-deployment-safety.ps1
           ./scripts/test-release-orchestration.ps1
+          ./scripts/test-tracepoint-staging-rollback.ps1
       - name: Require repaired Vercel branch Preview
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -83,15 +84,36 @@ jobs:
           aws-region: us-east-1
           allowed-account-ids: '559054714699'
           role-duration-seconds: 7200
+      - name: Initialize run-scoped release result
+        shell: pwsh
+        env:
+          RELEASE_RESULT_PATH: ${{ runner.temp }}/tracepoint-staging-release-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          $result = [ordered]@{ schemaVersion = 1; runId = '${{ github.run_id }}-${{ github.run_attempt }}'; outcome = 'in_progress'; phase = 'image_publication'; imageTag = $null; failure = $null; rollback = [ordered]@{ outcome = 'not_started'; failure = $null } }
+          [IO.File]::WriteAllText($env:RELEASE_RESULT_PATH, ($result | ConvertTo-Json -Depth 5) + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
       - name: Publish tracked source and wait for scan
         if: github.event_name != 'push' || steps.request.outputs.publish == 'true'
         shell: pwsh
-        run: ./scripts/publish-tracepoint-staging-image.ps1 -Wait
+        env:
+          RELEASE_RESULT_PATH: ${{ runner.temp }}/tracepoint-staging-release-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          try { ./scripts/publish-tracepoint-staging-image.ps1 -Wait }
+          catch {
+            $report = Get-Content -Raw -LiteralPath $env:RELEASE_RESULT_PATH | ConvertFrom-Json
+            if ($null -eq $report.failure) {
+              $report.outcome = 'failed'
+              $report.phase = 'failed'
+              $report.failure = [ordered]@{ phase = 'image_publication'; assertion = 'STAGING_IMAGE_PUBLISH_OR_SCAN_FAILED' }
+            }
+            [IO.File]::WriteAllText($env:RELEASE_RESULT_PATH, ($report | ConvertTo-Json -Depth 5) + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+            throw 'Staging image publication failed; see the sanitized run-scoped result artifact.'
+          }
       - name: Guarded release with authenticated smoke and automatic recovery
         shell: pwsh
         env:
           RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit || github.sha }}-aws-native-staging
-        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:RELEASE_IMAGE -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3
+          RELEASE_RESULT_PATH: ${{ runner.temp }}/tracepoint-staging-release-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:RELEASE_IMAGE -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3 -ResultPath $env:RELEASE_RESULT_PATH
 
       - name: Controlled staging rollback and return to accepted image
         if: steps.request.outputs.rollbackPriorTaskArn != ''
@@ -99,4 +121,29 @@ jobs:
         env:
           RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit }}-aws-native-staging
           ROLLBACK_TASK: ${{ steps.request.outputs.rollbackPriorTaskArn }}
-        run: ./scripts/rehearse-staging-rollback.ps1 -CurrentImageTag $env:RELEASE_IMAGE -PriorTaskDefinitionArn $env:ROLLBACK_TASK -Execute
+          RELEASE_RESULT_PATH: ${{ runner.temp }}/tracepoint-staging-release-${{ github.run_id }}-${{ github.run_attempt }}.json
+          RELEASE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          $rollbackExecutionSucceeded = $false
+          try {
+            ./scripts/rehearse-staging-rollback.ps1 -CurrentImageTag $env:RELEASE_IMAGE -PriorTaskDefinitionArn $env:ROLLBACK_TASK -Execute
+            $rollbackExecutionSucceeded = $true
+          } catch { }
+
+          $recordedOutcome = if ($rollbackExecutionSucceeded) { 'succeeded' } else { 'failed' }
+          try {
+            ./scripts/record-staging-controlled-rollback.ps1 -ResultPath $env:RELEASE_RESULT_PATH -ExpectedRunId $env:RELEASE_RUN_ID -Outcome $recordedOutcome
+          } catch {
+            if ($rollbackExecutionSucceeded) { throw 'Controlled rollback succeeded, but result or diagnostics reporting failed; inspect the run-scoped artifact.' }
+            throw 'Controlled rollback failed and its result or diagnostics could not be fully recorded.'
+          }
+          if (-not $rollbackExecutionSucceeded) { throw 'Controlled staging rollback failed; see the sanitized run-scoped result artifact.' }
+
+      - name: Retain sanitized run-scoped release result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: staging-release-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tracepoint-staging-release-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 14
