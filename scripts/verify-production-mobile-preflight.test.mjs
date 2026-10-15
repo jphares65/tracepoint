@@ -34,6 +34,8 @@ test("database preflight is isolated from ECS Exec and injects only the runtime 
   assert.doesNotMatch(script, /ecs execute-command|enableExecuteCommand|session-manager-plugin/i);
   assert.match(script, /tracepoint-production-mobile-inspection/);
   assert.match(script, /\$inspectionTaskFamily = "\$inspectionTaskFamilyPrefix-\$runId"/);
+  assert.ok(script.indexOf("$runId = [Guid]::NewGuid()") < script.indexOf("$inspectionTaskFamily = \"$inspectionTaskFamilyPrefix-$runId\""));
+  assert.ok(script.indexOf("$inspectionTaskFamily = \"$inspectionTaskFamilyPrefix-$runId\"") < script.indexOf("family = $inspectionTaskFamily"));
   assert.match(script, /ecs list-task-definitions/);
   assert.match(script, /registration result was ambiguous/);
   assert.match(script, /task launch result remains ambiguous/);

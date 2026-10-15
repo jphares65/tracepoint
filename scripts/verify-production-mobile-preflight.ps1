@@ -254,6 +254,11 @@ try {
     $awsLogs = $sourceContainer[0].logConfiguration
     Require-True ($awsLogs.logDriver -eq 'awslogs' -and $awsLogs.options.'awslogs-group' -like '/tracepoint/production/*' -and $awsLogs.options.'awslogs-region' -eq $region -and $awsLogs.options.'awslogs-stream-prefix') 'existing production task must provide the reviewed production CloudWatch log group and region'
     $inspectionImageUri = "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@$InspectionImageDigest"
+    $runId = [Guid]::NewGuid().ToString('N').Substring(0,12)
+    $inspectionTaskFamily = "$inspectionTaskFamilyPrefix-$runId"
+    $taskDefinitionPath = Join-Path ([IO.Path]::GetTempPath()) "tp-mobile-inspection-$runId.json"
+    $taskRunPath = Join-Path ([IO.Path]::GetTempPath()) "tp-mobile-inspection-run-$runId.json"
+    $utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
     $inspectionContainer = [ordered]@{
         name = 'tracepoint'
         image = $inspectionImageUri
@@ -286,11 +291,6 @@ try {
     if ($runtimePlatform) { $inspectionDefinition.runtimePlatform = $runtimePlatform }
     if ($ephemeralStorage) { $inspectionDefinition.ephemeralStorage = $ephemeralStorage }
     Require-True (@($network.subnets).Count -gt 0 -and @($network.securityGroups).Count -gt 0) 'inspection task must use the explicitly approved subnets and database-enabled security group'
-    $runId = [Guid]::NewGuid().ToString('N').Substring(0,12)
-    $inspectionTaskFamily = "$inspectionTaskFamilyPrefix-$runId"
-    $taskDefinitionPath = Join-Path ([IO.Path]::GetTempPath()) "tp-mobile-inspection-$runId.json"
-    $taskRunPath = Join-Path ([IO.Path]::GetTempPath()) "tp-mobile-inspection-run-$runId.json"
-    $utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
     $registered = $null
     $inspectionTaskArn = $null
     $inspectionTaskArns = @()
