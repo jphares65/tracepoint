@@ -134,7 +134,7 @@ test("migration preflight uses a production-only fixed read-only action", () => 
   assert.ok(body.indexOf('await report(client, files)') < body.indexOf('await client.query("COMMIT")'));
   assert.match(runner, /action === "mobile-preflight" && requestedEnvironment !== "production"/);
   assert.ok(runner.indexOf('action === "mobile-preflight" && requestedEnvironment !== "production"') < runner.indexOf('client = await connect()'));
-  assert.match(runner, /console\.error\(JSON\.stringify\(\{ status: "BLOCKED", inspection: "read-only", reason: "DATABASE_INSPECTION_FAILED" \}\)\)/);
+  assert.match(runner, /console\.error\(JSON\.stringify\(\{\s*status: "BLOCKED",\s*inspection: "read-only",\s*reason: "DATABASE_INSPECTION_FAILED",\s*failure: mobilePreflightFailureDetails\(mobilePreflightFailureStage, error\),\s*\}\)\)/);
   assert.doesNotMatch(runner, /console\.(?:error|log)\([^\n]*(?:error\.message|JSON\.stringify\(error\))/);
 });
 

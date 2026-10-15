@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, inspectionSearchPathSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
@@ -13,12 +14,11 @@ const ledger = "public.tracepoint_aws_schema_migrations";
 const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
+let mobilePreflightFailureStage = "MIGRATION_MANIFEST";
 
-if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply> <staging|production>");
-if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
-if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
-if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
-if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
+function setMobilePreflightStage(stage) {
+  if (action === "mobile-preflight") mobilePreflightFailureStage = stage;
+}
 
 const migrationDirectory = path.resolve("database/aws");
 
@@ -43,18 +43,24 @@ function migrationSqlWithLedgerEntry(migration, context) {
 function quote(value) { return `'${String(value).replaceAll("'", "''")}'`; }
 
 async function connect() {
+  setMobilePreflightStage("RUNTIME_CONFIGURATION");
   if (process.env.TRACEPOINT_DATA_PROVIDER !== "postgres" || process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native") throw new Error("AWS-native PostgreSQL runtime configuration is required.");
   let secret;
+  setMobilePreflightStage("DATABASE_SECRET_PARSE");
   try { secret = JSON.parse(process.env.TRACEPOINT_DATABASE_SECRET_JSON ?? ""); } catch { throw new Error("AWS-native database secret is invalid."); }
+  setMobilePreflightStage("DATABASE_SECRET_SHAPE");
   if (!secret || typeof secret.host !== "string" || secret.port !== 5432 || secret.dbname !== "tracepoint" || typeof secret.username !== "string" || typeof secret.password !== "string") throw new Error("AWS-native database secret is invalid.");
+  setMobilePreflightStage("EXPECTED_DATABASE_HOST");
   const expectedRdsHostMatched = action === "mobile-preflight"
     ? assertExpectedDatabaseHost(secret.host, process.env.TRACEPOINT_EXPECTED_DATABASE_HOST)
     : false;
+  setMobilePreflightStage("DATABASE_CA");
   const caPath = process.env.TRACEPOINT_DATABASE_CA_PATH;
   if (!caPath?.startsWith("/app/") || !caPath.endsWith(".pem")) throw new Error("AWS-native database CA path is invalid.");
   const ca = await readFile(caPath, "utf8");
   if (!ca.includes("BEGIN CERTIFICATE")) throw new Error("AWS-native database CA is invalid.");
   const client = new Client({ host: secret.host, port: secret.port, user: secret.username, password: secret.password, database: secret.dbname, ssl: { ca, rejectUnauthorized: true, servername: secret.host }, connectionTimeoutMillis: 10_000, statement_timeout: 60_000, application_name: "tracepoint-aws-native-migrations" });
+  setMobilePreflightStage("DATABASE_CONNECT");
   await client.connect();
   client.expectedRdsHostMatched = expectedRdsHostMatched;
   return client;
@@ -134,20 +140,26 @@ async function inspect(client, { transactionAlreadyOpen = false } = {}) {
 }
 
 async function mobilePreflight(client, files) {
+  setMobilePreflightStage("EXPECTED_DATABASE_HOST");
   if (requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
   if (client.expectedRdsHostMatched !== true) throw new Error("DATABASE_TARGET_MISMATCH");
+  setMobilePreflightStage("READ_ONLY_TRANSACTION_BEGIN");
   assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
   try {
+    setMobilePreflightStage("READ_ONLY_SEARCH_PATH");
     assertInspectionSql(inspectionSearchPathSql);
     await client.query(inspectionSearchPathSql);
+    setMobilePreflightStage("DATABASE_IDENTITY_QUERY");
     const databaseIdentitySql = `select current_database() as database_name,
       inet_server_addr()::text as server_address, inet_server_port() as server_port,
       current_setting('search_path') as search_path, array_to_json(current_schemas(true)) as effective_schemas,
       current_user as database_user, session_user as session_user`;
     assertInspectionSql(databaseIdentitySql);
     const databaseIdentity = (await client.query(databaseIdentitySql)).rows[0];
+    setMobilePreflightStage("DATABASE_IDENTITY_VALIDATION");
     assertDatabaseTargetIdentity(databaseIdentity);
+    setMobilePreflightStage("DATABASE_PRINCIPAL_QUERY");
     const databasePrincipalSql = `select current_user as database_user,
       current_setting('transaction_read_only') as transaction_read_only,
       current_setting('transaction_isolation') as transaction_isolation,
@@ -158,8 +170,11 @@ async function mobilePreflight(client, files) {
     assertInspectionSql(databasePrincipalSql);
     const databasePrincipal = (await client.query(databasePrincipalSql)).rows[0];
     if (!databasePrincipal) throw new Error("DATABASE_PRINCIPAL_UNAVAILABLE");
+    setMobilePreflightStage("MIGRATION_LEDGER_READ");
     const migrationStatus = await report(client, files);
+    setMobilePreflightStage("SCHEMA_CATALOG_READ");
     const catalog = await inspect(client, { transactionAlreadyOpen: true });
+    setMobilePreflightStage("READ_ONLY_TRANSACTION_COMMIT");
     assertInspectionSql("COMMIT");
     await client.query("COMMIT");
     return {
@@ -220,6 +235,13 @@ async function applyRangeWorkspaceHotfix(client, files) {
 let files;
 let client;
 try {
+  if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply> <staging|production>");
+  if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
+  if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
+  setMobilePreflightStage("RUNTIME_CONFIGURATION");
+  if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
+  if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
+  setMobilePreflightStage("MIGRATION_MANIFEST");
   files = await migrations();
   client = await connect();
   if (action === "status") {
@@ -298,7 +320,12 @@ try {
   });
 } catch (error) {
   if (action === "mobile-preflight") {
-    console.error(JSON.stringify({ status: "BLOCKED", inspection: "read-only", reason: "DATABASE_INSPECTION_FAILED" }));
+    console.error(JSON.stringify({
+      status: "BLOCKED",
+      inspection: "read-only",
+      reason: "DATABASE_INSPECTION_FAILED",
+      failure: mobilePreflightFailureDetails(mobilePreflightFailureStage, error),
+    }));
     process.exitCode = 1;
   } else {
     throw error;

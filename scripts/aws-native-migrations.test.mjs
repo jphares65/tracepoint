@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { access, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import EmbeddedPostgres from "embedded-postgres";
 import pg from "pg";
@@ -12,6 +14,7 @@ import {
 } from "./aws-native-production-ledger-adoption.mjs";
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectionCatalogQueries, inspectionSearchPathSql, migrationInspectionManifest, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
+import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -374,6 +377,43 @@ test("mobile production preflight reads ledger and schema in one explicit read-o
   assert.match(body, /migrations: catalog\.migrations\.map\(\(\{ version, status \}\) => \(\{ version, status \}\)\)/);
   assert.match(body, /current_database\(\)[\s\S]*inet_server_addr\(\)[\s\S]*inet_server_port\(\)[\s\S]*current_setting\('search_path'\)[\s\S]*current_user[\s\S]*session_user/);
   assert.match(body, /expectedRdsHostMatched: true/);
+});
+
+test("mobile preflight failures report safe stage and stable code without database details", async () => {
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  assert.match(runner, /failure:\s*mobilePreflightFailureDetails\(mobilePreflightFailureStage,\s*error\)/);
+  const failureHandler = runner.slice(runner.lastIndexOf("} catch (error) {"));
+  assert.doesNotMatch(failureHandler, /error\.(?:message|stack)/);
+
+  const hostMismatch = mobilePreflightFailureDetails("EXPECTED_DATABASE_HOST", new Error("DATABASE_TARGET_MISMATCH"));
+  assert.deepEqual(hostMismatch, { stage: "EXPECTED_DATABASE_HOST", code: "DATABASE_TARGET_MISMATCH" });
+
+  const authRejected = mobilePreflightFailureDetails("DATABASE_CONNECT", Object.assign(new Error("password rejected for secret user"), { code: "28P01" }));
+  assert.deepEqual(authRejected, { stage: "DATABASE_CONNECT", code: "DATABASE_AUTH_REJECTED" });
+
+  const tlsFailure = mobilePreflightFailureDetails("DATABASE_CONNECT", Object.assign(new Error("certificate details and host"), { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" }));
+  assert.deepEqual(tlsFailure, { stage: "DATABASE_CONNECT", code: "DATABASE_TLS_VALIDATION_FAILED" });
+
+  const unknownFailure = mobilePreflightFailureDetails("SCHEMA_CATALOG_READ", new Error("postgres://user:secret@db/password"));
+  assert.deepEqual(unknownFailure, { stage: "SCHEMA_CATALOG_READ", code: "SCHEMA_CATALOG_READ_FAILED" });
+  assert.doesNotMatch(JSON.stringify([hostMismatch, authRejected, tlsFailure, unknownFailure]), /secret|password|postgres:|certificate details|host/);
+
+  const unknownStage = mobilePreflightFailureDetails("secret-host", new Error("untrusted details"));
+  assert.deepEqual(unknownStage, { stage: "UNKNOWN", code: "MOBILE_PREFLIGHT_FAILED" });
+});
+
+test("mobile preflight reports runtime environment mismatch through the sanitized failure handler", () => {
+  const runnerPath = fileURLToPath(new URL("./run-aws-native-migrations.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [runnerPath, "mobile-preflight", "production"], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: { ...process.env, CONFIGURATION_ENVIRONMENT: "staging" },
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  const failure = JSON.parse(result.stderr);
+  assert.deepEqual(failure.failure, { stage: "RUNTIME_CONFIGURATION", code: "RUNTIME_CONFIGURATION_INVALID" });
+  assert.doesNotMatch(result.stderr, /secret|password|postgres:|host|Migration environment/);
 });
 
 test("Cognito password operations fail closed for global admins and cross-department identities", async () => {
