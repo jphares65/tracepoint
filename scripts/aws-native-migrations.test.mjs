@@ -210,6 +210,22 @@ test("mobile production preflight reads ledger and schema in one explicit read-o
   assert.match(body, /mobileApiDependencies:/);
 });
 
+test("Cognito password operations fail closed for global admins and cross-department identities", async () => {
+  const guard = await readFile(new URL("../database/aws/039_cognito_password_global_scope.sql", import.meta.url), "utf8");
+  const lifecycle = await readFile(new URL("../database/aws/006_cognito_lifecycle_state.sql", import.meta.url), "utf8");
+  const prepare = lifecycle.slice(
+    lifecycle.indexOf("create or replace function tracepoint_auth.prepare_cognito_password_operation"),
+    lifecycle.indexOf("create or replace function tracepoint_auth.finish_cognito_password_operation"),
+  );
+  assert.match(prepare, /has_department_permission\(p_department_id,'manage_users'\)/);
+  assert.match(prepare, /m\.department_id=p_department_id and m\.is_active and m\.user_id=p_target_user_id/);
+  assert.match(guard, /before insert on public\.authentication_lifecycle_operations/);
+  assert.match(guard, /new\.operation_kind in \('assign_password','reset_password'\)/);
+  assert.match(guard, /public\.platform_admins administrator[\s\S]*administrator\.is_active/);
+  assert.match(guard, /public\.department_memberships membership[\s\S]*membership\.department_id <> new\.department_id/);
+  assert.match(guard, /password operation target is a platform administrator/);
+  assert.match(guard, /password operation target has another department membership/);
+});
 test("inspection reports partial lineage without adopting absent migrations", () => {
   const result = classifyMigrationInspection({ relations: [], columns: [], routines: [{ schema: "tracepoint_auth", name: "subject_id" }], indexes: [], constraints: [], policies: [], privileges: [], roles: [], triggers: [] });
   assert.equal(result.migrations[0].status, "partial");

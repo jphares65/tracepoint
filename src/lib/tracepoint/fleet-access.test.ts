@@ -49,6 +49,7 @@ test("Fleet list, detail, and inspection routes enforce the policy on the backen
   assert.match(inspection, /resolveServerAccess\(request\)/);
   assert.match(inspection, /\.eq\("department_id", context\.departmentId\)/);
   assert.match(inspection, /permittedRoles/);
+  assert.match(inspection, /canPerformFleetInspection\(context, permittedRoles\)/);
   assert.match(evidence, /resolveServerAccess\(request\)/);
   assert.match(evidence, /\.eq\("department_id", context\.departmentId\)/);
   assert.match(qr, /resolveServerAccess\(request\)/);

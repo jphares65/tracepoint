@@ -5,6 +5,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { canPerformFleetInspection } from "@/lib/tracepoint/fleet-access";
 import {
   auditFleet,
   numeric,
@@ -55,24 +56,7 @@ export async function POST(
     ? rules.inspection_role_codes
     : [];
 
-  const userRoles = Array.isArray(context.roleCodes) ? context.roleCodes : [];
-
-  const userPermissions = Array.isArray(context.permissions)
-    ? context.permissions
-    : [];
-
-  const hasInspectionPermission =
-    context.isSuperAdmin ||
-    userPermissions.includes("administer_department") ||
-    userPermissions.includes("perform_fleet_inspections") ||
-    userPermissions.includes("manage_fleet") ||
-    userPermissions.includes("manage_fleet_rules");
-
-  if (
-    permittedRoles.length &&
-    !hasInspectionPermission &&
-    !userRoles.some((role: string) => permittedRoles.includes(role))
-  ) {
+  if (!canPerformFleetInspection(context, permittedRoles)) {
     return NextResponse.json(
       {
         error:

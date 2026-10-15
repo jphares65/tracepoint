@@ -174,7 +174,6 @@ export async function POST(
 
   const certificationEligibility =
     await evaluateCertificationCapability({
-      request,
       context,
       capabilityCode: "perform_firearm_inspections",
     });
