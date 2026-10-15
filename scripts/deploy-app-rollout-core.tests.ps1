@@ -1,6 +1,18 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deploy-app-rollout-core.ps1')
 
+$imageMissing = [System.Management.Automation.ErrorRecord]::new(
+    [System.Exception]::new('AWS command failed: aws ecr describe-images :: An error occurred (ImageNotFoundException) when calling the DescribeImages operation: Image not found.'),
+    'ECR_IMAGE_NOT_FOUND', [System.Management.Automation.ErrorCategory]::ObjectNotFound, $null)
+if (-not (Test-EcrImageNotFoundError -ErrorRecord $imageMissing)) { throw 'A genuine ECR ImageNotFoundException must permit first publication.' }
+foreach ($diagnostic in @(
+    'An error occurred (AccessDeniedException) when calling the DescribeImages operation: denied',
+    'Could not connect to the endpoint URL: https://ecr.us-east-1.amazonaws.com/'
+)) {
+    $failure = [System.Management.Automation.ErrorRecord]::new([System.Exception]::new($diagnostic), 'ECR_LOOKUP_FAILED', [System.Management.Automation.ErrorCategory]::ResourceUnavailable, $null)
+    if (Test-EcrImageNotFoundError -ErrorRecord $failure) { throw 'ECR access and network failures must not be mistaken for a missing image.' }
+}
+
 function New-TestService {
     param([string]$State, [string]$TaskArn = 'arn:aws:ecs:us-east-1:559054714699:task-definition/tracepoint-staging:111')
     [pscustomobject]@{

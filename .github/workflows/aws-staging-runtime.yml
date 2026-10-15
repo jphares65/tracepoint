@@ -69,6 +69,8 @@ jobs:
       - name: Windows deployment safety validation
         shell: pwsh
         run: |
+          ./scripts/test-staging-image-archive.ps1
+          ./scripts/test-migration-image-publication.ps1
           ./scripts/test-deployment-safety.ps1
           ./scripts/test-release-orchestration.ps1
       - name: Require repaired Vercel branch Preview
@@ -88,13 +90,13 @@ jobs:
       - name: Guarded release with authenticated smoke and automatic recovery
         shell: pwsh
         env:
-          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit || github.sha }}
+          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit || github.sha }}-aws-native-staging
         run: ./scripts/release-tracepoint-staging.ps1 -ImageTag $env:RELEASE_IMAGE -CertificateArn $env:CERTIFICATE_ARN -StorageProvider s3
 
       - name: Controlled staging rollback and return to accepted image
         if: steps.request.outputs.rollbackPriorTaskArn != ''
         shell: pwsh
         env:
-          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit }}
+          RELEASE_IMAGE: ${{ steps.request.outputs.imageCommit }}-aws-native-staging
           ROLLBACK_TASK: ${{ steps.request.outputs.rollbackPriorTaskArn }}
         run: ./scripts/rehearse-staging-rollback.ps1 -CurrentImageTag $env:RELEASE_IMAGE -PriorTaskDefinitionArn $env:ROLLBACK_TASK -Execute

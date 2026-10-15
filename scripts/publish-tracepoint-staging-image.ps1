@@ -8,28 +8,8 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $protectedUntrackedPaths = @('scripts/seed-demo-fleet-equipment.mjs', 'src/app/integration-demo/page.tsx')
-$archiveIncludes = @(
-    '.dockerignore',
-    'buildspec.staging-image.yml',
-    'Dockerfile',
-    'eslint.config.mjs',
-    'next.config.ts',
-    'package.json',
-    'package-lock.json',
-    'postcss.config.mjs',
-    'tsconfig.json',
-    'public',
-    'src',
-    'scripts/start-tracepoint-container.mjs',
-    'scripts/validate-tracepoint-runtime-config.mjs'
-)
-$archiveExcludes = @(
-    ':(glob,exclude)**/*.backup-*',
-    ':(glob,exclude)**/*.encoding-backup-*',
-    ':(glob,exclude)**/*.before-*',
-    ':(glob,exclude)**/*.bak',
-    ':(glob,exclude)**/*.bak-*'
-)
+$archiveIncludes = @(Get-TracePointStagingImageArchiveIncludes)
+$archiveExcludes = @(Get-TracePointStagingImageArchiveExcludes)
 $sourceBucket = 'tracepoint-staging-build-source-559054714699'
 $sourceKey = 'source/tracepoint-staging-source.zip'
 $projectName = 'tracepoint-staging-image-build'
@@ -42,6 +22,7 @@ $authorizedBranches = @(
 )
 if ($branch -notin $authorizedBranches) { throw "Refusing branch '$branch'." }
 if ($commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA.' }
+$imageTag = "$commit-aws-native-staging"
 
 $status = @(& git.exe -C $repositoryRoot status --short --untracked-files=all)
 $unexpected = @($status | Where-Object {
@@ -92,16 +73,7 @@ try {
     try {
         $entryNames = @($archiveEntries.Entries.FullName | Where-Object { -not $_.EndsWith('/') })
         $trackedPaths = @(& git.exe -C $repositoryRoot ls-tree -r --name-only $commit)
-        $untrackedEntries = @($entryNames | Where-Object { $_ -notin $trackedPaths })
-        if ($untrackedEntries.Count) {
-            throw "Archive contains paths not tracked by commit ${commit}: $($untrackedEntries -join ', ')"
-        }
-        $prohibitedEntries = @($entryNames | Where-Object {
-            $_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.(dump|sql)$|(^|/)[^/]*(credential|secret)[^/]*$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)'
-        })
-        if ($prohibitedEntries.Count) {
-            throw "Prohibited secret, environment, credential, dump, or generated paths entered the archive: $($prohibitedEntries -join ', ')"
-        }
+        Assert-TracePointStagingImageArchive -EntryNames $entryNames -TrackedPaths $trackedPaths
     }
     finally { $archiveEntries.Dispose() }
 
@@ -109,10 +81,10 @@ try {
     if ($ValidateArchiveOnly) { return }
 
     Assert-TracePointStagingIdentity | Out-Null
-    $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --region us-east-1 --query VersionId --output text
+    $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --expected-bucket-owner 559054714699 --region us-east-1 --query VersionId --output text
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceVersion) -or $sourceVersion -eq 'None') { throw 'Versioned source upload failed.' }
     Assert-TracePointStagingIdentity | Out-Null
-    $overrides = "name=IMAGE_TAG,value=$commit,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
+    $overrides = "name=IMAGE_TAG,value=$imageTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"
     $buildId = & aws.exe codebuild start-build --project-name $projectName --source-version $sourceVersion --environment-variables-override $overrides.Split(' ') --region us-east-1 --query build.id --output text
     if ($LASTEXITCODE -ne 0) { throw 'CodeBuild start failed.' }
     Write-Host "Started immutable source build $buildId."
@@ -131,11 +103,11 @@ try {
         $scanErrorPreference = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
-            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$commit" --region us-east-1
+            & aws.exe ecr wait image-scan-complete --repository-name tracepoint-staging --image-id "imageTag=$imageTag" --region us-east-1
             $scanExitCode = $LASTEXITCODE
         } finally { $ErrorActionPreference = $scanErrorPreference }
         if ($scanExitCode -ne 0) { throw 'Image scan did not complete.' }
-        Write-Host "Build and scan completed for $commit; deployment separately requires zero findings at every severity."
+        Write-Host "Build and scan completed for $imageTag; deployment separately requires zero findings at every severity."
     }
 }
 finally {

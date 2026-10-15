@@ -234,8 +234,7 @@ function Publish-Image {
     try {
         $existingImage = (Invoke-Aws @('ecr', 'describe-images', '--repository-name', $configuration.Repository, '--image-ids', "imageTag=$ImageTag")).imageDetails | Select-Object -First 1
     } catch {
-        # ECR's ImageNotFoundException is the normal first-publish path. Any
-        # later failure remains visible when the image is required below.
+        if (-not (Test-EcrImageNotFoundError -ErrorRecord $_)) { throw }
         $existingImage = $null
     }
     if ($null -ne $existingImage -and -not [string]::IsNullOrWhiteSpace([string]$existingImage.imageDigest)) {

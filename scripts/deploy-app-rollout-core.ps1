@@ -1,5 +1,11 @@
 Set-StrictMode -Version Latest
 
+function Test-EcrImageNotFoundError {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+    return ([string]$ErrorRecord.Exception.Message -match '(?i)\(ImageNotFoundException\)\s+when calling the DescribeImages operation:')
+}
+
 function Wait-ExpectedEcsRolloutCompletion {
     [CmdletBinding()]
     param(

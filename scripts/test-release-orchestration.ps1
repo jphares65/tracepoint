@@ -31,7 +31,8 @@ $global:ReleaseTestRevision=2
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'deploy-tracepoint-staging.ps1')
  @'
 param($WaitSeconds)
-if($global:ReleaseTestRevision -eq 2 -and $WaitSeconds -ne 900){throw 'Rollout settling wait missing'}
+$global:ReleaseTestRuntimeWaits+= $WaitSeconds
+if($WaitSeconds -ne 900){throw 'Baseline or rollout settling wait missing'}
 $global:ReleaseTestCalls+='runtime'
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'test-tracepoint-staging-runtime.ps1')
  @'
@@ -41,11 +42,12 @@ $global:ReleaseTestCalls+='rollback'
 $global:ReleaseTestRevision=1
 '@ | Set-Content -LiteralPath (Join-Path $temporaryRoot 'invoke-tracepoint-staging-rollback.ps1')
  foreach($scenario in @('success','preflight','acceptance','brevo','evidence','stderr')) {
-  $global:ReleaseTestScenario=$scenario;$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$failed=$false
-  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag ('a'*40) -CertificateArn 'synthetic'} catch {$failed=$true}
+  $global:ReleaseTestScenario=$scenario;$global:ReleaseTestRevision=1;$global:ReleaseTestCalls=@();$global:ReleaseTestRuntimeWaits=@();$failed=$false
+  try {& (Join-Path $temporaryRoot 'release-tracepoint-staging.ps1') -ImageTag (('a'*40)+'-aws-native-staging') -CertificateArn 'synthetic'} catch {$failed=$true}
   if($scenario -eq 'success') {
    if($failed -or $global:ReleaseTestRevision -ne 2 -or $global:ReleaseTestCalls -contains 'rollback'){throw 'Successful release incorrectly rolled back'}
    if(-not ($global:ReleaseTestCalls -match 'test-staging-brevo-delivery')){throw 'Successful release skipped live Brevo delivery'}
+   if($global:ReleaseTestRuntimeWaits.Count -ne 2 -or @($global:ReleaseTestRuntimeWaits | Where-Object {$_ -ne 900}).Count -ne 0){throw 'Baseline and post-deploy runtime checks must each allow 900 seconds.'}
   }
   elseif($scenario -eq 'preflight') {if(!$failed -or $global:ReleaseTestCalls -contains 'deploy'){throw 'Failed authentication preflight deployed'}}
   elseif(!$failed -or $global:ReleaseTestRevision -ne 1 -or $global:ReleaseTestCalls -notcontains 'rollback'){throw 'Failed release did not restore prior revision'}
