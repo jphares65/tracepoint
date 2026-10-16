@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { access, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,7 +16,7 @@ import {
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, migrationInspectionManifest, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql, migrationLedgerTransactionSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
-import { applyInventoryUnit, applyPasswordScopeUnit, liveOwnerActions, liveReleaseUnits, liveUnitReadiness, normalizedSha256, runAtomicLiveUnit, runLivePrecheck, selectUnitFiles } from "./aws-native-live-release-units.mjs";
+import { applyInventoryUnit, applyPasswordScopeResolutionUnit, liveOwnerActions, liveReleaseUnits, liveUnitReadiness, normalizedSha256, parsePasswordScopeResolutions, runAtomicLiveUnit, runLivePrecheck, selectUnitFiles, transactionBody } from "./aws-native-live-release-units.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -276,9 +277,9 @@ test("live release units pin the exact repository migration files and route only
   for (const pins of Object.values(liveReleaseUnits)) {
     for (const pin of pins) assert.equal(normalizedSha256(await readFile(path.join(directory, pin.filename), "utf8")), pin.sha256, pin.filename);
   }
-  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039"]);
+  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039-040"]);
   assert.deepEqual(liveReleaseUnits["inventory-035-037"].map(file => file.version), [35, 36, 37]);
-  assert.deepEqual(liveReleaseUnits["password-scope-039"].map(file => file.version), [39]);
+  assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [39, 40]);
   const files = [{ version: 35, filename: "035_inventory_phase1.sql", contents: "begin;\nselect 1;\ncommit;\n" }];
   assert.throws(() => selectUnitFiles("inventory-035-037", files), /LIVE_RELEASE_UNIT_FILE_MISMATCH: 035_inventory_phase1\.sql/);
   assert.throws(() => selectUnitFiles("apply", files), /LIVE_RELEASE_UNIT_UNKNOWN/);
@@ -291,7 +292,7 @@ test("live release units pin the exact repository migration files and route only
   assert.match(connect, /servername: host/);
   assert.match(runner, /action === "precheck"\) \{\s*console\.log\(JSON\.stringify\(await runLivePrecheck\(client\)\)\);/);
   assert.match(runner, /action === "inventory-035-037"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyInventoryUnit\(client, files\)\)\)\);/);
-  assert.match(runner, /action === "password-scope-039"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyPasswordScopeUnit\(client, files\)\)\)\);/);
+  assert.match(runner, /action === "password-scope-039-040"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyPasswordScopeResolutionUnit\(client, files, passwordScopeResolutions\)\)\)\);/);
   const units = await readFile(new URL("./aws-native-live-release-units.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(units, /insert into public\.tracepoint_aws_schema_migrations|ensureLedger/);
 
@@ -317,6 +318,7 @@ test("live release units pin the exact repository migration files and route only
 test("live owner actions refuse staging, a non-owner credential, and a missing host pin before connecting", () => {
   const runnerPath = fileURLToPath(new URL("./run-aws-native-migrations.mjs", import.meta.url));
   const liveHost = "tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
+  let resolutions = "";
   const run = (action, environment, username, expectedHost) => spawnSync(process.execPath, [runnerPath, action, environment], {
     cwd: path.resolve(import.meta.dirname, ".."),
     encoding: "utf8",
@@ -328,8 +330,18 @@ test("live owner actions refuse staging, a non-owner credential, and a missing h
       TRACEPOINT_DATABASE_CA_PATH: "/app/tracepoint-test-absent-ca.pem",
       TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({ host: "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com", port: 5432, dbname: "tracepoint", username, password: "synthetic-owner-password" }),
       ...(expectedHost === undefined ? {} : { TRACEPOINT_EXPECTED_DATABASE_HOST: expectedHost }),
+      TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS: resolutions,
     },
   });
+  // The reviewed resolution list is required, and validated, before any connection.
+  resolutions = "";
+  const unlisted = run("password-scope-039-040", "production", "tracepoint_migrator", liveHost);
+  assert.notEqual(unlisted.status, 0);
+  assert.match(unlisted.stderr, /PASSWORD_SCOPE_RESOLUTIONS_INVALID/);
+  assert.doesNotMatch(unlisted.stderr, /ENOENT/);
+  resolutions = JSON.stringify([{ operation_id: "10000000-0000-0000-0000-000000000001", operation_kind: "reset_password", safe_error_code: "recovery_unavailable",
+    basis: "The reset was refused by the readiness check before any Cognito write.",
+    evidence: { cognito_writes_by_operation: "none", cloudtrail_window: "AdminGetUser only", code_path: "readiness check before writes" } }]);
   for (const action of liveOwnerActions) {
     const staging = run(action, "staging", "tracepoint_migrator", liveHost);
     assert.notEqual(staging.status, 0);
@@ -435,18 +447,6 @@ test("embedded Postgres applies the inventory and password-scope units atomicall
     assert.equal((await owner.query("select to_regclass('public.tracepoint_aws_schema_migrations') is null as absent")).rows[0].absent, true);
     await assert.rejects(applyInventoryUnit(owner, files, options), /LIVE_RELEASE_UNIT_PRECONDITION_FAILED: inventory_tables_already_present/);
 
-    // 039 refuses while any password operation is unresolved, then applies and enforces scope.
-    await owner.query("insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('10000000-0000-0000-0000-000000000001', 'reset_password', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'failed')");
-    await assert.rejects(applyPasswordScopeUnit(owner, files, options), /LIVE_RELEASE_UNIT_PRECONDITION_FAILED: unresolved_password_operations_present/);
-    await owner.query("delete from public.authentication_lifecycle_operations");
-    const scope = await applyPasswordScopeUnit(owner, files, options);
-    assert.equal(scope.status, "APPLIED");
-    assert.deepEqual(scope.postconditions, { guarded_functions: 3, enabled_triggers: 3 });
-    await assert.rejects(
-      owner.query("insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('10000000-0000-0000-0000-000000000002', 'assign_password', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'prepared')"),
-      error => error.code === "42501",
-    );
-    await assert.rejects(applyPasswordScopeUnit(owner, files, options), /password_scope_objects_already_present/);
   } finally {
     await runtime?.end().catch(() => undefined);
     await owner?.end().catch(() => undefined);
@@ -457,11 +457,262 @@ test("embedded Postgres applies the inventory and password-scope units atomicall
 
 test("live unit readiness reports every blocker instead of guessing", () => {
   const clean = { inventory_tables_present: [], permissions_code_unique: true, permissions_writable: true, public_schema_create: true, inventory_prerequisites_present: true,
-    password_scope_functions_present: 0, password_scope_triggers_present: 0, password_scope_tables_present: 3, password_scope_tables_owned: true, tracepoint_auth_schema_create: true, unresolved_password_operation_users: 0 };
+    password_scope_functions_present: 0, password_scope_triggers_present: 0, password_scope_tables_present: 3, password_scope_tables_owned: true, tracepoint_auth_schema_create: true, password_operation_resolutions_present: false, unresolved_password_operation_users: 2 };
   assert.deepEqual(liveUnitReadiness(clean), { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
-  const blocked = liveUnitReadiness({ ...clean, inventory_tables_present: ["inventory_items"], permissions_code_unique: false, password_scope_tables_owned: false, unresolved_password_operation_users: 2 });
+  const blocked = liveUnitReadiness({ ...clean, inventory_tables_present: ["inventory_items"], permissions_code_unique: false, password_scope_tables_owned: false, password_operation_resolutions_present: true });
   assert.deepEqual(blocked.inventory.blockers, ["inventory_tables_already_present", "permissions_code_not_unique"]);
-  assert.deepEqual(blocked.passwordScope.blockers, ["password_scope_tables_not_owned", "unresolved_password_operations_present"]);
+  assert.deepEqual(blocked.passwordScope.blockers, ["password_scope_tables_not_owned", "password_operation_resolutions_already_present"]);
+});
+
+const departmentA = "00000000-0000-0000-0000-00000000000a";
+const departmentB = "00000000-0000-0000-0000-00000000000b";
+const scopeUser = n => `00000000-0000-0000-0000-0000000000${String(n).padStart(2, "0")}`;
+const scopeOperation = n => `10000000-0000-0000-0000-0000000000${String(n).padStart(2, "0")}`;
+const reviewedEvidence = {
+  cognito_writes_by_operation: "none",
+  cloudtrail_window: "the failure second shows AdminGetUser only",
+  code_path: "assertCognitoPasswordResetReady refuses before globalSignOut and beginPasswordReset",
+  known_side_effects: ["tracepoint_sessions_revoked_at_prepare"],
+};
+const reviewedResolution = (n, code) => ({
+  operation_id: scopeOperation(n), operation_kind: "reset_password", safe_error_code: code,
+  basis: "The reset was refused by the readiness check before any Cognito write.", evidence: reviewedEvidence,
+});
+
+// The 006 lifecycle tables and finish function exactly as the live database
+// has them, plus minimal companions for the success path and the 039 guards.
+async function createScopeFixture(admin, config, database) {
+  await admin.query(`CREATE DATABASE ${database}`);
+  const superuser = new pg.Client({ ...config, database, user: "postgres", password: "local-scope-only" });
+  await superuser.connect();
+  await superuser.query(`grant create on schema public to tracepoint_migrator;
+    create schema tracepoint_auth authorization tracepoint_migrator;
+    grant usage on schema public to tracepoint_runtime;
+    grant usage on schema tracepoint_auth to tracepoint_runtime;`);
+  await superuser.end();
+  const owner = new pg.Client({ ...config, database, user: "tracepoint_migrator", password: "owner-scope-only" });
+  await owner.connect();
+  const source006 = (await readFile(new URL("../database/aws/006_cognito_lifecycle_state.sql", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  const slice = (start, end) => { const from = source006.indexOf(start); const to = source006.indexOf(end, from); assert.ok(from >= 0 && to > from, start); return source006.slice(from, to + end.length); };
+  await owner.query(`
+    create table public.departments(id uuid primary key);
+    create table public.profiles(id uuid primary key, email text, full_name text);
+    create table public.department_memberships(department_id uuid not null references public.departments(id), user_id uuid not null references public.profiles(id),
+      is_active boolean not null default true, activation_status text);
+    create table public.platform_admins(user_id uuid primary key references public.profiles(id), is_active boolean not null default true);
+    create table public.authentication_identity_links(provider text not null, issuer text not null, subject text not null, tracepoint_user_id uuid not null references public.profiles(id),
+      state text not null default 'pending', provider_username text, updated_at timestamptz not null default now(), primary key(provider, issuer, subject));
+    create table public.user_activation_tokens(id uuid primary key default gen_random_uuid(), department_id uuid, user_id uuid, used_at timestamptz, revoked_at timestamptz);
+    create table public.audit_events(id bigint generated always as identity primary key, department_id uuid not null references public.departments(id), actor_user_id uuid,
+      action text not null, entity_type text not null, entity_id uuid, summary text, previous_value jsonb, new_value jsonb, created_at timestamptz not null default now());
+    ${slice("create table if not exists public.authentication_identity_events (", "\n);")}
+    ${slice("create table if not exists public.authentication_lifecycle_operations (", "\n);")}
+    ${slice("create or replace function tracepoint_auth.finish_cognito_password_operation(", "end;$$;")}
+    ${slice("revoke all on function tracepoint_auth.finish_cognito_password_operation(uuid,boolean,text)", ";")}
+    ${slice("grant execute on function tracepoint_auth.finish_cognito_password_operation(uuid,boolean,text)", ";")}
+    insert into public.departments values ('${departmentA}'), ('${departmentB}');
+    insert into public.profiles(id, email) select ('00000000-0000-0000-0000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'user' || n || '@example.test' from generate_series(1, 9) n;
+    insert into public.department_memberships(department_id, user_id) select '${departmentA}', ('00000000-0000-0000-0000-0000000000' || lpad(n::text, 2, '0'))::uuid from generate_series(1, 9) n;
+    insert into public.platform_admins values ('${scopeUser(5)}', true);
+    insert into public.authentication_identity_links(provider, issuer, subject, tracepoint_user_id, state, provider_username)
+      select 'cognito', 'issuer', 'subject-' || n, ('00000000-0000-0000-0000-0000000000' || lpad(n::text, 2, '0'))::uuid, 'active', 'provider-' || n from generate_series(1, 9) n;
+    -- The two historical reset refusals, and a later committed assignment for the first user.
+    insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state, attempts, safe_error_code, created_at, updated_at) values
+      ('${scopeOperation(1)}', 'reset_password', '${scopeUser(1)}', '${departmentA}', 'compensation_required', 1, 'recovery_unavailable', '2026-09-29T17:06:55.902Z', '2026-09-29T17:06:56.153Z'),
+      ('${scopeOperation(2)}', 'reset_password', '${scopeUser(2)}', '${departmentA}', 'compensation_required', 1, 'initial_password_required', '2026-10-05T13:31:52.940Z', '2026-10-05T13:31:53.121Z'),
+      ('${scopeOperation(3)}', 'assign_password', '${scopeUser(1)}', '${departmentA}', 'committed', 1, null, '2026-09-29T17:08:49Z', '2026-09-29T17:08:49Z');`);
+  return owner;
+}
+
+const scopeObjectsState = async client => (await client.query(`select
+  to_regclass('public.authentication_lifecycle_resolutions') is not null as resolutions_table,
+  (select count(*)::int from pg_trigger where not tgisinternal and tgname like '%password_scope%') as scope_triggers,
+  (select string_agg(pg_get_function_identity_arguments(p.oid), ' | ') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'tracepoint_auth' and p.proname = 'finish_cognito_password_operation') as finish_arguments,
+  (select count(*)::int from public.audit_events where action = 'password_operation_resolved') as resolution_audit_rows`)).rows[0];
+
+test("embedded Postgres applies 039 and 040 with reviewed resolutions atomically and keeps scope protections", { timeout: 240_000 }, async () => {
+  let server; let admin; let directory; const clients = [];
+  try {
+    directory = await mkdtemp(path.join(tmpdir(), "tp-password-scope-"));
+    const port = await localPostgresPort();
+    server = new EmbeddedPostgres({ databaseDir: directory, user: "postgres", password: "local-scope-only", port, persistent: true,
+      postgresFlags: ["-h", "127.0.0.1"], initdbFlags: ["--encoding=UTF8", "--locale=C"], onLog: () => {}, onError: () => {} });
+    await server.initialise();
+    await server.start();
+    const config = { host: "127.0.0.1", port };
+    admin = new pg.Client({ ...config, database: "postgres", user: "postgres", password: "local-scope-only" });
+    await admin.connect();
+    await admin.query(`create role authenticated nologin; create role anon nologin; create role service_role nologin;
+      create role tracepoint_runtime login noinherit password 'runtime-scope-only'; grant authenticated to tracepoint_runtime;
+      create role tracepoint_migrator login password 'owner-scope-only';`);
+    const optionsFor = database => ({ expectedPort: port, expectedDatabase: database });
+    const migrationDirectory = path.resolve(import.meta.dirname, "../database/aws");
+    const files = await Promise.all((await readdir(migrationDirectory)).filter(name => /^\d{3}_[a-z0-9_]+\.sql$/.test(name)).sort().map(async filename => ({
+      version: Number(filename.slice(0, 3)), filename, contents: await readFile(path.join(migrationDirectory, filename), "utf8"),
+    })));
+    const connect = async (database, user, password) => { const client = new pg.Client({ ...config, database, user, password }); await client.connect(); clients.push(client); return client; };
+
+    // Before 040: the original three-argument finish works and the four-argument form is absent.
+    const compatibility = await createScopeFixture(admin, config, "scope_compat"); clients.push(compatibility);
+    await compatibility.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('${scopeOperation(20)}', 'reset_password', '${scopeUser(4)}', '${departmentA}', 'prepared')`);
+    const runtimeBefore = await connect("scope_compat", "tracepoint_runtime", "runtime-scope-only");
+    await assert.rejects(runtimeBefore.query("select tracepoint_auth.finish_cognito_password_operation($1,$2,$3,$4)", [scopeOperation(20), false, "initial_password_required", true]), error => error.code === "42883");
+    await runtimeBefore.query("select tracepoint_auth.finish_cognito_password_operation($1,$2,$3)", [scopeOperation(20), false, "initial_password_required"]);
+    assert.equal((await compatibility.query(`select state from public.authentication_lifecycle_operations where id = '${scopeOperation(20)}'`)).rows[0].state, "compensation_required");
+
+    // Authorization mismatches, a failing step, or a failing postcondition leave the database unchanged.
+    const rollback = await createScopeFixture(admin, config, "scope_rollback"); clients.push(rollback);
+    const untouched = await scopeObjectsState(rollback);
+    assert.deepEqual(untouched, { resolutions_table: false, scope_triggers: 0, finish_arguments: "p_operation_id uuid, p_succeeded boolean, p_error_code text", resolution_audit_rows: 0 });
+    for (const [resolutions, expected] of [
+      [[reviewedResolution(1, "recovery_unavailable")], /unauthorized_unresolved_operation/],
+      [[reviewedResolution(1, "recovery_unavailable"), reviewedResolution(2, "initial_password_required"), reviewedResolution(9, "recovery_unavailable")], /authorized_operation_not_unresolved/],
+      [[reviewedResolution(1, "initial_password_required"), reviewedResolution(2, "initial_password_required")], /operation_does_not_match_authorized_evidence/],
+    ]) {
+      await assert.rejects(applyPasswordScopeResolutionUnit(rollback, files, resolutions, optionsFor("scope_rollback")), expected);
+      assert.deepEqual(await scopeObjectsState(rollback), untouched);
+    }
+    await rollback.query(`update public.authentication_lifecycle_operations set department_id = null where id = '${scopeOperation(2)}'`);
+    await assert.rejects(applyPasswordScopeResolutionUnit(rollback, files, [reviewedResolution(1, "recovery_unavailable"), reviewedResolution(2, "initial_password_required")], optionsFor("scope_rollback")), error => error.code === "23502");
+    assert.deepEqual(await scopeObjectsState(rollback), untouched);
+    await rollback.query(`update public.authentication_lifecycle_operations set department_id = '${departmentA}' where id = '${scopeOperation(2)}'`);
+    // Default privileges are neutralized by 040's explicit revokes, so they do not block the unit.
+    await rollback.query("alter default privileges in schema public grant select on tables to anon");
+    // A stray finish overload is not repaired by 040: the signature postcondition must roll back everything.
+    await rollback.query("create function tracepoint_auth.finish_cognito_password_operation(p_operation_id text) returns void language sql as 'select null'");
+    const withStrayOverload = await scopeObjectsState(rollback);
+    await assert.rejects(applyPasswordScopeResolutionUnit(rollback, files, [reviewedResolution(1, "recovery_unavailable"), reviewedResolution(2, "initial_password_required")], optionsFor("scope_rollback")), /LIVE_PASSWORD_SCOPE_POSTCONDITION_FAILED: finish_overloads, finish_arguments/);
+    assert.deepEqual(await scopeObjectsState(rollback), withStrayOverload);
+    await rollback.query("drop function tracepoint_auth.finish_cognito_password_operation(text)");
+    const appliedDespiteDefaults = await applyPasswordScopeResolutionUnit(rollback, files, [reviewedResolution(1, "recovery_unavailable"), reviewedResolution(2, "initial_password_required")], optionsFor("scope_rollback"));
+    assert.equal(appliedDespiteDefaults.postconditions.resolutions_app_privileges, 0);
+
+    // The reviewed unit applies 039, 040, and both resolutions together.
+    const owner = await createScopeFixture(admin, config, "scope_live"); clients.push(owner);
+    const originals = (await owner.query("select id::text, state, safe_error_code, attempts, updated_at from public.authentication_lifecycle_operations order by id")).rows;
+    const precheck = await runLivePrecheck(owner, optionsFor("scope_live"));
+    assert.equal(precheck.readiness.passwordScope.ready, true);
+    assert.equal(precheck.precheck.unresolved_password_operation_users, 2);
+    const applied = await applyPasswordScopeResolutionUnit(owner, files, [reviewedResolution(1, "recovery_unavailable"), reviewedResolution(2, "initial_password_required")], optionsFor("scope_live"));
+    assert.equal(applied.status, "APPLIED");
+    assert.equal(applied.resolved_operations, 2);
+    assert.deepEqual(applied.files.map(file => file.version), [39, 40]);
+    assert.equal(applied.postconditions.unresolved_remaining, 0);
+    assert.deepEqual((await owner.query("select id::text, state, safe_error_code, attempts, updated_at from public.authentication_lifecycle_operations order by id")).rows, originals);
+    const audit = (await owner.query(`select entity_id::text, previous_value, new_value from public.audit_events where action = 'password_operation_resolved' order by entity_id`)).rows;
+    assert.deepEqual(audit.map(row => [row.entity_id, row.previous_value.state, row.previous_value.safe_error_code, row.new_value.source]), [
+      [scopeOperation(1), "compensation_required", "recovery_unavailable", "owner_verified"],
+      [scopeOperation(2), "compensation_required", "initial_password_required", "owner_verified"],
+    ]);
+    assert.deepEqual(audit[0].new_value.evidence.known_side_effects, ["tracepoint_sessions_revoked_at_prepare"]);
+    const afterApply = await runLivePrecheck(owner, optionsFor("scope_live"));
+    assert.deepEqual(afterApply.precheck.resolution_aware, { unresolved_password_operations: 0, unresolved_password_operation_users: 0, resolutions: 2, owner_verified_resolutions: 2 });
+    assert.equal(afterApply.precheck.unresolved_password_operation_users, 2, "raw counts still show the historical failures");
+    await assert.rejects(applyPasswordScopeResolutionUnit(owner, files, [], optionsFor("scope_live")), /password_scope_objects_already_present/);
+
+    // Resolutions are append-only, owner-only, and resolve an operation at most once.
+    for (const statement of [`update public.authentication_lifecycle_resolutions set basis = basis || ' edited'`, "delete from public.authentication_lifecycle_resolutions", "truncate public.authentication_lifecycle_resolutions"]) {
+      await assert.rejects(owner.query(statement), error => error.code === "42501", statement);
+    }
+    await assert.rejects(owner.query("select tracepoint_auth.resolve_password_operation_provider_unchanged($1,'owner_verified',$2,$3::jsonb)",
+      [scopeOperation(1), reviewedResolution(1, "x").basis, JSON.stringify(reviewedEvidence)]), error => error.code === "22023" || error.code === "23505");
+    const runtime = await connect("scope_live", "tracepoint_runtime", "runtime-scope-only");
+    await assert.rejects(runtime.query(`insert into public.authentication_lifecycle_resolutions(operation_id, resolution, resolution_source, basis, evidence) values ('${scopeOperation(3)}', 'provider_unchanged', 'owner_verified', 'An application role must never write a resolution.', '{}')`), error => error.code === "42501");
+    for (const call of ["select tracepoint_auth.resolve_password_operation_provider_unchanged($1,'owner_verified','An application role must never resolve an operation.','{}'::jsonb)", "select tracepoint_auth.password_scope_hold_exists($1, null)"]) {
+      await assert.rejects(runtime.query(call, [scopeOperation(1)]), error => error.code === "42501");
+    }
+
+    // Concurrent owner resolutions of one eligible operation: exactly one succeeds.
+    await owner.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state, attempts, safe_error_code) values ('${scopeOperation(4)}', 'reset_password', '${scopeUser(4)}', '${departmentA}', 'compensation_required', 1, 'initial_password_required')`);
+    const [first, second] = [await connect("scope_live", "tracepoint_migrator", "owner-scope-only"), await connect("scope_live", "tracepoint_migrator", "owner-scope-only")];
+    const resolve = client => client.query("select tracepoint_auth.resolve_password_operation_provider_unchanged($1,'owner_verified',$2,$3::jsonb)", [scopeOperation(4), reviewedResolution(4, "initial_password_required").basis, JSON.stringify(reviewedEvidence)]);
+    await first.query("begin");
+    await resolve(first);
+    const racing = resolve(second).then(() => "resolved", error => error.code);
+    await first.query("commit");
+    assert.equal(await racing, "23505");
+    assert.equal((await owner.query(`select count(*)::int as total from public.authentication_lifecycle_resolutions where operation_id = '${scopeOperation(4)}'`)).rows[0].total, 1);
+    assert.equal((await owner.query(`select count(*)::int as total from public.audit_events where entity_id = '${scopeOperation(4)}' and action = 'password_operation_resolved'`)).rows[0].total, 1);
+
+    // Even a direct owner insert, bypassing the resolution function, records its audit entry in the same transaction.
+    await owner.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state, attempts, safe_error_code) values
+      ('${scopeOperation(16)}', 'reset_password', '${scopeUser(4)}', '${departmentA}', 'compensation_required', 1, 'initial_password_required'),
+      ('${scopeOperation(17)}', 'reset_password', '${scopeUser(4)}', null, 'compensation_required', 1, 'initial_password_required')`);
+    await owner.query(`insert into public.authentication_lifecycle_resolutions(operation_id, resolution, resolution_source, basis, evidence) values ('${scopeOperation(16)}', 'provider_unchanged', 'owner_verified', 'Direct owner resolution recorded for the audit trigger test.', '{"cognito_writes_by_operation":"none"}')`);
+    assert.equal((await owner.query(`select count(*)::int as total from public.audit_events where entity_id = '${scopeOperation(16)}' and action = 'password_operation_resolved'`)).rows[0].total, 1);
+    await assert.rejects(owner.query(`insert into public.authentication_lifecycle_resolutions(operation_id, resolution, resolution_source, basis, evidence) values ('${scopeOperation(17)}', 'provider_unchanged', 'owner_verified', 'An unauditable resolution must not be recorded at all.', '{}')`), error => error.code === "23502");
+    assert.equal((await owner.query(`select count(*)::int as total from public.authentication_lifecycle_resolutions where operation_id = '${scopeOperation(17)}'`)).rows[0].total, 0);
+
+    // Only resolved or committed operations release scope: ambiguous and unverified failures stay blocked.
+    await owner.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state, attempts, safe_error_code) values
+      ('${scopeOperation(6)}', 'reset_password', '${scopeUser(6)}', '${departmentA}', 'compensation_required', 1, 'provider_unavailable'),
+      ('${scopeOperation(7)}', 'assign_password', '${scopeUser(7)}', '${departmentA}', 'failed', 1, 'conflict')`);
+    await assert.rejects(owner.query("select tracepoint_auth.resolve_password_operation_provider_unchanged($1,'owner_verified',$2,$3::jsonb)", [scopeOperation(6), reviewedResolution(6, "x").basis, JSON.stringify(reviewedEvidence)]), error => error.code === "22023");
+    for (const user of [6, 7]) {
+      await assert.rejects(owner.query(`insert into public.department_memberships(department_id, user_id) values ('${departmentB}', '${scopeUser(user)}')`), error => error.code === "42501", `user ${user}`);
+    }
+    await owner.query(`insert into public.department_memberships(department_id, user_id) values ('${departmentB}', '${scopeUser(1)}')`);
+    // Cross-agency and platform-administrator password restrictions from 039 still apply.
+    await assert.rejects(owner.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('${scopeOperation(10)}', 'assign_password', '${scopeUser(1)}', '${departmentA}', 'prepared')`), error => error.code === "42501");
+    await assert.rejects(owner.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('${scopeOperation(11)}', 'reset_password', '${scopeUser(5)}', '${departmentA}', 'prepared')`), error => error.code === "42501");
+    await assert.rejects(owner.query(`insert into public.platform_admins values ('${scopeUser(6)}', true)`), error => error.code === "42501");
+    await owner.query(`insert into public.platform_admins values ('${scopeUser(2)}', true)`);
+
+    // After 040: one finish signature; three-argument callers keep uncertain failures, and only an
+    // application-reported pre-write refusal of a prepared operation becomes a resolved failure.
+    assert.deepEqual((await owner.query(`select pg_get_function_identity_arguments(p.oid) as arguments, p.pronargdefaults as defaults,
+        has_function_privilege('tracepoint_runtime', p.oid, 'EXECUTE') as runtime, has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+        has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'tracepoint_auth' and p.proname = 'finish_cognito_password_operation'`)).rows,
+      [{ arguments: "p_operation_id uuid, p_succeeded boolean, p_error_code text, p_provider_unchanged boolean", defaults: 2, runtime: true, anon: false, authenticated: false }]);
+    await owner.query(`insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state, provider_username) values
+      ('${scopeOperation(12)}', 'reset_password', '${scopeUser(8)}', '${departmentA}', 'prepared', 'provider-8'),
+      ('${scopeOperation(13)}', 'reset_password', '${scopeUser(9)}', '${departmentA}', 'prepared', 'provider-9'),
+      ('${scopeOperation(14)}', 'assign_password', '${scopeUser(3)}', '${departmentA}', 'prepared', 'provider-3')`);
+    await runtime.query("select tracepoint_auth.finish_cognito_password_operation($1,$2,$3)", [scopeOperation(12), false, "provider_unavailable"]);
+    await runtime.query("select tracepoint_auth.finish_cognito_password_operation($1,$2,$3,$4)", [scopeOperation(13), false, "initial_password_required", true]);
+    await assert.rejects(runtime.query("select tracepoint_auth.finish_cognito_password_operation($1,$2,$3,$4)", [scopeOperation(12), false, "initial_password_required", true]), error => error.code === "22023");
+    await runtime.query("select tracepoint_auth.finish_cognito_password_operation($1,$2)", [scopeOperation(14), true]);
+    const finished = Object.fromEntries((await owner.query(`select o.id::text, o.state, r.resolution_source from public.authentication_lifecycle_operations o
+      left join public.authentication_lifecycle_resolutions r on r.operation_id = o.id where o.id in ('${scopeOperation(12)}','${scopeOperation(13)}','${scopeOperation(14)}')`)).rows.map(row => [row.id, [row.state, row.resolution_source]]));
+    assert.deepEqual(finished, {
+      [scopeOperation(12)]: ["compensation_required", null],
+      [scopeOperation(13)]: ["failed", "application_pre_write_refusal"],
+      [scopeOperation(14)]: ["committed", null],
+    });
+    await assert.rejects(owner.query(`insert into public.department_memberships(department_id, user_id) values ('${departmentB}', '${scopeUser(8)}')`), error => error.code === "42501");
+    await owner.query(`insert into public.department_memberships(department_id, user_id) values ('${departmentB}', '${scopeUser(9)}')`);
+  } finally {
+    for (const client of clients.reverse()) await client.end().catch(() => undefined);
+    await admin?.end().catch(() => undefined);
+    await server?.stop().catch(() => undefined);
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+test("reviewed resolution lists are validated before any connection and carry no personal data", () => {
+  const valid = [reviewedResolution(1, "recovery_unavailable")];
+  assert.deepEqual(parsePasswordScopeResolutions(JSON.stringify(valid)), valid);
+  for (const invalid of [
+    "not json", "{}", JSON.stringify([{ ...valid[0], operation_kind: "assign_password" }]),
+    JSON.stringify([{ ...valid[0], safe_error_code: "provider_unavailable" }]),
+    JSON.stringify([{ ...valid[0], evidence: { ...reviewedEvidence, cognito_writes_by_operation: "unknown" } }]),
+    JSON.stringify([{ ...valid[0], basis: "too short" }]), JSON.stringify([valid[0], valid[0]]),
+  ]) assert.throws(() => parsePasswordScopeResolutions(invalid), /PASSWORD_SCOPE_RESOLUTIONS_INVALID/);
+  assert.throws(() => parsePasswordScopeResolutions(JSON.stringify([{ ...valid[0], basis: "Reviewed with officer@example.test before resolution." }])), /PERSONAL_DATA/);
+});
+
+test("unit files are atomic bodies: nested transaction control outside function bodies is refused", async () => {
+  for (const file of ["035_inventory_phase1.sql", "036_inventory_checkout_phase2a.sql", "037_inventory_management_runtime_grants.sql", "039_cognito_password_global_scope.sql", "040_password_operation_resolution.sql"]) {
+    assert.doesNotThrow(() => transactionBody(readFileSync(new URL(`../database/aws/${file}`, import.meta.url), "utf8")), file);
+  }
+  for (const nested of ["begin;\nselect 1;\ncommit;\nbegin;\nselect 2;\ncommit;", "begin;\nselect 1;\nsavepoint inner_step;\ncommit;", "begin;\nselect 1; rollback;\ncommit;", "begin;\ncreate function f() returns int language plpgsql as $$ begin return 1; end; $$;\nend;\ncommit;"]) {
+    assert.throws(() => transactionBody(nested), /LIVE_RELEASE_UNIT_FILE_HAS_NESTED_TRANSACTION_CONTROL/);
+  }
+  assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [39, 40]);
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  assert.ok(runner.indexOf("parsePasswordScopeResolutions(process.env.TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS)") < runner.indexOf("client = await connect();"));
 });
 
 test("production reconciliation refuses to adopt a migration when a catalog postcondition is absent", () => {

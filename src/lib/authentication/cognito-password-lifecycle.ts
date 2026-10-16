@@ -6,19 +6,12 @@ import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
 import { getCognitoAdminDirectory } from "./cognito-admin";
-import { assertCognitoPasswordResetReady, CognitoDirectoryError, type CognitoDirectoryUser } from "./cognito-admin-core";
+import { CognitoDirectoryError } from "./cognito-admin-core";
+import { completeAssignPassword, completePasswordReset, finishPasswordOperation, type PreparedPasswordOperation } from "./cognito-password-lifecycle-core";
 import { passwordOperationContext } from "./cognito-password-operation-context";
 import { isCognitoCompliantPassword } from "./password-policy";
 
 type PasswordOperationKind = "assign_password" | "reset_password";
-type PreparedPasswordOperation = {
-  userId: string;
-  providerUsername: string;
-  providerSubject: string;
-  issuer: string;
-  email: string;
-  identityState: "pending" | "active";
-};
 
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : "";
 
@@ -49,22 +42,9 @@ async function prepare(input: {
   });
 }
 
-async function finish(operationId: string, succeeded: boolean, errorCode?: string) {
-  await getPostgresPool().query(
-    "select tracepoint_auth.finish_cognito_password_operation($1,$2,$3)",
-    [operationId, succeeded, errorCode ?? null],
-  );
-}
-
-function safeCode(error: unknown) {
-  return error instanceof CognitoDirectoryError ? error.code : "provider_unavailable";
-}
-
-function assertDirectoryMatch(prepared: PreparedPasswordOperation, actual: CognitoDirectoryUser) {
-  if (!actual.enabled || actual.username !== prepared.providerUsername || actual.subject !== prepared.providerSubject ||
-      actual.email.toLowerCase() !== prepared.email) {
-    throw new CognitoDirectoryError("conflict");
-  }
+async function finish(operationId: string, succeeded: boolean, errorCode?: string, providerUnchanged = false) {
+  const pool = getPostgresPool();
+  await finishPasswordOperation((sql, values) => pool.query(sql, values), operationId, succeeded, errorCode, providerUnchanged);
 }
 
 export async function assignCognitoPassword(input: {
@@ -80,18 +60,7 @@ export async function assignCognitoPassword(input: {
   }
   const operationId = randomUUID();
   const prepared = await prepare({ ...input, operationId, kind: "assign_password" });
-  const directory = getCognitoAdminDirectory();
-  try {
-    assertDirectoryMatch(prepared, await directory.get(prepared.providerUsername));
-    await directory.setPermanentPassword(prepared.providerUsername, input.password);
-    if (prepared.identityState === "pending") await directory.markEmailVerified(prepared.providerUsername);
-    await directory.globalSignOut(prepared.providerUsername);
-    await finish(operationId, true);
-    return prepared;
-  } catch (error) {
-    await finish(operationId, false, safeCode(error)).catch(() => undefined);
-    throw error;
-  }
+  return completeAssignPassword(operationId, prepared, input.password, getCognitoAdminDirectory(), finish);
 }
 
 export async function beginCognitoPasswordReset(input: {
@@ -103,17 +72,5 @@ export async function beginCognitoPasswordReset(input: {
   assertIdentityMutationAllowed();
   const operationId = randomUUID();
   const prepared = await prepare({ ...input, operationId, kind: "reset_password" });
-  const directory = getCognitoAdminDirectory();
-  try {
-    const actual = await directory.get(prepared.providerUsername);
-    assertDirectoryMatch(prepared, actual);
-    assertCognitoPasswordResetReady(actual);
-    await directory.globalSignOut(prepared.providerUsername);
-    await directory.beginPasswordReset(prepared.providerUsername);
-    await finish(operationId, true);
-    return prepared;
-  } catch (error) {
-    await finish(operationId, false, safeCode(error)).catch(() => undefined);
-    throw error;
-  }
+  return completePasswordReset(operationId, prepared, getCognitoAdminDirectory(), finish);
 }

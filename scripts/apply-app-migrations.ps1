@@ -1,9 +1,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','inspect','publish-only','range-workspace-hotfix','baseline','reconcile','apply','precheck','inventory-035-037','password-scope-039')][string]$Action = 'status',
+    [ValidateSet('status','inspect','publish-only','range-workspace-hotfix','baseline','reconcile','apply','precheck','inventory-035-037','password-scope-039-040')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit,
-    [switch]$AuthorizeLiveDatabaseChange
+    [switch]$AuthorizeLiveDatabaseChange,
+    [string]$PasswordScopeResolutionsPath
 )
 
 # This command runs a finite ECS task. It never starts the web server, updates
@@ -22,9 +23,22 @@ if ($Action -eq 'publish-only' -and $Environment -ne 'production') { throw 'Publ
 if ($Action -eq 'publish-only' -and -not $ImageCommit) { throw 'Publish-only requires an explicit immutable -ImageCommit.' }
 # Guarded actions on the live final-cutover database. They run the owner
 # credential against the pinned live host; two of them change the database.
-$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039')
-$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039')
+$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039-040')
+$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039-040')
 if ($Action -in $liveOwnerActions -and $Environment -ne 'production') { throw 'Live final-database actions are production-only.' }
+# The reviewed list of password operations to resolve travels with the task;
+# the runner validates it in full before connecting.
+function Read-PasswordScopeResolutions([string]$Path) {
+  if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'password-scope-039-040 requires -PasswordScopeResolutionsPath with the reviewed resolution list.' }
+  $text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path)
+  if ($text -match '@') { throw 'The resolution list must not contain personal data.' }
+  # Windows PowerShell emits a JSON array as one object; enumerate its entries.
+  $entries = @(($text | ConvertFrom-Json) | ForEach-Object { $_ })
+  if (@($entries | Where-Object { [string]$_.operation_id -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }).Count -ne 0) { throw 'The resolution list contains an invalid operation id.' }
+  return ConvertTo-Json -InputObject $entries -Depth 10 -Compress
+}
+$passwordScopeResolutionsJson = $null
+if ($Action -eq 'password-scope-039-040') { $passwordScopeResolutionsJson = Read-PasswordScopeResolutions $PasswordScopeResolutionsPath }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 function Invoke-Aws([string[]]$Arguments) {
@@ -222,6 +236,7 @@ function Invoke-MigrationTask {
     [scriptblock]$ScanNow = { [DateTimeOffset]::UtcNow },
     [scriptblock]$ScanSleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
   )
+  if ($Action -eq 'password-scope-039-040' -and [string]::IsNullOrWhiteSpace($passwordScopeResolutionsJson)) { throw 'password-scope-039-040 requires the reviewed resolution list.' }
   if ($Action -in $liveDatabaseChangeActions -and -not $AuthorizeLiveDatabaseChange) { throw "$Action changes the live production database; supply -AuthorizeLiveDatabaseChange only after it is approved." }
   $service = (Invoke-Aws @('ecs','describe-services','--cluster',$settings.Cluster,'--services',$settings.Service)).services | Select-Object -First 1
   if (!$service -or $service.status -ne 'ACTIVE') { throw 'Expected ECS application service is not active.' }
@@ -287,6 +302,7 @@ function Invoke-MigrationTask {
     # The owner credential keeps its pre-cutover hostname; the runner connects
     # only to this pinned live host for the guarded final-database actions.
     if ($Action -in $liveOwnerActions) { $container.environment += ,([ordered]@{ name='TRACEPOINT_EXPECTED_DATABASE_HOST'; value=$settings.LiveDatabaseHost }) }
+    if ($Action -eq 'password-scope-039-040') { $container.environment += ,([ordered]@{ name='TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS'; value=$passwordScopeResolutionsJson }) }
   }
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')

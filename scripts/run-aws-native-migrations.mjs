@@ -4,7 +4,7 @@ import path from "node:path";
 import { Client } from "pg";
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
-import { applyInventoryUnit, applyPasswordScopeUnit, liveOwnerActions, runLivePrecheck } from "./aws-native-live-release-units.mjs";
+import { applyInventoryUnit, applyPasswordScopeResolutionUnit, liveOwnerActions, parsePasswordScopeResolutions, runLivePrecheck } from "./aws-native-live-release-units.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
@@ -262,13 +262,17 @@ async function applyRangeWorkspaceHotfix(client, files) {
 let files;
 let client;
 try {
-  if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039> <staging|production>");
+  if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039-040> <staging|production>");
   if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
   if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
   if (liveOwnerActions.includes(action) && requestedEnvironment !== "production") throw new Error("Live final-database actions are production-only.");
   setMobilePreflightStage("RUNTIME_CONFIGURATION");
   if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
   if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
+  // The reviewed resolution list is validated before any connection.
+  const passwordScopeResolutions = action === "password-scope-039-040"
+    ? parsePasswordScopeResolutions(process.env.TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS)
+    : null;
   setMobilePreflightStage("MIGRATION_MANIFEST");
   files = await migrations();
   client = await connect();
@@ -284,8 +288,8 @@ try {
     console.log(JSON.stringify(await runLivePrecheck(client)));
   } else if (action === "inventory-035-037") {
     console.log(JSON.stringify(await withLock(client, () => applyInventoryUnit(client, files))));
-  } else if (action === "password-scope-039") {
-    console.log(JSON.stringify(await withLock(client, () => applyPasswordScopeUnit(client, files))));
+  } else if (action === "password-scope-039-040") {
+    console.log(JSON.stringify(await withLock(client, () => applyPasswordScopeResolutionUnit(client, files, passwordScopeResolutions))));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);
     if (before) verifyLedger(files, before);

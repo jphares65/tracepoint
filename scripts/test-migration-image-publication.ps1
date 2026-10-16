@@ -9,7 +9,7 @@ $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($sourcePath, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw "Migration publisher parser errors: $($parseErrors -join '; ')" }
 $requiredFunctionNames = @(
-    'Test-EcrImageNotFoundError', 'Wait-MigrationImageScan', 'Resolve-ApplicationInspectionImage', 'Assert-LiveInspectionTarget', 'Assert-LiveDatabaseEndpoint', 'Publish-MigrationImage', 'Invoke-MigrationTask',
+    'Test-EcrImageNotFoundError', 'Wait-MigrationImageScan', 'Resolve-ApplicationInspectionImage', 'Assert-LiveInspectionTarget', 'Assert-LiveDatabaseEndpoint', 'Read-PasswordScopeResolutions', 'Publish-MigrationImage', 'Invoke-MigrationTask',
     'Get-OptionalPropertyValue', 'Get-ReportedValue', 'Get-MigrationTaskFailureDetails',
     'Set-MigrationTaskContainerUser', 'Set-MigrationTaskContainerEntryPoint'
 )
@@ -21,9 +21,10 @@ foreach ($function in $functions) { . ([scriptblock]::Create($function.Extent.Te
 
 $Environment = 'staging'
 $Action = 'status'
-$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039')
-$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039')
+$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039-040')
+$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039-040')
 $AuthorizeLiveDatabaseChange = $false
+$passwordScopeResolutionsJson = $null
 $settings = @{ Account='559054714699'; Profile='synthetic-profile'; Repository='tracepoint-staging'; Bucket='synthetic-bucket'; Key='source.zip'; Build='synthetic-build'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; MigrationTaskDefinition='tracepoint-staging-database-bootstrap:27'; MigratorSecretArn='synthetic-secret-arn' }
 $root = $repositoryRoot
 $global:MigrationScanScenario = 'clean'
@@ -296,6 +297,17 @@ foreach ($case in @(
 foreach ($ownerAction in $liveOwnerActions) {
     $Action = $ownerAction
     $changesDatabase = $liveDatabaseChangeActions -contains $ownerAction
+    if ($ownerAction -eq 'password-scope-039-040') {
+        # The reviewed resolution list is required before any AWS call.
+        $AuthorizeLiveDatabaseChange = $true
+        Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
+        Set-LiveTarget -Secret $liveSecret -Endpoint $liveHost
+        $failure = $null
+        try { Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep } catch { $failure = $_.Exception.Message }
+        if (-not $failure -or $failure -notmatch 'requires the reviewed resolution list') { throw "password-scope-039-040 ran without a resolution list: $failure" }
+        if (@($global:MigrationAwsCalls).Count -ne 0) { throw 'password-scope-039-040 made AWS calls without a resolution list.' }
+        $passwordScopeResolutionsJson = '[{"operation_id":"10000000-0000-0000-0000-000000000001","operation_kind":"reset_password"}]'
+    }
     if ($changesDatabase) {
         $AuthorizeLiveDatabaseChange = $false
         Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
@@ -313,6 +325,7 @@ foreach ($ownerAction in $liveOwnerActions) {
     if ((@($global:MigrationSourceTaskDefinitions) -join ',') -ne 'tracepoint-production-database-bootstrap:3') { throw "$ownerAction changed its source task definition." }
     if ($global:MigrationRegisteredSecrets -ne "TRACEPOINT_DATABASE_SECRET_JSON=$migratorSecret") { throw "$ownerAction did not use only the owner credential: $($global:MigrationRegisteredSecrets)" }
     $expectedOwnerEnvironment = "CONFIGURATION_ENVIRONMENT=production,TRACEPOINT_DATA_PROVIDER=postgres,TRACEPOINT_RUNTIME_PROVIDER_MODE=aws-native,TRACEPOINT_DATABASE_CA_PATH=/app/rds-ca.pem,DEPLOYMENT_VERSION=$('a' * 40),TRACEPOINT_EXPECTED_DATABASE_HOST=$liveHost"
+    if ($ownerAction -eq 'password-scope-039-040') { $expectedOwnerEnvironment += ",TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS=$passwordScopeResolutionsJson" }
     if ($global:MigrationRegisteredEnvironment -ne $expectedOwnerEnvironment) { throw "$ownerAction environment changed: $($global:MigrationRegisteredEnvironment)" }
     $expectedOwnerCommand = "scripts/run-aws-native-migrations.mjs $ownerAction production"
     if ($global:MigrationRegisteredCommand -ne $expectedOwnerCommand -or $global:MigrationOverrideCommand -ne $expectedOwnerCommand) { throw "$ownerAction command changed." }
@@ -333,7 +346,32 @@ foreach ($ownerAction in $liveOwnerActions) {
         if ($global:MigrationRegisterTaskCount -ne 0 -or $global:MigrationRunTaskCount -ne 0 -or $global:MigrationTagLookupCount -ne 0) { throw "$ownerAction began image or task work after $($case.Name)." }
     }
 }
+# Reviewed resolution files are read as a list of entries, whatever their length.
+$resolutionDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tp-resolutions-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $resolutionDirectory | Out-Null
+try {
+    $entry = { param($n) '{"operation_id":"10000000-0000-0000-0000-00000000000' + $n + '","operation_kind":"reset_password","evidence":{"cognito_writes_by_operation":"none"}}' }
+    foreach ($case in @(@{ Name='two'; Text='[' + (& $entry 1) + ',' + (& $entry 2) + ']'; Ids='10000000-0000-0000-0000-000000000001,10000000-0000-0000-0000-000000000002' }, @{ Name='one'; Text='[' + (& $entry 1) + ']'; Ids='10000000-0000-0000-0000-000000000001' })) {
+        $file = Join-Path $resolutionDirectory "$($case.Name).json"
+        [IO.File]::WriteAllText($file, $case.Text, [Text.UTF8Encoding]::new($false))
+        $json = Read-PasswordScopeResolutions $file
+        $parsed = @(($json | ConvertFrom-Json) | ForEach-Object { $_ })
+        if (-not $json.StartsWith('[{') -or (($parsed | ForEach-Object { $_.operation_id }) -join ',') -ne $case.Ids -or $parsed[0].evidence.cognito_writes_by_operation -ne 'none') { throw "Resolution file '$($case.Name)' was not read as its entries: $json" }
+    }
+    foreach ($bad in @(@{ Name='personal'; Text='[{"operation_id":"10000000-0000-0000-0000-000000000001","basis":"officer@example.test"}]'; Error='personal data' }, @{ Name='badid'; Text='[{"operation_id":"not-an-id"}]'; Error='invalid operation id' })) {
+        $file = Join-Path $resolutionDirectory "$($bad.Name).json"
+        [IO.File]::WriteAllText($file, $bad.Text, [Text.UTF8Encoding]::new($false))
+        $failure = $null
+        try { Read-PasswordScopeResolutions $file | Out-Null } catch { $failure = $_.Exception.Message }
+        if (-not $failure -or $failure -notmatch $bad.Error) { throw "Resolution file '$($bad.Name)' was accepted: $failure" }
+    }
+    $failure = $null
+    try { Read-PasswordScopeResolutions (Join-Path $resolutionDirectory 'absent.json') | Out-Null } catch { $failure = $_.Exception.Message }
+    if ($failure -notmatch 'requires -PasswordScopeResolutionsPath') { throw 'A missing resolution file was accepted.' }
+} finally { Remove-Item -LiteralPath $resolutionDirectory -Recurse -Force -ErrorAction SilentlyContinue }
+
 $AuthorizeLiveDatabaseChange = $false
+$passwordScopeResolutionsJson = $null
 $Environment = $stagingEnvironment
 $settings = $stagingSettings
 

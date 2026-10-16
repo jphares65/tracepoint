@@ -53,6 +53,7 @@ export const migrationInspectionManifest = [
   [37, [privilege("public.inventory_items.authenticated.INSERT"), privilege("public.inventory_items.authenticated.UPDATE"), privilege("public.inventory_locations.authenticated.INSERT"), privilege("public.inventory_locations.authenticated.UPDATE")]],
   [38, [relation("public.pilot_range_workspaces"), column("public.pilot_range_workspaces.workspace"), column("public.pilot_range_workspaces.updated_by_user_id"), privilege("public.pilot_range_workspaces.authenticated.INSERT"), privilege("public.pilot_range_workspaces.authenticated.UPDATE")]],
   [39, [routine("tracepoint_auth.guard_cognito_password_global_scope"), routine("tracepoint_auth.guard_cognito_scope_membership_write"), routine("tracepoint_auth.guard_cognito_scope_platform_admin_write"), trigger("public.authentication_lifecycle_operations.authentication_lifecycle_password_global_scope"), trigger("public.department_memberships.department_memberships_password_scope_guard"), trigger("public.platform_admins.platform_admins_password_scope_guard")]],
+  [40, [relation("public.authentication_lifecycle_resolutions"), routine("tracepoint_auth.password_scope_hold_exists"), routine("tracepoint_auth.resolve_password_operation_provider_unchanged"), trigger("public.authentication_lifecycle_resolutions.authentication_lifecycle_resolutions_append_only")]],
 ].map(([version, checks]) => ({ version, checks }));
 
 export function assertExpectedDatabaseHost(actualHost, expectedHost) {

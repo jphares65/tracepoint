@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 // ledgered apply path cannot target it. Each unit runs its pinned migration
 // files as one transaction and commits only after its postconditions hold.
 
-export const liveOwnerActions = Object.freeze(["precheck", "inventory-035-037", "password-scope-039"]);
+export const liveOwnerActions = Object.freeze(["precheck", "inventory-035-037", "password-scope-039-040"]);
 
 export const liveReleaseUnits = Object.freeze({
   "inventory-035-037": Object.freeze([
@@ -13,8 +13,9 @@ export const liveReleaseUnits = Object.freeze({
     { version: 36, filename: "036_inventory_checkout_phase2a.sql", sha256: "e9298b65d290293c66a2f2420a7775a55a342b5c111db9b9cbaab6f8dc3ad7fc" },
     { version: 37, filename: "037_inventory_management_runtime_grants.sql", sha256: "8aad48a4378d7b69e392e0cdd2869e1e8a55226c0feb47e137b8006e21064f97" },
   ]),
-  "password-scope-039": Object.freeze([
+  "password-scope-039-040": Object.freeze([
     { version: 39, filename: "039_cognito_password_global_scope.sql", sha256: "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987" },
+    { version: 40, filename: "040_password_operation_resolution.sql", sha256: "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b" },
   ]),
 });
 
@@ -26,9 +27,20 @@ export function normalizedSha256(contents) {
   return createHash("sha256").update(String(contents).replace(/\r\n/g, "\n")).digest("hex");
 }
 
+// Files own one outer BEGIN/COMMIT. A unit strips it and runs every body in
+// its own single transaction, so a body must contain no other transaction
+// control outside quoted text, comments, or function bodies.
 export function transactionBody(contents) {
   const match = String(contents).match(/^\s*begin;([\s\S]*)commit;\s*$/i);
   if (!match) throw new Error("LIVE_RELEASE_UNIT_FILE_NOT_TRANSACTIONAL");
+  const statementsOnly = match[1]
+    .replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, " ")
+    .replace(/'(?:''|[^'])*'/g, " ")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ");
+  if (/(^|;)\s*(begin|commit|rollback|end|abort|savepoint|release|start\s+transaction|set\s+transaction|prepare\s+transaction)\b/i.test(statementsOnly)) {
+    throw new Error("LIVE_RELEASE_UNIT_FILE_HAS_NESTED_TRANSACTION_CONTROL");
+  }
   return match[1];
 }
 
@@ -47,8 +59,8 @@ export function selectUnitFiles(unit, files) {
 export const liveOwnerIdentitySql = `select current_database() as database_name, current_user as database_user,
   session_user as session_user, inet_server_port() as server_port`;
 
-export function assertLiveOwnerIdentity(identity, { expectedPort = 5432 } = {}) {
-  if (identity?.database_name !== "tracepoint" || identity?.database_user !== "tracepoint_migrator"
+export function assertLiveOwnerIdentity(identity, { expectedPort = 5432, expectedDatabase = "tracepoint" } = {}) {
+  if (identity?.database_name !== expectedDatabase || identity?.database_user !== "tracepoint_migrator"
     || identity?.session_user !== "tracepoint_migrator" || Number(identity?.server_port) !== expectedPort) {
     throw new Error("LIVE_OWNER_IDENTITY_MISMATCH");
   }
@@ -96,8 +108,20 @@ export const livePrecheckSql = `with password_operations as (
       ('authentication_lifecycle_password_global_scope','department_memberships_password_scope_guard','platform_admins_password_scope_guard')) as password_scope_triggers_present,
     (select count(*)::int from pg_default_acl d where d.defaclrole = (select oid from pg_roles where rolname = current_user)
       and (d.defaclnamespace = 0 or d.defaclnamespace = to_regnamespace('public'))) as owner_default_privilege_entries,
+    to_regclass('public.authentication_lifecycle_resolutions') is not null as password_operation_resolutions_present,
     to_regclass('public.tracepoint_aws_schema_migrations') is not null as aws_native_ledger_present,
     to_regclass('tracepoint_migrations.applied_migrations') is not null as imported_ledger_present`;
+
+const resolutionAwarePrecheckSql = `with holding as (
+    select o.tracepoint_user_id, o.department_id from public.authentication_lifecycle_operations o
+    where o.operation_kind in ('assign_password','reset_password') and o.state <> 'committed'
+      and not exists (select 1 from public.authentication_lifecycle_resolutions r where r.operation_id = o.id)
+  )
+  select
+    (select count(*)::int from holding) as unresolved_password_operations,
+    (select count(distinct tracepoint_user_id)::int from holding) as unresolved_password_operation_users,
+    (select count(*)::int from public.authentication_lifecycle_resolutions) as resolutions,
+    (select count(*)::int from public.authentication_lifecycle_resolutions where resolution_source = 'owner_verified') as owner_verified_resolutions`;
 
 export function liveUnitReadiness(precheck) {
   const inventory = [];
@@ -111,7 +135,9 @@ export function liveUnitReadiness(precheck) {
   if (precheck.password_scope_tables_present !== passwordScopeTables.length) passwordScope.push("password_scope_tables_missing");
   if (precheck.password_scope_tables_owned !== true) passwordScope.push("password_scope_tables_not_owned");
   if (precheck.tracepoint_auth_schema_create !== true) passwordScope.push("tracepoint_auth_schema_create_denied");
-  if (precheck.unresolved_password_operation_users !== 0) passwordScope.push("unresolved_password_operations_present");
+  if (precheck.password_operation_resolutions_present !== false) passwordScope.push("password_operation_resolutions_already_present");
+  // Unfinished password operations are not a readiness blocker here: the
+  // unit requires every one of them to be on the reviewed resolution list.
   return { inventory: { ready: inventory.length === 0, blockers: inventory }, passwordScope: { ready: passwordScope.length === 0, blockers: passwordScope } };
 }
 
@@ -123,6 +149,10 @@ export async function runLivePrecheck(client, options = {}) {
     const transaction = (await client.query("select current_setting('transaction_read_only') as read_only")).rows[0];
     if (transaction?.read_only !== "on") throw new Error("LIVE_PRECHECK_NOT_READ_ONLY");
     const precheck = (await client.query(livePrecheckSql)).rows[0];
+    // Once 040 exists, report what still holds password scope after resolutions.
+    if (precheck.password_operation_resolutions_present === true) {
+      precheck.resolution_aware = (await client.query(resolutionAwarePrecheckSql)).rows[0];
+    }
     await client.query("COMMIT");
     return { status: "PASSED", inspection: "read-only", identity, precheck, readiness: liveUnitReadiness(precheck) };
   } catch (error) {
@@ -166,25 +196,6 @@ export function assertInventoryPostconditions(row) {
   return true;
 }
 
-const passwordScopePostconditionsSql = `select
-  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'tracepoint_auth' and p.prosecdef
-    and p.proname in ('guard_cognito_password_global_scope','guard_cognito_scope_membership_write','guard_cognito_scope_platform_admin_write')
-    and not exists (select 1 from pg_roles r where r.rolname in ('anon','authenticated','service_role','tracepoint_runtime') and has_function_privilege(r.rolname, p.oid, 'EXECUTE'))
-    and not exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl where acl.grantee = 0)) as guarded_functions,
-  (select count(*)::int from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and not t.tgisinternal and t.tgenabled = 'O' and (c.relname, t.tgname) in (
-      ('authentication_lifecycle_operations','authentication_lifecycle_password_global_scope'),
-      ('department_memberships','department_memberships_password_scope_guard'),
-      ('platform_admins','platform_admins_password_scope_guard'))) as enabled_triggers`;
-
-export function assertPasswordScopePostconditions(row) {
-  const failures = [];
-  if (row.guarded_functions !== 3) failures.push(`guarded_functions=${row.guarded_functions}`);
-  if (row.enabled_triggers !== 3) failures.push(`enabled_triggers=${row.enabled_triggers}`);
-  if (failures.length) throw new Error(`LIVE_PASSWORD_SCOPE_POSTCONDITION_FAILED: ${failures.join(", ")}`);
-  return true;
-}
-
 // One transaction for the whole unit: a failure, a lock wait, or an unmet
 // postcondition rolls every file back.
 export async function runAtomicLiveUnit(client, bodies, postconditionsSql, assertPostconditions) {
@@ -224,6 +235,158 @@ export function applyInventoryUnit(client, files, options = {}) {
   return applyLiveUnit(client, files, options, "inventory-035-037", "inventory", inventoryPostconditionsSql, assertInventoryPostconditions);
 }
 
-export function applyPasswordScopeUnit(client, files, options = {}) {
-  return applyLiveUnit(client, files, options, "password-scope-039", "passwordScope", passwordScopePostconditionsSql, assertPasswordScopePostconditions);
+// Owner-verified resolutions for historical password operations. Each entry
+// is reviewed evidence that Cognito was not changed; no personal data.
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const preWriteRefusalCodes = ["initial_password_required", "recovery_unavailable"];
+
+export function parsePasswordScopeResolutions(raw) {
+  let resolutions;
+  try { resolutions = JSON.parse(String(raw ?? "")); } catch { throw new Error("PASSWORD_SCOPE_RESOLUTIONS_INVALID"); }
+  if (!Array.isArray(resolutions) || resolutions.length > 20) throw new Error("PASSWORD_SCOPE_RESOLUTIONS_INVALID");
+  if (/@/.test(JSON.stringify(resolutions))) throw new Error("PASSWORD_SCOPE_RESOLUTIONS_CONTAIN_PERSONAL_DATA");
+  const seen = new Set();
+  for (const entry of resolutions) {
+    const evidence = entry?.evidence;
+    if (!uuidPattern.test(String(entry?.operation_id ?? "")) || seen.has(entry.operation_id)
+      || entry.operation_kind !== "reset_password" || !preWriteRefusalCodes.includes(entry.safe_error_code)
+      || typeof entry.basis !== "string" || entry.basis.trim().length < 20 || entry.basis.trim().length > 1000
+      || !evidence || typeof evidence !== "object" || Array.isArray(evidence)
+      || evidence.cognito_writes_by_operation !== "none" || !String(evidence.cloudtrail_window ?? "").trim()
+      || !String(evidence.code_path ?? "").trim()) {
+      throw new Error("PASSWORD_SCOPE_RESOLUTIONS_INVALID");
+    }
+    seen.add(entry.operation_id);
+  }
+  return resolutions;
+}
+
+const unresolvedPasswordOperationsSql = `select id::text as operation_id, operation_kind, state, safe_error_code, attempts
+  from public.authentication_lifecycle_operations
+  where operation_kind in ('assign_password','reset_password') and state <> 'committed'
+  order by id`;
+
+// Every unfinished password operation must be on the reviewed list, and the
+// list must name nothing else, before any SQL in the unit runs.
+export function assertAuthorizedResolutionSet(unresolved, resolutions) {
+  const authorized = new Map(resolutions.map(entry => [entry.operation_id, entry]));
+  const failures = [];
+  for (const operation of unresolved) {
+    const entry = authorized.get(operation.operation_id);
+    if (!entry) { failures.push("unauthorized_unresolved_operation"); continue; }
+    if (operation.operation_kind !== entry.operation_kind || operation.state !== "compensation_required"
+      || operation.safe_error_code !== entry.safe_error_code || Number(operation.attempts) !== 1) {
+      failures.push("operation_does_not_match_authorized_evidence");
+    }
+    authorized.delete(operation.operation_id);
+  }
+  if (authorized.size) failures.push("authorized_operation_not_unresolved");
+  if (failures.length) throw new Error(`PASSWORD_SCOPE_RESOLUTION_SET_MISMATCH: ${[...new Set(failures)].join(", ")}`);
+  return true;
+}
+
+const passwordScopeResolutionPostconditionsSql = `with app_roles as (
+    select rolname from pg_roles where rolname in ('anon','authenticated','service_role','tracepoint_runtime')
+  ), scope_functions as (
+    select p.oid, p.proname, p.prosrc, p.prosecdef, p.proacl, p.proowner from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'tracepoint_auth' and p.proname in ('guard_cognito_password_global_scope','guard_cognito_scope_membership_write',
+      'guard_cognito_scope_platform_admin_write','password_scope_hold_exists','resolve_password_operation_provider_unchanged','reject_lifecycle_resolution_change',
+      'audit_lifecycle_resolution')
+  ), finish as (
+    select p.oid, pg_get_function_identity_arguments(p.oid) as arguments, p.pronargdefaults from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'tracepoint_auth' and p.proname = 'finish_cognito_password_operation'
+  )
+  select
+    (select count(*)::int from scope_functions) as scope_functions_present,
+    (select count(*)::int from scope_functions f where f.proname <> 'reject_lifecycle_resolution_change' and not f.prosecdef) as scope_functions_not_definer,
+    (select count(*)::int from scope_functions f cross join app_roles r where has_function_privilege(r.rolname, f.oid, 'EXECUTE')) as scope_functions_app_executable,
+    (select count(*)::int from scope_functions f where exists (select 1 from aclexplode(coalesce(f.proacl, acldefault('f', f.proowner))) acl where acl.grantee = 0)) as scope_functions_public_executable,
+    (select count(*)::int from scope_functions f where f.proname in ('guard_cognito_scope_membership_write','guard_cognito_scope_platform_admin_write')
+      and f.prosrc like '%password_scope_hold_exists(%' and f.prosrc not like '%state <> ''committed''%') as guards_using_shared_predicate,
+    (select count(*)::int from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and not t.tgisinternal and t.tgenabled = 'O' and (c.relname, t.tgname) in (
+        ('authentication_lifecycle_operations','authentication_lifecycle_password_global_scope'),
+        ('department_memberships','department_memberships_password_scope_guard'),
+        ('platform_admins','platform_admins_password_scope_guard'),
+        ('authentication_lifecycle_resolutions','authentication_lifecycle_resolutions_append_only'),
+        ('authentication_lifecycle_resolutions','authentication_lifecycle_resolutions_no_truncate'),
+        ('authentication_lifecycle_resolutions','authentication_lifecycle_resolutions_audit'))) as enabled_triggers,
+    coalesce((select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.authentication_lifecycle_resolutions')), false) as resolutions_rls,
+    (select count(*)::int from app_roles r cross join unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) as privilege
+      where has_table_privilege(r.rolname, 'public.authentication_lifecycle_resolutions', privilege)) as resolutions_app_privileges,
+    (select count(*)::int from finish) as finish_overloads,
+    (select arguments from finish limit 1) as finish_arguments,
+    (select pronargdefaults from finish limit 1) as finish_defaults,
+    (select has_function_privilege('tracepoint_runtime', oid, 'EXECUTE') from finish limit 1) as finish_runtime_executable,
+    (select count(*)::int from finish f cross join app_roles r where r.rolname <> 'tracepoint_runtime' and has_function_privilege(r.rolname, f.oid, 'EXECUTE')) as finish_other_app_executable,
+    (select count(*)::int from public.authentication_lifecycle_operations o where o.operation_kind in ('assign_password','reset_password')
+      and o.state <> 'committed' and not exists (select 1 from public.authentication_lifecycle_resolutions r where r.operation_id = o.id)) as unresolved_remaining,
+    (select count(*)::int from public.authentication_lifecycle_resolutions where operation_id = any($1::uuid[]) and resolution_source = 'owner_verified') as owner_resolutions,
+    (select count(*)::int from public.audit_events where entity_id = any($1::uuid[]) and action = 'password_operation_resolved'
+      and entity_type = 'authentication_lifecycle_operation') as resolution_audit_rows,
+    (select count(*)::int from public.authentication_lifecycle_operations where id = any($1::uuid[]) and state = 'compensation_required') as original_operations_preserved`;
+
+export function assertPasswordScopeResolutionPostconditions(row, expectedResolutions) {
+  const failures = Object.entries({
+    scope_functions_present: row.scope_functions_present === 7,
+    scope_functions_not_definer: row.scope_functions_not_definer === 0,
+    scope_functions_app_executable: row.scope_functions_app_executable === 0,
+    scope_functions_public_executable: row.scope_functions_public_executable === 0,
+    guards_using_shared_predicate: row.guards_using_shared_predicate === 2,
+    enabled_triggers: row.enabled_triggers === 6,
+    resolutions_rls: row.resolutions_rls === true,
+    resolutions_app_privileges: row.resolutions_app_privileges === 0,
+    finish_overloads: row.finish_overloads === 1,
+    finish_arguments: row.finish_arguments === "p_operation_id uuid, p_succeeded boolean, p_error_code text, p_provider_unchanged boolean",
+    finish_defaults: row.finish_defaults === 2,
+    finish_runtime_executable: row.finish_runtime_executable === true,
+    finish_other_app_executable: row.finish_other_app_executable === 0,
+    unresolved_remaining: row.unresolved_remaining === 0,
+    owner_resolutions: row.owner_resolutions === expectedResolutions,
+    resolution_audit_rows: row.resolution_audit_rows === expectedResolutions,
+    original_operations_preserved: row.original_operations_preserved === expectedResolutions,
+  }).filter(([, passed]) => !passed).map(([name]) => name);
+  if (failures.length) throw new Error(`LIVE_PASSWORD_SCOPE_POSTCONDITION_FAILED: ${failures.join(", ")}`);
+  return true;
+}
+
+// 039, 040, and the reviewed resolutions commit together or not at all. The
+// operations table is locked so no new password operation can appear between
+// the authorization check and the commit.
+export async function applyPasswordScopeResolutionUnit(client, files, resolutions, options = {}) {
+  const authorized = parsePasswordScopeResolutions(JSON.stringify(resolutions));
+  const selected = selectUnitFiles("password-scope-039-040", files);
+  const before = await runLivePrecheck(client, options);
+  if (!before.readiness.passwordScope.ready) {
+    throw new Error(`LIVE_RELEASE_UNIT_PRECONDITION_FAILED: ${before.readiness.passwordScope.blockers.join(", ")}`);
+  }
+  const ids = authorized.map(entry => entry.operation_id);
+  await client.query("BEGIN");
+  let postconditions;
+  try {
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("LOCK TABLE public.authentication_lifecycle_operations IN SHARE ROW EXCLUSIVE MODE");
+    assertAuthorizedResolutionSet((await client.query(unresolvedPasswordOperationsSql)).rows, authorized);
+    for (const file of selected) await client.query(file.body);
+    for (const entry of authorized) {
+      await client.query("select tracepoint_auth.resolve_password_operation_provider_unchanged($1::uuid,'owner_verified',$2,$3::jsonb)",
+        [entry.operation_id, entry.basis, JSON.stringify(entry.evidence)]);
+    }
+    postconditions = (await client.query(passwordScopeResolutionPostconditionsSql, [ids])).rows[0];
+    assertPasswordScopeResolutionPostconditions(postconditions, ids.length);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
+  return {
+    action: "password-scope-039-040",
+    status: "APPLIED",
+    executed_at: new Date().toISOString(),
+    files: selected.map(({ version, filename, sha256 }) => ({ version, filename, sha256 })),
+    resolved_operations: ids.length,
+    ledger_modified: false,
+    identity: before.identity,
+    postconditions,
+  };
 }
