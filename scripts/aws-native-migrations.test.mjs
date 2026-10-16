@@ -298,8 +298,19 @@ test("live release units pin the exact repository migration files and route only
   const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
   assert.match(publisher, /\$liveOwnerActions -and \$Environment -ne 'production'\) \{ throw 'Live final-database actions are production-only\.' \}/);
   assert.match(publisher, /\$liveDatabaseChangeActions -and -not \$AuthorizeLiveDatabaseChange\) \{ throw/);
-  for (const dockerfile of ["../Dockerfile", "../Dockerfile.aws-native-production"]) {
-    assert.match(await readFile(new URL(dockerfile, import.meta.url), "utf8"), /COPY --from=builder --chown=nonroot:nonroot \/app\/scripts\/aws-native-live-release-units\.mjs \.\/scripts\/aws-native-live-release-units\.mjs/);
+  // Each image build archives only its own Dockerfile, so the required set
+  // follows the build environment. A required Dockerfile that is missing
+  // fails the read below; it is never skipped.
+  const deployScript = await readFile(new URL("./deploy-app.ps1", import.meta.url), "utf8");
+  assert.match(deployScript, /if \(\$Environment -eq 'staging'\) \{ \$archivePaths \+= @\('Dockerfile', 'buildspec\.staging-image\.yml'\) \}/);
+  assert.match(deployScript, /else \{ \$archivePaths \+= @\('Dockerfile\.aws-native-production', 'buildspec\.production-image\.yml'\) \}/);
+  const requiredDockerfiles = {
+    production: ["Dockerfile.aws-native-production"],
+    staging: ["Dockerfile"],
+  }[process.env.TRACEPOINT_MIGRATION_TEST_ENVIRONMENT] ?? ["Dockerfile", "Dockerfile.aws-native-production"];
+  for (const filename of requiredDockerfiles) {
+    const dockerfile = await readFile(path.resolve(import.meta.dirname, "..", filename), "utf8");
+    assert.match(dockerfile, /COPY --from=builder --chown=nonroot:nonroot \/app\/scripts\/aws-native-live-release-units\.mjs \.\/scripts\/aws-native-live-release-units\.mjs/, filename);
   }
 });
 
