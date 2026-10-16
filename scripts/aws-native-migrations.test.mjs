@@ -411,7 +411,7 @@ test("embedded Postgres reconciles both migration ledgers without writes or coun
       filename: files[version - 1].filename,
       sha256: overrides[version] ?? files[version - 1].sha256,
     }));
-    async function replaceLedgers({ awsNativeRows = null, importedRows = null, grantImportedSelect = true } = {}) {
+    async function replaceLedgers({ awsNativeRows = null, importedRows = null, grantNativeSelect = true, grantImportedUsage = true, grantImportedSelect = true } = {}) {
       await owner.query("drop table if exists public.tracepoint_aws_schema_migrations");
       await owner.query("drop schema if exists tracepoint_migrations cascade");
       if (awsNativeRows !== null) {
@@ -420,7 +420,7 @@ test("embedded Postgres reconciles both migration ledgers without writes or coun
           "insert into public.tracepoint_aws_schema_migrations(version, filename, content_sha256) values ($1, $2, $3)",
           [row.version, row.filename, row.sha256],
         );
-        await owner.query("grant select on public.tracepoint_aws_schema_migrations to migration_ledger_reader");
+        if (grantNativeSelect) await owner.query("grant select on public.tracepoint_aws_schema_migrations to migration_ledger_reader");
       }
       if (importedRows !== null) {
         await owner.query("create schema tracepoint_migrations");
@@ -429,7 +429,7 @@ test("embedded Postgres reconciles both migration ledgers without writes or coun
           "insert into tracepoint_migrations.applied_migrations(kind, name, sha256) values ($1, $2, $3)",
           [row.kind, row.filename, row.sha256],
         );
-        await owner.query("grant usage on schema tracepoint_migrations to migration_ledger_reader");
+        if (grantImportedUsage) await owner.query("grant usage on schema tracepoint_migrations to migration_ledger_reader");
         if (grantImportedSelect) await owner.query("grant select on tracepoint_migrations.applied_migrations to migration_ledger_reader");
       }
     }
@@ -486,6 +486,12 @@ test("embedded Postgres reconciles both migration ledgers without writes or coun
     assert.deepEqual(bothAgree.appliedVersions, [1, 2, 3, 4]);
     assert.deepEqual(bothAgree.pending, []);
 
+    await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4]), grantNativeSelect: false });
+    await assert.rejects(inspectReadOnly(), error => error.code === "MIGRATION_LEDGER_AWS_NATIVE_SELECT_DENIED", "an unreadable AWS-native ledger must be identified and block verification");
+
+    await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4]), grantImportedUsage: false });
+    await assert.rejects(inspectReadOnly(), error => error.code === "MIGRATION_LEDGER_IMPORTED_SCHEMA_USAGE_DENIED", "missing imported-ledger schema USAGE must be distinguished from table SELECT");
+
     await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4], { 2: "f".repeat(64) }) });
     const disagree = await inspectReadOnly();
     assert.equal(disagree.status, "divergent");
@@ -512,7 +518,7 @@ test("embedded Postgres reconciles both migration ledgers without writes or coun
     assert.equal(partial.pending, null, "a gap must not be converted into a guessed pending list");
 
     await replaceLedgers({ importedRows: sharedRows, awsNativeRows: nativeFor([1, 2, 3, 4]), grantImportedSelect: false });
-    await assert.rejects(inspectReadOnly(), error => error.code === "42501", "permission failure on one present ledger must block rather than fall back to the readable ledger");
+    await assert.rejects(inspectReadOnly(), error => error.code === "MIGRATION_LEDGER_IMPORTED_SELECT_DENIED", "permission failure on one present ledger must block rather than fall back to the readable ledger");
     await reader.query("BEGIN");
     transactionOpen = true;
     await assert.rejects(inspectMigrationLedgerEvidence(reader, files), /MIGRATION_LEDGER_READ_ONLY_TRANSACTION_REQUIRED/);
@@ -562,12 +568,17 @@ test("mobile preflight failures report safe stage and stable code without databa
   const authRejected = mobilePreflightFailureDetails("DATABASE_CONNECT", Object.assign(new Error("password rejected for secret user"), { code: "28P01" }));
   assert.deepEqual(authRejected, { stage: "DATABASE_CONNECT", code: "DATABASE_AUTH_REJECTED" });
 
+  const ledgerDenied = mobilePreflightFailureDetails("MIGRATION_LEDGER_READ", Object.assign(new Error("sensitive database error"), { code: "MIGRATION_LEDGER_IMPORTED_SELECT_DENIED" }));
+  assert.deepEqual(ledgerDenied, { stage: "MIGRATION_LEDGER_READ", code: "MIGRATION_LEDGER_IMPORTED_SELECT_DENIED" });
+  const discoveryDenied = mobilePreflightFailureDetails("MIGRATION_LEDGER_READ", Object.assign(new Error("secret-bearing query failure"), { code: "MIGRATION_LEDGER_DISCOVERY_FAILED_42501" }));
+  assert.deepEqual(discoveryDenied, { stage: "MIGRATION_LEDGER_READ", code: "MIGRATION_LEDGER_DISCOVERY_FAILED_42501" });
+
   const tlsFailure = mobilePreflightFailureDetails("DATABASE_CONNECT", Object.assign(new Error("certificate details and host"), { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" }));
   assert.deepEqual(tlsFailure, { stage: "DATABASE_CONNECT", code: "DATABASE_TLS_VALIDATION_FAILED" });
 
   const unknownFailure = mobilePreflightFailureDetails("SCHEMA_CATALOG_READ", new Error("postgres://user:secret@db/password"));
   assert.deepEqual(unknownFailure, { stage: "SCHEMA_CATALOG_READ", code: "SCHEMA_CATALOG_READ_FAILED" });
-  assert.doesNotMatch(JSON.stringify([hostMismatch, authRejected, tlsFailure, unknownFailure]), /secret|password|postgres:|certificate details|host/);
+  assert.doesNotMatch(JSON.stringify([hostMismatch, authRejected, ledgerDenied, discoveryDenied, tlsFailure, unknownFailure]), /secret|password|postgres:|certificate details|host/);
 
   const unknownStage = mobilePreflightFailureDetails("secret-host", new Error("untrusted details"));
   assert.deepEqual(unknownStage, { stage: "UNKNOWN", code: "MOBILE_PREFLIGHT_FAILED" });

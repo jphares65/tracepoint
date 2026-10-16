@@ -91,6 +91,14 @@ export const awsNativeMigrationLedgerSql = `select version::int as version, file
 export const importedAwsMigrationLedgerSql = `select kind, name as filename, sha256
   from tracepoint_migrations.applied_migrations where kind = 'aws' order by name`;
 
+const migrationLedgerPermissionSql = `select
+  has_schema_privilege(current_user, $1, 'USAGE') as schema_usage,
+  case when to_regclass($2) is null then null
+    else has_table_privilege(current_user, to_regclass($2), 'SELECT') end as ledger_select`;
+const migrationLedgerSchemaPermissionSql = `select
+  has_schema_privilege(current_user, 'public', 'USAGE') as public_schema_usage,
+  has_schema_privilege(current_user, 'tracepoint_migrations', 'USAGE') as imported_schema_usage`;
+
 export const migrationLedgerTransactionSql = `select current_setting('transaction_read_only') as read_only,
   current_setting('transaction_isolation') as isolation`;
 
@@ -219,13 +227,96 @@ export async function inspectMigrationLedgerEvidence(client, files) {
   for (const sql of [migrationLedgerTransactionSql, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql]) {
     assertInspectionSql(sql);
   }
-  const transaction = (await client.query(migrationLedgerTransactionSql)).rows[0];
+  const query = async (operation, sql, values) => {
+    try {
+      return await client.query(sql, values);
+    } catch (cause) {
+      const sqlState = typeof cause?.code === "string" && /^[0-9A-Z]{5}$/.test(cause.code) ? cause.code : "UNKNOWN";
+      const error = new Error(`MIGRATION_LEDGER_${operation}_FAILED_${sqlState}`);
+      error.code = `MIGRATION_LEDGER_${operation}_FAILED_${sqlState}`;
+      throw error;
+    }
+  };
+  const transaction = (await query("TRANSACTION_CHECK", migrationLedgerTransactionSql)).rows[0];
   if (transaction?.read_only !== "on" || transaction?.isolation !== "repeatable read") {
     throw new Error("MIGRATION_LEDGER_READ_ONLY_TRANSACTION_REQUIRED");
   }
-  const relations = (await client.query(migrationLedgerDiscoverySql)).rows[0] ?? {};
-  const awsNativeRows = relations.aws_native_relation ? (await client.query(awsNativeMigrationLedgerSql)).rows : null;
-  const importedRows = relations.imported_relation ? (await client.query(importedAwsMigrationLedgerSql)).rows : null;
+  assertInspectionSql("SAVEPOINT migration_ledger_permission_probe");
+  await client.query("SAVEPOINT migration_ledger_permission_probe");
+  let relations;
+  try {
+    relations = (await client.query(migrationLedgerDiscoverySql)).rows[0] ?? {};
+    await client.query("RELEASE SAVEPOINT migration_ledger_permission_probe");
+  } catch (cause) {
+    const sqlState = typeof cause?.code === "string" && /^[0-9A-Z]{5}$/.test(cause.code) ? cause.code : "UNKNOWN";
+    await client.query("ROLLBACK TO SAVEPOINT migration_ledger_permission_probe");
+    await client.query("RELEASE SAVEPOINT migration_ledger_permission_probe");
+    if (sqlState === "42501") {
+      try {
+        const permissions = (await client.query(migrationLedgerSchemaPermissionSql)).rows[0];
+        const deniedSchema = permissions?.public_schema_usage !== true ? "PUBLIC"
+          : permissions?.imported_schema_usage !== true ? "IMPORTED"
+            : null;
+        if (deniedSchema) {
+          const error = new Error(`MIGRATION_LEDGER_${deniedSchema}_SCHEMA_USAGE_DENIED`);
+          error.code = `MIGRATION_LEDGER_${deniedSchema}_SCHEMA_USAGE_DENIED`;
+          throw error;
+        }
+      } catch (diagnosticError) {
+        if (diagnosticError?.code?.startsWith("MIGRATION_LEDGER_")) throw diagnosticError;
+      }
+    }
+    const error = new Error(`MIGRATION_LEDGER_DISCOVERY_FAILED_${sqlState}`);
+    error.code = `MIGRATION_LEDGER_DISCOVERY_FAILED_${sqlState}`;
+    throw error;
+  }
+  const readLedger = async (operation, sql, relation, schemaName) => {
+    assertInspectionSql("SAVEPOINT migration_ledger_permission_probe");
+    await client.query("SAVEPOINT migration_ledger_permission_probe");
+    try {
+      const rows = (await client.query(sql)).rows;
+      await client.query("RELEASE SAVEPOINT migration_ledger_permission_probe");
+      return rows;
+    } catch (cause) {
+      const sqlState = typeof cause?.code === "string" && /^[0-9A-Z]{5}$/.test(cause.code) ? cause.code : "UNKNOWN";
+      try {
+        assertInspectionSql("ROLLBACK TO SAVEPOINT migration_ledger_permission_probe");
+        await client.query("ROLLBACK TO SAVEPOINT migration_ledger_permission_probe");
+        await client.query("RELEASE SAVEPOINT migration_ledger_permission_probe");
+      } catch (recoveryError) {
+        const recoverySqlState = typeof recoveryError?.code === "string" && /^[0-9A-Z]{5}$/.test(recoveryError.code) ? recoveryError.code : "UNKNOWN";
+        const error = new Error(`MIGRATION_LEDGER_${operation}_SAVEPOINT_RECOVERY_FAILED_${recoverySqlState}`);
+        error.code = `MIGRATION_LEDGER_${operation}_SAVEPOINT_RECOVERY_FAILED_${recoverySqlState}`;
+        throw error;
+      }
+      if (sqlState === "42501") {
+        let permission;
+        try {
+          permission = (await client.query(migrationLedgerPermissionSql, [schemaName, relation])).rows[0];
+        } catch (diagnosticError) {
+          const diagnosticSqlState = typeof diagnosticError?.code === "string" && /^[0-9A-Z]{5}$/.test(diagnosticError.code) ? diagnosticError.code : "UNKNOWN";
+          const error = new Error(`MIGRATION_LEDGER_${operation}_PERMISSION_DIAGNOSTIC_FAILED_${diagnosticSqlState}`);
+          error.code = `MIGRATION_LEDGER_${operation}_PERMISSION_DIAGNOSTIC_FAILED_${diagnosticSqlState}`;
+          throw error;
+        }
+        const reason = permission?.schema_usage !== true ? "SCHEMA_USAGE_DENIED"
+          : permission?.ledger_select !== true ? "SELECT_DENIED"
+            : "PERMISSION_STATE_UNRESOLVED";
+        const error = new Error(`MIGRATION_LEDGER_${operation}_${reason}`);
+        error.code = `MIGRATION_LEDGER_${operation}_${reason}`;
+        throw error;
+      }
+      const error = new Error(`MIGRATION_LEDGER_${operation}_SELECT_FAILED_${sqlState}`);
+      error.code = `MIGRATION_LEDGER_${operation}_SELECT_FAILED_${sqlState}`;
+      throw error;
+    }
+  };
+  const awsNativeRows = relations.aws_native_relation
+    ? await readLedger("AWS_NATIVE", awsNativeMigrationLedgerSql, "public.tracepoint_aws_schema_migrations", "public")
+    : null;
+  const importedRows = relations.imported_relation
+    ? await readLedger("IMPORTED", importedAwsMigrationLedgerSql, "tracepoint_migrations.applied_migrations", "tracepoint_migrations")
+    : null;
   return classifyMigrationLedgerEvidence({ awsNativeRows, importedRows }, files);
 }
 
@@ -295,7 +386,7 @@ export const inspectionCatalogQueries = Object.freeze([
 
 export function assertInspectionSql(sql) {
   const normalized = sql.trim().replace(/\s+/g, " ").toLowerCase();
-  if (/^(begin transaction read only|begin transaction isolation level repeatable read read only|set transaction read only|set local search_path = pg_catalog|commit)$/.test(normalized)) return;
+  if (/^(begin transaction read only|begin transaction isolation level repeatable read read only|set transaction read only|set local search_path = pg_catalog|commit|savepoint migration_ledger_permission_probe|release savepoint migration_ledger_permission_probe|rollback to savepoint migration_ledger_permission_probe)$/.test(normalized)) return;
   const withoutStringLiterals = normalized.replace(/'(?:''|[^'])*'/g, "''");
   const fixedReadOnlyCte = /^with required\s*\(relation_name, required_columns, require_rls\) as \(values\b/.test(withoutStringLiterals);
   if (!(/^select\b/.test(withoutStringLiterals) || fixedReadOnlyCte) || /\b(insert|update|delete|merge|truncate|create|alter|drop|grant|revoke|call|do|copy|vacuum|analyze|lock)\b/.test(withoutStringLiterals)) throw new Error("READ_ONLY_INSPECTION_SQL_REJECTED");

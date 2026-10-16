@@ -22,6 +22,11 @@ const safeErrorCodes = new Map([
   ["AWS-native database CA is invalid.", "DATABASE_CA_INVALID"],
   ["AWS-native database CA path is invalid.", "DATABASE_CA_INVALID"],
   ["AWS-native PostgreSQL runtime configuration is required.", "RUNTIME_CONFIGURATION_INVALID"],
+  ["MIGRATION_LEDGER_AWS_NATIVE_SCHEMA_USAGE_DENIED", "MIGRATION_LEDGER_AWS_NATIVE_SCHEMA_USAGE_DENIED"],
+  ["MIGRATION_LEDGER_AWS_NATIVE_SELECT_DENIED", "MIGRATION_LEDGER_AWS_NATIVE_SELECT_DENIED"],
+  ["MIGRATION_LEDGER_IMPORTED_SCHEMA_USAGE_DENIED", "MIGRATION_LEDGER_IMPORTED_SCHEMA_USAGE_DENIED"],
+  ["MIGRATION_LEDGER_IMPORTED_SELECT_DENIED", "MIGRATION_LEDGER_IMPORTED_SELECT_DENIED"],
+  ["MIGRATION_LEDGER_PUBLIC_SCHEMA_USAGE_DENIED", "MIGRATION_LEDGER_PUBLIC_SCHEMA_USAGE_DENIED"],
 ]);
 
 const networkErrorCodes = new Set([
@@ -54,7 +59,12 @@ export function mobilePreflightFailureDetails(stage, error) {
   const safeStage = stageFailureCodes.has(stage) ? stage : "UNKNOWN";
   const message = typeof error?.message === "string" ? error.message : "";
   const rawCode = typeof error?.code === "string" ? error.code : "";
-  let code = safeErrorCodes.get(message);
+  let code = safeErrorCodes.get(error?.code) ?? safeErrorCodes.get(message);
+
+  if (!code && typeof error?.code === "string"
+    && /^MIGRATION_LEDGER_(?:TRANSACTION_CHECK|DISCOVERY|AWS_NATIVE|IMPORTED)_(?:FAILED_[0-9A-Z]{5}|FAILED_UNKNOWN|SELECT_FAILED_[0-9A-Z]{5}|SELECT_FAILED_UNKNOWN|PERMISSION_DIAGNOSTIC_FAILED_[0-9A-Z]{5}|PERMISSION_DIAGNOSTIC_FAILED_UNKNOWN|SAVEPOINT_RECOVERY_FAILED_[0-9A-Z]{5}|SAVEPOINT_RECOVERY_FAILED_UNKNOWN|PERMISSION_STATE_UNRESOLVED)$/.test(error.code)) {
+    code = error.code;
+  }
 
   if (!code && postgresErrorCodes.has(rawCode)) code = postgresErrorCodes.get(rawCode);
   if (!code && networkErrorCodes.has(rawCode)) code = "DATABASE_NETWORK_CONNECT_FAILED";
