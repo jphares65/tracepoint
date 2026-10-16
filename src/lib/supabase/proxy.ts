@@ -7,10 +7,11 @@ import {
 } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { readBearerToken } from "@/lib/authentication/request-bearer";
-import { isSupabasePublicPath } from "./public-path-core";
+import { isSupabaseSupportPath } from "./public-path-core";
 
 import type { Database } from "./database.types";
 
+const PUBLIC_PATHS = ["/landing", "/login", "/auth/callback", "/auth/confirm", "/activate", "/api/health", "/api/notifications/email-dispatch"];
 const AUTH_FLOW_PATHS = [
   "/auth/setup",
   "/auth/signout",
@@ -36,6 +37,13 @@ function pathMatches(pathname: string, path: string) {
   return (
     normalizedPath === normalizedTarget ||
     normalizedPath.startsWith(`${normalizedTarget}/`)
+  );
+}
+
+function isPublicPath(pathname: string) {
+  return (
+    isSupabaseSupportPath(pathname) ||
+    PUBLIC_PATHS.some((path) => pathMatches(pathname, path))
   );
 }
 
@@ -153,7 +161,7 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const authenticated = Boolean(claims?.sub);
 
-  if (!authenticated && !isSupabasePublicPath(pathname)) {
+  if (!authenticated && !isPublicPath(pathname)) {
     if (isApiPath(pathname)) {
       return apiAccessFailure(
         response,
@@ -199,7 +207,7 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  if (isSupabasePublicPath(pathname) || isAuthFlowPath(pathname)) {
+  if (isPublicPath(pathname) || isAuthFlowPath(pathname)) {
     return response;
   }
 
