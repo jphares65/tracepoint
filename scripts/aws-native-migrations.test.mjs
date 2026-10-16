@@ -15,6 +15,7 @@ import {
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, migrationInspectionManifest, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql, migrationLedgerTransactionSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
+import { applyInventoryUnit, applyPasswordScopeUnit, liveOwnerActions, liveReleaseUnits, liveUnitReadiness, normalizedSha256, runAtomicLiveUnit, runLivePrecheck, selectUnitFiles } from "./aws-native-live-release-units.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -174,10 +175,10 @@ test("status and inspect reuse the scanned application image and dispatch only t
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   const resolver = publisher.slice(publisher.indexOf("function Resolve-ApplicationInspectionImage"), publisher.indexOf("function Publish-MigrationImage"));
   assert.match(resolver, /\$tag = "\$Commit-aws-native-\$Environment"/);
-  assert.match(resolver, /refusing to build an image for read-only/);
+  assert.match(resolver, /refusing to build an image for \$Action/);
   assert.match(resolver, /Wait-MigrationImageScan -Digest/);
   assert.doesNotMatch(resolver, /codebuild|s3api|start-build|put-object|git\.exe|'ecs'/);
-  assert.match(publisher, /\$Action -in @\('status','inspect'\)\) \{ Resolve-ApplicationInspectionImage/);
+  assert.match(publisher, /\$Action -in \(@\('status','inspect'\) \+ \$liveOwnerActions\)\) \{ Resolve-ApplicationInspectionImage/);
   assert.match(publisher, /else \{ Publish-MigrationImage -Commit \$Commit/);
   assert.doesNotMatch(publisher, /update-service|delete-service|update-cluster/);
 
@@ -268,6 +269,188 @@ test("a host-pinned inspect fails closed before connecting when the credential t
   const status = run("status", "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com", liveHost);
   assert.doesNotMatch(status.stderr, /DATABASE_TARGET_MISMATCH/);
   assert.match(status.stderr, /ENOENT/);
+});
+
+test("live release units pin the exact repository migration files and route only through guarded owner actions", async () => {
+  const directory = path.resolve(import.meta.dirname, "../database/aws");
+  for (const pins of Object.values(liveReleaseUnits)) {
+    for (const pin of pins) assert.equal(normalizedSha256(await readFile(path.join(directory, pin.filename), "utf8")), pin.sha256, pin.filename);
+  }
+  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039"]);
+  assert.deepEqual(liveReleaseUnits["inventory-035-037"].map(file => file.version), [35, 36, 37]);
+  assert.deepEqual(liveReleaseUnits["password-scope-039"].map(file => file.version), [39]);
+  const files = [{ version: 35, filename: "035_inventory_phase1.sql", contents: "begin;\nselect 1;\ncommit;\n" }];
+  assert.throws(() => selectUnitFiles("inventory-035-037", files), /LIVE_RELEASE_UNIT_FILE_MISMATCH: 035_inventory_phase1\.sql/);
+  assert.throws(() => selectUnitFiles("apply", files), /LIVE_RELEASE_UNIT_UNKNOWN/);
+
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  assert.match(runner, /liveOwnerActions\.includes\(action\) && requestedEnvironment !== "production"\) throw/);
+  const connect = runner.slice(runner.indexOf("async function connect"), runner.indexOf("async function ledgerRows"));
+  assert.match(connect, /secret\.username !== "tracepoint_migrator"\) throw new Error\("LIVE_OWNER_CREDENTIAL_MISMATCH"\)/);
+  assert.match(connect, /host = pinnedHost/);
+  assert.match(connect, /servername: host/);
+  assert.match(runner, /action === "precheck"\) \{\s*console\.log\(JSON\.stringify\(await runLivePrecheck\(client\)\)\);/);
+  assert.match(runner, /action === "inventory-035-037"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyInventoryUnit\(client, files\)\)\)\);/);
+  assert.match(runner, /action === "password-scope-039"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyPasswordScopeUnit\(client, files\)\)\)\);/);
+  const units = await readFile(new URL("./aws-native-live-release-units.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(units, /insert into public\.tracepoint_aws_schema_migrations|ensureLedger/);
+
+  const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
+  assert.match(publisher, /\$liveOwnerActions -and \$Environment -ne 'production'\) \{ throw 'Live final-database actions are production-only\.' \}/);
+  assert.match(publisher, /\$liveDatabaseChangeActions -and -not \$AuthorizeLiveDatabaseChange\) \{ throw/);
+  for (const dockerfile of ["../Dockerfile", "../Dockerfile.aws-native-production"]) {
+    assert.match(await readFile(new URL(dockerfile, import.meta.url), "utf8"), /COPY --from=builder --chown=nonroot:nonroot \/app\/scripts\/aws-native-live-release-units\.mjs \.\/scripts\/aws-native-live-release-units\.mjs/);
+  }
+});
+
+test("live owner actions refuse staging, a non-owner credential, and a missing host pin before connecting", () => {
+  const runnerPath = fileURLToPath(new URL("./run-aws-native-migrations.mjs", import.meta.url));
+  const liveHost = "tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
+  const run = (action, environment, username, expectedHost) => spawnSync(process.execPath, [runnerPath, action, environment], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CONFIGURATION_ENVIRONMENT: environment,
+      TRACEPOINT_DATA_PROVIDER: "postgres",
+      TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native",
+      TRACEPOINT_DATABASE_CA_PATH: "/app/tracepoint-test-absent-ca.pem",
+      TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({ host: "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com", port: 5432, dbname: "tracepoint", username, password: "synthetic-owner-password" }),
+      ...(expectedHost === undefined ? {} : { TRACEPOINT_EXPECTED_DATABASE_HOST: expectedHost }),
+    },
+  });
+  for (const action of liveOwnerActions) {
+    const staging = run(action, "staging", "tracepoint_migrator", liveHost);
+    assert.notEqual(staging.status, 0);
+    assert.match(staging.stderr, /production-only/);
+    for (const expectedHost of [undefined, ""]) {
+      const unpinned = run(action, "production", "tracepoint_migrator", expectedHost);
+      assert.notEqual(unpinned.status, 0);
+      assert.match(unpinned.stderr, /DATABASE_TARGET_MISMATCH/);
+    }
+    const runtime = run(action, "production", "tracepoint_runtime", liveHost);
+    assert.notEqual(runtime.status, 0);
+    assert.match(runtime.stderr, /LIVE_OWNER_CREDENTIAL_MISMATCH/);
+    // A pinned owner credential passes those gates and stops at the absent CA, before any connection.
+    const pinned = run(action, "production", "tracepoint_migrator", liveHost);
+    assert.notEqual(pinned.status, 0);
+    assert.doesNotMatch(pinned.stderr, /DATABASE_TARGET_MISMATCH|LIVE_OWNER_CREDENTIAL_MISMATCH/);
+    assert.match(pinned.stderr, /ENOENT/);
+    assert.doesNotMatch(pinned.stderr + runtime.stderr, /synthetic-owner-password/);
+  }
+});
+
+test("embedded Postgres applies the inventory and password-scope units atomically with fail-closed gates", { timeout: 180_000 }, async () => {
+  let server;
+  let owner;
+  let runtime;
+  let directory;
+  try {
+    directory = await mkdtemp(path.join(tmpdir(), "tp-live-release-units-"));
+    const port = await localPostgresPort();
+    server = new EmbeddedPostgres({ databaseDir: directory, user: "postgres", password: "local-units-only", port, persistent: true,
+      postgresFlags: ["-h", "127.0.0.1"], initdbFlags: ["--encoding=UTF8", "--locale=C"], onLog: () => {}, onError: () => {} });
+    await server.initialise();
+    await server.start();
+    const config = { host: "127.0.0.1", port };
+    const admin = new pg.Client({ ...config, database: "postgres", user: "postgres", password: "local-units-only" });
+    await admin.connect();
+    await admin.query("CREATE DATABASE tracepoint");
+    await admin.end();
+    const superuser = new pg.Client({ ...config, database: "tracepoint", user: "postgres", password: "local-units-only" });
+    await superuser.connect();
+    await superuser.query(`
+      create role authenticated nologin; create role anon nologin; create role service_role nologin;
+      create role tracepoint_runtime login noinherit password 'runtime-local-only';
+      grant authenticated to tracepoint_runtime;
+      create role tracepoint_migrator login password 'owner-local-only';
+      grant create on schema public to tracepoint_migrator;
+      create schema tracepoint_auth authorization tracepoint_migrator;`);
+    await superuser.end();
+    owner = new pg.Client({ ...config, database: "tracepoint", user: "tracepoint_migrator", password: "owner-local-only" });
+    await owner.connect();
+    // The live prerequisites the units depend on, owned by the migrator as on the final instance.
+    await owner.query(`
+      create table public.departments(id uuid primary key);
+      create table public.profiles(id uuid primary key, email text, full_name text);
+      create table public.permissions(code text primary key, display_name text, description text);
+      create table public.department_memberships(department_id uuid not null references public.departments(id), user_id uuid not null references public.profiles(id), is_active boolean not null default true);
+      create table public.platform_admins(user_id uuid primary key references public.profiles(id), is_active boolean not null default true);
+      create table public.authentication_lifecycle_operations(id uuid primary key, operation_kind text not null, tracepoint_user_id uuid not null references public.profiles(id),
+        department_id uuid references public.departments(id), state text not null, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+      create function tracepoint_auth.subject_id() returns uuid language sql stable as $$ select null::uuid $$;
+      create function tracepoint_auth.department_id() returns uuid language sql stable as $$ select null::uuid $$;
+      create function public.is_department_member(p_department_id uuid) returns boolean language sql stable as $$ select true $$;
+      create function public.has_department_permission(p_department_id uuid, p_code text) returns boolean language sql stable as $$ select true $$;
+      insert into public.departments values ('00000000-0000-0000-0000-00000000000a'), ('00000000-0000-0000-0000-00000000000b');
+      insert into public.profiles(id) values ('00000000-0000-0000-0000-000000000001');
+      insert into public.department_memberships(department_id, user_id) values
+        ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-000000000001'),
+        ('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-000000000001');`);
+    const options = { expectedPort: port };
+    const migrationDirectory = path.resolve(import.meta.dirname, "../database/aws");
+    const files = await Promise.all((await readdir(migrationDirectory)).filter(name => /^\d{3}_[a-z0-9_]+\.sql$/.test(name)).sort().map(async filename => ({
+      version: Number(filename.slice(0, 3)), filename, contents: await readFile(path.join(migrationDirectory, filename), "utf8"),
+    })));
+    const inventoryTablePresent = async () => (await owner.query("select to_regclass('public.inventory_items') is not null as present")).rows[0].present;
+
+    const precheck = await runLivePrecheck(owner, options);
+    assert.equal(precheck.inspection, "read-only");
+    assert.equal(precheck.identity.database_user, "tracepoint_migrator");
+    assert.deepEqual(precheck.readiness, { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
+    assert.equal(precheck.precheck.multi_agency_users_any, 1);
+    assert.equal(precheck.precheck.unresolved_password_operation_users, 0);
+    assert.deepEqual(precheck.precheck.inventory_tables_present, []);
+
+    runtime = new pg.Client({ ...config, database: "tracepoint", user: "tracepoint_runtime", password: "runtime-local-only" });
+    await runtime.connect();
+    await assert.rejects(runLivePrecheck(runtime, options), /LIVE_OWNER_IDENTITY_MISMATCH/);
+    await assert.rejects(runLivePrecheck(owner), /LIVE_OWNER_IDENTITY_MISMATCH/);
+
+    // A failed postcondition rolls the whole unit back.
+    const [inventory035] = selectUnitFiles("inventory-035-037", files);
+    await assert.rejects(runAtomicLiveUnit(owner, [inventory035.body], "select 1 as checked", () => { throw new Error("FORCED_POSTCONDITION_FAILURE"); }), /FORCED_POSTCONDITION_FAILURE/);
+    assert.equal(await inventoryTablePresent(), false);
+    assert.equal((await owner.query("select count(*)::int as total from public.permissions")).rows[0].total, 0);
+
+    const inventory = await applyInventoryUnit(owner, files, options);
+    assert.equal(inventory.status, "APPLIED");
+    assert.equal(inventory.ledger_modified, false);
+    assert.deepEqual(inventory.files.map(file => file.version), [35, 36, 37]);
+    assert.equal(inventory.postconditions.tables_present, 6);
+    assert.equal(inventory.postconditions.tables_with_rls, 6);
+    assert.equal(inventory.postconditions.unexpected_role_privileges, 0);
+    assert.equal(await inventoryTablePresent(), true);
+    assert.equal((await owner.query("select to_regclass('public.tracepoint_aws_schema_migrations') is null as absent")).rows[0].absent, true);
+    await assert.rejects(applyInventoryUnit(owner, files, options), /LIVE_RELEASE_UNIT_PRECONDITION_FAILED: inventory_tables_already_present/);
+
+    // 039 refuses while any password operation is unresolved, then applies and enforces scope.
+    await owner.query("insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('10000000-0000-0000-0000-000000000001', 'reset_password', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'failed')");
+    await assert.rejects(applyPasswordScopeUnit(owner, files, options), /LIVE_RELEASE_UNIT_PRECONDITION_FAILED: unresolved_password_operations_present/);
+    await owner.query("delete from public.authentication_lifecycle_operations");
+    const scope = await applyPasswordScopeUnit(owner, files, options);
+    assert.equal(scope.status, "APPLIED");
+    assert.deepEqual(scope.postconditions, { guarded_functions: 3, enabled_triggers: 3 });
+    await assert.rejects(
+      owner.query("insert into public.authentication_lifecycle_operations(id, operation_kind, tracepoint_user_id, department_id, state) values ('10000000-0000-0000-0000-000000000002', 'assign_password', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'prepared')"),
+      error => error.code === "42501",
+    );
+    await assert.rejects(applyPasswordScopeUnit(owner, files, options), /password_scope_objects_already_present/);
+  } finally {
+    await runtime?.end().catch(() => undefined);
+    await owner?.end().catch(() => undefined);
+    await server?.stop().catch(() => undefined);
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+test("live unit readiness reports every blocker instead of guessing", () => {
+  const clean = { inventory_tables_present: [], permissions_code_unique: true, permissions_writable: true, public_schema_create: true, inventory_prerequisites_present: true,
+    password_scope_functions_present: 0, password_scope_triggers_present: 0, password_scope_tables_present: 3, password_scope_tables_owned: true, tracepoint_auth_schema_create: true, unresolved_password_operation_users: 0 };
+  assert.deepEqual(liveUnitReadiness(clean), { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
+  const blocked = liveUnitReadiness({ ...clean, inventory_tables_present: ["inventory_items"], permissions_code_unique: false, password_scope_tables_owned: false, unresolved_password_operation_users: 2 });
+  assert.deepEqual(blocked.inventory.blockers, ["inventory_tables_already_present", "permissions_code_not_unique"]);
+  assert.deepEqual(blocked.passwordScope.blockers, ["password_scope_tables_not_owned", "unresolved_password_operations_present"]);
 });
 
 test("production reconciliation refuses to adopt a migration when a catalog postcondition is absent", () => {

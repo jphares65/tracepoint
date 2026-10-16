@@ -1,8 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-    [ValidateSet('status','inspect','publish-only','range-workspace-hotfix','baseline','reconcile','apply')][string]$Action = 'status',
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit
+    [ValidateSet('status','inspect','publish-only','range-workspace-hotfix','baseline','reconcile','apply','precheck','inventory-035-037','password-scope-039')][string]$Action = 'status',
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit,
+    [switch]$AuthorizeLiveDatabaseChange
 )
 
 # This command runs a finite ECS task. It never starts the web server, updates
@@ -19,6 +20,11 @@ $settings = @{
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
 if ($Action -eq 'publish-only' -and $Environment -ne 'production') { throw 'Publish-only is reserved for an explicitly reviewed production inspection image.' }
 if ($Action -eq 'publish-only' -and -not $ImageCommit) { throw 'Publish-only requires an explicit immutable -ImageCommit.' }
+# Guarded actions on the live final-cutover database. They run the owner
+# credential against the pinned live host; two of them change the database.
+$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039')
+$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039')
+if ($Action -in $liveOwnerActions -and $Environment -ne 'production') { throw 'Live final-database actions are production-only.' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 function Invoke-Aws([string[]]$Arguments) {
@@ -110,16 +116,16 @@ function Resolve-ApplicationInspectionImage {
     [scriptblock]$ScanNow = { [DateTimeOffset]::UtcNow },
     [scriptblock]$ScanSleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
   )
-  # Read-only status and inspect reuse the immutable application image that
-  # deploy-app.ps1 published for this commit. It carries the same migration
-  # runner and SQL, so a read-only action never builds or publishes an image.
+  # Read-only and live final-database actions reuse the immutable application
+  # image that deploy-app.ps1 published for this commit. It carries the same
+  # migration runner and SQL, so these actions never build or publish an image.
   $tag = "$Commit-aws-native-$Environment"
   try { $details = @((Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails) } catch {
     if (-not (Test-EcrImageNotFoundError -ErrorRecord $_)) { throw }
     $details = @()
   }
   if ($details.Count -ne 1 -or [string]$details[0].imageDigest -notmatch '^sha256:[0-9a-f]{64}$') {
-    throw "Application image $tag is not present in ECR; refusing to build an image for read-only $Action. Publish it with deploy-app.ps1 first."
+    throw "Application image $tag is not present in ECR; refusing to build an image for $Action. Publish it with deploy-app.ps1 first."
   }
   $digest = Wait-MigrationImageScan -Digest ([string]$details[0].imageDigest) -Now $ScanNow -Sleep $ScanSleep
   return @{ Tag=$tag; Digest=$digest }
@@ -139,9 +145,12 @@ function Assert-LiveInspectionTarget {
   if ($versions.Count -ne 1 -or [string]$versions[0].VersionId -cne $settings.LiveDatabaseSecretVersionId -or @($versions[0].VersionStages) -notcontains 'AWSCURRENT') {
     throw 'The live database secret changed since its host was attested; refusing live inspection.'
   }
+  Assert-LiveDatabaseEndpoint
+}
+function Assert-LiveDatabaseEndpoint {
   $instances = @((Invoke-Aws @('rds','describe-db-instances','--db-instance-identifier',$settings.LiveDatabaseInstance)).DBInstances)
   if ($instances.Count -ne 1 -or $instances[0].DBInstanceStatus -ne 'available' -or [string]$instances[0].Endpoint.Address -cne $settings.LiveDatabaseHost -or [int]$instances[0].Endpoint.Port -ne 5432) {
-    throw 'The pinned live database host does not match the live RDS instance endpoint; refusing live inspection.'
+    throw 'The pinned live database host does not match the live RDS instance endpoint; refusing live inspection and database changes.'
   }
 }
 function Publish-MigrationImage {
@@ -213,6 +222,7 @@ function Invoke-MigrationTask {
     [scriptblock]$ScanNow = { [DateTimeOffset]::UtcNow },
     [scriptblock]$ScanSleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
   )
+  if ($Action -in $liveDatabaseChangeActions -and -not $AuthorizeLiveDatabaseChange) { throw "$Action changes the live production database; supply -AuthorizeLiveDatabaseChange only after it is approved." }
   $service = (Invoke-Aws @('ecs','describe-services','--cluster',$settings.Cluster,'--services',$settings.Service)).services | Select-Object -First 1
   if (!$service -or $service.status -ne 'ACTIVE') { throw 'Expected ECS application service is not active.' }
   # Production inspect reads the live application database. Its source is the
@@ -223,7 +233,8 @@ function Invoke-MigrationTask {
   $current = (Invoke-Aws @('ecs','describe-task-definition','--task-definition',$sourceTaskDefinition)).taskDefinition
   if ($current.networkMode -ne 'awsvpc' -or @($current.requiresCompatibilities) -notcontains 'FARGATE' -or @($current.containerDefinitions).Count -ne 1) { throw 'Unexpected ECS task pattern.' }
   if ($liveInspection) { Assert-LiveInspectionTarget -Task $current }
-  $image = if ($Action -in @('status','inspect')) { Resolve-ApplicationInspectionImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
+  if ($Action -in $liveOwnerActions) { Assert-LiveDatabaseEndpoint }
+  $image = if ($Action -in (@('status','inspect') + $liveOwnerActions)) { Resolve-ApplicationInspectionImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
     else { Publish-MigrationImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
   $registration = [ordered]@{}
   if ($liveInspection) {
@@ -273,6 +284,9 @@ function Invoke-MigrationTask {
       [ordered]@{ name='TRACEPOINT_DATABASE_CA_PATH'; value='/app/rds-ca.pem' },
       [ordered]@{ name='DEPLOYMENT_VERSION'; value=$Commit }
     )
+    # The owner credential keeps its pre-cutover hostname; the runner connects
+    # only to this pinned live host for the guarded final-database actions.
+    if ($Action -in $liveOwnerActions) { $container.environment += ,([ordered]@{ name='TRACEPOINT_EXPECTED_DATABASE_HOST'; value=$settings.LiveDatabaseHost }) }
   }
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')

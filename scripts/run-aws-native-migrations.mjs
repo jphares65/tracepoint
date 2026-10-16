@@ -4,6 +4,7 @@ import path from "node:path";
 import { Client } from "pg";
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
+import { applyInventoryUnit, applyPasswordScopeUnit, liveOwnerActions, runLivePrecheck } from "./aws-native-live-release-units.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
@@ -58,12 +59,21 @@ async function connect() {
   const expectedRdsHostMatched = expectedHostPinned
     ? assertExpectedDatabaseHost(secret.host, process.env.TRACEPOINT_EXPECTED_DATABASE_HOST)
     : false;
+  // The owner credential predates the final instance and keeps its original
+  // hostname, so live owner actions connect only to the separately pinned host.
+  let host = secret.host;
+  if (liveOwnerActions.includes(action)) {
+    const pinnedHost = process.env.TRACEPOINT_EXPECTED_DATABASE_HOST?.trim().toLowerCase().replace(/\.$/, "");
+    assertExpectedDatabaseHost(pinnedHost, pinnedHost);
+    if (requestedEnvironment !== "production" || secret.username !== "tracepoint_migrator") throw new Error("LIVE_OWNER_CREDENTIAL_MISMATCH");
+    host = pinnedHost;
+  }
   setMobilePreflightStage("DATABASE_CA");
   const caPath = process.env.TRACEPOINT_DATABASE_CA_PATH;
   if (!caPath?.startsWith("/app/") || !caPath.endsWith(".pem")) throw new Error("AWS-native database CA path is invalid.");
   const ca = await readFile(caPath, "utf8");
   if (!ca.includes("BEGIN CERTIFICATE")) throw new Error("AWS-native database CA is invalid.");
-  const client = new Client({ host: secret.host, port: secret.port, user: secret.username, password: secret.password, database: secret.dbname, ssl: { ca, rejectUnauthorized: true, servername: secret.host }, connectionTimeoutMillis: 10_000, statement_timeout: 60_000, application_name: "tracepoint-aws-native-migrations" });
+  const client = new Client({ host, port: secret.port, user: secret.username, password: secret.password, database: secret.dbname, ssl: { ca, rejectUnauthorized: true, servername: host }, connectionTimeoutMillis: 10_000, statement_timeout: 60_000, application_name: "tracepoint-aws-native-migrations" });
   setMobilePreflightStage("DATABASE_CONNECT");
   await client.connect();
   client.expectedRdsHostMatched = expectedRdsHostMatched;
@@ -252,9 +262,10 @@ async function applyRangeWorkspaceHotfix(client, files) {
 let files;
 let client;
 try {
-  if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply> <staging|production>");
+  if (!["status", "inspect", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039> <staging|production>");
   if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
   if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
+  if (liveOwnerActions.includes(action) && requestedEnvironment !== "production") throw new Error("Live final-database actions are production-only.");
   setMobilePreflightStage("RUNTIME_CONFIGURATION");
   if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
   if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
@@ -269,6 +280,12 @@ try {
     console.log(JSON.stringify(await mobilePreflight(client, files)));
   } else if (action === "range-workspace-hotfix") {
     console.log(JSON.stringify(await applyRangeWorkspaceHotfix(client, files)));
+  } else if (action === "precheck") {
+    console.log(JSON.stringify(await runLivePrecheck(client)));
+  } else if (action === "inventory-035-037") {
+    console.log(JSON.stringify(await withLock(client, () => applyInventoryUnit(client, files))));
+  } else if (action === "password-scope-039") {
+    console.log(JSON.stringify(await withLock(client, () => applyPasswordScopeUnit(client, files))));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);
     if (before) verifyLedger(files, before);

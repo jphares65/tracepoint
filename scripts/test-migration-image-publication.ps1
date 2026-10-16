@@ -9,7 +9,7 @@ $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($sourcePath, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw "Migration publisher parser errors: $($parseErrors -join '; ')" }
 $requiredFunctionNames = @(
-    'Test-EcrImageNotFoundError', 'Wait-MigrationImageScan', 'Resolve-ApplicationInspectionImage', 'Assert-LiveInspectionTarget', 'Publish-MigrationImage', 'Invoke-MigrationTask',
+    'Test-EcrImageNotFoundError', 'Wait-MigrationImageScan', 'Resolve-ApplicationInspectionImage', 'Assert-LiveInspectionTarget', 'Assert-LiveDatabaseEndpoint', 'Publish-MigrationImage', 'Invoke-MigrationTask',
     'Get-OptionalPropertyValue', 'Get-ReportedValue', 'Get-MigrationTaskFailureDetails',
     'Set-MigrationTaskContainerUser', 'Set-MigrationTaskContainerEntryPoint'
 )
@@ -21,6 +21,9 @@ foreach ($function in $functions) { . ([scriptblock]::Create($function.Extent.Te
 
 $Environment = 'staging'
 $Action = 'status'
+$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039')
+$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039')
+$AuthorizeLiveDatabaseChange = $false
 $settings = @{ Account='559054714699'; Profile='synthetic-profile'; Repository='tracepoint-staging'; Bucket='synthetic-bucket'; Key='source.zip'; Build='synthetic-build'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; MigrationTaskDefinition='tracepoint-staging-database-bootstrap:27'; MigratorSecretArn='synthetic-secret-arn' }
 $root = $repositoryRoot
 $global:MigrationScanScenario = 'clean'
@@ -201,7 +204,7 @@ foreach ($readOnlyAction in @('status','inspect')) {
         Reset-MigrationScenario -Mode $mode -Scan 'clean'
         $failure = $null
         try { Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep } catch { $failure = $_.Exception.Message }
-        if (-not $failure -or $failure -notmatch 'refusing to build an image for read-only') { throw "Read-only $readOnlyAction accepted a $mode application image: $failure" }
+        if (-not $failure -or $failure -notmatch 'refusing to build an image for') { throw "Read-only $readOnlyAction accepted a $mode application image: $failure" }
         if ($global:MigrationBuildCount -ne 0 -or @($global:MigrationAwsCalls | Where-Object { $_ -match '^(codebuild|s3api) ' }).Count -ne 0) { throw "Read-only $readOnlyAction started a source upload or image build for a $mode image." }
         if ($global:MigrationRegisterTaskCount -ne 0 -or $global:MigrationRunTaskCount -ne 0) { throw "Read-only $readOnlyAction began ECS task work without an application image." }
         if ((@($global:MigrationRequestedImageIds) -join ',') -ne $applicationTag) { throw "Read-only $readOnlyAction did not look up only the application tag: $($global:MigrationRequestedImageIds -join ', ')" }
@@ -289,6 +292,48 @@ foreach ($case in @(
     if (-not $failure -or $failure -notmatch 'refusing live inspection') { throw "Live inspect accepted $($case.Name): $failure" }
     if ($global:MigrationRegisterTaskCount -ne 0 -or $global:MigrationRunTaskCount -ne 0 -or $global:MigrationTagLookupCount -ne 0) { throw "Live inspect began image or task work after $($case.Name)." }
 }
+# Guarded live-database actions use the owner credential against the pinned live host.
+foreach ($ownerAction in $liveOwnerActions) {
+    $Action = $ownerAction
+    $changesDatabase = $liveDatabaseChangeActions -contains $ownerAction
+    if ($changesDatabase) {
+        $AuthorizeLiveDatabaseChange = $false
+        Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
+        Set-LiveTarget -Secret $liveSecret -Endpoint $liveHost
+        $failure = $null
+        try { Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep } catch { $failure = $_.Exception.Message }
+        if (-not $failure -or $failure -notmatch 'changes the live production database') { throw "$ownerAction ran without explicit authorization: $failure" }
+        if (@($global:MigrationAwsCalls).Count -ne 0) { throw "$ownerAction made AWS calls before authorization was checked." }
+        $AuthorizeLiveDatabaseChange = $true
+    }
+
+    Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
+    Set-LiveTarget -Secret $liveSecret -Endpoint $liveHost
+    Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep
+    if ((@($global:MigrationSourceTaskDefinitions) -join ',') -ne 'tracepoint-production-database-bootstrap:3') { throw "$ownerAction changed its source task definition." }
+    if ($global:MigrationRegisteredSecrets -ne "TRACEPOINT_DATABASE_SECRET_JSON=$migratorSecret") { throw "$ownerAction did not use only the owner credential: $($global:MigrationRegisteredSecrets)" }
+    $expectedOwnerEnvironment = "CONFIGURATION_ENVIRONMENT=production,TRACEPOINT_DATA_PROVIDER=postgres,TRACEPOINT_RUNTIME_PROVIDER_MODE=aws-native,TRACEPOINT_DATABASE_CA_PATH=/app/rds-ca.pem,DEPLOYMENT_VERSION=$('a' * 40),TRACEPOINT_EXPECTED_DATABASE_HOST=$liveHost"
+    if ($global:MigrationRegisteredEnvironment -ne $expectedOwnerEnvironment) { throw "$ownerAction environment changed: $($global:MigrationRegisteredEnvironment)" }
+    $expectedOwnerCommand = "scripts/run-aws-native-migrations.mjs $ownerAction production"
+    if ($global:MigrationRegisteredCommand -ne $expectedOwnerCommand -or $global:MigrationOverrideCommand -ne $expectedOwnerCommand) { throw "$ownerAction command changed." }
+    if ($global:MigrationRegisteredImage -ne "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@$goodDigest" -or (@($global:MigrationRequestedImageIds) -join ',') -ne "imageTag=$('a' * 40)-aws-native-production") { throw "$ownerAction did not pin the scanned application digest." }
+    if ($global:MigrationBuildCount -ne 0 -or $global:MigrationRegisterTaskCount -ne 1 -or $global:MigrationRunTaskCount -ne 1) { throw "$ownerAction did not start exactly one task without building." }
+    $unexpected = @($global:MigrationAwsCalls | Where-Object { ($readOnlyAllowedCalls + 'rds describe-db-instances') -notcontains $_ })
+    if ($unexpected.Count -ne 0) { throw "$ownerAction made unexpected AWS calls: $($unexpected -join ', ')" }
+
+    foreach ($case in @(
+        @{ Name='pre-cutover endpoint'; Endpoint='tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com'; Status='available' },
+        @{ Name='unavailable instance'; Endpoint=$liveHost; Status='stopped' }
+    )) {
+        Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
+        Set-LiveTarget -Secret $liveSecret -Endpoint $case.Endpoint -Status $case.Status
+        $failure = $null
+        try { Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep } catch { $failure = $_.Exception.Message }
+        if (-not $failure -or $failure -notmatch 'refusing live inspection and database changes') { throw "$ownerAction accepted $($case.Name): $failure" }
+        if ($global:MigrationRegisterTaskCount -ne 0 -or $global:MigrationRunTaskCount -ne 0 -or $global:MigrationTagLookupCount -ne 0) { throw "$ownerAction began image or task work after $($case.Name)." }
+    }
+}
+$AuthorizeLiveDatabaseChange = $false
 $Environment = $stagingEnvironment
 $settings = $stagingSettings
 
