@@ -12,7 +12,7 @@ import {
   productionLedgerAdoptionPostconditions,
   productionLedgerAdoptionPostconditionsSql,
 } from "./aws-native-production-ledger-adoption.mjs";
-import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, migrationInspectionManifest, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql, migrationLedgerTransactionSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, migrationInspectionManifest, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql, migrationLedgerTransactionSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
 
@@ -191,6 +191,83 @@ test("status and inspect reuse the scanned application image and dispatch only t
   }
   assert.match(inspectPath, /BEGIN TRANSACTION READ ONLY/);
   assert.match(inspectPath, /assertInspectionSql\(sql\); snapshot\[section\]/);
+});
+
+test("production inspect is pinned to the live final-cutover database through the running service's runtime credential", async () => {
+  const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  const production = publisher.split("\n").find(line => line.trimStart().startsWith("production = @{"));
+  assert.match(production, /LiveDatabaseInstance='tracepoint-production-final-cutover-20260926'/);
+  assert.match(production, /LiveDatabaseHost='tracepoint-production-final-cutover-20260926\.c8r4sgs089tu\.us-east-1\.rds\.amazonaws\.com'/);
+  assert.match(production, /LiveDatabaseSecretArn='arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint\/production\/final\/database-runtime-20260926-yg23sb'/);
+  assert.match(production, /LiveInspectionFamily='tracepoint-production-live-database-inspect'/);
+  // status, apply, and publish-only keep the existing owner credential and bootstrap source.
+  assert.match(production, /MigrationTaskDefinition='tracepoint-production-database-bootstrap:3'; MigratorSecretArn='[^']*migrator-8X57JT'/);
+  const staging = publisher.split("\n").find(line => line.trimStart().startsWith("staging = @{"));
+  assert.doesNotMatch(staging, /Live/);
+  assert.match(publisher, /\$liveInspection = \$Action -eq 'inspect' -and \$settings\.ContainsKey\('LiveDatabaseInstance'\)/);
+  assert.match(publisher, /if \(\$liveInspection\) \{ \$service\.taskDefinition \}/);
+  assert.match(publisher, /if \(\$settings\.MigratorSecretArn -and -not \$liveInspection\)/);
+  const liveCheck = publisher.slice(publisher.indexOf("function Assert-LiveInspectionTarget"), publisher.indexOf("function Publish-MigrationImage"));
+  assert.match(liveCheck, /valueFrom -cne \$settings\.LiveDatabaseSecretArn/);
+  assert.match(liveCheck, /'rds','describe-db-instances','--db-instance-identifier',\$settings\.LiveDatabaseInstance/);
+  assert.match(liveCheck, /Endpoint\.Address -cne \$settings\.LiveDatabaseHost/);
+  assert.match(production, /LiveDatabaseSecretVersionId='5edc21b8-99f0-183c-a6e8-98f0809d0594'/);
+  assert.match(liveCheck, /'secretsmanager','list-secret-version-ids','--secret-id',\$settings\.LiveDatabaseSecretArn,'--include-deprecated'/);
+  assert.match(liveCheck, /\$versions\.Count -ne 1 -or \[string\]\$versions\[0\]\.VersionId -cne \$settings\.LiveDatabaseSecretVersionId/);
+  // Metadata only: the workstation never reads a secret value.
+  assert.doesNotMatch(publisher, /get-secret-value|GetSecretValue|SecretString/);
+  assert.doesNotMatch(liveCheck, /'ecs'/);
+
+  const connect = runner.slice(runner.indexOf("async function connect"), runner.indexOf("async function ledgerRows"));
+  assert.match(connect, /action === "inspect" && process\.env\.TRACEPOINT_EXPECTED_DATABASE_HOST !== undefined/);
+  assert.ok(connect.indexOf("assertExpectedDatabaseHost") < connect.indexOf("await client.connect()"));
+  const inspectPath = runner.slice(runner.indexOf("async function inspect("), runner.indexOf("async function mobilePreflight"));
+  assert.match(inspectPath, /client\.expectedRdsHostMatched === true[\s\S]*assertInspectionSql\(inspectionTargetIdentitySql\)[\s\S]*assertDatabaseTargetIdentity\(identity\)/);
+  assert.ok(inspectPath.indexOf("inspectionSearchPathSql);") < inspectPath.indexOf("inspectionTargetIdentitySql"));
+  assert.doesNotThrow(() => assertInspectionSql(inspectionTargetIdentitySql));
+  const live = { database_name: "tracepoint", server_address: "10.0.0.1/32", server_port: 5432, database_user: "tracepoint_runtime", session_user: "tracepoint_runtime", search_path: "pg_catalog", effective_schemas: ["pg_catalog"] };
+  assert.equal(assertDatabaseTargetIdentity(live), true);
+  for (const wrong of [{ database_user: "tracepoint_migrator", session_user: "tracepoint_migrator" }, { database_name: "postgres" }, { server_port: 5433 }]) {
+    assert.throws(() => assertDatabaseTargetIdentity({ ...live, ...wrong }), /DATABASE_TARGET_MISMATCH/);
+  }
+});
+
+test("a host-pinned inspect fails closed before connecting when the credential targets another database", () => {
+  const runnerPath = fileURLToPath(new URL("./run-aws-native-migrations.mjs", import.meta.url));
+  const liveHost = "tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com";
+  const run = (action, secretHost, expectedHost) => spawnSync(process.execPath, [runnerPath, action, "production"], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CONFIGURATION_ENVIRONMENT: "production",
+      TRACEPOINT_DATA_PROVIDER: "postgres",
+      TRACEPOINT_RUNTIME_PROVIDER_MODE: "aws-native",
+      TRACEPOINT_DATABASE_CA_PATH: "/app/tracepoint-test-absent-ca.pem",
+      TRACEPOINT_DATABASE_SECRET_JSON: JSON.stringify({ host: secretHost, port: 5432, dbname: "tracepoint", username: "tracepoint_runtime", password: "synthetic-inspection-password" }),
+      ...(expectedHost === undefined ? {} : { TRACEPOINT_EXPECTED_DATABASE_HOST: expectedHost }),
+    },
+  });
+  for (const [secretHost, expectedHost] of [
+    ["tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com", liveHost],
+    [liveHost, ""],
+    [liveHost, "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com"],
+  ]) {
+    const result = run("inspect", secretHost, expectedHost);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /DATABASE_TARGET_MISMATCH/);
+    assert.doesNotMatch(result.stderr, /synthetic-inspection-password/);
+  }
+  // A matching host passes the pin and stops at the absent CA, before any connection.
+  const matched = run("inspect", liveHost, `${liveHost.toUpperCase()}.`);
+  assert.notEqual(matched.status, 0);
+  assert.doesNotMatch(matched.stderr, /DATABASE_TARGET_MISMATCH/);
+  assert.match(matched.stderr, /ENOENT/);
+  // status is unchanged: it does not read the inspect host pin.
+  const status = run("status", "tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com", liveHost);
+  assert.doesNotMatch(status.stderr, /DATABASE_TARGET_MISMATCH/);
+  assert.match(status.stderr, /ENOENT/);
 });
 
 test("production reconciliation refuses to adopt a migration when a catalog postcondition is absent", () => {

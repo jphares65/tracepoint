@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
-import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
 import {
   assertProductionLedgerAdoptionPostconditions,
@@ -51,7 +51,11 @@ async function connect() {
   setMobilePreflightStage("DATABASE_SECRET_SHAPE");
   if (!secret || typeof secret.host !== "string" || secret.port !== 5432 || secret.dbname !== "tracepoint" || typeof secret.username !== "string" || typeof secret.password !== "string") throw new Error("AWS-native database secret is invalid.");
   setMobilePreflightStage("EXPECTED_DATABASE_HOST");
-  const expectedRdsHostMatched = action === "mobile-preflight"
+  // An inspect task given a pinned host must connect to exactly that host;
+  // TLS below then verifies the server certificate for the same name.
+  const expectedHostPinned = action === "mobile-preflight"
+    || (action === "inspect" && process.env.TRACEPOINT_EXPECTED_DATABASE_HOST !== undefined);
+  const expectedRdsHostMatched = expectedHostPinned
     ? assertExpectedDatabaseHost(secret.host, process.env.TRACEPOINT_EXPECTED_DATABASE_HOST)
     : false;
   setMobilePreflightStage("DATABASE_CA");
@@ -124,10 +128,17 @@ async function withLock(client, fn) {
 }
 async function inspect(client, { transactionAlreadyOpen = false } = {}) {
   const snapshot = {};
+  let connectionIdentity = null;
   if (!transactionAlreadyOpen) {
     for (const sql of ["BEGIN TRANSACTION READ ONLY", "SET TRANSACTION READ ONLY"]) { assertInspectionSql(sql); await client.query(sql); }
     assertInspectionSql(inspectionSearchPathSql);
     await client.query(inspectionSearchPathSql);
+    if (client.expectedRdsHostMatched === true) {
+      assertInspectionSql(inspectionTargetIdentitySql);
+      const identity = (await client.query(inspectionTargetIdentitySql)).rows[0];
+      assertDatabaseTargetIdentity(identity);
+      connectionIdentity = { ...identity, expectedRdsHostMatched: true };
+    }
   }
   for (const [section, sql] of inspectionCatalogQueries) { assertInspectionSql(sql); snapshot[section] = (await client.query(sql)).rows; }
   assertInspectionSql(mobileApiDependenciesSql);
@@ -136,7 +147,7 @@ async function inspect(client, { transactionAlreadyOpen = false } = {}) {
     assertInspectionSql("COMMIT");
     await client.query("COMMIT");
   }
-  return { ...classifyMigrationInspection(snapshot), mobileApiDependencies };
+  return { ...classifyMigrationInspection(snapshot), mobileApiDependencies, ...(connectionIdentity ? { connectionIdentity } : {}) };
 }
 
 async function mobilePreflight(client, files) {

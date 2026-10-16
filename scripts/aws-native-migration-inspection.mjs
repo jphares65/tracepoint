@@ -81,6 +81,13 @@ export function assertDatabaseTargetIdentity(identity, { expectedDatabase = "tra
 
 export const inspectionSearchPathSql = "SET LOCAL search_path = pg_catalog";
 
+// Identity of a host-pinned inspection connection, read inside its read-only
+// transaction after the search path is fixed to pg_catalog.
+export const inspectionTargetIdentitySql = `select current_database() as database_name,
+  inet_server_addr()::text as server_address, inet_server_port() as server_port,
+  current_setting('search_path') as search_path, array_to_json(current_schemas(true)) as effective_schemas,
+  current_user as database_user, session_user as session_user`;
+
 export const migrationLedgerDiscoverySql = `select
   to_regclass('public.tracepoint_aws_schema_migrations')::text as aws_native_relation,
   to_regclass('tracepoint_migrations.applied_migrations')::text as imported_relation`;

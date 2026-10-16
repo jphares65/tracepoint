@@ -9,7 +9,7 @@ $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($sourcePath, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw "Migration publisher parser errors: $($parseErrors -join '; ')" }
 $requiredFunctionNames = @(
-    'Test-EcrImageNotFoundError', 'Wait-MigrationImageScan', 'Resolve-ApplicationInspectionImage', 'Publish-MigrationImage', 'Invoke-MigrationTask',
+    'Test-EcrImageNotFoundError', 'Wait-MigrationImageScan', 'Resolve-ApplicationInspectionImage', 'Assert-LiveInspectionTarget', 'Publish-MigrationImage', 'Invoke-MigrationTask',
     'Get-OptionalPropertyValue', 'Get-ReportedValue', 'Get-MigrationTaskFailureDetails',
     'Set-MigrationTaskContainerUser', 'Set-MigrationTaskContainerEntryPoint'
 )
@@ -44,7 +44,15 @@ function Invoke-Aws {
         return [pscustomobject]@{ services=@([pscustomobject]@{status='ACTIVE';taskDefinition='arn:aws:ecs:us-east-1:559054714699:task-definition/tracepoint:27';networkConfiguration=[pscustomobject]@{awsvpcConfiguration=[pscustomobject]@{subnets=@('subnet-synthetic');securityGroups=@('sg-synthetic');assignPublicIp='DISABLED'}}}) }
     }
     if ($Arguments[0] -eq 'ecs' -and $Arguments[1] -eq 'describe-task-definition') {
-        return [pscustomobject]@{ taskDefinition=[pscustomobject]@{family='tracepoint-migration';taskRoleArn='arn:aws:iam::559054714699:role/existing-task';executionRoleArn='arn:aws:iam::559054714699:role/existing-execution';networkMode='awsvpc';requiresCompatibilities=@('FARGATE');containerDefinitions=@([pscustomobject]@{name='tracepoint';image='old-image';command=@();user='node';entryPoint=@('node');secrets=@();environment=@();portMappings=@([pscustomobject]@{containerPort=3000})})} }
+        $global:MigrationSourceTaskDefinitions += [string]$Arguments[3]
+        return [pscustomobject]@{ taskDefinition=[pscustomobject]@{family='tracepoint-migration';taskRoleArn='arn:aws:iam::559054714699:role/existing-task';executionRoleArn='arn:aws:iam::559054714699:role/existing-execution';networkMode='awsvpc';requiresCompatibilities=@('FARGATE');containerDefinitions=@([pscustomobject]@{name='tracepoint';image='old-image';command=@();user='node';entryPoint=@('node');secrets=@($global:MockSourceSecrets);environment=@([pscustomobject]@{name='APPLICATION_ONLY';value='synthetic'});portMappings=@([pscustomobject]@{containerPort=3000});logConfiguration=[pscustomobject]@{logDriver='awslogs';options=[pscustomobject]@{'awslogs-group'='/synthetic/app'}}})} }
+    }
+    if ($Arguments[0] -eq 'secretsmanager' -and $Arguments[1] -eq 'list-secret-version-ids') {
+        if ([string]$Arguments[3] -cne $global:MockVersionedSecretArn) { throw "Unexpected secret version lookup: $($Arguments[3])" }
+        return [pscustomobject]@{ Versions=@($global:MockSecretVersions) }
+    }
+    if ($Arguments[0] -eq 'rds' -and $Arguments[1] -eq 'describe-db-instances') {
+        return [pscustomobject]@{ DBInstances=@($global:MockRdsInstances) }
     }
     if ($Arguments[0] -eq 'ecr' -and $Arguments[1] -eq 'describe-images') {
         $global:MigrationTagLookupCount++
@@ -90,7 +98,11 @@ function Invoke-Aws {
         $global:MigrationRegisterTaskCount++
         $index = [Array]::IndexOf($Arguments, '--cli-input-json')
         $path = $Arguments[$index + 1].Substring('file://'.Length)
-        $registeredContainer = (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).containerDefinitions[0]
+        $registeredDefinition = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $global:MigrationRegisteredFamily = $registeredDefinition.family
+        $global:MigrationRegisteredTaskRole = $registeredDefinition.PSObject.Properties['taskRoleArn']
+        $registeredContainer = $registeredDefinition.containerDefinitions[0]
+        $global:MigrationRegisteredEnvironment = @($registeredContainer.environment | ForEach-Object { "$($_.name)=$($_.value)" }) -join ','
         $global:MigrationRegisteredImage = $registeredContainer.image
         $global:MigrationRegisteredCommand = @($registeredContainer.command) -join ' '
         $global:MigrationRegisteredSecrets = @($registeredContainer.secrets | ForEach-Object { "$($_.name)=$($_.valueFrom)" }) -join ','
@@ -134,6 +146,14 @@ function Reset-MigrationScenario([string]$Mode, [string]$Scan) {
     $global:MigrationOverrideCommand=$null
     $global:MigrationRequestedImageIds=@()
     $global:MigrationAwsCalls=@()
+    $global:MigrationSourceTaskDefinitions=@()
+    $global:MigrationRegisteredFamily=$null
+    $global:MigrationRegisteredTaskRole=$null
+    $global:MigrationRegisteredEnvironment=$null
+    $global:MockSourceSecrets=@()
+    $global:MockRdsInstances=@()
+    $global:MockSecretVersions=@()
+    $global:MockVersionedSecretArn=$null
     $global:MigrationClock=[DateTimeOffset]::Parse('2026-10-15T12:00:00Z')
 }
 
@@ -212,16 +232,64 @@ foreach ($readOnlyAction in @('status','inspect')) {
 $stagingEnvironment = $Environment
 $stagingSettings = $settings
 $Environment = 'production'
-$settings = @{ Account='193644343389'; Profile='synthetic-profile'; Repository='tracepoint-production'; Bucket='synthetic-bucket'; Key='source.zip'; Build='synthetic-build'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; MigrationTaskDefinition='tracepoint-production-database-bootstrap:3'; MigratorSecretArn='synthetic-production-secret-arn' }
-foreach ($readOnlyAction in @('status','inspect')) {
-    $Action = $readOnlyAction
+$liveHost = 'tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com'
+$liveSecret = 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb'
+$liveSecretVersion = '5edc21b8-99f0-183c-a6e8-98f0809d0594'
+$migratorSecret = 'arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT'
+$serviceTaskDefinition = 'arn:aws:ecs:us-east-1:559054714699:task-definition/tracepoint:27'
+$settings = @{ Account='193644343389'; Profile='synthetic-profile'; Repository='tracepoint-production'; Bucket='synthetic-bucket'; Key='source.zip'; Build='synthetic-build'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; MigrationTaskDefinition='tracepoint-production-database-bootstrap:3'; MigratorSecretArn=$migratorSecret; LiveDatabaseInstance='tracepoint-production-final-cutover-20260926'; LiveDatabaseHost=$liveHost; LiveDatabaseSecretArn=$liveSecret; LiveDatabaseSecretVersionId=$liveSecretVersion; LiveInspectionFamily='tracepoint-production-live-database-inspect' }
+function Set-LiveTarget([string]$Secret, [string]$Endpoint, [string]$Status = 'available', [int]$Port = 5432, [object[]]$Versions = @([pscustomobject]@{ VersionId=$liveSecretVersion; VersionStages=@('AWSCURRENT') })) {
+    $global:MockVersionedSecretArn = $liveSecret
+    $global:MockSecretVersions = $Versions
+    $global:MockSourceSecrets = if ($Secret) { @([pscustomobject]@{ name='TRACEPOINT_DATABASE_SECRET_JSON'; valueFrom=$Secret }) } else { @() }
+    $global:MockRdsInstances = @([pscustomobject]@{ DBInstanceStatus=$Status; Endpoint=[pscustomobject]@{ Address=$Endpoint; Port=$Port } })
+}
+
+# Production status keeps its existing bootstrap source and migrator credential.
+$Action = 'status'
+Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
+Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep
+if ((@($global:MigrationSourceTaskDefinitions) -join ',') -ne 'tracepoint-production-database-bootstrap:3') { throw 'Production status changed its source task definition.' }
+if ($global:MigrationRegisteredSecrets -ne "TRACEPOINT_DATABASE_SECRET_JSON=$migratorSecret" -or $global:MigrationRegisteredEnvironment -match 'TRACEPOINT_EXPECTED_DATABASE_HOST') { throw 'Production status changed its database target.' }
+if ((@($global:MigrationRequestedImageIds) -join ',') -ne "imageTag=$('a' * 40)-aws-native-production" -or $global:MigrationRegisteredImage -ne "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@$goodDigest") { throw 'Production status did not pin the deployed application image.' }
+if ($global:MigrationRegisteredCommand -ne 'scripts/run-aws-native-migrations.mjs status production' -or $global:MigrationBuildCount -ne 0) { throw 'Production status changed its command or built an image.' }
+
+# Production inspect reads the live database through the running service's credential.
+$Action = 'inspect'
+Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
+Set-LiveTarget -Secret $liveSecret -Endpoint $liveHost
+Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep
+if ((@($global:MigrationSourceTaskDefinitions) -join ',') -ne $serviceTaskDefinition) { throw "Live inspect did not derive from the running service task: $($global:MigrationSourceTaskDefinitions -join ', ')" }
+if ($global:MigrationRegisteredFamily -ne 'tracepoint-production-live-database-inspect') { throw "Live inspect registered into an unexpected family: $($global:MigrationRegisteredFamily)" }
+if ($null -ne $global:MigrationRegisteredTaskRole) { throw 'Live inspect must not carry a task role.' }
+if ($global:MigrationRegisteredSecrets -ne "TRACEPOINT_DATABASE_SECRET_JSON=$liveSecret") { throw "Live inspect did not use only the live runtime secret: $($global:MigrationRegisteredSecrets)" }
+$expectedEnvironment = "CONFIGURATION_ENVIRONMENT=production,TRACEPOINT_DATA_PROVIDER=postgres,TRACEPOINT_RUNTIME_PROVIDER_MODE=aws-native,TRACEPOINT_DATABASE_CA_PATH=/app/rds-ca.pem,TRACEPOINT_EXPECTED_DATABASE_HOST=$liveHost,DEPLOYMENT_VERSION=$('a' * 40)"
+if ($global:MigrationRegisteredEnvironment -ne $expectedEnvironment) { throw "Live inspect environment changed: $($global:MigrationRegisteredEnvironment)" }
+if ($global:MigrationRegisteredCommand -ne 'scripts/run-aws-native-migrations.mjs inspect production' -or $global:MigrationOverrideCommand -ne 'scripts/run-aws-native-migrations.mjs inspect production') { throw 'Live inspect command changed.' }
+if ($global:MigrationRegisteredImage -ne "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@$goodDigest" -or (@($global:MigrationRequestedImageIds) -join ',') -ne "imageTag=$('a' * 40)-aws-native-production") { throw 'Live inspect did not pin the scanned application digest.' }
+if ($global:MigrationBuildCount -ne 0 -or $global:MigrationRegisterTaskCount -ne 1 -or $global:MigrationRunTaskCount -ne 1) { throw 'Live inspect did not start exactly one task without building.' }
+$unexpected = @($global:MigrationAwsCalls | Where-Object { ($readOnlyAllowedCalls + 'rds describe-db-instances' + 'secretsmanager list-secret-version-ids') -notcontains $_ })
+if ($unexpected.Count -ne 0) { throw "Live inspect made unexpected AWS calls: $($unexpected -join ', ')" }
+
+# Any drift in the live credential or endpoint stops before image lookup or task work.
+foreach ($case in @(
+    @{ Name='old migrator secret'; Secret=$migratorSecret; Endpoint=$liveHost; Status='available'; Port=5432 },
+    @{ Name='missing secret'; Secret=''; Endpoint=$liveHost; Status='available'; Port=5432 },
+    @{ Name='pre-cutover endpoint'; Secret=$liveSecret; Endpoint='tracepoint-production.c8r4sgs089tu.us-east-1.rds.amazonaws.com'; Status='available'; Port=5432 },
+    @{ Name='unavailable instance'; Secret=$liveSecret; Endpoint=$liveHost; Status='stopped'; Port=5432 },
+    @{ Name='unexpected port'; Secret=$liveSecret; Endpoint=$liveHost; Status='available'; Port=5433 },
+    @{ Name='rotated secret'; Secret=$liveSecret; Endpoint=$liveHost; Status='available'; Port=5432; Versions=@([pscustomobject]@{ VersionId='11111111-2222-3333-4444-555555555555'; VersionStages=@('AWSCURRENT') }) },
+    @{ Name='additional secret version'; Secret=$liveSecret; Endpoint=$liveHost; Status='available'; Port=5432; Versions=@([pscustomobject]@{ VersionId=$liveSecretVersion; VersionStages=@('AWSPREVIOUS') }, [pscustomobject]@{ VersionId='11111111-2222-3333-4444-555555555555'; VersionStages=@('AWSCURRENT') }) }
+)) {
     Reset-MigrationScenario -Mode 'reuse' -Scan 'clean'
-    Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep
-    if ((@($global:MigrationRequestedImageIds) -join ',') -ne "imageTag=$('a' * 40)-aws-native-production") { throw "Production read-only $readOnlyAction did not resolve the deployed application tag." }
-    if ($global:MigrationRegisteredImage -ne "193644343389.dkr.ecr.us-east-1.amazonaws.com/tracepoint-production@$goodDigest") { throw "Production read-only $readOnlyAction did not pin the application digest." }
-    if ($global:MigrationRegisteredCommand -ne "scripts/run-aws-native-migrations.mjs $readOnlyAction production" -or $global:MigrationBuildCount -ne 0) { throw "Production read-only $readOnlyAction changed its command or built an image." }
+    if ($case.ContainsKey('Versions')) { Set-LiveTarget -Secret $case.Secret -Endpoint $case.Endpoint -Status $case.Status -Port $case.Port -Versions $case.Versions }
+    else { Set-LiveTarget -Secret $case.Secret -Endpoint $case.Endpoint -Status $case.Status -Port $case.Port }
+    $failure = $null
+    try { Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep } catch { $failure = $_.Exception.Message }
+    if (-not $failure -or $failure -notmatch 'refusing live inspection') { throw "Live inspect accepted $($case.Name): $failure" }
+    if ($global:MigrationRegisterTaskCount -ne 0 -or $global:MigrationRunTaskCount -ne 0 -or $global:MigrationTagLookupCount -ne 0) { throw "Live inspect began image or task work after $($case.Name)." }
 }
 $Environment = $stagingEnvironment
 $settings = $stagingSettings
 
-Write-Host 'Migration image scan gate tests passed: reuse/build failures launched zero ECS tasks; incomplete, unavailable, failed, findings, mismatch, timeout all blocked; clean scans launched one task pinned to the checked digest; apply keeps the migration image; status and inspect reuse only the scanned application image, never build, and make no service update. AWS/ECR/CodeBuild/ECS were mocked.'
+Write-Host 'Migration image scan gate tests passed: reuse/build failures launched zero ECS tasks; incomplete, unavailable, failed, findings, mismatch, timeout all blocked; clean scans launched one task pinned to the checked digest; apply keeps the migration image; status and inspect reuse only the scanned application image, never build, and make no service update; production inspect uses only the live runtime secret and pinned live host, and refuses secret or endpoint drift. AWS/ECR/CodeBuild/ECS/RDS were mocked.'

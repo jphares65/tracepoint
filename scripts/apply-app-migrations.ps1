@@ -14,7 +14,7 @@ Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 
 $settings = @{
   staging = @{ Account='559054714699'; Profile='tracepoint-member-staging'; Role='TracePointMigrationStaging'; Region='us-east-1'; Cluster='tracepoint-staging'; Service='tracepoint-staging'; Repository='tracepoint-staging'; Bucket='tracepoint-staging-build-source-559054714699'; Key='source/tracepoint-staging-source.zip'; Build='tracepoint-staging-image-build'; MigrationTaskDefinition='tracepoint-staging-database-bootstrap:27'; MigratorSecretArn='arn:aws:secretsmanager:us-east-1:559054714699:secret:tracepoint/staging/database/migrator-GqXXWG' }
-  production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build'; MigrationTaskDefinition='tracepoint-production-database-bootstrap:3'; MigratorSecretArn='arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT' }
+  production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Cluster='tracepoint-production'; Service='tracepoint-production'; Repository='tracepoint-production'; Bucket='tracepoint-production-aws-native-build-source-193644343389'; Key='source/tracepoint-production-aws-native-source.zip'; Build='tracepoint-production-aws-native-image-build'; MigrationTaskDefinition='tracepoint-production-database-bootstrap:3'; MigratorSecretArn='arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/database/migrator-8X57JT'; LiveDatabaseInstance='tracepoint-production-final-cutover-20260926'; LiveDatabaseHost='tracepoint-production-final-cutover-20260926.c8r4sgs089tu.us-east-1.rds.amazonaws.com'; LiveDatabaseSecretArn='arn:aws:secretsmanager:us-east-1:193644343389:secret:tracepoint/production/final/database-runtime-20260926-yg23sb'; LiveDatabaseSecretVersionId='5edc21b8-99f0-183c-a6e8-98f0809d0594'; LiveInspectionFamily='tracepoint-production-live-database-inspect' }
 }[$Environment]
 if ($Action -eq 'baseline' -and $Environment -ne 'staging') { throw 'Baseline is staging-only.' }
 if ($Action -eq 'publish-only' -and $Environment -ne 'production') { throw 'Publish-only is reserved for an explicitly reviewed production inspection image.' }
@@ -124,6 +124,26 @@ function Resolve-ApplicationInspectionImage {
   $digest = Wait-MigrationImageScan -Digest ([string]$details[0].imageDigest) -Now $ScanNow -Sleep $ScanSleep
   return @{ Tag=$tag; Digest=$digest }
 }
+function Assert-LiveInspectionTarget {
+  param([Parameter(Mandatory)]$Task)
+  # The running service must use the pinned live credential, and the pinned
+  # host must be the live instance's RDS endpoint. Fail closed on any drift.
+  $secrets = @($Task.containerDefinitions[0].secrets | Where-Object { $_.name -eq 'TRACEPOINT_DATABASE_SECRET_JSON' })
+  if ($secrets.Count -ne 1 -or [string]$secrets[0].valueFrom -cne $settings.LiveDatabaseSecretArn) {
+    throw 'The running application task does not use the pinned live database secret; refusing live inspection.'
+  }
+  # Images before this check do not enforce the host pin in-task. The pinned
+  # version is the secret's only version, written by the stack whose template
+  # sets the live host; refuse if the secret has changed since then.
+  $versions = @((Invoke-Aws @('secretsmanager','list-secret-version-ids','--secret-id',$settings.LiveDatabaseSecretArn,'--include-deprecated')).Versions)
+  if ($versions.Count -ne 1 -or [string]$versions[0].VersionId -cne $settings.LiveDatabaseSecretVersionId -or @($versions[0].VersionStages) -notcontains 'AWSCURRENT') {
+    throw 'The live database secret changed since its host was attested; refusing live inspection.'
+  }
+  $instances = @((Invoke-Aws @('rds','describe-db-instances','--db-instance-identifier',$settings.LiveDatabaseInstance)).DBInstances)
+  if ($instances.Count -ne 1 -or $instances[0].DBInstanceStatus -ne 'available' -or [string]$instances[0].Endpoint.Address -cne $settings.LiveDatabaseHost -or [int]$instances[0].Endpoint.Port -ne 5432) {
+    throw 'The pinned live database host does not match the live RDS instance endpoint; refusing live inspection.'
+  }
+}
 function Publish-MigrationImage {
   param(
     [Parameter(Mandatory)][string]$Commit,
@@ -195,22 +215,53 @@ function Invoke-MigrationTask {
   )
   $service = (Invoke-Aws @('ecs','describe-services','--cluster',$settings.Cluster,'--services',$settings.Service)).services | Select-Object -First 1
   if (!$service -or $service.status -ne 'ACTIVE') { throw 'Expected ECS application service is not active.' }
-  $sourceTaskDefinition = if ($settings.MigrationTaskDefinition) { $settings.MigrationTaskDefinition } else { $service.taskDefinition }
+  # Production inspect reads the live application database. Its source is the
+  # running service revision, never the bootstrap task, whose credentials
+  # target the pre-cutover instance.
+  $liveInspection = $Action -eq 'inspect' -and $settings.ContainsKey('LiveDatabaseInstance')
+  $sourceTaskDefinition = if ($liveInspection) { $service.taskDefinition } elseif ($settings.MigrationTaskDefinition) { $settings.MigrationTaskDefinition } else { $service.taskDefinition }
   $current = (Invoke-Aws @('ecs','describe-task-definition','--task-definition',$sourceTaskDefinition)).taskDefinition
   if ($current.networkMode -ne 'awsvpc' -or @($current.requiresCompatibilities) -notcontains 'FARGATE' -or @($current.containerDefinitions).Count -ne 1) { throw 'Unexpected ECS task pattern.' }
+  if ($liveInspection) { Assert-LiveInspectionTarget -Task $current }
   $image = if ($Action -in @('status','inspect')) { Resolve-ApplicationInspectionImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
     else { Publish-MigrationImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
   $registration = [ordered]@{}
-  foreach ($field in @('family','taskRoleArn','executionRoleArn','networkMode','containerDefinitions','volumes','placementConstraints','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) {
-    $property = $current.PSObject.Properties[$field]
-    if ($null -ne $property -and $null -ne $property.Value) { $registration[$field] = $property.Value }
+  if ($liveInspection) {
+    # A separate family keeps the service's family free of inspection
+    # revisions. No task role: the runner needs no AWS API access.
+    $registration.family = $settings.LiveInspectionFamily
+    foreach ($field in @('executionRoleArn','networkMode','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) {
+      $property = $current.PSObject.Properties[$field]
+      if ($null -ne $property -and $null -ne $property.Value) { $registration[$field] = $property.Value }
+    }
+    $sourceContainer = $current.containerDefinitions[0]
+    # The running application's least-privileged credential, never the owner
+    # credential, plus the independently pinned host the runner must match.
+    $registration.containerDefinitions = @([pscustomobject][ordered]@{
+      name = $sourceContainer.name; image = $null; essential = $true; command = @()
+      logConfiguration = $sourceContainer.logConfiguration
+      secrets = @([ordered]@{ name='TRACEPOINT_DATABASE_SECRET_JSON'; valueFrom=$settings.LiveDatabaseSecretArn })
+      environment = @(
+        [ordered]@{ name='CONFIGURATION_ENVIRONMENT'; value=$Environment },
+        [ordered]@{ name='TRACEPOINT_DATA_PROVIDER'; value='postgres' },
+        [ordered]@{ name='TRACEPOINT_RUNTIME_PROVIDER_MODE'; value='aws-native' },
+        [ordered]@{ name='TRACEPOINT_DATABASE_CA_PATH'; value='/app/rds-ca.pem' },
+        [ordered]@{ name='TRACEPOINT_EXPECTED_DATABASE_HOST'; value=$settings.LiveDatabaseHost },
+        [ordered]@{ name='DEPLOYMENT_VERSION'; value=$Commit }
+      )
+    })
+  } else {
+    foreach ($field in @('family','taskRoleArn','executionRoleArn','networkMode','containerDefinitions','volumes','placementConstraints','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) {
+      $property = $current.PSObject.Properties[$field]
+      if ($null -ne $property -and $null -ne $property.Value) { $registration[$field] = $property.Value }
+    }
   }
   $container = $registration.containerDefinitions[0]
   $container.image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
   $container.command = @('scripts/run-aws-native-migrations.mjs',$Action,$Environment)
   Set-MigrationTaskContainerUser $container
   Set-MigrationTaskContainerEntryPoint $container
-  if ($settings.MigratorSecretArn) {
+  if ($settings.MigratorSecretArn -and -not $liveInspection) {
     # A migration task must use the existing database-owner credential, never
     # the web service's least-privileged runtime credential.  Deliberately
     # replace the bootstrap task's names with the runner's single input.
