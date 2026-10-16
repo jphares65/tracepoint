@@ -169,6 +169,30 @@ test("production publish-only action stops after immutable image publication", a
   assert.doesNotMatch(imagePublisher, /'ecs'|'rds'|MigratorSecretArn|TRACEPOINT_DATABASE/);
 });
 
+test("status and inspect reuse the scanned application image and dispatch only to read-only runner paths", async () => {
+  const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
+  const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
+  const resolver = publisher.slice(publisher.indexOf("function Resolve-ApplicationInspectionImage"), publisher.indexOf("function Publish-MigrationImage"));
+  assert.match(resolver, /\$tag = "\$Commit-aws-native-\$Environment"/);
+  assert.match(resolver, /refusing to build an image for read-only/);
+  assert.match(resolver, /Wait-MigrationImageScan -Digest/);
+  assert.doesNotMatch(resolver, /codebuild|s3api|start-build|put-object|git\.exe|'ecs'/);
+  assert.match(publisher, /\$Action -in @\('status','inspect'\)\) \{ Resolve-ApplicationInspectionImage/);
+  assert.match(publisher, /else \{ Publish-MigrationImage -Commit \$Commit/);
+  assert.doesNotMatch(publisher, /update-service|delete-service|update-cluster/);
+
+  assert.match(runner, /if \(action === "status"\) \{\s*console\.log\(JSON\.stringify\(await report\(client, files\)\)\);\s*\} else if \(action === "inspect"\) \{\s*console\.log\(JSON\.stringify\(await inspect\(client\)\)\);/);
+  assert.match(runner, /action === "range-workspace-hotfix"\) \{[\s\S]*?\} else await withLock\(/);
+  const reportPath = runner.slice(runner.indexOf("async function ledgerRows"), runner.indexOf("async function verifyBaselineAnchor"));
+  const inspectPath = runner.slice(runner.indexOf("async function inspect("), runner.indexOf("async function mobilePreflight"));
+  for (const body of [reportPath, inspectPath]) {
+    assert.ok(body.length > 0);
+    assert.doesNotMatch(body, /\b(insert|update|delete|create|alter|drop|grant|truncate)\b|ensureLedger|withLock|migrationSqlWithLedgerEntry|pg_advisory/i);
+  }
+  assert.match(inspectPath, /BEGIN TRANSACTION READ ONLY/);
+  assert.match(inspectPath, /assertInspectionSql\(sql\); snapshot\[section\]/);
+});
+
 test("production reconciliation refuses to adopt a migration when a catalog postcondition is absent", () => {
   const verified = Object.fromEntries(productionLedgerAdoptionPostconditions.map(key => [key, true]));
   assert.doesNotThrow(() => assertProductionLedgerAdoptionPostconditions(verified));

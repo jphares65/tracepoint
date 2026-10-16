@@ -104,6 +104,26 @@ function Wait-MigrationImageScan {
   } while ((& $Now) -lt $deadline)
   throw "Migration image scan did not complete within $TimeoutMinutes minutes."
 }
+function Resolve-ApplicationInspectionImage {
+  param(
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit,
+    [scriptblock]$ScanNow = { [DateTimeOffset]::UtcNow },
+    [scriptblock]$ScanSleep = { param([int]$Seconds) Start-Sleep -Seconds $Seconds }
+  )
+  # Read-only status and inspect reuse the immutable application image that
+  # deploy-app.ps1 published for this commit. It carries the same migration
+  # runner and SQL, so a read-only action never builds or publishes an image.
+  $tag = "$Commit-aws-native-$Environment"
+  try { $details = @((Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails) } catch {
+    if (-not (Test-EcrImageNotFoundError -ErrorRecord $_)) { throw }
+    $details = @()
+  }
+  if ($details.Count -ne 1 -or [string]$details[0].imageDigest -notmatch '^sha256:[0-9a-f]{64}$') {
+    throw "Application image $tag is not present in ECR; refusing to build an image for read-only $Action. Publish it with deploy-app.ps1 first."
+  }
+  $digest = Wait-MigrationImageScan -Digest ([string]$details[0].imageDigest) -Now $ScanNow -Sleep $ScanSleep
+  return @{ Tag=$tag; Digest=$digest }
+}
 function Publish-MigrationImage {
   param(
     [Parameter(Mandatory)][string]$Commit,
@@ -178,7 +198,8 @@ function Invoke-MigrationTask {
   $sourceTaskDefinition = if ($settings.MigrationTaskDefinition) { $settings.MigrationTaskDefinition } else { $service.taskDefinition }
   $current = (Invoke-Aws @('ecs','describe-task-definition','--task-definition',$sourceTaskDefinition)).taskDefinition
   if ($current.networkMode -ne 'awsvpc' -or @($current.requiresCompatibilities) -notcontains 'FARGATE' -or @($current.containerDefinitions).Count -ne 1) { throw 'Unexpected ECS task pattern.' }
-  $image = Publish-MigrationImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep
+  $image = if ($Action -in @('status','inspect')) { Resolve-ApplicationInspectionImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
+    else { Publish-MigrationImage -Commit $Commit -ScanNow $ScanNow -ScanSleep $ScanSleep }
   $registration = [ordered]@{}
   foreach ($field in @('family','taskRoleArn','executionRoleArn','networkMode','containerDefinitions','volumes','placementConstraints','requiresCompatibilities','cpu','memory','runtimePlatform','ephemeralStorage')) {
     $property = $current.PSObject.Properties[$field]
