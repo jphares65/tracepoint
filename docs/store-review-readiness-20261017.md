@@ -128,18 +128,27 @@ Components (each additive and reversible):
    `TracePointAppReview`/`Cognito_Subject`/review-pool `sub`). The source must not have signed in
    before linking.
 
-Not documented by AWS, so it must be proven in staging (section 8) before production:
-- a linked native user signing in through the provider is not challenged for TOTP;
-- the tokens carry the local user's `sub` and the `aws.cognito.signin.user.admin` scope, and
-  `GetUser` accepts them;
-- linking works for an activated user who never enrolled TOTP;
-- disabling the local user, global sign-out, and unlinking each cut off access.
-If any of these fails, stop: the remaining options need a new decision (see "Alternatives").
+Staging results (2026-10-17, evidence in `tracepoint-release-evidence/staging-reviewer-test-20261017/RESULTS.md`):
+- Proven: a linked user signing in through the provider gets no TOTP prompt; tokens carry the
+  local user's `sub` and `aws.cognito.signin.user.admin`; `GetUser` accepts them; mobile session,
+  module access, refresh, logout/revoke, and global sign-out behave as designed; tenant isolation
+  holds; existing users, identity links, profiles and memberships are unchanged.
+- The local user must be `CONFIRMED` (normal activation sets a permanent password). A user still
+  in `FORCE_CHANGE_PASSWORD` makes federated sign-in fail. It does not need TOTP enrolled.
+- **Unlinking is not a revocation method.** After `AdminDisableProviderForUser`, Cognito's
+  remembered hosted sign-in session kept issuing valid tokens for the linked user (also after a
+  global sign-out). TracePoint refused those tokens only because the membership was inactive.
+- Federated sign-in sets the linked user's `email_verified` to false. Only effect: an admin
+  password reset or Cognito "forgot password" for the reviewer's local account is refused
+  (`recovery_unavailable`), which is acceptable; map `email_verified` too to avoid it.
 
-Revocation (all independent): deactivate the reviewer membership in TracePoint (signs the user out
-of Cognito and disables it); `AdminUserGlobalSignOut` (next request fails at `GetUser`);
-`AdminDisableProviderForUser` (removes the link); disable the user in the review pool; remove the
-provider from the mobile client.
+Required revocation procedure (verified kill switches, in order):
+1. Deactivate the reviewer's TracePoint membership. Verified to refuse existing sessions and every
+   new token, including tokens minted from a remembered session.
+2. `AdminUserGlobalSignOut` on the reviewer's local user. Verified to end existing tokens on the
+   next request and to invalidate refresh tokens. It does not prevent new sign-ins.
+3. Then housekeeping (not counted as verified kill switches): disable the user in the review pool,
+   disable the local user, remove the provider from the mobile client, unlink.
 
 Cost: Cognito lists 50 free federated monthly active users per account, then $0.015 each; no fee
 per user pool. Expected cost $0. No EAS cost.
@@ -220,7 +229,7 @@ Risks to resolve or accept
 - Sentry's data processing addendum must be accepted in Sentry (Legal & Compliance) by an owner;
   it is not automatic. Sentry's data region is visible only in the Sentry organization settings.
 
-## 8. Staging rehearsal of reviewer access (requires approval; not performed)
+## 8. Staging rehearsal of reviewer access (performed 2026-10-17; rolled back — see section 5 results)
 
 Scope: staging account `559054714699`, staging pool behind
 `tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com`, staging mobile client
@@ -281,8 +290,8 @@ two hours including the fictional agency setup.
 |---|---|---|---|
 | 1 | Owner resolves the policy confirmations in `src/app/privacy/policy-content.ts` | Owner | No `[[OWNER: …]]` left; tests pass; local commit |
 | 2 | Deploy web `/privacy` with `deploy-app.ps1` (CodeBuild image from the reviewed commit, then ECS update with automatic rollback) | Approval | `/privacy` 200 without sign-in; `/api/health`, `/support` 200; mobile APIs unchanged |
-| 3 | Staging rehearsal of reviewer access (section 8) | Approval | T1–T14 pass; staging change kept or rolled back as decided |
-| 4 | Production reviewer access: review pool, provider on the mobile client only, fictional agency, demo data and QR codes, reviewer activation and link | Approval | Repeat T3–T7, T10–T14 against production with the reviewer only |
+| 3 | Staging rehearsal of reviewer access (section 8) | Done | Passed except unlinking, which is excluded from the revocation procedure; staging rolled back |
+| 4 | Production reviewer access: review pool, provider on the mobile client only (map `email` and `email_verified`), fictional agency with only the needed features, demo data and QR codes, reviewer activation (must end `CONFIRMED`) and link | Approval | Repeat T3–T11 against production with the reviewer only, including one request proving production’s registration-time membership check |
 | 5 | Final mobile verification of `5b4e160` (privacy link opens the live page) | — | Tests pass; link target live |
 | 6 | EAS production builds from `5b4e160` (iOS build 7, Android versionCode 5); upload iOS; upload Android versionCode 5 into the existing production draft (manually in Play Console, or with EAS Submit if a service account is added) | Approval (EAS cost) | Builds finished; Apple processing complete |
 | 7 | Screenshots from the fictional agency, feature graphic, descriptions, App Privacy and Data safety, age/content rating, reviewer credentials and notes | Owner | All required fields complete in both consoles |
