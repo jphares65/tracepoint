@@ -9,10 +9,10 @@ This document contains no credentials or secrets.
 | | Current store builds | Required for review |
 |---|---|---|
 | iOS | 1.0.0 (5) from `98e6e8a` (old device name); 1.0.0 (6) from `1bec3eb` (name "TracePoint"), both uploaded to App Store Connect | New build from mobile `5b4e160` (adds the in-app Privacy Policy link). Apple 5.1.1(i) requires the policy to be reachable in the app. |
-| Android | versionCode 3 from `98e6e8a`; versionCode 4 from `1bec3eb` (not uploaded) | New build from mobile `5b4e160`. Google's User Data policy requires the policy inside the app. |
+| Android | versionCode 3 from `98e6e8a`; versionCode 4 from `1bec3eb`, uploaded by the owner to Google Play with a production release draft (has no in-app privacy link) | New build from mobile `5b4e160`. Google's User Data policy requires the policy inside the app. |
 
 Order: publish the web `/privacy` page first (the in-app link opens it), then build both apps from
-`5b4e160`, then submit. Builds 5/6 and versionCodes 3/4 must not be submitted.
+`5b4e160`, then submit. Builds 5/6 and versionCodes 3/4 must not be submitted. In the existing Google Play production draft, replace versionCode 4 with versionCode 5 before sending it for review.
 
 ## 2. Verified data practices of the mobile app (basis for both store forms)
 
@@ -207,8 +207,6 @@ Blocking submission
 - No store build contains the in-app privacy link; new builds from mobile `5b4e160` are needed.
 - Store assets: real iPhone 6.9" screenshots, at least 2 Android phone screenshots, a 1024×500
   Google feature graphic, descriptions, and the completed privacy/content questionnaires.
-- Google Play: the first app bundle must be uploaded manually in Play Console (EAS has no
-  service account).
 
 Risks to resolve or accept
 - Apple developer account is an **Individual** account (team `BHRBP525FV`, "Jason Phares"). The
@@ -286,7 +284,7 @@ two hours including the fictional agency setup.
 | 3 | Staging rehearsal of reviewer access (section 8) | Approval | T1–T14 pass; staging change kept or rolled back as decided |
 | 4 | Production reviewer access: review pool, provider on the mobile client only, fictional agency, demo data and QR codes, reviewer activation and link | Approval | Repeat T3–T7, T10–T14 against production with the reviewer only |
 | 5 | Final mobile verification of `5b4e160` (privacy link opens the live page) | — | Tests pass; link target live |
-| 6 | EAS production builds from `5b4e160` (iOS build 7, Android versionCode 5); upload iOS; upload Android bundle manually in Play Console | Approval (EAS cost) | Builds finished; Apple processing complete |
+| 6 | EAS production builds from `5b4e160` (iOS build 7, Android versionCode 5); upload iOS; upload Android versionCode 5 into the existing production draft (manually in Play Console, or with EAS Submit if a service account is added) | Approval (EAS cost) | Builds finished; Apple processing complete |
 | 7 | Screenshots from the fictional agency, feature graphic, descriptions, App Privacy and Data safety, age/content rating, reviewer credentials and notes | Owner | All required fields complete in both consoles |
 | 8 | Submit: Apple "Manually release this version"; Google "Managed publishing" | Owner | Both stores show "Waiting for review" / "In review" |
 
@@ -303,8 +301,9 @@ App Store Connect
 - [ ] Version release: **Manually release this version**. Then Submit for Review.
 
 Google Play Console
-- [ ] Upload the first AAB manually (no service account is configured in EAS) to the
-      production track as a draft, or approve adding a service account for EAS Submit.
+- [x] First bundle (versionCode 4) uploaded and a production release draft created (owner, done).
+- [ ] Upload versionCode 5 (from `5b4e160`) and swap it into the production draft in place of
+      versionCode 4.
 - [ ] Store listing: short and full description, 512×512 icon (exists:
       `TracePoint-Icon-Release-20261015-221734/tracepoint-google-play-512.png`), 1024×500
       feature graphic (missing), at least 2 phone screenshots from the fictional agency.
@@ -317,3 +316,21 @@ Google Play Console
 
 Nice-to-have, not blocking: clear inspection drafts on sign-out; remove the unused photo-library
 permission string; consider stripping photo location metadata on upload.
+
+## 11. Owner decision list for the privacy policy
+
+Each item maps to one `[[OWNER: …]]` marker or store setting. A production build will not publish
+`/privacy` until every marker is resolved.
+
+| # | Decision or input | Who | Notes |
+|---|---|---|---|
+| 1 | Registered legal entity name and mailing address | Owner | From formation documents; no document in the repositories establishes it. |
+| 2 | App Store seller identity | Owner | The Apple developer account is Individual ("Jason Phares"). Accept, or enroll an Organization account (needs a D-U-N-S number). |
+| 3 | Privacy contact | Owner | Confirm support@tracepointhq.com (Microsoft 365) is monitored for privacy requests, or name another monitored address. |
+| 4 | TracePoint's role | Owner / counsel | Approve the description in section 1 of the policy. It mentions no DPA or CJIS agreement; say if one exists. |
+| 5 | Sentry | Owner | Read the data region in Sentry organization settings; accept Sentry's DPA under Legal & Compliance (owner or billing role). |
+| 6 | Backup retention | Read-only check | AWS Backup plan retention for the production database (needs a fresh production sign-in). |
+| 7 | Manual database snapshots | Owner | Decide how long to keep the two pre-migration snapshots, then state it. |
+| 8 | Request and firewall log retention | Read-only check | Live WAF and load-balancer log retention (needs a fresh production sign-in). |
+| 9 | End of service | Owner | How long an agency's data is kept after its agreement ends, and whether it is returned or deleted. Only what TracePoint can actually do today. |
+| 10 | Effective date | Owner | The actual publication date, set when the web deployment is approved. |
