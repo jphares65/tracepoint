@@ -5,10 +5,10 @@
 
 export type PolicySection = { id: string; heading: string; paragraphs?: string[]; items?: string[]; closing?: string[] };
 
-export const policyEffectiveDate = "[[OWNER: effective date, e.g. October 20, 2026]]";
+export const policyEffectiveDate = "[[OWNER: actual publication date]]";
 
 export const policyIntro = [
-  "This Privacy Policy explains how [[OWNER: confirm legal entity name — TracePoint LLC]] (\"TracePoint,\" \"we,\" \"us\") collects, uses, shares, and protects information through TracePoint Public Safety, which includes the TracePoint website and web application at tracepointhq.com and the TracePoint mobile apps for iOS and Android (together, the \"Service\").",
+  "This Privacy Policy explains how [[OWNER: registered legal entity name from formation documents, e.g. TracePoint LLC]] (\"TracePoint,\" \"we,\" \"us\") collects, uses, shares, and protects information through TracePoint Public Safety, which includes the TracePoint website and web application at tracepointhq.com and the TracePoint mobile apps for iOS and Android (together, the \"Service\").",
   "TracePoint is an operations platform for public safety agencies. The Service is provided to agencies and is intended only for authorized agency personnel. It is not a consumer service and is not intended for members of the public.",
 ];
 
@@ -17,7 +17,7 @@ export const policySections: PolicySection[] = [
     id: "role",
     heading: "1. Our relationship with your agency",
     paragraphs: [
-      "Your agency decides who receives an account, which roles and permissions each person has, and what records are kept in the Service. We process the information in your agency's TracePoint workspace to provide the Service to your agency and in accordance with our agreement with your agency. [[OWNER: confirm that agencies act as the controller and TracePoint as service provider/processor, and whether a data processing or CJIS addendum applies]]",
+      "Your agency is responsible for the records it keeps in the Service. It decides who receives an account, which roles and permissions each person has, and what information is entered, kept, and removed. TracePoint hosts and processes the information in your agency's workspace to provide the Service to your agency. [[OWNER: confirm this description of TracePoint's role with counsel; do not reference a data processing, CJIS, or similar agreement unless one is in place]]",
       "If you have questions about records your agency keeps about you, contact your agency administrator first. You can also contact us using the details at the end of this policy.",
     ],
   },
@@ -25,7 +25,7 @@ export const policySections: PolicySection[] = [
     id: "accounts",
     heading: "2. Who can use the Service",
     paragraphs: [
-      "Accounts are created by an authorized administrator of a participating agency. The Service does not offer public sign-up. Sign-in uses Amazon Cognito and requires multi-factor authentication. Your password and authenticator codes are entered on the secure sign-in page and are never entered into or stored by the TracePoint mobile app.",
+      "Accounts are created by an authorized administrator of a participating agency. The Service does not offer public sign-up. Sign-in uses Amazon Cognito, and agency user accounts require multi-factor authentication. Your password and authenticator codes are entered on the secure sign-in page and are never entered into or stored by the TracePoint mobile app.",
     ],
   },
   {
@@ -36,7 +36,7 @@ export const policySections: PolicySection[] = [
       "Account and profile information: name, email address, and, if your agency provides them, phone number, badge number, rank or title, unit, employee number, agency, roles, groups, and account status.",
       "Sign-in and session information: Amazon Cognito account identifiers, records of active sessions, encrypted refresh tokens, and account lifecycle events such as invitations, activations, password resets, and deactivations.",
       "Agency operational records: firearms, assignments, custody events, inspections, and possession restrictions; qualification, training, and certification records, including scores and instructor notes; range-day rosters, attendance, and scoring; equipment and inventory assignments and checkouts; fleet vehicles, inspections, and work orders; off-duty and personal firearm requests; and in-app notifications.",
-      "Files you upload: photos, short videos (which may include audio), and documents attached as inspection evidence or records. Files can contain metadata added by your device, such as the date and, if your camera records it, location. [[OWNER: decide whether to strip photo location metadata on upload; if not, keep this sentence]]",
+      "Files you upload: photos, short videos (which may include audio), and documents attached as inspection evidence or records. Photos and videos may contain metadata embedded by your device, such as the date and time and, if your device records it, GPS location. TracePoint does not currently remove this metadata, and it is stored with the file.",
       "Audit records: which user created or changed a record, what changed, and when.",
       "Technical and security information: our hosting provider's security and request logs, which include IP addresses and request details, and error reports used to diagnose problems.",
     ],
@@ -73,7 +73,7 @@ export const policySections: PolicySection[] = [
     heading: "6. How information is shared",
     items: [
       "Within your agency: with personnel your agency authorizes, according to the roles and permissions your agency assigns.",
-      "Service providers: Amazon Web Services, which provides hosting, database, file storage, authentication, email delivery, and security monitoring; and Sentry, which provides error monitoring. Error reports are configured to exclude user identities, cookies, request bodies, and contact details. These providers may process information only to provide services to us.",
+      "Service providers: Amazon Web Services, which provides hosting, database, file storage, authentication, email delivery, and security monitoring; and Sentry, which provides error monitoring for our servers. Error reports are configured to exclude user identities, cookies, request bodies, and contact details. [[OWNER: confirm Sentry's data region from the Sentry organization settings and that Sentry's data processing terms cover TracePoint's account]] We use these providers to operate the Service and not to sell or advertise.",
       "TracePoint support staff: authorized TracePoint staff may access an agency's workspace to provide support. Support access is recorded in the agency's audit log.",
       "Legal reasons: when required by law, legal process, or to protect the rights, safety, or security of users, agencies, the public, or TracePoint.",
       "Business transfers: as part of a merger, acquisition, or sale of assets, subject to this policy's protections.",
@@ -90,22 +90,27 @@ export const policySections: PolicySection[] = [
     id: "security",
     heading: "8. Storage and security",
     paragraphs: [
-      "Information is stored with Amazon Web Services in the United States (US East, N. Virginia region). Information is encrypted in transit using TLS and encrypted at rest. Access is restricted by role and agency, sign-in requires multi-factor authentication, and the Service maintains audit logs and security monitoring. No method of transmission or storage is completely secure, but we work to protect information using industry-standard safeguards.",
+      "Information is stored with Amazon Web Services in the United States (US East, N. Virginia region). Information is encrypted in transit using TLS and encrypted at rest. Access is restricted by role and agency, agency user accounts require multi-factor authentication, and the Service maintains audit logs and security monitoring. No method of transmission or storage is completely secure, but we work to protect information using industry-standard safeguards.",
     ],
   },
   {
     id: "retention",
     heading: "9. Retention",
-    paragraphs: [
-      "Agency records are kept while your agency uses the Service so your agency can meet its operational and recordkeeping obligations. When a user is deactivated, the account can no longer sign in, and the user's historical records remain part of the agency's records. [[OWNER: state how long agency data is kept after an agency's contract ends and how it is deleted or returned]]",
-      "Some information is kept for limited periods for security and recovery: database backups for up to 35 days, application logs for up to 90 days, and earlier versions of uploaded files for up to 365 days.",
+    items: [
+      "Active agency records: kept while your agency uses the Service so your agency can meet its operational and recordkeeping obligations. The Service does not currently delete agency records automatically on a schedule.",
+      "Deactivated users: a deactivated account can no longer sign in. The user's historical records remain part of the agency's records.",
+      "Removed files: files removed from a record are archived rather than erased and remain part of the agency's records.",
+      "Earlier versions of files: when a stored file is replaced or deleted, the earlier version is kept for up to 365 days.",
+      "Backups: automated database backups are kept for up to 35 days. [[OWNER: confirm retention of the AWS Backup plan's recovery points and of manual database snapshots taken before maintenance, then state them here]]",
+      "Logs: application logs are kept for up to 90 days. [[OWNER: confirm retention of hosting request and firewall logs, which contain IP addresses]]",
+      "End of service: [[OWNER: state what happens to an agency's data after its agreement ends — how long it is kept and whether it is returned or deleted — only as TracePoint can actually carry out]]",
     ],
   },
   {
     id: "rights",
     heading: "10. Your choices and rights",
     paragraphs: [
-      "You can ask to access, correct, or delete your personal information, or ask to have your account closed. Because your agency controls its records, we may need to refer your request to your agency or confirm it with your agency first. Some records may need to be kept to meet your agency's legal or recordkeeping obligations. To make a request, contact your agency administrator or email us at [[OWNER: privacy contact email, e.g. privacy@tracepointhq.com]]. We will respond as required by applicable law.",
+      "You can ask to access, correct, or delete your personal information, or ask to have your account deactivated. Your agency controls its records, so requests are handled together with your agency: your agency administrator manages your account and can deactivate it, and we may refer a request to your agency or confirm it with your agency first. Some records may need to be kept to meet your agency's legal or recordkeeping obligations, so deletion may not always be possible. To make a request, contact your agency administrator or email support@tracepointhq.com. [[OWNER: confirm support@tracepointhq.com is monitored for privacy requests]]",
     ],
   },
   {
@@ -119,15 +124,15 @@ export const policySections: PolicySection[] = [
     id: "changes",
     heading: "12. Changes to this policy",
     paragraphs: [
-      "We may update this policy from time to time. When we do, we will change the effective date above and, for material changes, [[OWNER: how users are notified, e.g. notify agency administrators by email or in the Service]].",
+      "We may update this policy from time to time. When we do, we will post the updated policy on this page and change the effective date above.",
     ],
   },
   {
     id: "contact",
     heading: "13. Contact us",
     paragraphs: [
-      "Questions about this policy or our privacy practices can be sent to [[OWNER: privacy contact email]] or support@tracepointhq.com.",
-      "[[OWNER: legal entity name and mailing address]]",
+      "Questions about this policy or our privacy practices can be sent to support@tracepointhq.com.",
+      "[[OWNER: registered legal entity name and mailing address, from formation documents]]",
     ],
   },
 ];
