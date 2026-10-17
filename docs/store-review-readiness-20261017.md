@@ -1,6 +1,6 @@
 # TracePoint Public Safety — store review readiness (2026-10-17)
 
-Status: prepared locally for owner review. Nothing here has been published, submitted,
+Status: prepared locally for owner review; updated with validated reviewer-access analysis. Nothing here has been published, submitted,
 or applied to production. Items marked **CONFIRM** need the owner's decision before use.
 This document contains no credentials or secrets.
 
@@ -78,40 +78,88 @@ Privacy Policy URL: `https://tracepointhq.com/privacy`. Support URL: `https://tr
 
 ## 5. Reviewer access
 
-### Constraint
-The production Cognito pool requires TOTP MFA for every local user (`MfaConfiguration: ON`;
-TOTP only; admin-created accounts only). Cognito cannot exempt one local user. The backend binds a
-verified production-pool access token to a TracePoint user through an active identity link and
-calls Cognito `GetUser`; it does not inspect how the user authenticated. Sharing a TOTP setup key
-was rejected. Turning MFA to optional would weaken every agency. Therefore no reviewer access is
-possible without one approved production change.
+### Constraint (verified)
+- Production pool `us-east-1_diFmWDMe9`: `MfaConfiguration: ON`, TOTP only, admin-created users,
+  password-only first factor. Cognito cannot exempt a single local user from pool MFA.
+- Google requires reusable review credentials and asks apps that normally use 2-step
+  verification to provide credentials that bypass it (Play Console Help 15748846). Apple requires
+  a non-expiring demo account (App Store Connect "App Review information").
+- Sharing a TOTP setup key was rejected; making MFA optional would weaken every agency.
 
-### Recommendation: isolated review identity provider, linked to one demo officer
-1. Create a separate Cognito user pool used only for store review (`tracepoint-app-review`):
-   one user, administrator-created, no self sign-up, long random password stored only in the
-   owner's password manager and the store consoles' credential fields.
-2. Add that pool to the production pool as an OIDC identity provider ("TracePoint App Review") and
-   enable it **only on the mobile app client** (`tracepoint-production-mobile`). The web client and
-   every existing local user are unchanged and keep mandatory MFA.
-3. Create a fictional agency (plan type `internal`, clearly fictional name — not Readington or
-   Montville, which are real tenants) and invite one reviewer user through the normal invite flow
-   with the `officer` role only. The owner completes its first activation once (with MFA).
-4. Link the review-provider identity to that reviewer's Cognito user with
-   `AdminLinkProviderForUser`. Federated sign-in then issues tokens for the existing local user, so
-   the existing identity link applies and **no backend code changes** are needed.
-5. Seed only fictional records in that agency and print its QR codes for the review notes.
+### How the backend authenticates a mobile request (verified in code at `8194364`)
+1. `cognito-verifier.ts`: RS256 access token from the production pool, mobile `client_id`, uuid
+   `sub` and `jti`, lifetime ≤ 15 min. It never inspects how the user signed in (no `amr`/MFA check).
+2. `postgres-mapping.ts`: `(issuer, sub)` must map to an identity link in state `active`.
+3. `postgres-sessions.ts` `registerVerified` (only via `POST /api/mobile/session`): same active
+   link **and** an active department membership (or platform admin) in one transaction; each
+   access token (`jti`) gets its own session row; global TracePoint revocations are honoured.
+4. `cognito-mobile-session.ts`: every request also calls Cognito `GetUser` with the access token,
+   so a Cognito global sign-out takes effect on the next request, not at token expiry.
+5. Identity links become `active` through the normal activation link
+   (`finalize_cognito_activation`) or an administrator password assignment — not through a TOTP
+   sign-in. Groups, email and department claims never grant access.
 
-Why this is acceptable: existing users and agencies are untouched; the review identity can reach
-only one fictional agency with officer-level permissions; the access path can be removed by
-unlinking the provider and disabling it on the mobile client; nothing bypasses backend
-authorization.
+### Recommendation: link an isolated review identity provider to one demo officer
+Federated sign-in does not use the pool's MFA (AWS: Cognito "delegates all authentication
+processes to the IdP" for federated users). `AdminLinkProviderForUser` makes the federated
+identity sign in **as the existing local user** (same username and `sub`), so steps 1–5 above
+apply unchanged. Result:
+- **No backend code change, no mobile code change.** The app already opens the Cognito sign-in
+  page without an `identity_provider` parameter; managed login shows one extra button for the
+  provider on the mobile client only.
+- Existing users keep mandatory MFA. The web client and its sign-in page are unchanged.
+- The reviewer can reach only what its TracePoint membership allows: one fictional agency, officer
+  role, enforced by the backend and row-level security — not by Cognito.
 
-Must be proven in staging before production (all are fail-closed if wrong):
-- a linked federated sign-in is not prompted for MFA and receives tokens for the linked user;
-- `GetUser` succeeds for that access token (the mobile session check calls it);
-- the hosted sign-in page shows the review provider only on the mobile client.
-If `GetUser` fails for federated sessions, stop: the only remaining options are a backend change or
-a different review arrangement, both requiring a new decision.
+Components (each additive and reversible):
+1. Review pool `tracepoint-app-review` (Essentials): one administrator-created user, no MFA, no
+   self sign-up, long random password, its own domain and a confidential app client (secret,
+   authorization-code grant, scopes `openid email profile`) whose only callback is the main pool's
+   `https://<main domain>/oauth2/idpresponse`.
+2. OIDC identity provider `TracePointAppReview` in the main pool: issuer
+   `https://cognito-idp.us-east-1.amazonaws.com/<review pool id>`, `client_secret_post`,
+   attributes request method `GET`, mapping `email`→`email` only.
+3. Enable the provider **only** on the mobile app client.
+4. Fictional agency (plan `internal`; not Readington or Montville, which are real tenants), its
+   features and officer permissions, and one reviewer invited through the normal invite flow and
+   activated through the normal activation link. Use the **same email** in both pools: AWS
+   overwrites a linked user's mapped attributes at every federated sign-in.
+5. `AdminLinkProviderForUser` (destination `Cognito`/local username; source
+   `TracePointAppReview`/`Cognito_Subject`/review-pool `sub`). The source must not have signed in
+   before linking.
+
+Not documented by AWS, so it must be proven in staging (section 8) before production:
+- a linked native user signing in through the provider is not challenged for TOTP;
+- the tokens carry the local user's `sub` and the `aws.cognito.signin.user.admin` scope, and
+  `GetUser` accepts them;
+- linking works for an activated user who never enrolled TOTP;
+- disabling the local user, global sign-out, and unlinking each cut off access.
+If any of these fails, stop: the remaining options need a new decision (see "Alternatives").
+
+Revocation (all independent): deactivate the reviewer membership in TracePoint (signs the user out
+of Cognito and disables it); `AdminUserGlobalSignOut` (next request fails at `GetUser`);
+`AdminDisableProviderForUser` (removes the link); disable the user in the review pool; remove the
+provider from the mobile client.
+
+Cost: Cognito lists 50 free federated monthly active users per account, then $0.015 each; no fee
+per user pool. Expected cost $0. No EAS cost.
+
+Residual risk: the review account has no second factor. Its exposure is one fictional agency with
+officer permissions. Mitigate with a long random password, no reuse, rotation after each review,
+and disabling the provider between review cycles if preferred.
+
+### Alternatives considered
+| Option | Verdict |
+|---|---|
+| Share the TOTP setup key with reviewers | Rejected by owner; reviewers also need an authenticator app |
+| Set pool MFA to optional | Weakens every agency; the backend has no MFA check to compensate |
+| Email or SMS one-time codes | Pool-wide change; reviewers cannot receive codes |
+| Passkeys | Bound to devices reviewers do not have |
+| Apple demo mode without sign-in | Needs Apple's prior approval and new app code with fake data |
+| Separate review deployment or second trusted pool in the backend | Backend and infrastructure changes; more complexity than linking |
+| Company Microsoft 365 (Entra ID) as the provider | Possible, but MFA exclusions for one user need Conditional Access licensing; a review pool is simpler and free |
+
+The linked review provider is the smallest option that keeps mandatory MFA for every real user.
 
 ### Proposed reviewer permissions (fictional agency only)
 Role `officer`, with that agency's officer permissions set to: `view_fleet`,
@@ -122,10 +170,12 @@ Role `officer`, with that agency's officer permissions set to: `view_fleet`,
 Never grant: `administer_department`, `manage_users`, password management, `view_audit_log`,
 manage/override permissions, or platform administration. Equipment check-out/in and Inbox need
 no extra permission. Seed firearm assignments to the reviewer so the firearms list is populated.
+Note: the mobile home screen does not hide modules the user lacks; every module above must be
+enabled and populated so reviewers do not see "not permitted" screens.
 
 ### Reviewer sign-in instructions (to paste into both consoles once set up)
 1. Open TracePoint and tap **Continue with TracePoint**.
-2. On the TracePoint sign-in page, choose **TracePoint App Review**.
+2. On the sign-in page, choose **TracePointAppReview**.
 3. Enter the username and password provided in the credentials fields.
 4. If asked, choose the agency **[fictional agency name]**.
 No verification code is required for this account.
@@ -135,7 +185,7 @@ No verification code is required for this account.
 > TracePoint Public Safety is an operations app for public safety agencies. Accounts are created by
 > each agency's administrator; the app has no public sign-up. Please use the demo account provided,
 > which belongs to a fictional demonstration agency containing only fictional records.
-> Sign in: tap "Continue with TracePoint", choose "TracePoint App Review", and enter the provided
+> Sign in: tap "Continue with TracePoint", choose "TracePointAppReview", and enter the provided
 > credentials. No verification code is needed for this demo account.
 > Suggested review path: Home → Inbox; Fleet → open a vehicle → start an inspection (camera is used
 > only to attach evidence to a failed checklist item); Equipment → check an item out and back in;
@@ -143,19 +193,104 @@ No verification code is required for this account.
 > QR scanning: use Scan and point the camera at one of the attached demo QR codes.
 > Camera is used for QR scanning and inspection evidence; microphone only for the audio of a short
 > inspection video; Face ID only to unlock the app locally. The app does not use location,
-> tracking, or advertising. Privacy policy: https://tracepointhq.com/privacy
+> tracking, or advertising. Accounts are provisioned only by agencies; the app does not offer account
+> creation, so users request deactivation through their agency or support@tracepointhq.com.
+> TracePoint serves multiple independent public safety agencies. Privacy policy:
+> https://tracepointhq.com/privacy
 
-## 7. Remaining submission checklist
+## 7. Remaining blockers and risks
 
-Owner decisions and inputs
-- [ ] Resolve every `[[OWNER: ...]]` item in `src/app/privacy/policy-content.ts` (legal entity
-      and address, privacy contact, controller/processor role and DPA/CJIS, post-contract
-      retention, photo location metadata, change-notification method, effective date).
-- [ ] Approve deploying the web change (`/privacy`) to production.
-- [ ] Approve the reviewer-access plan (section 5): staging rehearsal, then production Cognito
-      change, fictional agency, reviewer invite, demo data.
-- [ ] Approve new EAS production builds from mobile `5b4e160`.
-- [ ] **CONFIRM** Data safety and App Privacy answers (sections 3–4).
+Blocking submission
+- `/privacy` is not live (production still redirects it to sign-in) and the policy has unresolved
+  owner confirmations; a production build refuses to publish it until they are resolved.
+- No working reviewer access in either store (section 5).
+- No store build contains the in-app privacy link; new builds from mobile `5b4e160` are needed.
+- Store assets: real iPhone 6.9" screenshots, at least 2 Android phone screenshots, a 1024×500
+  Google feature graphic, descriptions, and the completed privacy/content questionnaires.
+- Google Play: the first app bundle must be uploaded manually in Play Console (EAS has no
+  service account).
+
+Risks to resolve or accept
+- Apple developer account is an **Individual** account (team `BHRBP525FV`, "Jason Phares"). The
+  App Store will show the individual as the seller while the policy names the company. Either
+  accept this or enroll an Organization account (requires a D-U-N-S number) before submission.
+- Apple 5.1.1(v) account deletion applies to apps that support account creation. TracePoint
+  accounts are created only by agencies, so it should not apply; state this in the review notes.
+  Apple's guidance does not address organization-provisioned accounts explicitly.
+- Apple may question whether an app limited to agency personnel belongs on the public App Store;
+  the review notes explain that it serves multiple independent agencies.
+- Sentry's data processing addendum must be accepted in Sentry (Legal & Compliance) by an owner;
+  it is not automatic. Sentry's data region is visible only in the Sentry organization settings.
+
+## 8. Staging rehearsal of reviewer access (requires approval; not performed)
+
+Scope: staging account `559054714699`, staging pool behind
+`tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com`, staging mobile client
+`5s8l4b8jt4vi8oubbj9m6dabbj`, staging API `https://staging.tracepointhq.com`. No production change,
+no deployment, no mobile build.
+
+Before changing anything, save `describe-user-pool-client` output for the staging mobile client:
+`update-user-pool-client` resets every setting that is not passed, so the change and the rollback
+must resend the full saved configuration.
+
+Changes
+1. Create review pool `tracepoint-staging-app-review` (MFA off, admin-create only, email
+   username), a domain, a confidential app client with secret (code grant; scopes `openid email
+   profile`; callback `https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com/oauth2/idpresponse`),
+   and one user with a permanent random password and the reviewer email.
+2. Staging pool: `create-identity-provider` OIDC `TracePointAppReview` (issuer = review pool,
+   `client_secret_post`, attributes request method GET, scopes `openid email profile`, mapping
+   `email`→`email`).
+3. Staging mobile client: add `TracePointAppReview` to `SupportedIdentityProviders`, resending the
+   saved configuration unchanged otherwise.
+4. Staging TracePoint: fictional agency, features, officer permissions, reviewer invite with the
+   same email, activation through the activation link.
+5. `admin-link-provider-for-user` (destination `Cognito`/local username; source
+   `TracePointAppReview`/`Cognito_Subject`/review-pool `sub`).
+
+Test procedure and expected results (a local script performs the authorization-code + PKCE
+exchange; the browser shows the redirect code)
+| # | Test | Expected |
+|---|---|---|
+| T1 | Staging web sign-in page | No review provider button |
+| T2 | Staging mobile client sign-in page | `TracePointAppReview` button beside local sign-in |
+| T3 | Sign in through the provider | No TOTP prompt; access token `sub` = local user's `sub`, `client_id` = mobile client, scope includes `aws.cognito.signin.user.admin` |
+| T4 | `GetUser` with that token | Succeeds; local username |
+| T5 | `POST /api/mobile/session` | 200, one membership (fictional agency), no selection prompt |
+| T6 | Inbox, inventory, firearms, fleet, equipment, range days, range workspace; QR resolve of a demo code | 200 with fictional data |
+| T7 | Password reset, user management, other agency's id in `x-tracepoint-department-id`, support-mode header | Refused (401/403/400) |
+| T8 | Refresh-token grant, then `POST /api/mobile/session` with the new token | New token accepted |
+| T9 | Mobile logout plus `/oauth2/revoke` | Next request 401; refresh fails |
+| T10 | Fresh sign-in, then `admin-user-global-sign-out` on the local user | Next request 401 (GetUser fails); refresh fails |
+| T11 | Deactivate the reviewer membership in TracePoint | Session establishment refused |
+| T12 | `admin-disable-provider-for-user` (unlink), sign in through the provider again | New unlinked Cognito user; backend 401 (no identity link) |
+| T13 | Existing staging local user signs in | Still challenged for TOTP |
+| T14 | Linked local user tries local password sign-in | Still challenged for TOTP |
+
+Pass criteria: T1–T14 all as expected. Any deviation stops the rollout.
+
+Rollback (staging): resend the saved mobile-client configuration (removes the provider);
+`delete-identity-provider`; `admin-disable-provider-for-user`; deactivate the reviewer membership;
+delete the review pool's domain, then the review pool. Fictional agency records can remain as
+staging test data or be deactivated.
+
+Cost: $0 expected (federated MAUs within Cognito's free 50; no EAS or compute cost). Time: about
+two hours including the fictional agency setup.
+
+## 9. Release sequence (dependency order)
+
+| Step | Action | Needs | Gate to continue |
+|---|---|---|---|
+| 1 | Owner resolves the policy confirmations in `src/app/privacy/policy-content.ts` | Owner | No `[[OWNER: …]]` left; tests pass; local commit |
+| 2 | Deploy web `/privacy` with `deploy-app.ps1` (CodeBuild image from the reviewed commit, then ECS update with automatic rollback) | Approval | `/privacy` 200 without sign-in; `/api/health`, `/support` 200; mobile APIs unchanged |
+| 3 | Staging rehearsal of reviewer access (section 8) | Approval | T1–T14 pass; staging change kept or rolled back as decided |
+| 4 | Production reviewer access: review pool, provider on the mobile client only, fictional agency, demo data and QR codes, reviewer activation and link | Approval | Repeat T3–T7, T10–T14 against production with the reviewer only |
+| 5 | Final mobile verification of `5b4e160` (privacy link opens the live page) | — | Tests pass; link target live |
+| 6 | EAS production builds from `5b4e160` (iOS build 7, Android versionCode 5); upload iOS; upload Android bundle manually in Play Console | Approval (EAS cost) | Builds finished; Apple processing complete |
+| 7 | Screenshots from the fictional agency, feature graphic, descriptions, App Privacy and Data safety, age/content rating, reviewer credentials and notes | Owner | All required fields complete in both consoles |
+| 8 | Submit: Apple "Manually release this version"; Google "Managed publishing" | Owner | Both stores show "Waiting for review" / "In review" |
+
+## 10. Console checklist
 
 App Store Connect
 - [ ] Privacy Policy URL and Support URL; App Privacy answers; age rating questionnaire
