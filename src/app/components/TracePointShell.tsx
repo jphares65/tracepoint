@@ -16,6 +16,7 @@ import {
   House,
   LogOut,
   Menu,
+  FileText,
   Settings,
   Shield,
   ShieldCheck,
@@ -64,7 +65,7 @@ type NavigationGroup = {
 
 type NavigationEntry = NavigationLeaf | NavigationGroup;
 
-const NAV_ITEMS: readonly NavigationEntry[] = [
+export const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
   {
     label: "Command",
@@ -243,7 +244,14 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
     label: "Administration",
     icon: Settings,
     requirement: {
-      anyOf: ["manage_users", "view_audit_log", "administer_department"],
+      anyOf: [
+        "manage_users",
+        "view_audit_log",
+        "administer_department",
+        "view_agency_documents",
+        "generate_agency_documents",
+        "manage_document_templates",
+      ],
     },
     children: [
       {
@@ -257,6 +265,18 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
         icon: BarChart3,
         requirement: { anyOf: ["administer_department"] },
       },
+      {
+        label: "Agency Documents",
+        href: "/agency-documents",
+        icon: FileText,
+        requirement: {
+          anyOf: [
+            "view_agency_documents",
+            "generate_agency_documents",
+            "manage_document_templates",
+          ],
+        },
+      },
     ],
   },
   { label: "Help Center", href: "/help", icon: CircleHelp },
@@ -266,7 +286,7 @@ function isNavigationGroup(item: NavigationEntry): item is NavigationGroup {
   return "children" in item;
 }
 
-function getVisibleChildren(
+export function getVisibleChildren(
   group: NavigationGroup,
   permissions: TracePointPermission[],
   enabledFeatures: Set<string>,

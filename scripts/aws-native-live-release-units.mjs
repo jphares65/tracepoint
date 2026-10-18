@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 
 // Guarded, ledger-free release units for the live final-cutover database.
-// Its schema lineage is partial (001-026 plus 028, 029, 032, 038), so the
+// Its schema lineage is partial (001-026 plus 028, 029, 032, and the range
+// workspace migration now numbered 043), so the
 // ledgered apply path cannot target it. Each unit runs its pinned migration
 // files as one transaction and commits only after its postconditions hold.
 
@@ -13,9 +14,12 @@ export const liveReleaseUnits = Object.freeze({
     { version: 36, filename: "036_inventory_checkout_phase2a.sql", sha256: "e9298b65d290293c66a2f2420a7775a55a342b5c111db9b9cbaab6f8dc3ad7fc" },
     { version: 37, filename: "037_inventory_management_runtime_grants.sql", sha256: "8aad48a4378d7b69e392e0cdd2869e1e8a55226c0feb47e137b8006e21064f97" },
   ]),
+  // The unit keeps its original name (it is recorded in release evidence); its
+  // files were renumbered 039/040 -> 044/045 with identical contents when the
+  // Agency Documents lineage kept 038-041.
   "password-scope-039-040": Object.freeze([
-    { version: 39, filename: "039_cognito_password_global_scope.sql", sha256: "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987" },
-    { version: 40, filename: "040_password_operation_resolution.sql", sha256: "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b" },
+    { version: 44, filename: "044_cognito_password_global_scope.sql", sha256: "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987" },
+    { version: 45, filename: "045_password_operation_resolution.sql", sha256: "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b" },
   ]),
 });
 

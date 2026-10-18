@@ -1,0 +1,1412 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "path": "infra/cdk.out-agency-patch-waf-deploy/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-deploy/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 11
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-deploy/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-deploy/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 4
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff-local/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff-local/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 11
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff-local/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff-local/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 4
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 11
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-diff/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 4
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-xss/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-xss/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 11
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-xss/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf-xss/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 4
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/__entrypoint__.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 11
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 1
+    },
+    {
+      "path": "infra/cdk.out-agency-patch-waf/asset.02b51ab524e7bcf8f477de3e71e5f9a72e448301b26ba62e9e75a14f9c55a093/index.js",
+      "ruleId": "@typescript-eslint/no-unused-expressions",
+      "severity": 1,
+      "message": "Expected an assignment or function call and instead saw an expression.",
+      "count": 4
+    },
+    {
+      "path": "infra/lib/supabase-rest-ledger-runner-stack.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'sourceSecret' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "infra/scripts/rehearse-cognito.mts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'begin' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "infra/test/github-staging.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "infra/test/phase3c-rehearsal-app.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "path": "infra/test/postgres-rehearsal.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "infra/test/request-controls.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "scripts/check-production-maintenance-ingress.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_legacyValues' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/final-target-fixed-baseline-readonly.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/final-target-fixed-import-guards.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 4
+    },
+    {
+      "path": "scripts/final-target-fixed-schema-prep.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 4
+    },
+    {
+      "path": "scripts/final-target-runtime-credential-readonly.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/manage-production-vercel-cutover-deny.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'VERCEL_TEAM_ID' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/phase3b-native-auth-schema-probe.mjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 2
+    },
+    {
+      "path": "scripts/phase3c-fixed-tenant-negative.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/production-final-cognito-stage-link.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 5
+    },
+    {
+      "path": "scripts/production-final-cognito-stage-link.test.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/production-final-notification-queue-schema.mjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 4
+    },
+    {
+      "path": "scripts/production-final-ses-feedback-smoke.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 5
+    },
+    {
+      "path": "scripts/production-native-no-traffic-proof.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 5
+    },
+    {
+      "path": "scripts/publish-production-composite-fence-attestation.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'VERCEL_TEAM_ID' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/run-supabase-rest-initial-import.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'classifyDepartmentPrerequisiteBootstrap' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/run-supabase-rest-initial-import.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'cleanupProvenMigrationArtifacts' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/run-supabase-rest-initial-import.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'HeadObjectCommand' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/run-supabase-rest-initial-import.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'jsonRows' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/run-supabase-rest-initial-import.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'topologicalImportOrder' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/run-supabase-rest-initial-import.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'value' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/shadow-s3-kms-default-probe.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 2
+    },
+    {
+      "path": "scripts/source-proof-authority-write.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 6
+    },
+    {
+      "path": "scripts/source-proof-frozen-capture-compare.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/source-proof-post-replay-compare.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/source-proof-post-replay-target-verify.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 3
+    },
+    {
+      "path": "scripts/source-rehearsal-cognito-link.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 6
+    },
+    {
+      "path": "scripts/source-rehearsal-cognito-link.test.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "severity": 2,
+      "message": "A `require()` style import is forbidden.",
+      "count": 4
+    },
+    {
+      "path": "scripts/supabase-rest-import-core.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'error' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "scripts/supabase-rest-import-core.mjs",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'hasDefault' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/agency-training/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/agency-training/events/[eventId]/certificates/[certificateId]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "src/app/api/agency-training/events/[eventId]/files/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/app/api/agency-training/events/[eventId]/report/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/agency-training/events/[eventId]/roster/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 13
+    },
+    {
+      "path": "src/app/api/armory/ammunition/reconciliations/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 13
+    },
+    {
+      "path": "src/app/api/armory/ammunition/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "path": "src/app/api/armory/firearms/[firearmId]/attachments/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/armory/firearms/[firearmId]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/armory/firearms/[firearmId]/status/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/armory/personal-rifles/[rifleId]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/armory/personal-rifles/[rifleId]/route.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'historyNotes' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/armory/personal-rifles/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "path": "src/app/api/equipment/custody/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 8
+    },
+    {
+      "path": "src/app/api/fleet/vehicles/[vehicleId]/inspections/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 16
+    },
+    {
+      "path": "src/app/api/fleet/vehicles/[vehicleId]/work-orders/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "path": "src/app/api/notifications/preferences/route.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'DEFAULT_PREFERENCES' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/notifications/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 47
+    },
+    {
+      "path": "src/app/api/notifications/route.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'departmentScope' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/off-duty-firearms/[requestId]/inspections/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "path": "src/app/api/off-duty-firearms/[requestId]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 9
+    },
+    {
+      "path": "src/app/api/off-duty-firearms/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 14
+    },
+    {
+      "path": "src/app/api/off-duty-firearms/route.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'now' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/pilot/ammunition/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "src/app/api/pilot/performance-summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 8
+    },
+    {
+      "path": "src/app/api/pilot/personnel/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 8
+    },
+    {
+      "path": "src/app/api/qualifications/[resultId]/evidence/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/training/certification-requirements/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/training/certifications/[certificationId]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/api/training/certifications/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/AgencyTrainingCloseoutPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/AgencyTrainingEventEditor.tsx",
+      "ruleId": "react-hooks/rules-of-hooks",
+      "severity": 2,
+      "message": "React Hook \"useCourse\" cannot be called inside a callback. React Hooks must be called in a React function component or a custom React Hook function.",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/AgencyTrainingRosterBoard.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/AgencyTrainingRosterBoard.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "severity": 2,
+      "message": "`'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/FirearmAttachments.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/FirearmAttachments.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/IdleSessionGuard.tsx",
+      "ruleId": "@next/next/no-location-assign-relative-destination",
+      "severity": 1,
+      "message": "Do not use `window.location.assign()` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/IdleSessionGuard.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/TracePointShell.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/TracePointShell.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_activePage' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/components/TracePointShell.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/equipment/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'AlertTriangle' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/equipment/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'CheckCircle2' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/equipment/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Clock3' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/equipment/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'requirements' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/equipment/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'UserRound' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/equipment/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Wrench' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/ammunition/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/ammunition/reconciliation/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'CalendarRange' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/ammunition/reconciliation/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'CheckCircle2' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/ammunition/reconciliation/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/inspections/new/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Link' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/inspections/new/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/inspections/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/firearms/personal-rifles/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 2
+    },
+    {
+      "path": "src/app/fleet-management/[vehicleId]/FleetEquipmentDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 6
+    },
+    {
+      "path": "src/app/fleet-management/[vehicleId]/FleetWorkOrderDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "path": "src/app/fleet-management/[vehicleId]/FleetWorkOrderDialog.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/fleet-management/[vehicleId]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 9
+    },
+    {
+      "path": "src/app/fleet-management/[vehicleId]/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/fleet-management/[vehicleId]/QuickInspectionPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 10
+    },
+    {
+      "path": "src/app/fleet-management/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 2
+    },
+    {
+      "path": "src/app/notifications/page.tsx",
+      "ruleId": "react-hooks/purity",
+      "severity": 2,
+      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
+      "count": 2
+    },
+    {
+      "path": "src/app/notifications/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/off-duty-firearms/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'nowIso' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/off-duty-firearms/page.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadInspectionHistory'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "path": "src/app/off-duty-firearms/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 2
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'ExternalLink' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'getRoleLabel' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'MembershipRow' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'ProfileRow' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'SOURCE_ORDER' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'sourceCounts' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "react-hooks/purity",
+      "severity": 2,
+      "message": "Error: Cannot call impure function during render `Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).",
+      "count": 1
+    },
+    {
+      "path": "src/app/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 2
+    },
+    {
+      "path": "src/app/platform/[departmentId]/AccessAgencyButton.tsx",
+      "ruleId": "@next/next/no-location-assign-relative-destination",
+      "severity": 1,
+      "message": "Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination",
+      "count": 1
+    },
+    {
+      "path": "src/app/platform/CreateAgencyForm.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "severity": 2,
+      "message": "`'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.",
+      "count": 2
+    },
+    {
+      "path": "src/app/qualifications/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'completed' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'createDrillFromTemplate' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Crosshair' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'dedupeRosterEntries' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'DRILL_DIFFICULTIES' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'malfunctionNotes' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'malfunctionOccurred' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'malfunctionType' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'notes' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'passed' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'score' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'selectedFirearmId' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useMemo has a missing dependency: 'selectedDrills'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "path": "src/app/range-days/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 5
+    },
+    {
+      "path": "src/app/settings/components/AgencyTrainingRulesPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "path": "src/app/settings/components/AgencyTrainingRulesPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/components/CertificationRulesPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/components/EquipmentRulesPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "src/app/settings/components/EquipmentRulesPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/components/NotificationPreferencesPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/components/OffDutyRulesPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/fleet/FleetRulesPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "path": "src/app/settings/fleet/FleetRulesPanel.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "severity": 2,
+      "message": "`'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@next/next/no-html-link-for-pages",
+      "severity": 2,
+      "message": "Do not use an `<a>` element to navigate to `/firearms/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 16
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'current' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'Download' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'getLastName' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'inQuotes' is assigned a value but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'line' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'splitCsvLine' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'current' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'inQuotes' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/import-export/page.tsx",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'sourceRows' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/page.tsx",
+      "ruleId": "@next/next/no-img-element",
+      "severity": 1,
+      "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element",
+      "count": 1
+    },
+    {
+      "path": "src/app/settings/page.tsx",
+      "ruleId": "react-hooks/exhaustive-deps",
+      "severity": 1,
+      "message": "React Hook useEffect has a missing dependency: 'loadQualificationStandards'. Either include it or remove the dependency array.",
+      "count": 1
+    },
+    {
+      "path": "src/app/super-admin/page.tsx",
+      "ruleId": "@next/next/no-location-assign-relative-destination",
+      "severity": 1,
+      "message": "Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination",
+      "count": 1
+    },
+    {
+      "path": "src/app/super-admin/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/app/training/certifications/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    },
+    {
+      "path": "src/components/SupportModeBanner.tsx",
+      "ruleId": "@next/next/no-location-assign-relative-destination",
+      "severity": 1,
+      "message": "Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination",
+      "count": 1
+    },
+    {
+      "path": "src/lib/active-department/read-repository.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/lib/active-department/read-repository.test.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'query' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/administration/read-repository-core.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/agency-training/read-repository.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "src/lib/evidence/read-repository-core.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 2
+    },
+    {
+      "path": "src/lib/evidence/read-repository.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/lib/evidence/read-repository.test.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'q' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/notifications/read-repository.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/lib/notifications/read-repository.test.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'query' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/off-duty-firearms/read-repository-core.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/off-duty-firearms/read-repository.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/lib/off-duty-firearms/read-repository.test.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'q' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/personal-rifles/read-repository-core.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/platform/read-repository.test.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/lib/platform/read-repository.test.ts",
+      "ruleId": "prefer-const",
+      "severity": 2,
+      "message": "'query' is never reassigned. Use 'const' instead.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/tracepoint/activation.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 3
+    },
+    {
+      "path": "src/lib/tracepoint/agency-training-notifications.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 7
+    },
+    {
+      "path": "src/lib/tracepoint/audit-server.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 4
+    },
+    {
+      "path": "src/lib/tracepoint/certification-capability.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/tracepoint/equipment-readiness.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_isReady' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/tracepoint/equipment-readiness.ts",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "severity": 1,
+      "message": "'_readinessRank' is defined but never used.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/tracepoint/export-audit-server.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/tracepoint/fleet-notifications.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 5
+    },
+    {
+      "path": "src/lib/tracepoint/fleet-server.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 12
+    },
+    {
+      "path": "src/lib/tracepoint/off-duty-qualification-readiness.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 16
+    },
+    {
+      "path": "src/lib/tracepoint/personal-rifle-server.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "severity": 2,
+      "message": "Unexpected any. Specify a different type.",
+      "count": 6
+    },
+    {
+      "path": "src/lib/tracepoint/useTracePointAccess.ts",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "severity": 2,
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following: * Update external systems with the latest state from React. * Subscribe for updates from some external system, calling setState in a callback function when external state changes. Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).",
+      "count": 1
+    }
+  ]
+}

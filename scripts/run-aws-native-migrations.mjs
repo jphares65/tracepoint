@@ -248,8 +248,8 @@ function assertRangeWorkspaceContract(contract, expectedPrivileges) {
 }
 async function applyRangeWorkspaceHotfix(client, files) {
   if (requestedEnvironment !== "production") throw new Error("Range workspace hotfix is production-only.");
-  const migration = files.find(file => file.version === 38 && file.filename === "038_range_workspace_authenticated_writes.sql");
-  if (!migration || files.filter(file => file.version === 38).length !== 1 || !migration.ownsTransaction) throw new Error("Range workspace hotfix requires exactly the transaction-owned migration 038.");
+  const migration = files.find(file => file.version === 43 && file.filename === "043_range_workspace_authenticated_writes.sql");
+  if (!migration || files.filter(file => file.version === 43).length !== 1 || !migration.ownsTransaction) throw new Error("Range workspace hotfix requires exactly the transaction-owned migration 043.");
   const before = await rangeWorkspaceContract(client);
   assertRangeWorkspaceContract(before, ["SELECT"]);
   await client.query(migration.contents);
@@ -317,12 +317,12 @@ try {
           adopted.length !== productionLedgerAdoptionVersions.last
           || !adopted.every((file, index) => file.version === index + 1)
           || pending.length !== 2
-          || pending[0]?.version !== 38
-          || pending[0]?.filename !== "038_range_workspace_authenticated_writes.sql"
-          || pending[1]?.version !== 39
-          || pending[1]?.filename !== "039_cognito_password_global_scope.sql"
+          || pending[0]?.version !== 43
+          || pending[0]?.filename !== "043_range_workspace_authenticated_writes.sql"
+          || pending[1]?.version !== 44
+          || pending[1]?.filename !== "044_cognito_password_global_scope.sql"
         ) {
-          throw new Error("Production reconciliation requires the verified 001-037 chain followed by pending migrations 038 and 039.");
+          throw new Error("Production reconciliation requires the verified 001-037 chain followed by pending migrations 043 and 044.");
         }
         await client.query("begin");
         try {

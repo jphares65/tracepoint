@@ -25,6 +25,10 @@ From a clean, reviewed commit:
 
 Post-deployment workstation/sandbox diagnostics are reported as `DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING`; their hangs, dependency differences, transport limits, or unexplained exits cannot roll back or block a release that passed CodeBuild and deployment-authoritative evidence. A concrete HTTP failure from the deployed service remains a deployment failure and rolls back.
 
+### Lint debt ratchet
+
+`lint-baseline.json` is a checked-in, machine-readable inventory of the historical ESLint debt. Each entry is a normalized repository-relative path, rule ID, severity, message, and count. CodeBuild runs full ESLint on every release, then `scripts/lint-ratchet.mjs` compares its JSON output with that inventory. Existing counts are reported but allowed; any new path/rule/message or count increase fails before image publication. Removed findings are reported as removals and are always accepted, so the baseline only stays level or decreases when it is deliberately regenerated after cleanup.
+
 ## Database lane
 
 `migrate-db.ps1 staging -Action status` first verifies the final SHA-tagged application image and its scan, then launches the established one-off ECS migration task from a separate immutable `SHA-aws-native-migration` image built from that same commit. The task receives the existing RDS secret and CA only through its copied live task definition. It validates the `public.tracepoint_aws_schema_migrations` ledger against the numeric, SHA-256 checked files in `database/aws/`; drift stops the task. `-Action apply` runs only pending files, each in its own file-owned transaction with an advisory lock and ledger insertion. `baseline` is staging-only. A successful status with no pending entries is the safe no-op release evidence.

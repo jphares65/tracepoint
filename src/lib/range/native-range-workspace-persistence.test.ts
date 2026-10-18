@@ -4,7 +4,7 @@ import test from "node:test";
 
 test("AWS-native Range Day persistence grants only the authenticated writes guarded by existing RLS", async () => {
   const migration = await readFile(
-    "database/aws/038_range_workspace_authenticated_writes.sql",
+    "database/aws/043_range_workspace_authenticated_writes.sql",
     "utf8",
   );
 

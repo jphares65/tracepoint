@@ -12,6 +12,7 @@ export const TRACEPOINT_PERMISSIONS = [
   "view_fleet", "manage_fleet", "perform_fleet_inspections",
   "manage_fleet_maintenance", "manage_fleet_rules",
   "submit_off_duty_requests", "review_off_duty_requests",
+  "view_agency_documents", "generate_agency_documents", "manage_document_templates",
   "view_audit_log", "administer_department",
 ] as const;
 
@@ -68,6 +69,9 @@ export const PERMISSION_COVERAGE: readonly PermissionCoverage[] = [
   { code: "manage_fleet_rules", displayName: "Manage Fleet Rules", description: "Configure Fleet rules, inspection templates, readiness behavior, network-detail visibility, and notification routing.", actions: ["View", "Configure"], modules: ["Fleet Settings"], routes: ["/settings/fleet", "/api/fleet/rules"], tables: ["fleet_rules"] },
   { code: "submit_off_duty_requests", displayName: "Submit Off-Duty Requests", description: "Create, edit, submit, correct, and resubmit the signed-in member's own off-duty firearm requests.", actions: ["View", "Create", "Edit"], modules: ["Off-Duty Firearms"], routes: ["/off-duty-firearms", "/api/off-duty-firearms"], tables: ["off_duty_firearm_requests", "off_duty_firearm_history"] },
   { code: "review_off_duty_requests", displayName: "Review Off-Duty Requests", description: "View department off-duty requests and approve, deny, return, revoke, or archive them.", actions: ["View", "Approve", "Delete/Archive"], modules: ["Off-Duty Firearms"], routes: ["/off-duty-firearms", "/api/off-duty-firearms"], tables: ["off_duty_firearm_requests", "off_duty_firearm_history"] },
+  { code: "view_agency_documents", displayName: "View Agency Documents", description: "View the agency document library and published templates.", actions: ["View"], modules: ["Agency Documents"], routes: ["/agency-documents", "/api/agency-documents"], tables: ["document_templates", "document_template_versions"] },
+  { code: "generate_agency_documents", displayName: "Generate Agency Documents", description: "Generate a document from a published agency template.", actions: ["View", "Create"], modules: ["Agency Documents"], routes: ["/agency-documents", "/api/agency-documents/generate"], tables: ["document_templates", "generated_documents"] },
+  { code: "manage_document_templates", displayName: "Manage Document Templates", description: "Create, edit, duplicate, publish, unpublish, and archive agency document templates.", actions: ["View", "Create", "Edit", "Delete/Archive", "Configure"], modules: ["Agency Documents", "Template Builder"], routes: ["/agency-documents/templates", "/api/agency-documents/templates"], tables: ["document_templates", "document_template_versions", "document_template_fields"] },
   { code: "view_audit_log", displayName: "View Audit Log", description: "View and export department audit events; this does not grant permission to change records.", actions: ["View", "Export"], modules: ["Audit Log"], routes: ["/settings", "/api/settings/audit-log"], tables: ["audit_events"] },
   { code: "administer_department", displayName: "Administer Department", description: "Configure department profile, security, appearance, rules, permissions, imports, exports, and administrator assignments.", actions: ["View", "Create", "Edit", "Delete/Archive", "Approve", "Score", "Export", "Configure", "Administer"], modules: ["Settings", "Department Administration", "Command Dashboard", "Analytics"], routes: ["/settings", "/settings/command-dashboard-analytics", "/api/settings"], tables: ["departments", "department_rules", "department_security_settings", "department_role_permissions"] },
 ] as const;
@@ -85,6 +89,7 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
   { prefix: "/training-alerts", requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS } },
   { prefix: "/range-days", requirement: {} },
   { prefix: "/qualifications", requirement: {} },
+  { prefix: "/agency-documents", requirement: { anyOf: ["view_agency_documents", "generate_agency_documents", "manage_document_templates"] } },
   { prefix: "/off-duty-firearms", requirement: { anyOf: ["submit_off_duty_requests", "review_off_duty_requests"] } },
   { prefix: "/personal-rifle-review", requirement: { anyOf: ["manage_inspections", "approve_personal_rifles"] } },
   { prefix: "/fleet-management", requirement: { anyOf: ["view_fleet", "manage_fleet", "perform_fleet_inspections", "manage_fleet_maintenance", "manage_fleet_rules"] } },

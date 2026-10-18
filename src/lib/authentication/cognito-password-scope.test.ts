@@ -68,7 +68,7 @@ before(async () => {
       is_active boolean not null default true
     );
   `);
-  await first.query(await readFile(new URL("../../../database/aws/039_cognito_password_global_scope.sql", import.meta.url), "utf8"));
+  await first.query(await readFile(new URL("../../../database/aws/044_cognito_password_global_scope.sql", import.meta.url), "utf8"));
 });
 
 after(async () => {

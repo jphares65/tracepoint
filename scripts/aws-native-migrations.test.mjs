@@ -147,7 +147,7 @@ test("AWS-native migration runner is ledgered, locked, hash-checked, and does no
   assert.match(runner, /requestedEnvironment === "production"/);
   assert.match(runner, /verifyProductionLedgerAdoptionAnchor/);
   assert.match(runner, /file\.version <= productionLedgerAdoptionVersions\.last/);
-  assert.match(runner, /038_range_workspace_authenticated_writes\.sql/);
+  assert.match(runner, /043_range_workspace_authenticated_writes\.sql/);
 });
 
 test("production publish-only action stops after immutable image publication", async () => {
@@ -279,7 +279,7 @@ test("live release units pin the exact repository migration files and route only
   }
   assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039-040"]);
   assert.deepEqual(liveReleaseUnits["inventory-035-037"].map(file => file.version), [35, 36, 37]);
-  assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [39, 40]);
+  assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [44, 45]);
   const files = [{ version: 35, filename: "035_inventory_phase1.sql", contents: "begin;\nselect 1;\ncommit;\n" }];
   assert.throws(() => selectUnitFiles("inventory-035-037", files), /LIVE_RELEASE_UNIT_FILE_MISMATCH: 035_inventory_phase1\.sql/);
   assert.throws(() => selectUnitFiles("apply", files), /LIVE_RELEASE_UNIT_UNKNOWN/);
@@ -597,7 +597,7 @@ test("embedded Postgres applies 039 and 040 with reviewed resolutions atomically
     const applied = await applyPasswordScopeResolutionUnit(owner, files, [reviewedResolution(1, "recovery_unavailable"), reviewedResolution(2, "initial_password_required")], optionsFor("scope_live"));
     assert.equal(applied.status, "APPLIED");
     assert.equal(applied.resolved_operations, 2);
-    assert.deepEqual(applied.files.map(file => file.version), [39, 40]);
+    assert.deepEqual(applied.files.map(file => file.version), [44, 45]);
     assert.equal(applied.postconditions.unresolved_remaining, 0);
     assert.deepEqual((await owner.query("select id::text, state, safe_error_code, attempts, updated_at from public.authentication_lifecycle_operations order by id")).rows, originals);
     const audit = (await owner.query(`select entity_id::text, previous_value, new_value from public.audit_events where action = 'password_operation_resolved' order by entity_id`)).rows;
@@ -704,13 +704,13 @@ test("reviewed resolution lists are validated before any connection and carry no
 });
 
 test("unit files are atomic bodies: nested transaction control outside function bodies is refused", async () => {
-  for (const file of ["035_inventory_phase1.sql", "036_inventory_checkout_phase2a.sql", "037_inventory_management_runtime_grants.sql", "039_cognito_password_global_scope.sql", "040_password_operation_resolution.sql"]) {
+  for (const file of ["035_inventory_phase1.sql", "036_inventory_checkout_phase2a.sql", "037_inventory_management_runtime_grants.sql", "044_cognito_password_global_scope.sql", "045_password_operation_resolution.sql"]) {
     assert.doesNotThrow(() => transactionBody(readFileSync(new URL(`../database/aws/${file}`, import.meta.url), "utf8")), file);
   }
   for (const nested of ["begin;\nselect 1;\ncommit;\nbegin;\nselect 2;\ncommit;", "begin;\nselect 1;\nsavepoint inner_step;\ncommit;", "begin;\nselect 1; rollback;\ncommit;", "begin;\ncreate function f() returns int language plpgsql as $$ begin return 1; end; $$;\nend;\ncommit;"]) {
     assert.throws(() => transactionBody(nested), /LIVE_RELEASE_UNIT_FILE_HAS_NESTED_TRANSACTION_CONTROL/);
   }
-  assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [39, 40]);
+  assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [44, 45]);
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   assert.ok(runner.indexOf("parsePasswordScopeResolutions(process.env.TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS)") < runner.indexOf("client = await connect();"));
 });
@@ -1145,7 +1145,7 @@ test("mobile preflight reports runtime environment mismatch through the sanitize
 });
 
 test("Cognito password operations fail closed for global admins and cross-department identities", async () => {
-  const guard = await readFile(new URL("../database/aws/039_cognito_password_global_scope.sql", import.meta.url), "utf8");
+  const guard = await readFile(new URL("../database/aws/044_cognito_password_global_scope.sql", import.meta.url), "utf8");
   const lifecycle = await readFile(new URL("../database/aws/006_cognito_lifecycle_state.sql", import.meta.url), "utf8");
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
   const prepare = lifecycle.slice(
@@ -1176,11 +1176,11 @@ test("Cognito password operations fail closed for global admins and cross-depart
   assert.match(integration, /operation-first serializes and denies a new department membership/);
   assert.match(integration, /compensation_required and release after commit/);
   const inspection = await readFile(new URL("./aws-native-migration-inspection.mjs", import.meta.url), "utf8");
-  assert.match(inspection, /\[39, \[routine\("tracepoint_auth\.guard_cognito_password_global_scope"\)/);
-  assert.match(inspection, /\[39,[\s\S]*trigger\("public\.authentication_lifecycle_operations\.authentication_lifecycle_password_global_scope"\)/);
+  assert.match(inspection, /\[44, \[routine\("tracepoint_auth\.guard_cognito_password_global_scope"\)/);
+  assert.match(inspection, /\[44,[\s\S]*trigger\("public\.authentication_lifecycle_operations\.authentication_lifecycle_password_global_scope"\)/);
   assert.match(inspectionCatalogQueries.find(([name]) => name === "triggers")?.[1] ?? "", /pg_trigger/);
-  assert.ok(migrationInspectionManifest.some(({ version }) => version === 39));
-  assert.match(runner, /pending\.length !== 2[\s\S]*pending\[0\]\?\.version !== 38[\s\S]*pending\[1\]\?\.version !== 39/);
+  assert.ok(migrationInspectionManifest.some(({ version }) => version === 44));
+  assert.match(runner, /pending\.length !== 2[\s\S]*pending\[0\]\?\.version !== 43[\s\S]*pending\[1\]\?\.version !== 44/);
 });
 test("mobile preflight separates immutable pre-039 evidence from the 039 release gate", async () => {
   const preflight = await readFile(new URL("./verify-production-mobile-preflight.ps1", import.meta.url), "utf8");
@@ -1202,7 +1202,7 @@ test("inspection reports partial lineage without adopting absent migrations", ()
 
 test("Range Day hotfix is isolated from the ledger and missing 023–037 lineage", async () => {
   const runner = await readFile(new URL("./run-aws-native-migrations.mjs", import.meta.url), "utf8");
-  const migration = await readFile(new URL("../database/aws/038_range_workspace_authenticated_writes.sql", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../database/aws/043_range_workspace_authenticated_writes.sql", import.meta.url), "utf8");
   assert.match(runner, /action === "range-workspace-hotfix"/);
   assert.match(runner, /Range workspace hotfix is production-only/);
   assert.match(runner, /assertRangeWorkspaceContract\(before, \["SELECT"\]\)/);
@@ -1281,4 +1281,40 @@ test("final migration stages contain the recursive local runtime dependency clos
   for (const environment of await activeRuntimeDockerfiles(root)) {
     await assertFinalMigrationRuntimeClosure({ root, dockerfilePath: environment.dockerfilePath });
   }
+});
+
+test("migration versions are unique and 038-045 hold the reconciled lineage with unchanged contents", async () => {
+  // Agency Documents keeps 038-041 (recorded in the staging ledger). The release line's range-workspace and
+  // password-scope migrations, applied to production without ledger rows, moved byte-for-byte to 043-045.
+  // 042 is intentionally unused. Hashes are of LF content (normalizedSha256), as the staging ledger's 038 row
+  // and the live release-unit pins record.
+  const directory = new URL("../database/aws/", import.meta.url);
+  const names = (await readdir(directory)).filter((name) => /^\d{3}_.*\.sql$/.test(name)).sort();
+  const versions = names.map((name) => Number(name.slice(0, 3)));
+  assert.equal(new Set(versions).size, versions.length, "each version is used by exactly one file");
+  const expected = {
+    38: ["038_agency_documents_template_builder.sql", "e5d9731e6eef405945ca1c222c69bdd76559646fc97c393beec537cd656eee89"],
+    39: ["039_document_template_analysis.sql", "894c51ea4d74e8e6d4a6b988a4bf3add34266cf5fde9a199f18a2660ecfa6086"],
+    40: ["040_document_template_structured_bindings.sql", "908c2e8704c331d4122ee820143ab645f851761c9747b6d65dee8743e3007525"],
+    41: ["041_document_template_write_authority.sql", "e0d5cb1b4abb1257debff25c6de00785e7853b9b5157b459cae592f8545ca06c"],
+    43: ["043_range_workspace_authenticated_writes.sql", "f250c74b87b63a9d4ac614edf09ae84e15976cbe0234114a158f79b2b0cae3e1"],
+    44: ["044_cognito_password_global_scope.sql", "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987"],
+    45: ["045_password_operation_resolution.sql", "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b"],
+  };
+  for (const [version, [filename, sha256]] of Object.entries(expected)) {
+    assert.ok(names.includes(filename), `${filename} is version ${version}`);
+    assert.equal(normalizedSha256(await readFile(new URL(filename, directory), "utf8")), sha256, `${filename} contents are unchanged`);
+  }
+  assert.ok(!versions.includes(42), "042 stays unused");
+  for (const [unit, pins] of Object.entries(liveReleaseUnits)) for (const pin of pins) assert.equal(pin.filename.slice(0, 3), String(pin.version).padStart(3, "0"), `${unit} pins ${pin.filename} at its own version`);
+});
+
+test("Agency Documents migration grants only manager writes and generation inserts", async () => {
+  const contents = await readFile(new URL("../database/aws/041_document_template_write_authority.sql", import.meta.url), "utf8");
+  assert.match(contents, /grant insert, update, delete on public\.document_templates/);
+  assert.match(contents, /document_templates_manage[\s\S]*manage_document_templates/);
+  assert.match(contents, /document_template_structured_bindings_manage[\s\S]*manage_document_templates/);
+  assert.match(contents, /grant insert on public\.generated_documents to authenticated/);
+  assert.match(contents, /generated_documents_create[\s\S]*generate_agency_documents/);
+  assert.doesNotMatch(contents, /grant all on public\.generated_documents/i);
 });

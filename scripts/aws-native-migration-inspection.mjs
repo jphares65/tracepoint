@@ -51,9 +51,13 @@ export const migrationInspectionManifest = [
   [35, [relation("public.inventory_items"), relation("public.inventory_locations"), relation("public.inventory_balances"), relation("public.inventory_transactions"), routine("public.record_inventory_transaction")]],
   [36, [relation("public.inventory_checkouts"), relation("public.inventory_checkout_returns"), routine("public.checkout_inventory"), routine("public.return_inventory_checkout")]],
   [37, [privilege("public.inventory_items.authenticated.INSERT"), privilege("public.inventory_items.authenticated.UPDATE"), privilege("public.inventory_locations.authenticated.INSERT"), privilege("public.inventory_locations.authenticated.UPDATE")]],
-  [38, [relation("public.pilot_range_workspaces"), column("public.pilot_range_workspaces.workspace"), column("public.pilot_range_workspaces.updated_by_user_id"), privilege("public.pilot_range_workspaces.authenticated.INSERT"), privilege("public.pilot_range_workspaces.authenticated.UPDATE")]],
-  [39, [routine("tracepoint_auth.guard_cognito_password_global_scope"), routine("tracepoint_auth.guard_cognito_scope_membership_write"), routine("tracepoint_auth.guard_cognito_scope_platform_admin_write"), trigger("public.authentication_lifecycle_operations.authentication_lifecycle_password_global_scope"), trigger("public.department_memberships.department_memberships_password_scope_guard"), trigger("public.platform_admins.platform_admins_password_scope_guard")]],
-  [40, [relation("public.authentication_lifecycle_resolutions"), routine("tracepoint_auth.password_scope_hold_exists"), routine("tracepoint_auth.resolve_password_operation_provider_unchanged"), trigger("public.authentication_lifecycle_resolutions.authentication_lifecycle_resolutions_append_only")]],
+  [38, [relation("public.document_templates"), relation("public.document_template_versions"), relation("public.document_template_fields"), relation("public.generated_documents"), policy("public.document_templates.document_templates_tenant_read")]],
+  [39, [relation("public.document_template_analysis_proposals"), policy("public.document_template_analysis_proposals.document_template_analysis_proposals_read")]],
+  [40, [relation("public.document_template_structured_bindings"), policy("public.document_template_structured_bindings.document_template_structured_bindings_read")]],
+  [41, [policy("public.document_templates.document_templates_manage"), policy("public.generated_documents.generated_documents_create")]],
+  [43, [relation("public.pilot_range_workspaces"), column("public.pilot_range_workspaces.workspace"), column("public.pilot_range_workspaces.updated_by_user_id"), privilege("public.pilot_range_workspaces.authenticated.INSERT"), privilege("public.pilot_range_workspaces.authenticated.UPDATE")]],
+  [44, [routine("tracepoint_auth.guard_cognito_password_global_scope"), routine("tracepoint_auth.guard_cognito_scope_membership_write"), routine("tracepoint_auth.guard_cognito_scope_platform_admin_write"), trigger("public.authentication_lifecycle_operations.authentication_lifecycle_password_global_scope"), trigger("public.department_memberships.department_memberships_password_scope_guard"), trigger("public.platform_admins.platform_admins_password_scope_guard")]],
+  [45, [relation("public.authentication_lifecycle_resolutions"), routine("tracepoint_auth.password_scope_hold_exists"), routine("tracepoint_auth.resolve_password_operation_provider_unchanged"), trigger("public.authentication_lifecycle_resolutions.authentication_lifecycle_resolutions_append_only")]],
 ].map(([version, checks]) => ({ version, checks }));
 
 export function assertExpectedDatabaseHost(actualHost, expectedHost) {
@@ -440,9 +444,7 @@ export function classifyMigrationInspection(snapshot) {
   const phaseA = migrations.find(migration => migration.version === 28);
   const later = migrations.filter(migration => migration.version >= 30 && migration.version <= 37).map(({ version, status }) => ({ version, status }));
   const recommendation = highestContiguousVersion === 37
-    ? "Adopt the verified 001-037 ledger only; apply migrations 038 and 039 in order."
-    : highestContiguousVersion === 38
-      ? "Apply migration 039 after verifying the complete 001-038 chain."
+    ? "Adopt the verified 001-037 ledger only; apply the later migrations in order."
     : "Do not adopt beyond the highest contiguous verified version. Reconcile against a production-specific anchor only after every missing or partial migration has a reviewed, dependency-ordered, idempotency-validated plan.";
   return { migrations, highestContiguousVersion, outOfOrderPresent, missingPhaseAObjects: phaseA.evidence.filter(item => !item.present).map(item => item.check), migrations030to037: later, recommendation };
 }
