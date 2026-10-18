@@ -97,7 +97,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 export function cleanValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : typeof value === "boolean" ? (value ? "Yes" : "No") : "";
-  // eslint-disable-next-line no-control-regex
+  // Strip control characters (other than tab/newline/carriage return) that would corrupt PDF or Word output.
   return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/[ \t]+/g, " ").trim();
 }
 

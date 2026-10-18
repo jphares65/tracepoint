@@ -128,7 +128,7 @@ function drawOverlay(page: PDFPage, info: PdfPageInfo, field: RenderField, fonts
 }
 
 function fillNative(form: PDFForm, field: RenderField, font: PDFFont, issues: RenderIssue[]): boolean {
-  const name = field.formatting?.acroFieldName!;
+  const name = field.formatting?.acroFieldName ?? "";
   let target;
   try { target = form.getField(name); } catch { target = null; }
   if (!target) {
