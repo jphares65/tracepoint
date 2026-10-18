@@ -65,3 +65,19 @@ Minimum correction (both needed; deploy only with approval):
    guard; the route keeps its bearer-secret check — application deploy.
 Before enabling, review the `Pending` backlog: once fixed, every queued email since 2026-10-07
 would be sent at once. Consider expiring stale rows or sending only recent ones.
+
+## 3. Agency offboarding procedure (needed before the first agency termination)
+
+The privacy policy commits to a 90-day transition period after an agency agreement ends, followed
+by deletion. Export is supported today (Settings → Import/Export, department administrators: CSV
+and PDF exports of personnel, firearms, ammunition, qualifications, training, range days,
+certifications, equipment, off-duty firearms, complete audit history, and a complete PDF report;
+uploaded files download individually). Deletion has no documented procedure: the database
+cascades a department delete (`supabase/migrations/202609060005_allow_guarded_department_teardown.sql`),
+but S3 objects under `attachments/<departmentId>/` and `department-assets/`, and Cognito
+accounts of users with no other membership, also need handling.
+
+Smallest process: a written offboarding runbook (confirm termination date; offer export; record
+the 90-day deletion date; at day 90 deactivate memberships, delete the department, delete its S3
+prefixes, disable or delete Cognito users without other memberships; record completion), rehearsed
+once against a fictional staging agency. No infrastructure or application change is required.

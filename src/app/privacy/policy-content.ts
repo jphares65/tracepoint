@@ -8,7 +8,7 @@ export type PolicySection = { id: string; heading: string; paragraphs?: string[]
 export const policyEffectiveDate = "[[OWNER: actual publication date]]";
 
 export const policyIntro = [
-  "This Privacy Policy explains how [[OWNER: registered legal entity name from formation documents, e.g. TracePoint LLC]] (\"TracePoint,\" \"we,\" \"us\") collects, uses, shares, and protects information through TracePoint Public Safety, which includes the TracePoint website and web application at tracepointhq.com and the TracePoint mobile apps for iOS and Android (together, the \"Service\").",
+  "This Privacy Policy explains how TracePoint LLC (\"TracePoint,\" \"we,\" \"us\") collects, uses, shares, and protects information through TracePoint Public Safety, which includes the TracePoint website and web application at tracepointhq.com and the TracePoint mobile apps for iOS and Android (together, the \"Service\").",
   "TracePoint is an operations platform for public safety agencies. The Service is provided to agencies and is intended only for authorized agency personnel. It is not a consumer service and is not intended for members of the public.",
 ];
 
@@ -17,7 +17,7 @@ export const policySections: PolicySection[] = [
     id: "role",
     heading: "1. Our relationship with your agency",
     paragraphs: [
-      "Your agency is responsible for the records it keeps in the Service. It decides who receives an account, which roles and permissions each person has, and what information is entered, kept, and removed. TracePoint hosts and processes the information in your agency's workspace to provide the Service to your agency. [[OWNER: confirm this description of TracePoint's role with counsel; do not reference a data processing, CJIS, or similar agreement unless one is in place]]",
+      "Your agency is responsible for, and retains control of, the records it keeps in the Service. It decides who receives an account, which roles and permissions each person has, and what information is entered, kept, and removed. TracePoint hosts and processes the information in your agency's workspace to provide the Service to your agency.",
       "If you have questions about records your agency keeps about you, contact your agency administrator first. You can also contact us using the details at the end of this policy.",
     ],
   },
@@ -101,16 +101,16 @@ export const policySections: PolicySection[] = [
       "Deactivated users: a deactivated account can no longer sign in. The user's historical records remain part of the agency's records.",
       "Removed files: files removed from a record are archived rather than erased and remain part of the agency's records.",
       "Earlier versions of files: when a stored file is replaced or deleted, the earlier version is kept for up to 365 days.",
-      "Backups: daily database backups are kept for up to 35 days and monthly backups for up to 365 days. Database snapshots taken before maintenance are kept until they are deleted. [[OWNER: decide how long pre-maintenance snapshots and the retired pre-migration database copy are kept, then state it here]]",
+      "Backups: automated database backups are kept for up to 35 days, and some backup copies are kept for up to 365 days. Database snapshots and copies created during system migrations are reviewed for safe deletion 90 days after the migration.",
       "Logs: application logs, hosting request logs, firewall logs, and network logs, some of which contain IP addresses, are kept for up to 90 days.",
-      "End of service: [[OWNER: state what happens to an agency's data after its agreement ends — how long it is kept and whether it is returned or deleted — only as TracePoint can actually carry out]]",
+      "End of service: agency administrators can export the agency's records at any time, including before the agency's agreement ends, using the Service's export tools (CSV and PDF exports of personnel, firearms, qualification, training, range-day, equipment, and audit records; uploaded files can be downloaded individually). Agencies may also contact us for help obtaining a copy of their records. After an agreement ends, we keep the agency's data for a 90-day transition period and then delete it from the Service, unless the law requires us to keep it. Copies in backups are removed as those backups expire.",
     ],
   },
   {
     id: "rights",
     heading: "10. Your choices and rights",
     paragraphs: [
-      "You can ask to access, correct, or delete your personal information, or ask to have your account deactivated. Your agency controls its records, so requests are handled together with your agency: your agency administrator manages your account and can deactivate it, and we may refer a request to your agency or confirm it with your agency first. Some records may need to be kept to meet your agency's legal or recordkeeping obligations, so deletion may not always be possible. To make a request, contact your agency administrator or email support@tracepointhq.com. [[OWNER: confirm support@tracepointhq.com is monitored for privacy requests]]",
+      "You can ask to access, correct, or delete your personal information, or ask to have your account deactivated. Your agency controls its records, so requests are handled together with your agency: your agency administrator manages your account and can deactivate it, and we may refer a request to your agency or confirm it with your agency first. Some records may need to be kept to meet your agency's legal or recordkeeping obligations, so deletion may not always be possible. To make a request, contact your agency administrator or email support@tracepointhq.com.",
     ],
   },
   {
@@ -132,7 +132,7 @@ export const policySections: PolicySection[] = [
     heading: "13. Contact us",
     paragraphs: [
       "Questions about this policy or our privacy practices can be sent to support@tracepointhq.com.",
-      "[[OWNER: registered legal entity name and mailing address, from formation documents]]",
+      "TracePoint LLC, P.O. Box 26, Ringoes, NJ 08551.",
     ],
   },
 ];

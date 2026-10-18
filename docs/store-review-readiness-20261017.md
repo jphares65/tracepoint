@@ -326,20 +326,22 @@ Google Play Console
 Nice-to-have, not blocking: clear inspection drafts on sign-out; remove the unused photo-library
 permission string; consider stripping photo location metadata on upload.
 
-## 11. Owner decision list for the privacy policy
+## 11. Privacy-policy decisions (resolved 2026-10-17)
 
-Each item maps to one `[[OWNER: …]]` marker or store setting. A production build will not publish
-`/privacy` until every marker is resolved.
+| Decision | Answer |
+|---|---|
+| Legal entity and address | TracePoint LLC, P.O. Box 26, Ringoes, NJ 08551 |
+| Privacy contact | support@tracepointhq.com (actively monitored) |
+| Counsel review | Initial policy, not yet reviewed by counsel |
+| Agency agreements | No signed agency DPAs or CJIS agreements; the policy references none |
+| Agency records | Agencies retain control of their records and can export them before termination |
+| End of service | 90-day transition period after termination, then deletion from the Service |
+| Migration snapshots | Reviewed for safe deletion 90 days after the migration |
+| Sentry | DPA accepted; data stored in the United States (verified) |
+| Apple seller | Existing Individual developer account; organization conversion after launch |
+| Effective date | Actual publication date (set in the final commit before deployment) |
+| Backups and logs | Verified: automated database backups 35 days; some backup copies 365 days; request, firewall, application and network logs 90 days. The live database is not yet in the AWS Backup plan (see production follow-ups). |
 
-| # | Decision or input | Who | Notes |
-|---|---|---|---|
-| 1 | Registered legal entity name and mailing address | Owner | From formation documents; no document in the repositories establishes it. |
-| 2 | App Store seller identity | Owner | The Apple developer account is Individual ("Jason Phares"). Accept, or enroll an Organization account (needs a D-U-N-S number). |
-| 3 | Privacy contact | Owner | Confirm support@tracepointhq.com (Microsoft 365) is monitored for privacy requests, or name another monitored address. |
-| 4 | TracePoint's role | Owner / counsel | Approve the description in section 1 of the policy. It mentions no DPA or CJIS agreement; say if one exists. |
-| 5 | Sentry | Done | Verified: data storage region United States (US). DPA accepted (owner). |
-| 6 | Backup retention | Done | Verified: daily backups 35 days, monthly 365 days; the live database is not yet in the AWS Backup plan (see `docs/production-followups-20261017.md`). |
-| 7 | Manual database snapshots and retired database | Owner | Decide how long to keep the two pre-maintenance snapshots and the retired pre-cutover database `tracepoint-production` and its backups. |
-| 8 | Request and firewall log retention | Done | Verified: load-balancer access logs, firewall logs, application logs and VPC flow logs 90 days. |
-| 9 | End of service | Owner | How long an agency's data is kept after its agreement ends, and whether it is returned or deleted. Only what TracePoint can actually do today. |
-| 10 | Effective date | Owner | The actual publication date, set when the web deployment is approved. |
+Open item: whether the retired pre-cutover database `tracepoint-production` (still running, with
+monthly backups kept 365 days) falls under the 90-day migration review. The policy wording
+("snapshots and copies created during system migrations") assumes it does.
