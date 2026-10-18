@@ -337,9 +337,9 @@ Each item maps to one `[[OWNER: …]]` marker or store setting. A production bui
 | 2 | App Store seller identity | Owner | The Apple developer account is Individual ("Jason Phares"). Accept, or enroll an Organization account (needs a D-U-N-S number). |
 | 3 | Privacy contact | Owner | Confirm support@tracepointhq.com (Microsoft 365) is monitored for privacy requests, or name another monitored address. |
 | 4 | TracePoint's role | Owner / counsel | Approve the description in section 1 of the policy. It mentions no DPA or CJIS agreement; say if one exists. |
-| 5 | Sentry | Owner | Read the data region in Sentry organization settings; accept Sentry's DPA under Legal & Compliance (owner or billing role). |
-| 6 | Backup retention | Read-only check | AWS Backup plan retention for the production database (needs a fresh production sign-in). |
-| 7 | Manual database snapshots | Owner | Decide how long to keep the two pre-migration snapshots, then state it. |
-| 8 | Request and firewall log retention | Read-only check | Live WAF and load-balancer log retention (needs a fresh production sign-in). |
+| 5 | Sentry | Done | Verified: data storage region United States (US). DPA accepted (owner). |
+| 6 | Backup retention | Done | Verified: daily backups 35 days, monthly 365 days; the live database is not yet in the AWS Backup plan (see `docs/production-followups-20261017.md`). |
+| 7 | Manual database snapshots and retired database | Owner | Decide how long to keep the two pre-maintenance snapshots and the retired pre-cutover database `tracepoint-production` and its backups. |
+| 8 | Request and firewall log retention | Done | Verified: load-balancer access logs, firewall logs, application logs and VPC flow logs 90 days. |
 | 9 | End of service | Owner | How long an agency's data is kept after its agreement ends, and whether it is returned or deleted. Only what TracePoint can actually do today. |
 | 10 | Effective date | Owner | The actual publication date, set when the web deployment is approved. |
