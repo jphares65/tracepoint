@@ -47,5 +47,5 @@ test("unbound repeating sections block publishing until bound or dismissed", () 
     { id: "p4", status: "proposed", proposal: { kind: "scalar_field", detectedLabel: "Officer Signature" } },
   ];
   const blockers = structuredPublishBlockers(proposals, ["structured-section-p1"]);
-  assert.deepEqual(blockers.map((blocker) => blocker.message), ["Roster: bind it to TracePoint data or dismiss it."]);
+  assert.deepEqual(blockers.map((blocker) => blocker.message), ["Roster: bind it to TracePoint data or leave it blank."]);
 });
