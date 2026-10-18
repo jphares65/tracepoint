@@ -4,6 +4,7 @@ import { fieldLocator } from "@/lib/agency-documents/field-persistence";
 import { canCreateTemplateField, eligibleForBulkAccept, mergeProposalUpdate, proposalToFieldRow, ProposalConversionError, sharedSourceKeys, type ReviewedProposal } from "@/lib/agency-documents/proposal-review";
 import type { AnalysisProposal } from "@/lib/agency-documents/template-analyzer";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { revisionLockedError } from "@/lib/agency-documents/template-revisions";
 
 type Context = { params: Promise<{ templateId: string }> };
 type ProposalRow = { id: string; proposal: AnalysisProposal; status: string };
@@ -29,6 +30,9 @@ export async function PATCH(request: Request, route: Context) {
   if (template.error) return NextResponse.json({ error: "Template could not be loaded." }, { status: 500 });
   if (!template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
   if (template.data.status === "published") return NextResponse.json({ error: "Unpublish this template before changing its fields." }, { status: 409 });
+  // Documents generated from this revision fix its fields; edits need a new revision.
+  const locked = await revisionLockedError(admin, departmentId, templateId, template.data.current_version);
+  if (locked) return NextResponse.json(locked.revisionLocked ? { error: locked.error, revisionLocked: true } : { error: locked.error }, { status: locked.status });
 
   if (body.action === "update" && body.proposalIds?.[0] && body.proposal) {
     if (body.proposal.suggestedSemanticKey && !getDocumentField(body.proposal.suggestedSemanticKey)) return NextResponse.json({ error: "That field is not available." }, { status: 400 });

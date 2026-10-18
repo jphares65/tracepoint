@@ -286,3 +286,12 @@ test("a Word list or unsupported control with no decision blocks the official do
   tables.document_template_analysis_proposals[0]!.status = "rejected";
   assert.equal((await handleGenerate(post({ templateId: DOCX_TEMPLATE, mode: "final", context }), deps())).status, 200);
 });
+
+test("an issued document records the exact template revision it was filled from", async () => {
+  const { deps, tables } = await world();
+  const response = await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context }), deps());
+  assert.equal(response.status, 200);
+  const saved = tables.generated_documents.at(-1)!;
+  assert.equal(saved.template_version_id, VERSION);
+  assert.equal((saved.context as { template_version_number?: number }).template_version_number, 1);
+});

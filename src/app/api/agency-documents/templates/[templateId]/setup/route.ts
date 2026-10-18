@@ -6,6 +6,7 @@ import { reuseIdsByLocator } from "@/lib/agency-documents/field-persistence";
 import { structuredSectionKey } from "@/lib/agency-documents/structured-binding-builder-state";
 import { analyzeTemplateSource, loadLearnedMappings, loadTemplateSource, TemplateSourceError } from "@/lib/agency-documents/template-service";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { revisionLockedError } from "@/lib/agency-documents/template-revisions";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ templateId: string }> };
@@ -25,6 +26,9 @@ export async function POST(request: Request, route: Context) {
   const template = await admin.from("document_templates").select("id,status,current_version,source_storage_path").eq("id", templateId).eq("department_id", departmentId).maybeSingle();
   if (template.error || !template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
   if (template.data.status === "published") return NextResponse.json({ error: "Unpublish the template before setting it up again." }, { status: 409 });
+  // Documents generated from this revision fix its fields; edits need a new revision.
+  const locked = await revisionLockedError(admin, departmentId, templateId, template.data.current_version);
+  if (locked) return NextResponse.json(locked.revisionLocked ? { error: locked.error, revisionLocked: true } : { error: locked.error }, { status: locked.status });
   const version = await admin.from("document_template_versions").select("id").eq("department_id", departmentId).eq("template_id", templateId).eq("version_number", template.data.current_version).single();
   if (version.error) return NextResponse.json({ error: "The template version could not be loaded." }, { status: 500 });
   const existing = await admin.from("document_template_fields").select("id,formatting").eq("department_id", departmentId).eq("template_version_id", version.data.id);

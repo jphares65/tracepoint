@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { publishBlockers } from "@/lib/agency-documents/proposal-review";
 import { structuredPublishBlockers } from "@/lib/agency-documents/field-persistence";
 import { structuredSectionKey } from "@/lib/agency-documents/structured-binding-builder-state";
+import { revisionHasGeneratedDocuments, startTemplateRevision } from "@/lib/agency-documents/template-revisions";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type Context = { params: Promise<{ templateId: string }> };
@@ -19,7 +20,9 @@ export async function GET(_request: Request, route: Context) {
   if (version.error || !version.data) return response(version.error?.message ?? "Template version not found.", 500);
   const fields = await access.context.admin.from("document_template_fields").select("*").eq("template_version_id", version.data.id).eq("department_id", access.context.departmentId).order("created_at");
   if (fields.error) return response(fields.error.message, 500);
-  return NextResponse.json({ template: template.data, version: version.data, fields: fields.data ?? [], canManage: hasAnyServerPermission(access.context, MANAGE) });
+  // A revision documents were generated from is frozen; the builder offers "Start new revision" instead of editing it.
+  const used = await revisionHasGeneratedDocuments(access.context.admin, access.context.departmentId, version.data.id);
+  return NextResponse.json({ template: template.data, version: version.data, fields: fields.data ?? [], canManage: hasAnyServerPermission(access.context, MANAGE), revisionLocked: used !== false });
 }
 
 export async function PATCH(request: Request, route: Context) {
@@ -63,7 +66,20 @@ export async function PATCH(request: Request, route: Context) {
     await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: "document_template_duplicated", entity_type: "document_template", entity_id: duplicate.data.id, summary: `Duplicated document template ${existing.data.name}.`, new_value: { source_template_id: templateId } });
     return NextResponse.json({ id: duplicate.data.id });
   }
+  if (body.action === "revise") {
+    if (existing.data.status === "published") return response("Unpublish this template before starting a new revision.", 409);
+    const revision = await startTemplateRevision(access.context.admin, { departmentId: access.context.departmentId, templateId, userId: access.context.userId });
+    if (!revision.ok) return response(revision.error, revision.status);
+    return NextResponse.json({ ok: true, revised: revision.revised, versionNumber: revision.versionNumber });
+  }
   const status = body.status; if (status !== "draft" && status !== "published" && status !== "archived") return response("A valid template status is required.");
+  // Unpublishing is where editing starts. If documents were generated from the current revision, editing moves
+  // to a new revision first, so those documents keep pointing at exactly the fields that filled them.
+  let revision: Awaited<ReturnType<typeof startTemplateRevision>> | null = null;
+  if (status === "draft" && existing.data.status === "published") {
+    revision = await startTemplateRevision(access.context.admin, { departmentId: access.context.departmentId, templateId, userId: access.context.userId });
+    if (!revision.ok) return response(revision.error, revision.status);
+  }
   if (status === "published") {
     // A template can only be published once every field is confirmed and complete.
     const current = await access.context.admin.from("document_template_versions").select("id").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", existing.data.current_version).single();
@@ -80,5 +96,5 @@ export async function PATCH(request: Request, route: Context) {
   const updated = await access.context.admin.from("document_templates").update({ status, updated_by_user_id: access.context.userId, updated_at: new Date().toISOString() }).eq("id", templateId).eq("department_id", access.context.departmentId);
   if (updated.error) return response(updated.error.message, 500);
   await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: `document_template_${status === "published" ? "published" : status === "draft" ? "unpublished" : "archived"}`, entity_type: "document_template", entity_id: templateId, summary: `${status === "published" ? "Published" : status === "draft" ? "Unpublished" : "Archived"} document template ${existing.data.name}.` });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(revision?.ok && revision.revised ? { revised: true, versionNumber: revision.versionNumber } : {}) });
 }

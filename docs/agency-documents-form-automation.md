@@ -78,6 +78,11 @@ locators, match status and reasons live in `document_template_fields.formatting`
   rather than filled at a possibly different place. Word templates set up
   before scheme 5 must be set up again ("Replace fields").
 - Repeating-section bindings cannot be changed on a published template.
+- A template revision that any document was generated from is frozen. Unpublishing such a
+  template starts revision N+1 (fields and bindings copied, `current_version` moved); a draft
+  in that state offers "Start new revision". Every field, setup, suggestion and binding edit on a
+  used revision is refused. Generated documents keep `template_version_id` of the exact revision
+  and record `template_version_number` in their context.
 - A repeating section that cannot hold every matching record blocks the
   official document under every overflow setting (previews still show what
   fits, flagged). Records are never left out of an issued document.

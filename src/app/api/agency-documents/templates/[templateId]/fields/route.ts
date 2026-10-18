@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDocumentField } from "@/lib/agency-documents/field-registry";
 import { planFieldSave } from "@/lib/agency-documents/field-persistence";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { revisionLockedError } from "@/lib/agency-documents/template-revisions";
 
 type Context = { params: Promise<{ templateId: string }> };
 type FieldInput = { id?: string; pageNumber: number; fieldType: "tracepoint_data" | "manual" | "static_text" | "generated_date"; canonicalKey?: string; label?: string; placeholder?: string; staticText?: string; required?: boolean; geometry: { x: number; y: number; width: number; height: number }; formatting?: Record<string, unknown> };
@@ -16,6 +17,9 @@ export async function PUT(request: Request, route: Context) {
   if (template.error) return NextResponse.json({ error: template.error.message }, { status: 500 }); if (!template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
   // A published template is in use; changing its fields could change documents generated from it. Unpublish first.
   if (template.data.status === "published") return NextResponse.json({ error: "Unpublish this template before editing its fields." }, { status: 409 });
+  // Documents generated from this revision fix its fields; edits need a new revision.
+  const locked = await revisionLockedError(access.context.admin, access.context.departmentId, templateId, template.data.current_version);
+  if (locked) return NextResponse.json(locked.revisionLocked ? { error: locked.error, revisionLocked: true } : { error: locked.error }, { status: locked.status });
   const version = await access.context.admin.from("document_template_versions").select("id").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", template.data.current_version).single();
   if (version.error) return NextResponse.json({ error: version.error.message }, { status: 500 });
   // Field ids are stable: existing fields keep their id (saved decisions and generated-document provenance

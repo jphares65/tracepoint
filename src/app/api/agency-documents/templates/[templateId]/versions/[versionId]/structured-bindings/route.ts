@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { normalizeStructuredBindingInput } from "@/lib/agency-documents/structured-binding-http";
 import { StructuredBindingDuplicateError, StructuredBindingRepository, StructuredBindingRepositoryError, type StructuredBindingSupabaseClient } from "@/lib/agency-documents/structured-binding-repository";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { REVISION_LOCKED_MESSAGE, revisionHasGeneratedDocuments } from "@/lib/agency-documents/template-revisions";
 
 type Context = { params: Promise<{ templateId: string; versionId: string }> };
 const VIEW = ["view_agency_documents", "generate_agency_documents", "manage_document_templates"] as const;
@@ -15,6 +16,12 @@ async function ownedVersion(admin: { from(table: string): { select(fields: strin
   if (editable && version.data.version_number !== template.data.current_version) return { status: 404 as const };
   // A published template is what people generate from; its bindings change only after unpublishing.
   if (editable && template.data.status === "published") return { status: 409 as const };
+  // Bindings of a revision that documents were generated from never change (423 = revision locked).
+  if (editable) {
+    const used = await revisionHasGeneratedDocuments(admin as never, departmentId, versionId);
+    if (used === null) return { status: 500 as const };
+    if (used) return { status: 423 as const };
+  }
   return { status: 200 as const };
 }
 function repository(admin: StructuredBindingSupabaseClient, departmentId: string) { return new StructuredBindingRepository(admin, departmentId); }
@@ -35,6 +42,7 @@ export async function POST(request: Request, route: Context) {
   const { templateId, versionId } = await route.params;
   const ownership = await ownedVersion(access.context.admin, access.context.departmentId, templateId, versionId, true);
   if (ownership.status === 409) return response("Unpublish this template before changing its repeating sections.", 409);
+  if (ownership.status === 423) return response(REVISION_LOCKED_MESSAGE, 409);
   if (ownership.status !== 200) return response(ownership.status === 404 ? "Template version not found." : "Template could not be read.", ownership.status);
   try {
     const binding = await repository(access.context.admin, access.context.departmentId).create({ ...normalizeStructuredBindingInput(await request.json().catch(() => null)), templateId, templateVersionId: versionId, actorUserId: access.context.userId });

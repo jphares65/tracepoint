@@ -176,7 +176,8 @@ export async function handleGenerate(request: Request, deps: GenerateDeps): Prom
   const saved = await admin.from("generated_documents").insert({
     id: generatedId, department_id: departmentId, template_id: template.data.id, template_version_id: version.data.id, generated_by_user_id: userId, storage_path: upload.path,
     // Field provenance only — typed values themselves are kept in the PDF, not duplicated into the audit context.
-    context: { references, report_year: reportYear ?? undefined, structured_binding_ids: structured.bindingIds, field_sources: summary.fields.map((field) => ({ field_id: field.fieldId, status: field.status, key: field.canonicalKey })) },
+    // template_version_id (column) is the exact, immutable revision used; its number is kept for readers of the record.
+    context: { references, template_version_number: template.data.current_version, report_year: reportYear ?? undefined, structured_binding_ids: structured.bindingIds, field_sources: summary.fields.map((field) => ({ field_id: field.fieldId, status: field.status, key: field.canonicalKey })) },
   });
   if (saved.error) return json({ error: "The completed document could not be recorded." }, 500);
   await admin.from("audit_events").insert({ department_id: departmentId, actor_user_id: userId, action: "document_generated", entity_type: "generated_document", entity_id: generatedId, summary: `Generated ${template.data.name}.`, new_value: { template_id: templateId, template_version: template.data.current_version, typed_fields: outcome.resolution.typed.length } });
