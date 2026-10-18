@@ -187,3 +187,39 @@ test("the Word preview includes filled headers and footers", () => {
   const filled = fillDocx(source, [{ target: header, value: "Lakeview PD" }]);
   assert.ok(docxPreviewHtml(filled.bytes, ["Lakeview PD"]).includes("<header class=\"docx-header\"><p><mark>Lakeview PD</mark></p></header>"));
 });
+
+test("formatting is preserved: token runs keep their style, filled cells use the cell's own paragraph font", () => {
+  const styled = `<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="28"/>`;
+  const cellWithMarkFont = `<w:tc><w:p><w:pPr><w:rPr>${styled}</w:rPr></w:pPr></w:p></w:tc>`;
+  const source = buildDocx(p(r("{{Officer Name}}", `<w:b/><w:u w:val="single"/>`)) + table(row(cell(p(r("Badge Number"))), cellWithMarkFont)));
+  const fields = analyzeDocx(source);
+  const filled = fillDocx(source, fields.map((field) => ({ target: field, value: field.label === "Officer Name" ? "Jordan Rivera" : "4471" })));
+  const body = entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!);
+  assert.match(body, /<w:rPr><w:b\/><w:u w:val="single"\/><\/w:rPr><w:t xml:space="preserve">Jordan Rivera<\/w:t>/);
+  assert.ok(body.includes(`<w:r><w:rPr>${styled}</w:rPr><w:t xml:space="preserve">4471</w:t></w:r>`), body);
+  // Paragraph properties of the filled cell are untouched.
+  assert.ok(body.includes(`<w:pPr><w:rPr>${styled}</w:rPr></w:pPr>`));
+});
+
+test("footer placeholders are detected, filled, and shown in the preview", async () => {
+  const { createZip } = await import("./docx-zip");
+  const base = readZip(buildDocx(p(r("Body"))));
+  const files: Array<[string, string]> = base.map((entry) => [entry.name, entryText(entry)]);
+  files.push(["word/footer1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${p(r("Prepared by: {{Prepared By}}"))}</w:ftr>`]);
+  const source = createZip(files);
+  const footer = analyzeDocx(source).find((field) => field.part === "word/footer1.xml")!;
+  assert.equal(footer.label, "Prepared By");
+  const filled = fillDocx(source, [{ target: footer, value: "Sgt. Casey Morgan" }]);
+  assert.ok(entryText(readZip(filled.bytes).find((entry) => entry.name === "word/footer1.xml")!).includes("Sgt. Casey Morgan"));
+  assert.ok(docxPreviewHtml(filled.bytes).includes("<footer class=\"docx-footer\"><p>Prepared by: Sgt. Casey Morgan</p></footer>"));
+});
+
+test("images and drawings elsewhere in the document survive filling byte-for-byte in their XML", () => {
+  const drawing = `<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Seal"/></wp:inline></w:drawing></w:r>`;
+  const source = buildDocx(p(drawing) + p(r("Officer: {{Officer Name}}")) + table(row(cell(p(r("Seal"))), `<w:tc><w:p>${drawing}</w:p></w:tc>`)));
+  const fields = analyzeDocx(source);
+  assert.deepEqual(fields.map((field) => field.label), ["Officer Name"]);
+  const filled = fillDocx(source, [{ target: fields[0]!, value: "Jordan Rivera" }]);
+  const body = entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!);
+  assert.equal(body.split(drawing).length - 1, 2);
+});

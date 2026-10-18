@@ -38,7 +38,7 @@ export default function GenerateAgencyDocumentPage() {
   const [entered, setEntered] = useState<Record<string, string>>({});
   const [leaveBlank, setLeaveBlank] = useState<string[]>([]);
   const [review, setReview] = useState<Review | null>(null);
-  const [preview, setPreview] = useState<{ url?: string; html?: string } | null>(null);
+  const [storedPreview, setPreview] = useState<{ url?: string; html?: string; key: string } | null>(null);
   const [message, setMessage] = useState(""), [busy, setBusy] = useState(false);
   const reviewSeq = useRef(0);
 
@@ -72,9 +72,10 @@ export default function GenerateAgencyDocumentPage() {
     return () => window.clearTimeout(timer);
   }, [templateId, request]);
 
-  useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url); }, [preview]);
-  // Any change to what would be generated makes an existing preview out of date; remove it rather than show the wrong document.
-  useEffect(() => { setPreview(null); }, [request]);
+  // A preview is shown only while the inputs it was made from are unchanged; any change hides it rather than show the wrong document.
+  const inputKey = JSON.stringify({ templateId, reportYear, personId, firearmId, qualificationId, entered, leaveBlank });
+  const preview = storedPreview && storedPreview.key === inputKey ? storedPreview : null;
+  useEffect(() => () => { if (storedPreview?.url) URL.revokeObjectURL(storedPreview.url); }, [storedPreview]);
 
   function resetFor(nextTemplate: string) { setTemplateId(nextTemplate); setPersonId(""); setFirearmId(""); setQualificationId(""); setReportYear(""); setEntered({}); setLeaveBlank([]); setReview(null); setPreview(null); }
 
@@ -83,8 +84,8 @@ export default function GenerateAgencyDocumentPage() {
     try {
       const response = await request("preview");
       if (!response.ok && response.headers.get("Content-Type")?.includes("json")) throw new Error((await response.json()).error || "Preview could not be created.");
-      if (response.headers.get("Content-Type")?.includes("json")) { const body = await response.json(); setPreview({ html: body.previewHtml ?? "" }); }
-      else { const blob = await response.blob(); setPreview({ url: URL.createObjectURL(blob) }); }
+      if (response.headers.get("Content-Type")?.includes("json")) { const body = await response.json(); setPreview({ html: body.previewHtml ?? "", key: inputKey }); }
+      else { const blob = await response.blob(); setPreview({ url: URL.createObjectURL(blob), key: inputKey }); }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Preview could not be created."); } finally { setBusy(false); }
   }
 
