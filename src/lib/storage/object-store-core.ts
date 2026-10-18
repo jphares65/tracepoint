@@ -29,6 +29,8 @@ export interface ObjectStore {
   uploadFleetInspectionEvidence(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadFleetDocument(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   uploadDrillDocument(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
+  uploadDocumentTemplateSource(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
+  uploadGeneratedAgencyDocument(input: AttachmentUploadInput): Promise<StoredObjectResult<AttachmentObjectPath>>;
   removeAttachment(path: AttachmentObjectPath): Promise<ObjectStoreResult>;
   createAttachmentDownload(
     path: AttachmentObjectPath,
@@ -101,6 +103,8 @@ const ATTACHMENT_DOMAINS = new Set([
   "fleet-inspection",
   "fleet-document",
   "drill-document",
+  "agency-document-template",
+  "agency-document-generated",
 ]);
 
 function safelyDecodePathSegment(segment: string) {
@@ -214,6 +218,20 @@ export class SupabaseObjectStore implements ObjectStore {
       attachmentPath(
         `${input.departmentId}/drill-document/${encodeURIComponent(input.recordId)}/${input.objectId}-${safeName(input.fileName, "document", true)}`,
       ),
+      input,
+    );
+  }
+
+  uploadDocumentTemplateSource(input: AttachmentUploadInput) {
+    return this.uploadAttachment(
+      attachmentPath(`${input.departmentId}/agency-document-template/${input.recordId}/${input.objectId}-${safeName(input.fileName, "template.pdf", true)}`),
+      input,
+    );
+  }
+
+  uploadGeneratedAgencyDocument(input: AttachmentUploadInput) {
+    return this.uploadAttachment(
+      attachmentPath(`${input.departmentId}/agency-document-generated/${input.recordId}/${input.objectId}-${safeName(input.fileName, "document.pdf", true)}`),
       input,
     );
   }

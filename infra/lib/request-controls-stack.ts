@@ -27,12 +27,14 @@ export class RequestControlsStack extends cdk.Stack {
   const exact=(fieldToMatch:waf.CfnWebACL.FieldToMatchProperty,value:string):waf.CfnWebACL.StatementProperty=>({byteMatchStatement:{fieldToMatch,positionalConstraint:'EXACTLY',searchString:value,textTransformations:[{priority:0,type:'NONE'}]}});
   const shadowAmmunitionSave:waf.CfnWebACL.StatementProperty={andStatement:{statements:[exact({singleHeader:{Name:'host'}},'shadow.tracepointhq.com'),exact({method:{}},'PUT'),exact({uriPath:{}},'/api/pilot/ammunition')]}};
   const agencyPatchUpload:waf.CfnWebACL.StatementProperty={andStatement:{statements:[exact({singleHeader:{Name:'host'}},'tracepointhq.com'),exact({method:{}},'POST'),exact({uriPath:{}},'/api/settings/department-patch')]}};
-  const sizeRestrictedUploads:waf.CfnWebACL.StatementProperty={orStatement:{statements:[shadowAmmunitionSave,agencyPatchUpload]}};
+  const rangeWorkspaceSave:waf.CfnWebACL.StatementProperty={andStatement:{statements:[exact({singleHeader:{Name:'host'}},'tracepointhq.com'),exact({method:{}},'PUT'),exact({uriPath:{}},'/api/pilot/range-workspace')]}};
+  const sizeRestrictedUploads:waf.CfnWebACL.StatementProperty={orStatement:{statements:[shadowAmmunitionSave,agencyPatchUpload,rangeWorkspaceSave]}};
   const managed=(ruleName:string,priority:number,groupName:string,scopeDownStatement?:waf.CfnWebACL.StatementProperty,ruleActionOverrides?:waf.CfnWebACL.RuleActionOverrideProperty[]):waf.CfnWebACL.RuleProperty=>({name:ruleName,priority,statement:{managedRuleGroupStatement:{vendorName:'AWS',name:groupName,scopeDownStatement,ruleActionOverrides}},overrideAction:{none:{}},visibilityConfig:visibility(ruleName)});
   const productionManagedRules:waf.CfnWebACL.RuleProperty[]=props.environment==='production'?[
     managed('AwsCommonProtection',10,'AWSManagedRulesCommonRuleSet',{notStatement:{statement:sizeRestrictedUploads}}),
     managed('ShadowAmmunitionCommonProtection',11,'AWSManagedRulesCommonRuleSet',shadowAmmunitionSave,[{name:'SizeRestrictions_BODY',actionToUse:{count:{}}}]),
     managed('AgencyPatchUploadCommonProtection',12,'AWSManagedRulesCommonRuleSet',agencyPatchUpload,[{name:'SizeRestrictions_BODY',actionToUse:{count:{}}},{name:'CrossSiteScripting_BODY',actionToUse:{count:{}}}]),
+    managed('RangeWorkspaceCommonProtection',13,'AWSManagedRulesCommonRuleSet',rangeWorkspaceSave,[{name:'SizeRestrictions_BODY',actionToUse:{count:{}}}]),
     managed('AwsKnownBadInputs',20,'AWSManagedRulesKnownBadInputsRuleSet'),
     managed('AwsIpReputation',30,'AWSManagedRulesAmazonIpReputationList'),
   ]:[];

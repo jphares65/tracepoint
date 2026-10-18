@@ -65,6 +65,40 @@ test("JSON document columns serialize arrays without changing PostgreSQL array p
   assert.deepEqual(rpc.calls.find(call => call.text.includes("public.\"set_department_role_permissions\""))?.values?.[2], ["administer_department"]);
 });
 
+test("Range Day workspace writes use jsonb parameters and retain tenant and optimistic-lock filters", async () => {
+  const value = fixture([{ department_id: departmentId }]);
+  const updatedAt = "2026-10-05T17:00:00.000Z";
+  const previousUpdatedAt = "2026-10-05T16:59:59.000Z";
+  const workspace = {
+    rangeDays: [{ id: "day-1", title: "Range Day" }],
+    drillLibrary: [{ id: "template-1", name: "Library drill" }],
+    rangeDayDrills: [{ id: "assignment-1", rangeDayId: "day-1", sourceTemplateId: "template-1" }],
+    rangeRoster: [], results: [], malfunctions: [],
+  };
+
+  const result = await value.client.from("pilot_range_workspaces").update({
+    department_id: departmentId,
+    workspace,
+    updated_by_user_id: subjectId,
+    updated_at: updatedAt,
+  }).eq("department_id", departmentId).eq("updated_at", previousUpdatedAt)
+    .select("department_id").maybeSingle();
+
+  assert.equal(result.error, null);
+  assert.equal(result.data, null);
+  const statement = value.calls.find(call => call.text.startsWith("update public.\"pilot_range_workspaces\""));
+  assert.match(statement?.text ?? "", /"workspace"=\$2/);
+  assert.match(statement?.text ?? "", /where t\."department_id" = \$5 and t\."updated_at" = \$6/);
+  assert.deepEqual(statement?.values, [
+    departmentId,
+    JSON.stringify(workspace),
+    subjectId,
+    updatedAt,
+    departmentId,
+    previousUpdatedAt,
+  ]);
+});
+
 test("default and ignore-duplicate upserts preserve Supabase mutation contracts", async () => {
   const defaultValue = fixture();
   const result = await defaultValue.client.from("notification_events").upsert({ department_id: departmentId, notification_key: "key" });

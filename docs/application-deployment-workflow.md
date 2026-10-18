@@ -20,7 +20,7 @@ From a clean, reviewed checkout:
 
 The script validates the account, region, and expected assumed role before it reads or changes deployment state. It archives the reviewed Git SHA, runs the existing environment-specific CodeBuild image build, tags the immutable ECR image with that SHA (production retains its existing `-aws-native-production` suffix), waits for a clean ECR scan, and copies the live application task-definition pattern while changing only the `tracepoint` container image to the matching immutable digest. It then calls `ecs update-service` only for the existing application service.
 
-Before ECS changes, the script runs account, source-state, and required local application validation. A failure there stops the workflow before it registers or deploys an application revision.
+Before ECS changes, the script validates account and source state, then its existing CodeBuild project runs the authoritative `npm ci`, lint, application suite, and ledgered migration-runner integrity test with bounded timeouts. A failure there stops the workflow before it registers or deploys an application revision. Workstation lint and the full application suite are optional diagnostics because their runner can hang or return nonzero after reporting only passing tests; that is not evidence about a deployed release.
 
 After ECS changes, rollback-authoritative checks are limited to evidence about the deployment: ECS steady state and task counts, active (non-draining) ALB target health, public `/api/health`, the running task-definition/image digest, and deployment-safe remote smoke requests. ALB targets in `draining` state are expected during deregistration and do not invalidate an otherwise healthy new release.
 

@@ -149,13 +149,14 @@ try {
 
     $statusOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit)
     $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'before-apply' -ExpectedDigest $imageDigest
-    if (@($status.pending).Count -ne 1 -or $status.pending[0].version -ne 42 -or $status.pending[0].filename -cne '042_default_module_entitlements.sql') { throw 'Pre-apply status must show exactly migration 042 pending, after the complete 038–041 lineage is verified applied.' }
+    $expectedPending = @('042_default_module_entitlements.sql', '043_range_workspace_authenticated_writes.sql', '044_cognito_password_global_scope.sql', '045_password_operation_resolution.sql')
+    if ((@($status.pending | ForEach-Object { [string]$_.filename }) -join '|') -cne ($expectedPending -join '|')) { throw 'Pre-apply status must show exactly migrations 042-045 pending, after the complete 038–041 lineage is verified applied.' }
     $null = Assert-RdsPitr
     $currentService = Get-StagingService
     if ($currentService.taskDefinition -cne $previousTaskDefinition) { throw 'Staging application task changed during migration preparation; stop for review.' }
 
-    $confirmation = Read-Host "Type APPLY 042 to mutate staging account $account database using image $imageDigest"
-    if ($confirmation -cne 'APPLY 042') { throw 'Database apply was not confirmed; no migration was started.' }
+    $confirmation = Read-Host "Type APPLY 042-045 to mutate staging account $account database using image $imageDigest"
+    if ($confirmation -cne 'APPLY 042-045') { throw 'Database apply was not confirmed; no migration was started.' }
     $migrationApplyStarted = $true
     $applyOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','apply','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
     $applied = Get-VerifiedLedgerReport -Output $applyOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
@@ -171,7 +172,7 @@ try {
     $deploymentStarted = $true
     Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest) | Out-Null
     $null = Assert-StagingRuntimeHealth
-        Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); migration 042 applied; prior task $previousTaskDefinition."
+        Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); migrations 042-045 applied; prior task $previousTaskDefinition."
 }
 catch {
     $failure = $_

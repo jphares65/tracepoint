@@ -1,0 +1,5 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { resolveDocumentStructuredBindings } from "./structured-document-resolution";
+const binding = { id: "binding-a", sectionKey: "dates-a", sourceType: "qualification_history" as const, fillMode: "sequential_cells" as const, ordering: "date_asc" as const, maxRows: 2, overflowBehavior: "require_review" as const, filters: { reportYearMode: "document" as const }, columnMappings: [{ target: "date" as const, dateFormat: "MM/DD/YYYY" as const }], targetCells: [{ page: 2, order: 2, row: 1, column: 2, geometry: { x: .3, y: .2, width: .1, height: .03 } }, { page: 2, order: 1, row: 1, column: 1, geometry: { x: .1, y: .2, width: .1, height: .03 } }] };
+test("document report year and persisted cell order resolve deterministically", () => { const result = resolveDocumentStructuredBindings([binding], [{ id: "later", date: "2025-02-01" }, { id: "first", date: "2025-01-02" }, { id: "other", date: "2024-01-01" }], 2025); assert.deepEqual(result.fields.map(field => [field.geometry.x, field.value]), [[.1, "01/02/2025"], [.3, "02/01/2025"]]); assert.equal(result.requiresReview, false); });

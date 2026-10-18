@@ -16,10 +16,15 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV DEPLOYMENT_VERSION=$DEPLOYMENT_VERSION
+ENV TRACEPOINT_MIGRATION_TEST_ENVIRONMENT=staging
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 USER node
-RUN node scripts/run-application-tests.mjs
+# Lint ratchet: findings already present on the parent lines (lint-baseline.json) are tolerated;
+# any new finding fails the build. eslint exits 1 when it reports findings; the ratchet then judges them.
+RUN lint_results="$(mktemp)"; set +e; timeout 5m node node_modules/eslint/bin/eslint.js . --format json --output-file "$lint_results"; lint_status=$?; set -e; test -s "$lint_results"; test "$lint_status" -eq 0 -o "$lint_status" -eq 1; node scripts/lint-ratchet.mjs --results "$lint_results" --baseline lint-baseline.json; rm -f "$lint_results" && \
+    timeout 20m node scripts/run-application-tests.mjs && \
+    timeout 5m node --test scripts/aws-native-migrations.test.mjs
 USER root
 ADD https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem /app/rds-ca.pem
 RUN test -r /app/rds-ca.pem && grep -q 'BEGIN CERTIFICATE' /app/rds-ca.pem
@@ -48,6 +53,10 @@ COPY --from=builder --chown=nonroot:nonroot /app/rds-ca.pem /app/rds-ca.pem
 COPY --from=builder --chown=nonroot:nonroot /app/database/aws ./database/aws
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/run-aws-native-migrations.mjs ./scripts/run-aws-native-migrations.mjs
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-migration-diagnostics.mjs ./scripts/aws-native-migration-diagnostics.mjs
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-production-ledger-adoption.mjs ./scripts/aws-native-production-ledger-adoption.mjs
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-migration-inspection.mjs ./scripts/aws-native-migration-inspection.mjs
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-mobile-preflight-diagnostics.mjs ./scripts/aws-native-mobile-preflight-diagnostics.mjs
+COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-live-release-units.mjs ./scripts/aws-native-live-release-units.mjs
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/mobile-route-image-contract-core.mjs ./scripts/mobile-route-image-contract-core.mjs

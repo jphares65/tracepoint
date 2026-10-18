@@ -220,6 +220,22 @@ export function createDrillLibraryTemplate(
   };
 }
 
+/**
+ * Adds a newly-created library template to the workspace that will be saved.
+ *
+ * Keeping this relationship in the persisted workspace before rendering the
+ * template is important: Drill Documents authorizes its template key against
+ * that workspace.
+ */
+export function addDrillLibraryTemplateToWorkspace<
+  T extends { drillLibrary: DrillLibraryTemplate[] },
+>(workspace: T, template: T["drillLibrary"][number]): T {
+  return {
+    ...workspace,
+    drillLibrary: [template, ...workspace.drillLibrary],
+  } as T;
+}
+
 export function updateDrillLibraryTemplate(
   template: DrillLibraryTemplate,
   updates: Partial<CreateDrillLibraryTemplateInput>,

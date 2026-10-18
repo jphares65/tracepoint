@@ -2,12 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Archive,
   Boxes,
-  CheckCircle2,
   ChevronDown,
-  Clock3,
   PackagePlus,
   Pencil,
   Plus,
@@ -18,8 +15,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
-  UserRound,
-  Wrench,
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
@@ -167,9 +162,7 @@ type EquipmentVehicle = {
   model?: string | null;
 };
 
-type StatusFilter =
-  | "all"
-  | ReadinessStatus;
+type StatusFilter = "all" | ReadinessStatus;
 
 function emptySummary(): EquipmentReadinessSummary {
   return {
@@ -251,28 +244,22 @@ function SummaryCard({
         {label}
       </p>
 
-      <p className="mt-1.5 text-2xl font-bold text-white">
-        {value}
-      </p>
+      <p className="mt-1.5 text-2xl font-bold text-white">{value}</p>
 
-      <p className="mt-1 text-[10px] leading-4 text-slate-500">
-        {detail}
-      </p>
+      <p className="mt-1 text-[10px] leading-4 text-slate-500">{detail}</p>
     </div>
   );
 }
 
 export default function EquipmentPage() {
-  const [readiness, setReadiness] =
-    useState<ReadinessPayload>({
-      scope: "self",
-      summary: emptySummary(),
-      rows: [],
-    });
+  const [readiness, setReadiness] = useState<ReadinessPayload>({
+    scope: "self",
+    summary: emptySummary(),
+    rows: [],
+  });
 
   const [types, setTypes] = useState<EquipmentType[]>([]);
-  const [requirements, setRequirements] =
-    useState<EquipmentRequirement[]>([]);
+  const [, setRequirements] = useState<EquipmentRequirement[]>([]);
   const [assets, setAssets] = useState<EquipmentAsset[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [vehicles, setVehicles] = useState<EquipmentVehicle[]>([]);
@@ -285,29 +272,26 @@ export default function EquipmentPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [statusFilter, setStatusFilter] =
-    useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const [search, setSearch] = useState("");
 
-  const [showTypeForm, setShowTypeForm] =
-    useState(false);
+  const [showTypeForm, setShowTypeForm] = useState(false);
   const [editingType, setEditingType] = useState<EquipmentType | null>(null);
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [showArchivedTypes, setShowArchivedTypes] = useState(false);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [typeSearch, setTypeSearch] = useState("");
 
-  const [showRequirementForm, setShowRequirementForm] =
-    useState(false);
+  const [showRequirementForm, setShowRequirementForm] = useState(false);
 
-  const [showAssetForm, setShowAssetForm] =
-    useState(false);
+  const [showAssetForm, setShowAssetForm] = useState(false);
   const [editingAsset, setEditingAsset] = useState<EquipmentAsset | null>(null);
   const [detailAsset, setDetailAsset] = useState<EquipmentAsset | null>(null);
-  const [activeView, setActiveView] =
-    useState<"equipment" | "readiness">("equipment");
-const [typeForm, setTypeForm] = useState({
+  const [activeView, setActiveView] = useState<"equipment" | "readiness">(
+    "equipment",
+  );
+  const [typeForm, setTypeForm] = useState({
     name: "",
     category: "General",
     description: "",
@@ -319,20 +303,19 @@ const [typeForm, setTypeForm] = useState({
     defaultInspectionDueSoonDays: "30",
   });
 
-  const [requirementForm, setRequirementForm] =
-    useState({
-      equipmentTypeId: "",
-      scopeType: "all" as "all" | "rank" | "unit" | "officer",
-      scopeValue: "",
-      isRequired: true,
-      affectsReadiness: true,
-      requiredQuantity: "1",
-      validDays: "",
-      dueSoonDays: "",
-      inspectionIntervalDays: "",
-      inspectionDueSoonDays: "",
-      notes: "",
-    });
+  const [requirementForm, setRequirementForm] = useState({
+    equipmentTypeId: "",
+    scopeType: "all" as "all" | "rank" | "unit" | "officer",
+    scopeValue: "",
+    isRequired: true,
+    affectsReadiness: true,
+    requiredQuantity: "1",
+    validDays: "",
+    dueSoonDays: "",
+    inspectionIntervalDays: "",
+    inspectionDueSoonDays: "",
+    notes: "",
+  });
 
   const [assetForm, setAssetForm] = useState({
     equipmentTypeId: "",
@@ -381,49 +364,38 @@ const [typeForm, setTypeForm] = useState({
       ]);
 
       if (!typesResponse.ok) {
-        throw new Error(
-          await responseError(typesResponse),
-        );
+        throw new Error(await responseError(typesResponse));
       }
 
       if (!requirementsResponse.ok) {
-        throw new Error(
-          await responseError(requirementsResponse),
-        );
+        throw new Error(await responseError(requirementsResponse));
       }
 
       if (!assetsResponse.ok) {
-        throw new Error(
-          await responseError(assetsResponse),
-        );
+        throw new Error(await responseError(assetsResponse));
       }
 
-      const typesPayload =
-        (await typesResponse.json()) as {
-          items?: EquipmentType[];
-          canManage?: boolean;
-        };
+      const typesPayload = (await typesResponse.json()) as {
+        items?: EquipmentType[];
+        canManage?: boolean;
+      };
 
-      const requirementsPayload =
-        (await requirementsResponse.json()) as {
-          items?: EquipmentRequirement[];
-          canManage?: boolean;
-        };
+      const requirementsPayload = (await requirementsResponse.json()) as {
+        items?: EquipmentRequirement[];
+        canManage?: boolean;
+      };
 
-      const assetsPayload =
-        (await assetsResponse.json()) as {
-          items?: EquipmentAsset[];
-          members?: Member[];
-          vehicles?: EquipmentVehicle[];
-          canManage?: boolean;
-          canViewDepartment?: boolean;
-        };
+      const assetsPayload = (await assetsResponse.json()) as {
+        items?: EquipmentAsset[];
+        members?: Member[];
+        vehicles?: EquipmentVehicle[];
+        canManage?: boolean;
+        canViewDepartment?: boolean;
+      };
 
       setTypes(typesPayload.items ?? []);
 
-      setRequirements(
-        requirementsPayload.items ?? [],
-      );
+      setRequirements(requirementsPayload.items ?? []);
 
       setAssets(assetsPayload.items ?? []);
 
@@ -434,17 +406,15 @@ const [typeForm, setTypeForm] = useState({
       setCanManage(
         Boolean(
           typesPayload.canManage ||
-            requirementsPayload.canManage ||
-            assetsPayload.canManage,
+          requirementsPayload.canManage ||
+          assetsPayload.canManage,
         ),
       );
 
       // Inventory is authoritative for the equipment table. Keep successfully
       // loaded assets visible even if the derived readiness aggregation fails.
       if (!readinessResponse.ok) {
-        throw new Error(
-          await responseError(readinessResponse),
-        );
+        throw new Error(await responseError(readinessResponse));
       }
 
       const readinessPayload =
@@ -467,10 +437,7 @@ const [typeForm, setTypeForm] = useState({
   }, []);
 
   const typeMap = useMemo(
-    () =>
-      new Map(
-        types.map((type) => [type.id, type]),
-      ),
+    () => new Map(types.map((type) => [type.id, type])),
     [types],
   );
 
@@ -480,20 +447,16 @@ const [typeForm, setTypeForm] = useState({
     const query = typeSearch.trim().toLowerCase();
     return types
       .filter((type) => showArchivedTypes || type.is_active)
-      .filter((type) =>
-        !query || `${type.name} ${type.category}`.toLowerCase().includes(query),
+      .filter(
+        (type) =>
+          !query ||
+          `${type.name} ${type.category}`.toLowerCase().includes(query),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [showArchivedTypes, typeSearch, types]);
 
   const memberMap = useMemo(
-    () =>
-      new Map(
-        members.map((member) => [
-          member.userId,
-          member,
-        ]),
-      ),
+    () => new Map(members.map((member) => [member.userId, member])),
     [members],
   );
   const availableRanks = useMemo(
@@ -519,14 +482,11 @@ const [typeForm, setTypeForm] = useState({
       ).sort((a, b) => a.localeCompare(b)),
     [members],
   );
-const filteredReadiness = useMemo(() => {
+  const filteredReadiness = useMemo(() => {
     const normalized = search.trim().toLowerCase();
 
     return readiness.rows.filter((row) => {
-      if (
-        statusFilter !== "all" &&
-        row.status !== statusFilter
-      ) {
+      if (statusFilter !== "all" && row.status !== statusFilter) {
         return false;
       }
 
@@ -546,11 +506,7 @@ const filteredReadiness = useMemo(() => {
         .toLowerCase()
         .includes(normalized);
     });
-  }, [
-    readiness.rows,
-    search,
-    statusFilter,
-  ]);
+  }, [readiness.rows, search, statusFilter]);
 
   const officerReadinessGroups = useMemo(() => {
     const groups = new Map<
@@ -578,18 +534,46 @@ const filteredReadiness = useMemo(() => {
 
     members.forEach((member) => {
       const assignedAssets = assetsByUser.get(member.userId) ?? [];
-      const memberText = [member.fullName, member.badgeNumber, member.rankTitle, member.unitName]
-        .filter(Boolean).join(" ").toLowerCase();
-      const assetText = assignedAssets.map((asset) => {
-        const type = typeMap.get(asset.equipment_type_id);
-        return [type?.name, type?.category, asset.manufacturer, asset.model, asset.asset_number]
-          .filter(Boolean).join(" ");
-      }).join(" ").toLowerCase();
-      const hasMatchingReadiness = filteredReadiness.some((row) => row.userId === member.userId);
-      const matchesSearch = !normalizedSearch || memberText.includes(normalizedSearch) || assetText.includes(normalizedSearch);
+      const memberText = [
+        member.fullName,
+        member.badgeNumber,
+        member.rankTitle,
+        member.unitName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const assetText = assignedAssets
+        .map((asset) => {
+          const type = typeMap.get(asset.equipment_type_id);
+          return [
+            type?.name,
+            type?.category,
+            asset.manufacturer,
+            asset.model,
+            asset.asset_number,
+          ]
+            .filter(Boolean)
+            .join(" ");
+        })
+        .join(" ")
+        .toLowerCase();
+      const hasMatchingReadiness = filteredReadiness.some(
+        (row) => row.userId === member.userId,
+      );
+      const matchesSearch =
+        !normalizedSearch ||
+        memberText.includes(normalizedSearch) ||
+        assetText.includes(normalizedSearch);
       const matchesStatus = statusFilter === "all" || hasMatchingReadiness;
 
-      if ((canViewDepartment || assignedAssets.length > 0 || hasMatchingReadiness) && matchesSearch && matchesStatus) {
+      if (
+        (canViewDepartment ||
+          assignedAssets.length > 0 ||
+          hasMatchingReadiness) &&
+        matchesSearch &&
+        matchesStatus
+      ) {
         groups.set(member.userId, {
           userId: member.userId,
           officerName: member.fullName,
@@ -612,24 +596,22 @@ const filteredReadiness = useMemo(() => {
     filteredReadiness.forEach((row) => {
       const existing = groups.get(row.userId);
 
-      const group =
-        existing ??
-        {
-          userId: row.userId,
-          officerName: row.officerName,
-          badgeNumber: row.badgeNumber,
-          rankTitle: row.rankTitle,
-          unitName: row.unitName,
-          rows: [],
-          assignedAssets: assetsByUser.get(row.userId) ?? [],
-          requiredQuantity: 0,
-          assignedQuantity: 0,
-          missingQuantity: 0,
-          attentionCount: 0,
-          criticalCount: 0,
-          affectsReadinessCount: 0,
-          readinessReadyCount: 0,
-        };
+      const group = existing ?? {
+        userId: row.userId,
+        officerName: row.officerName,
+        badgeNumber: row.badgeNumber,
+        rankTitle: row.rankTitle,
+        unitName: row.unitName,
+        rows: [],
+        assignedAssets: assetsByUser.get(row.userId) ?? [],
+        requiredQuantity: 0,
+        assignedQuantity: 0,
+        missingQuantity: 0,
+        attentionCount: 0,
+        criticalCount: 0,
+        affectsReadinessCount: 0,
+        readinessReadyCount: 0,
+      };
 
       group.rows.push(row);
       group.requiredQuantity += row.requiredQuantity;
@@ -681,8 +663,15 @@ const filteredReadiness = useMemo(() => {
 
       return a.officerName.localeCompare(b.officerName);
     });
-  }, [assets, canViewDepartment, filteredReadiness, members, search, statusFilter, typeMap]);
-
+  }, [
+    assets,
+    canViewDepartment,
+    filteredReadiness,
+    members,
+    search,
+    statusFilter,
+    typeMap,
+  ]);
 
   async function saveType() {
     setSaving(true);
@@ -690,16 +679,17 @@ const filteredReadiness = useMemo(() => {
     setSuccess("");
 
     try {
-      const response = await fetch(
-        "/api/equipment/types",
-        {
-          method: editingType ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ...typeForm, id: editingType?.id, isActive: editingType?.is_active ?? true }),
+      const response = await fetch("/api/equipment/types", {
+        method: editingType ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          ...typeForm,
+          id: editingType?.id,
+          isActive: editingType?.is_active ?? true,
+        }),
+      });
 
       if (!response.ok) {
         throw new Error(await responseError(response));
@@ -724,7 +714,11 @@ const filteredReadiness = useMemo(() => {
       setEditingType(null);
       await loadAll();
       setSelectedTypeId(savedTypeId);
-      setSuccess(editingType ? "Equipment type updated. Existing equipment relationships were preserved." : "Equipment type created. You can now add individual equipment to inventory.");
+      setSuccess(
+        editingType
+          ? "Equipment type updated. Existing equipment relationships were preserved."
+          : "Equipment type created. You can now add individual equipment to inventory.",
+      );
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -743,11 +737,17 @@ const filteredReadiness = useMemo(() => {
       category: type.category,
       description: type.description ?? "",
       expirationRequired: type.expiration_required,
-      defaultValidDays: type.default_valid_days == null ? "" : String(type.default_valid_days),
+      defaultValidDays:
+        type.default_valid_days == null ? "" : String(type.default_valid_days),
       defaultDueSoonDays: String(type.default_due_soon_days),
       inspectionRequired: type.inspection_required,
-      defaultInspectionIntervalDays: type.default_inspection_interval_days == null ? "" : String(type.default_inspection_interval_days),
-      defaultInspectionDueSoonDays: String(type.default_inspection_due_soon_days),
+      defaultInspectionIntervalDays:
+        type.default_inspection_interval_days == null
+          ? ""
+          : String(type.default_inspection_interval_days),
+      defaultInspectionDueSoonDays: String(
+        type.default_inspection_due_soon_days,
+      ),
     });
     setShowTypeForm(true);
   }
@@ -773,11 +773,17 @@ const filteredReadiness = useMemo(() => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id: type.id, name: type.name, category: type.category, description: type.description,
-        expirationRequired: type.expiration_required, defaultValidDays: type.default_valid_days,
-        defaultDueSoonDays: type.default_due_soon_days, inspectionRequired: type.inspection_required,
+        id: type.id,
+        name: type.name,
+        category: type.category,
+        description: type.description,
+        expirationRequired: type.expiration_required,
+        defaultValidDays: type.default_valid_days,
+        defaultDueSoonDays: type.default_due_soon_days,
+        inspectionRequired: type.inspection_required,
         defaultInspectionIntervalDays: type.default_inspection_interval_days,
-        defaultInspectionDueSoonDays: type.default_inspection_due_soon_days, isActive: false,
+        defaultInspectionDueSoonDays: type.default_inspection_due_soon_days,
+        isActive: false,
       }),
     });
     if (!response.ok) throw new Error(await responseError(response));
@@ -792,11 +798,17 @@ const filteredReadiness = useMemo(() => {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: type.id, name: type.name, category: type.category, description: type.description,
-          expirationRequired: type.expiration_required, defaultValidDays: type.default_valid_days,
-          defaultDueSoonDays: type.default_due_soon_days, inspectionRequired: type.inspection_required,
+          id: type.id,
+          name: type.name,
+          category: type.category,
+          description: type.description,
+          expirationRequired: type.expiration_required,
+          defaultValidDays: type.default_valid_days,
+          defaultDueSoonDays: type.default_due_soon_days,
+          inspectionRequired: type.inspection_required,
           defaultInspectionIntervalDays: type.default_inspection_interval_days,
-          defaultInspectionDueSoonDays: type.default_inspection_due_soon_days, isActive,
+          defaultInspectionDueSoonDays: type.default_inspection_due_soon_days,
+          isActive,
         }),
       });
       if (!response.ok) throw new Error(await responseError(response));
@@ -804,38 +816,65 @@ const filteredReadiness = useMemo(() => {
       setSelectedTypeId(isActive || showArchivedTypes ? type.id : "");
       setSuccess(`${type.name} ${isActive ? "restored" : "archived"}.`);
     } catch (mutationError) {
-      setError(mutationError instanceof Error ? mutationError.message : "Equipment type could not be updated.");
+      setError(
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Equipment type could not be updated.",
+      );
     } finally {
       setSaving(false);
     }
   }
 
   async function deleteType(type: EquipmentType) {
-    if (!window.confirm(`Permanently delete ${type.name}? This cannot be undone.`)) return;
-    setSaving(true); setError(""); setSuccess("");
+    if (
+      !window.confirm(`Permanently delete ${type.name}? This cannot be undone.`)
+    )
+      return;
+    setSaving(true);
+    setError("");
+    setSuccess("");
     try {
       const response = await fetch("/api/equipment/types", {
-        method: "DELETE", headers: { "Content-Type": "application/json" },
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: type.id }),
       });
-      const payload = await response.json().catch(() => ({})) as { error?: string; canArchive?: boolean };
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        canArchive?: boolean;
+      };
       if (!response.ok) {
-        if (response.status === 409 && payload.canArchive && type.is_active &&
-            window.confirm(`${payload.error}\n\nArchive this type instead?`)) {
+        if (
+          response.status === 409 &&
+          payload.canArchive &&
+          type.is_active &&
+          window.confirm(`${payload.error}\n\nArchive this type instead?`)
+        ) {
           await archiveType(type);
           await loadAll();
           if (!showArchivedTypes) setSelectedTypeId("");
-          setSuccess(`${type.name} archived. It remains on historical records and is hidden from new-item selectors.`);
+          setSuccess(
+            `${type.name} archived. It remains on historical records and is hidden from new-item selectors.`,
+          );
           return;
         }
-        throw new Error(payload.error || "Equipment type could not be deleted.");
+        throw new Error(
+          payload.error || "Equipment type could not be deleted.",
+        );
       }
       await loadAll();
       setSelectedTypeId("");
       setSuccess(`${type.name} permanently deleted.`);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Equipment type could not be deleted.");
-    } finally { setSaving(false); }
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Equipment type could not be deleted.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveRequirement() {
@@ -843,16 +882,13 @@ const filteredReadiness = useMemo(() => {
     setError("");
 
     try {
-      const response = await fetch(
-        "/api/equipment/requirements",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requirementForm),
+      const response = await fetch("/api/equipment/requirements", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(requirementForm),
+      });
 
       if (!response.ok) {
         throw new Error(await responseError(response));
@@ -862,11 +898,11 @@ const filteredReadiness = useMemo(() => {
 
       setRequirementForm({
         equipmentTypeId: "",
-      scopeType: "all" as "all" | "rank" | "unit" | "officer",
-      scopeValue: "",
-      isRequired: true,
-      affectsReadiness: true,
-      requiredQuantity: "1",
+        scopeType: "all" as "all" | "rank" | "unit" | "officer",
+        scopeValue: "",
+        isRequired: true,
+        affectsReadiness: true,
+        requiredQuantity: "1",
         validDays: "",
         dueSoonDays: "",
         inspectionIntervalDays: "",
@@ -892,16 +928,13 @@ const filteredReadiness = useMemo(() => {
     setSuccess("");
 
     try {
-      const response = await fetch(
-        "/api/equipment/assets",
-        {
-          method: editingAsset ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ...assetForm, id: editingAsset?.id }),
+      const response = await fetch("/api/equipment/assets", {
+        method: editingAsset ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({ ...assetForm, id: editingAsset?.id }),
+      });
 
       if (!response.ok) {
         throw new Error(await responseError(response));
@@ -929,7 +962,11 @@ const filteredReadiness = useMemo(() => {
       setEditingAsset(null);
 
       await loadAll();
-      setSuccess(editingAsset ? "Equipment updated successfully." : "Equipment added successfully.");
+      setSuccess(
+        editingAsset
+          ? "Equipment updated successfully."
+          : "Equipment added successfully.",
+      );
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -967,18 +1004,15 @@ const filteredReadiness = useMemo(() => {
 
   async function updateAssetStatus(
     asset: EquipmentAsset,
-    lifecycleStatus:
-      | "active"
-      | "out_of_service"
-      | "removed",
+    lifecycleStatus: "active" | "out_of_service" | "removed",
   ) {
     let removalReason = "";
 
     if (lifecycleStatus === "removed") {
       removalReason =
-        window.prompt(
-          "Enter the reason this equipment is being removed:",
-        )?.trim() ?? "";
+        window
+          .prompt("Enter the reason this equipment is being removed:")
+          ?.trim() ?? "";
 
       if (!removalReason) return;
     }
@@ -987,23 +1021,18 @@ const filteredReadiness = useMemo(() => {
     setError("");
 
     try {
-      const response = await fetch(
-        "/api/equipment/assets",
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            id: asset.id,
-            lifecycleStatus,
-            removalReason:
-              lifecycleStatus === "removed"
-                ? removalReason
-                : undefined,
-          }),
+      const response = await fetch("/api/equipment/assets", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          id: asset.id,
+          lifecycleStatus,
+          removalReason:
+            lifecycleStatus === "removed" ? removalReason : undefined,
+        }),
+      });
 
       if (!response.ok) {
         throw new Error(await responseError(response));
@@ -1021,7 +1050,7 @@ const filteredReadiness = useMemo(() => {
     }
   }
 
-    const assetReadinessMap = useMemo(() => {
+  const assetReadinessMap = useMemo(() => {
     const map = new Map<string, ReadinessStatus>();
 
     readiness.rows.forEach((row) => {
@@ -1065,13 +1094,9 @@ const filteredReadiness = useMemo(() => {
   }, [assets, memberMap, search, typeMap]);
   const summary = readiness.summary;
 
-  const criticalCount =
-    summary.expired +
-    summary.inspectionOverdue;
+  const criticalCount = summary.expired + summary.inspectionOverdue;
 
-  const unavailableCount =
-    summary.missing +
-    summary.outOfService;
+  const unavailableCount = summary.missing + summary.outOfService;
 
   return (
     <TracePointShell activePage="Equipment">
@@ -1083,13 +1108,11 @@ const filteredReadiness = useMemo(() => {
                 Readiness
               </p>
 
-              <h1 className="mt-1 text-2xl font-bold text-white">
-                Equipment
-              </h1>
+              <h1 className="mt-1 text-2xl font-bold text-white">Equipment</h1>
 
               <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
-                Track issued equipment, assignments, expirations,
-                inspections, and officer readiness.
+                Track issued equipment, assignments, expirations, inspections,
+                and officer readiness.
               </p>
             </div>
 
@@ -1106,17 +1129,33 @@ const filteredReadiness = useMemo(() => {
                   </button>
 
                   <button
-                  type="button"
-                  onClick={() => {
-                    setEditingAsset(null);
-                    setAssetForm({ equipmentTypeId: "", assignedUserId: "", assignedVehicleId: "", assignedLocation: "", manufacturer: "", model: "", serialNumber: "", assetNumber: "", lotNumber: "", issueDate: "", expirationDate: "", lastInspectionDate: "", nextInspectionDate: "", notes: "", lifecycleStatus: "active" });
-                    setShowAssetForm(true);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
-                >
-                  <PackagePlus size={15} />
-                  Assign/Add to Inventory
-                </button>
+                    type="button"
+                    onClick={() => {
+                      setEditingAsset(null);
+                      setAssetForm({
+                        equipmentTypeId: "",
+                        assignedUserId: "",
+                        assignedVehicleId: "",
+                        assignedLocation: "",
+                        manufacturer: "",
+                        model: "",
+                        serialNumber: "",
+                        assetNumber: "",
+                        lotNumber: "",
+                        issueDate: "",
+                        expirationDate: "",
+                        lastInspectionDate: "",
+                        nextInspectionDate: "",
+                        notes: "",
+                        lifecycleStatus: "active",
+                      });
+                      setShowAssetForm(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
+                  >
+                    <PackagePlus size={15} />
+                    Assign/Add to Inventory
+                  </button>
                 </>
               ) : null}
 
@@ -1143,7 +1182,10 @@ const filteredReadiness = useMemo(() => {
         ) : null}
 
         {success ? (
-          <div role="status" className="rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">
+          <div
+            role="status"
+            className="rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200"
+          >
             {success}
           </div>
         ) : null}
@@ -1158,10 +1200,7 @@ const filteredReadiness = useMemo(() => {
 
           <SummaryCard
             label="Due Soon"
-            value={
-              summary.dueSoon +
-              summary.inspectionDueSoon
-            }
+            value={summary.dueSoon + summary.inspectionDueSoon}
             detail="Expiration or inspection approaching"
             tone="amber"
           />
@@ -1182,16 +1221,36 @@ const filteredReadiness = useMemo(() => {
         </section>
 
         {canManage ? (
-          <section aria-labelledby="equipment-type-manager-heading" className="relative rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+          <section
+            aria-labelledby="equipment-type-manager-heading"
+            className="relative rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <div className="mr-1 min-w-fit">
-                <h2 id="equipment-type-manager-heading" className="text-sm font-bold text-white">Equipment Types</h2>
-                <p className="text-[10px] text-slate-500">{types.filter((type) => type.is_active).length} active</p>
+                <h2
+                  id="equipment-type-manager-heading"
+                  className="text-sm font-bold text-white"
+                >
+                  Equipment Types
+                </h2>
+                <p className="text-[10px] text-slate-500">
+                  {types.filter((type) => type.is_active).length} active
+                </p>
               </div>
 
               <div className="relative min-w-[220px] flex-1">
-                <button type="button" aria-haspopup="listbox" aria-expanded={typePickerOpen} onClick={() => setTypePickerOpen((open) => !open)} className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-left text-xs text-slate-200">
-                  <span className="truncate">{selectedType ? `${selectedType.name} · ${selectedType.category}${selectedType.is_active ? "" : " · Archived"}` : "Select an equipment type"}</span>
+                <button
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={typePickerOpen}
+                  onClick={() => setTypePickerOpen((open) => !open)}
+                  className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-left text-xs text-slate-200"
+                >
+                  <span className="truncate">
+                    {selectedType
+                      ? `${selectedType.name} · ${selectedType.category}${selectedType.is_active ? "" : " · Archived"}`
+                      : "Select an equipment type"}
+                  </span>
                   <ChevronDown size={14} className="shrink-0 text-slate-500" />
                 </button>
 
@@ -1200,35 +1259,121 @@ const filteredReadiness = useMemo(() => {
                     <label className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-2">
                       <Search size={13} className="text-slate-500" />
                       <span className="sr-only">Search equipment types</span>
-                      <input autoFocus value={typeSearch} onChange={(event) => setTypeSearch(event.target.value)} placeholder="Search types..." className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-slate-600" />
+                      <input
+                        autoFocus
+                        value={typeSearch}
+                        onChange={(event) => setTypeSearch(event.target.value)}
+                        placeholder="Search types..."
+                        className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-slate-600"
+                      />
                     </label>
-                    <div role="listbox" aria-label="Equipment types" className="mt-2 max-h-56 overflow-y-auto">
-                      {visibleManagedTypes.length ? visibleManagedTypes.map((type) => (
-                        <button type="button" role="option" aria-selected={selectedTypeId === type.id} key={type.id} onClick={() => { setSelectedTypeId(type.id); setTypePickerOpen(false); setTypeSearch(""); }} className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-slate-800">
-                          <span className="truncate text-xs text-slate-200">{type.name} <span className="text-slate-500">· {type.category}</span></span>
-                          {!type.is_active ? <span className="rounded-full border border-amber-700/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-300">Archived</span> : null}
-                        </button>
-                      )) : <p className="px-2.5 py-3 text-xs text-slate-500">No matching equipment types.</p>}
+                    <div
+                      role="listbox"
+                      aria-label="Equipment types"
+                      className="mt-2 max-h-56 overflow-y-auto"
+                    >
+                      {visibleManagedTypes.length ? (
+                        visibleManagedTypes.map((type) => (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selectedTypeId === type.id}
+                            key={type.id}
+                            onClick={() => {
+                              setSelectedTypeId(type.id);
+                              setTypePickerOpen(false);
+                              setTypeSearch("");
+                            }}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-slate-800"
+                          >
+                            <span className="truncate text-xs text-slate-200">
+                              {type.name}{" "}
+                              <span className="text-slate-500">
+                                · {type.category}
+                              </span>
+                            </span>
+                            {!type.is_active ? (
+                              <span className="rounded-full border border-amber-700/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-300">
+                                Archived
+                              </span>
+                            ) : null}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-2.5 py-3 text-xs text-slate-500">
+                          No matching equipment types.
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : null}
               </div>
 
-              <button type="button" onClick={createType} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-2 text-[11px] font-semibold text-white hover:bg-blue-500"><Plus size={12} /> Add</button>
+              <button
+                type="button"
+                onClick={createType}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-2 text-[11px] font-semibold text-white hover:bg-blue-500"
+              >
+                <Plus size={12} /> Add
+              </button>
               {selectedType ? (
                 <>
-                  <button type="button" disabled={saving} onClick={() => editType(selectedType)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-2 text-[11px] font-semibold text-slate-300 disabled:opacity-40"><Pencil size={12} /> Edit</button>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => editType(selectedType)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-2 text-[11px] font-semibold text-slate-300 disabled:opacity-40"
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
                   {selectedType.is_active ? (
-                    <button type="button" disabled={saving} onClick={() => void setTypeActive(selectedType, false)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800 px-2.5 py-2 text-[11px] font-semibold text-amber-300 disabled:opacity-40"><Archive size={12} /> Archive</button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void setTypeActive(selectedType, false)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-800 px-2.5 py-2 text-[11px] font-semibold text-amber-300 disabled:opacity-40"
+                    >
+                      <Archive size={12} /> Archive
+                    </button>
                   ) : (
-                    <button type="button" disabled={saving} onClick={() => void setTypeActive(selectedType, true)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-800 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 disabled:opacity-40"><RotateCcw size={12} /> Restore</button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void setTypeActive(selectedType, true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-800 px-2.5 py-2 text-[11px] font-semibold text-emerald-300 disabled:opacity-40"
+                    >
+                      <RotateCcw size={12} /> Restore
+                    </button>
                   )}
-                  <button type="button" disabled={saving} onClick={() => void deleteType(selectedType)} className="inline-flex items-center gap-1.5 rounded-lg border border-red-900 px-2.5 py-2 text-[11px] font-semibold text-red-300 disabled:opacity-40"><Trash2 size={12} /> Remove</button>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void deleteType(selectedType)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-900 px-2.5 py-2 text-[11px] font-semibold text-red-300 disabled:opacity-40"
+                  >
+                    <Trash2 size={12} /> Remove
+                  </button>
                 </>
               ) : null}
               <label className="ml-auto flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400">
-                <input type="checkbox" checked={showArchivedTypes} disabled={archivedTypeCount === 0} onChange={(event) => { const showArchived = event.target.checked; setShowArchivedTypes(showArchived); if (!showArchived && selectedType && !selectedType.is_active) setSelectedTypeId(""); setTypePickerOpen(true); }} />
-                Show archived{archivedTypeCount ? ` (${archivedTypeCount})` : ""}
+                <input
+                  type="checkbox"
+                  checked={showArchivedTypes}
+                  disabled={archivedTypeCount === 0}
+                  onChange={(event) => {
+                    const showArchived = event.target.checked;
+                    setShowArchivedTypes(showArchived);
+                    if (
+                      !showArchived &&
+                      selectedType &&
+                      !selectedType.is_active
+                    )
+                      setSelectedTypeId("");
+                    setTypePickerOpen(true);
+                  }}
+                />
+                Show archived
+                {archivedTypeCount ? ` (${archivedTypeCount})` : ""}
               </label>
             </div>
           </section>
@@ -1265,9 +1410,7 @@ const filteredReadiness = useMemo(() => {
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={search}
-                onChange={(event) =>
-                  setSearch(event.target.value)
-                }
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder={
                   activeView === "equipment"
                     ? "Search equipment, officer, serial..."
@@ -1280,9 +1423,7 @@ const filteredReadiness = useMemo(() => {
                 <select
                   value={statusFilter}
                   onChange={(event) =>
-                    setStatusFilter(
-                      event.target.value as StatusFilter,
-                    )
+                    setStatusFilter(event.target.value as StatusFilter)
                   }
                   className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
                 >
@@ -1294,12 +1435,8 @@ const filteredReadiness = useMemo(() => {
                   </option>
                   <option value="missing">Missing</option>
                   <option value="expired">Expired</option>
-                  <option value="inspection_overdue">
-                    Inspection Overdue
-                  </option>
-                  <option value="out_of_service">
-                    Out of Service
-                  </option>
+                  <option value="inspection_overdue">Inspection Overdue</option>
+                  <option value="out_of_service">Out of Service</option>
                 </select>
               ) : null}
             </div>
@@ -1308,10 +1445,7 @@ const filteredReadiness = useMemo(() => {
           {activeView === "equipment" ? (
             loading ? (
               <div className="flex min-h-[280px] items-center justify-center">
-                <RefreshCw
-                  size={24}
-                  className="animate-spin text-blue-300"
-                />
+                <RefreshCw size={24} className="animate-spin text-blue-300" />
               </div>
             ) : filteredAssets.length === 0 ? (
               <div className="flex min-h-[240px] flex-col items-center justify-center p-6 text-center">
@@ -1320,7 +1454,8 @@ const filteredReadiness = useMemo(() => {
                   No equipment inventory found
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Add equipment to department inventory and optionally assign it to an officer, vehicle, unit, or location.
+                  Add equipment to department inventory and optionally assign it
+                  to an officer, vehicle, unit, or location.
                 </p>
               </div>
             ) : (
@@ -1335,27 +1470,25 @@ const filteredReadiness = useMemo(() => {
                       <th className="px-4 py-3">Inspection</th>
                       <th className="px-4 py-3">Status</th>
                       {canManage ? (
-                        <th className="px-4 py-3 text-right">
-                          Actions
-                        </th>
+                        <th className="px-4 py-3 text-right">Actions</th>
                       ) : null}
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-slate-800">
                     {filteredAssets.map((asset) => {
-                      const type =
-                        typeMap.get(asset.equipment_type_id);
+                      const type = typeMap.get(asset.equipment_type_id);
 
                       const member = asset.assigned_user_id
                         ? memberMap.get(asset.assigned_user_id)
                         : undefined;
                       const vehicle = asset.assigned_vehicle_id
-                        ? vehicles.find((item) => item.id === asset.assigned_vehicle_id)
+                        ? vehicles.find(
+                            (item) => item.id === asset.assigned_vehicle_id,
+                          )
                         : undefined;
 
-                      const readinessStatus =
-                        assetReadinessMap.get(asset.id);
+                      const readinessStatus = assetReadinessMap.get(asset.id);
 
                       return (
                         <tr
@@ -1363,7 +1496,11 @@ const filteredReadiness = useMemo(() => {
                           className="align-top transition hover:bg-slate-950/40"
                         >
                           <td className="px-4 py-3">
-                            <button type="button" onClick={() => setDetailAsset(asset)} className="text-left text-sm font-semibold text-white hover:text-blue-300">
+                            <button
+                              type="button"
+                              onClick={() => setDetailAsset(asset)}
+                              className="text-left text-sm font-semibold text-white hover:text-blue-300"
+                            >
                               {type?.name ?? "Equipment"}
                             </button>
                             <p className="mt-1 text-[11px] text-slate-500">
@@ -1375,7 +1512,10 @@ const filteredReadiness = useMemo(() => {
 
                           <td className="px-4 py-3">
                             <p className="text-xs font-medium text-slate-300">
-                              {member?.fullName ?? (vehicle ? `Vehicle ${vehicle.unit_number}` : asset.assigned_location ?? "Unassigned")}
+                              {member?.fullName ??
+                                (vehicle
+                                  ? `Vehicle ${vehicle.unit_number}`
+                                  : (asset.assigned_location ?? "Unassigned"))}
                             </p>
                             <p className="mt-1 text-[10px] text-slate-500">
                               {member?.badgeNumber
@@ -1417,8 +1557,7 @@ const filteredReadiness = useMemo(() => {
                               <span className="inline-flex rounded-full border border-slate-700 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
                                 Removed
                               </span>
-                            ) : asset.lifecycle_status ===
-                              "out_of_service" ? (
+                            ) : asset.lifecycle_status === "out_of_service" ? (
                               <span className="inline-flex rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-red-300">
                                 Out of Service
                               </span>
@@ -1468,10 +1607,7 @@ const filteredReadiness = useMemo(() => {
                                       type="button"
                                       disabled={saving}
                                       onClick={() =>
-                                        void updateAssetStatus(
-                                          asset,
-                                          "active",
-                                        )
+                                        void updateAssetStatus(asset, "active")
                                       }
                                       className="rounded-lg border border-emerald-700 px-2 py-1.5 text-[10px] font-semibold text-emerald-300"
                                     >
@@ -1483,10 +1619,7 @@ const filteredReadiness = useMemo(() => {
                                     type="button"
                                     disabled={saving}
                                     onClick={() =>
-                                      void updateAssetStatus(
-                                        asset,
-                                        "removed",
-                                      )
+                                      void updateAssetStatus(asset, "removed")
                                     }
                                     className="rounded-lg border border-red-800 px-2 py-1.5 text-[10px] font-semibold text-red-300"
                                   >
@@ -1505,17 +1638,11 @@ const filteredReadiness = useMemo(() => {
             )
           ) : loading ? (
             <div className="flex min-h-[280px] items-center justify-center">
-              <RefreshCw
-                size={24}
-                className="animate-spin text-blue-300"
-              />
+              <RefreshCw size={24} className="animate-spin text-blue-300" />
             </div>
           ) : officerReadinessGroups.length === 0 ? (
             <div className="flex min-h-[240px] flex-col items-center justify-center p-6 text-center">
-              <ShieldCheck
-                size={34}
-                className="text-emerald-400"
-              />
+              <ShieldCheck size={34} className="text-emerald-400" />
               <p className="mt-3 font-semibold text-white">
                 No officer readiness records found
               </p>
@@ -1536,8 +1663,7 @@ const filteredReadiness = useMemo(() => {
                     : 100;
 
                 const ready =
-                  group.criticalCount === 0 &&
-                  group.missingQuantity === 0;
+                  group.criticalCount === 0 && group.missingQuantity === 0;
 
                 return (
                   <article
@@ -1573,9 +1699,7 @@ const filteredReadiness = useMemo(() => {
                                   : "border-red-500/30 bg-red-500/10 text-red-300"
                               }`}
                             >
-                              {ready
-                                ? "Ready"
-                                : "Needs Attention"}
+                              {ready ? "Ready" : "Needs Attention"}
                             </span>
                           </div>
 
@@ -1656,31 +1780,51 @@ const filteredReadiness = useMemo(() => {
                       {group.assignedAssets.map((asset) => {
                         const type = typeMap.get(asset.equipment_type_id);
                         return (
-                          <div key={`assigned-${asset.id}`} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.3fr)_120px_160px_minmax(260px,2fr)] lg:items-center">
+                          <div
+                            key={`assigned-${asset.id}`}
+                            className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.3fr)_120px_160px_minmax(260px,2fr)] lg:items-center"
+                          >
                             <div>
-                              <p className="text-xs font-semibold text-slate-200">{type?.name ?? "Equipment"}</p>
-                              <p className="mt-1 text-[10px] text-slate-500">{[type?.category, asset.manufacturer, asset.model].filter(Boolean).join(" · ") || "Assigned inventory"}</p>
+                              <p className="text-xs font-semibold text-slate-200">
+                                {type?.name ?? "Equipment"}
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                {[
+                                  type?.category,
+                                  asset.manufacturer,
+                                  asset.model,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ") || "Assigned inventory"}
+                              </p>
                             </div>
                             <div>
-                              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-600">Custody</p>
-                              <p className="mt-1 text-xs text-slate-300">Assigned</p>
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-600">
+                                Custody
+                              </p>
+                              <p className="mt-1 text-xs text-slate-300">
+                                Assigned
+                              </p>
                             </div>
                             <div>
-                              <span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${asset.lifecycle_status === "out_of_service" ? "border-red-500/30 text-red-300" : "border-emerald-500/30 text-emerald-300"}`}>
-                                {asset.lifecycle_status === "out_of_service" ? "Out of Service" : "Active"}
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${asset.lifecycle_status === "out_of_service" ? "border-red-500/30 text-red-300" : "border-emerald-500/30 text-emerald-300"}`}
+                              >
+                                {asset.lifecycle_status === "out_of_service"
+                                  ? "Out of Service"
+                                  : "Active"}
                               </span>
                             </div>
-                            <p className="text-xs leading-5 text-slate-400">Current inventory assignment</p>
+                            <p className="text-xs leading-5 text-slate-400">
+                              Current inventory assignment
+                            </p>
                           </div>
                         );
                       })}
                       {group.rows
                         .slice()
                         .sort((a, b) => {
-                          const order: Record<
-                            ReadinessStatus,
-                            number
-                          > = {
+                          const order: Record<ReadinessStatus, number> = {
                             missing: 0,
                             out_of_service: 1,
                             expired: 2,
@@ -1690,9 +1834,7 @@ const filteredReadiness = useMemo(() => {
                             current: 6,
                           };
 
-                          return (
-                            order[a.status] - order[b.status]
-                          );
+                          return order[a.status] - order[b.status];
                         })
                         .map((row) => (
                           <div
@@ -1706,9 +1848,7 @@ const filteredReadiness = useMemo(() => {
 
                               <p className="mt-1 text-[10px] text-slate-500">
                                 {row.equipmentCategory}
-                                {!row.affectsReadiness
-                                  ? " · Tracked only"
-                                  : ""}
+                                {!row.affectsReadiness ? " · Tracked only" : ""}
                               </p>
                             </div>
 
@@ -1717,8 +1857,7 @@ const filteredReadiness = useMemo(() => {
                                 Issued
                               </p>
                               <p className="mt-1 text-xs text-slate-300">
-                                {row.assignedQuantity}/
-                                {row.requiredQuantity}
+                                {row.assignedQuantity}/{row.requiredQuantity}
                               </p>
                             </div>
 
@@ -1744,14 +1883,17 @@ const filteredReadiness = useMemo(() => {
             </div>
           )}
         </section>
-{showTypeForm && canManage ? (
+        {showTypeForm && canManage ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <h2 className="text-lg font-bold text-white">
-                {editingType ? "Edit Equipment Category/Type" : "Create Equipment Category/Type"}
+                {editingType
+                  ? "Edit Equipment Category/Type"
+                  : "Create Equipment Category/Type"}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                Create a reusable equipment category or type before adding individual items to inventory.
+                Create a reusable equipment category or type before adding
+                individual items to inventory.
               </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1784,8 +1926,7 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      description:
-                        event.target.value,
+                      description: event.target.value,
                     })
                   }
                   placeholder="Description"
@@ -1795,14 +1936,11 @@ const filteredReadiness = useMemo(() => {
                 <label className="flex items-center gap-2 text-xs text-slate-300">
                   <input
                     type="checkbox"
-                    checked={
-                      typeForm.expirationRequired
-                    }
+                    checked={typeForm.expirationRequired}
                     onChange={(event) =>
                       setTypeForm({
                         ...typeForm,
-                        expirationRequired:
-                          event.target.checked,
+                        expirationRequired: event.target.checked,
                       })
                     }
                   />
@@ -1812,14 +1950,11 @@ const filteredReadiness = useMemo(() => {
                 <label className="flex items-center gap-2 text-xs text-slate-300">
                   <input
                     type="checkbox"
-                    checked={
-                      typeForm.inspectionRequired
-                    }
+                    checked={typeForm.inspectionRequired}
                     onChange={(event) =>
                       setTypeForm({
                         ...typeForm,
-                        inspectionRequired:
-                          event.target.checked,
+                        inspectionRequired: event.target.checked,
                       })
                     }
                   />
@@ -1832,8 +1967,7 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      defaultValidDays:
-                        event.target.value,
+                      defaultValidDays: event.target.value,
                     })
                   }
                   placeholder="Default validity days"
@@ -1842,14 +1976,11 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   type="number"
-                  value={
-                    typeForm.defaultDueSoonDays
-                  }
+                  value={typeForm.defaultDueSoonDays}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      defaultDueSoonDays:
-                        event.target.value,
+                      defaultDueSoonDays: event.target.value,
                     })
                   }
                   placeholder="Expiration warning days"
@@ -1858,14 +1989,11 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   type="number"
-                  value={
-                    typeForm.defaultInspectionIntervalDays
-                  }
+                  value={typeForm.defaultInspectionIntervalDays}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      defaultInspectionIntervalDays:
-                        event.target.value,
+                      defaultInspectionIntervalDays: event.target.value,
                     })
                   }
                   placeholder="Inspection interval days"
@@ -1874,14 +2002,11 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   type="number"
-                  value={
-                    typeForm.defaultInspectionDueSoonDays
-                  }
+                  value={typeForm.defaultInspectionDueSoonDays}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      defaultInspectionDueSoonDays:
-                        event.target.value,
+                      defaultInspectionDueSoonDays: event.target.value,
                     })
                   }
                   placeholder="Inspection warning days"
@@ -1892,9 +2017,7 @@ const filteredReadiness = useMemo(() => {
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() =>
-                    (setShowTypeForm(false), setEditingType(null))
-                  }
+                  onClick={() => (setShowTypeForm(false), setEditingType(null))}
                   className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300"
                 >
                   Cancel
@@ -1906,7 +2029,9 @@ const filteredReadiness = useMemo(() => {
                   onClick={() => void saveType()}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {editingType ? "Save Equipment Category/Type" : "Create Equipment Category/Type"}
+                  {editingType
+                    ? "Save Equipment Category/Type"
+                    : "Create Equipment Category/Type"}
                 </button>
               </div>
             </div>
@@ -1921,14 +2046,13 @@ const filteredReadiness = useMemo(() => {
               </h2>
 
               <p className="mt-1 text-xs text-slate-500">
-                Define who should receive this equipment and whether the requirement affects operational readiness.
+                Define who should receive this equipment and whether the
+                requirement affects operational readiness.
               </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <select
-                  value={
-                    requirementForm.equipmentTypeId
-                  }
+                  value={requirementForm.equipmentTypeId}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
@@ -1937,19 +2061,12 @@ const filteredReadiness = useMemo(() => {
                   }
                   className="sm:col-span-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 >
-                  <option value="">
-                    Select equipment type
-                  </option>
+                  <option value="">Select equipment type</option>
 
                   {types
-                    .filter(
-                      (type) => type.is_active,
-                    )
+                    .filter((type) => type.is_active)
                     .map((type) => (
-                      <option
-                        key={type.id}
-                        value={type.id}
-                      >
+                      <option key={type.id} value={type.id}>
                         {type.name}
                       </option>
                     ))}
@@ -1963,10 +2080,7 @@ const filteredReadiness = useMemo(() => {
                       setRequirementForm({
                         ...requirementForm,
                         scopeType: event.target.value as
-                          | "all"
-                          | "rank"
-                          | "unit"
-                          | "officer",
+                          "all" | "rank" | "unit" | "officer",
                         scopeValue: "",
                       })
                     }
@@ -2043,14 +2157,9 @@ const filteredReadiness = useMemo(() => {
                       <option value="">Select officer</option>
 
                       {members.map((member) => (
-                        <option
-                          key={member.userId}
-                          value={member.userId}
-                        >
+                        <option key={member.userId} value={member.userId}>
                           {member.fullName}
-                          {member.badgeNumber
-                            ? ` · ${member.badgeNumber}`
-                            : ""}
+                          {member.badgeNumber ? ` · ${member.badgeNumber}` : ""}
                         </option>
                       ))}
                     </select>
@@ -2060,14 +2169,11 @@ const filteredReadiness = useMemo(() => {
                 <label className="flex items-center gap-2 text-xs text-slate-300">
                   <input
                     type="checkbox"
-                    checked={
-                      requirementForm.isRequired
-                    }
+                    checked={requirementForm.isRequired}
                     onChange={(event) =>
                       setRequirementForm({
                         ...requirementForm,
-                        isRequired:
-                          event.target.checked,
+                        isRequired: event.target.checked,
                       })
                     }
                   />
@@ -2091,14 +2197,11 @@ const filteredReadiness = useMemo(() => {
                 <input
                   type="number"
                   min="1"
-                  value={
-                    requirementForm.requiredQuantity
-                  }
+                  value={requirementForm.requiredQuantity}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      requiredQuantity:
-                        event.target.value,
+                      requiredQuantity: event.target.value,
                     })
                   }
                   placeholder="Required quantity"
@@ -2111,8 +2214,7 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      validDays:
-                        event.target.value,
+                      validDays: event.target.value,
                     })
                   }
                   placeholder="Validity override days"
@@ -2121,14 +2223,11 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   type="number"
-                  value={
-                    requirementForm.dueSoonDays
-                  }
+                  value={requirementForm.dueSoonDays}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      dueSoonDays:
-                        event.target.value,
+                      dueSoonDays: event.target.value,
                     })
                   }
                   placeholder="Expiration warning override"
@@ -2137,14 +2236,11 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   type="number"
-                  value={
-                    requirementForm.inspectionIntervalDays
-                  }
+                  value={requirementForm.inspectionIntervalDays}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      inspectionIntervalDays:
-                        event.target.value,
+                      inspectionIntervalDays: event.target.value,
                     })
                   }
                   placeholder="Inspection interval override"
@@ -2153,14 +2249,11 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   type="number"
-                  value={
-                    requirementForm.inspectionDueSoonDays
-                  }
+                  value={requirementForm.inspectionDueSoonDays}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      inspectionDueSoonDays:
-                        event.target.value,
+                      inspectionDueSoonDays: event.target.value,
                     })
                   }
                   placeholder="Inspection warning override"
@@ -2183,9 +2276,7 @@ const filteredReadiness = useMemo(() => {
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() =>
-                    setShowRequirementForm(false)
-                  }
+                  onClick={() => setShowRequirementForm(false)}
                   className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300"
                 >
                   Cancel
@@ -2199,9 +2290,7 @@ const filteredReadiness = useMemo(() => {
                     (requirementForm.scopeType !== "all" &&
                       !requirementForm.scopeValue)
                   }
-                  onClick={() =>
-                    void saveRequirement()
-                  }
+                  onClick={() => void saveRequirement()}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
                   Save Requirement
@@ -2215,29 +2304,89 @@ const filteredReadiness = useMemo(() => {
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4">
             <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-950 p-5">
               <div className="flex items-start justify-between gap-4">
-                <div><h2 className="text-lg font-bold text-white">{typeMap.get(detailAsset.equipment_type_id)?.name ?? "Equipment details"}</h2><p className="mt-1 text-sm text-slate-400">{[detailAsset.manufacturer, detailAsset.model].filter(Boolean).join(" ") || "No make/model recorded"}</p></div>
-                <button type="button" onClick={() => setDetailAsset(null)} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300">Close</button>
+                <div>
+                  <h2 className="text-lg font-bold text-white">
+                    {typeMap.get(detailAsset.equipment_type_id)?.name ??
+                      "Equipment details"}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {[detailAsset.manufacturer, detailAsset.model]
+                      .filter(Boolean)
+                      .join(" ") || "No make/model recorded"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailAsset(null)}
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300"
+                >
+                  Close
+                </button>
               </div>
               <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-                {[["Serial number", detailAsset.serial_number], ["Asset number", detailAsset.asset_number], ["Lot number", detailAsset.lot_number], ["Status", detailAsset.lifecycle_status], ["Issue date", formatDate(detailAsset.issue_date)], ["Expiration", formatDate(detailAsset.expiration_date)], ["Last inspection", formatDate(detailAsset.last_inspection_date)], ["Next inspection", formatDate(detailAsset.next_inspection_date)], ["Notes", detailAsset.notes]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-800 p-3"><dt className="text-[10px] uppercase text-slate-500">{label}</dt><dd className="mt-1 text-slate-200">{value || "—"}</dd></div>)}
+                {[
+                  ["Serial number", detailAsset.serial_number],
+                  ["Asset number", detailAsset.asset_number],
+                  ["Lot number", detailAsset.lot_number],
+                  ["Status", detailAsset.lifecycle_status],
+                  ["Issue date", formatDate(detailAsset.issue_date)],
+                  ["Expiration", formatDate(detailAsset.expiration_date)],
+                  [
+                    "Last inspection",
+                    formatDate(detailAsset.last_inspection_date),
+                  ],
+                  [
+                    "Next inspection",
+                    formatDate(detailAsset.next_inspection_date),
+                  ],
+                  ["Notes", detailAsset.notes],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-slate-800 p-3"
+                  >
+                    <dt className="text-[10px] uppercase text-slate-500">
+                      {label}
+                    </dt>
+                    <dd className="mt-1 text-slate-200">{value || "—"}</dd>
+                  </div>
+                ))}
               </dl>
               <div className="mt-5 flex flex-wrap justify-end gap-2">
                 {detailAsset.lifecycle_status !== "removed" ? (
                   <TracePointQrLabel
                     kind="equipment"
                     id={detailAsset.id}
-                    title={typeMap.get(detailAsset.equipment_type_id)?.name ?? "Equipment"}
+                    title={
+                      typeMap.get(detailAsset.equipment_type_id)?.name ??
+                      "Equipment"
+                    }
                     subtitle={
                       [
-                        detailAsset.asset_number ? `Asset ${detailAsset.asset_number}` : null,
-                        detailAsset.serial_number ? `SN ${detailAsset.serial_number}` : null,
+                        detailAsset.asset_number
+                          ? `Asset ${detailAsset.asset_number}`
+                          : null,
+                        detailAsset.serial_number
+                          ? `SN ${detailAsset.serial_number}`
+                          : null,
                       ]
                         .filter(Boolean)
                         .join(" · ") || "TracePoint equipment"
                     }
                   />
                 ) : null}
-                {canManage ? <button type="button" onClick={() => { setDetailAsset(null); editAsset(detailAsset); }} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"><Pencil size={13}/> Edit Equipment</button> : null}
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailAsset(null);
+                      editAsset(detailAsset);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white"
+                  >
+                    <Pencil size={13} /> Edit Equipment
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2250,7 +2399,9 @@ const filteredReadiness = useMemo(() => {
                 {editingAsset ? "Edit Equipment" : "Assign/Add to Inventory"}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                {editingAsset ? "Update configurable details and custody. System identifiers and agency ownership cannot be changed." : "Add equipment to department inventory and optionally assign it to an officer, vehicle, or location."}
+                {editingAsset
+                  ? "Update configurable details and custody. System identifiers and agency ownership cannot be changed."
+                  : "Add equipment to department inventory and optionally assign it to an officer, vehicle, or location."}
               </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -2259,25 +2410,17 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setAssetForm({
                       ...assetForm,
-                      equipmentTypeId:
-                        event.target.value,
+                      equipmentTypeId: event.target.value,
                     })
                   }
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 >
-                  <option value="">
-                    Select equipment type
-                  </option>
+                  <option value="">Select equipment type</option>
 
                   {types
-                    .filter(
-                      (type) => type.is_active,
-                    )
+                    .filter((type) => type.is_active)
                     .map((type) => (
-                      <option
-                        key={type.id}
-                        value={type.id}
-                      >
+                      <option key={type.id} value={type.id}>
                         {type.name}
                       </option>
                     ))}
@@ -2288,45 +2431,54 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setAssetForm({
                       ...assetForm,
-                      assignedUserId:
-                        event.target.value,
+                      assignedUserId: event.target.value,
                       assignedVehicleId: "",
                       assignedLocation: "",
                     })
                   }
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 >
-                  <option value="">
-                    Unassigned
-                  </option>
+                  <option value="">Unassigned</option>
 
                   {members.map((member) => (
-                    <option
-                      key={member.userId}
-                      value={member.userId}
-                    >
+                    <option key={member.userId} value={member.userId}>
                       {member.fullName}
-                      {member.badgeNumber
-                        ? ` · ${member.badgeNumber}`
-                        : ""}
+                      {member.badgeNumber ? ` · ${member.badgeNumber}` : ""}
                     </option>
                   ))}
                 </select>
 
                 <select
                   value={assetForm.assignedVehicleId}
-                  onChange={(event) => setAssetForm({ ...assetForm, assignedVehicleId: event.target.value, assignedUserId: "", assignedLocation: "" })}
+                  onChange={(event) =>
+                    setAssetForm({
+                      ...assetForm,
+                      assignedVehicleId: event.target.value,
+                      assignedUserId: "",
+                      assignedLocation: "",
+                    })
+                  }
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 >
                   <option value="">No vehicle assignment</option>
                   {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>Vehicle {vehicle.unit_number} · {[vehicle.make, vehicle.model].filter(Boolean).join(" ")}</option>
+                    <option key={vehicle.id} value={vehicle.id}>
+                      Vehicle {vehicle.unit_number} ·{" "}
+                      {[vehicle.make, vehicle.model].filter(Boolean).join(" ")}
+                    </option>
                   ))}
                 </select>
 
                 <input
                   value={assetForm.assignedLocation}
-                  onChange={(event) => setAssetForm({ ...assetForm, assignedLocation: event.target.value, assignedUserId: "", assignedVehicleId: "" })}
+                  onChange={(event) =>
+                    setAssetForm({
+                      ...assetForm,
+                      assignedLocation: event.target.value,
+                      assignedUserId: "",
+                      assignedVehicleId: "",
+                    })
+                  }
                   placeholder="Assigned location (optional)"
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 />
@@ -2336,8 +2488,7 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setAssetForm({
                       ...assetForm,
-                      manufacturer:
-                        event.target.value,
+                      manufacturer: event.target.value,
                     })
                   }
                   placeholder="Manufacturer"
@@ -2361,8 +2512,7 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setAssetForm({
                       ...assetForm,
-                      serialNumber:
-                        event.target.value,
+                      serialNumber: event.target.value,
                     })
                   }
                   placeholder="Serial number"
@@ -2371,7 +2521,12 @@ const filteredReadiness = useMemo(() => {
 
                 <input
                   value={assetForm.assetNumber}
-                  onChange={(event) => setAssetForm({ ...assetForm, assetNumber: event.target.value })}
+                  onChange={(event) =>
+                    setAssetForm({
+                      ...assetForm,
+                      assetNumber: event.target.value,
+                    })
+                  }
                   placeholder="Asset number"
                   className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 />
@@ -2381,8 +2536,7 @@ const filteredReadiness = useMemo(() => {
                   onChange={(event) =>
                     setAssetForm({
                       ...assetForm,
-                      lotNumber:
-                        event.target.value,
+                      lotNumber: event.target.value,
                     })
                   }
                   placeholder="Lot number"
@@ -2397,8 +2551,7 @@ const filteredReadiness = useMemo(() => {
                     onChange={(event) =>
                       setAssetForm({
                         ...assetForm,
-                        issueDate:
-                          event.target.value,
+                        issueDate: event.target.value,
                       })
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -2413,8 +2566,7 @@ const filteredReadiness = useMemo(() => {
                     onChange={(event) =>
                       setAssetForm({
                         ...assetForm,
-                        expirationDate:
-                          event.target.value,
+                        expirationDate: event.target.value,
                       })
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -2425,14 +2577,11 @@ const filteredReadiness = useMemo(() => {
                   <span>Last Inspection</span>
                   <input
                     type="date"
-                    value={
-                      assetForm.lastInspectionDate
-                    }
+                    value={assetForm.lastInspectionDate}
                     onChange={(event) =>
                       setAssetForm({
                         ...assetForm,
-                        lastInspectionDate:
-                          event.target.value,
+                        lastInspectionDate: event.target.value,
                       })
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -2443,14 +2592,11 @@ const filteredReadiness = useMemo(() => {
                   <span>Next Inspection</span>
                   <input
                     type="date"
-                    value={
-                      assetForm.nextInspectionDate
-                    }
+                    value={assetForm.nextInspectionDate}
                     onChange={(event) =>
                       setAssetForm({
                         ...assetForm,
-                        nextInspectionDate:
-                          event.target.value,
+                        nextInspectionDate: event.target.value,
                       })
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -2473,12 +2619,20 @@ const filteredReadiness = useMemo(() => {
                   <span>Status</span>
                   <select
                     value={assetForm.lifecycleStatus}
-                    onChange={(event) => setAssetForm({ ...assetForm, lifecycleStatus: event.target.value as EquipmentAsset["lifecycle_status"] })}
+                    onChange={(event) =>
+                      setAssetForm({
+                        ...assetForm,
+                        lifecycleStatus: event.target
+                          .value as EquipmentAsset["lifecycle_status"],
+                      })
+                    }
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                   >
                     <option value="active">Active</option>
                     <option value="out_of_service">Out of service</option>
-                    {editingAsset?.lifecycle_status === "removed" ? <option value="removed">Removed</option> : null}
+                    {editingAsset?.lifecycle_status === "removed" ? (
+                      <option value="removed">Removed</option>
+                    ) : null}
                   </select>
                 </label>
               </div>
@@ -2486,7 +2640,10 @@ const filteredReadiness = useMemo(() => {
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => { setShowAssetForm(false); setEditingAsset(null); }}
+                  onClick={() => {
+                    setShowAssetForm(false);
+                    setEditingAsset(null);
+                  }}
                   className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300"
                 >
                   Cancel
@@ -2494,13 +2651,8 @@ const filteredReadiness = useMemo(() => {
 
                 <button
                   type="button"
-                  disabled={
-                    saving ||
-                    !assetForm.equipmentTypeId
-                  }
-                  onClick={() =>
-                    void saveAsset()
-                  }
+                  disabled={saving || !assetForm.equipmentTypeId}
+                  onClick={() => void saveAsset()}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                 >
                   {editingAsset ? "Save Changes" : "Assign/Add to Inventory"}
@@ -2513,11 +2665,3 @@ const filteredReadiness = useMemo(() => {
     </TracePointShell>
   );
 }
-
-
-
-
-
-
-
-

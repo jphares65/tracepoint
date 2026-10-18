@@ -2,17 +2,24 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
+import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
+import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
+import { applyInventoryUnit, applyPasswordScopeResolutionUnit, liveOwnerActions, parsePasswordScopeResolutions, runLivePrecheck } from "./aws-native-live-release-units.mjs";
+import {
+  assertProductionLedgerAdoptionPostconditions,
+  productionLedgerAdoptionPostconditionsSql,
+  productionLedgerAdoptionVersions,
+} from "./aws-native-production-ledger-adoption.mjs";
 
 const ledger = "public.tracepoint_aws_schema_migrations";
 const lockName = "tracepoint:aws-native-schema-migrations:v1";
 const action = process.argv[2] ?? "status";
 const requestedEnvironment = process.argv[3];
+let mobilePreflightFailureStage = "MIGRATION_MANIFEST";
 
-if (!["status", "baseline", "reconcile", "apply", "diagnose"].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|baseline|reconcile|apply|diagnose> <staging|production>");
-if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
-if (action === "diagnose" && requestedEnvironment !== "staging") throw new Error("Migration diagnostics are staging-only.");
-if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
-if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
+function setMobilePreflightStage(stage) {
+  if (action === "mobile-preflight") mobilePreflightFailureStage = stage;
+}
 
 const migrationDirectory = path.resolve("database/aws");
 
@@ -37,16 +44,39 @@ function migrationSqlWithLedgerEntry(migration, context) {
 function quote(value) { return `'${String(value).replaceAll("'", "''")}'`; }
 
 async function connect() {
+  setMobilePreflightStage("RUNTIME_CONFIGURATION");
   if (process.env.TRACEPOINT_DATA_PROVIDER !== "postgres" || process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native") throw new Error("AWS-native PostgreSQL runtime configuration is required.");
   let secret;
+  setMobilePreflightStage("DATABASE_SECRET_PARSE");
   try { secret = JSON.parse(process.env.TRACEPOINT_DATABASE_SECRET_JSON ?? ""); } catch { throw new Error("AWS-native database secret is invalid."); }
+  setMobilePreflightStage("DATABASE_SECRET_SHAPE");
   if (!secret || typeof secret.host !== "string" || secret.port !== 5432 || secret.dbname !== "tracepoint" || typeof secret.username !== "string" || typeof secret.password !== "string") throw new Error("AWS-native database secret is invalid.");
+  setMobilePreflightStage("EXPECTED_DATABASE_HOST");
+  // An inspect task given a pinned host must connect to exactly that host;
+  // TLS below then verifies the server certificate for the same name.
+  const expectedHostPinned = action === "mobile-preflight"
+    || (action === "inspect" && process.env.TRACEPOINT_EXPECTED_DATABASE_HOST !== undefined);
+  const expectedRdsHostMatched = expectedHostPinned
+    ? assertExpectedDatabaseHost(secret.host, process.env.TRACEPOINT_EXPECTED_DATABASE_HOST)
+    : false;
+  // The owner credential predates the final instance and keeps its original
+  // hostname, so live owner actions connect only to the separately pinned host.
+  let host = secret.host;
+  if (liveOwnerActions.includes(action)) {
+    const pinnedHost = process.env.TRACEPOINT_EXPECTED_DATABASE_HOST?.trim().toLowerCase().replace(/\.$/, "");
+    assertExpectedDatabaseHost(pinnedHost, pinnedHost);
+    if (requestedEnvironment !== "production" || secret.username !== "tracepoint_migrator") throw new Error("LIVE_OWNER_CREDENTIAL_MISMATCH");
+    host = pinnedHost;
+  }
+  setMobilePreflightStage("DATABASE_CA");
   const caPath = process.env.TRACEPOINT_DATABASE_CA_PATH;
   if (!caPath?.startsWith("/app/") || !caPath.endsWith(".pem")) throw new Error("AWS-native database CA path is invalid.");
   const ca = await readFile(caPath, "utf8");
   if (!ca.includes("BEGIN CERTIFICATE")) throw new Error("AWS-native database CA is invalid.");
-  const client = new Client({ host: secret.host, port: secret.port, user: secret.username, password: secret.password, database: secret.dbname, ssl: { ca, rejectUnauthorized: true, servername: secret.host }, connectionTimeoutMillis: 10_000, statement_timeout: 60_000, application_name: "tracepoint-aws-native-migrations" });
+  const client = new Client({ host, port: secret.port, user: secret.username, password: secret.password, database: secret.dbname, ssl: { ca, rejectUnauthorized: true, servername: host }, connectionTimeoutMillis: 10_000, statement_timeout: 60_000, application_name: "tracepoint-aws-native-migrations" });
+  setMobilePreflightStage("DATABASE_CONNECT");
   await client.connect();
+  client.expectedRdsHostMatched = expectedRdsHostMatched;
   return client;
 }
 
@@ -62,16 +92,25 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
-function requireStagingEntitlementMigrationOnly(report, files) {
+// The staging release that combines the demo-pd line, Agency Documents and the production line.
+// Staging's ledger records Agency Documents at 038-041 (CRLF archive bytes). Its apply must find
+// 001-041 recorded and exactly the four later migrations pending; anything else stops before any SQL.
+export const STAGING_RELEASE_PENDING = Object.freeze([
+  "042_default_module_entitlements.sql",
+  "043_range_workspace_authenticated_writes.sql",
+  "044_cognito_password_global_scope.sql",
+  "045_password_operation_resolution.sql",
+]);
+function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
-  if (report.ledger !== "present" || versions.length !== 42 || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present contiguous AWS ledger through migration 042.");
-  }
-  if (report.pending.length !== 1 || report.pending[0].version !== 42 || report.pending[0].filename !== "042_default_module_entitlements.sql") {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 042_default_module_entitlements.sql pending.");
+  if (report.ledger !== "present" || versions.length !== 45 || versions.some((version, index) => version !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-045.");
   }
   if (report.applied.length !== 41 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001–041, including the Agency Documents lineage, must all be accounted for before 042.");
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-041, including the Agency Documents lineage, must all be recorded before 042-045.");
+  }
+  if (report.pending.length !== STAGING_RELEASE_PENDING.length || report.pending.some((file, index) => file.filename !== STAGING_RELEASE_PENDING[index])) {
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 042, 043, 044 and 045 pending.");
   }
 }
 async function report(client, files) {
@@ -96,6 +135,14 @@ async function verifyBaselineAnchor(client) {
   const failed = Object.entries(checks.rows[0]).filter(([, value]) => value !== true).map(([key]) => key);
   if (failed.length) throw new Error(`AWS_NATIVE_BASELINE_UNVERIFIED: ${failed.join(", ")}`);
 }
+async function verifyProductionLedgerAdoptionAnchor(client) {
+  // 001–029 retain the audited Phase A anchor used by reconciliation.  The
+  // later changes are verified individually below before any ledger row is
+  // recorded; this path never executes historical migration SQL.
+  await verifyBaselineAnchor(client);
+  const checks = await client.query(productionLedgerAdoptionPostconditionsSql);
+  assertProductionLedgerAdoptionPostconditions(checks.rows[0]);
+}
 async function ensureLedger(client) {
   await client.query(`create table if not exists ${ledger} (
     version integer primary key check (version > 0), filename text not null unique,
@@ -110,18 +157,156 @@ async function withLock(client, fn) {
   await client.query("select pg_advisory_lock(hashtext($1))", [lockName]);
   try { return await fn(); } finally { await client.query("select pg_advisory_unlock(hashtext($1))", [lockName]).catch(() => undefined); }
 }
+async function inspect(client, { transactionAlreadyOpen = false } = {}) {
+  const snapshot = {};
+  let connectionIdentity = null;
+  if (!transactionAlreadyOpen) {
+    for (const sql of ["BEGIN TRANSACTION READ ONLY", "SET TRANSACTION READ ONLY"]) { assertInspectionSql(sql); await client.query(sql); }
+    assertInspectionSql(inspectionSearchPathSql);
+    await client.query(inspectionSearchPathSql);
+    if (client.expectedRdsHostMatched === true) {
+      assertInspectionSql(inspectionTargetIdentitySql);
+      const identity = (await client.query(inspectionTargetIdentitySql)).rows[0];
+      assertDatabaseTargetIdentity(identity);
+      connectionIdentity = { ...identity, expectedRdsHostMatched: true };
+    }
+  }
+  for (const [section, sql] of inspectionCatalogQueries) { assertInspectionSql(sql); snapshot[section] = (await client.query(sql)).rows; }
+  assertInspectionSql(mobileApiDependenciesSql);
+  const mobileApiDependencies = (await client.query(mobileApiDependenciesSql)).rows;
+  if (!transactionAlreadyOpen) {
+    assertInspectionSql("COMMIT");
+    await client.query("COMMIT");
+  }
+  return { ...classifyMigrationInspection(snapshot), mobileApiDependencies, ...(connectionIdentity ? { connectionIdentity } : {}) };
+}
 
-const files = await migrations();
+async function mobilePreflight(client, files) {
+  setMobilePreflightStage("EXPECTED_DATABASE_HOST");
+  if (requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
+  if (client.expectedRdsHostMatched !== true) throw new Error("DATABASE_TARGET_MISMATCH");
+  setMobilePreflightStage("READ_ONLY_TRANSACTION_BEGIN");
+  assertInspectionSql("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  try {
+    setMobilePreflightStage("READ_ONLY_SEARCH_PATH");
+    assertInspectionSql(inspectionSearchPathSql);
+    await client.query(inspectionSearchPathSql);
+    setMobilePreflightStage("DATABASE_IDENTITY_QUERY");
+    const databaseIdentitySql = `select current_database() as database_name,
+      inet_server_addr()::text as server_address, inet_server_port() as server_port,
+      current_setting('search_path') as search_path, array_to_json(current_schemas(true)) as effective_schemas,
+      current_user as database_user, session_user as session_user`;
+    assertInspectionSql(databaseIdentitySql);
+    const databaseIdentity = (await client.query(databaseIdentitySql)).rows[0];
+    setMobilePreflightStage("DATABASE_IDENTITY_VALIDATION");
+    assertDatabaseTargetIdentity(databaseIdentity);
+    setMobilePreflightStage("DATABASE_PRINCIPAL_QUERY");
+    const databasePrincipalSql = `select current_user as database_user,
+      current_setting('transaction_read_only') as transaction_read_only,
+      current_setting('transaction_isolation') as transaction_isolation,
+      principal_role.rolsuper as is_superuser, principal_role.rolcreatedb as can_create_database,
+      principal_role.rolcreaterole as can_create_roles, principal_role.rolreplication as can_replicate,
+      principal_role.rolbypassrls as can_bypass_rls
+      from pg_roles principal_role where principal_role.rolname = current_user`;
+    assertInspectionSql(databasePrincipalSql);
+    const databasePrincipal = (await client.query(databasePrincipalSql)).rows[0];
+    if (!databasePrincipal) throw new Error("DATABASE_PRINCIPAL_UNAVAILABLE");
+    setMobilePreflightStage("MIGRATION_LEDGER_READ");
+    const migrationLineage = await inspectMigrationLedgerEvidence(client, files);
+    if (migrationLineage.blocked) {
+      const error = new Error("MIGRATION_LEDGER_LINEAGE_UNVERIFIED");
+      error.migrationLineageEvidence = migrationLineage;
+      throw error;
+    }
+    setMobilePreflightStage("SCHEMA_CATALOG_READ");
+    const catalog = await inspect(client, { transactionAlreadyOpen: true });
+    setMobilePreflightStage("READ_ONLY_TRANSACTION_COMMIT");
+    assertInspectionSql("COMMIT");
+    await client.query("COMMIT");
+    return {
+      status: "PASSED",
+      inspection: "read-only",
+      transaction: { isolation: "repeatable read", readOnly: true },
+      connectionIdentity: { ...databaseIdentity, expectedRdsHostMatched: true },
+      databasePrincipal,
+      ledger: "present",
+      latestAppliedVersion: migrationLineage.latestAppliedVersion,
+      appliedVersions: migrationLineage.appliedVersions,
+      pending: migrationLineage.pending,
+      ledgerEvidence: migrationLineage,
+      migrations: catalog.migrations.map(({ version, status }) => ({ version, status })),
+      highestContiguousVersion: catalog.highestContiguousVersion,
+      outOfOrderPresent: catalog.outOfOrderPresent,
+      mobileApiDependencies: catalog.mobileApiDependencies,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
+}
+async function rangeWorkspaceContract(client) {
+  const result = await client.query(`select
+    to_regclass('public.pilot_range_workspaces') is not null as table_present,
+    coalesce((select relrowsecurity from pg_class where oid=to_regclass('public.pilot_range_workspaces')), false) as rls_enabled,
+    exists(select 1 from pg_attribute where attrelid=to_regclass('public.pilot_range_workspaces') and attname='workspace' and atttypid='jsonb'::regtype and attnum>0 and not attisdropped) as workspace_jsonb,
+    exists(select 1 from pg_attribute where attrelid=to_regclass('public.pilot_range_workspaces') and attname='updated_by_user_id' and atttypid='uuid'::regtype and attnum>0 and not attisdropped) as updated_by_uuid,
+    exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('INSERT','ALL') and 'authenticated'=any(roles)) as insert_policy,
+    exists(select 1 from pg_policies where schemaname='public' and tablename='pilot_range_workspaces' and cmd in ('UPDATE','ALL') and 'authenticated'=any(roles)) as update_policy,
+    coalesce((select jsonb_agg(jsonb_build_object('name',policyname,'command',cmd,'roles',roles,'using',qual,'check',with_check) order by policyname) from pg_policies where schemaname='public' and tablename='pilot_range_workspaces'),'[]'::jsonb) as policies,
+    coalesce((select jsonb_agg(jsonb_build_object('name',tgname,'definition',pg_get_triggerdef(oid,true)) order by tgname) from pg_trigger where tgrelid=to_regclass('public.pilot_range_workspaces') and not tgisinternal),'[]'::jsonb) as triggers,
+    coalesce((select array_agg(privilege_type order by privilege_type) from information_schema.role_table_grants where table_schema='public' and table_name='pilot_range_workspaces' and grantee='authenticated'),array[]::text[]) as privileges`);
+  return result.rows[0];
+}
+function assertRangeWorkspaceContract(contract, expectedPrivileges) {
+  const failures = [
+    ["table_present", contract.table_present], ["rls_enabled", contract.rls_enabled], ["workspace_jsonb", contract.workspace_jsonb], ["updated_by_uuid", contract.updated_by_uuid], ["insert_policy", contract.insert_policy], ["update_policy", contract.update_policy],
+  ].filter(([, value]) => value !== true).map(([key]) => key);
+  if (!Array.isArray(contract.policies) || contract.policies.length === 0) failures.push("range_workspace_policies_missing");
+  if (!Array.isArray(contract.triggers) || contract.triggers.length === 0 || !contract.triggers.some(trigger => trigger.name === "pilot_range_workspaces_accountability_audit")) failures.push("range_workspace_accountability_trigger_missing");
+  if (JSON.stringify(contract.privileges) !== JSON.stringify(expectedPrivileges)) failures.push(`authenticated_privileges=${JSON.stringify(contract.privileges)}`);
+  if (failures.length) throw new Error(`RANGE_WORKSPACE_HOTFIX_PRECONDITION_FAILED: ${failures.join(", ")}`);
+}
+async function applyRangeWorkspaceHotfix(client, files) {
+  if (requestedEnvironment !== "production") throw new Error("Range workspace hotfix is production-only.");
+  const migration = files.find(file => file.version === 43 && file.filename === "043_range_workspace_authenticated_writes.sql");
+  if (!migration || files.filter(file => file.version === 43).length !== 1 || !migration.ownsTransaction) throw new Error("Range workspace hotfix requires exactly the transaction-owned migration 043.");
+  const before = await rangeWorkspaceContract(client);
+  assertRangeWorkspaceContract(before, ["SELECT"]);
+  await client.query(migration.contents);
+  const after = await rangeWorkspaceContract(client);
+  assertRangeWorkspaceContract(after, ["INSERT", "SELECT", "UPDATE"]);
+  if (JSON.stringify(before.policies) !== JSON.stringify(after.policies) || JSON.stringify(before.triggers) !== JSON.stringify(after.triggers)) throw new Error("RANGE_WORKSPACE_HOTFIX_POSTCONDITION_FAILED: RLS policies or triggers changed.");
+  return { action: "range-workspace-hotfix", environment: requestedEnvironment, executed_at: new Date().toISOString(), filename: migration.filename, content_sha256: migration.sha256, application_git_sha: process.env.DEPLOYMENT_VERSION ?? "unknown", ledger_modified: false, before, after };
+}
+
+let files;
 let client;
 try {
-  client = await connect();
-} catch (error) {
-  if (action === "diagnose") throw new Error("STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed.");
-  throw error;
-}
-try {
+  if (!["status", "inspect", "diagnose", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|diagnose|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039-040> <staging|production>");
+  if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
+  if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
+  if (action === "diagnose" && requestedEnvironment !== "staging") throw new Error("Migration diagnostics are staging-only.");
+  if (liveOwnerActions.includes(action) && requestedEnvironment !== "production") throw new Error("Live final-database actions are production-only.");
+  setMobilePreflightStage("RUNTIME_CONFIGURATION");
+  if (process.env.CONFIGURATION_ENVIRONMENT !== requestedEnvironment) throw new Error("Migration environment does not match the runtime configuration.");
+  if (action === "baseline" && requestedEnvironment !== "staging") throw new Error("Baseline is intentionally staging-only.");
+  // The reviewed resolution list is validated before any connection.
+  const passwordScopeResolutions = action === "password-scope-039-040"
+    ? parsePasswordScopeResolutions(process.env.TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS)
+    : null;
+  setMobilePreflightStage("MIGRATION_MANIFEST");
+  files = await migrations();
+  try {
+    client = await connect();
+  } catch (error) {
+    if (action === "diagnose") throw new Error("STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed.");
+    throw error;
+  }
   if (action === "status") {
     console.log(JSON.stringify(await report(client, files)));
+  } else if (action === "inspect") {
+    console.log(JSON.stringify(await inspect(client)));
   } else if (action === "diagnose") {
     try {
       const { readMigration038Diagnostics } = await import("./aws-native-migration-diagnostics.mjs");
@@ -129,6 +314,16 @@ try {
     } catch {
       throw new Error("STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed.");
     }
+  } else if (action === "mobile-preflight") {
+    console.log(JSON.stringify(await mobilePreflight(client, files)));
+  } else if (action === "range-workspace-hotfix") {
+    console.log(JSON.stringify(await applyRangeWorkspaceHotfix(client, files)));
+  } else if (action === "precheck") {
+    console.log(JSON.stringify(await runLivePrecheck(client)));
+  } else if (action === "inventory-035-037") {
+    console.log(JSON.stringify(await withLock(client, () => applyInventoryUnit(client, files))));
+  } else if (action === "password-scope-039-040") {
+    console.log(JSON.stringify(await withLock(client, () => applyPasswordScopeResolutionUnit(client, files, passwordScopeResolutions))));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);
     if (before) verifyLedger(files, before);
@@ -148,6 +343,30 @@ try {
       } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
     } else if (action === "reconcile") {
       if (before?.length) throw new Error("AWS-native migration ledger already contains entries; reconciliation requires an unbaselined verified historical schema.");
+      if (requestedEnvironment === "production") {
+        await verifyProductionLedgerAdoptionAnchor(client);
+        const adopted = files.filter((file) => file.version <= productionLedgerAdoptionVersions.last);
+        const pending = files.filter((file) => file.version > productionLedgerAdoptionVersions.last);
+        if (
+          adopted.length !== productionLedgerAdoptionVersions.last
+          || !adopted.every((file, index) => file.version === index + 1)
+          || pending.length !== 2
+          || pending[0]?.version !== 43
+          || pending[0]?.filename !== "043_range_workspace_authenticated_writes.sql"
+          || pending[1]?.version !== 44
+          || pending[1]?.filename !== "044_cognito_password_global_scope.sql"
+        ) {
+          throw new Error("Production reconciliation requires the verified 001-037 chain followed by pending migrations 043 and 044.");
+        }
+        await client.query("begin");
+        try {
+          await ensureLedger(client);
+          for (const file of adopted) await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'reconcile',true)`, [file.version, file.filename, file.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
+          await client.query("commit");
+        } catch (error) { await client.query("rollback").catch(() => undefined); throw error; }
+        console.log(JSON.stringify(await report(client, files)));
+        return;
+      }
       const historical = files.filter((file) => file.version <= 27);
       const phaseA = files.find((file) => file.version === 28);
       const reconciliation = files.find((file) => file.version === 29 && file.filename === "029_firearm_custody_phase_a_function_reconciliation.sql");
@@ -163,10 +382,7 @@ try {
       await client.query(`insert into ${ledger}(version, filename, content_sha256, application_git_sha, environment, application_context, is_baseline) values ($1,$2,$3,$4,$5,'baseline',true)`, [phaseA.version, phaseA.filename, phaseA.sha256, process.env.DEPLOYMENT_VERSION ?? "unknown", requestedEnvironment]);
     } else {
       if (!before) throw new Error("AWS-native migration ledger is absent; run the verified staging baseline first.");
-      if (requestedEnvironment === "staging" && action === "apply") {
-        const current = await report(client, files);
-        requireStagingEntitlementMigrationOnly(current, files);
-      }
+      if (requestedEnvironment === "staging" && action === "apply") requireStagingReleaseMigrations(await report(client, files), files);
       const applied = new Set(before.map((row) => Number(row.version)));
       for (const file of files.filter((entry) => !applied.has(entry.version))) {
         console.log(JSON.stringify({ applying: publicMigration(file) }));
@@ -175,7 +391,19 @@ try {
     }
     console.log(JSON.stringify(await report(client, files)));
   });
+} catch (error) {
+  if (action === "mobile-preflight") {
+    console.error(JSON.stringify({
+      status: "BLOCKED",
+      inspection: "read-only",
+      reason: "DATABASE_INSPECTION_FAILED",
+      failure: mobilePreflightFailureDetails(mobilePreflightFailureStage, error),
+        ...(error?.migrationLineageEvidence ? { migrationLineage: error.migrationLineageEvidence } : {}),
+    }));
+    process.exitCode = 1;
+  } else {
+    throw error;
+  }
 } finally {
-  if (action === "diagnose") await client.end().catch(() => undefined);
-  else await client.end();
+  if (client) await client.end().catch(() => undefined);
 }

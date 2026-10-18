@@ -15,20 +15,22 @@ test('native staging application images use exactly the suffixed immutable tag c
  assert.match(publisher,/\$imageTag = Get-ReviewedImageTag -Environment staging -Commit \$commit/);
  assert.match(publisher,/name=IMAGE_TAG,value=\$imageTag,type=PLAINTEXT/);
  assert.match(publisher,/imageTag=\$imageTag/);
- assert.match(dockerfile,/RUN node scripts\/run-application-tests\.mjs/);
+ assert.match(dockerfile,/node scripts\/lint-ratchet\.mjs --results "\$lint_results" --baseline lint-baseline\.json/);
+ assert.match(dockerfile,/timeout 20m node scripts\/run-application-tests\.mjs/);
+ assert.match(dockerfile,/timeout 5m node --test scripts\/aws-native-migrations\.test\.mjs/);
  assert.match(dockerfile,/mobile-route-image-contract-core\.mjs --source-root \/app --next-root \/app\/\.next/);
  assert.match(buildspec,/test-staging-image-mobile-routes\.sh/);
  assert.match(buildspec,/grep -q \$'\\\\r' scripts\/test-staging-image-mobile-routes\.sh/);
  assert.match(read('.gitattributes'),/scripts\/test-staging-image-mobile-routes\.sh text eol=lf/);
  assert.match(buildspec,/mobile-route-image-contract-core\.mjs --next-root \/app\/\.next/);
- assert.match(publisher,/'scripts\/assert-aws-native-provider-reachability\.mjs'/);
- assert.match(publisher,/'scripts\/run-application-tests\.mjs'/);
- assert.match(publisher,/'scripts\/run-aws-native-migrations\.mjs'/);
- assert.match(publisher,/'database\/aws'/);
- assert.match(publisher,/'database\/rehearsal'/);
- assert.match(publisher,/'supabase\/migrations'/);
- assert.match(publisher,/\$isApprovedSchemaFixture/);
- assert.match(publisher,/never executed\s+# by the staging release process/i);
+ // The archive contents and their checks live in TracePoint.Staging.psm1; the publisher uses them.
+ const stagingModule=read('scripts/TracePoint.Staging.psm1');
+ assert.match(publisher,/Get-TracePointStagingImageArchiveIncludes/);
+ assert.match(publisher,/Assert-TracePointStagingImageArchive -EntryNames \$entryNames -TrackedPaths \$trackedPaths/);
+ for(const include of ["'scripts'","'database/aws'","'database/rehearsal'","'supabase/migrations'","'lint-baseline.json'"])assert.ok(stagingModule.includes(include),include);
+ for(const required of ["'scripts/run-application-tests.mjs'","'scripts/lint-ratchet.mjs'","'lint-baseline.json'"])assert.ok(stagingModule.includes(required),required);
+ // Schema fixtures are the only SQL allowed into the build source; they are test inputs, never executed by the release.
+ assert.match(stagingModule,/\(\?:database\/aws\|database\/rehearsal\|supabase\/migrations\)/);
  assert.match(workflow,/RELEASE_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \|\| github\.sha \}\}/);
  assert.match(workflow,/ImageTag "\$env:RELEASE_COMMIT-aws-native-staging"/);
 });

@@ -106,13 +106,19 @@ test("dashboard and analytics expose permission-gated visual builders with secon
     ]);
 
   assert.match(visual, /normalizeAnalyticsDashboardConfiguration/);
-  assert.match(visualConfigurationRoute, /\.select\("range_qualification_rules"\)/);
+  assert.match(visual, /fetch\("\/api\/settings\/visual-configuration"/);
+  assert.match(visualConfigurationRoute, /resolveServerAccess/);
+  assert.match(
+    visualConfigurationRoute,
+    /\.select\("require_rifle_familiarization,range_qualification_rules"\)/,
+  );
   assert.match(visualConfigurationRoute, /mergeAnalyticsDashboardConfiguration/);
   assert.match(visual, /Reset to default/);
   assert.doesNotMatch(rangePanel, /Dashboard & Analytics Presentation/);
   assert.doesNotMatch(rangePanel, /patchAnalyticsDashboard/);
 
-  assert.match(dashboard, /hasPermission\("administer_department"\)/);
+  assert.match(settings, /const canAdminister\s*=\s*hasPermission\("administer_department"\)/);
+  assert.match(settings, /<RangeQualificationRulesPanel[\s\S]*canAdminister=\{canAdminister\}/);
   assert.match(dashboard, /Customize Dashboard/);
   assert.match(dashboard, /Add Card \/ Section/);
   assert.match(dashboard, /command_dashboard_card_order/);

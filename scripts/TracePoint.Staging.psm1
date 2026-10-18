@@ -59,4 +59,53 @@ function Assert-TracePointImageScan {
     }
 }
 
-Export-ModuleMember -Function Assert-TracePointImageScan, Assert-TracePointStagingIdentity, Assert-TracePointStagingHostname, Assert-TracePointStagingDatabaseReleaseLease, ConvertFrom-TracePointSecureString
+function Get-TracePointStagingImageArchiveIncludes {
+    return @(
+        '.dockerignore', 'buildspec.staging-image.yml', 'Dockerfile', 'eslint.config.mjs',
+        'next.config.ts', 'package.json', 'package-lock.json', 'postcss.config.mjs',
+        'tsconfig.json', 'lint-baseline.json', 'public', 'src', 'database/aws', 'scripts',
+        # Test-only schema fixtures for the application suite the Docker build runs.
+        'database/rehearsal', 'supabase/migrations'
+    )
+}
+
+function Get-TracePointStagingImageArchiveExcludes {
+    return @(
+        ':(glob,exclude)**/*.backup-*', ':(glob,exclude)**/*.encoding-backup-*',
+        ':(glob,exclude)**/*.before-*', ':(glob,exclude)**/*.bak', ':(glob,exclude)**/*.bak-*'
+    )
+}
+
+function Assert-TracePointStagingImageArchive {
+    param(
+        [Parameter(Mandatory)][string[]]$EntryNames,
+        [Parameter(Mandatory)][string[]]$TrackedPaths
+    )
+    $untracked = @($EntryNames | Where-Object { $_ -notin $TrackedPaths })
+    if ($untracked.Count) { throw "Staging image archive contains untracked paths: $($untracked -join ', ')" }
+
+    $requiredFiles = @(
+        '.dockerignore', 'buildspec.staging-image.yml', 'Dockerfile', 'eslint.config.mjs',
+        'next.config.ts', 'package.json', 'package-lock.json', 'postcss.config.mjs',
+        'tsconfig.json', 'lint-baseline.json', 'scripts/lint-ratchet.mjs', 'scripts/run-application-tests.mjs', 'scripts/aws-native-migrations.test.mjs',
+        'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs'
+    )
+    $missing = @($requiredFiles | Where-Object { $_ -notin $EntryNames })
+    foreach ($prefix in @('public/', 'src/', 'database/aws/', 'scripts/')) {
+        if (-not ($EntryNames | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })) { $missing += $prefix }
+    }
+    if ($missing.Count) { throw "Staging image archive omits required Docker or CodeBuild inputs: $($missing -join ', ')" }
+
+    $prohibitedEntries = @($EntryNames | Where-Object {
+        $sourceCodeFile = $_ -match '\.(?:[cm]?[jt]sx?|ps1|psm1|psd1)$'
+        $credentialNamedFile = $_ -match '(^|/)[^/]*(credential|secret)[^/]*$'
+        $badPath = $_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.dump$|\.(?:key|p12|pfx|jks)$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)'
+        $sourceSql = $_ -match '^scripts/(?:fixtures/migration-lineages/.+|validate-local-[^/]+)\.sql$'
+        $nonMigrationSql = $_.EndsWith('.sql') -and $_ -notmatch '^(?:database/aws|database/rehearsal|supabase/migrations)/[^/]+\.sql$' -and -not $sourceSql
+        $sensitiveNamedData = $credentialNamedFile -and -not $sourceCodeFile
+        $badPath -or $nonMigrationSql -or $sensitiveNamedData
+    })
+    if ($prohibitedEntries.Count) { throw "Staging image archive contains prohibited secret, credential, environment, dump, or generated paths: $($prohibitedEntries -join ', ')" }
+}
+
+Export-ModuleMember -Function Assert-TracePointImageScan, Assert-TracePointStagingIdentity, Assert-TracePointStagingHostname, Assert-TracePointStagingDatabaseReleaseLease, ConvertFrom-TracePointSecureString, Get-TracePointStagingImageArchiveIncludes, Get-TracePointStagingImageArchiveExcludes, Assert-TracePointStagingImageArchive

@@ -20,9 +20,13 @@ $toolingCommit = (git rev-parse HEAD).Trim()
 .\scripts\release-entitlements-staging.ps1 -ToolingCommit $toolingCommit -ApplicationCommit '353933a6b98ad7e6c3ac082b786c6a8c7b7aedb8'
 ```
 
-`deploy-app.ps1` runs reliable local application checks before ECS changes, builds and scan-checks a SHA-tagged ECR image, registers a task revision copied from the current application definition with only that image changed, and updates only the application ECS service. It then requires ECS steady state, expected desired/running/pending counts, healthy non-draining ALB targets, a `200` TracePoint health response, and exact running image digest before declaring success. Deployment-safe remote smoke failures roll back to the preceding healthy task revision.
+`deploy-app.ps1` treats workstation checks as optional diagnostics. Its existing CodeBuild project is the authoritative pre-deployment environment: the Node 24 Docker build runs lint (5 minutes), the application suite (20 minutes), and the migration-runner integrity test (5 minutes) before it compiles and pushes the SHA-tagged image. Any timeout, lint/build failure, or test failure aborts CodeBuild and leaves ECS unchanged. Only after that scan-clean artifact exists does the script register a task revision copied from the current application definition with only that image changed and update the application ECS service. It then requires ECS steady state, expected desired/running/pending counts, healthy non-draining ALB targets, a `200` TracePoint health response, and exact running image digest before declaring success. Deployment-safe remote smoke failures roll back to the preceding healthy task revision.
 
-Post-deployment workstation/sandbox diagnostics are reported as `DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING`; they cannot roll back a release that passed deployment-authoritative evidence. A concrete HTTP failure from the deployed service remains a deployment failure and rolls back.
+Post-deployment workstation/sandbox diagnostics are reported as `DEPLOYMENT SUCCEEDED WITH LOCAL VALIDATION WARNING`; their hangs, dependency differences, transport limits, or unexplained exits cannot roll back or block a release that passed CodeBuild and deployment-authoritative evidence. A concrete HTTP failure from the deployed service remains a deployment failure and rolls back.
+
+### Lint debt ratchet
+
+`lint-baseline.json` is a checked-in, machine-readable inventory of the historical ESLint debt. Each entry is a normalized repository-relative path, rule ID, severity, message, and count. CodeBuild runs full ESLint on every release, then `scripts/lint-ratchet.mjs` compares its JSON output with that inventory. Existing counts are reported but allowed; any new path/rule/message or count increase fails before image publication. Removed findings are reported as removals and are always accepted, so the baseline only stays level or decreases when it is deliberately regenerated after cleanup.
 
 ## Database lane
 

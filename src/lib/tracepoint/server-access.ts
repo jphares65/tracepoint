@@ -9,11 +9,6 @@ import { resolveRuntimeCognitoMobileBearer } from "@/lib/authentication/cognito-
 import { parseUniqueBearerToken } from "@/lib/authentication/request-bearer-core";
 import { isDedicatedMobileApiPath, mobileDepartmentSelection, mobileSupportSelection } from "@/lib/authentication/mobile-route-policy-core";
 import { parseCognitoTargetConfiguration } from "@/lib/authentication/cognito-runtime-configuration-core";
-import {
-  emitProductionSessionDiagnostic,
-  productionSessionDiagnostic,
-  withResolvedCognitoPrincipal,
-} from "@/lib/authentication/production-session-diagnostic";
 import { resolvePostgresAccess, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
@@ -135,8 +130,6 @@ function uniqueStrings(values: unknown[]) {
 
 export async function resolveServerAccess(request?: Request): Promise<ServerAccessResult> {
   if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
-    const requestHeaders = await headers();
-    const diagnostic = productionSessionDiagnostic(requestHeaders, request);
     try {
       parseCognitoTargetConfiguration(process.env);
       // Only dedicated /api/mobile routes may resolve bearer credentials.
@@ -165,44 +158,18 @@ export async function resolveServerAccess(request?: Request): Promise<ServerAcce
       }
       // Browser sessions are the only native application credential in this
       // release. A bearer token must never fall through to Supabase.
-      if (requestHeaders.has("authorization")) {
+      if ((await headers()).has("authorization")) {
         return { ok: false, status: 401, error: "Authentication is required." };
       }
       const principal = await resolveAuthenticatedPrincipal();
       if (!principal || principal.provider !== "cognito") {
-        if (diagnostic.applicationSessionCookie.present || diagnostic.supportCookiePresent) {
-          emitProductionSessionDiagnostic({
-            ...diagnostic,
-            identityLinkValidated: false,
-            sessionAccepted: false,
-            rejectionOrReplacementReason: diagnostic.applicationSessionCookie.present
-              ? "opaque_session_rejected"
-              : "opaque_session_absent",
-            supportModeConsideredActive: false,
-            finalAuthorizationBranch: "authentication_required",
-          });
-        }
         return { ok: false, status: 401, error: "Authentication is required." };
       }
       const cookieStore = await cookies();
       const selected = clean(cookieStore.get("tracepoint_department_id")?.value);
       const support = clean(cookieStore.get("tracepoint_support_department_id")?.value);
-      return await resolvePostgresAccess(
-        principal,
-        selected,
-        support,
-        withResolvedCognitoPrincipal(diagnostic, principal),
-      ) as ServerAccessResult;
+      return await resolvePostgresAccess(principal, selected, support) as ServerAccessResult;
     } catch {
-      if (diagnostic.applicationSessionCookie.present || diagnostic.supportCookiePresent) {
-        emitProductionSessionDiagnostic({
-          ...diagnostic,
-          sessionAccepted: false,
-          rejectionOrReplacementReason: "session_or_access_verification_exception",
-          supportModeConsideredActive: false,
-          finalAuthorizationBranch: "access_verification_unavailable",
-        });
-      }
       return { ok: false, status: 503, error: "AWS-native access verification is unavailable." };
     }
   }

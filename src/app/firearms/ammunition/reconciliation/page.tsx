@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
-  CalendarRange,
-  CheckCircle2,
   ClipboardCheck,
   History,
   Loader2,
@@ -87,10 +85,9 @@ export default function AmmunitionReconciliationPage() {
     setError(null);
 
     try {
-      const response = await fetch(
-        "/api/armory/ammunition/reconciliations",
-        { cache: "no-store" },
-      );
+      const response = await fetch("/api/armory/ammunition/reconciliations", {
+        cache: "no-store",
+      });
 
       if (!response.ok) throw new Error(await readError(response));
 
@@ -110,7 +107,11 @@ export default function AmmunitionReconciliationPage() {
   }
 
   useEffect(() => {
-    void load();
+    const loadTimer = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, []);
 
   const totals = useMemo(() => {
@@ -127,8 +128,7 @@ export default function AmmunitionReconciliationPage() {
   }, [items]);
 
   function updatePhysical(lotId: string, value: string) {
-    const parsed =
-      value.trim() === "" ? null : Number.parseInt(value, 10);
+    const parsed = value.trim() === "" ? null : Number.parseInt(value, 10);
 
     setItems((current) =>
       current.map((item) => {
@@ -160,9 +160,7 @@ export default function AmmunitionReconciliationPage() {
   }
 
   async function save(action: "save" | "submit" | "certify") {
-    const incomplete = items.some(
-      (item) => item.physicalQuantity === null,
-    );
+    const incomplete = items.some((item) => item.physicalQuantity === null);
 
     if (action !== "save" && incomplete) {
       setError(
@@ -172,14 +170,11 @@ export default function AmmunitionReconciliationPage() {
     }
 
     const unexplainedVariance = items.some(
-      (item) =>
-        (item.variance ?? 0) !== 0 && !item.explanation.trim(),
+      (item) => (item.variance ?? 0) !== 0 && !item.explanation.trim(),
     );
 
     if (action !== "save" && unexplainedVariance) {
-      setError(
-        "Every discrepancy requires an explanation before submission.",
-      );
+      setError("Every discrepancy requires an explanation before submission.");
       return;
     }
 
@@ -188,19 +183,16 @@ export default function AmmunitionReconciliationPage() {
     setMessage(null);
 
     try {
-      const response = await fetch(
-        "/api/armory/ammunition/reconciliations",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action,
-            reconciliationId: payload?.active?.id ?? null,
-            notes,
-            items,
-          }),
-        },
-      );
+      const response = await fetch("/api/armory/ammunition/reconciliations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          reconciliationId: payload?.active?.id ?? null,
+          notes,
+          items,
+        }),
+      });
 
       if (!response.ok) throw new Error(await readError(response));
 
@@ -360,10 +352,7 @@ export default function AmmunitionReconciliationPage() {
                               <input
                                 value={item.physicalQuantity ?? ""}
                                 onChange={(event) =>
-                                  updatePhysical(
-                                    item.lotId,
-                                    event.target.value,
-                                  )
+                                  updatePhysical(item.lotId, event.target.value)
                                 }
                                 type="number"
                                 min="0"
@@ -497,11 +486,8 @@ export default function AmmunitionReconciliationPage() {
                             </p>
                             {reconciliation.certifiedByName ? (
                               <p className="mt-1 text-xs text-slate-600">
-                                Certified by{" "}
-                                {reconciliation.certifiedByName} on{" "}
-                                {formatDateTime(
-                                  reconciliation.certifiedAt,
-                                )}
+                                Certified by {reconciliation.certifiedByName} on{" "}
+                                {formatDateTime(reconciliation.certifiedAt)}
                               </p>
                             ) : null}
                           </div>
@@ -530,4 +516,3 @@ export default function AmmunitionReconciliationPage() {
     </TracePointShell>
   );
 }
-

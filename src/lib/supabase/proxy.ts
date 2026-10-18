@@ -7,6 +7,7 @@ import {
 } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { readBearerToken } from "@/lib/authentication/request-bearer";
+import { isSupabasePrivacyPath, isSupabaseSupportPath } from "./public-path-core";
 
 import type { Database } from "./database.types";
 
@@ -40,8 +41,10 @@ function pathMatches(pathname: string, path: string) {
 }
 
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.some((path) =>
-    pathMatches(pathname, path),
+  return (
+    isSupabaseSupportPath(pathname) ||
+    isSupabasePrivacyPath(pathname) ||
+    PUBLIC_PATHS.some((path) => pathMatches(pathname, path))
   );
 }
 

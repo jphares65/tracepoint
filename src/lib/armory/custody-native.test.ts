@@ -9,7 +9,6 @@ test("AWS-native custody migration keeps assignment availability independent of 
   assert.match(sql, /not exists \(select 1 from public\.firearm_assignments assignment/);
   assert.doesNotMatch(sql, /feature_catalog|firearm_custody',true|department_features/);
 });
-
 test("custody mutations are idempotent and append an audit event", async () => {
   const sql = await readFile("database/aws/028_firearm_custody_phase_a.sql", "utf8");
   assert.match(sql, /unique \(department_id, idempotency_key\)/);
@@ -19,7 +18,6 @@ test("custody mutations are idempotent and append an audit event", async () => {
   assert.match(sql, /create_firearm_possession_restriction/);
   assert.match(sql, /create_firearm_storage_location/);
 });
-
 test("custody API is server-authorized and never creates a Cognito identity", async () => {
   const route = await readFile("src/app/api/armory/firearms/[firearmId]/custody/route.ts", "utf8");
   assert.match(route, /resolveServerAccess\(\)/);
@@ -58,10 +56,6 @@ test("restricted use preserves assignment, uses existing custody, and keeps its 
   assert.match(route, /clear_firearm_restriction/);
   assert.match(page, /No Carry/);
   assert.match(page, /Duty Only/);
-  
+
   assert.match(page, /no_possession_permitted/);
 });
-
-
-
-

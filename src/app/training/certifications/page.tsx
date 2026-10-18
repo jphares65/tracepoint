@@ -1,11 +1,6 @@
 ﻿"use client";
 
-import {
-  FormEvent,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Award,
@@ -142,45 +137,36 @@ function daysUntil(date: string) {
   today.setHours(0, 0, 0, 0);
 
   const target = new Date(`${date}T00:00:00`);
-  return Math.ceil(
-    (target.getTime() - today.getTime()) / 86400000,
-  );
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000);
 }
 
 export default function CertificationsPage() {
-  const [certifications, setCertifications] = useState<
-    Certification[]
-  >([]);
+  const [certifications, setCertifications] = useState<Certification[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [certificationTypes, setCertificationTypes] =
-    useState<CertificationType[]>([]);
-  const [requirements, setRequirements] = useState<
-    Requirement[]
+  const [certificationTypes, setCertificationTypes] = useState<
+    CertificationType[]
   >([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
 
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [credentialModalOpen, setCredentialModalOpen] =
-    useState(false);
-  const [editingCredentialId, setEditingCredentialId] =
-    useState<string | null>(null);
-  const [credentialForm, setCredentialForm] =
-    useState<CertificationFormState>(
-      EMPTY_CERTIFICATION_FORM,
-    );
+  const [credentialModalOpen, setCredentialModalOpen] = useState(false);
+  const [editingCredentialId, setEditingCredentialId] = useState<string | null>(
+    null,
+  );
+  const [credentialForm, setCredentialForm] = useState<CertificationFormState>(
+    EMPTY_CERTIFICATION_FORM,
+  );
 
   const [typeModalOpen, setTypeModalOpen] = useState(false);
-  const [typeForm, setTypeForm] =
-    useState<TypeFormState>(EMPTY_TYPE_FORM);
+  const [typeForm, setTypeForm] = useState<TypeFormState>(EMPTY_TYPE_FORM);
 
-  const [requirementModalOpen, setRequirementModalOpen] =
-    useState(false);
-  const [requirementForm, setRequirementForm] =
-    useState<RequirementFormState>(
-      EMPTY_REQUIREMENT_FORM,
-    );
+  const [requirementModalOpen, setRequirementModalOpen] = useState(false);
+  const [requirementForm, setRequirementForm] = useState<RequirementFormState>(
+    EMPTY_REQUIREMENT_FORM,
+  );
 
   const [saving, setSaving] = useState(false);
 
@@ -188,18 +174,14 @@ export default function CertificationsPage() {
     setLoading(true);
     setError("");
 
-    const response = await fetch(
-      "/api/training/certifications",
-      { cache: "no-store" },
-    );
+    const response = await fetch("/api/training/certifications", {
+      cache: "no-store",
+    });
 
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      setError(
-        payload.error ||
-          "Certifications could not be loaded.",
-      );
+      setError(payload.error || "Certifications could not be loaded.");
     } else {
       setCertifications(payload.certifications ?? []);
       setMembers(
@@ -207,9 +189,7 @@ export default function CertificationsPage() {
           (member: Member) => member.is_active !== false,
         ),
       );
-      setCertificationTypes(
-        payload.certificationTypes ?? [],
-      );
+      setCertificationTypes(payload.certificationTypes ?? []);
       setRequirements(payload.requirements ?? []);
       setCanManage(Boolean(payload.canManage));
     }
@@ -218,25 +198,20 @@ export default function CertificationsPage() {
   }
 
   useEffect(() => {
-    void load();
+    const loadTimer = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, []);
 
   const memberMap = useMemo(
-    () =>
-      new Map(
-        members.map((member) => [
-          member.user_id,
-          member,
-        ]),
-      ),
+    () => new Map(members.map((member) => [member.user_id, member])),
     [members],
   );
 
   const typeMap = useMemo(
-    () =>
-      new Map(
-        certificationTypes.map((type) => [type.id, type]),
-      ),
+    () => new Map(certificationTypes.map((type) => [type.id, type])),
     [certificationTypes],
   );
 
@@ -251,14 +226,11 @@ export default function CertificationsPage() {
     [requirements],
   );
 
-  function getEffectiveDueSoonDays(
-    certificationTypeId?: string | null,
-  ) {
+  function getEffectiveDueSoonDays(certificationTypeId?: string | null) {
     if (!certificationTypeId) return 30;
 
     const type = typeMap.get(certificationTypeId);
-    const requirement =
-      requirementMap.get(certificationTypeId);
+    const requirement = requirementMap.get(certificationTypeId);
 
     if (
       requirement?.due_soon_days !== null &&
@@ -274,8 +246,7 @@ export default function CertificationsPage() {
     if (!item.expiration_date) {
       return {
         label: "No Expiration",
-        className:
-          "border-slate-700 bg-slate-800/60 text-slate-300",
+        className: "border-slate-700 bg-slate-800/60 text-slate-300",
       };
     }
 
@@ -284,30 +255,22 @@ export default function CertificationsPage() {
     if (days < 0) {
       return {
         label: "Expired",
-        className:
-          "border-red-500/30 bg-red-500/10 text-red-300",
+        className: "border-red-500/30 bg-red-500/10 text-red-300",
       };
     }
 
-    const warningWindow = getEffectiveDueSoonDays(
-      item.certification_type_id,
-    );
+    const warningWindow = getEffectiveDueSoonDays(item.certification_type_id);
 
     if (days <= warningWindow) {
       return {
-        label:
-          days === 0
-            ? "Expires today"
-            : `Due in ${days} days`,
-        className:
-          "border-amber-500/30 bg-amber-500/10 text-amber-300",
+        label: days === 0 ? "Expires today" : `Due in ${days} days`,
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
       };
     }
 
     return {
       label: "Current",
-      className:
-        "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
     };
   }
 
@@ -322,15 +285,12 @@ export default function CertificationsPage() {
 
     setCredentialForm({
       userId: item.user_id,
-      certificationTypeId:
-        item.certification_type_id ?? "",
-      issuingOrganization:
-        item.issuing_organization ?? "",
+      certificationTypeId: item.certification_type_id ?? "",
+      issuingOrganization: item.issuing_organization ?? "",
       credentialNumber: item.credential_number ?? "",
       issueDate: item.issue_date ?? "",
       expirationDate: item.expiration_date ?? "",
-      reminderDays:
-        item.reminder_days ?? DEFAULT_REMINDERS,
+      reminderDays: item.reminder_days ?? DEFAULT_REMINDERS,
       documentUrl: item.document_url ?? "",
       notes: item.notes ?? "",
     });
@@ -345,9 +305,7 @@ export default function CertificationsPage() {
       ...current,
       certificationTypeId,
       issuingOrganization:
-        current.issuingOrganization ||
-        selected?.issuing_organization ||
-        "",
+        current.issuingOrganization || selected?.issuing_organization || "",
     }));
   }
 
@@ -372,10 +330,7 @@ export default function CertificationsPage() {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      setError(
-        payload.error ||
-          "The certification could not be saved.",
-      );
+      setError(payload.error || "The certification could not be saved.");
     } else {
       setCredentialModalOpen(false);
       await load();
@@ -393,18 +348,14 @@ export default function CertificationsPage() {
       return;
     }
 
-    const response = await fetch(
-      `/api/training/certifications/${id}`,
-      { method: "DELETE" },
-    );
+    const response = await fetch(`/api/training/certifications/${id}`, {
+      method: "DELETE",
+    });
 
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      setError(
-        payload.error ||
-          "The certification could not be archived.",
-      );
+      setError(payload.error || "The certification could not be archived.");
     } else {
       await load();
     }
@@ -421,13 +372,10 @@ export default function CertificationsPage() {
       name: type.name,
       category: type.category,
       description: type.description ?? "",
-      issuingOrganization:
-        type.issuing_organization ?? "",
+      issuingOrganization: type.issuing_organization ?? "",
       expirationRequired: type.expiration_required,
-      defaultValidDays:
-        type.default_valid_days?.toString() ?? "",
-      defaultDueSoonDays:
-        type.default_due_soon_days.toString(),
+      defaultValidDays: type.default_valid_days?.toString() ?? "",
+      defaultDueSoonDays: type.default_due_soon_days.toString(),
     });
 
     setTypeModalOpen(true);
@@ -438,37 +386,25 @@ export default function CertificationsPage() {
     setSaving(true);
     setError("");
 
-    const editing = Boolean(
-      typeForm.certificationTypeId,
-    );
+    const editing = Boolean(typeForm.certificationTypeId);
 
-    const response = await fetch(
-      "/api/training/certification-types",
-      {
-        method: editing ? "PATCH" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...typeForm,
-          defaultValidDays: parseNumberOrNull(
-            typeForm.defaultValidDays,
-          ),
-          defaultDueSoonDays:
-            parseNumberOrNull(
-              typeForm.defaultDueSoonDays,
-            ) ?? 30,
-        }),
+    const response = await fetch("/api/training/certification-types", {
+      method: editing ? "PATCH" : "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        ...typeForm,
+        defaultValidDays: parseNumberOrNull(typeForm.defaultValidDays),
+        defaultDueSoonDays:
+          parseNumberOrNull(typeForm.defaultDueSoonDays) ?? 30,
+      }),
+    });
 
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      setError(
-        payload.error ||
-          "The certification type could not be saved.",
-      );
+      setError(payload.error || "The certification type could not be saved.");
     } else {
       setTypeModalOpen(false);
       await load();
@@ -477,18 +413,14 @@ export default function CertificationsPage() {
     setSaving(false);
   }
 
-  function openRequirement(
-    type: CertificationType,
-  ) {
+  function openRequirement(type: CertificationType) {
     const existing = requirementMap.get(type.id);
 
     setRequirementForm({
       certificationTypeId: type.id,
       isRequired: existing?.is_required ?? true,
-      validDays:
-        existing?.valid_days?.toString() ?? "",
-      dueSoonDays:
-        existing?.due_soon_days?.toString() ?? "",
+      validDays: existing?.valid_days?.toString() ?? "",
+      dueSoonDays: existing?.due_soon_days?.toString() ?? "",
       isActive: existing?.is_active ?? true,
       notes: existing?.notes ?? "",
     });
@@ -501,32 +433,22 @@ export default function CertificationsPage() {
     setSaving(true);
     setError("");
 
-    const response = await fetch(
-      "/api/training/certification-requirements",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...requirementForm,
-          validDays: parseNumberOrNull(
-            requirementForm.validDays,
-          ),
-          dueSoonDays: parseNumberOrNull(
-            requirementForm.dueSoonDays,
-          ),
-        }),
+    const response = await fetch("/api/training/certification-requirements", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        ...requirementForm,
+        validDays: parseNumberOrNull(requirementForm.validDays),
+        dueSoonDays: parseNumberOrNull(requirementForm.dueSoonDays),
+      }),
+    });
 
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      setError(
-        payload.error ||
-          "The agency requirement could not be saved.",
-      );
+      setError(payload.error || "The agency requirement could not be saved.");
     } else {
       setRequirementModalOpen(false);
       await load();
@@ -557,8 +479,8 @@ export default function CertificationsPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm text-slate-400">
-              Track officer credentials, expiration status,
-              and agency-defined certification requirements.
+              Track officer credentials, expiration status, and agency-defined
+              certification requirements.
             </p>
           </div>
 
@@ -598,31 +520,27 @@ export default function CertificationsPage() {
                   Agency Requirements
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Requirements are configured by this agency.
-                  TracePoint does not impose jurisdiction-specific
-                  standards.
+                  Requirements are configured by this agency. TracePoint does
+                  not impose jurisdiction-specific standards.
                 </p>
               </div>
             </div>
 
             {certificationTypes.length === 0 ? (
               <div className="px-5 py-8 text-sm text-slate-500">
-                Create a certification type to begin
-                configuring readiness requirements.
+                Create a certification type to begin configuring readiness
+                requirements.
               </div>
             ) : (
               <div className="divide-y divide-slate-800">
                 {certificationTypes.map((type) => {
-                  const requirement =
-                    requirementMap.get(type.id);
+                  const requirement = requirementMap.get(type.id);
 
                   const effectiveValidity =
-                    requirement?.valid_days ??
-                    type.default_valid_days;
+                    requirement?.valid_days ?? type.default_valid_days;
 
                   const effectiveWarning =
-                    requirement?.due_soon_days ??
-                    type.default_due_soon_days;
+                    requirement?.due_soon_days ?? type.default_due_soon_days;
 
                   return (
                     <div
@@ -639,8 +557,7 @@ export default function CertificationsPage() {
                             {type.category}
                           </span>
 
-                          {requirement?.is_active &&
-                          requirement.is_required ? (
+                          {requirement?.is_active && requirement.is_required ? (
                             <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs text-blue-300">
                               Required
                             </span>
@@ -657,25 +574,20 @@ export default function CertificationsPage() {
                             : type.expiration_required
                               ? "Expiration date required"
                               : "No fixed validity"}{" "}
-                          · Warning {effectiveWarning} days
-                          before expiration
+                          · Warning {effectiveWarning} days before expiration
                         </div>
                       </div>
 
                       <div className="flex gap-2">
                         <button
-                          onClick={() =>
-                            openRequirement(type)
-                          }
+                          onClick={() => openRequirement(type)}
                           className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white"
                         >
                           Requirement
                         </button>
 
                         <button
-                          onClick={() =>
-                            openEditType(type)
-                          }
+                          onClick={() => openEditType(type)}
                           className="rounded-lg border border-slate-700 p-2 text-slate-400 hover:text-white"
                           title="Edit certification type"
                         >
@@ -692,9 +604,7 @@ export default function CertificationsPage() {
 
         <section className="mt-7 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40">
           <div className="border-b border-slate-800 px-5 py-4">
-            <h2 className="font-semibold text-white">
-              Officer Certifications
-            </h2>
+            <h2 className="font-semibold text-white">Officer Certifications</h2>
           </div>
 
           {loading ? (
@@ -703,18 +613,15 @@ export default function CertificationsPage() {
             </div>
           ) : certifications.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-14 text-center">
-              <Award
-                size={34}
-                className="text-slate-700"
-              />
+              <Award size={34} className="text-slate-700" />
 
               <h2 className="mt-4 font-semibold text-white">
                 No certifications recorded
               </h2>
 
               <p className="mt-2 max-w-md text-sm text-slate-500">
-                Add officer credentials to begin readiness
-                and expiration tracking.
+                Add officer credentials to begin readiness and expiration
+                tracking.
               </p>
             </div>
           ) : (
@@ -722,60 +629,35 @@ export default function CertificationsPage() {
               <table className="w-full min-w-[980px] text-left text-sm">
                 <thead className="border-b border-slate-800 bg-slate-900/60 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-5 py-4">
-                      Officer
-                    </th>
-                    <th className="px-5 py-4">
-                      Certification
-                    </th>
-                    <th className="px-5 py-4">
-                      Requirement
-                    </th>
-                    <th className="px-5 py-4">
-                      Issuer
-                    </th>
-                    <th className="px-5 py-4">
-                      Expires
-                    </th>
-                    <th className="px-5 py-4">
-                      Status
-                    </th>
-                    <th className="px-5 py-4 text-right">
-                      Actions
-                    </th>
+                    <th className="px-5 py-4">Officer</th>
+                    <th className="px-5 py-4">Certification</th>
+                    <th className="px-5 py-4">Requirement</th>
+                    <th className="px-5 py-4">Issuer</th>
+                    <th className="px-5 py-4">Expires</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-800">
                   {certifications.map((item) => {
-                    const member = memberMap.get(
-                      item.user_id,
-                    );
+                    const member = memberMap.get(item.user_id);
 
                     const type = item.certification_type_id
-                      ? typeMap.get(
-                          item.certification_type_id,
-                        )
+                      ? typeMap.get(item.certification_type_id)
                       : undefined;
 
-                    const requirement =
-                      item.certification_type_id
-                        ? requirementMap.get(
-                            item.certification_type_id,
-                          )
-                        : undefined;
+                    const requirement = item.certification_type_id
+                      ? requirementMap.get(item.certification_type_id)
+                      : undefined;
 
                     const status = getStatus(item);
 
                     return (
-                      <tr
-                        key={item.id}
-                        className="hover:bg-slate-900/40"
-                      >
+                      <tr key={item.id} className="hover:bg-slate-900/40">
                         <td className="px-5 py-4">
                           <div className="font-medium text-white">
-                            {member?.full_name ||
-                              "Unknown officer"}
+                            {member?.full_name || "Unknown officer"}
                           </div>
 
                           <div className="text-xs text-slate-500">
@@ -792,19 +674,16 @@ export default function CertificationsPage() {
 
                         <td className="px-5 py-4">
                           <div className="font-medium text-slate-200">
-                            {type?.name ||
-                              item.certification_title}
+                            {type?.name || item.certification_title}
                           </div>
 
                           <div className="text-xs text-slate-500">
-                            {item.credential_number ||
-                              "No credential number"}
+                            {item.credential_number || "No credential number"}
                           </div>
                         </td>
 
                         <td className="px-5 py-4">
-                          {requirement?.is_active &&
-                          requirement.is_required ? (
+                          {requirement?.is_active && requirement.is_required ? (
                             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-300">
                               <ShieldCheck size={14} />
                               Required
@@ -817,8 +696,7 @@ export default function CertificationsPage() {
                         </td>
 
                         <td className="px-5 py-4 text-slate-400">
-                          {item.issuing_organization ||
-                            "—"}
+                          {item.issuing_organization || "—"}
                         </td>
 
                         <td className="px-5 py-4 text-slate-300">
@@ -838,11 +716,7 @@ export default function CertificationsPage() {
                             {canManage ? (
                               <>
                                 <button
-                                  onClick={() =>
-                                    openEditCredential(
-                                      item,
-                                    )
-                                  }
+                                  onClick={() => openEditCredential(item)}
                                   className="rounded-lg border border-slate-700 p-2 text-slate-400 hover:text-white"
                                   title="Edit"
                                 >
@@ -851,9 +725,7 @@ export default function CertificationsPage() {
 
                                 <button
                                   onClick={() =>
-                                    void archiveCredential(
-                                      item.id,
-                                    )
+                                    void archiveCredential(item.id)
                                   }
                                   className="rounded-lg border border-slate-700 p-2 text-slate-400 hover:border-red-500/40 hover:text-red-300"
                                   title="Archive"
@@ -894,9 +766,7 @@ export default function CertificationsPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setCredentialModalOpen(false)
-                }
+                onClick={() => setCredentialModalOpen(false)}
                 className="text-slate-500 hover:text-white"
               >
                 <X size={20} />
@@ -917,15 +787,10 @@ export default function CertificationsPage() {
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
                 >
-                  <option value="">
-                    Select officer
-                  </option>
+                  <option value="">Select officer</option>
 
                   {members.map((member) => (
-                    <option
-                      key={member.user_id}
-                      value={member.user_id}
-                    >
+                    <option key={member.user_id} value={member.user_id}>
                       {member.full_name}
                     </option>
                   ))}
@@ -936,25 +801,14 @@ export default function CertificationsPage() {
                 Certification type
                 <select
                   required
-                  value={
-                    credentialForm.certificationTypeId
-                  }
-                  onChange={(event) =>
-                    selectCredentialType(
-                      event.target.value,
-                    )
-                  }
+                  value={credentialForm.certificationTypeId}
+                  onChange={(event) => selectCredentialType(event.target.value)}
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
                 >
-                  <option value="">
-                    Select certification
-                  </option>
+                  <option value="">Select certification</option>
 
                   {certificationTypes.map((type) => (
-                    <option
-                      key={type.id}
-                      value={type.id}
-                    >
+                    <option key={type.id} value={type.id}>
                       {type.name}
                     </option>
                   ))}
@@ -964,14 +818,11 @@ export default function CertificationsPage() {
               <label className="text-sm text-slate-300">
                 Issuing organization
                 <input
-                  value={
-                    credentialForm.issuingOrganization
-                  }
+                  value={credentialForm.issuingOrganization}
                   onChange={(event) =>
                     setCredentialForm({
                       ...credentialForm,
-                      issuingOrganization:
-                        event.target.value,
+                      issuingOrganization: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -981,14 +832,11 @@ export default function CertificationsPage() {
               <label className="text-sm text-slate-300">
                 Credential number
                 <input
-                  value={
-                    credentialForm.credentialNumber
-                  }
+                  value={credentialForm.credentialNumber}
                   onChange={(event) =>
                     setCredentialForm({
                       ...credentialForm,
-                      credentialNumber:
-                        event.target.value,
+                      credentialNumber: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1014,14 +862,11 @@ export default function CertificationsPage() {
                 Expiration date
                 <input
                   type="date"
-                  value={
-                    credentialForm.expirationDate
-                  }
+                  value={credentialForm.expirationDate}
                   onChange={(event) =>
                     setCredentialForm({
                       ...credentialForm,
-                      expirationDate:
-                        event.target.value,
+                      expirationDate: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1035,8 +880,7 @@ export default function CertificationsPage() {
                   onChange={(event) =>
                     setCredentialForm({
                       ...credentialForm,
-                      documentUrl:
-                        event.target.value,
+                      documentUrl: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1051,10 +895,7 @@ export default function CertificationsPage() {
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {DEFAULT_REMINDERS.map((day) => {
-                    const selected =
-                      credentialForm.reminderDays.includes(
-                        day,
-                      );
+                    const selected = credentialForm.reminderDays.includes(day);
 
                     return (
                       <button
@@ -1065,13 +906,9 @@ export default function CertificationsPage() {
                             ...credentialForm,
                             reminderDays: selected
                               ? credentialForm.reminderDays.filter(
-                                  (value) =>
-                                    value !== day,
+                                  (value) => value !== day,
                                 )
-                              : [
-                                  ...credentialForm.reminderDays,
-                                  day,
-                                ].sort(
+                              : [...credentialForm.reminderDays, day].sort(
                                   (a, b) => b - a,
                                 ),
                           })
@@ -1082,9 +919,7 @@ export default function CertificationsPage() {
                             : "border-slate-700 text-slate-500"
                         }`}
                       >
-                        {day === 0
-                          ? "On expiration"
-                          : `${day} days`}
+                        {day === 0 ? "On expiration" : `${day} days`}
                       </button>
                     );
                   })}
@@ -1110,9 +945,7 @@ export default function CertificationsPage() {
             <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4">
               <button
                 type="button"
-                onClick={() =>
-                  setCredentialModalOpen(false)
-                }
+                onClick={() => setCredentialModalOpen(false)}
                 className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300"
               >
                 Cancel
@@ -1122,9 +955,7 @@ export default function CertificationsPage() {
                 disabled={saving}
                 className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {saving
-                  ? "Saving..."
-                  : "Save Certification"}
+                {saving ? "Saving..." : "Save Certification"}
               </button>
             </div>
           </form>
@@ -1146,16 +977,14 @@ export default function CertificationsPage() {
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  Define the credential itself. Agency
-                  requirements are configured separately.
+                  Define the credential itself. Agency requirements are
+                  configured separately.
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() =>
-                  setTypeModalOpen(false)
-                }
+                onClick={() => setTypeModalOpen(false)}
                 className="text-slate-500 hover:text-white"
               >
                 <X size={20} />
@@ -1202,8 +1031,7 @@ export default function CertificationsPage() {
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      description:
-                        event.target.value,
+                      description: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1213,14 +1041,11 @@ export default function CertificationsPage() {
               <label className="text-sm text-slate-300 md:col-span-2">
                 Default issuing organization
                 <input
-                  value={
-                    typeForm.issuingOrganization
-                  }
+                  value={typeForm.issuingOrganization}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      issuingOrganization:
-                        event.target.value,
+                      issuingOrganization: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1230,14 +1055,11 @@ export default function CertificationsPage() {
               <label className="flex items-center gap-3 text-sm text-slate-300 md:col-span-2">
                 <input
                   type="checkbox"
-                  checked={
-                    typeForm.expirationRequired
-                  }
+                  checked={typeForm.expirationRequired}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      expirationRequired:
-                        event.target.checked,
+                      expirationRequired: event.target.checked,
                     })
                   }
                   className="h-4 w-4"
@@ -1250,14 +1072,11 @@ export default function CertificationsPage() {
                 <input
                   type="number"
                   min="1"
-                  value={
-                    typeForm.defaultValidDays
-                  }
+                  value={typeForm.defaultValidDays}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      defaultValidDays:
-                        event.target.value,
+                      defaultValidDays: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1271,14 +1090,11 @@ export default function CertificationsPage() {
                   required
                   type="number"
                   min="0"
-                  value={
-                    typeForm.defaultDueSoonDays
-                  }
+                  value={typeForm.defaultDueSoonDays}
                   onChange={(event) =>
                     setTypeForm({
                       ...typeForm,
-                      defaultDueSoonDays:
-                        event.target.value,
+                      defaultDueSoonDays: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1289,9 +1105,7 @@ export default function CertificationsPage() {
             <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4">
               <button
                 type="button"
-                onClick={() =>
-                  setTypeModalOpen(false)
-                }
+                onClick={() => setTypeModalOpen(false)}
                 className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300"
               >
                 Cancel
@@ -1321,19 +1135,13 @@ export default function CertificationsPage() {
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  {
-                    typeMap.get(
-                      requirementForm.certificationTypeId,
-                    )?.name
-                  }
+                  {typeMap.get(requirementForm.certificationTypeId)?.name}
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() =>
-                  setRequirementModalOpen(false)
-                }
+                onClick={() => setRequirementModalOpen(false)}
                 className="text-slate-500 hover:text-white"
               >
                 <X size={20} />
@@ -1344,14 +1152,11 @@ export default function CertificationsPage() {
               <label className="flex items-center gap-3 text-sm text-slate-300 md:col-span-2">
                 <input
                   type="checkbox"
-                  checked={
-                    requirementForm.isRequired
-                  }
+                  checked={requirementForm.isRequired}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      isRequired:
-                        event.target.checked,
+                      isRequired: event.target.checked,
                     })
                   }
                   className="h-4 w-4"
@@ -1364,14 +1169,11 @@ export default function CertificationsPage() {
                 <input
                   type="number"
                   min="1"
-                  value={
-                    requirementForm.validDays
-                  }
+                  value={requirementForm.validDays}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      validDays:
-                        event.target.value,
+                      validDays: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1384,14 +1186,11 @@ export default function CertificationsPage() {
                 <input
                   type="number"
                   min="0"
-                  value={
-                    requirementForm.dueSoonDays
-                  }
+                  value={requirementForm.dueSoonDays}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      dueSoonDays:
-                        event.target.value,
+                      dueSoonDays: event.target.value,
                     })
                   }
                   className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-white"
@@ -1402,14 +1201,11 @@ export default function CertificationsPage() {
               <label className="flex items-center gap-3 text-sm text-slate-300 md:col-span-2">
                 <input
                   type="checkbox"
-                  checked={
-                    requirementForm.isActive
-                  }
+                  checked={requirementForm.isActive}
                   onChange={(event) =>
                     setRequirementForm({
                       ...requirementForm,
-                      isActive:
-                        event.target.checked,
+                      isActive: event.target.checked,
                     })
                   }
                   className="h-4 w-4"
@@ -1436,9 +1232,7 @@ export default function CertificationsPage() {
             <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4">
               <button
                 type="button"
-                onClick={() =>
-                  setRequirementModalOpen(false)
-                }
+                onClick={() => setRequirementModalOpen(false)}
                 className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300"
               >
                 Cancel
@@ -1448,9 +1242,7 @@ export default function CertificationsPage() {
                 disabled={saving}
                 className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {saving
-                  ? "Saving..."
-                  : "Save Requirement"}
+                {saving ? "Saving..." : "Save Requirement"}
               </button>
             </div>
           </form>

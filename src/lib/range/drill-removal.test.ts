@@ -14,6 +14,21 @@ test("removes an unscored drill from an editable agency range day", () => {
   if (result.ok) assert.deepEqual(result.workspace.rangeDayDrills, []);
 });
 
+test("removal deletes only the Range Day association and retains the source template and its document references", () => {
+  const document = { id: "document-1", drill_template_id: "template-1", storage_path: "drills/template-1/course.pdf" };
+  const result = removeRangeDayDrill(workspace({
+    drillLibrary: [{ id: "template-1", name: "Failure Drill", departmentId: "agency-a" }],
+    drillDocuments: [document],
+  }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-a" });
+
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.workspace.rangeDayDrills, []);
+    assert.deepEqual(result.workspace.drillLibrary, [{ id: "template-1", name: "Failure Drill", departmentId: "agency-a" }]);
+    assert.deepEqual(result.workspace.drillDocuments, [document]);
+  }
+});
+
 test("blocks removal when results or dependent malfunctions exist", () => {
   const result = removeRangeDayDrill(workspace({ results: [{ id: "result-1", rangeDayId: "day-1", drillId: "drill-1" }] }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-a" });
   assert.equal(result.ok, false);

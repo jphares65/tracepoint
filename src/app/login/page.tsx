@@ -1,9 +1,11 @@
-﻿import Image from "next/image";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 
 import { resolveLoginSession } from "@/lib/authentication/login-session-core";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
+import { shouldRedirectAuthenticatedLogin } from "@/lib/authentication/login-recovery-core";
 import { runtimeAuthenticationProvider } from "@/lib/authentication/request-session-core";
+import { resolvePostgresPlatformLanding } from "@/lib/tracepoint/server-access-postgres";
 
 import LoginForm from "./LoginForm";
 
@@ -31,10 +33,25 @@ export default async function LoginPage({
   // The proxy normally clears bad receipts before rendering. Keep this route
   // independently safe when it is bypassed or a stale request still arrives.
   const loginSession = await resolveLoginSession(resolveAuthenticatedPrincipal);
-  if (loginSession.principal) {
+  const principal = loginSession.principal;
+  const providerMode =
+    runtimeAuthenticationProvider(process.env) === "cognito"
+      ? "aws-native"
+      : "bridge";
+  const nativeBaselineAccess =
+    principal?.provider === "cognito"
+      ? await resolvePostgresPlatformLanding(principal).catch(() => null)
+      : null;
+
+  if (
+    shouldRedirectAuthenticatedLogin(
+      principal,
+      providerMode,
+      nativeBaselineAccess,
+    )
+  ) {
     redirect(nextPath);
   }
-  const providerMode = runtimeAuthenticationProvider(process.env) === "cognito" ? "aws-native" : "bridge";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">

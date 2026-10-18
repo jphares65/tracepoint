@@ -34,6 +34,19 @@ export class PostgresCognitoSessionStore {
     mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
    }
    if(mapping.rowCount!==1){shadowCognitoDiagnostic('access_session_mapping_lock',{matchCount:mapping.rowCount??0});throw Error();}
+   // A Cognito identity link identifies a TracePoint profile; it does not by
+   // itself grant application access. Check the baseline grant in the same
+   // transaction that creates the access-session row so an unentitled linked
+   // identity can never receive an opaque browser session.
+   await client.query("set local role authenticated");
+   await client.query("select set_config('tracepoint.subject_id',$1,true)",[input.userId]);
+   const baseline=await client.query(`select public.is_platform_admin() as is_platform_admin,
+    exists(select 1 from public.department_memberships where user_id=$1 and is_active=true) as has_active_department_membership`,[input.userId]);
+   await client.query("set local role none");
+   if(baseline.rows[0]?.is_platform_admin!==true&&baseline.rows[0]?.has_active_department_membership!==true){
+    shadowCognitoDiagnostic('access_session_baseline_authorization',{authorized:false});
+    throw Error('Baseline application authorization is required.');
+   }
    const result=await client.query(`insert into public.authentication_access_sessions(issuer,subject,tracepoint_user_id,token_id,issued_at,expires_at)
     select $1,$2,$3,$4,to_timestamp($5),to_timestamp($6)
     where not exists(select 1 from public.authentication_session_revocations where tracepoint_user_id=$3 and issuer=$1 and revoked_before>=to_timestamp($5))`,[input.issuer,input.subject,input.userId,input.tokenId,input.issuedAt,input.expiresAt]);if(result.rowCount!==1){shadowCognitoDiagnostic('access_session_insert_or_revocation',{inserted:result.rowCount===1});throw Error();}

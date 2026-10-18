@@ -29,10 +29,16 @@ test('dedicated rehearsal login redirects only to its hosted pool',async()=>{
  assert.equal(new URL(response.headers.get('location')!).origin,
   'https://tracepoint-phase3c-rehearsal-193644343389.auth.us-east-1.amazoncognito.com');
 });
-test('callback consumes PKCE and returns opaque session without provider tokens or redirect injection',async()=>{
+test('callback issues an opaque session while clearing account-specific tenant and Support Mode context',async()=>{
  const f=fixture(),begin=await f.api.begin(post('login')),url=new URL(begin.headers.get('location')!);const flow=begin.headers.get('set-cookie')!.split(';')[0];
  const request=new Request(origin+'/api/auth/cognito/callback?'+new URLSearchParams({state:url.searchParams.get('state')!,code:'synthetic-code',returnTo:'https://evil.invalid'}),{headers:{cookie:flow}});
- const response=await f.api.callback(request);assert.equal(response.status,303);assert.equal(response.headers.get('location'),origin+'/');assert.equal(response.headers.getSetCookie().length,2);assert.ok(response.headers.getSetCookie()[1].startsWith('__Host-tracepoint-cognito-session='+handle));assert.equal((await response.text()).includes('provider-'),false);assert.equal((await f.api.callback(request)).status,401);assert.equal(f.calls.establish,1);assert.equal(f.calls.exchange,1);
+ const response=await f.api.callback(request);assert.equal(response.status,303);assert.equal(response.headers.get('location'),origin+'/');const cookies=response.headers.getSetCookie();assert.equal(cookies.length,4);assert.ok(cookies.some(value=>value.startsWith('__Host-tracepoint-cognito-session='+handle)));for(const name of ['tracepoint_department_id','tracepoint_support_department_id'])assert.ok(cookies.some(value=>value.startsWith(name+'=;')&&value.includes('Max-Age=0')&&value.includes('HttpOnly')&&value.includes('Secure')));assert.equal((await response.text()).includes('provider-'),false);assert.equal((await f.api.callback(request)).status,401);assert.equal(f.calls.establish,1);assert.equal(f.calls.exchange,1);
+});
+test('authorization rejection clears the old opaque session and all account-specific context',async()=>{
+ const f=fixture(),begin=await f.api.begin(post('login')),url=new URL(begin.headers.get('location')!),flow=begin.headers.get('set-cookie')!.split(';')[0];
+ f.ports.establish=async()=>{f.calls.establish++;throw Error('linked synthetic principal lacks baseline access');};
+ const response=await f.api.callback(new Request(origin+'/api/auth/cognito/callback?'+new URLSearchParams({state:url.searchParams.get('state')!,code:'synthetic-code'}),{headers:{cookie:flow+'; __Host-tracepoint-cognito-session='+handle+'; tracepoint_department_id=department; tracepoint_support_department_id=department'}}));
+ assert.equal(response.status,401);const cookies=response.headers.getSetCookie();assert.equal(cookies.length,4);for(const name of ['__Host-tracepoint-cognito-flow','__Host-tracepoint-cognito-session','tracepoint_department_id','tracepoint_support_department_id'])assert.ok(cookies.some(value=>value.startsWith(name+'=;')&&value.includes('Max-Age=0')&&value.includes('HttpOnly')&&value.includes('Secure')));
 });
 test('callback duplicate cookies or query values cannot reach token exchange',async()=>{
  const f=fixture();for(const query of ['state=a&state=b&code=c','state=a&code=b&error=denied','state=a&code=b']){const request=new Request(origin+'/api/auth/cognito/callback?'+query,{headers:{cookie:'__Host-tracepoint-cognito-flow='+handle+'; __Host-tracepoint-cognito-flow='+nextHandle}});assert.equal((await f.api.callback(request)).status,401);}assert.equal(f.calls.exchange,0);

@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
-  ExternalLink,
   FileCheck2,
   Inbox,
   Loader2,
@@ -52,6 +51,9 @@ type NotificationPayload = {
     snoozed: number;
   };
   generatedAt?: string;
+  departmentItems?: NotificationItem[];
+  canViewDepartmentInbox?: boolean;
+  isSupportMode?: boolean;
 };
 
 type HomeProfile = {
@@ -60,44 +62,6 @@ type HomeProfile = {
   role: string;
   unit: string;
   badge: string;
-};
-
-type ProfileRow = {
-  full_name?: string | null;
-};
-
-type MembershipRow = {
-  department_id?: string | null;
-  badge_number?: string | null;
-  rank_title?: string | null;
-  unit_name?: string | null;
-};
-
-type MembershipRoleRow = {
-  role_code?: string | null;
-};
-
-
-const ROLE_PRIORITY = [
-  "administrator",
-  "chief",
-  "command_staff",
-  "supervisor",
-  "range_master",
-  "armorer",
-  "instructor",
-  "officer",
-] as const;
-
-const ROLE_LABELS: Record<string, string> = {
-  administrator: "Administrator",
-  chief: "Chief",
-  command_staff: "Command Staff",
-  supervisor: "Supervisor",
-  range_master: "Range Master",
-  armorer: "Armorer",
-  instructor: "Instructor",
-  officer: "Officer",
 };
 
 const RANK_ABBREVIATIONS: Record<string, string> = {
@@ -112,24 +76,6 @@ const RANK_ABBREVIATIONS: Record<string, string> = {
   Officer: "Ofc.",
   "Patrol Officer": "Ofc.",
 };
-
-const SOURCE_ORDER = [
-  "Personal Rifle",
-  "Ammunition",
-  "Inspection",
-  "Range",
-  "Off-Duty",
-  "Qualifications",
-  "System",
-];
-
-function getRoleLabel(rows: MembershipRoleRow[]) {
-  const roleCode = ROLE_PRIORITY.find((code) =>
-    rows.some((row) => row.role_code === code),
-  );
-
-  return roleCode ? ROLE_LABELS[roleCode] : "Member";
-}
 
 function professionalGreeting(profile: HomeProfile) {
   const parts = profile.name.trim().split(/\s+/).filter(Boolean);
@@ -225,14 +171,25 @@ async function responseError(response: Response) {
 }
 
 export default function OfficerHomePage() {
-  const { hasPermission, departmentId, fullName, rankTitle, primaryRoleLabel, unitName, badgeNumber } = useTracePointAccess();
-  const profile = useMemo<HomeProfile>(() => ({
-    name: fullName,
+  const {
+    hasPermission,
+    departmentId,
+    fullName,
     rankTitle,
-    role: primaryRoleLabel || "Member",
-    unit: unitName || "Department",
-    badge: badgeNumber,
-  }), [badgeNumber, fullName, primaryRoleLabel, rankTitle, unitName]);
+    primaryRoleLabel,
+    unitName,
+    badgeNumber,
+  } = useTracePointAccess();
+  const profile = useMemo<HomeProfile>(
+    () => ({
+      name: fullName,
+      rankTitle,
+      role: primaryRoleLabel || "Member",
+      unit: unitName || "Department",
+      badge: badgeNumber,
+    }),
+    [badgeNumber, fullName, primaryRoleLabel, rankTitle, unitName],
+  );
   const [notifications, setNotifications] =
     useState<NotificationPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -262,7 +219,11 @@ export default function OfficerHomePage() {
   }
 
   useEffect(() => {
-    void loadNotifications();
+    const loadTimer = window.setTimeout(() => {
+      void loadNotifications();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
   }, [departmentId]);
 
   async function updateNotification(
@@ -279,10 +240,6 @@ export default function OfficerHomePage() {
         body: JSON.stringify({
           action,
           notificationId: item.id,
-          snoozedUntil:
-            action === "snooze"
-              ? new Date(Date.now() + 86_400_000).toISOString()
-              : undefined,
         }),
       });
 
@@ -299,28 +256,26 @@ export default function OfficerHomePage() {
     }
   }
 
-  const [actionScope, setActionScope] =
-    useState<"my" | "department">("my");
+  const [actionScope, setActionScope] = useState<"my" | "department">("my");
 
   const myItems = notifications?.items ?? [];
 
-  const departmentItems =
-    ((notifications as any)?.departmentItems as
-      | NotificationItem[]
-      | undefined) ?? [];
+  const departmentItems = notifications?.departmentItems ?? [];
 
   const canViewDepartmentActions = Boolean(
-    (notifications as any)?.canViewDepartmentInbox,
+    notifications?.canViewDepartmentInbox,
   );
 
-  const isSupportMode = Boolean(
-    (notifications as any)?.isSupportMode,
-  );
+  const isSupportMode = Boolean(notifications?.isSupportMode);
 
   useEffect(() => {
-    if (isSupportMode && canViewDepartmentActions) {
+    if (!isSupportMode || !canViewDepartmentActions) return;
+
+    const scopeTimer = window.setTimeout(() => {
       setActionScope("department");
-    }
+    }, 0);
+
+    return () => window.clearTimeout(scopeTimer);
   }, [isSupportMode, canViewDepartmentActions]);
 
   const items =
@@ -328,20 +283,14 @@ export default function OfficerHomePage() {
       ? departmentItems
       : myItems;
 
-  const criticalItems = items.filter(
-    (item) => item.priority === "Critical",
-  );
+  const criticalItems = items.filter((item) => item.priority === "Critical");
 
-  const highItems = items.filter(
-    (item) => item.priority === "High",
-  );
+  const highItems = items.filter((item) => item.priority === "High");
 
   const approvalItems = useMemo(
     () =>
       items.filter((item) =>
-        /(review|approval|certif|decision)/i.test(
-          `${item.kind} ${item.title}`,
-        ),
+        /(review|approval|certif|decision)/i.test(`${item.kind} ${item.title}`),
       ),
     [items],
   );
@@ -361,19 +310,6 @@ export default function OfficerHomePage() {
     [items],
   );
 
-  const sourceCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    for (const item of items) {
-      counts.set(
-        item.source,
-        (counts.get(item.source) ?? 0) + 1,
-      );
-    }
-
-    return counts;
-  }, [items]);
-
   const [queueFilter, setQueueFilter] = useState<
     "all" | "priority" | "approvals" | "range" | "expiring"
   >("all");
@@ -382,9 +318,7 @@ export default function OfficerHomePage() {
     switch (queueFilter) {
       case "priority":
         return items.filter(
-          (item) =>
-            item.priority === "Critical" ||
-            item.priority === "High",
+          (item) => item.priority === "Critical" || item.priority === "High",
         );
 
       case "approvals":
@@ -399,13 +333,7 @@ export default function OfficerHomePage() {
       default:
         return items;
     }
-  }, [
-    items,
-    queueFilter,
-    approvalItems,
-    rangeItems,
-    expiringItems,
-  ]);
+  }, [items, queueFilter, approvalItems, rangeItems, expiringItems]);
 
   const queue = filteredItems.slice(0, 8);
   const greeting = professionalGreeting(profile);
@@ -417,7 +345,6 @@ export default function OfficerHomePage() {
   ]
     .filter(Boolean)
     .join(" · ");
-
 
   return (
     <TracePointShell activePage="My Home">
@@ -435,7 +362,8 @@ export default function OfficerHomePage() {
                 {profileLine || "Authenticated department member"}
               </p>
               <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-400">
-                Your assignments, approvals, expiring items, and operational exceptions are consolidated here.
+                Your assignments, approvals, expiring items, and operational
+                exceptions are consolidated here.
               </p>
             </div>
 
@@ -474,9 +402,8 @@ export default function OfficerHomePage() {
 
         {notifications?.sourceErrors?.length ? (
           <div className="rounded-2xl border border-amber-700 bg-amber-950/25 p-4 text-sm text-amber-200">
-            Some sources were unavailable: {notifications.sourceErrors
-              .map((item) => item.source)
-              .join(", ")}.
+            Some sources were unavailable:{" "}
+            {notifications.sourceErrors.map((item) => item.source).join(", ")}.
           </div>
         ) : null}
 
@@ -523,9 +450,11 @@ export default function OfficerHomePage() {
           />
         </section>
 
-
         <section>
-          <div id="my-inbox" className="rounded-2xl border border-slate-800 bg-slate-900/70">
+          <div
+            id="my-inbox"
+            className="rounded-2xl border border-slate-800 bg-slate-900/70"
+          >
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3.5">
               <div>
                 <h2 className="text-[15px] font-bold text-white">
@@ -564,9 +493,7 @@ export default function OfficerHomePage() {
                   {canViewDepartmentActions ? (
                     <button
                       type="button"
-                      onClick={() =>
-                        setActionScope("department")
-                      }
+                      onClick={() => setActionScope("department")}
                       className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold ${
                         actionScope === "department"
                           ? "border-blue-500 bg-blue-500/10 text-blue-200"
@@ -645,7 +572,7 @@ export default function OfficerHomePage() {
                             Open
                             <ChevronRight size={13} />
                           </Link>
-                                                    {!isConditionBasedReadiness(item) ? (
+                          {!isConditionBasedReadiness(item) ? (
                             <button
                               type="button"
                               onClick={() =>
@@ -660,7 +587,9 @@ export default function OfficerHomePage() {
                           ) : null}
                           <button
                             type="button"
-                            onClick={() => void updateNotification("snooze", item)}
+                            onClick={() =>
+                              void updateNotification("snooze", item)
+                            }
                             disabled={savingId === item.id}
                             className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 disabled:opacity-50"
                           >
@@ -675,12 +604,8 @@ export default function OfficerHomePage() {
               </div>
             )}
           </div>
-
         </section>
       </div>
     </TracePointShell>
   );
 }
-
-
-

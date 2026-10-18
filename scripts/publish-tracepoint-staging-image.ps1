@@ -13,41 +13,8 @@ Import-Module (Join-Path $PSScriptRoot 'migration-release-core.psm1') -Force
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $protectedUntrackedPaths = @('scripts/seed-demo-fleet-equipment.mjs', 'src/app/integration-demo/page.tsx')
-$archiveIncludes = @(
-    '.dockerignore',
-    'buildspec.staging-image.yml',
-    'Dockerfile',
-    'eslint.config.mjs',
-    'next.config.ts',
-    'package.json',
-    'package-lock.json',
-    'postcss.config.mjs',
-    'tsconfig.json',
-    'public',
-    'src',
-    # The Docker build runs the checked-in application suite. These are test-only
-    # schema fixtures; they are copied into the builder stage and never executed
-    # by the staging release process or included in the runtime image.
-    'database/aws',
-    'database/rehearsal',
-    'supabase/migrations',
-    # npm run build invokes this checked-in prebuild validator inside the builder.
-    'scripts/assert-aws-native-provider-reachability.mjs',
-    'scripts/mobile-route-image-contract-core.mjs',
-    'scripts/test-staging-image-mobile-routes.sh',
-    'scripts/run-application-tests.mjs',
-    # The runtime image copies its migration runner; including it does not invoke it.
-    'scripts/run-aws-native-migrations.mjs',
-    'scripts/start-tracepoint-container.mjs',
-    'scripts/validate-tracepoint-runtime-config.mjs'
-)
-$archiveExcludes = @(
-    ':(glob,exclude)**/*.backup-*',
-    ':(glob,exclude)**/*.encoding-backup-*',
-    ':(glob,exclude)**/*.before-*',
-    ':(glob,exclude)**/*.bak',
-    ':(glob,exclude)**/*.bak-*'
-)
+$archiveIncludes = @(Get-TracePointStagingImageArchiveIncludes)
+$archiveExcludes = @(Get-TracePointStagingImageArchiveExcludes)
 $sourceBucket = 'tracepoint-staging-build-source-559054714699'
 $sourceKey = 'source/tracepoint-staging-source.zip'
 $projectName = 'tracepoint-staging-image-build'
@@ -123,19 +90,7 @@ try {
     try {
         $entryNames = @($archiveEntries.Entries.FullName | Where-Object { -not $_.EndsWith('/') })
         $trackedPaths = @(& git.exe -C $repositoryRoot ls-tree -r --name-only $commit)
-        if ($LASTEXITCODE -ne 0) { throw 'Unable to verify tracked staging image source files.' }
-        $untrackedEntries = @($entryNames | Where-Object { $_ -notin $trackedPaths })
-        if ($untrackedEntries.Count) {
-            throw "Archive contains paths not tracked by commit ${commit}: $($untrackedEntries -join ', ')"
-        }
-        $prohibitedEntries = @($entryNames | Where-Object {
-            $isApprovedSchemaFixture = $_ -like 'database/aws/*.sql' -or $_ -like 'database/rehearsal/*.sql' -or $_ -like 'supabase/migrations/*.sql'
-            ($_ -match '(^|/)\.env($|\.)|(^|/)\.aws/|(^|/)\.git/|(^|/)\.github/|(^|/)node_modules/|(^|/)\.next/|(^|/)cdk\.out|(^|/)dist/|\.tsbuildinfo$|(^|/)(coverage|build|out)/|\.dump$|(^|/)[^/]*(credential|secret)[^/]*$|\.(backup|encoding-backup)-|\.before-|\.bak($|-)') -or
-            (($_ -match '\.sql$') -and -not $isApprovedSchemaFixture)
-        })
-        if ($prohibitedEntries.Count) {
-            throw "Prohibited secret, environment, credential, dump, or generated paths entered the archive: $($prohibitedEntries -join ', ')"
-        }
+        Assert-TracePointStagingImageArchive -EntryNames $entryNames -TrackedPaths $trackedPaths
     }
     finally { $archiveEntries.Dispose() }
 
@@ -143,7 +98,7 @@ try {
     if ($ValidateArchiveOnly) { return }
 
     Assert-TracePointStagingIdentity | Out-Null
-    $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --region us-east-1 --query VersionId --output text
+    $sourceVersion = & aws.exe s3api put-object --bucket $sourceBucket --key $sourceKey --body $archivePath --expected-bucket-owner 559054714699 --region us-east-1 --query VersionId --output text
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceVersion) -or $sourceVersion -eq 'None') { throw 'Versioned source upload failed.' }
     Assert-TracePointStagingIdentity | Out-Null
     $overrides = "name=IMAGE_TAG,value=$imageTag,type=PLAINTEXT name=SOURCE_COMMIT,value=$commit,type=PLAINTEXT"

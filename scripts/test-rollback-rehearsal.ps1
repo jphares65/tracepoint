@@ -34,6 +34,7 @@ if($global:RehearsalScenario -eq 'rollback-failure'){throw 'Synthetic rollback h
   elseif(!$failed -or !$global:RehearsalRestored){throw 'Failure did not attempt restoration or was hidden'}
  }
  Write-Host 'Passed four rollback rehearsal scenarios; zero network calls.'
+ $global:LASTEXITCODE=0
 } finally {
  Remove-Item Function:/aws.exe,Function:/node
  $resolved=[IO.Path]::GetFullPath($temporaryRoot)

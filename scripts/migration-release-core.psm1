@@ -7,7 +7,9 @@ $script:StagingReleaseBranches = @(
     'codex/aws-staging-readiness-20260902',
     'codex/aws-staging-integration-20260908',
     'codex/staging-mobile-api-release-20261007',
-    'codex/demo-pd-module-visibility'
+    'codex/demo-pd-module-visibility',
+    # Staging release candidate: demo-pd + Agency Documents + production line (2026-10-18).
+    'claude/staging-release-agency-documents'
 )
 
 function Get-ReviewedImageTag {
@@ -185,8 +187,8 @@ function Assert-MigrationLedgerReport {
     foreach ($version in $expectedVersions) {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
-    if ($filesByVersion.Count -ne 42 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 042, preserving the Agency Documents lineage.' }
-    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(42))) { throw 'Apply requires exactly 042_default_module_entitlements.sql pending.' }
+    if ($filesByVersion.Count -ne 45 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 045, preserving the Agency Documents lineage at 038-041.' }
+    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 4 -or @(42, 43, 44, 45 | Where-Object { -not $pendingByVersion.ContainsKey($_) }).Count -ne 0)) { throw 'Apply requires exactly migrations 042, 043, 044 and 045 pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -198,11 +200,17 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)][string]$ApplicationCommit,
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment
     )
-    $record = @($Report.applied | Where-Object { [int]$_.version -eq 42 }) | Select-Object -First 1
-    if ($null -eq $record -or [string]$record.filename -cne '042_default_module_entitlements.sql' -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
-        throw 'Migration 042 ledger entry does not match this application commit and release environment.'
+    # Every migration this release applies must be recorded by this commit, in this environment, as an apply.
+    $expected = [ordered]@{ 42 = '042_default_module_entitlements.sql'; 43 = '043_range_workspace_authenticated_writes.sql'; 44 = '044_cognito_password_global_scope.sql'; 45 = '045_password_operation_resolution.sql' }
+    $records = @()
+    foreach ($version in $expected.Keys) {
+        $record = @($Report.applied | Where-Object { [int]$_.version -eq $version }) | Select-Object -First 1
+        if ($null -eq $record -or [string]$record.filename -cne $expected[$version] -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
+            throw "Migration $('{0:d3}' -f $version) ledger entry does not match this application commit and release environment."
+        }
+        $records += $record
     }
-    return $record
+    return $records[0]
 }
 
 Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Get-AwsMigrationArchiveHashes,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord

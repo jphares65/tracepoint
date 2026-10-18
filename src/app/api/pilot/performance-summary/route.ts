@@ -92,6 +92,61 @@ type RangeDayDrillRow = {
   passing_time_seconds: number | string | null;
 };
 
+type DrillTrendInput = {
+  result: DrillResultRow;
+  drill: RangeDayDrillRow;
+  rangeDay?: RangeDayRow;
+};
+
+type DrillTrend = {
+  officerId: string;
+  name: string;
+  assignment: string;
+  category: string;
+  drillName: string;
+  trend: Trend;
+  changeValue: number | null;
+  averageChange: string;
+  weakArea: string;
+  repeatedDeficiency: string;
+  remedial: "Recommended" | "None";
+  risk: Risk;
+  detail: string;
+};
+
+type QualificationTrend = {
+  officerId: string;
+  name: string;
+  assignment: string;
+  status: string;
+  risk: Risk;
+  detail: string;
+};
+
+type BroadCategoryTrend = {
+  category: string;
+  direction: "Monitor" | "Improving" | "Stable";
+  affected: string;
+  detail: string;
+};
+
+type PerformanceAlert = {
+  id: string;
+  officerName: string;
+  officerAssignment: string;
+  source: "Qualification" | "Drill Trend";
+  category: string;
+  severity: Risk;
+  status: "New";
+  title: string;
+  basis: string;
+  recommendedAction: string;
+  createdAt: string;
+  recipients: string[];
+  relatedRecords: string[];
+  auditLog: string[];
+};
+
 function dateValue(value?: string | null) {
   if (!value) return 0;
 
@@ -135,7 +190,7 @@ function buildQualificationTrends(
   qualificationDueSoonDays: number,
   requiredComponents: readonly QualificationComponent[],
   analyticsDashboard: AnalyticsDashboardConfiguration,
-) {
+): QualificationTrend[] {
   return Object.keys(officerLabels).map((officerId) => {
     const label = officerLabels[officerId];
     const readiness = evaluateCanonicalQualificationReadiness({
@@ -153,10 +208,13 @@ function buildQualificationTrends(
       .sort((a, b) => dateValue(a.date) - dateValue(b.date));
     const latest = officerResults.at(-1);
     const dayResults = officerResults.filter((row) => row.component === "day");
-    const nightResults = officerResults.filter((row) => row.component === "night");
+    const nightResults = officerResults.filter(
+      (row) => row.component === "night",
+    );
     const latestDay = dayResults.at(-1);
     const latestNight = nightResults.at(-1);
-    const status = readiness.status === "Overdue" ? "Expired" : readiness.status;
+    const status =
+      readiness.status === "Overdue" ? "Expired" : readiness.status;
 
     const comparisons: Array<{
       component: string;
@@ -172,12 +230,26 @@ function buildQualificationTrends(
     ] as const) {
       const scored = rows
         .map((row) => ({ row, score: numericValue(row.score) }))
-        .filter((item): item is { row: typeof officerResults[number]; score: number } => item.score !== undefined);
+        .filter(
+          (
+            item,
+          ): item is { row: (typeof officerResults)[number]; score: number } =>
+            item.score !== undefined,
+        );
       if (scored.length < 2) continue;
       const previous = scored[scored.length - 2].score;
       const current = scored[scored.length - 1].score;
       const change = current - previous;
-      comparisons.push({ component, previous, current, change, trend: classifyTrendChange(change, analyticsDashboard.trend_change_threshold) });
+      comparisons.push({
+        component,
+        previous,
+        current,
+        change,
+        trend: classifyTrendChange(
+          change,
+          analyticsDashboard.trend_change_threshold,
+        ),
+      });
     }
 
     let trend: Trend = "Baseline";
@@ -194,13 +266,14 @@ function buildQualificationTrends(
     } else if (comparisons.length > 0) {
       const improving = comparisons.some((item) => item.trend === "Improving");
       const declining = comparisons.some((item) => item.trend === "Declining");
-      trend = improving && declining
-        ? "Monitor"
-        : declining
-          ? "Declining"
-          : improving
-            ? "Improving"
-            : "Stable";
+      trend =
+        improving && declining
+          ? "Monitor"
+          : declining
+            ? "Declining"
+            : improving
+              ? "Improving"
+              : "Stable";
     }
 
     const dayScore = numericValue(latestDay?.score);
@@ -208,22 +281,27 @@ function buildQualificationTrends(
     const requiredCoverage = requiredComponents.filter((component) =>
       component === "day" ? Boolean(latestDay) : Boolean(latestNight),
     );
-    const coverage = requiredComponents.length === 0
-      ? "Not Required"
-      : requiredCoverage.length === requiredComponents.length
-        ? requiredComponents.length === 2
-          ? "Day + Night"
-          : `${requiredComponents[0] === "day" ? "Day" : "Night"} Complete`
-        : requiredCoverage.length === 0
-          ? "No Record"
-          : `${requiredCoverage[0] === "day" ? "Day" : "Night"} Only`;
+    const coverage =
+      requiredComponents.length === 0
+        ? "Not Required"
+        : requiredCoverage.length === requiredComponents.length
+          ? requiredComponents.length === 2
+            ? "Day + Night"
+            : `${requiredComponents[0] === "day" ? "Day" : "Night"} Complete`
+          : requiredCoverage.length === 0
+            ? "No Record"
+            : `${requiredCoverage[0] === "day" ? "Day" : "Night"} Only`;
     const risk = getRiskFromQualificationStatus(status);
 
     let detail = readiness.statusReason;
     if (status === "Current" && comparisons.length > 0) {
-      detail = comparisons
-        .map((item) => `${item.component} changed from ${item.previous} to ${item.current}`)
-        .join("; ") + ".";
+      detail =
+        comparisons
+          .map(
+            (item) =>
+              `${item.component} changed from ${item.previous} to ${item.current}`,
+          )
+          .join("; ") + ".";
     }
 
     return {
@@ -248,10 +326,12 @@ function buildDrillTrends(
   drills: RangeDayDrillRow[],
   rangeDays: RangeDayRow[],
   analyticsDashboard: AnalyticsDashboardConfiguration,
-) {
+): DrillTrend[] {
   const drillById = new Map(drills.map((drill) => [drill.id, drill]));
-  const rangeDayById = new Map(rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]));
-  const groups = new Map<string, any[]>();
+  const rangeDayById = new Map(
+    rangeDays.map((rangeDay) => [rangeDay.id, rangeDay]),
+  );
+  const groups = new Map<string, DrillTrendInput[]>();
 
   drillResults.forEach((result) => {
     const drill = drillById.get(result.range_day_drill_id);
@@ -259,26 +339,39 @@ function buildDrillTrends(
     const drillIdentity = `${drill.name.trim().toLowerCase()}::${drill.scoring_format}`;
     const key = `${result.officer_user_id}::${drill.category}::${drillIdentity}`;
     const current = groups.get(key) ?? [];
-    current.push({ result, drill, rangeDay: rangeDayById.get(result.range_day_id) });
+    current.push({
+      result,
+      drill,
+      rangeDay: rangeDayById.get(result.range_day_id),
+    });
     groups.set(key, current);
   });
 
   return Array.from(groups.entries()).map(([key, items]) => {
     const [officerId, category] = key.split("::");
-    const label = officerLabels[officerId] ?? { name: officerId, assignment: "Department Personnel" };
+    const label = officerLabels[officerId] ?? {
+      name: officerId,
+      assignment: "Department Personnel",
+    };
     const drillName = String(items[0]?.drill?.name ?? category);
 
-    const latestByRangeDay = new Map<string, any>();
+    const latestByRangeDay = new Map<string, DrillTrendInput>();
     for (const item of items) {
       const current = latestByRangeDay.get(item.result.range_day_id);
       const currentRun = Number(current?.result?.run_number ?? 0);
       const nextRun = Number(item.result.run_number ?? 0);
-      if (!current || nextRun > currentRun || (nextRun === currentRun && String(item.result.recorded_at) > String(current.result.recorded_at))) {
+      if (
+        !current ||
+        nextRun > currentRun ||
+        (nextRun === currentRun &&
+          String(item.result.recorded_at) > String(current.result.recorded_at))
+      ) {
         latestByRangeDay.set(item.result.range_day_id, item);
       }
     }
     const sorted = Array.from(latestByRangeDay.values()).sort(
-      (a, b) => dateValue(a.rangeDay?.range_date) - dateValue(b.rangeDay?.range_date),
+      (a, b) =>
+        dateValue(a.rangeDay?.range_date) - dateValue(b.rangeDay?.range_date),
     );
 
     const scoreSeries = sorted
@@ -286,9 +379,14 @@ function buildDrillTrends(
         const score = numericValue(item.result.score);
         if (score === undefined) return null;
         const maximum = numericValue(item.drill.max_score);
-        return { value: maximum && maximum > 0 ? (score / maximum) * 100 : score, normalized: Boolean(maximum && maximum > 0) };
+        return {
+          value: maximum && maximum > 0 ? (score / maximum) * 100 : score,
+          normalized: Boolean(maximum && maximum > 0),
+        };
       })
-      .filter((item): item is { value: number; normalized: boolean } => item !== null);
+      .filter(
+        (item): item is { value: number; normalized: boolean } => item !== null,
+      );
     const timeSeries = sorted
       .map((item) => numericValue(item.result.time_seconds))
       .filter((value): value is number => value !== undefined);
@@ -299,9 +397,10 @@ function buildDrillTrends(
       const previous = scoreSeries[scoreSeries.length - 2];
       const current = scoreSeries[scoreSeries.length - 1];
       change = current.value - previous.value;
-      detail = previous.normalized && current.normalized
-        ? `Normalized score changed from ${previous.value.toFixed(1)}% to ${current.value.toFixed(1)}% across the two latest range days.`
-        : `Score changed from ${previous.value} to ${current.value} across the two latest range days.`;
+      detail =
+        previous.normalized && current.normalized
+          ? `Normalized score changed from ${previous.value.toFixed(1)}% to ${current.value.toFixed(1)}% across the two latest range days.`
+          : `Score changed from ${previous.value} to ${current.value} across the two latest range days.`;
     } else if (timeSeries.length >= 2) {
       const previous = timeSeries[timeSeries.length - 2];
       const current = timeSeries[timeSeries.length - 1];
@@ -309,20 +408,36 @@ function buildDrillTrends(
       detail = `Time changed from ${previous.toFixed(2)}s to ${current.toFixed(2)}s across the two latest range days; lower is better.`;
     }
 
-    let trend: Trend = change === null
-      ? "Baseline"
-      : classifyTrendChange(change, analyticsDashboard.trend_change_threshold);
+    let trend: Trend =
+      change === null
+        ? "Baseline"
+        : classifyTrendChange(
+            change,
+            analyticsDashboard.trend_change_threshold,
+          );
     const latestResult = sorted[sorted.length - 1]?.result;
     const deficiencies = sorted.filter(
-      (item) => item.result.deficiency_observed === true || item.result.remedial_training_recommended === true || item.result.passed === false,
+      (item) =>
+        item.result.deficiency_observed === true ||
+        item.result.remedial_training_recommended === true ||
+        item.result.passed === false,
     ).length;
-    if (latestResult?.passed === false || latestResult?.remedial_training_recommended === true) trend = "Action Needed";
+    if (
+      latestResult?.passed === false ||
+      latestResult?.remedial_training_recommended === true
+    )
+      trend = "Action Needed";
 
-    const risk: Risk = trend === "Action Needed" || reachesRepeatedDeficiencyThreshold(deficiencies, analyticsDashboard.repeated_deficiency_count)
-      ? "High"
-      : trend === "Declining" || deficiencies > 0
-        ? "Medium"
-        : "Low";
+    const risk: Risk =
+      trend === "Action Needed" ||
+      reachesRepeatedDeficiencyThreshold(
+        deficiencies,
+        analyticsDashboard.repeated_deficiency_count,
+      )
+        ? "High"
+        : trend === "Declining" || deficiencies > 0
+          ? "Medium"
+          : "Low";
 
     return {
       officerId,
@@ -332,35 +447,49 @@ function buildDrillTrends(
       drillName,
       trend,
       changeValue: change,
-      averageChange: change === null ? "â€”" : `${change > 0 ? "+" : ""}${change.toFixed(1)}`,
+      averageChange:
+        change === null
+          ? "â€”"
+          : `${change > 0 ? "+" : ""}${change.toFixed(1)}`,
       weakArea: drillName,
-      repeatedDeficiency: reachesRepeatedDeficiencyThreshold(deficiencies, analyticsDashboard.repeated_deficiency_count)
+      repeatedDeficiency: reachesRepeatedDeficiencyThreshold(
+        deficiencies,
+        analyticsDashboard.repeated_deficiency_count,
+      )
         ? `Yes (${deficiencies} range days)`
         : deficiencies > 0
           ? `Monitor (${deficiencies}/${analyticsDashboard.repeated_deficiency_count})`
           : "No",
-      remedial: sorted.some((item) => item.result.remedial_training_recommended) ? "Recommended" : "None",
+      remedial: sorted.some((item) => item.result.remedial_training_recommended)
+        ? "Recommended"
+        : "None",
       risk,
       detail,
     };
   });
 }
 
-function buildBroadCategoryTrends(
-  drillTrends: any[],
-) {
+function buildBroadCategoryTrends(drillTrends: DrillTrend[]): BroadCategoryTrend[] {
+  type CategoryTotals = {
+    category: string;
+    affected: Set<string>;
+    highRisk: number;
+    mediumRisk: number;
+    improving: number;
+    declining: number;
+  };
+
   return Array.from(
     drillTrends
       .reduce((map, row) => {
-        const current =
-          map.get(row.category) ?? {
-            category: row.category,
-            affected: new Set<string>(),
-            highRisk: 0,
-            mediumRisk: 0,
-            improving: 0,
-            declining: 0,
-          };
+        const current = map.get(row.category) ?? {
+          category: row.category,
+          affected: new Set<string>(),
+          highRisk: 0,
+          mediumRisk: 0,
+          improving: 0,
+          declining: 0,
+        };
 
         current.affected.add(row.officerId);
 
@@ -376,23 +505,19 @@ function buildBroadCategoryTrends(
           current.improving += 1;
         }
 
-        if (
-          row.trend === "Declining" ||
-          row.trend === "Action Needed"
-        ) {
+        if (row.trend === "Declining" || row.trend === "Action Needed") {
           current.declining += 1;
         }
 
         map.set(row.category, current);
         return map;
-      }, new Map<string, any>())
+      }, new Map<string, CategoryTotals>())
       .values(),
-  ).map((item: any) => {
+  ).map((item) => {
     const affectedCount = item.affected.size;
 
     const direction =
-      item.highRisk > 0 ||
-      item.declining > item.improving
+      item.highRisk > 0 || item.declining > item.improving
         ? "Monitor"
         : item.improving > item.declining
           ? "Improving"
@@ -401,9 +526,7 @@ function buildBroadCategoryTrends(
     return {
       category: item.category,
       direction,
-      affected: `${affectedCount} officer${
-        affectedCount === 1 ? "" : "s"
-      }`,
+      affected: `${affectedCount} officer${affectedCount === 1 ? "" : "s"}`,
       detail:
         item.highRisk > 0
           ? `${item.highRisk} high-risk officer trend${
@@ -417,10 +540,10 @@ function buildBroadCategoryTrends(
 }
 
 function buildAlerts(
-  qualificationTrends: any[],
-  drillTrends: any[],
-) {
-  const alerts: any[] = [];
+  qualificationTrends: QualificationTrend[],
+  drillTrends: DrillTrend[],
+): PerformanceAlert[] {
+  const alerts: PerformanceAlert[] = [];
 
   qualificationTrends.forEach((row) => {
     if (row.risk === "Low") return;
@@ -444,30 +567,21 @@ function buildAlerts(
                 ? "Day qualification component missing"
                 : row.status === "Missing Night"
                   ? "Night qualification component missing"
-              : "Qualification renewal approaching",
+                  : "Qualification renewal approaching",
       basis: row.detail,
       recommendedAction:
         row.status === "Due Soon"
           ? "Schedule the officer for the upcoming qualification cycle."
           : "Review the qualification record and determine appropriate follow-up.",
-      createdAt: new Date()
-        .toISOString()
-        .slice(0, 10),
+      createdAt: new Date().toISOString().slice(0, 10),
       recipients: [
         "Range Master",
         "Firearms Instructors",
         "Training Supervisor",
-        ...(row.risk === "High"
-          ? ["Command Staff"]
-          : []),
+        ...(row.risk === "High" ? ["Command Staff"] : []),
       ],
-      relatedRecords: [
-        "Qualification History",
-        "Range & Training",
-      ],
-      auditLog: [
-        "Generated from authoritative qualification records.",
-      ],
+      relatedRecords: ["Qualification History", "Range & Training"],
+      auditLog: ["Generated from authoritative qualification records."],
     });
   });
 
@@ -493,24 +607,15 @@ function buildAlerts(
         row.risk === "High"
           ? "Review the underlying records and apply the agency's remediation policy."
           : "Review the drill history and decide whether agency follow-up is appropriate.",
-      createdAt: new Date()
-        .toISOString()
-        .slice(0, 10),
+      createdAt: new Date().toISOString().slice(0, 10),
       recipients: [
         "Range Master",
         "Firearms Instructors",
         "Training Supervisor",
-        ...(row.risk === "High"
-          ? ["Command Staff"]
-          : []),
+        ...(row.risk === "High" ? ["Command Staff"] : []),
       ],
-      relatedRecords: [
-        "Range-Day Drill Results",
-        "Instructor Notes",
-      ],
-      auditLog: [
-        "Generated from authoritative drill results.",
-      ],
+      relatedRecords: ["Range-Day Drill Results", "Instructor Notes"],
+      auditLog: ["Generated from authoritative drill results."],
     });
   });
 
@@ -533,39 +638,44 @@ export async function GET() {
   if (featureError) {
     return featureError;
   }
-  if (!hasAnyServerPermission(resolved.context, TRAINING_ALERTS_FEED_PERMISSIONS)) {
-    return permissionDeniedResponse("Analytics read or agency-training management permission is required to view department performance data.");
+  if (
+    !hasAnyServerPermission(resolved.context, TRAINING_ALERTS_FEED_PERMISSIONS)
+  ) {
+    return permissionDeniedResponse(
+      "Analytics read or agency-training management permission is required to view department performance data.",
+    );
   }
 
-  const { admin, departmentId } =
-    resolved.context;
+  const { admin, departmentId } = resolved.context;
 
   try {
     const repository = createRangeReadRepository(admin, departmentId);
-    const [inputs, qualificationWorkspace, qualificationRuleRow] = await Promise.all([
-      repository.getPerformanceInputs(departmentId),
-      repository.getWorkspace(departmentId),
-      createCurrentRulesRepository(admin, departmentId)
-        .getCurrentRules({ departmentId }),
-    ]);
+    const [inputs, qualificationWorkspace, qualificationRuleRow] =
+      await Promise.all([
+        repository.getPerformanceInputs(departmentId),
+        repository.getWorkspace(departmentId),
+        createCurrentRulesRepository(admin, departmentId).getCurrentRules({
+          departmentId,
+        }),
+      ]);
     const qualificationRules = mapCurrentRules(qualificationRuleRow);
     const personnelLabels = inputs.personnelLabels as OfficerLabelMap;
-    const qualificationResults = inputs.qualificationResults as QualificationRow[];
+    const qualificationResults =
+      inputs.qualificationResults as QualificationRow[];
     const rangeDays = inputs.rangeDays as RangeDayRow[];
     const drills = inputs.drills as RangeDayDrillRow[];
     const drillResults = inputs.drillResults as DrillResultRow[];
     const rangeRoster = inputs.rangeRoster;
-    const qualificationTrends =
-      buildQualificationTrends(
-        personnelLabels,
-        qualificationResults,
-        qualificationWorkspace.workspace,
-        qualificationWorkspace.qualificationStandards as QualificationStandardSummary[],
-        qualificationRules.qualification_valid_days,
-        qualificationRules.qualification_due_soon_days,
-        qualificationRules.required_handgun_qualification_components,
-        qualificationRules.analytics_dashboard,
-      );
+    const qualificationTrends = buildQualificationTrends(
+      personnelLabels,
+      qualificationResults,
+      qualificationWorkspace.workspace,
+      qualificationWorkspace.qualificationStandards as QualificationStandardSummary[],
+      qualificationRules.qualification_valid_days,
+      qualificationRules.qualification_due_soon_days,
+      qualificationRules.required_handgun_qualification_components,
+      qualificationRules.analytics_dashboard,
+    );
 
     const drillTrends = buildDrillTrends(
       personnelLabels,
@@ -575,43 +685,31 @@ export async function GET() {
       qualificationRules.analytics_dashboard,
     );
 
-    const broadCategoryTrends =
-      buildBroadCategoryTrends(drillTrends);
+    const broadCategoryTrends = buildBroadCategoryTrends(drillTrends);
 
-    const alerts = buildAlerts(
-      qualificationTrends,
-      drillTrends,
-    );
+    const alerts = buildAlerts(qualificationTrends, drillTrends);
 
-    const currentQualifications =
-      qualificationTrends.filter(
-        (row) => row.status === "Current",
-      ).length;
+    const currentQualifications = qualificationTrends.filter(
+      (row) => row.status === "Current",
+    ).length;
 
-    const totalOfficers =
-      qualificationTrends.length;
+    const totalOfficers = qualificationTrends.length;
 
     const qualificationCoverage =
       totalOfficers > 0
-        ? Math.round(
-            (currentQualifications /
-              totalOfficers) *
-              100,
-          )
+        ? Math.round((currentQualifications / totalOfficers) * 100)
         : 0;
 
     const changes = drillTrends
       .map((row) => row.changeValue)
-      .filter((value): value is number =>
-        typeof value === "number" && Number.isFinite(value),
+      .filter(
+        (value): value is number =>
+          typeof value === "number" && Number.isFinite(value),
       );
 
     const averageChange =
       changes.length > 0
-        ? changes.reduce(
-            (sum, value) => sum + value,
-            0,
-          ) / changes.length
+        ? changes.reduce((sum, value) => sum + value, 0) / changes.length
         : 0;
 
     const today = new Date().toISOString().slice(0, 10);
@@ -628,9 +726,7 @@ export async function GET() {
             String(day.status).toLowerCase(),
           ),
       )
-      .sort((a, b) =>
-        String(a.range_date).localeCompare(String(b.range_date)),
-      )
+      .sort((a, b) => String(a.range_date).localeCompare(String(b.range_date)))
       .slice(0, 4)
       .map((day) => ({
         id: day.id,
@@ -643,9 +739,7 @@ export async function GET() {
 
     const incompletePacketCount = activeRangeDays.filter(
       (day) =>
-        !["completed", "locked"].includes(
-          String(day.status).toLowerCase(),
-        ) &&
+        !["completed", "locked"].includes(String(day.status).toLowerCase()) &&
         String(day.packet_status).toLowerCase() !== "ready",
     ).length;
 
@@ -668,39 +762,22 @@ export async function GET() {
         drillPerformance:
           drillResults.length === 0
             ? "—"
-            : `${
-                averageChange > 0 ? "+" : ""
-              }${averageChange.toFixed(1)}`,
+            : `${averageChange > 0 ? "+" : ""}${averageChange.toFixed(1)}`,
 
         trainingFollowUps: String(
-          alerts.filter(
-            (alert) =>
-              alert.source === "Drill Trend",
-          ).length,
+          alerts.filter((alert) => alert.source === "Drill Trend").length,
         ),
 
         officerWatchlist: String(
-          new Set(
-            [
-              ...qualificationTrends
-                .filter(
-                  (row) =>
-                    row.risk !== "Low",
-                )
-                .map(
-                  (row) => row.officerId,
-                ),
+          new Set([
+            ...qualificationTrends
+              .filter((row) => row.risk !== "Low")
+              .map((row) => row.officerId),
 
-              ...drillTrends
-                .filter(
-                  (row) =>
-                    row.risk !== "Low",
-                )
-                .map(
-                  (row) => row.officerId,
-                ),
-            ],
-          ).size,
+            ...drillTrends
+              .filter((row) => row.risk !== "Low")
+              .map((row) => row.officerId),
+          ]).size,
         ),
       },
 

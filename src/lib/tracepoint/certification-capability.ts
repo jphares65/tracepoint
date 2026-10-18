@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
-
-export type CertificationCapabilityCode =
-  | "perform_firearm_inspections";
+import { createReadinessRepository } from "@/lib/readiness/read-repository";
+import { hasAnyServerPermission } from "@/lib/tracepoint/server-access";
+import type { ServerAccessContext } from "@/lib/tracepoint/server-access";
+import {
+  evaluateCertificationCapabilityRows,
+  type CertificationCapabilityCode,
+} from "./certification-capability-core";
 
 export type CertificationCapabilityResult = {
   configured: boolean;
@@ -9,11 +13,7 @@ export type CertificationCapabilityResult = {
   capabilityCode: CertificationCapabilityCode;
   certificationTypeId?: string;
   certificationName?: string;
-  status?:
-    | "current"
-    | "due_soon"
-    | "expired"
-    | "missing";
+  status?: "current" | "due_soon" | "expired" | "missing";
   reason: string;
 };
 
@@ -22,23 +22,19 @@ function text(value: unknown) {
 }
 
 export async function evaluateCertificationCapability({
-  request,
   context,
   capabilityCode,
 }: {
-  request: Request;
-  context: any;
+  context: ServerAccessContext;
   capabilityCode: CertificationCapabilityCode;
 }): Promise<CertificationCapabilityResult> {
-
-  const { data: requirement, error } =
-    await context.admin
-      .from("department_certification_capabilities")
-      .select("certification_type_id,is_active")
-      .eq("department_id", context.departmentId)
-      .eq("capability_code", capabilityCode)
-      .eq("is_active", true)
-      .maybeSingle();
+  const { data: requirement, error } = await context.admin
+    .from("department_certification_capabilities")
+    .select("certification_type_id,is_active")
+    .eq("department_id", context.departmentId)
+    .eq("capability_code", capabilityCode)
+    .eq("is_active", true)
+    .maybeSingle();
 
   if (error) {
     throw new Error(error.message);
@@ -49,91 +45,31 @@ export async function evaluateCertificationCapability({
       configured: false,
       eligible: true,
       capabilityCode,
-      reason:
-        "No certification eligibility rule is configured.",
+      reason: "No certification eligibility rule is configured.",
     };
   }
 
-  const certificationTypeId = text(
-    requirement.certification_type_id,
-  );
-
-  const cookie = request.headers.get("cookie");
-
-  const response = await fetch(
-    new URL(
-      "/api/readiness/certifications",
-      request.url,
-    ),
-    {
-      cache: "no-store",
-      headers: cookie
-        ? { cookie }
-        : undefined,
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "Certification readiness could not be evaluated.",
-    );
+  const certificationTypeId = text(requirement.certification_type_id);
+  const canViewDepartmentReadiness = hasAnyServerPermission(context, [
+    "manage_certifications",
+    "view_command_dashboard",
+    "view_analytics",
+  ]);
+  if (!canViewDepartmentReadiness) {
+    throw new Error("Certification readiness could not be evaluated.");
   }
 
-  const payload =
-    (await response.json()) as {
-      rows?: Array<{
-        userId?: string;
-        certificationTypeId?: string;
-        certificationName?: string;
-        status?:
-          | "current"
-          | "due_soon"
-          | "expired"
-          | "missing";
-      }>;
-    };
+  const readiness = await createReadinessRepository(
+    context.admin,
+    context.departmentId,
+  ).getCertificationReadiness({ departmentId: context.departmentId });
 
-  const rows = Array.isArray(payload.rows)
-    ? payload.rows
-    : [];
-
-  const row = rows.find(
-    (item) =>
-      text(item.userId) === text(context.userId) &&
-      text(item.certificationTypeId) ===
-        certificationTypeId,
-  );
-
-  if (!row) {
-    return {
-      configured: true,
-      eligible: false,
-      capabilityCode,
-      certificationTypeId,
-      status: "missing",
-      reason: "Required certification is missing.",
-    };
-  }
-
-  const eligible =
-    row.status === "current" ||
-    row.status === "due_soon";
-
-  return {
-    configured: true,
-    eligible,
-    capabilityCode,
+  return evaluateCertificationCapabilityRows({
+    rows: Array.isArray(readiness.rows) ? readiness.rows : [],
+    userId: text(context.userId),
     certificationTypeId,
-    certificationName: row.certificationName,
-    status: row.status,
-    reason: eligible
-      ? row.status === "due_soon"
-        ? `${row.certificationName ?? "Required certification"} is due soon but remains current.`
-        : `${row.certificationName ?? "Required certification"} is current.`
-      : row.status === "expired"
-        ? `${row.certificationName ?? "Required certification"} is expired.`
-        : `${row.certificationName ?? "Required certification"} is missing.`,
-  };
+    capabilityCode,
+  });
 }
 
 export function certificationCapabilityDeniedResponse(

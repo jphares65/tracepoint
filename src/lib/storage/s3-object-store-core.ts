@@ -44,6 +44,8 @@ export class S3ObjectStore implements ObjectStore {
   uploadFleetInspectionEvidence(input:AttachmentUploadInput){return this.upload('fleet-inspection',input);}
   uploadFleetDocument(input:AttachmentUploadInput){return this.upload('fleet-document',input);}
   uploadDrillDocument(input:AttachmentUploadInput){return this.upload('drill-document',input);}
+  uploadDocumentTemplateSource(input:AttachmentUploadInput){return this.upload('agency-document-template',input);}
+  uploadGeneratedAgencyDocument(input:AttachmentUploadInput){return this.upload('agency-document-generated',input);}
   async removeAttachment(path:AttachmentObjectPath){const key='attachments/'+this.attachment(path);try{await this.client.send(new DeleteObjectCommand(this.object(key)));return {error:null};}catch{return {error:failure()};}}
   private async signed(key:string,disposition?:string){try{return {signedUrl:await this.sign(this.client,new GetObjectCommand({...this.object(key),ResponseContentDisposition:disposition}),{expiresIn:60}),error:null};}catch{return {signedUrl:null,error:failure()};}}
   createAttachmentDownload(path:AttachmentObjectPath,fileName:string){const safeName=fileName.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)||'download';return this.signed('attachments/'+this.attachment(path),'attachment; filename="'+safeName+'"');}

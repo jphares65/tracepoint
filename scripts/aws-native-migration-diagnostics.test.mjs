@@ -63,12 +63,15 @@ test("migration 038 diagnostics verify restored Agency Documents lineage and mod
 });
 
 test("diagnostic expectations stay aligned with the restored 038 source and version 042 catalog migration", async () => {
+  // Staging's ledger records hashes of the canonical archive bytes (git archive with core.autocrlf=true, i.e. CRLF),
+  // whatever line endings this checkout uses.
+  const archiveBytes = (contents) => contents.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
   const historicalMigration = await readFile(new URL("../database/aws/038_agency_documents_template_builder.sql", import.meta.url), "utf8");
-  assert.equal(createHash("sha256").update(historicalMigration).digest("hex"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a");
+  assert.equal(createHash("sha256").update(archiveBytes(historicalMigration)).digest("hex"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a");
 
   const migration = await readFile(new URL("../database/aws/042_default_module_entitlements.sql", import.meta.url), "utf8");
-  const digest = createHash("sha256").update(migration).digest("hex");
-  assert.equal(digest, "857baa4ab02f99acb046a71a820c9d54bd0d69fd56cf6048fba22945685adff1");
+  assert.equal(createHash("sha256").update(archiveBytes(migration)).digest("hex"), "f24425f5370f1ab32ec7074b13dd56f5b00afa5ab757039ca431f7312c27a4b4");
+  assert.equal(createHash("sha256").update(migration.replace(/\r\n/g, "\n")).digest("hex"), "857baa4ab02f99acb046a71a820c9d54bd0d69fd56cf6048fba22945685adff1");
 
   const seededRows = [...migration.matchAll(/^\s*\('([a-z_]+)', '([^']+)', '([^']*)', (\d+), true\),?$/gm)]
     .map(([, code, display_name, description, sort_order]) => ({ code, display_name, description, sort_order: Number(sort_order) }));
@@ -87,15 +90,18 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /action === "diagnose"/);
   assert.match(runner, /requestedEnvironment !== "staging"/);
   assert.match(runner, /MIGRATION_DRIFT/);
-  assert.match(runner, /versions\.length !== 42/);
-  assert.match(runner, /pending\[0\]\.version !== 42/);
+  // Staging apply: contiguous 001-045, 001-041 recorded, exactly 042-045 pending.
+  assert.match(runner, /versions\.length !== 45/);
+  assert.match(runner, /report\.applied\.length !== 41/);
+  assert.match(runner, /"042_default_module_entitlements\.sql",\s+"043_range_workspace_authenticated_writes\.sql",\s+"044_cognito_password_global_scope\.sql",\s+"045_password_operation_resolution\.sql"/);
   assert.match(runner, /await import\("\.\/aws-native-migration-diagnostics\.mjs"\)/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed/);
-  assert.match(runner, /if \(action === "diagnose"\) await client\.end\(\)\.catch\(\(\) => undefined\)/);
+  // Every action closes its connection without letting a close error replace the real outcome.
+  assert.match(runner, /if \(client\) await client\.end\(\)\.catch\(\(\) => undefined\)/);
   assert.match(taskWrapper, /if \(\$Action -eq 'diagnose' -and \$Environment -ne 'staging'\)/);
   assert.match(taskWrapper, /\$ImageCommit -cne 'a3fa9855f4c797dfb7b4dd16144cf6c85a445946'/);
-  assert.match(taskWrapper, /ValidateSet\('status','baseline','reconcile','apply','diagnose'\)/);
+  assert.match(taskWrapper, /ValidateSet\('status','baseline','reconcile','apply','diagnose'[,)]/);
   assert.match(taskWrapper, /if \(\$TaskAction -ne 'diagnose'\)/);
   assert.match(taskWrapper, /scripts\/aws-native-migration-diagnostics\.mjs/);
   assert.match(taskWrapper, /'database\/aws'/);
