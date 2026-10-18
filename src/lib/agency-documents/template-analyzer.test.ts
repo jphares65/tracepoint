@@ -141,3 +141,25 @@ test("hierarchical names without a row segment, or with a page number, are not t
   ] }]));
   assert.equal(proposals.filter((proposal) => proposal.kind === "structured_section").length, 0);
 });
+
+test("a PDF image or push-button box is reported for a decision; print and reset buttons are not", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const form = doc.getForm();
+  form.createButton("OfficerPhoto").addToPage("Photo", page, { x: 400, y: 600, width: 120, height: 150 });
+  form.createButton("PrintForm").addToPage("Print", page, { x: 40, y: 40, width: 80, height: 20 });
+  form.createTextField("OfficerName").addToPage(page, { x: 40, y: 700, width: 200, height: 20 });
+  const proposals = (await analyzeTemplatePdf(await doc.save())).proposals;
+  const flagged = proposals.filter((proposal) => proposal.structuredType === "unsupported_control");
+  assert.deepEqual(flagged.map((proposal) => proposal.detectedLabel), ["Unsupported button or image field: Officer Photo"]);
+  assert.equal(flagged[0]!.kind, "structured_section");
+  assert.ok(flagged[0]!.reviewRequired);
+});
+
+test("a PDF firearm list is a section TracePoint says it cannot fill, never a single-record field", async () => {
+  const fields = [1, 2, 3].flatMap((row) => ["Make", "Model", "SerialNumber"].map((column, index) => ({ name: `Inventory.Row${row}.${column}`, x: 40 + index * 150, y: 500 - row * 25, width: 140, height: 20 })));
+  const proposals = (await analyzeTemplatePdf(await buildAcroFormPdf([{ fields }]))).proposals;
+  assert.equal(proposals.filter((proposal) => proposal.acroField?.name.startsWith("Inventory.")).length, 0);
+  const section = proposals.find((proposal) => proposal.kind === "structured_section");
+  assert.match(section?.rationale ?? "", /cannot fill firearm lists/);
+});

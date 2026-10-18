@@ -76,8 +76,19 @@ locators, match status and reasons live in `document_template_fields.formatting`
 - Word locators carry the detection-rule version (`DOCX_LOCATOR_SCHEME`). A
   locator from another version is refused with "set the template up again"
   rather than filled at a possibly different place. Word templates set up
-  before scheme 3 must be set up again ("Replace fields").
+  before scheme 5 must be set up again ("Replace fields").
 - Repeating-section bindings cannot be changed on a published template.
+- A repeating section that cannot hold every matching record blocks the
+  official document under every overflow setting (previews still show what
+  fits, flagged). Records are never left out of an issued document.
+- Each record of a repeating section takes one whole row of cells and is placed
+  on the page of those cells. A cell layout that cannot be split into whole
+  records is refused when the binding is saved and again at generation.
+- Things TracePoint cannot fill need an explicit "Leave blank" before
+  publishing: PDF firearm lists, Word lists with several entry rows (only the
+  first row is fillable), Word drop-down, combo-box and picture controls,
+  legacy drop-down fields, and PDF image/push-button boxes (other than
+  print/reset/submit-style buttons).
 
 ## Testing
 
@@ -102,3 +113,7 @@ round-trip test uses LibreOffice when present.
   An exact Word→PDF preview would need LibreOffice in the runtime image.
 - Encrypted/restricted PDFs and macro-enabled or legacy `.doc` files are refused
   with instructions.
+- Repeating sections can be filled only from qualification history (dates,
+  course, result, score, instructor). Firearm lists and Word lists cannot be
+  filled from TracePoint data; they are left blank by an explicit decision.
+- Word drop-downs, combo boxes, pictures and PDF image fields are never filled.

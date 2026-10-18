@@ -1,5 +1,5 @@
 import type { QualificationRecord, StructuredBinding } from "./structured-binding";
-import { resolveStructuredBinding, StructuredOverflowError } from "./structured-binding";
+import { resolveStructuredBinding, StructuredLayoutError, StructuredOverflowError } from "./structured-binding";
 import type { StructuredBindingTargetCellRow } from "./structured-binding-repository";
 
 export type DocumentStructuredBinding = StructuredBinding & { id: string; sectionKey: string; targetCells: StructuredBindingTargetCellRow[] };
@@ -10,8 +10,9 @@ export function resolveDocumentStructuredBindings(bindings: DocumentStructuredBi
     const filters = binding.filters?.reportYearMode === "document" && reportYear ? { ...binding.filters, reportYear } : binding.filters;
     let resolved;
     try { resolved = resolveStructuredBinding(qualifications, { ...binding, filters }, binding.targetCells); }
-    catch (error) { throw error instanceof StructuredOverflowError ? new StructuredOverflowError(`${binding.sectionKey}: ${error.message}`) : error; }
-    fields.push(...resolved.values.map((value, index) => ({ pageNumber: binding.targetCells[index]?.page ?? 1, value: value.value, geometry: value.geometry, formatting: { align: "center" as const, autoFit: true as const, fontSize: 10 } })));
+    catch (error) { throw error instanceof StructuredOverflowError ? new StructuredOverflowError(`${binding.sectionKey}: ${error.message}`) : error instanceof StructuredLayoutError ? new StructuredLayoutError(`${binding.sectionKey}: ${error.message}`) : error; }
+    // The page travels with the cell the value was placed in (target cells are stored in no particular order).
+    fields.push(...resolved.values.map((value) => ({ pageNumber: value.page, value: value.value, geometry: value.geometry, formatting: { align: "center" as const, autoFit: true as const, fontSize: 10 } })));
     warnings.push(...resolved.warnings.map(warning => `${binding.sectionKey}: ${warning}`)); requiresReview ||= resolved.requiresReview;
   }
   return { fields, warnings, requiresReview, bindingIds: bindings.map(binding => binding.id) };

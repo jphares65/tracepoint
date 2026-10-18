@@ -9,7 +9,7 @@ type Template = { id: string; name: string; description: string | null; category
 type Option = { id: string; label: string; detail: string };
 type Analysis = { requiresPerson?: boolean; requiresFirearm?: boolean; requiresQualification?: boolean; requiresReportYear?: boolean };
 type ReviewField = { fieldId: string; label: string; value: string; status: "filled" | "typed" | "static" | "blank" | "missing"; detail: string; fieldType: string; required: boolean; page: number; inputKind: "text" | "multiline" | "checkbox"; options?: string[] };
-type Review = { ready: boolean; format: "pdf" | "docx"; fields: ReviewField[]; missing: { fieldId: string; label: string; detail: string }[]; issues: { fieldId?: string; label?: string; message: string }[]; structuredBlockers: string[]; structuredWarnings: string[]; structuredTruncation?: boolean };
+type Review = { ready: boolean; format: "pdf" | "docx"; fields: ReviewField[]; missing: { fieldId: string; label: string; detail: string }[]; issues: { fieldId?: string; label?: string; message: string }[]; structuredBlockers: string[]; structuredWarnings: string[] };
 
 const STATUS: Record<ReviewField["status"], { label: string; tone: string }> = {
   filled: { label: "From TracePoint", tone: "text-blue-300" },
@@ -37,7 +37,6 @@ export default function GenerateAgencyDocumentPage() {
   const [personId, setPersonId] = useState(""), [firearmId, setFirearmId] = useState(""), [qualificationId, setQualificationId] = useState(""), [reportYear, setReportYear] = useState("");
   const [entered, setEntered] = useState<Record<string, string>>({});
   const [leaveBlank, setLeaveBlank] = useState<string[]>([]);
-  const [acknowledgeStructuredWarnings, setAcknowledgeStructuredWarnings] = useState(false);
   const [review, setReview] = useState<Review | null>(null);
   const [storedPreview, setPreview] = useState<{ url?: string; html?: string; key: string } | null>(null);
   const [message, setMessage] = useState(""), [busy, setBusy] = useState(false);
@@ -55,7 +54,7 @@ export default function GenerateAgencyDocumentPage() {
   useEffect(() => { if (analysis.requiresFirearm && templateId) void list("firearm").then(setFirearms); }, [analysis.requiresFirearm, templateId, list]);
   useEffect(() => { if (analysis.requiresQualification && templateId && personId) void list("qualification", `&personId=${encodeURIComponent(personId)}`).then(setQualifications); }, [analysis.requiresQualification, templateId, personId, list]);
 
-  const request = useCallback((mode: "review" | "preview" | "final") => fetch("/api/agency-documents/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templateId, mode, reportYear: reportYear ? Number(reportYear) : undefined, context: { personId: personId || undefined, firearmId: firearmId || undefined, qualificationId: qualificationId || undefined }, entered, leaveBlank, acknowledgeStructuredWarnings }) }), [templateId, reportYear, personId, firearmId, qualificationId, entered, leaveBlank, acknowledgeStructuredWarnings]);
+  const request = useCallback((mode: "review" | "preview" | "final") => fetch("/api/agency-documents/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templateId, mode, reportYear: reportYear ? Number(reportYear) : undefined, context: { personId: personId || undefined, firearmId: firearmId || undefined, qualificationId: qualificationId || undefined }, entered, leaveBlank }) }), [templateId, reportYear, personId, firearmId, qualificationId, entered, leaveBlank]);
 
   // Re-check what will be filled whenever an input changes (debounced). Nothing is saved by a review.
   useEffect(() => {
@@ -74,11 +73,11 @@ export default function GenerateAgencyDocumentPage() {
   }, [templateId, request]);
 
   // A preview is shown only while the inputs it was made from are unchanged; any change hides it rather than show the wrong document.
-  const inputKey = JSON.stringify({ templateId, reportYear, personId, firearmId, qualificationId, entered, leaveBlank, acknowledgeStructuredWarnings });
+  const inputKey = JSON.stringify({ templateId, reportYear, personId, firearmId, qualificationId, entered, leaveBlank });
   const preview = storedPreview && storedPreview.key === inputKey ? storedPreview : null;
   useEffect(() => () => { if (storedPreview?.url) URL.revokeObjectURL(storedPreview.url); }, [storedPreview]);
 
-  function resetFor(nextTemplate: string) { setTemplateId(nextTemplate); setPersonId(""); setFirearmId(""); setQualificationId(""); setReportYear(""); setEntered({}); setLeaveBlank([]); setAcknowledgeStructuredWarnings(false); setReview(null); setPreview(null); }
+  function resetFor(nextTemplate: string) { setTemplateId(nextTemplate); setPersonId(""); setFirearmId(""); setQualificationId(""); setReportYear(""); setEntered({}); setLeaveBlank([]); setReview(null); setPreview(null); }
 
   async function showPreview() {
     setBusy(true); setMessage("");
@@ -137,7 +136,7 @@ export default function GenerateAgencyDocumentPage() {
               </div> : null}
             </li>)}
           </ul>
-          {review.structuredWarnings.length ? <div className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-100"><ul>{review.structuredWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>{review.structuredTruncation ? <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={acknowledgeStructuredWarnings} onChange={(event) => setAcknowledgeStructuredWarnings(event.target.checked)} />Generate anyway, leaving these records out (recorded with the document)</label> : null}</div> : null}
+          {review.structuredWarnings.length ? <div className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-100"><ul>{review.structuredWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div> : null}
         </div> : null}
 
         {blockers.length ? <div role="status" className="mt-4 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100"><p className="mb-1 flex items-center gap-1 font-semibold"><AlertTriangle size={13} />Before generating:</p><ul className="list-disc space-y-0.5 pl-4">{blockers.map((item, index) => <li key={index}>{item}</li>)}</ul></div> : review?.ready ? <p className="mt-4 flex items-center gap-1.5 text-xs text-emerald-300"><CheckCircle2 size={14} />Everything is filled. Preview to check, then generate.</p> : null}

@@ -24,10 +24,18 @@ export type DocxTargetKind = "token" | "label_blank" | "table_cell" | "content_c
  * Version of the detection rules that assign kinds and ordinals. Locators saved under another version may
  * point at a different place in the document, so they are refused until the template is set up again.
  * 4: checkboxes are detected (and ☐ characters separate blank labels).
+ * 5: boxes after a "Question:" lead-in take the words after them as their label.
  */
-export const DOCX_LOCATOR_SCHEME = 4;
+export const DOCX_LOCATOR_SCHEME = 5;
 export type DocxTarget = { part: string; kind: DocxTargetKind; ordinal: number; label: string; scheme?: number };
-export type DocxField = DocxTarget & { context: string; /** First row of a multi-row list — may not be about a single record. */ repeating?: boolean; /** Nearest heading above the field (e.g. "SUPERVISOR INFORMATION"), used to spot fields about someone else. */ section?: string };
+export type DocxField = DocxTarget & {
+  context: string;
+  /** First row of a multi-row list — may not be about a single record. */ repeating?: boolean;
+  /** For `repeating` fields: which list (stable per template file) and how many entry rows it has. */ list?: { key: string; rows: number };
+  /** Nearest heading above the field (e.g. "SUPERVISOR INFORMATION"), used to spot fields about someone else. */ section?: string;
+};
+/** A control TracePoint cannot fill (drop-down, combo box, picture). Reported so a person decides; never skipped silently. */
+export type DocxUnsupported = { part: string; kind: "dropdown" | "combo_box" | "picture" | "legacy_dropdown"; label: string };
 export type DocxFill = { target: DocxTarget; value: string; fieldId?: string; label?: string };
 export type DocxIssue = { fieldId?: string; label?: string; kind: "target_missing" | "target_changed" | "invalid_checkbox_value"; message: string };
 
@@ -325,7 +333,7 @@ function tableCandidates(xml: string, part: string, table: Block, counters: Reco
       // A label already paired with the empty cell to its right is not also paired downward.
       if (c + 1 < cells.length && texts[r][c + 1] === "" && used.has(cells[c + 1].start)) return;
       used.add(below[c].start);
-      out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, position: cell.start, repeating: emptyRows > 1, context: emptyRows > 1 ? `First row of a ${emptyRows}-row list under "${label}"` : `Table column: ${label}`, edit: fillEmptyCell(xml, below[c], cell) });
+      out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, position: cell.start, repeating: emptyRows > 1, ...(emptyRows > 1 ? { list: { key: `${part}@${table.start}:${r}`, rows: emptyRows } } : {}), context: emptyRows > 1 ? `First row of a ${emptyRows}-row list under "${label}"` : `Table column: ${label}`, edit: fillEmptyCell(xml, below[c], cell) });
     });
   });
   return out;
@@ -390,7 +398,7 @@ function labelCheckboxes(xml: string, candidates: Candidate[], reservedRanges: r
   const boxes = candidates.filter((candidate) => candidate.checkbox);
   if (!boxes.length) return;
   const where = (box: Candidate) => box.checkbox!.anchor?.[0] ?? box.checkbox!.glyph!.node;
-  const beside = new Map<Candidate, string>();
+  const beside = new Map<Candidate, string>(), question = new Map<Candidate, string>();
   for (const paragraph of elements(xml, "w:p")) {
     const inside = boxes.filter((box) => where(box) >= paragraph.inner && where(box) < paragraph.innerEnd);
     if (!inside.length) continue;
@@ -416,11 +424,15 @@ function labelCheckboxes(xml: string, candidates: Candidate[], reservedRanges: r
     let run: Array<{ box: Candidate; before: string; after: string }> = [], lead = "";
     const finish = () => {
       if (!run.length) return;
-      const leading = !(run[0]!.before.split(LABEL_BREAK).at(-1) ?? "").trim();
-      for (const entry of run) {
-        const after = cleanLabel(entry.after.split(LABEL_BREAK)[0] ?? ""), before = cleanLabel(entry.before.split(LABEL_BREAK).at(-1) ?? "");
+      const opening = run[0]!.before.split(LABEL_BREAK).at(-1) ?? "";
+      // "Weapon carried: ☐ Duty ☐ Off-duty" — text ending in a colon asks the question; each box's label follows it.
+      const asked = /:\s*$/.test(opening) ? cleanLabel(opening) : "";
+      const leading = !opening.trim() || Boolean(asked);
+      for (const [index, entry] of run.entries()) {
+        const after = cleanLabel(entry.after.split(LABEL_BREAK)[0] ?? ""), before = index === 0 && asked ? "" : cleanLabel(entry.before.split(LABEL_BREAK).at(-1) ?? "");
         const [first, second] = leading ? [after, before] : [before, after];
         beside.set(entry.box, plausibleLabel(first) ? first : plausibleLabel(second) ? second : "");
+        if (asked) question.set(entry.box, asked);
       }
       run = []; lead = "";
     };
@@ -435,7 +447,7 @@ function labelCheckboxes(xml: string, candidates: Candidate[], reservedRanges: r
     const preset = box.checkbox!.preset ?? "";
     const label = (plausibleLabel(preset) && !/^(check|checkbox|check box)\s*\d*$/i.test(preset) ? preset : "") || beside.get(box) || cellLabel(xml, where(box)) || "Checkbox";
     box.label = label;
-    box.context = `Checkbox: ${label}`;
+    box.context = question.has(box) ? `Checkbox: ${question.get(box)}: ${label}` : `Checkbox: ${label}`;
   }
 }
 
@@ -453,7 +465,7 @@ function cellLabel(xml: string, at: number) {
   return "";
 }
 
-function contentControlCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>): { candidates: Candidate[]; ranges: Array<[number, number]> } {
+function contentControlCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>, unsupported: DocxUnsupported[]): { candidates: Candidate[]; ranges: Array<[number, number]> } {
   const candidates: Candidate[] = [], ranges: Array<[number, number]> = [];
   // Containers (building blocks, groups, controls wrapping tables) are not fields themselves; what is inside them is scanned normally.
   const queue: Array<[number, number]> = [[0, xml.length]];
@@ -477,9 +489,10 @@ function contentControlCandidates(xml: string, part: string, counters: Record<Do
       candidates.push({ part, kind: "checkbox", ordinal: counters.checkbox++, label: "", position: sdt.start, context: "Checkbox", checkbox: { anchor: [sdt.start, sdt.end], preset: name, state: (checked) => (checked ? "1" : "0") }, edit: (value) => checkboxControlEdits(xml, prBlock, content, value === "1") });
       continue;
     }
-    // Lists and pictures are not text fields; their content is left alone.
-    if (/<w:dropDownList|<w:comboBox|<w:picture/.test(pr)) continue;
     const alias = pr.match(/<w:alias w:val="([^"]*)"/)?.[1], tag = pr.match(/<w:tag w:val="([^"]*)"/)?.[1];
+    // Lists and pictures are not text fields; their content is left alone, and they are reported for a decision.
+    const other = /<w:dropDownList/.test(pr) ? "dropdown" : /<w:comboBox/.test(pr) ? "combo_box" : /<w:picture/.test(pr) ? "picture" : null;
+    if (other) { unsupported.push({ part, kind: other, label: cleanLabel(decodeXml(alias || tag || "")) || plainText(xml, content.inner, content.innerEnd).trim().slice(0, 40) || "Unnamed control" }); continue; }
     const placeholder = /<w:showingPlcHdr\/>/.test(pr) ? plainText(xml, content.inner, content.innerEnd) : "";
     const label = cleanLabel(decodeXml(alias || tag || placeholder || ""));
     if (!plausibleLabel(label)) continue;
@@ -513,7 +526,7 @@ function contentControlCandidates(xml: string, part: string, counters: Record<Do
   return { candidates, ranges };
 }
 
-function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>): { candidates: Candidate[]; ranges: Array<[number, number]> } {
+function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>, unsupported: DocxUnsupported[]): { candidates: Candidate[]; ranges: Array<[number, number]> } {
   const candidates: Candidate[] = [], ranges: Array<[number, number]> = [];
   if (!/FORM(TEXT|CHECKBOX|DROPDOWN)/.test(xml)) return { candidates, ranges };
   const paragraphs = elements(xml, "w:p");
@@ -547,6 +560,7 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
         candidates.push({ part, kind: "checkbox", ordinal: counters.checkbox++, label: "", position: begin, context: "Checkbox", checkbox: { anchor: [begin, fieldEnd], preset: /^(text|check|dropdown)\d*$/i.test(name) ? "" : name, state: (checked) => (checked ? "1" : "0") }, edit: (value) => legacyCheckboxEdits(xml, begin, beginEnd, value === "1") });
         continue;
       }
+      if (/\bFORMDROPDOWN\b/.test(field.instr)) { unsupported.push({ part, kind: "legacy_dropdown", label: name && !/^(text|check|dropdown)\d*$/i.test(name) ? name : cleanLabel(plainText(xml, labelFrom, field.begin).split(LABEL_BREAK).at(-1) ?? "") || "Unnamed drop-down" }); continue; }
       if (!/\bFORMTEXT\b/.test(field.instr) || field.separateEnd === null) continue;
       const resultStart = field.separateEnd, resultEnd = at;
       const before = cleanLabel(plainText(xml, labelFrom, field.begin).split(LABEL_BREAK).at(-1) ?? "");
@@ -591,10 +605,10 @@ function allTables(xml: string, start = 0, end = xml.length): Block[] {
   return elements(xml, "w:tbl", start, end).flatMap((table) => [table, ...allTables(xml, table.inner, table.innerEnd)]).sort((a, b) => a.start - b.start);
 }
 
-function detectPart(xml: string, part: string): Candidate[] {
+function detectPart(xml: string, part: string, unsupported: DocxUnsupported[] = []): Candidate[] {
   const counters: Record<DocxTargetKind, number> = { token: 0, label_blank: 0, table_cell: 0, content_control: 0, legacy_field: 0, checkbox: 0 };
-  const controls = contentControlCandidates(xml, part, counters);
-  const legacy = legacyFieldCandidates(xml, part, counters);
+  const controls = contentControlCandidates(xml, part, counters, unsupported);
+  const legacy = legacyFieldCandidates(xml, part, counters, unsupported);
   const reservedRanges: Array<readonly [number, number]> = [...controls.ranges, ...legacy.ranges];
   const reserved = (start: number, end: number) => reservedRanges.some(([a, b]) => start < b && end > a);
   const symbols = symbolCheckboxCandidates(xml, part, counters, reserved);
@@ -627,8 +641,15 @@ function loadParts(bytes: Uint8Array) {
 }
 
 export function analyzeDocx(bytes: Uint8Array): DocxField[] {
+  return inspectDocx(bytes).fields;
+}
+
+/** Fillable places, plus the controls TracePoint cannot fill (which need a person's decision before publishing). */
+export function inspectDocx(bytes: Uint8Array): { fields: DocxField[]; unsupported: DocxUnsupported[] } {
   const { xml } = loadParts(bytes);
-  return [...xml.entries()].flatMap(([part, content]) => detectPart(content, part).map(({ edit: _edit, position: _position, range: _range, checkbox: _checkbox, ...field }) => { void _edit; void _position; void _range; void _checkbox; return field; }));
+  const unsupported: DocxUnsupported[] = [];
+  const fields = [...xml.entries()].flatMap(([part, content]) => detectPart(content, part, unsupported).map(({ edit: _edit, position: _position, range: _range, checkbox: _checkbox, ...field }) => { void _edit; void _position; void _range; void _checkbox; return field; }));
+  return { fields, unsupported };
 }
 
 export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes: Uint8Array; issues: DocxIssue[] } {

@@ -346,3 +346,41 @@ test("a value written into an empty cell keeps the label's font and size but not
   assert.match(xml, /<w:r><w:rPr><w:sz w:val="20"\/><\/w:rPr><w:t xml:space="preserve">Jordan Rivera<\/w:t><\/w:r>/);
   assert.match(xml, /<w:r><w:t xml:space="preserve">Sergeant<\/w:t><\/w:r>/);
 });
+
+test("boxes after a question take the words after them, not the question, as their label", () => {
+  const bytes = buildDocx(p(r("Weapon carried:  ☐ Duty weapon   ☐ Off-duty weapon")) + p(r("Passed ☐ Failed ☐")));
+  const fields = analyzeDocx(bytes).filter((field) => field.kind === "checkbox");
+  assert.deepEqual(fields.map((field) => field.label), ["Duty weapon", "Off-duty weapon", "Passed", "Failed"]);
+  assert.equal(fields[0]!.context, "Checkbox: Weapon carried: Duty weapon");
+  const filled = fillDocx(bytes, [{ target: fields[0]!, value: "Yes" }, { target: fields[1]!, value: "No" }]);
+  assert.deepEqual(filled.issues, []);
+  assert.match(docxText(filled.bytes), /Weapon carried:\s+☒ Duty weapon\s+☐ Off-duty weapon/);
+});
+
+test("drop-down, combo-box and picture controls and legacy drop-downs are reported for a decision, never skipped silently", async () => {
+  const { inspectDocx } = await import("./docx-forms");
+  const { structuredPublishBlockers } = await import("./field-persistence");
+  const sdt = (pr: string, text: string) => `<w:sdt><w:sdtPr><w:alias w:val="${text}"/>${pr}</w:sdtPr><w:sdtContent><w:r><w:t>Choose</w:t></w:r></w:sdtContent></w:sdt>`;
+  const dropdown = `<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Shift"/><w:ddList><w:listEntry w:val="Day"/></w:ddList></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMDROPDOWN </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const bytes = buildDocx(p(sdt(`<w:dropDownList><w:listItem w:value="A"/></w:dropDownList>`, "Unit")) + p(sdt(`<w:comboBox/>`, "District")) + p(sdt(`<w:picture/>`, "Officer Photo")) + p(r("Shift: "), dropdown));
+  const { unsupported } = inspectDocx(bytes);
+  assert.deepEqual(unsupported.map((item) => `${item.kind}:${item.label}`), ["dropdown:Unit", "combo_box:District", "picture:Officer Photo", "legacy_dropdown:Shift"]);
+  const sections = analyzeTemplateDocx(bytes).proposals.filter((proposal) => proposal.kind === "structured_section");
+  assert.equal(sections.length, 4);
+  assert.ok(sections.every((section) => section.structuredType === "unsupported_control" && section.reviewRequired && /cannot fill/.test(section.rationale ?? "")));
+  // Until each is explicitly left blank, publishing (and final generation) is blocked.
+  const rows = sections.map((section, index) => ({ id: `0000000${index}-0000-4000-8000-000000000000`, status: "proposed", proposal: section }));
+  assert.equal(structuredPublishBlockers(rows, []).length, 4);
+  assert.equal(structuredPublishBlockers(rows.map((item) => ({ ...item, status: "rejected" })), []).length, 0);
+});
+
+test("a Word list with several entry rows becomes one section needing a decision", () => {
+  const bytes = buildDocx(table(row(cell(p(r("Make"))), cell(p(r("Model"))), cell(p(r("Serial Number")))), ...[1, 2, 3, 4].map(() => row(cell(""), cell(""), cell("")))));
+  const proposals = analyzeTemplateDocx(bytes).proposals;
+  const sections = proposals.filter((proposal) => proposal.kind === "structured_section");
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0]!.detectedLabel, "List with 4 rows (Make, Model, Serial Number)");
+  assert.match(sections[0]!.rationale ?? "", /other 3 rows would print empty/);
+  // The first row's cells are still offered, but never as confirmed single-record fields.
+  assert.ok(proposals.filter((proposal) => proposal.docxTarget?.repeating).every((proposal) => proposal.matchStatus !== "exact"));
+});

@@ -2,7 +2,7 @@ import { getDocumentField } from "./field-registry";
 import { matchFieldLabel, type LearnedMapping, type MatchStatus } from "./field-matcher";
 import { normalizeRotation, pdfRectToNormalized } from "./page-geometry";
 import { inspectPdf, labelSources, type InspectedField, type InspectedFieldKind } from "./pdf-form-inspector";
-import { analyzeDocx, type DocxField } from "./docx-forms";
+import { inspectDocx, type DocxField, type DocxUnsupported } from "./docx-forms";
 import { isValidFieldGeometry, type FieldGeometry } from "./template-core";
 
 export type ProposalType = "tracepoint_data" | "manual" | "static_text";
@@ -26,7 +26,7 @@ export type AnalysisProposal = {
   rationale?: string;
   analyzerSource: AnalyzerSource;
   kind?: ProposalKind;
-  structuredType?: "repeating_table";
+  structuredType?: "repeating_table" | "unsupported_control";
   targetCells?: StructuredTargetCell[];
   /** Deterministic matcher outcome; absent on legacy proposals. */
   matchStatus?: MatchStatus;
@@ -138,7 +138,7 @@ export function classifyRepeatedNativeGroups(widgets: NativeWidget[]) {
     if (indexes.size < 2) continue;
     const members = [...groups.entries()].filter(([key]) => key.startsWith(`${page}:`)).flatMap(([, items]) => items);
     members.forEach((member) => grouped.add(`${member.page}:${member.name}`));
-    const proposal = validateProposal({ page, detectedLabel: `Repeated firearm fields (${[...indexes].sort((a, b) => Number(a) - Number(b)).join(", ")})`, suggestedType: "manual", confidence: 0.9, geometry: unionGeometry(members), rationale: "Numbered firearm make/model/caliber/serial fields are a repeating group and need a repeating-data model.", analyzerSource: "native_pdf", kind: "structured_section", structuredType: "repeating_table" });
+    const proposal = validateProposal({ page, detectedLabel: `Repeated firearm fields (${[...indexes].sort((a, b) => Number(a) - Number(b)).join(", ")})`, suggestedType: "manual", confidence: 0.9, geometry: unionGeometry(members), rationale: "Numbered firearm make/model/caliber/serial fields are a list of firearms. TracePoint cannot fill firearm lists yet, so none of these rows will be filled. Leave the list blank here and complete it by hand; filling it from one firearm would repeat that firearm on every row.", analyzerSource: "native_pdf", kind: "structured_section", structuredType: "repeating_table" });
     if (proposal) proposals.push(proposal);
   }
   return { grouped, proposals };
@@ -167,6 +167,14 @@ export function proposalsFromInspection(fields: readonly InspectedField[], learn
   const fillable = fields.filter((field) => !field.readOnly && field.kind !== "button");
   const widgets: NativeWidget[] = fillable.flatMap((field) => field.widgets.map((widget) => ({ name: field.name, page: widget.page, geometry: widget.geometry, fallback: false })));
   const { grouped, proposals } = classifyRepeatedNativeGroups(widgets);
+  // Buttons are not filled. Print/reset/submit buttons are form controls; any other button (usually a photo or image
+  // box) is reported so a person decides, rather than left out silently.
+  for (const field of fields) {
+    const first = field.widgets[0];
+    if (field.kind !== "button" || field.readOnly || !first || /\b(print|reset|clear|submit|save|e-?mail|send|close|next|back|previous|help)\b/i.test(humanizeFieldName(field.name.split(".").at(-1) ?? field.name))) continue;
+    const proposal = validateProposal({ page: first.page, detectedLabel: `Unsupported button or image field: ${field.tooltip ?? humanizeFieldName(field.name.split(".").at(-1) ?? field.name)}`, suggestedType: "manual", confidence: 0.9, geometry: first.geometry, analyzerSource: "native_pdf", kind: "structured_section", structuredType: "unsupported_control", rationale: "TracePoint cannot place an image or press a button in a PDF form. This box will print as it is in the form. Leave it blank here to confirm that, and complete it by hand if needed." });
+    if (proposal) proposals.push(proposal);
+  }
   for (const field of fillable) {
     const partial = field.name.split(".").at(-1) ?? field.name;
     const first = field.widgets[0];
@@ -219,7 +227,29 @@ export function proposalsFromDocxFields(fields: readonly DocxField[], learned: r
   return proposals;
 }
 
+/**
+ * Things in a Word form TracePoint cannot fill correctly, as sections that block publishing until a template manager
+ * explicitly leaves them blank: multi-row lists (only their first row is a fillable place; the other rows would print
+ * empty however many records exist) and drop-down, combo-box and picture controls.
+ */
+export function docxDecisionSections(fields: readonly DocxField[], unsupported: readonly DocxUnsupported[]): AnalysisProposal[] {
+  const out: AnalysisProposal[] = [];
+  const at = (index: number) => ({ x: 0, y: Math.min(0.98, 0.9 + index * 0.001), width: 1, height: 0.001 });
+  const lists = new Map<string, { rows: number; labels: string[] }>();
+  for (const field of fields) if (field.list) { const list = lists.get(field.list.key) ?? { rows: field.list.rows, labels: [] }; list.labels.push(field.label); lists.set(field.list.key, list); }
+  for (const list of lists.values()) {
+    const proposal = validateProposal({ page: 1, detectedLabel: `List with ${list.rows} rows (${list.labels.join(", ")})`, suggestedType: "manual", confidence: 0.9, geometry: at(out.length), analyzerSource: "docx", kind: "structured_section", structuredType: "repeating_table", rationale: `TracePoint can fill only the first row of a Word list; the other ${list.rows - 1} rows would print empty even when the officer has more records. Leave the list blank here and complete it by hand, or use a PDF version of the form.` });
+    if (proposal) out.push(proposal);
+  }
+  const names = { dropdown: "drop-down list", combo_box: "combo box", picture: "picture", legacy_dropdown: "drop-down field" } as const;
+  for (const control of unsupported) {
+    const proposal = validateProposal({ page: 1, detectedLabel: `Unsupported ${names[control.kind]}: ${control.label}`, suggestedType: "manual", confidence: 0.9, geometry: at(out.length), analyzerSource: "docx", kind: "structured_section", structuredType: "unsupported_control", rationale: `TracePoint cannot fill a Word ${names[control.kind]}. It will be left exactly as it is in the form. Leave it blank here to confirm that, and complete it by hand if needed.` });
+    if (proposal) out.push(proposal);
+  }
+  return out;
+}
+
 export function analyzeTemplateDocx(bytes: Uint8Array, options: { learned?: readonly LearnedMapping[] } = {}): AnalysisResult {
-  const fields = analyzeDocx(bytes);
-  return { provider: "docx-structure", version: "3", scanned: false, proposals: proposalsFromDocxFields(fields, options.learned ?? []) };
+  const { fields, unsupported } = inspectDocx(bytes);
+  return { provider: "docx-structure", version: "3", scanned: false, proposals: [...proposalsFromDocxFields(fields, options.learned ?? []), ...docxDecisionSections(fields, unsupported)] };
 }

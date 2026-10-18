@@ -1,5 +1,5 @@
 import { isValidFieldGeometry } from "./template-core";
-import type { StructuredBinding, StructuredCell, QualificationRecord } from "./structured-binding";
+import { recordSlots, type StructuredBinding, type StructuredCell, type QualificationRecord } from "./structured-binding";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -29,6 +29,9 @@ export function validateStructuredBinding(binding: StructuredBindingInput) {
   const previousOrders = new Set<number>();
   for (const cell of binding.targetCells) { if (!Number.isInteger(cell.order) || cell.order < 1 || previousOrders.has(cell.order) || !Number.isInteger(cell.page) || cell.page < 1 || !Number.isInteger(cell.row) || cell.row < 1 || !Number.isInteger(cell.column) || cell.column < 1 || !isValidFieldGeometry(cell.geometry)) throw new Error("Target cells must have unique stable order and valid geometry."); previousOrders.add(cell.order); }
   if (binding.columnMappings.some((mapping) => mapping.dateFormat && !["MM/DD/YYYY", "MM/DD/YY", "YYYY-MM-DD"].includes(mapping.dateFormat))) throw new Error("Unsupported date format.");
+  if (!binding.columnMappings.length) throw new Error("A repeating section needs at least one mapped column.");
+  // Refuse at setup a layout whose records could not be placed one per row, rather than discovering it at generation.
+  recordSlots(binding.targetCells, binding);
 }
 export function structuredBindingFromRow(row: StructuredBindingRow): PersistedStructuredBinding { return { id: row.id, agencyId: row.department_id, templateId: row.template_id, templateVersionId: row.template_version_id, sectionKey: row.section_key, sourceType: row.source_type, fillMode: row.fill_mode, ordering: row.ordering, maxRows: row.max_rows, overflowBehavior: row.overflow_behavior, filters: row.filters ?? undefined, columnMappings: row.column_mappings, formatting: row.formatting, targetCells: row.target_cells, createdByUserId: row.created_by_user_id, updatedByUserId: row.updated_by_user_id, createdAt: row.created_at, updatedAt: row.updated_at }; }
 function persistenceFields(input: StructuredBindingInput, actorUserId?: string): Omit<StructuredBindingInsertRow, "department_id" | "template_id" | "template_version_id" | "created_by_user_id"> { return { section_key: input.sectionKey, source_type: input.sourceType, fill_mode: input.fillMode, ordering: input.ordering, max_rows: input.maxRows, overflow_behavior: input.overflowBehavior, filters: input.filters ?? null, column_mappings: input.columnMappings, formatting: input.formatting, target_cells: input.targetCells, updated_by_user_id: actorUserId ?? null }; }
