@@ -73,9 +73,9 @@ export function reuseIdsByLocator<T extends Locatable>(planned: readonly T[], ex
  * explicitly dismissed before publishing; otherwise part of the form would be
  * silently left empty.
  */
-export function structuredPublishBlockers(proposals: readonly { id: string; status: string; proposal: { kind?: string; detectedLabel?: string } }[], boundSectionKeys: Iterable<string>) {
+export function structuredPublishBlockers(proposals: readonly { id: string; status: string; proposal: { kind?: string; structuredType?: string; detectedLabel?: string } }[], boundSectionKeys: Iterable<string>) {
   const bound = new Set(boundSectionKeys);
   return proposals
     .filter((row) => row.proposal?.kind === "structured_section" && (row.status === "proposed" || row.status === "modified") && !bound.has(structuredSectionKey(row.id)))
-    .map((row) => ({ fieldId: "", message: `${row.proposal.detectedLabel || "Repeating section"}: bind it to TracePoint data or dismiss it.` }));
+    .map((row) => ({ fieldId: "", message: `${row.proposal.detectedLabel || "Repeating section"}: ${row.proposal.structuredType === "unsupported_control" ? "TracePoint cannot fill this. Choose Leave blank to confirm it prints as it is in the form." : "bind it to TracePoint data or leave it blank."}` }));
 }
