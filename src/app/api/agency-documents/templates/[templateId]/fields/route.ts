@@ -15,11 +15,22 @@ export async function PUT(request: Request, route: Context) {
   if (template.error) return NextResponse.json({ error: template.error.message }, { status: 500 }); if (!template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
   const version = await access.context.admin.from("document_template_versions").select("id").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", template.data.current_version).single();
   if (version.error) return NextResponse.json({ error: version.error.message }, { status: 500 });
-  const deleted = await access.context.admin.from("document_template_fields").delete().eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id);
-  if (deleted.error) return NextResponse.json({ error: deleted.error.message }, { status: 500 });
-  if (body.fields.length) {
-    const saved = await access.context.admin.from("document_template_fields").insert(body.fields.map((field) => ({ id: field.id || crypto.randomUUID(), department_id: access.context.departmentId, template_version_id: version.data.id, page_number: field.pageNumber, field_type: field.fieldType, canonical_key: field.canonicalKey || null, label: field.label || null, placeholder: field.placeholder || null, static_text: field.staticText || null, is_required: Boolean(field.required), geometry: field.geometry, formatting: field.formatting ?? {} })));
-    if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 500 });
+  // Save atomically from the user's point of view: write the new set first (fresh ids, so a client can never
+  // address another record), then remove the previous set. On failure the previous fields remain.
+  const previous = await access.context.admin.from("document_template_fields").select("id").eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id);
+  if (previous.error) return NextResponse.json({ error: "Template fields could not be saved." }, { status: 500 });
+  const rows = body.fields.map((field) => ({ id: crypto.randomUUID(), department_id: access.context.departmentId, template_version_id: version.data.id, page_number: field.pageNumber, field_type: field.fieldType, canonical_key: field.fieldType === "tracepoint_data" ? field.canonicalKey || null : null, label: field.label?.trim() || null, placeholder: field.placeholder || null, static_text: field.fieldType === "static_text" ? field.staticText?.trim() || null : null, is_required: Boolean(field.required), geometry: field.geometry, formatting: field.formatting ?? {} }));
+  if (rows.length) {
+    const saved = await access.context.admin.from("document_template_fields").insert(rows);
+    if (saved.error) return NextResponse.json({ error: "Template fields could not be saved. Your previous fields were kept." }, { status: 500 });
+  }
+  const oldIds = (previous.data ?? []).map((row: { id: string }) => row.id);
+  if (oldIds.length) {
+    const deleted = await access.context.admin.from("document_template_fields").delete().eq("department_id", access.context.departmentId).in("id", oldIds);
+    if (deleted.error) {
+      if (rows.length) await access.context.admin.from("document_template_fields").delete().eq("department_id", access.context.departmentId).in("id", rows.map((row) => row.id));
+      return NextResponse.json({ error: "Template fields could not be saved. Your previous fields were kept." }, { status: 500 });
+    }
   }
   await access.context.admin.from("document_templates").update({ updated_at: new Date().toISOString(), updated_by_user_id: access.context.userId }).eq("id", templateId).eq("department_id", access.context.departmentId);
   await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: "document_template_edited", entity_type: "document_template", entity_id: templateId, summary: "Updated document template fields.", new_value: { field_count: body.fields.length } });

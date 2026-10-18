@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { publishBlockers } from "@/lib/agency-documents/proposal-review";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type Context = { params: Promise<{ templateId: string }> };
@@ -48,6 +49,15 @@ export async function PATCH(request: Request, route: Context) {
     return NextResponse.json({ id: duplicate.data.id });
   }
   const status = body.status; if (status !== "draft" && status !== "published" && status !== "archived") return response("A valid template status is required.");
+  if (status === "published") {
+    // A template can only be published once every field is confirmed and complete.
+    const current = await access.context.admin.from("document_template_versions").select("id").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", existing.data.current_version).single();
+    if (current.error) return response("The template version could not be loaded.", 500);
+    const fieldRows = await access.context.admin.from("document_template_fields").select("id,field_type,canonical_key,label,static_text,formatting").eq("template_version_id", current.data.id).eq("department_id", access.context.departmentId);
+    if (fieldRows.error) return response("Template fields could not be checked.", 500);
+    const blockers = publishBlockers(fieldRows.data ?? []);
+    if (blockers.length) return NextResponse.json({ error: "Review the flagged fields before publishing.", blockers }, { status: 409 });
+  }
   const updated = await access.context.admin.from("document_templates").update({ status, updated_by_user_id: access.context.userId, updated_at: new Date().toISOString() }).eq("id", templateId).eq("department_id", access.context.departmentId);
   if (updated.error) return response(updated.error.message, 500);
   await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: `document_template_${status === "published" ? "published" : status === "draft" ? "unpublished" : "archived"}`, entity_type: "document_template", entity_id: templateId, summary: `${status === "published" ? "Published" : status === "draft" ? "Unpublished" : "Archived"} document template ${existing.data.name}.` });
