@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { publishBlockers } from "@/lib/agency-documents/proposal-review";
+import { structuredPublishBlockers } from "@/lib/agency-documents/field-persistence";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type Context = { params: Promise<{ templateId: string }> };
@@ -55,7 +56,11 @@ export async function PATCH(request: Request, route: Context) {
     if (current.error) return response("The template version could not be loaded.", 500);
     const fieldRows = await access.context.admin.from("document_template_fields").select("id,field_type,canonical_key,label,static_text,formatting").eq("template_version_id", current.data.id).eq("department_id", access.context.departmentId);
     if (fieldRows.error) return response("Template fields could not be checked.", 500);
-    const blockers = publishBlockers(fieldRows.data ?? []);
+    // Repeating sections found on the form must be bound or explicitly dismissed.
+    const pending = await access.context.admin.from("document_template_analysis_proposals").select("id,status,proposal").eq("template_id", templateId).eq("department_id", access.context.departmentId).in("status", ["proposed", "modified"]);
+    const bindings = await access.context.admin.from("document_template_structured_bindings").select("section_key").eq("template_version_id", current.data.id).eq("department_id", access.context.departmentId);
+    if (pending.error || bindings.error) return response("Template sections could not be checked.", 500);
+    const blockers = [...publishBlockers(fieldRows.data ?? []), ...structuredPublishBlockers(pending.data ?? [], (bindings.data ?? []).map((row: { section_key: string }) => row.section_key))];
     if (blockers.length) return NextResponse.json({ error: "Review the flagged fields before publishing.", blockers }, { status: 409 });
   }
   const updated = await access.context.admin.from("document_templates").update({ status, updated_by_user_id: access.context.userId, updated_at: new Date().toISOString() }).eq("id", templateId).eq("department_id", access.context.departmentId);

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { DocxFormError } from "@/lib/agency-documents/docx-forms";
 import { PdfInspectionError } from "@/lib/agency-documents/pdf-form-inspector";
 import { planAutomaticSetup } from "@/lib/agency-documents/proposal-review";
+import { reuseIdsByLocator } from "@/lib/agency-documents/field-persistence";
+import { structuredSectionKey } from "@/lib/agency-documents/structured-binding-builder-state";
 import { analyzeTemplateSource, loadLearnedMappings, loadTemplateSource, TemplateSourceError } from "@/lib/agency-documents/template-service";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -25,7 +27,7 @@ export async function POST(request: Request, route: Context) {
   if (template.data.status === "published") return NextResponse.json({ error: "Unpublish the template before setting it up again." }, { status: 409 });
   const version = await admin.from("document_template_versions").select("id").eq("department_id", departmentId).eq("template_id", templateId).eq("version_number", template.data.current_version).single();
   if (version.error) return NextResponse.json({ error: "The template version could not be loaded." }, { status: 500 });
-  const existing = await admin.from("document_template_fields").select("id").eq("department_id", departmentId).eq("template_version_id", version.data.id);
+  const existing = await admin.from("document_template_fields").select("id,formatting").eq("department_id", departmentId).eq("template_version_id", version.data.id);
   if (existing.error) return NextResponse.json({ error: "Existing fields could not be checked." }, { status: 500 });
   if ((existing.data ?? []).length && body.replace !== true) return NextResponse.json({ error: "This template already has fields. Confirm that you want to replace them.", existingFields: existing.data!.length }, { status: 409 });
 
@@ -34,22 +36,30 @@ export async function POST(request: Request, route: Context) {
     const learned = await loadLearnedMappings(admin, departmentId, templateId);
     const analysis = await analyzeTemplateSource(bytes, format, learned);
     const plan = planAutomaticSetup(analysis.proposals);
-    // Insert the new fields first and remove the old ones only after that succeeds, so a failure never leaves the template empty.
-    const oldIds = (existing.data ?? []).map((row: { id: string }) => row.id);
-    if (plan.rows.length) {
-      const inserted = await admin.from("document_template_fields").insert(plan.rows.map((row) => ({ ...row, department_id: departmentId, template_version_id: version.data.id })));
-      if (inserted.error) throw new Error("Fields could not be saved. Your template was not changed.");
+    // Fields that point at the same place in the form keep their ids (stable references); all rows are written
+    // in one upsert, then fields with no counterpart are removed. A failure leaves the previous fields in place.
+    const reuse = reuseIdsByLocator(plan.rows, (existing.data ?? []) as { id: string; formatting: Record<string, unknown> | null }[]);
+    if (reuse.rows.length) {
+      const saved = await admin.from("document_template_fields").upsert(reuse.rows.map((row) => ({ ...row, department_id: departmentId, template_version_id: version.data.id, updated_at: new Date().toISOString() })), { onConflict: "id" });
+      if (saved.error) throw new Error("Fields could not be saved. Your template was not changed.");
     }
-    if (oldIds.length) {
-      const deleted = await admin.from("document_template_fields").delete().eq("department_id", departmentId).in("id", oldIds);
-      if (deleted.error) {
-        if (plan.rows.length) await admin.from("document_template_fields").delete().eq("department_id", departmentId).in("id", plan.rows.map((row) => row.id));
-        throw new Error("Existing fields could not be replaced. Your template was not changed.");
-      }
+    if (reuse.staleIds.length) {
+      const deleted = await admin.from("document_template_fields").delete().eq("department_id", departmentId).eq("template_version_id", version.data.id).in("id", reuse.staleIds);
+      if (deleted.error) throw new Error("Old fields could not be removed. Refresh and run setup again.");
     }
-    // Keep repeating sections (and skipped items) as reviewable suggestions for the structured-binding builder.
-    await admin.from("document_template_analysis_proposals").delete().eq("department_id", departmentId).eq("template_id", templateId);
-    const leftover = [...plan.structured, ...plan.skipped];
+    // Keep repeating sections (and skipped items) as reviewable suggestions. Sections that are already bound keep
+    // their suggestion row, because the binding refers to it; new detections of the same section are not duplicated.
+    const previousProposals = await admin.from("document_template_analysis_proposals").select("id,proposal").eq("department_id", departmentId).eq("template_id", templateId);
+    const bindingRows = await admin.from("document_template_structured_bindings").select("section_key").eq("department_id", departmentId).eq("template_version_id", version.data.id);
+    const boundKeys = new Set((bindingRows.data ?? []).map((row: { section_key: string }) => row.section_key));
+    const kept = ((previousProposals.data ?? []) as { id: string; proposal: { page?: number; detectedLabel?: string } }[]).filter((row) => boundKeys.has(structuredSectionKey(row.id)));
+    const keptIds = kept.map((row) => row.id);
+    let clear = admin.from("document_template_analysis_proposals").delete().eq("department_id", departmentId).eq("template_id", templateId);
+    if (keptIds.length) clear = clear.not("id", "in", `(${keptIds.join(",")})`);
+    const cleared = await clear;
+    if (cleared.error) throw new Error("Previous suggestions could not be replaced.");
+    const keptSections = new Set(kept.map((row) => `${row.proposal.page}:${row.proposal.detectedLabel}`));
+    const leftover = [...plan.structured.filter((proposal) => !keptSections.has(`${proposal.page}:${proposal.detectedLabel}`)), ...plan.skipped];
     if (leftover.length) await admin.from("document_template_analysis_proposals").insert(leftover.map((proposal) => ({ department_id: departmentId, template_id: templateId, proposal })));
     await admin.from("document_templates").update({ analysis_status: "analyzed", analysis_version: analysis.version, updated_at: new Date().toISOString(), updated_by_user_id: userId }).eq("id", templateId).eq("department_id", departmentId);
     await admin.from("audit_events").insert({ department_id: departmentId, actor_user_id: userId, action: "document_template_auto_setup", entity_type: "document_template", entity_id: templateId, summary: "Set up document template fields automatically.", new_value: { format, provider: analysis.provider, ...plan.summary } });
