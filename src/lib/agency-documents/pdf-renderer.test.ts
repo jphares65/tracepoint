@@ -42,6 +42,21 @@ test("native form fields are filled through the form itself and keep their value
   assert.equal(form.getTextField("SupervisorName").getText(), undefined);
 });
 
+test("flattened output is structurally clean: no dangling annotation references", async () => {
+  const { source, fields } = await nativeFields({ OfficerName: "Jordan A. Rivera", BadgeNo: "4471" });
+  const result = await renderDocument(source, fields);
+  const output = await PDFDocument.load(result.bytes);
+  for (const page of output.getPages()) {
+    const annots = page.node.Annots();
+    for (let index = 0; index < (annots?.size() ?? 0); index += 1) {
+      const ref = annots!.get(index);
+      assert.ok(output.context.lookup(ref as never), "every annotation reference must resolve");
+    }
+  }
+  const poppler = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(result.bytes) });
+  if (poppler.status === 0) assert.ok(!/Invalid XRef|Syntax Error/.test(poppler.stderr.toString()), poppler.stderr.toString());
+});
+
 test("flattened output has no editable fields and the ink lands inside each form box", { skip: noRaster }, async () => {
   const { source, fields } = await nativeFields({ OfficerName: "Jordan A. Rivera", BadgeNo: "4471" });
   const result = await renderDocument(source, fields);

@@ -1,4 +1,4 @@
-import { PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFForm, type PDFPage } from "pdf-lib";
+import { PDFCheckBox, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFForm, type PDFPage } from "pdf-lib";
 import type { FieldFormatting, ResolutionStatus } from "./field-values";
 import { normalizedToPdfRect, readingSize, textOrigin, type PdfRect, type Rotation } from "./page-geometry";
 import { loadPdf, pageInfo, PdfInspectionError, type PdfPageInfo } from "./pdf-form-inspector";
@@ -196,11 +196,30 @@ function drawProof(pages: PDFPage[], infos: PdfPageInfo[], field: RenderField, f
   for (const placement of proofRects(field, infos)) {
     const page = pages[placement.page - 1];
     page.drawRectangle({ x: placement.rect.x, y: placement.rect.y, width: placement.rect.width, height: placement.rect.height, borderColor: color, borderWidth: 0.8, opacity: 0, borderOpacity: 0.9 });
+    // Native form fields already sit under the form's own printed labels; tagging them only adds clutter.
+    if (field.formatting?.acroFieldName) continue;
     const tag = (field.label ?? "Field").slice(0, 40);
     if (!encodable(font, tag)) continue;
     const size = 5.5;
     const origin = textOrigin(placement.rect, placement.rotation, 0, readingSize(placement.rect, placement.rotation).height + 1.5);
     page.drawText(tag, { x: origin.x, y: origin.y, size, font, color, rotate: degrees(origin.angle) });
+  }
+}
+
+/**
+ * pdf-lib's flatten can leave references to the removed widget annotations in
+ * a page's /Annots array. Viewers then report the file as damaged ("Invalid
+ * XRef entry"). Drop any annotation reference that no longer resolves.
+ */
+function removeDanglingAnnotations(pages: PDFPage[]) {
+  for (const page of pages) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (let index = annots.size() - 1; index >= 0; index -= 1) {
+      const entry = annots.get(index);
+      if (entry instanceof PDFRef && !page.doc.context.lookup(entry)) annots.remove(index);
+    }
+    if (annots.size() === 0) page.node.delete(PDFName.of("Annots"));
   }
 }
 
@@ -234,7 +253,10 @@ export async function renderDocument(source: Uint8Array, fields: readonly Render
   }
   if (form) {
     form.updateFieldAppearances(regular);
-    if (options.flatten !== false) form.flatten({ updateFieldAppearances: false });
+    if (options.flatten !== false) {
+      form.flatten({ updateFieldAppearances: false });
+      removeDanglingAnnotations(pages);
+    }
   }
   if (options.mode === "proof") for (const field of fields) drawProof(pages, infos, field, regular);
   return { bytes: await pdf.save(), issues };
