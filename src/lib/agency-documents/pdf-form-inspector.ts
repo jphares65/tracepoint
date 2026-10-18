@@ -31,6 +31,8 @@ export type PdfInspection = {
   flat: boolean;
 };
 
+export const ENCRYPTED_MESSAGE = "This PDF is password-protected or restricted. Save an unrestricted copy and upload it again.";
+
 export class PdfInspectionError extends Error {
   constructor(message: string) { super(message); this.name = "PdfInspectionError"; }
 }
@@ -65,8 +67,16 @@ export async function loadPdf(bytes: Uint8Array) {
   if (!bytes.length) throw new PdfInspectionError("The file is empty.");
   const header = new TextDecoder("latin1").decode(bytes.subarray(0, Math.min(1024, bytes.length)));
   if (!header.includes("%PDF-")) throw new PdfInspectionError("The file is not a PDF.");
+  const encrypted = () => new TextDecoder("latin1").decode(bytes).includes("/Encrypt");
+  let pdf: PDFDocument;
   try {
-    const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    pdf = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  } catch {
+    if (encrypted()) throw new PdfInspectionError(ENCRYPTED_MESSAGE);
+    throw new PdfInspectionError("The PDF could not be read. It may be damaged.");
+  }
+  if (pdf.isEncrypted) throw new PdfInspectionError(ENCRYPTED_MESSAGE);
+  try {
     // pdf-lib is lenient while parsing; touch the page tree so structural damage surfaces here, not mid-generation.
     if (pdf.getPageCount() < 1) throw new Error("no pages");
     return pdf;
