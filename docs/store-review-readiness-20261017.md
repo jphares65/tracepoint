@@ -339,9 +339,7 @@ permission string; consider stripping photo location metadata on upload.
 | Migration snapshots | Reviewed for safe deletion 90 days after the migration |
 | Sentry | DPA accepted; data stored in the United States (verified) |
 | Apple seller | Existing Individual developer account; organization conversion after launch |
-| Effective date | Actual publication date (set in the final commit before deployment) |
+| Effective date | October 17, 2026 (publication date) |
 | Backups and logs | Verified: automated database backups 35 days; some backup copies 365 days; request, firewall, application and network logs 90 days. The live database is not yet in the AWS Backup plan (see production follow-ups). |
 
-Open item: whether the retired pre-cutover database `tracepoint-production` (still running, with
-monthly backups kept 365 days) falls under the 90-day migration review. The policy wording
-("snapshots and copies created during system migrations") assumes it does.
+Retired pre-cutover database `tracepoint-production`: falls under the 90-day migration review (owner, 2026-10-17).

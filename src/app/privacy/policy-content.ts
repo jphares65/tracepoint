@@ -5,7 +5,7 @@
 
 export type PolicySection = { id: string; heading: string; paragraphs?: string[]; items?: string[]; closing?: string[] };
 
-export const policyEffectiveDate = "[[OWNER: actual publication date]]";
+export const policyEffectiveDate = "October 17, 2026";
 
 export const policyIntro = [
   "This Privacy Policy explains how TracePoint LLC (\"TracePoint,\" \"we,\" \"us\") collects, uses, shares, and protects information through TracePoint Public Safety, which includes the TracePoint website and web application at tracepointhq.com and the TracePoint mobile apps for iOS and Android (together, the \"Service\").",
