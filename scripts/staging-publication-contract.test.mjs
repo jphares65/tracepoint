@@ -28,7 +28,8 @@ test('staging publisher, buildspec, deployment, and workflows share the immutabl
   assert.match(runtimeWorkflow, /RELEASE_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \|\| github\.sha \}\}/);
   assert.match(runtimeWorkflow, /RELEASE_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \}\}/);
   assert.equal((runtimeWorkflow.match(/"\$env:RELEASE_COMMIT-aws-native-staging"/g) ?? []).length, 2);
-  assert.match(operationsWorkflow, /imageCommit \}\}-aws-native-staging/);
+  assert.match(operationsWorkflow, /ACCEPTED_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \}\}/);
+  assert.match(operationsWorkflow, /--image "\$env:ACCEPTED_COMMIT-aws-native-staging"/);
   assert.match(oidcWorkflow, /ACCEPTED_IMAGE: [0-9a-f]{40}-aws-native-staging/);
   assert.match(deployApp, /ImageSuffix = '-aws-native-staging'/);
 });

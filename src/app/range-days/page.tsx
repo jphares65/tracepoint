@@ -3035,8 +3035,9 @@ export default function RangeDaysPage() {
       await finishPendingRangeWorkspaceWrite();
       await saveRemoteRangeDayWorkspace(workspace, departmentId);
       setIsRangeDayDirty(false);
-      setSaveMessage("");
       setWorkspaceFeedback("Saved");
+      // The explicit save supersedes any earlier autosave status.
+      setSaveMessage("");
     } catch (error) {
       setWorkspaceFeedback(
         error instanceof Error
