@@ -2,6 +2,7 @@ import { getDocumentField } from "./field-registry";
 import { matchFieldLabel, type LearnedMapping, type MatchStatus } from "./field-matcher";
 import { normalizeRotation, pdfRectToNormalized } from "./page-geometry";
 import { inspectPdf, labelSources, type InspectedField, type InspectedFieldKind } from "./pdf-form-inspector";
+import { analyzeDocx, type DocxField } from "./docx-forms";
 import { isValidFieldGeometry, type FieldGeometry } from "./template-core";
 
 export type ProposalType = "tracepoint_data" | "manual" | "static_text";
@@ -32,6 +33,8 @@ export type AnalysisProposal = {
   alternatives?: string[];
   normalizedLabel?: string;
   acroField?: AcroFieldRef;
+  /** Word placeholder locator; Word templates are filled in place rather than by position. */
+  docxTarget?: DocxField;
   /** Proposals that should default to "leave blank" (signatures, buttons). */
   skipByDefault?: boolean;
 };
@@ -154,7 +157,9 @@ export function proposalsFromInspection(fields: readonly InspectedField[], learn
     }
     const proposal = suggestFromLabel(labels, first.page, first.geometry, { learned, fieldKind: fieldKindForMatcher(field.kind) });
     if (!proposal) continue;
-    proposals.push({ ...proposal, detectedLabel: labels[0] ?? field.name, acroField: acroRef(field), skipByDefault: field.kind === "signature" ? true : undefined });
+    // Signature and initials boxes are signed by hand; they default to "leave blank".
+    const signature = field.kind === "signature" || labels.some((label) => /\b(signature|signed|initials?)\b/i.test(label.replace(/([a-z])([A-Z])/g, "$1 $2")));
+    proposals.push({ ...proposal, detectedLabel: labels[0] ?? field.name, acroField: acroRef(field), skipByDefault: signature ? true : undefined });
   }
   return proposals;
 }
@@ -167,4 +172,30 @@ export async function analyzeTemplatePdf(bytes: Uint8Array, options: { learned?:
 
 export function shouldUseVisualFallback(result: AnalysisResult) {
   return result.scanned && result.proposals.length === 0;
+}
+
+/**
+ * Word templates: each detected placeholder becomes one proposal. Word has no
+ * fixed page coordinates, so geometry is a stable list position used only for
+ * ordering; filling uses the placeholder locator.
+ */
+export function proposalsFromDocxFields(fields: readonly DocxField[], learned: readonly LearnedMapping[] = []): AnalysisProposal[] {
+  const proposals: AnalysisProposal[] = [];
+  fields.forEach((field, index) => {
+    const geometry = { x: 0, y: Math.min(0.98, index * 0.001), width: 1, height: 0.001 };
+    const base = suggestFromLabel(field.label, 1, geometry, { learned, analyzerSource: "docx" });
+    if (!base) return;
+    let proposal: AnalysisProposal = { ...base, detectedLabel: field.label, docxTarget: field };
+    if (field.repeating && proposal.matchStatus === "exact") {
+      proposal = { ...proposal, matchStatus: "suggested", classification: "review", reviewRequired: true, confidence: Math.min(proposal.confidence, 0.6), rationale: `${proposal.rationale} It is the first row of a list, which may need a repeating section instead of one record.` };
+    }
+    if (/\b(signature|signed|initials?)\b/i.test(field.label)) proposal = { ...proposal, skipByDefault: true };
+    proposals.push(proposal);
+  });
+  return proposals;
+}
+
+export function analyzeTemplateDocx(bytes: Uint8Array, options: { learned?: readonly LearnedMapping[] } = {}): AnalysisResult {
+  const fields = analyzeDocx(bytes);
+  return { provider: "docx-structure", version: "2", scanned: false, proposals: proposalsFromDocxFields(fields, options.learned ?? []) };
 }

@@ -91,3 +91,10 @@ export function todayInZone(timeZone = "America/New_York", now = new Date()) {
     return now.toISOString().slice(0, 10);
   }
 }
+
+/** The generating user's own details, read from their membership — never derived from an email address. */
+export async function loadPreparer(db: GenerationDatabase, departmentId: string, userId: string): Promise<PreparerSource> {
+  const id = uuid(userId);
+  const self = id ? await member(db, departmentId, id) : null;
+  return { fullName: self?.fullName || null, badgeNumber: self?.badgeNumber ?? null, rankTitle: self?.rankTitle ?? null };
+}
