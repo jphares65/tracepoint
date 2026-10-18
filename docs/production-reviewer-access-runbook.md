@@ -33,15 +33,15 @@ A1. Confirm the service is on the expected revision, healthy, and that the pool 
 A2. Save the mobile client configuration:
     `aws cognito-idp describe-user-pool-client --user-pool-id us-east-1_diFmWDMe9 --client-id 7ndi959ot7k9cja0a0tvugbipo`
     → `mobile-client-before.json` and its hash (evidence folder). This file is the rollback.
-A3. Owner: open `/super-admin` and confirm `fleet` and `inventory` appear in the feature list
-    (production's feature catalog is not provable from migrations). If either is missing, stop:
-    Fleet or Inventory would show "not available" to reviewers.
+A3. Owner: open `/super-admin` and confirm `fleet` and `inventory` appear in the feature list.
+    Found missing on 2026-10-17 (production follow-up 4); the catalog correction must be applied
+    and A3 repeated before continuing.
 
 ## B. Fictional agency and reviewer (Owner, in the web app; audited)
 B1. `/platform` → Create agency: the fictional name, plan type `internal`.
 B2. `/super-admin` → that agency's features: enable `fleet`, `equipment_readiness`, `firearms`,
-    `firearm_custody`, `inventory`, `range_training`, `qualifications`; disable every other
-    feature (in staging the insert trigger enabled all of them).
+    `inventory`, `range_training`, `qualifications`; leave every other feature off. (Production
+    has no feature-provisioning trigger; `firearm_custody` is not a production feature code.)
 B3. Enter the agency in Support Mode → Settings → Role permissions → **officer** role only:
     `view_fleet`, `perform_fleet_inspections`, `view_inventory`, `firearm_custody.check_in`,
     `firearm_custody.check_out`, `firearm_custody.view_history`, `score_range_days`,

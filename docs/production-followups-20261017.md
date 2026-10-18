@@ -81,3 +81,35 @@ Smallest process: a written offboarding runbook (confirm termination date; offer
 the 90-day deletion date; at day 90 deactivate memberships, delete the department, delete its S3
 prefixes, disable or delete Cognito users without other memberships; record completion), rehearsed
 once against a fictional staging agency. No infrastructure or application change is required.
+
+## 4. Fleet and Inventory are missing from the production feature catalog
+
+Verified read-only on the live database (2026-10-17):
+- `feature_catalog` has 9 active rows; `fleet` and `inventory` do not exist (absent, not
+  inactive). The Super Admin module list, `set_platform_entitlement`, and the
+  `department_features` foreign key all depend on this table, so no agency can have Fleet or
+  Inventory enabled.
+- Code (`src/lib/tracepoint/module-catalog.ts`) defines both modules. Fleet access is gated on the
+  `fleet` feature (`src/lib/tracepoint/fleet-access.ts`); QR resolution of inventory items is
+  gated on `inventory` (`src/lib/tracepoint/mobile-workflows.ts`).
+- 45 fleet vehicles exist in 2 agencies, so real agencies have Fleet data they cannot reach through
+  the gated Fleet features today. Inventory has no items yet.
+- The rows were added only by unreleased commit `037a9b9` (branch
+  `codex/demo-pd-module-visibility`, `database/aws/038_default_module_entitlements.sql`). That
+  migration number collides with the production 038, and its triggers would enable every active
+  feature for every existing agency, so it is not suitable as the fix.
+- The live database has no trigger on `feature_catalog`; only explicit admin actions write
+  `department_features`.
+
+Smallest safe correction (needs approval): one guarded owner transaction on the live database
+inserting the two catalog rows (`fleet`, sort 55; `inventory`, sort 65) with `on conflict do
+nothing`. Preconditions: identity, 9 catalog rows, no catalog trigger. Postconditions: 11 rows,
+both codes active, `department_features` row count and digest unchanged, no new feature events;
+otherwise roll back. It enables nothing for any agency; Fleet or Inventory is turned on per agency
+in `/super-admin` (audited). Reversal: delete the two rows while no agency references them.
+The prepared script runs on `tracepoint-production-database-bootstrap:30` (live-pinned owner
+task), the same path used for the read-only checks.
+
+Follow-ups after the correction: add the same two rows to the release lineage as a new migration
+so new environments match; decide per agency whether to enable Fleet for the two agencies that
+already have fleet data; decide what to do with branch `codex/demo-pd-module-visibility`.
