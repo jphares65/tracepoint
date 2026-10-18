@@ -276,3 +276,28 @@ test("preview highlighting never breaks the markup, even for short values", () =
   const html = docxPreviewHtml(filled.bytes, ["p", "strong & amp"]);
   assert.equal(html, "<p>Grade: <mark>p</mark></p><p><strong>Notes: <mark>strong &amp; amp</mark></strong></p>");
 });
+
+test("checkboxes separate the text around them, so blank labels do not absorb checkbox wording", () => {
+  const box = `<w:sdt><w:sdtPr><w14:checkbox xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"/></w:sdtPr><w:sdtContent><w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:sdtContent></w:sdt>`;
+  const legacyBox = `<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Check1"/><w:checkBox><w:sizeAuto/><w:default w:val="0"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const bytes = buildDocx(`<w:p>${r("Yes ")}${box}${r(" No ")}${box}${r(" Date ____")}</w:p>` + `<w:p>${r("Passed ")}${legacyBox}${r(" Failed ")}${legacyBox}${r(" Instructor ____")}</w:p>`);
+  assert.deepEqual(analyzeDocx(bytes).map((field) => field.label), ["Date", "Instructor"]);
+});
+
+test("a legacy form field whose result runs into the next paragraph stays protected", () => {
+  const begin = `<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Notes"/><w:textInput/></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${r("First line")}`;
+  const end = `${r("Comments: ________")}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const fields = analyzeDocx(buildDocx(p(r("Notes: "), begin) + p(end)));
+  assert.deepEqual(fields.map((field) => `${field.kind}:${field.label}`), ["legacy_field:Notes"]);
+});
+
+test("locators saved by an earlier version of Word detection are refused, not filled somewhere else", () => {
+  const bytes = buildDocx(p(r("Officer: {{Officer Name}}")));
+  const [field] = analyzeDocx(bytes);
+  const { scheme: _scheme, ...old } = field!;
+  void _scheme;
+  const result = fillDocx(bytes, [{ target: old, value: "Jordan Rivera", fieldId: "f1" }]);
+  assert.equal(result.issues[0]?.kind, "target_changed");
+  assert.match(result.issues[0]!.message, /Set the template up again/);
+  assert.equal(docxText(result.bytes), "Officer: {{Officer Name}}");
+});

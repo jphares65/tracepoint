@@ -38,7 +38,7 @@ export type AnalysisProposal = {
   /** Proposals that should default to "leave blank" (signatures, buttons). */
   skipByDefault?: boolean;
 };
-export type AnalysisResult = { provider: "native-pdf-heuristic" | "native-pdf-form" | "visual-scan-layout-profile" | "general-vision-advisory" | "docx-structure"; version: "1" | "2"; scanned: boolean; proposals: AnalysisProposal[] };
+export type AnalysisResult = { provider: "native-pdf-heuristic" | "native-pdf-form" | "visual-scan-layout-profile" | "general-vision-advisory" | "docx-structure"; version: "1" | "2" | "3"; scanned: boolean; proposals: AnalysisProposal[] };
 type WidgetRect = { x: number; y: number; width: number; height: number };
 type NativeWidget = { name: string; page: number; geometry: FieldGeometry; fallback: boolean };
 
@@ -204,5 +204,5 @@ export function proposalsFromDocxFields(fields: readonly DocxField[], learned: r
 
 export function analyzeTemplateDocx(bytes: Uint8Array, options: { learned?: readonly LearnedMapping[] } = {}): AnalysisResult {
   const fields = analyzeDocx(bytes);
-  return { provider: "docx-structure", version: "2", scanned: false, proposals: proposalsFromDocxFields(fields, options.learned ?? []) };
+  return { provider: "docx-structure", version: "3", scanned: false, proposals: proposalsFromDocxFields(fields, options.learned ?? []) };
 }

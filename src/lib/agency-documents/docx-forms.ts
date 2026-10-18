@@ -18,7 +18,12 @@ import { entryText, readZip, writeZip, ZipFormatError, type ZipEntry } from "./d
  */
 
 export type DocxTargetKind = "token" | "label_blank" | "table_cell" | "content_control" | "legacy_field";
-export type DocxTarget = { part: string; kind: DocxTargetKind; ordinal: number; label: string };
+/**
+ * Version of the detection rules that assign kinds and ordinals. Locators saved under another version may
+ * point at a different place in the document, so they are refused until the template is set up again.
+ */
+export const DOCX_LOCATOR_SCHEME = 3;
+export type DocxTarget = { part: string; kind: DocxTargetKind; ordinal: number; label: string; scheme?: number };
 export type DocxField = DocxTarget & { context: string; /** First row of a multi-row list — may not be about a single record. */ repeating?: boolean; /** Nearest heading above the field (e.g. "SUPERVISOR INFORMATION"), used to spot fields about someone else. */ section?: string };
 export type DocxFill = { target: DocxTarget; value: string; fieldId?: string; label?: string };
 export type DocxIssue = { fieldId?: string; label?: string; kind: "target_missing" | "target_changed"; message: string };
@@ -182,10 +187,14 @@ function paragraphCandidates(xml: string, part: string, paragraph: Block, counte
   // Text inside a content control or a legacy form field belongs to those detectors. The rest of the
   // paragraph is still scanned, in segments separated by those elements, so a merge token next to a
   // checkbox is not left in the output.
+  // A control or field also separates text when it holds no text itself (a checkbox symbol, an empty field).
   const segments: TextNode[][] = [[]];
+  let previous = paragraph.inner;
   for (const node of textNodes(xml, paragraph.inner, paragraph.innerEnd)) {
-    if (reserved(node.start, node.end)) { if (segments.at(-1)!.length) segments.push([]); continue; }
-    segments.at(-1)!.push(node);
+    const inside = reserved(node.start, node.end);
+    if ((inside || reserved(previous, node.start)) && segments.at(-1)!.length) segments.push([]);
+    previous = node.end;
+    if (!inside) segments.at(-1)!.push(node);
   }
   for (const nodes of segments) {
     const text = nodes.map((node) => node.text).join("");
@@ -336,38 +345,40 @@ function contentControlCandidates(xml: string, part: string, counters: Record<Do
 
 function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>): { candidates: Candidate[]; ranges: Array<[number, number]> } {
   const candidates: Candidate[] = [], ranges: Array<[number, number]> = [];
-  for (const paragraph of elements(xml, "w:p")) {
-    const body = xml.slice(paragraph.start, paragraph.end);
-    if (!/FORM(TEXT|CHECKBOX|DROPDOWN)/.test(body)) continue;
-    // Walk field characters in order. Each field is begin … [separate …] end; checkboxes have no separate.
-    const token = /<w:fldChar\b[^>]*?w:fldCharType="(begin|separate|end)"[^>]*?(?:\/>|>([\s\S]*?)<\/w:fldChar>)|<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g;
-    type Open = { begin: number; ffData: string; instr: string; separateEnd: number | null; depth: number };
-    const stack: Open[] = [];
-    // The label for a field is the text after the previous field in the same paragraph.
-    let previousFieldEnd = paragraph.inner;
-    let match: RegExpExecArray | null;
-    while ((match = token.exec(body))) {
-      const at = paragraph.start + match.index;
-      if (match[3] !== undefined) { if (stack.length) stack[stack.length - 1]!.instr += decodeXml(match[3]); continue; }
-      if (match[1] === "begin") stack.push({ begin: at, ffData: match[2] ?? "", instr: "", separateEnd: null, depth: stack.length });
-      else if (match[1] === "separate") { if (stack.length) stack[stack.length - 1]!.separateEnd = at + match[0].length; }
-      else {
-        const field = stack.pop();
-        if (!field || field.depth !== 0) continue;
-        // Only the field itself (code and result) is reserved; text around it is scanned for placeholders.
-        ranges.push([field.begin, at + match[0].length]);
-        const labelFrom = previousFieldEnd;
-        previousFieldEnd = at + match[0].length;
-        if (!/\bFORMTEXT\b/.test(field.instr) || field.separateEnd === null) continue;
-        const resultStart = field.separateEnd, resultEnd = at;
-        const name = cleanLabel(field.ffData.match(/<w:name w:val="([^"]*)"/)?.[1] ?? "");
-        const before = cleanLabel(plainText(xml, labelFrom, field.begin).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
-        const label = name && !/^(text|check|dropdown)\d*$/i.test(name) ? name : before;
-        if (!plausibleLabel(label)) continue;
-        const nodes = textNodes(xml, resultStart, resultEnd);
-        const total = nodes.reduce((sum, node) => sum + node.text.length, 0);
-        candidates.push({ part, kind: "legacy_field", ordinal: counters.legacy_field++, label, position: field.begin, context: `Form field: ${label}`, edit: (value) => (nodes.length ? replaceTextRange(nodes, 0, total, value) : value ? [{ start: resultStart, end: resultStart, replacement: `<w:r>${textElements(value)}</w:r>` }] : []) });
-      }
+  if (!/FORM(TEXT|CHECKBOX|DROPDOWN)/.test(xml)) return { candidates, ranges };
+  const paragraphs = elements(xml, "w:p");
+  const paragraphStart = (at: number) => paragraphs.find((paragraph) => at >= paragraph.start && at < paragraph.end)?.inner ?? at;
+  // Walk field characters through the whole part, so a field whose result runs into the next paragraph is
+  // still one field. Each field is begin … [separate …] end; checkboxes have no separate.
+  const token = /<w:fldChar\b[^>]*?w:fldCharType="(begin|separate|end)"[^>]*?(?:\/>|>([\s\S]*?)<\/w:fldChar>)|<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g;
+  type Open = { begin: number; ffData: string; instr: string; separateEnd: number | null; depth: number };
+  const stack: Open[] = [];
+  // The label for a field is the text after the previous field in the same paragraph.
+  let previousFieldEnd = 0;
+  let match: RegExpExecArray | null;
+  while ((match = token.exec(xml))) {
+    const at = match.index;
+    if (match[3] !== undefined) { if (stack.length) stack[stack.length - 1]!.instr += decodeXml(match[3]); continue; }
+    if (match[1] === "begin") stack.push({ begin: at, ffData: match[2] ?? "", instr: "", separateEnd: null, depth: stack.length });
+    else if (match[1] === "separate") { if (stack.length) stack[stack.length - 1]!.separateEnd = at + match[0].length; }
+    else {
+      const field = stack.pop();
+      if (!field || field.depth !== 0) continue;
+      const fieldEnd = at + match[0].length;
+      const labelFrom = Math.max(previousFieldEnd, paragraphStart(field.begin));
+      previousFieldEnd = fieldEnd;
+      if (!/\bFORM(TEXT|CHECKBOX|DROPDOWN)\b/.test(field.instr)) continue;
+      // Only the form field itself (code and result) is reserved; text around it is scanned for placeholders.
+      ranges.push([field.begin, fieldEnd]);
+      if (!/\bFORMTEXT\b/.test(field.instr) || field.separateEnd === null) continue;
+      const resultStart = field.separateEnd, resultEnd = at;
+      const name = cleanLabel(field.ffData.match(/<w:name w:val="([^"]*)"/)?.[1] ?? "");
+      const before = cleanLabel(plainText(xml, labelFrom, field.begin).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
+      const label = name && !/^(text|check|dropdown)\d*$/i.test(name) ? name : before;
+      if (!plausibleLabel(label)) continue;
+      const nodes = textNodes(xml, resultStart, resultEnd);
+      const total = nodes.reduce((sum, node) => sum + node.text.length, 0);
+      candidates.push({ part, kind: "legacy_field", ordinal: counters.legacy_field++, label, position: field.begin, context: `Form field: ${label}`, edit: (value) => (nodes.length ? replaceTextRange(nodes, 0, total, value) : value ? [{ start: resultStart, end: resultStart, replacement: `<w:r>${textElements(value)}</w:r>` }] : []) });
     }
   }
   return { candidates, ranges };
@@ -416,7 +427,7 @@ function detectPart(xml: string, part: string): Candidate[] {
   const titles = headings(xml);
   return [...controls.candidates, ...legacy.candidates, ...tables, ...paragraphs].map((candidate) => {
     const section = [...titles].reverse().find((title) => title.position < candidate.position && title.text !== candidate.label)?.text;
-    return section ? { ...candidate, section } : candidate;
+    return { ...candidate, scheme: DOCX_LOCATOR_SCHEME, ...(section ? { section } : {}) };
   });
 }
 
@@ -455,6 +466,7 @@ export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes
       textFills.set(candidate.range.nodes, list);
     };
     for (const fill of fills.filter((item) => item.target.part === part)) {
+      if (fill.target.scheme !== DOCX_LOCATOR_SCHEME) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_changed", message: `"${fill.label ?? fill.target.label}" was set up with an earlier version of Word form detection. Set the template up again ("Replace fields") before generating.` }); continue; }
       const candidate = candidates.find((item) => item.kind === fill.target.kind && item.ordinal === fill.target.ordinal);
       if (!candidate) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_missing", message: `"${fill.label ?? fill.target.label}" could not be found in the Word document. Re-analyze the template.` }); continue; }
       if (candidate.label !== fill.target.label) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_changed", message: `The Word document changed near "${fill.target.label}". Re-analyze the template before generating.` }); continue; }

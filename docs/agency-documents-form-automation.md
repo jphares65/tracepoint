@@ -60,6 +60,25 @@ upload (PDF/.docx, sniffed by content)
 Stored data uses the existing tables (no new migration). Native-field and Word
 locators, match status and reasons live in `document_template_fields.formatting`.
 
+## Field identity and gates
+
+- A field keeps its id for as long as it exists. Saving reuses the ids already
+  stored for the template version (never ids from elsewhere); setting up again
+  from the same form reuses ids by native field name or Word location.
+- Published templates cannot be edited, set up, analyzed, or have suggestions
+  accepted; unpublish first.
+- Publishing and final generation are both refused while any field needs review
+  or any repeating section is neither bound nor explicitly left blank.
+  "Ignore all" never dismisses a repeating section.
+- A place on the form holds one field: accepting a suggestion for an occupied
+  location is refused. Editing a suggestion changes only the decision, never
+  what was detected (kind, native field, Word location, cells).
+- Word locators carry the detection-rule version (`DOCX_LOCATOR_SCHEME`). A
+  locator from another version is refused with "set the template up again"
+  rather than filled at a possibly different place. Word templates set up
+  before scheme 3 must be set up again ("Replace fields").
+- Repeating-section bindings cannot be changed on a published template.
+
 ## Testing
 
 ```
