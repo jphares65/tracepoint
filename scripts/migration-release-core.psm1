@@ -201,11 +201,13 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment
     )
     # Every migration this release applies must be recorded by this commit, in this environment, as an apply.
-    $expected = [ordered]@{ 42 = '042_default_module_entitlements.sql'; 43 = '043_range_workspace_authenticated_writes.sql'; 44 = '044_cognito_password_global_scope.sql'; 45 = '045_password_operation_resolution.sql' }
+    # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
+    $expected = @(@(42, '042_default_module_entitlements.sql'), @(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'))
     $records = @()
-    foreach ($version in $expected.Keys) {
+    foreach ($pair in $expected) {
+        $version = [int]$pair[0]; $filename = [string]$pair[1]
         $record = @($Report.applied | Where-Object { [int]$_.version -eq $version }) | Select-Object -First 1
-        if ($null -eq $record -or [string]$record.filename -cne $expected[$version] -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
+        if ($null -eq $record -or [string]$record.filename -cne $filename -or [string]$record.application_git_sha -cne $ApplicationCommit -or [string]$record.environment -cne $Environment -or [string]$record.application_context -cne 'apply' -or $record.is_baseline -ne $false) {
             throw "Migration $('{0:d3}' -f $version) ledger entry does not match this application commit and release environment."
         }
         $records += $record
