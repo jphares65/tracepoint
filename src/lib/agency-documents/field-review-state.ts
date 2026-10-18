@@ -59,7 +59,7 @@ export type MappingChoice =
 
 /** Apply a choice. Any explicit choice by a person confirms the field. Invalid choices return null. */
 export function applyMappingChoice(field: ReviewField, choice: MappingChoice): ReviewField | null {
-  const formatting = { ...(field.formatting ?? {}), matchStatus: "confirmed", source: field.formatting?.source === "manual" ? "manual" : "reviewed" };
+  const formatting = { ...(field.formatting ?? {}), matchStatus: "confirmed", confirmedByPerson: true, source: field.formatting?.source === "manual" ? "manual" : "reviewed" };
   const label = field.label || (field.canonical_key ? getDocumentField(field.canonical_key)?.label : null) || "Field";
   switch (choice.kind) {
     case "confirm":

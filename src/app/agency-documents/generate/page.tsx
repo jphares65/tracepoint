@@ -45,7 +45,12 @@ export default function GenerateAgencyDocumentPage() {
   useEffect(() => { void fetch("/api/agency-documents/templates").then((response) => response.json()).then((body) => { const published = (body.templates ?? []).filter((template: Template) => template.status === "published"); setTemplates(published); setTemplateId(published[0]?.id ?? ""); }).catch(() => setMessage("Templates could not be loaded.")); }, []);
   const list = useCallback(async (kind: string, extra = "") => { const response = await fetch(`/api/agency-documents/context?templateId=${encodeURIComponent(templateId)}&kind=${kind}${extra}`); const body = await response.json().catch(() => ({})); return (body.items ?? []) as Option[]; }, [templateId]);
   useEffect(() => { if (!templateId) return; void fetch(`/api/agency-documents/context?templateId=${encodeURIComponent(templateId)}`).then((response) => response.json()).then((body) => setAnalysis(body.analysis ?? {})).catch(() => setMessage("Template details could not be loaded.")); }, [templateId]);
-  useEffect(() => { if (analysis.requiresPerson && templateId) void list("person").then(setOfficers); }, [analysis.requiresPerson, templateId, list]);
+  // The officer picker is also needed to choose whose qualification record to use.
+  const needsOfficer = Boolean(analysis.requiresPerson || analysis.requiresQualification);
+  useEffect(() => { if (needsOfficer && templateId) void list("person").then(setOfficers); }, [needsOfficer, templateId, list]);
+  // Keep the chosen record visible in its list even after a search narrows the options.
+  const keep = (options: Option[], selected: string, all: Option[]) => (selected && !options.some((option) => option.id === selected) ? [...all.filter((option) => option.id === selected), ...options] : options);
+  const [selectedOfficer, setSelectedOfficer] = useState<Option[]>([]), [selectedFirearm, setSelectedFirearm] = useState<Option[]>([]);
   useEffect(() => { if (analysis.requiresFirearm && templateId) void list("firearm").then(setFirearms); }, [analysis.requiresFirearm, templateId, list]);
   useEffect(() => { if (analysis.requiresQualification && templateId && personId) void list("qualification", `&personId=${encodeURIComponent(personId)}`).then(setQualifications); }, [analysis.requiresQualification, templateId, personId, list]);
 
@@ -68,6 +73,8 @@ export default function GenerateAgencyDocumentPage() {
   }, [templateId, request]);
 
   useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url); }, [preview]);
+  // Any change to what would be generated makes an existing preview out of date; remove it rather than show the wrong document.
+  useEffect(() => { setPreview(null); }, [request]);
 
   function resetFor(nextTemplate: string) { setTemplateId(nextTemplate); setPersonId(""); setFirearmId(""); setQualificationId(""); setReportYear(""); setEntered({}); setLeaveBlank([]); setReview(null); setPreview(null); }
 
@@ -107,9 +114,9 @@ export default function GenerateAgencyDocumentPage() {
           <select value={templateId} onChange={(event) => resetFor(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">{templates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.category ? ` · ${template.category}` : ""}</option>)}</select>
         </label>
         {!templates.length ? <p className="mt-3 text-xs text-slate-400">No published templates yet.</p> : null}
-        {analysis.requiresPerson ? <Picker label="Officer this document is for" value={personId} onChange={(value) => { setPersonId(value); setQualificationId(""); }} options={officers} placeholder="Select an officer" onSearch={(value) => void list("person", `&search=${encodeURIComponent(value)}`).then(setOfficers)} /> : null}
-        {analysis.requiresFirearm ? <Picker label="Firearm" value={firearmId} onChange={setFirearmId} options={firearms} placeholder="Select a firearm" onSearch={(value) => void list("firearm", `&search=${encodeURIComponent(value)}`).then(setFirearms)} /> : null}
-        {analysis.requiresQualification ? <Picker label="Qualification record" value={qualificationId} onChange={setQualificationId} options={qualifications} placeholder={personId || !analysis.requiresPerson ? "Select a qualification" : "Select an officer first"} /> : null}
+        {needsOfficer ? <Picker label={analysis.requiresPerson ? "Officer this document is for" : "Officer whose qualification to use"} value={personId} onChange={(value) => { setPersonId(value); setQualificationId(""); setSelectedOfficer(officers.filter((option) => option.id === value)); }} options={keep(officers, personId, selectedOfficer)} placeholder="Select an officer" onSearch={(value) => void list("person", `&search=${encodeURIComponent(value)}`).then(setOfficers)} /> : null}
+        {analysis.requiresFirearm ? <Picker label="Firearm" value={firearmId} onChange={(value) => { setFirearmId(value); setSelectedFirearm(firearms.filter((option) => option.id === value)); }} options={keep(firearms, firearmId, selectedFirearm)} placeholder="Select a firearm" onSearch={(value) => void list("firearm", `&search=${encodeURIComponent(value)}`).then(setFirearms)} /> : null}
+        {analysis.requiresQualification ? <Picker label="Qualification record" value={qualificationId} onChange={setQualificationId} options={qualifications} placeholder={personId ? "Select a qualification" : "Select an officer first"} /> : null}
         {analysis.requiresReportYear ? <label className="mt-4 block text-xs font-semibold text-slate-300">Report year<input value={reportYear} onChange={(event) => setReportYear(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" placeholder="2026" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white" /></label> : null}
 
         {review ? <div className="mt-6">

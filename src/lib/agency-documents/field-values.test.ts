@@ -99,6 +99,10 @@ test("fields pointing at unknown or removed TracePoint keys are blocked, not gue
 test("names, dates and text are normalized conservatively", () => {
   assert.deepEqual(splitName("John Q. Public Jr."), { first: "John", last: "Public" });
   assert.deepEqual(splitName("Cher"), { first: "Cher", last: "" });
+  assert.deepEqual(splitName("Juan De La Cruz"), { first: "", last: "" });
+  assert.deepEqual(splitName("Mary Ann Van Der Berg"), { first: "", last: "" });
+  assert.deepEqual(splitName("Sgt. Jordan Rivera"), { first: "", last: "" });
+  assert.deepEqual(splitName("Jordan Rivera"), { first: "Jordan", last: "Rivera" });
   assert.equal(formatDate("2026-02-30"), "");
   assert.equal(formatDate("2026-02-03T10:00:00Z", "YYYY-MM-DD"), "2026-02-03");
   assert.equal(formatDate("02/03/2026"), "");

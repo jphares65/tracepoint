@@ -23,17 +23,16 @@ const EXACT_CASES: Array<[string, string]> = [
   ["Badge Number", "person.badge_number"],
   ["Badge #", "person.badge_number"],
   ["BadgeNo", "person.badge_number"],
-  ["Rank", "person.rank"],
   ["Agency Name", "agency.name"],
   ["Name of Department", "agency.name"],
   ["ORI", "agency.ori"],
-  ["Manufacturer", "firearm.manufacturer"],
   ["Serial Number", "firearm.serial_number"],
   ["S/N", "firearm.serial_number"],
-  ["Caliber", "firearm.caliber"],
   ["Qualification Date", "qualification.date"],
-  ["Score", "qualification.score"],
   ["Pass/Fail", "qualification.result"],
+  ["Officer Rank", "person.rank"],
+  ["Firearm Manufacturer", "firearm.manufacturer"],
+  ["Qualification Score", "qualification.score"],
   ["Instructor Name", "qualification.instructor"],
   ["Date of Report", "document.report_date"],
   ["Prepared By", "preparer.full_name"],
@@ -88,11 +87,15 @@ test("look-alike labels for a different person or detail are never auto-filled",
 });
 
 test("generic or ambiguous labels are suggestions that require review, never exact", () => {
-  for (const label of ["Name", "Date", "Year", "Model", "Make", "Officer", "Result"]) {
+  for (const label of ["Name", "Date", "Year", "Model", "Make", "Officer", "Result", "Badge", "Rank", "Email", "Serial", "Score", "Instructor", "Agency", "Caliber", "Manufacturer"]) {
     const match = matchFieldLabel(label);
     assert.equal(match.status, "suggested", `${label} should be a reviewable suggestion (got ${match.status})`);
     assert.ok(match.reason.length > 10);
   }
+});
+
+test("bare words like 'Firearm' or 'Weapon' are never auto-mapped", () => {
+  for (const label of ["Firearm", "Weapon"]) assert.notEqual(matchFieldLabel(label).status, "exact", label);
 });
 
 test("numbered list labels are not treated as the single selected record", () => {
@@ -146,4 +149,27 @@ test("matching is deterministic", () => {
   const first = JSON.stringify(EXACT_CASES.map(([label]) => matchFieldLabel(label)));
   const second = JSON.stringify(EXACT_CASES.map(([label]) => matchFieldLabel(label)));
   assert.equal(first, second);
+});
+
+test("a contradicting second label or section heading downgrades an exact match to review", () => {
+  const cases: Array<[string[], string[]?]> = [
+    [["Badge # of Supervisor", "txtBadge"]],
+    [["Badge", "form1[0].Supervisor[0].Badge[0]"]],
+    [["OfficerName", "Witness.OfficerName"]],
+    [["Rank of Reviewing Supervisor", "Rank"]],
+    [["Badge Number"], ["SUPERVISOR INFORMATION"]],
+  ];
+  for (const [labels, context] of cases) {
+    const match = matchFieldLabel(labels, { context });
+    assert.notEqual(match.status, "exact", `${labels.join(" | ")} ${context ?? ""} must not be exact (${match.reason})`);
+  }
+  assert.equal(matchFieldLabel(["Officer Name", "Supervisor Signature"]).status, "unmatched");
+  // Wording that explains the field does not count against it.
+  assert.equal(matchFieldLabel(["Instructor Name", "RangeInstructor"]).status, "exact");
+  assert.equal(matchFieldLabel("Agency Address").status, "exact");
+});
+
+test("learned decisions cannot override other-person wording", () => {
+  const learned = [{ normalizedLabel: "badge number", key: "person.badge_number" }];
+  assert.equal(matchFieldLabel(["Badge Number", "Supervisor.BadgeNumber"], { learned }).status, "suggested");
 });

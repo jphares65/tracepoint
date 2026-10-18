@@ -5,6 +5,7 @@ import { GenerationContextError, loadGenerationSources, loadPreparer, type Gener
 import { DocumentQualificationHistoryRepository } from "./document-qualification-history";
 import { PdfInspectionError } from "./pdf-form-inspector";
 import { resolveDocumentStructuredBindings, type DocumentStructuredBinding } from "./structured-document-resolution";
+import { publishBlockers } from "./proposal-review";
 
 /**
  * POST /api/agency-documents/generate, written against injected dependencies
@@ -149,6 +150,9 @@ export async function handleGenerate(request: Request, deps: GenerateDeps): Prom
   if (mode === "preview" || mode === "proof") return new Response(pdfBody, { headers: { "Content-Type": contentType, "Content-Disposition": `inline; filename="preview-${fileName}"`, "Cache-Control": "no-store", ...statusHeaders } });
 
   if (!ready) return json({ error: "The document is not complete yet. Resolve the items listed before generating.", ...summary }, 409);
+  // Defence in depth: never issue an official document from a template with unreviewed mappings, however it got that way.
+  const templateBlockers = publishBlockers((fieldRows.data ?? []) as StoredTemplateField[]);
+  if (templateBlockers.length) return json({ error: "This template has fields that still need review. Ask a template manager to finish setting it up.", blockers: templateBlockers }, 409);
   const generatedId = crypto.randomUUID();
   const upload = await deps.store(admin, departmentId).uploadGeneratedAgencyDocument({ departmentId, recordId: generatedId, objectId: crypto.randomUUID(), fileName, bytes: outcome.bytes, contentType });
   if (upload.error) return json({ error: "The completed document could not be saved." }, 500);

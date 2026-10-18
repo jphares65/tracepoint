@@ -49,8 +49,9 @@ const PROOF_COLORS: Record<string, [number, number, number]> = {
   filled: [0.11, 0.38, 0.85], static: [0.11, 0.38, 0.85], typed: [0.05, 0.55, 0.3], blank: [0.5, 0.5, 0.5], missing: [0.85, 0.15, 0.15],
 };
 
+/** Line breaks are layout, not glyphs: check each line on its own. */
 function encodable(font: PDFFont, value: string) {
-  try { font.encodeText(value); return true; } catch { return false; }
+  try { for (const line of value.split(/\r?\n/)) font.encodeText(line); return true; } catch { return false; }
 }
 
 /** Greedy word wrap; returns null if a single word cannot fit on a line. */

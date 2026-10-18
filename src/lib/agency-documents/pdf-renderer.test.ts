@@ -125,6 +125,16 @@ test("native field limits are enforced without altering the value", async () => 
   assert.deepEqual((await PDFDocument.load(ok.bytes)).getForm().getDropdown("Status").getSelected(), ["Pass"]);
 });
 
+test("multi-line entries render instead of being rejected as unprintable", async () => {
+  const source = await PDFDocument.create(); source.addPage([612, 792]);
+  const overlay = await renderDocument(await source.save(), [{ fieldId: "a", label: "Address", pageNumber: 1, value: "1 Main St\nTown, ST", geometry: { x: 0.1, y: 0.1, width: 0.4, height: 0.08 } }]);
+  assert.deepEqual(overlay.issues, []);
+  const { source: form, fields } = await nativeFields({ Remarks: "Line one\nLine two" });
+  const native = await renderDocument(form, fields, { flatten: false });
+  assert.deepEqual(native.issues, []);
+  assert.equal((await PDFDocument.load(native.bytes)).getForm().getTextField("Remarks").getText(), "Line one\nLine two");
+});
+
 test("characters the document font cannot print are reported, not replaced", async () => {
   const source = await PDFDocument.create(); source.addPage([612, 792]);
   const result = await renderDocument(await source.save(), [{ fieldId: "n", label: "Officer Name", pageNumber: 1, value: "Łukasz Żółć", geometry: { x: 0.1, y: 0.1, width: 0.4, height: 0.03 } }]);

@@ -58,6 +58,8 @@ export function proposalToFieldRow(proposal: ReviewedProposal, status: ProposalS
   const formatting: Record<string, unknown> = {
     ...(proposal.formatting ?? {}),
     source: status === "modified" ? "analyzer_modified" : "analyzer",
+    // Only decisions a person actually made are reused on other templates (see learned-mappings).
+    ...(status === "accepted" || status === "modified" ? { confirmedByPerson: true } : {}),
     // A person accepting or editing a proposal confirms it. During automatic setup
     // ("proposed"), only exact matches count as confirmed; suggestions stay flagged.
     matchStatus: status === "accepted" || status === "modified" || proposal.matchStatus === "exact" || !proposal.matchStatus ? "confirmed" : proposal.matchStatus,

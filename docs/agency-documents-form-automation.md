@@ -8,8 +8,12 @@ template and fills it accurately. Applies to `src/lib/agency-documents/` and
 
 1. **Deterministic first.** Fillable PDFs and Word forms are analyzed by rules,
    not by models. The same file always produces the same suggestions.
-2. **Never fabricate, never guess silently.** Only an exact label match is
-   pre-confirmed. Anything weaker is flagged and blocks publishing until a
+2. **Never fabricate, never guess silently.** Only an exact, multi-word label
+   match with no contradicting wording in any of the field's labels or its
+   section heading is pre-confirmed. One-word labels ("Rank", "Score") and
+   anything mentioning another person (supervisor, witness, reviewer) need a
+   person's confirmation. Learned mappings come only from decisions a person
+   made. Anything weaker is flagged and blocks publishing until a
    person decides. Missing data is reported, never defaulted.
 3. **Preview = document.** Previews, placement proofs, and final documents are
    produced by the same renderer.

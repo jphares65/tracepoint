@@ -19,7 +19,7 @@ import { entryText, readZip, writeZip, ZipFormatError, type ZipEntry } from "./d
 
 export type DocxTargetKind = "token" | "label_blank" | "table_cell" | "content_control" | "legacy_field";
 export type DocxTarget = { part: string; kind: DocxTargetKind; ordinal: number; label: string };
-export type DocxField = DocxTarget & { context: string; /** First row of a multi-row list — may not be about a single record. */ repeating?: boolean };
+export type DocxField = DocxTarget & { context: string; /** First row of a multi-row list — may not be about a single record. */ repeating?: boolean; /** Nearest heading above the field (e.g. "SUPERVISOR INFORMATION"), used to spot fields about someone else. */ section?: string };
 export type DocxFill = { target: DocxTarget; value: string; fieldId?: string; label?: string };
 export type DocxIssue = { fieldId?: string; label?: string; kind: "target_missing" | "target_changed"; message: string };
 
@@ -141,7 +141,7 @@ function plausibleLabel(label: string) {
 
 // ---------------------------------------------------------------- detection
 
-type Candidate = DocxField & { edit: (value: string) => Edit[] };
+type Candidate = DocxField & { edit: (value: string) => Edit[]; position: number };
 
 const BLANK = /_{3,}(?:\s*\/\s*_{2,}){0,2}/g;
 const TOKEN = /\{\{\s*([^{}]{1,80}?)\s*\}\}|«([^«»]{1,80})»/g;
@@ -157,7 +157,7 @@ function paragraphCandidates(xml: string, part: string, paragraph: Block, counte
     const label = cleanLabel(match[1] ?? match[2] ?? "");
     if (!label) continue;
     const from = match.index!, to = from + match[0].length;
-    out.push({ part, kind: "token", ordinal: counters.token++, label, context: text.trim().slice(0, 120), edit: (value) => replaceTextRange(nodes, from, to, value) });
+    out.push({ part, kind: "token", ordinal: counters.token++, label, position: paragraph.start, context: text.trim().slice(0, 120), edit: (value) => replaceTextRange(nodes, from, to, value) });
   }
   let previousEnd = 0;
   for (const match of text.matchAll(BLANK)) {
@@ -167,7 +167,7 @@ function paragraphCandidates(xml: string, part: string, paragraph: Block, counte
     // The label is the text right before the blank, after any earlier separator.
     const label = cleanLabel(preceding.split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
     if (!plausibleLabel(label)) continue;
-    out.push({ part, kind: "label_blank", ordinal: counters.label_blank++, label, context: text.trim().slice(0, 120), edit: (value) => replaceTextRange(nodes, from, to, value) });
+    out.push({ part, kind: "label_blank", ordinal: counters.label_blank++, label, position: paragraph.start, context: text.trim().slice(0, 120), edit: (value) => replaceTextRange(nodes, from, to, value) });
   }
   return out;
 }
@@ -195,18 +195,26 @@ function fillEmptyCell(xml: string, cell: Block, labelCell: Block | null): (valu
   };
 }
 
-function tableCandidates(xml: string, part: string, table: Block, counters: Record<DocxTargetKind, number>, used: Set<number>): Candidate[] {
+/** Content other than text that makes a cell "not empty" (checkbox symbols, images, fields, controls). */
+const NON_TEXT_CONTENT = /<w:sym\b|<w:drawing\b|<w:pict\b|<w:object\b|<w:fldChar\b|<w:fldSimple\b|<w:sdt\b|<mc:AlternateContent\b/;
+
+function tableCandidates(xml: string, part: string, table: Block, counters: Record<DocxTargetKind, number>, used: Set<number>, reserved: (start: number, end: number) => boolean): Candidate[] {
   const out: Candidate[] = [];
   const rows = elements(xml, "w:tr", table.inner, table.innerEnd).map((row) => elements(xml, "w:tc", row.inner, row.innerEnd));
-  const texts = rows.map((cells) => cells.map((cell) => plainText(xml, cell.inner, cell.innerEnd).trim()));
+  const rawTexts = rows.map((cells) => cells.map((cell) => plainText(xml, cell.inner, cell.innerEnd).trim()));
+  // A vertically merged continuation cell is part of the cell above it; it is neither a label nor a place to write.
+  const continuation = (cell: Block) => /<w:vMerge(?:\s+w:val="continue")?\s*\/>/.test(xml.slice(cell.inner, elements(xml, "w:tcPr", cell.inner, cell.innerEnd)[0]?.end ?? cell.inner));
+  const unusable = (cell: Block) => continuation(cell) || NON_TEXT_CONTENT.test(xml.slice(cell.inner, cell.innerEnd)) || reserved(cell.start, cell.end);
+  // Treat unusable cells as non-empty text so they are never filled and never pair with a label.
+  const texts = rawTexts.map((cells, r) => cells.map((text, c) => (text === "" && unusable(rows[r][c]) ? "\u0000" : text)));
   const nested = (cell: Block) => elements(xml, "w:tbl", cell.inner, cell.innerEnd).length > 0;
   rows.forEach((cells, r) => {
     // Horizontal: [Label][empty]
     for (let c = 0; c + 1 < cells.length; c += 1) {
       const label = cleanLabel(texts[r][c]);
-      if (/_{3,}/.test(texts[r][c]) || !plausibleLabel(label) || texts[r][c + 1] !== "" || used.has(cells[c + 1].start) || nested(cells[c + 1])) continue;
+      if (unusable(cells[c]) || /_{3,}/.test(texts[r][c]) || !plausibleLabel(label) || texts[r][c + 1] !== "" || used.has(cells[c + 1].start) || nested(cells[c + 1])) continue;
       used.add(cells[c + 1].start);
-      out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, context: `Table row: ${texts[r].filter(Boolean).join(" | ").slice(0, 100)}`, edit: fillEmptyCell(xml, cells[c + 1], cells[c]) });
+      out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, position: cells[c].start, context: `Table row: ${texts[r].filter(Boolean).join(" | ").slice(0, 100)}`, edit: fillEmptyCell(xml, cells[c + 1], cells[c]) });
     }
     // Vertical: a label cell whose cell directly below is empty (header row over an entry row).
     const below = rows[r + 1];
@@ -216,12 +224,12 @@ function tableCandidates(xml: string, part: string, table: Block, counters: Reco
     for (let next = r + 1; next < rows.length && rows[next].length === cells.length && texts[next].every((value) => value === ""); next += 1) emptyRows += 1;
     cells.forEach((cell, c) => {
       const label = cleanLabel(texts[r][c]);
-      if (/_{3,}/.test(texts[r][c]) || !plausibleLabel(label)) return;
+      if (unusable(cell) || /_{3,}/.test(texts[r][c]) || !plausibleLabel(label)) return;
       if (texts[r + 1][c] !== "" || used.has(below[c].start) || nested(below[c])) return;
       // A label already paired with the empty cell to its right is not also paired downward.
       if (c + 1 < cells.length && texts[r][c + 1] === "" && used.has(cells[c + 1].start)) return;
       used.add(below[c].start);
-      out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, repeating: emptyRows > 1, context: emptyRows > 1 ? `First row of a ${emptyRows}-row list under "${label}"` : `Table column: ${label}`, edit: fillEmptyCell(xml, below[c], cell) });
+      out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, position: cell.start, repeating: emptyRows > 1, context: emptyRows > 1 ? `First row of a ${emptyRows}-row list under "${label}"` : `Table column: ${label}`, edit: fillEmptyCell(xml, below[c], cell) });
     });
   });
   return out;
@@ -244,10 +252,12 @@ function contentControlCandidates(xml: string, part: string, counters: Record<Do
     const nodes = textNodes(xml, content.inner, content.innerEnd);
     const total = nodes.reduce((sum, node) => sum + node.text.length, 0);
     candidates.push({
-      part, kind: "content_control", ordinal: counters.content_control++, label, context: `Content control: ${label}`,
+      part, kind: "content_control", ordinal: counters.content_control++, label, position: sdt.start, context: `Content control: ${label}`,
       edit: (value) => {
         const edits: Edit[] = [];
         const placeholderFlag = pr.indexOf("<w:showingPlcHdr/>");
+        // Clearing is only for placeholder prompts; designed default text is left alone.
+        if (!value && placeholderFlag < 0) return edits;
         if (placeholderFlag >= 0) edits.push({ start: prBlock.start + placeholderFlag, end: prBlock.start + placeholderFlag + "<w:showingPlcHdr/>".length, replacement: "" });
         if (nodes.length) {
           edits.push(...replaceTextRange(nodes, 0, total, value));
@@ -260,7 +270,7 @@ function contentControlCandidates(xml: string, part: string, counters: Record<Do
         } else {
           const paragraph = elements(xml, "w:p", content.inner, content.innerEnd)[0];
           const insertAt = paragraph ? (elements(xml, "w:pPr", paragraph.inner, paragraph.innerEnd)[0]?.end ?? paragraph.inner) : content.inner;
-          edits.push({ start: insertAt, end: insertAt, replacement: `<w:r>${textElements(value)}</w:r>` });
+          if (value) edits.push({ start: insertAt, end: insertAt, replacement: `<w:r>${textElements(value)}</w:r>` });
         }
         return edits;
       },
@@ -273,22 +283,35 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
   const candidates: Candidate[] = [], ranges: Array<[number, number]> = [];
   for (const paragraph of elements(xml, "w:p")) {
     const body = xml.slice(paragraph.start, paragraph.end);
-    if (!body.includes("FORMTEXT")) continue;
-    const pattern = /<w:fldChar w:fldCharType="begin"[^>]*?(?:\/>|>([\s\S]*?)<\/w:fldChar>)([\s\S]*?)<w:fldChar w:fldCharType="separate"\/>([\s\S]*?)<w:fldChar w:fldCharType="end"\/>/g;
+    if (!/FORM(TEXT|CHECKBOX|DROPDOWN)/.test(body)) continue;
+    ranges.push([paragraph.start, paragraph.end]);
+    // Walk field characters in order. Each field is begin … [separate …] end; checkboxes have no separate.
+    const token = /<w:fldChar\b[^>]*?w:fldCharType="(begin|separate|end)"[^>]*?(?:\/>|>([\s\S]*?)<\/w:fldChar>)|<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g;
+    type Open = { begin: number; ffData: string; instr: string; separateEnd: number | null; depth: number };
+    const stack: Open[] = [];
+    // The label for a field is the text after the previous field in the same paragraph.
+    let previousFieldEnd = paragraph.inner;
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(body))) {
-      if (!/FORMTEXT/.test(match[2] ?? "")) continue;
-      const begin = paragraph.start + match.index;
-      const resultStart = begin + match[0].length - (match[3]!.length + '<w:fldChar w:fldCharType="end"/>'.length);
-      const resultEnd = resultStart + match[3]!.length;
-      const name = cleanLabel(match[1]?.match(/<w:name w:val="([^"]*)"/)?.[1] ?? "");
-      const before = cleanLabel(plainText(xml, paragraph.inner, begin).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
-      const label = name && !/^(text|check|dropdown)\d*$/i.test(name) ? name : before;
-      ranges.push([paragraph.start, paragraph.end]);
-      if (!plausibleLabel(label)) continue;
-      const nodes = textNodes(xml, resultStart, resultEnd);
-      const total = nodes.reduce((sum, node) => sum + node.text.length, 0);
-      candidates.push({ part, kind: "legacy_field", ordinal: counters.legacy_field++, label, context: `Form field: ${label}`, edit: (value) => (nodes.length ? replaceTextRange(nodes, 0, total, value) : [{ start: resultStart, end: resultStart, replacement: `<w:r>${textElements(value)}</w:r>` }]) });
+    while ((match = token.exec(body))) {
+      const at = paragraph.start + match.index;
+      if (match[3] !== undefined) { if (stack.length) stack[stack.length - 1]!.instr += decodeXml(match[3]); continue; }
+      if (match[1] === "begin") stack.push({ begin: at, ffData: match[2] ?? "", instr: "", separateEnd: null, depth: stack.length });
+      else if (match[1] === "separate") { if (stack.length) stack[stack.length - 1]!.separateEnd = at + match[0].length; }
+      else {
+        const field = stack.pop();
+        if (!field || field.depth !== 0) continue;
+        const labelFrom = previousFieldEnd;
+        previousFieldEnd = at + match[0].length;
+        if (!/\bFORMTEXT\b/.test(field.instr) || field.separateEnd === null) continue;
+        const resultStart = field.separateEnd, resultEnd = at;
+        const name = cleanLabel(field.ffData.match(/<w:name w:val="([^"]*)"/)?.[1] ?? "");
+        const before = cleanLabel(plainText(xml, labelFrom, field.begin).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
+        const label = name && !/^(text|check|dropdown)\d*$/i.test(name) ? name : before;
+        if (!plausibleLabel(label)) continue;
+        const nodes = textNodes(xml, resultStart, resultEnd);
+        const total = nodes.reduce((sum, node) => sum + node.text.length, 0);
+        candidates.push({ part, kind: "legacy_field", ordinal: counters.legacy_field++, label, position: field.begin, context: `Form field: ${label}`, edit: (value) => (nodes.length ? replaceTextRange(nodes, 0, total, value) : value ? [{ start: resultStart, end: resultStart, replacement: `<w:r>${textElements(value)}</w:r>` }] : []) });
+      }
     }
   }
   return { candidates, ranges };
@@ -301,16 +324,38 @@ function formParts(entries: readonly ZipEntry[]) {
   return names.filter((name) => name === "word/document.xml" || /^word\/(header|footer)\d*\.xml$/.test(name)).sort((a, b) => order(a) - order(b) || a.localeCompare(b, "en", { numeric: true }));
 }
 
+/** Short paragraphs with no blanks or placeholders, and single-cell table rows: candidates for section headings. */
+function headings(xml: string) {
+  const found: Array<{ position: number; text: string }> = [];
+  const tables = elements(xml, "w:tbl");
+  for (const paragraph of elements(xml, "w:p")) {
+    const text = cleanLabel(plainText(xml, paragraph.inner, paragraph.innerEnd));
+    if (!text || text.length > 60 || /_{3,}|\{\{|«|:\s*\S/.test(text)) continue;
+    const inTable = tables.find((table) => paragraph.start > table.start && paragraph.end < table.end);
+    if (inTable) {
+      // Inside a table only a row that is a single (merged) cell counts as a heading.
+      const row = elements(xml, "w:tr", inTable.inner, inTable.innerEnd).find((item) => paragraph.start > item.start && paragraph.end < item.end);
+      if (!row || elements(xml, "w:tc", row.inner, row.innerEnd).length !== 1) continue;
+    }
+    found.push({ position: paragraph.start, text });
+  }
+  return found;
+}
+
 function detectPart(xml: string, part: string): Candidate[] {
   const counters: Record<DocxTargetKind, number> = { token: 0, label_blank: 0, table_cell: 0, content_control: 0, legacy_field: 0 };
   const controls = contentControlCandidates(xml, part, counters);
   const legacy = legacyFieldCandidates(xml, part, counters);
-  const reserved = [...controls.ranges, ...legacy.ranges];
-  const skip = (start: number, end: number) => reserved.some(([a, b]) => start < b && end > a);
+  const reservedRanges = [...controls.ranges, ...legacy.ranges];
+  const reserved = (start: number, end: number) => reservedRanges.some(([a, b]) => start < b && end > a);
   const used = new Set<number>();
-  const tables = elements(xml, "w:tbl").flatMap((table) => tableCandidates(xml, part, table, counters, used));
-  const paragraphs = elements(xml, "w:p").flatMap((paragraph) => paragraphCandidates(xml, part, paragraph, counters, skip));
-  return [...controls.candidates, ...legacy.candidates, ...tables, ...paragraphs];
+  const tables = elements(xml, "w:tbl").flatMap((table) => tableCandidates(xml, part, table, counters, used, reserved));
+  const paragraphs = elements(xml, "w:p").flatMap((paragraph) => paragraphCandidates(xml, part, paragraph, counters, reserved));
+  const titles = headings(xml);
+  return [...controls.candidates, ...legacy.candidates, ...tables, ...paragraphs].map((candidate) => {
+    const section = [...titles].reverse().find((title) => title.position < candidate.position && title.text !== candidate.label)?.text;
+    return section ? { ...candidate, section } : candidate;
+  });
 }
 
 function loadParts(bytes: Uint8Array) {
@@ -329,7 +374,7 @@ function loadParts(bytes: Uint8Array) {
 
 export function analyzeDocx(bytes: Uint8Array): DocxField[] {
   const { xml } = loadParts(bytes);
-  return [...xml.entries()].flatMap(([part, content]) => detectPart(content, part).map(({ edit: _edit, ...field }) => { void _edit; return field; }));
+  return [...xml.entries()].flatMap(([part, content]) => detectPart(content, part).map(({ edit: _edit, position: _position, ...field }) => { void _edit; void _position; return field; }));
 }
 
 export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes: Uint8Array; issues: DocxIssue[] } {
@@ -343,7 +388,11 @@ export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes
       const candidate = candidates.find((item) => item.kind === fill.target.kind && item.ordinal === fill.target.ordinal);
       if (!candidate) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_missing", message: `"${fill.label ?? fill.target.label}" could not be found in the Word document. Re-analyze the template.` }); continue; }
       if (candidate.label !== fill.target.label) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_changed", message: `The Word document changed near "${fill.target.label}". Re-analyze the template before generating.` }); continue; }
-      if (!fill.value) continue;
+      if (!fill.value) {
+        // A merge token or placeholder prompt must not be printed in an official document; a blank line or empty cell can stay.
+        if (candidate.kind === "token" || candidate.kind === "content_control") edits.push(...candidate.edit(""));
+        continue;
+      }
       edits.push(...candidate.edit(fill.value));
     }
     if (edits.length) replacements.set(part, applyEdits(content, edits));
@@ -366,32 +415,41 @@ export function docxText(bytes: Uint8Array) {
  */
 export function docxPreviewHtml(bytes: Uint8Array, highlight: readonly string[] = []) {
   const { xml } = loadParts(bytes);
-  const body = xml.get("word/document.xml")!;
   const marks = highlight.filter((value) => value.trim().length > 0).sort((a, b) => b.length - a.length);
-  const runHtml = (start: number, end: number) => elements(body, "w:r", start, end).map((run) => {
-    const content = body.slice(run.inner, run.innerEnd);
-    let text = escapeXml(textNodes(body, run.inner, run.innerEnd).map((node) => node.text).join("")).replace(/\n/g, "<br>").replace(/\t/g, "&emsp;");
-    if (!text) return "";
-    if (/<w:b(?:\s+w:val="(?:1|true)")?\/>/.test(content)) text = `<strong>${text}</strong>`;
-    if (/<w:i(?:\s+w:val="(?:1|true)")?\/>/.test(content)) text = `<em>${text}</em>`;
-    if (/<w:u w:val="(?!none)/.test(content)) text = `<u>${text}</u>`;
-    return text;
-  }).join("");
-  const paragraphHtml = (paragraph: Block) => {
-    let html = runHtml(paragraph.inner, paragraph.innerEnd);
-    for (const mark of marks) html = html.split(escapeXml(mark)).join(`<mark>${escapeXml(mark)}</mark>`);
-    return `<p>${html || "&nbsp;"}</p>`;
+  const renderPart = (body: string) => {
+    const runHtml = (start: number, end: number) => elements(body, "w:r", start, end).map((run) => {
+      const content = body.slice(run.inner, run.innerEnd);
+      let text = escapeXml(textNodes(body, run.inner, run.innerEnd).map((node) => node.text).join("")).replace(/\n/g, "<br>").replace(/\t/g, "&emsp;");
+      if (!text) return "";
+      if (/<w:b(?:\s+w:val="(?:1|true)")?\/>/.test(content)) text = `<strong>${text}</strong>`;
+      if (/<w:i(?:\s+w:val="(?:1|true)")?\/>/.test(content)) text = `<em>${text}</em>`;
+      if (/<w:u w:val="(?!none)/.test(content)) text = `<u>${text}</u>`;
+      return text;
+    }).join("");
+    const paragraphHtml = (paragraph: Block) => {
+      let html = runHtml(paragraph.inner, paragraph.innerEnd);
+      for (const mark of marks) html = html.split(escapeXml(mark)).join(`<mark>${escapeXml(mark)}</mark>`);
+      return `<p>${html || "&nbsp;"}</p>`;
+    };
+    const parts: string[] = [];
+    let cursor = 0;
+    const tables = elements(body, "w:tbl");
+    const bodyParagraphs = (start: number, end: number) => elements(body, "w:p", start, end).filter((paragraph) => !tables.some((table) => paragraph.start >= table.start && paragraph.end <= table.end)).map(paragraphHtml).join("");
+    for (const table of tables) {
+      parts.push(bodyParagraphs(cursor, table.start));
+      const rows = elements(body, "w:tr", table.inner, table.innerEnd).map((row) => `<tr>${elements(body, "w:tc", row.inner, row.innerEnd).map((cell) => `<td>${elements(body, "w:p", cell.inner, cell.innerEnd).map(paragraphHtml).join("")}</td>`).join("")}</tr>`).join("");
+      parts.push(`<table>${rows}</table>`);
+      cursor = table.end;
+    }
+    parts.push(bodyParagraphs(cursor, body.length));
+    return parts.join("");
   };
-  const parts: string[] = [];
-  let cursor = 0;
-  const tables = elements(body, "w:tbl");
-  const bodyParagraphs = (start: number, end: number) => elements(body, "w:p", start, end).filter((paragraph) => !tables.some((table) => paragraph.start >= table.start && paragraph.end <= table.end)).map(paragraphHtml).join("");
-  for (const table of tables) {
-    parts.push(bodyParagraphs(cursor, table.start));
-    const rows = elements(body, "w:tr", table.inner, table.innerEnd).map((row) => `<tr>${elements(body, "w:tc", row.inner, row.innerEnd).map((cell) => `<td>${elements(body, "w:p", cell.inner, cell.innerEnd).map(paragraphHtml).join("")}</td>`).join("")}</tr>`).join("");
-    parts.push(`<table>${rows}</table>`);
-    cursor = table.end;
-  }
-  parts.push(bodyParagraphs(cursor, body.length));
-  return parts.join("");
+  const headers = [...xml.keys()].filter((name) => name.startsWith("word/header"));
+  const footers = [...xml.keys()].filter((name) => name.startsWith("word/footer"));
+  // Headers and footers are shown once, above and below the body, with their filled values.
+  return [
+    ...headers.map((name) => `<header class="docx-header">${renderPart(xml.get(name)!)}</header>`),
+    renderPart(xml.get("word/document.xml")!),
+    ...footers.map((name) => `<footer class="docx-footer">${renderPart(xml.get(name)!)}</footer>`),
+  ].join("");
 }

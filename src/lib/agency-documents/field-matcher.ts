@@ -49,7 +49,7 @@ const ABBREVIATIONS: Record<string, string[]> = {
 
 /** Widget-name prefixes that authoring tools prepend and that carry no meaning. */
 const NOISE_PREFIXES = new Set(["txt", "text", "fld", "field", "tb", "tf", "cb", "chk", "check", "dd", "ddl", "lst", "opt", "rb", "frm", "form", "input"]);
-const FILLER = new Set(["the", "of", "s", "please", "print", "printed", "enter", "type", "here", "a", "an", "to", "be", "in", "for", "and", "or", "your", "this"]);
+const FILLER = new Set(["the", "of", "s", "please", "print", "printed", "enter", "here", "a", "an", "to", "be", "in", "for", "and", "or", "your", "this"]);
 
 /** Words that mean the box belongs to someone/something other than the subject. */
 const GLOBAL_BLOCKERS = ["signature", "initials", "initial", "notary", "witness", "sign"];
@@ -90,7 +90,7 @@ const RULES: Rule[] = [
   { key: "qualification.course_name", exact: ["course", "course name", "course of fire", "qualification course", "drill", "drill name", "course title"], contains: ["course of fire", "course name"] },
   { key: "qualification.score", exact: ["score", "qualification score", "total score", "final score", "points", "score points"], contains: ["score"], blockers: ["minimum", "passing", "required", "possible", "max", "maximum"] },
   { key: "qualification.result", exact: ["result", "pass fail", "qualification result", "pass or fail", "results", "pass fail result", "qualified pass fail"], contains: ["pass fail"], blockers: [] },
-  { key: "qualification.instructor", exact: ["instructor", "instructor name", "range instructor", "firearms instructor", "qualifying instructor", "range master", "rangemaster", "range officer"], contains: ["instructor name"], blockers: ["signature", "number", "certification", "supervising", "other", "all", "additional"] },
+  { key: "qualification.instructor", exact: ["instructor", "instructor name", "range instructor", "firearms instructor", "qualifying instructor", "range master", "rangemaster"], contains: ["instructor name"], blockers: ["signature", "number", "certification", "supervising", "other", "all", "additional"] },
   { key: "document.report_year", exact: ["report year", "year", "reporting year", "calendar year", "year of report"], contains: ["report year", "reporting year"], blockers: ["birth", "model", "vehicle", "manufacture"] },
   { key: "document.report_date", exact: ["date", "report date", "date of report", "todays date", "today date", "date prepared", "date completed", "date submitted", "submission date", "date of submission"], contains: ["date of report", "report date"], blockers: ["birth", "hire", "qualification", "fired", "expiration", "expires", "issue", "issued", "due", "next", "purchase", "incident", "appointment", "academy"] },
   { key: "preparer.full_name", exact: ["prepared by", "completed by", "submitted by", "report prepared by", "name of person completing", "person completing form", "name of preparer", "preparer name", "preparer"], contains: ["prepared by", "completed by", "submitted by"], blockers: ["date", "rank", "badge", "title", "phone", "email"] },
@@ -145,24 +145,53 @@ export function numberedIndex(tokens: string[]): number | null {
   return digits.length === 1 ? Number(digits[0]) : null;
 }
 
+/** Words in a label that explain an otherwise "other person" word for a given field. */
+const EXPLAINED: Record<string, readonly string[]> = {
+  "qualification.instructor": ["instructor", "range", "master", "rangemaster"],
+  "agency.chief_name": ["chief", "director", "head"],
+  "agency.address": ["address", "street", "city", "zip"],
+  "preparer.full_name": ["prepared", "preparer", "completed", "submitted"],
+  "preparer.rank": ["prepared", "preparer", "completed", "submitted"],
+  "preparer.badge_number": ["prepared", "preparer", "completed", "submitted"],
+};
+const CONCERN_WORDS = [...OTHER_PERSON, ...PERSONAL_DETAIL];
+
+/** Words in a label that suggest the value belongs to someone or something other than what `key` describes. */
+function concernsFor(tokens: readonly string[], key: string | undefined) {
+  const explained = new Set(key ? EXPLAINED[key] ?? [] : []);
+  return [...new Set(tokens.filter((token) => CONCERN_WORDS.includes(token) && !explained.has(token)))];
+}
+
 /**
- * Match one form label. `labels` may contain several sources for the same
- * field (e.g. widget name and tooltip); the most specific usable result wins,
- * and disagreement between sources downgrades the result to a suggestion.
+ * Match one form field. `labels` may contain several sources for the same
+ * field (tooltip, short name, full hierarchical name, nearby heading). The
+ * best exact result is used only when no other source contradicts it: a
+ * signature word anywhere makes the field unmatched, and wording about another
+ * person (supervisor, witness, ...) or a different TracePoint field in any
+ * source downgrades the result to a suggestion for review.
  */
-export function matchFieldLabel(labels: string | readonly string[], options: { fieldKind?: "text" | "checkbox" | "choice" | "signature"; learned?: readonly LearnedMapping[] } = {}): FieldMatch {
+export function matchFieldLabel(labels: string | readonly string[], options: { fieldKind?: "text" | "checkbox" | "choice" | "signature"; learned?: readonly LearnedMapping[]; context?: readonly string[] } = {}): FieldMatch {
   const sources = (Array.isArray(labels) ? labels : [labels as string]).map((label) => label?.trim()).filter((label): label is string => Boolean(label));
   if (!sources.length) return { status: "unmatched", confidence: 0, reason: "The field has no readable label.", alternatives: [], normalizedLabel: "" };
   const results = sources.map((source) => matchSingle(source, options));
   const normalizedLabel = results.map((result) => result.normalizedLabel).find(Boolean) ?? "";
+  const allTokens = [...sources, ...(options.context ?? [])].map((source) => normalizeLabel(source));
+  if (options.fieldKind === "signature" || allTokens.slice(0, sources.length).some((tokens) => hasAny(tokens, GLOBAL_BLOCKERS))) {
+    return { status: "unmatched", confidence: 0, reason: "Signature and initial boxes are never filled automatically.", alternatives: [], normalizedLabel };
+  }
   const keyed = results.filter((result) => result.key);
   if (!keyed.length) return { ...results[0], normalizedLabel };
   const distinct = [...new Set(keyed.map((result) => result.key!))];
+  const best = [...keyed].sort((a, b) => b.confidence - a.confidence)[0];
   if (distinct.length > 1) {
-    const best = keyed.sort((a, b) => b.confidence - a.confidence)[0];
     return { status: "suggested", key: best.key, confidence: Math.min(best.confidence, 0.6), reason: `The field's labels point to different TracePoint fields (${distinct.map(label).join(", ")}). Confirm which one applies.`, alternatives: distinct.filter((key) => key !== best.key), normalizedLabel: best.normalizedLabel };
   }
-  return keyed.sort((a, b) => b.confidence - a.confidence)[0];
+  // Any source (or the surrounding heading) that talks about another person or a personal detail contradicts the match.
+  const concerns = [...new Set(allTokens.flatMap((tokens) => concernsFor(tokens, best.key)))];
+  if (concerns.length) {
+    return { ...best, status: "suggested", confidence: Math.min(best.confidence, 0.5), reason: `This field looks like ${label(best.key!)}, but its labels or section mention "${concerns.join(", ")}", so it may belong to someone else. Confirm before using it.` };
+  }
+  return best;
 }
 
 function label(key: string) {
@@ -180,6 +209,7 @@ function matchSingle(raw: string, options: { fieldKind?: "text" | "checkbox" | "
     return { status: "unmatched", confidence: 0, reason: "Checkboxes are completed by the person generating the document.", alternatives: [], normalizedLabel };
   }
 
+  // Decisions a person made on another template. They never bypass the other-person checks in matchFieldLabel.
   const learned = options.learned?.find((entry) => entry.normalizedLabel === normalizedLabel);
   if (learned) {
     if (learned.key === null) return { status: "unmatched", confidence: 0, reason: `Your agency previously chose manual entry for "${raw}"${learned.templateName ? ` on ${learned.templateName}` : ""}.`, alternatives: [], normalizedLabel };
@@ -205,8 +235,9 @@ function matchSingle(raw: string, options: { fieldKind?: "text" | "checkbox" | "
 
   if (exactHits.length === 1 && index === null) {
     const key = exactHits[0];
-    const generic = GENERIC_EXACT.has(coreText);
-    if (generic) return { status: "suggested", key, confidence: 0.7, reason: `"${raw}" is a generic label. It most likely means ${label(key)}, but confirm it for this form.`, alternatives: [], normalizedLabel };
+    // One-word labels ("Badge", "Rank", "Score") say nothing about whose value it is; a person confirms them.
+    const generic = GENERIC_EXACT.has(coreText) || (core.length === 1 && !UNAMBIGUOUS_SINGLE.has(coreText));
+    if (generic) return { status: "suggested", key, confidence: 0.7, reason: `"${raw}" is a short, generic label. It most likely means ${label(key)}, but confirm it for this form.`, alternatives: [], normalizedLabel };
     return { status: "exact", key, confidence: 0.97, reason: `"${raw}" exactly matches ${label(key)}.`, alternatives: [], normalizedLabel };
   }
   if (exactHits.length === 1 && index !== null) {
@@ -224,6 +255,9 @@ function matchSingle(raw: string, options: { fieldKind?: "text" | "checkbox" | "
   }
   return { status: "unmatched", confidence: 0, reason: `No TracePoint field reliably matches "${raw}".`, alternatives: [], normalizedLabel };
 }
+
+/** Single-word labels that cannot refer to anything else on a police form. */
+const UNAMBIGUOUS_SINGLE = new Set(["ori"]);
 
 /** Rule phrases are normalized with the same function as labels, so filler words and abbreviations never cause misses. */
 const COMPILED_RULES = RULES.map((rule) => ({

@@ -72,7 +72,7 @@ async function world() {
       createAttachmentView: async (path) => ({ signedUrl: `memory://${path}`, error: null }),
       uploadGeneratedAgencyDocument: async (input) => { uploads.push(input); return { path: `generated/${input.fileName}`, error: null }; },
     }),
-    fetch: async (url) => new Response(url.endsWith("docx-path") ? docx : pdf),
+    fetch: async (url) => new Response((url.endsWith("docx-path") ? docx : pdf) as unknown as BodyInit),
   });
   return { tables, deps, uploads, pdfRows, docxRows };
 }
@@ -167,4 +167,14 @@ test("malformed requests fail cleanly", async () => {
   assert.equal((await handleGenerate(post({}), deps())).status, 400);
   const garbage = await handleGenerate(new Request("http://local", { method: "POST", body: "{not json" }), deps());
   assert.equal(garbage.status, 400);
+});
+
+test("an official document is never issued from a template with unreviewed mappings", async () => {
+  const { deps, tables } = await world();
+  const field = tables.document_template_fields.find((row) => row.template_version_id === VERSION && row.canonical_key === "person.rank")!;
+  (field.formatting as Row).matchStatus = "suggested";
+  const response = await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context }), deps());
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /still need review/);
+  assert.equal(tables.generated_documents.length, 0);
 });

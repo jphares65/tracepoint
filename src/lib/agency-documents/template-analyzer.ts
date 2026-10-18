@@ -69,9 +69,9 @@ export function validateProposal(input: ProposalInput): AnalysisProposal | null 
 }
 
 /** Build a proposal for a printed or named label using the deterministic matcher. */
-export function suggestFromLabel(label: string | readonly string[], page: number, geometry: FieldGeometry, options: { learned?: readonly LearnedMapping[]; fieldKind?: "text" | "checkbox" | "choice" | "signature"; analyzerSource?: AnalyzerSource } = {}) {
+export function suggestFromLabel(label: string | readonly string[], page: number, geometry: FieldGeometry, options: { learned?: readonly LearnedMapping[]; fieldKind?: "text" | "checkbox" | "choice" | "signature"; analyzerSource?: AnalyzerSource; context?: readonly string[] } = {}) {
   const labels = typeof label === "string" ? [label] : label;
-  const match = matchFieldLabel(labels, { learned: options.learned, fieldKind: options.fieldKind });
+  const match = matchFieldLabel(labels, { learned: options.learned, fieldKind: options.fieldKind, context: options.context });
   return validateProposal({
     page,
     detectedLabel: labels[0] ?? "",
@@ -190,7 +190,7 @@ export function proposalsFromDocxFields(fields: readonly DocxField[], learned: r
   const proposals: AnalysisProposal[] = [];
   fields.forEach((field, index) => {
     const geometry = { x: 0, y: Math.min(0.98, index * 0.001), width: 1, height: 0.001 };
-    const base = suggestFromLabel(field.label, 1, geometry, { learned, analyzerSource: "docx" });
+    const base = suggestFromLabel(field.label, 1, geometry, { learned, analyzerSource: "docx", context: field.section ? [field.section] : undefined });
     if (!base) return;
     let proposal: AnalysisProposal = { ...base, detectedLabel: field.label, docxTarget: field };
     if (field.repeating && proposal.matchStatus === "exact") {

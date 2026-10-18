@@ -71,16 +71,21 @@ test("synthetic qualification form: mapping accuracy, traps, and bulk-accept eli
   const result = await analyzeTemplatePdf(await buildQualificationForm());
   assert.equal(result.scanned, false);
   const byName = new Map(result.proposals.map((p) => [p.acroField?.name, p]));
-  const expectExact: Record<string, string> = { OfficerName: "person.full_name", BadgeNo: "person.badge_number", Rank: "person.rank", AgencyName: "agency.name", Make: "firearm.manufacturer", SerialNo: "firearm.serial_number", Caliber: "firearm.caliber", QualDate: "qualification.date", Score: "qualification.score", PassFail: "qualification.result", InstructorName: "qualification.instructor" };
+  const expectExact: Record<string, string> = { OfficerName: "person.full_name", BadgeNo: "person.badge_number", AgencyName: "agency.name", SerialNo: "firearm.serial_number", QualDate: "qualification.date", PassFail: "qualification.result", InstructorName: "qualification.instructor" };
   for (const [name, key] of Object.entries(expectExact)) {
     const proposal = byName.get(name)!;
     assert.equal(proposal.suggestedSemanticKey, key, `${name} → ${key}`);
     assert.equal(proposal.classification, "high", `${name} should be high confidence`);
     assert.equal(eligibleForBulkAccept(proposal), true);
   }
-  // "Model" alone is generic: suggested, needs review, and not bulk-accepted.
-  assert.equal(byName.get("Model")!.classification, "review");
-  assert.equal(eligibleForBulkAccept(byName.get("Model")!), false);
+  // One-word labels are suggested with the right field but need a person's confirmation and are never bulk-accepted.
+  const expectReview: Record<string, string> = { Rank: "person.rank", Make: "firearm.manufacturer", Model: "firearm.model", Caliber: "firearm.caliber", Score: "qualification.score" };
+  for (const [name, key] of Object.entries(expectReview)) {
+    const proposal = byName.get(name)!;
+    assert.equal(proposal.suggestedSemanticKey, key, `${name} → ${key}`);
+    assert.equal(proposal.classification, "review", `${name} should need review`);
+    assert.equal(eligibleForBulkAccept(proposal), false);
+  }
   // Traps: never mapped to the selected officer or bulk-accepted.
   for (const trap of ["SupervisorName", "OfficerSignature", "CaseNumber", "Remarks", "DutyWeapon"]) {
     const proposal = byName.get(trap)!;

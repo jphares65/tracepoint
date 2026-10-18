@@ -34,21 +34,23 @@ test("vertical slice: upload → automatic setup → review flagged fields → g
   // 1. Analyze and set up automatically.
   const analysis = await analyzeTemplatePdf(source);
   const plan = planAutomaticSetup(analysis.proposals);
-  assert.equal(plan.summary.needsReview, 1, "only the generic 'Model' label should need review");
-  assert.ok(plan.summary.confirmed >= 11);
+  assert.equal(plan.summary.needsReview, 5, "the one-word labels Rank, Make, Model, Caliber and Score need review");
+  assert.ok(plan.summary.confirmed >= 7);
   // The signature box is left blank for a hand signature.
   assert.deepEqual(plan.skipped.map((proposal) => proposal.acroField?.name), ["OfficerSignature"]);
   // Supervisor, case number, remarks and the checkbox become manual fields asked for at generation — never auto-filled.
   const manualNames = plan.rows.filter((row) => row.field_type === "manual").map((row) => row.formatting.acroFieldName).sort();
   assert.deepEqual(manualNames, ["CaseNumber", "DutyWeapon", "Remarks", "SupervisorName"]);
 
-  // 2. Publishing is blocked until the flagged field is confirmed.
+  // 2. Publishing is blocked until each flagged field is confirmed.
   let rows = storedRows(plan.rows);
-  assert.equal(publishBlockers(rows).length, 1);
+  assert.equal(publishBlockers(rows).length, 5);
   assert.match(publishBlockers(rows)[0]!.message, /confirm or change/);
-  const modelProposal = analysis.proposals.find((proposal) => proposal.acroField?.name === "Model")!;
-  const confirmed = proposalToFieldRow(modelProposal, "accepted");
-  rows = rows.map((row) => (row.formatting?.acroFieldName === "Model" ? { ...confirmed, id: row.id } : row));
+  for (const name of ["Rank", "Make", "Model", "Caliber", "Score"]) {
+    const proposal = analysis.proposals.find((item) => item.acroField?.name === name)!;
+    const confirmed = proposalToFieldRow(proposal, "accepted");
+    rows = rows.map((row) => (row.formatting?.acroFieldName === name ? { ...confirmed, id: row.id } : row));
+  }
   assert.deepEqual(publishBlockers(rows), []);
 
   // 3. Generate for the selected officer; the generating sergeant's details must not appear in officer fields.
@@ -118,8 +120,8 @@ test("Word vertical slice: analyze → automatic setup → generate a completed 
   assert.equal(templateFormat(source), "docx");
   const plan = planAutomaticSetup(analyzeTemplateDocx(source).proposals);
   assert.deepEqual(plan.skipped.map((proposal) => proposal.detectedLabel), ["Officer Signature"]);
-  const reviewLabels = plan.rows.filter((row) => row.formatting.matchStatus === "suggested").map((row) => row.label);
-  assert.deepEqual(reviewLabels, ["Model"]);
+  const reviewLabels = plan.rows.filter((row) => row.formatting.matchStatus === "suggested").map((row) => row.label).sort();
+  assert.deepEqual(reviewLabels, ["Caliber", "Manufacturer", "Model", "Rank", "Score"]);
   const manual = plan.rows.filter((row) => row.field_type === "manual").map((row) => row.label).sort();
   assert.deepEqual(manual, ["CaseNo", "Supervisor Name"]);
   const specs = storedRows(plan.rows).map(toFieldSpec);

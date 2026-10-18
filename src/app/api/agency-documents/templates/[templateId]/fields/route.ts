@@ -11,8 +11,10 @@ export async function PUT(request: Request, route: Context) {
   if (!hasAnyServerPermission(access.context, ["manage_document_templates"])) return permissionDeniedResponse("Template-management permission is required.");
   const { templateId } = await route.params; const body = await request.json().catch(() => ({})) as { fields?: FieldInput[] };
   if (!Array.isArray(body.fields) || body.fields.some(invalid)) return NextResponse.json({ error: "One or more template fields are invalid." }, { status: 400 });
-  const template = await access.context.admin.from("document_templates").select("current_version").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
+  const template = await access.context.admin.from("document_templates").select("current_version,status").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
   if (template.error) return NextResponse.json({ error: template.error.message }, { status: 500 }); if (!template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
+  // A published template is in use; changing its fields could change documents generated from it. Unpublish first.
+  if (template.data.status === "published") return NextResponse.json({ error: "Unpublish this template before editing its fields." }, { status: 409 });
   const version = await access.context.admin.from("document_template_versions").select("id").eq("template_id", templateId).eq("department_id", access.context.departmentId).eq("version_number", template.data.current_version).single();
   if (version.error) return NextResponse.json({ error: version.error.message }, { status: 500 });
   // Save atomically from the user's point of view: write the new set first (fresh ids, so a client can never
@@ -24,7 +26,11 @@ export async function PUT(request: Request, route: Context) {
     const saved = await access.context.admin.from("document_template_fields").insert(rows);
     if (saved.error) return NextResponse.json({ error: "Template fields could not be saved. Your previous fields were kept." }, { status: 500 });
   }
-  const oldIds = (previous.data ?? []).map((row: { id: string }) => row.id);
+  // Remove everything for this version that is not in the set just written. Re-reading here (rather than using the
+  // earlier snapshot) means two overlapping saves can never leave both sets behind: the last save wins.
+  const newIds = new Set<string>(rows.map((row) => row.id));
+  const current = await access.context.admin.from("document_template_fields").select("id").eq("department_id", access.context.departmentId).eq("template_version_id", version.data.id);
+  const oldIds = current.error ? (previous.data ?? []).map((row: { id: string }) => row.id) : (current.data ?? []).map((row: { id: string }) => row.id).filter((id: string) => !newIds.has(id));
   if (oldIds.length) {
     const deleted = await access.context.admin.from("document_template_fields").delete().eq("department_id", access.context.departmentId).in("id", oldIds);
     if (deleted.error) {

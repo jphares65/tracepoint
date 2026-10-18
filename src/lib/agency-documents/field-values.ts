@@ -101,11 +101,23 @@ export function cleanValue(value: unknown): string {
   return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/[ \t]+/g, " ").trim();
 }
 
+const PREFIXES = new Set(["mr", "mrs", "ms", "dr", "sgt", "lt", "capt", "cpt", "det", "cpl", "ofc", "officer", "chief", "sheriff", "deputy", "trooper", "sergeant", "lieutenant", "captain", "detective"]);
+
+/**
+ * Split a recorded full name only when the split is unambiguous:
+ * "First Last" or "First M. Last" (optionally with Jr./Sr./II–V).
+ * Compound surnames ("De La Cruz"), extra given names, or titles in the name
+ * return empty parts, so the field is reported instead of filled wrongly.
+ */
 export function splitName(fullName: string) {
   const parts = cleanValue(fullName).split(/\s+/).filter(Boolean);
   if (!parts.length) return { first: "", last: "" };
-  const trailing = parts.length > 1 && SUFFIXES.has(parts.at(-1)!.replace(/\./g, "").toLowerCase()) ? parts.slice(0, -1) : parts;
-  return { first: trailing[0] ?? "", last: trailing.length > 1 ? trailing.at(-1)! : "" };
+  if (PREFIXES.has(parts[0]!.replace(/\./g, "").toLowerCase())) return { first: "", last: "" };
+  const core = parts.length > 1 && SUFFIXES.has(parts.at(-1)!.replace(/\./g, "").toLowerCase()) ? parts.slice(0, -1) : parts;
+  if (core.length === 1) return { first: core[0]!, last: "" };
+  if (core.length === 2) return { first: core[0]!, last: core[1]! };
+  if (core.length === 3 && /^[A-Za-z]\.?$/.test(core[1]!)) return { first: core[0]!, last: core[2]! };
+  return { first: "", last: "" };
 }
 
 /** Parse yyyy-mm-dd (optionally with time) strictly; returns null for anything ambiguous. */
@@ -140,8 +152,8 @@ function lookup(key: string, sources: GenerationSources, format: DateFormat): Lo
     const name = splitName(person.fullName);
     switch (key) {
       case "person.full_name": return has(person.fullName, who, "The selected officer has no name recorded in TracePoint.");
-      case "person.first_name": return has(name.first, who, "The selected officer's first name could not be determined.");
-      case "person.last_name": return has(name.last, who, "The selected officer's last name could not be determined from the recorded name.");
+      case "person.first_name": return has(name.first, who, "The officer's first name cannot be separated reliably from the recorded full name. Type it for this document.");
+      case "person.last_name": return has(name.last, who, "The officer's last name cannot be separated reliably from the recorded full name (for example a compound surname). Type it for this document.");
       case "person.badge_number": return has(person.badgeNumber, who, "The selected officer has no badge number recorded in TracePoint.");
       case "person.rank": return has(person.rankTitle, who, "The selected officer has no rank recorded in TracePoint.");
       case "person.email": return has(person.email, who, "The selected officer has no email recorded in TracePoint.");

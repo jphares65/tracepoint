@@ -6,7 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { analyzeDocx, docxPreviewHtml, docxText, fillDocx, DocxFormError, type DocxField } from "./docx-forms";
 import { createZip, entryText, readZip } from "./docx-zip";
-import { buildDocx, buildQualificationDocx, cell, p, r, row, table } from "./__fixtures__/synthetic-docx";
+import { buildDocx, buildQualificationDocx, cell, legacyField, p, r, row, table } from "./__fixtures__/synthetic-docx";
+import { analyzeTemplateDocx } from "./template-analyzer";
 
 const office = spawnSync("soffice", ["--version"]).status === 0;
 
@@ -130,4 +131,59 @@ test("the completed file opens in an office suite and prints the values", { skip
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const mergedStart = (content: string) => `<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>${content}</w:tc>`;
+const mergedContinue = () => `<w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>`;
+const checkboxField = (name: string) => `<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="${name}"/><w:checkBox><w:sizeAuto/><w:default w:val="0"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+
+test("cells that only look empty — merged continuations, symbols, images, fields — are never targets", () => {
+  const symbolCell = `<w:tc><w:p><w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:p></w:tc>`;
+  const source = buildDocx(table(
+    row(mergedStart(p(r("Officer Name"))), cell("")),
+    row(mergedContinue(), cell(p(r("x")))),
+    row(cell(p(r("Duty weapon"))), symbolCell),
+    row(cell(p(r("Case Number"))), cell(p(legacyField("CaseNo")))),
+  ));
+  const fields = analyzeDocx(source);
+  const tableTargets = fields.filter((field) => field.kind === "table_cell").map((field) => field.label);
+  assert.deepEqual(tableTargets, ["Officer Name"]);
+  assert.equal(fields.filter((field) => field.kind === "legacy_field").length, 1);
+  // Filling every detected target works without overlap errors and keeps the checkbox symbol.
+  const filled = fillDocx(source, fields.map((field) => ({ target: field, value: "V" })));
+  assert.deepEqual(filled.issues, []);
+  assert.ok(entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!).includes("<w:sym"));
+});
+
+test("a legacy checkbox before a text field does not steal the text field's label", () => {
+  const source = buildDocx(p(r("Supervisor Review "), checkboxField("SupervisorReviewed"), r(" Officer Name: "), legacyField("Text1")));
+  const fields = analyzeDocx(source).filter((field) => field.kind === "legacy_field");
+  assert.deepEqual(fields.map((field) => field.label), ["Officer Name"]);
+  const filled = fillDocx(source, [{ target: fields[0]!, value: "Jordan Rivera" }]);
+  assert.match(docxText(filled.bytes), /Officer Name: Jordan Rivera/);
+});
+
+test("fields under a heading about another person are flagged for review, not auto-confirmed", () => {
+  const source = buildDocx(p(r("OFFICER INFORMATION", "<w:b/>")) + table(row(cell(p(r("Badge Number"))), cell(""))) + p(r("SUPERVISOR INFORMATION", "<w:b/>")) + table(row(cell(p(r("Badge Number"))), cell(""))));
+  const proposals = analyzeTemplateDocx(source).proposals;
+  assert.deepEqual(proposals.map((proposal) => proposal.matchStatus), ["exact", "suggested"]);
+  assert.match(proposals[1]!.rationale ?? "", /supervisor/i);
+});
+
+test("a token or placeholder prompt left blank is removed rather than printed", () => {
+  const source = buildQualificationDocx();
+  const fields = analyzeDocx(source);
+  const token = fields.find((field) => field.label === "Officer Name")!;
+  const control = fields.find((field) => field.kind === "content_control")!;
+  const filled = fillDocx(source, [{ target: token, value: "" }, { target: control, value: "" }]);
+  const text = docxText(filled.bytes);
+  assert.ok(!text.includes("{{"));
+  assert.ok(!text.includes("Click or tap here"));
+});
+
+test("the Word preview includes filled headers and footers", () => {
+  const source = buildQualificationDocx();
+  const header = analyzeDocx(source).find((field) => field.part === "word/header1.xml")!;
+  const filled = fillDocx(source, [{ target: header, value: "Lakeview PD" }]);
+  assert.ok(docxPreviewHtml(filled.bytes, ["Lakeview PD"]).includes("<header class=\"docx-header\"><p><mark>Lakeview PD</mark></p></header>"));
 });

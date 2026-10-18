@@ -13,7 +13,8 @@ export function learnedMappingsFromFields(rows: readonly StoredField[]): Learned
   const decisions = new Map<string, { keys: Set<string | null>; templateName?: string }>();
   for (const row of rows) {
     const label = typeof row.formatting?.normalizedLabel === "string" ? row.formatting.normalizedLabel.trim() : "";
-    if (!label || row.formatting?.matchStatus === "suggested") continue;
+    // Learn only from decisions a person made — never from automatic setup, which may itself be wrong.
+    if (!label || row.formatting?.confirmedByPerson !== true || row.formatting?.matchStatus === "suggested") continue;
     let key: string | null;
     if (row.field_type === "tracepoint_data" && row.canonical_key && getDocumentField(row.canonical_key)) key = row.canonical_key;
     else if (row.field_type === "manual") key = null;
