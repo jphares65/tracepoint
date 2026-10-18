@@ -1,23 +1,170 @@
-import { PDFDocument } from "pdf-lib";
 import { getDocumentField } from "./field-registry";
+import { matchFieldLabel, type LearnedMapping, type MatchStatus } from "./field-matcher";
+import { normalizeRotation, pdfRectToNormalized } from "./page-geometry";
+import { inspectPdf, labelSources, type InspectedField, type InspectedFieldKind } from "./pdf-form-inspector";
 import { isValidFieldGeometry, type FieldGeometry } from "./template-core";
-export type ProposalType="tracepoint_data"|"manual"|"static_text";
-export type AnalyzerSource="native_pdf"|"visual_scan"|"manual";
-export type ProposalKind="scalar_field"|"structured_section";
-export type StructuredTargetCell={page:number;order:number;row:number;column:number;geometry:FieldGeometry;source?:"textract"|"grid_detector"};
-export type AnalysisProposal={id:string;page:number;detectedLabel:string;suggestedType:ProposalType;suggestedSemanticKey?:string;confidence:number;classification:"high"|"review"|"unmapped"|"structured";geometry:FieldGeometry;reviewRequired:boolean;rationale?:string;analyzerSource:AnalyzerSource;kind?:ProposalKind;structuredType?:"repeating_table";targetCells?:StructuredTargetCell[]};
-export type AnalysisResult={provider:"native-pdf-heuristic"|"visual-scan-layout-profile"|"general-vision-advisory";version:"1";scanned:boolean;proposals:AnalysisProposal[]};
-type WidgetRect={x:number;y:number;width:number;height:number};
-type NativeWidget={name:string;page:number;geometry:FieldGeometry;fallback:boolean};
-const LABELS:Array<[RegExp,string]>=[[/\b(officer|member|employee)\s*(name)?\b/i,"person.full_name"],[/\bbadge(\s*(#|number|no\.?))?\b/i,"person.badge_number"],[/\brank\b/i,"person.rank"],[/\b(agency|department)\b/i,"agency.name"],[/\bori\b/i,"agency.ori"],[/\b(make|manufacturer)\b/i,"firearm.manufacturer"],[/\bmodel\b/i,"firearm.model"],[/\bserial(\s*number)?\b/i,"firearm.serial_number"],[/\bcaliber\b/i,"firearm.caliber"],[/\bqualification\s*date\b/i,"qualification.date"],[/\bscore\b/i,"qualification.score"],[/\b(pass|fail|result)\b/i,"qualification.result"],[/\binstructor\b/i,"qualification.instructor"]];
-export function normalizeWidgetRectangle(rect:WidgetRect,pageWidth:number,pageHeight:number,rotation=0):FieldGeometry|null{const x=rect.width<0?rect.x+rect.width:rect.x,y=rect.height<0?rect.y+rect.height:rect.y,width=Math.abs(rect.width),height=Math.abs(rect.height);if(![0,90,180,270].includes(rotation)||pageWidth<=0||pageHeight<=0||width<=0||height<=0)return null;let geometry:FieldGeometry;if(rotation===0)geometry={x:x/pageWidth,y:(pageHeight-y-height)/pageHeight,width:width/pageWidth,height:height/pageHeight};else if(rotation===90)geometry={x:(pageHeight-y-height)/pageHeight,y:(pageWidth-x-width)/pageWidth,width:height/pageHeight,height:width/pageWidth};else if(rotation===180)geometry={x:(pageWidth-x-width)/pageWidth,y:y/pageHeight,width:width/pageWidth,height:height/pageHeight};else geometry={x:y/pageHeight,y:x/pageWidth,width:height/pageHeight,height:width/pageWidth};return isValidFieldGeometry(geometry)?geometry:null}
-function pageForWidget(pdf:PDFDocument,widget:unknown){const target=(widget as {dict:unknown}).dict;return pdf.getPages().findIndex(page=>{const annots=page.node.Annots();return Boolean(annots?.asArray().some(annotation=>pdf.context.lookup(annotation)===target||annotation===target))})}
-function nativeWidgets(pdf:PDFDocument){const widgets:NativeWidget[]=[];for(const field of pdf.getForm().getFields()){const name=field.getName();const rawWidgets=field.acroField.getWidgets();for(const widget of rawWidgets){const pageIndex=pageForWidget(pdf,widget);if(pageIndex<0)continue;const page=pdf.getPages()[pageIndex];const size=page.getSize();const geometry=normalizeWidgetRectangle(widget.getRectangle(),size.width,size.height,page.getRotation().angle);if(geometry)widgets.push({name,page:pageIndex+1,geometry,fallback:false})}}return widgets}
-function fallbackGeometry(index:number){return{x:.1,y:Math.min(.9,.1+index*.07),width:.3,height:.04}}
-export function validateProposal(input:Omit<AnalysisProposal,"id"|"classification"|"reviewRequired"|"analyzerSource">&{analyzerSource?:AnalyzerSource}):AnalysisProposal|null{if(!isValidFieldGeometry(input.geometry)||input.page<1||input.confidence<0||input.confidence>1)return null;const key=input.suggestedSemanticKey;const analyzerSource=input.analyzerSource??"manual";if(key&&!getDocumentField(key))return null;if(input.kind==="structured_section")return{...input,analyzerSource,id:crypto.randomUUID(),classification:"structured",reviewRequired:true,suggestedSemanticKey:undefined,suggestedType:"manual",structuredType:input.structuredType??"repeating_table"};const classification=!key?"unmapped":input.confidence>=.9?"high":"review";return{...input,analyzerSource,id:crypto.randomUUID(),classification,reviewRequired:classification!=="high",kind:"scalar_field"}}
-export function suggestFromLabel(label:string,page:number,geometry:FieldGeometry){const match=LABELS.find(([pattern])=>pattern.test(label));return validateProposal({page,detectedLabel:label,suggestedType:match?"tracepoint_data":"manual",suggestedSemanticKey:match?.[1],confidence:match?.[1]==="person.full_name"?.96:match?.[1]? .9:.35,geometry,rationale:match?"Recognized common form label.":"No reliable TracePoint mapping was found.",analyzerSource:"native_pdf"});}
-function repeatedName(name:string){const normalized=name.replace(/[._-]+/g," ").trim();const prefix=normalized.match(/^(?:firearm|weapon)\s*(\d+)\s*(make|manufacturer|model|serial|caliber)\b/i);if(prefix)return{index:prefix[1]};const suffix=normalized.match(/^(make|manufacturer|model|serial|caliber)\s*(\d+)\b/i);return suffix?{index:suffix[2]}:undefined}
-function unionGeometry(items:NativeWidget[]){const x=Math.min(...items.map(item=>item.geometry.x)),y=Math.min(...items.map(item=>item.geometry.y));return{x,y,width:Math.max(...items.map(item=>item.geometry.x+item.geometry.width))-x,height:Math.max(...items.map(item=>item.geometry.y+item.geometry.height))-y}}
-export function classifyRepeatedNativeGroups(widgets:NativeWidget[]){const groups=new Map<string,NativeWidget[]>();for(const widget of widgets){const match=repeatedName(widget.name);if(!match)continue;const key=`${widget.page}:${match.index}`;groups.set(key,[...(groups.get(key)??[]),widget])}const repeatedIndexes=new Map<number,Set<string>>();for(const [key,items] of groups){if(items.length<2)continue;const [page,index]=key.split(":");const indexes=repeatedIndexes.get(Number(page))??new Set<string>();indexes.add(index);repeatedIndexes.set(Number(page),indexes)}const grouped=new Set<string>();const proposals:AnalysisProposal[]=[];for(const [page,indexes] of repeatedIndexes){if(indexes.size<2)continue;const members=[...groups.entries()].filter(([key])=>key.startsWith(`${page}:`)).flatMap(([,items])=>items);members.forEach(member=>grouped.add(`${member.page}:${member.name}`));const proposal=validateProposal({page,detectedLabel:`Repeated firearm fields (${[...indexes].sort((a,b)=>Number(a)-Number(b)).join(", ")})`,suggestedType:"manual",confidence:.9,geometry:unionGeometry(members),rationale:"Numbered firearm make/model/caliber/serial fields are a repeating group and need a repeating-data model.",analyzerSource:"native_pdf",kind:"structured_section",structuredType:"repeating_table"});if(proposal)proposals.push(proposal)}return{grouped,proposals}}
-export async function analyzeTemplatePdf(bytes:Uint8Array):Promise<AnalysisResult>{const pdf=await PDFDocument.load(bytes,{ignoreEncryption:true});const fields=pdf.getForm().getFields();const widgets=nativeWidgets(pdf);const {grouped,proposals}=classifyRepeatedNativeGroups(widgets);for(const [index,field] of fields.entries()){const name=field.getName();const instances=widgets.filter(widget=>widget.name===name);const locations=instances.length?instances:[{name,page:1,geometry:fallbackGeometry(index),fallback:true}];for(const location of locations){if(grouped.has(`${location.page}:${name}`))continue;const proposal=suggestFromLabel(name.replace(/[._-]+/g," "),location.page,location.geometry);if(proposal)proposals.push(location.fallback?{...proposal,rationale:"Native widget bounds could not be resolved; using conservative fallback placement."}:proposal)}}return{provider:"native-pdf-heuristic",version:"1",scanned:fields.length===0,proposals};}
-export function shouldUseVisualFallback(result:AnalysisResult){return result.scanned&&result.proposals.length===0;}
+
+export type ProposalType = "tracepoint_data" | "manual" | "static_text";
+export type AnalyzerSource = "native_pdf" | "visual_scan" | "manual" | "docx";
+export type ProposalKind = "scalar_field" | "structured_section";
+export type StructuredTargetCell = { page: number; order: number; row: number; column: number; geometry: FieldGeometry; source?: "textract" | "grid_detector" };
+
+/** Native fillable-field details carried with a proposal so generation can fill the real form field instead of drawing over it. */
+export type AcroFieldRef = { name: string; kind: InspectedFieldKind; multiline: boolean; comb: boolean; maxLength: number | null; options: string[]; widgets: { page: number; geometry: FieldGeometry }[] };
+
+export type AnalysisProposal = {
+  id: string;
+  page: number;
+  detectedLabel: string;
+  suggestedType: ProposalType;
+  suggestedSemanticKey?: string;
+  confidence: number;
+  classification: "high" | "review" | "unmapped" | "structured";
+  geometry: FieldGeometry;
+  reviewRequired: boolean;
+  rationale?: string;
+  analyzerSource: AnalyzerSource;
+  kind?: ProposalKind;
+  structuredType?: "repeating_table";
+  targetCells?: StructuredTargetCell[];
+  /** Deterministic matcher outcome; absent on legacy proposals. */
+  matchStatus?: MatchStatus;
+  alternatives?: string[];
+  normalizedLabel?: string;
+  acroField?: AcroFieldRef;
+  /** Proposals that should default to "leave blank" (signatures, buttons). */
+  skipByDefault?: boolean;
+};
+export type AnalysisResult = { provider: "native-pdf-heuristic" | "native-pdf-form" | "visual-scan-layout-profile" | "general-vision-advisory" | "docx-structure"; version: "1" | "2"; scanned: boolean; proposals: AnalysisProposal[] };
+type WidgetRect = { x: number; y: number; width: number; height: number };
+type NativeWidget = { name: string; page: number; geometry: FieldGeometry; fallback: boolean };
+
+/**
+ * Legacy helper kept for callers/tests: normalizes a widget rectangle on a page
+ * whose MediaBox starts at the origin. New code uses page-geometry directly so
+ * CropBox offsets are honoured.
+ */
+export function normalizeWidgetRectangle(rect: WidgetRect, pageWidth: number, pageHeight: number, rotation = 0): FieldGeometry | null {
+  const normalized = normalizeRotation(rotation);
+  if (normalized === null || pageWidth <= 0 || pageHeight <= 0) return null;
+  const geometry = pdfRectToNormalized(rect, { x: 0, y: 0, width: pageWidth, height: pageHeight }, normalized);
+  return geometry && isValidFieldGeometry(geometry) ? geometry : null;
+}
+
+type ProposalInput = Omit<AnalysisProposal, "id" | "classification" | "reviewRequired" | "analyzerSource"> & { analyzerSource?: AnalyzerSource };
+
+export function validateProposal(input: ProposalInput): AnalysisProposal | null {
+  if (!isValidFieldGeometry(input.geometry) || input.page < 1 || input.confidence < 0 || input.confidence > 1) return null;
+  const key = input.suggestedSemanticKey;
+  const analyzerSource = input.analyzerSource ?? "manual";
+  if (key && !getDocumentField(key)) return null;
+  if (input.kind === "structured_section") return { ...input, analyzerSource, id: crypto.randomUUID(), classification: "structured", reviewRequired: true, suggestedSemanticKey: undefined, suggestedType: "manual", structuredType: input.structuredType ?? "repeating_table" };
+  // When the deterministic matcher ran, its verdict decides the classification.
+  // Legacy callers without a matcher verdict fall back to confidence bands.
+  const classification = !key ? "unmapped" : input.matchStatus ? (input.matchStatus === "exact" ? "high" : "review") : input.confidence >= 0.9 ? "high" : "review";
+  return { ...input, analyzerSource, id: crypto.randomUUID(), classification, reviewRequired: classification !== "high", kind: "scalar_field" };
+}
+
+/** Build a proposal for a printed or named label using the deterministic matcher. */
+export function suggestFromLabel(label: string | readonly string[], page: number, geometry: FieldGeometry, options: { learned?: readonly LearnedMapping[]; fieldKind?: "text" | "checkbox" | "choice" | "signature"; analyzerSource?: AnalyzerSource } = {}) {
+  const labels = typeof label === "string" ? [label] : label;
+  const match = matchFieldLabel(labels, { learned: options.learned, fieldKind: options.fieldKind });
+  return validateProposal({
+    page,
+    detectedLabel: labels[0] ?? "",
+    suggestedType: match.key ? "tracepoint_data" : "manual",
+    suggestedSemanticKey: match.key,
+    confidence: match.confidence,
+    geometry,
+    rationale: match.reason,
+    analyzerSource: options.analyzerSource ?? "native_pdf",
+    matchStatus: match.status,
+    alternatives: match.alternatives,
+    normalizedLabel: match.normalizedLabel,
+  });
+}
+
+function repeatedName(name: string) {
+  const normalized = name.replace(/[._-]+/g, " ").trim();
+  const prefix = normalized.match(/^(?:firearm|weapon)\s*(\d+)\s*(make|manufacturer|model|serial|caliber)\b/i);
+  if (prefix) return { index: prefix[1] };
+  const suffix = normalized.match(/^(make|manufacturer|model|serial|caliber)\s*(?:number\s*)?(\d+)\b/i);
+  return suffix ? { index: suffix[2] } : undefined;
+}
+
+function unionGeometry(items: NativeWidget[]) {
+  const x = Math.min(...items.map((item) => item.geometry.x)), y = Math.min(...items.map((item) => item.geometry.y));
+  return { x, y, width: Math.max(...items.map((item) => item.geometry.x + item.geometry.width)) - x, height: Math.max(...items.map((item) => item.geometry.y + item.geometry.height)) - y };
+}
+
+export function classifyRepeatedNativeGroups(widgets: NativeWidget[]) {
+  const groups = new Map<string, NativeWidget[]>();
+  for (const widget of widgets) {
+    const match = repeatedName(widget.name);
+    if (!match) continue;
+    const key = `${widget.page}:${match.index}`;
+    groups.set(key, [...(groups.get(key) ?? []), widget]);
+  }
+  const repeatedIndexes = new Map<number, Set<string>>();
+  for (const [key, items] of groups) {
+    if (items.length < 2) continue;
+    const [page, index] = key.split(":");
+    const indexes = repeatedIndexes.get(Number(page)) ?? new Set<string>();
+    indexes.add(index);
+    repeatedIndexes.set(Number(page), indexes);
+  }
+  const grouped = new Set<string>();
+  const proposals: AnalysisProposal[] = [];
+  for (const [page, indexes] of repeatedIndexes) {
+    if (indexes.size < 2) continue;
+    const members = [...groups.entries()].filter(([key]) => key.startsWith(`${page}:`)).flatMap(([, items]) => items);
+    members.forEach((member) => grouped.add(`${member.page}:${member.name}`));
+    const proposal = validateProposal({ page, detectedLabel: `Repeated firearm fields (${[...indexes].sort((a, b) => Number(a) - Number(b)).join(", ")})`, suggestedType: "manual", confidence: 0.9, geometry: unionGeometry(members), rationale: "Numbered firearm make/model/caliber/serial fields are a repeating group and need a repeating-data model.", analyzerSource: "native_pdf", kind: "structured_section", structuredType: "repeating_table" });
+    if (proposal) proposals.push(proposal);
+  }
+  return { grouped, proposals };
+}
+
+function fieldKindForMatcher(kind: InspectedFieldKind): "text" | "checkbox" | "choice" | "signature" {
+  if (kind === "checkbox" || kind === "radio") return "checkbox";
+  if (kind === "dropdown" || kind === "list") return "choice";
+  if (kind === "signature") return "signature";
+  return "text";
+}
+
+function acroRef(field: InspectedField): AcroFieldRef {
+  return { name: field.name, kind: field.kind, multiline: field.multiline, comb: field.comb, maxLength: field.maxLength, options: field.options, widgets: field.widgets };
+}
+
+/** Proposals for a PDF's native fillable fields. One proposal per field; all of its widgets are filled together at generation. */
+export function proposalsFromInspection(fields: readonly InspectedField[], learned: readonly LearnedMapping[] = []): AnalysisProposal[] {
+  const fillable = fields.filter((field) => !field.readOnly && field.kind !== "button");
+  const widgets: NativeWidget[] = fillable.flatMap((field) => field.widgets.map((widget) => ({ name: field.name.split(".").at(-1) ?? field.name, page: widget.page, geometry: widget.geometry, fallback: false })));
+  const { grouped, proposals } = classifyRepeatedNativeGroups(widgets);
+  for (const field of fillable) {
+    const partial = field.name.split(".").at(-1) ?? field.name;
+    const first = field.widgets[0];
+    if (first && grouped.has(`${first.page}:${partial}`)) continue;
+    const labels = labelSources(field);
+    if (!first) {
+      // Never guess a location. A field without a placeable widget is reported so the person can place it or ignore it.
+      const proposal = validateProposal({ page: 1, detectedLabel: labels[0] ?? field.name, suggestedType: "manual", confidence: 0, geometry: { x: 0.02, y: 0.02, width: 0.2, height: 0.03 }, rationale: "This fillable field has no visible position on any page. It will be filled through the form itself, but its location could not be shown.", analyzerSource: "native_pdf", matchStatus: "unmatched", acroField: acroRef(field), skipByDefault: true });
+      if (proposal) proposals.push(proposal);
+      continue;
+    }
+    const proposal = suggestFromLabel(labels, first.page, first.geometry, { learned, fieldKind: fieldKindForMatcher(field.kind) });
+    if (!proposal) continue;
+    proposals.push({ ...proposal, detectedLabel: labels[0] ?? field.name, acroField: acroRef(field), skipByDefault: field.kind === "signature" ? true : undefined });
+  }
+  return proposals;
+}
+
+export async function analyzeTemplatePdf(bytes: Uint8Array, options: { learned?: readonly LearnedMapping[] } = {}): Promise<AnalysisResult> {
+  const inspection = await inspectPdf(bytes);
+  const proposals = proposalsFromInspection(inspection.fields, options.learned ?? []);
+  return { provider: "native-pdf-form", version: "2", scanned: inspection.flat, proposals };
+}
+
+export function shouldUseVisualFallback(result: AnalysisResult) {
+  return result.scanned && result.proposals.length === 0;
+}
