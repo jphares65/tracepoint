@@ -73,24 +73,50 @@ function textNodes(xml: string, start: number, end: number): TextNode[] {
 
 type Edit = { start: number; end: number; replacement: string };
 
+type TextRange = { from: number; to: number; value: string };
+
+/**
+ * Replace several non-overlapping character ranges of the concatenated node
+ * text at once, keeping each run's formatting. Each value goes into the first
+ * node its range touches. Ranges that share a text node (two placeholders in
+ * one run) are combined into a single edit of that node.
+ */
+function replaceTextRanges(nodes: TextNode[], ranges: readonly TextRange[]): Edit[] {
+  const sorted = [...ranges].sort((a, b) => a.from - b.from);
+  for (let i = 1; i < sorted.length; i += 1) if (sorted[i]!.from < sorted[i - 1]!.to) throw new DocxFormError("Two fields overlap in the Word document.");
+  const offsets: number[] = [];
+  let total = 0;
+  for (const node of nodes) { offsets.push(total); total += node.text.length; }
+  // The node that receives each range's value: the first non-empty node it touches.
+  const home = sorted.map((range) => nodes.findIndex((node, i) => node.text.length > 0 && offsets[i]! + node.text.length > range.from && offsets[i]! < range.to));
+  const edits: Edit[] = [];
+  nodes.forEach((node, i) => {
+    const nodeStart = offsets[i]!, nodeEnd = nodeStart + node.text.length;
+    if (!node.text.length) return;
+    const touching = sorted.map((range, r) => ({ range, r })).filter(({ range }) => nodeEnd > range.from && nodeStart < range.to);
+    if (!touching.length) return;
+    const isText = !(node.text === "\t" || node.text === "\n") || nodes.length === 1;
+    if (!isText) {
+      const values = touching.filter(({ r }) => home[r] === i).map(({ range }) => range.value).join("");
+      edits.push({ start: node.start, end: node.end, replacement: values ? textElements(values) : "" });
+      return;
+    }
+    let out = "", pos = nodeStart;
+    for (const { range, r } of touching) {
+      const start = Math.max(range.from, nodeStart);
+      if (start > pos) out += node.text.slice(pos - nodeStart, start - nodeStart);
+      if (home[r] === i) out += range.value;
+      pos = Math.max(pos, Math.min(range.to, nodeEnd));
+    }
+    out += node.text.slice(pos - nodeStart);
+    edits.push({ start: node.start, end: node.end, replacement: textElements(out) });
+  });
+  return edits;
+}
+
 /** Replace characters [from, to) of the concatenated node text with value, keeping each run's formatting. */
 function replaceTextRange(nodes: TextNode[], from: number, to: number, value: string): Edit[] {
-  const edits: Edit[] = [];
-  let cursor = 0, placed = false;
-  for (const node of nodes) {
-    const nodeStart = cursor, nodeEnd = cursor + node.text.length;
-    cursor = nodeEnd;
-    if (nodeEnd <= from || nodeStart >= to) continue;
-    if (!node.text.length) continue;
-    const isText = !(node.text === "\t" || node.text === "\n") || nodes.length === 1;
-    const before = node.text.slice(0, Math.max(0, from - nodeStart));
-    const after = node.text.slice(Math.max(0, to - nodeStart));
-    if (!isText) { edits.push({ start: node.start, end: node.end, replacement: placed ? "" : textElements(value) }); placed = true; continue; }
-    const middle = placed ? "" : value;
-    placed = true;
-    edits.push({ start: node.start, end: node.end, replacement: textElements(before + middle + after) });
-  }
-  return edits;
+  return replaceTextRanges(nodes, [{ from, to, value }]);
 }
 
 function applyEdits(xml: string, edits: Edit[]) {
@@ -141,33 +167,48 @@ function plausibleLabel(label: string) {
 
 // ---------------------------------------------------------------- detection
 
-type Candidate = DocxField & { edit: (value: string) => Edit[]; position: number };
+type Candidate = DocxField & {
+  edit: (value: string) => Edit[];
+  position: number;
+  /** For placeholders inside running text: the text nodes and character range, so several placeholders in one run can be filled together. */
+  range?: { nodes: TextNode[]; from: number; to: number };
+};
 
 const BLANK = /_{3,}(?:\s*\/\s*_{2,}){0,2}/g;
 const TOKEN = /\{\{\s*([^{}]{1,80}?)\s*\}\}|«([^«»]{1,80})»/g;
 
-function paragraphCandidates(xml: string, part: string, paragraph: Block, counters: Record<DocxTargetKind, number>, skip: (start: number, end: number) => boolean): Candidate[] {
+function paragraphCandidates(xml: string, part: string, paragraph: Block, counters: Record<DocxTargetKind, number>, reserved: (start: number, end: number) => boolean): Candidate[] {
   const out: Candidate[] = [];
-  // Paragraphs that are part of a content control or legacy field result are handled by those detectors.
-  if (skip(paragraph.start, paragraph.end)) return out;
-  const nodes = textNodes(xml, paragraph.inner, paragraph.innerEnd);
-  const text = nodes.map((node) => node.text).join("");
-  if (!text.trim()) return out;
-  for (const match of text.matchAll(TOKEN)) {
-    const label = cleanLabel(match[1] ?? match[2] ?? "");
-    if (!label) continue;
-    const from = match.index!, to = from + match[0].length;
-    out.push({ part, kind: "token", ordinal: counters.token++, label, position: paragraph.start, context: text.trim().slice(0, 120), edit: (value) => replaceTextRange(nodes, from, to, value) });
+  // Text inside a content control or a legacy form field belongs to those detectors. The rest of the
+  // paragraph is still scanned, in segments separated by those elements, so a merge token next to a
+  // checkbox is not left in the output.
+  const segments: TextNode[][] = [[]];
+  for (const node of textNodes(xml, paragraph.inner, paragraph.innerEnd)) {
+    if (reserved(node.start, node.end)) { if (segments.at(-1)!.length) segments.push([]); continue; }
+    segments.at(-1)!.push(node);
   }
-  let previousEnd = 0;
-  for (const match of text.matchAll(BLANK)) {
-    const from = match.index!, to = from + match[0].length;
-    const preceding = text.slice(previousEnd, from);
-    previousEnd = to;
-    // The label is the text right before the blank, after any earlier separator.
-    const label = cleanLabel(preceding.split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
-    if (!plausibleLabel(label)) continue;
-    out.push({ part, kind: "label_blank", ordinal: counters.label_blank++, label, position: paragraph.start, context: text.trim().slice(0, 120), edit: (value) => replaceTextRange(nodes, from, to, value) });
+  for (const nodes of segments) {
+    const text = nodes.map((node) => node.text).join("");
+    if (!text.trim()) continue;
+    const context = text.trim().slice(0, 120);
+    const tokenEnds: number[] = [];
+    for (const match of text.matchAll(TOKEN)) {
+      const from = match.index!, to = from + match[0].length;
+      tokenEnds.push(to);
+      const label = cleanLabel(match[1] ?? match[2] ?? "");
+      if (!label) continue;
+      out.push({ part, kind: "token", ordinal: counters.token++, label, position: paragraph.start, context, range: { nodes, from, to }, edit: (value) => replaceTextRange(nodes, from, to, value) });
+    }
+    let previousEnd = 0;
+    for (const match of text.matchAll(BLANK)) {
+      const from = match.index!, to = from + match[0].length;
+      // The label is the text right before the blank, after any earlier blank, merge token or separator.
+      const labelFrom = Math.max(previousEnd, ...tokenEnds.filter((end) => end <= from));
+      previousEnd = to;
+      const label = cleanLabel(text.slice(labelFrom, from).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
+      if (!plausibleLabel(label)) continue;
+      out.push({ part, kind: "label_blank", ordinal: counters.label_blank++, label, position: paragraph.start, context, range: { nodes, from, to }, edit: (value) => replaceTextRange(nodes, from, to, value) });
+    }
   }
   return out;
 }
@@ -204,15 +245,18 @@ function tableCandidates(xml: string, part: string, table: Block, counters: Reco
   const rawTexts = rows.map((cells) => cells.map((cell) => plainText(xml, cell.inner, cell.innerEnd).trim()));
   // A vertically merged continuation cell is part of the cell above it; it is neither a label nor a place to write.
   const continuation = (cell: Block) => /<w:vMerge(?:\s+w:val="continue")?\s*\/>/.test(xml.slice(cell.inner, elements(xml, "w:tcPr", cell.inner, cell.innerEnd)[0]?.end ?? cell.inner));
-  const unusable = (cell: Block) => continuation(cell) || NON_TEXT_CONTENT.test(xml.slice(cell.inner, cell.innerEnd)) || reserved(cell.start, cell.end);
+  // A cell that holds a whole table is layout, not a label or an entry cell; the inner table is scanned on its own.
+  const nested = (cell: Block) => elements(xml, "w:tbl", cell.inner, cell.innerEnd).length > 0;
+  const unusable = (cell: Block) => continuation(cell) || nested(cell) || NON_TEXT_CONTENT.test(xml.slice(cell.inner, cell.innerEnd)) || reserved(cell.start, cell.end);
   // Treat unusable cells as non-empty text so they are never filled and never pair with a label.
   const texts = rawTexts.map((cells, r) => cells.map((text, c) => (text === "" && unusable(rows[r][c]) ? "\u0000" : text)));
-  const nested = (cell: Block) => elements(xml, "w:tbl", cell.inner, cell.innerEnd).length > 0;
+  // Cells with blanks or merge tokens are filled in place; they are not labels for a neighbouring cell.
+  const fillsInPlace = (text: string) => /_{3,}|\{\{|«/.test(text);
   rows.forEach((cells, r) => {
     // Horizontal: [Label][empty]
     for (let c = 0; c + 1 < cells.length; c += 1) {
       const label = cleanLabel(texts[r][c]);
-      if (unusable(cells[c]) || /_{3,}/.test(texts[r][c]) || !plausibleLabel(label) || texts[r][c + 1] !== "" || used.has(cells[c + 1].start) || nested(cells[c + 1])) continue;
+      if (unusable(cells[c]) || fillsInPlace(texts[r][c]) || !plausibleLabel(label) || texts[r][c + 1] !== "" || used.has(cells[c + 1].start) || nested(cells[c + 1])) continue;
       used.add(cells[c + 1].start);
       out.push({ part, kind: "table_cell", ordinal: counters.table_cell++, label, position: cells[c].start, context: `Table row: ${texts[r].filter(Boolean).join(" | ").slice(0, 100)}`, edit: fillEmptyCell(xml, cells[c + 1], cells[c]) });
     }
@@ -224,7 +268,7 @@ function tableCandidates(xml: string, part: string, table: Block, counters: Reco
     for (let next = r + 1; next < rows.length && rows[next].length === cells.length && texts[next].every((value) => value === ""); next += 1) emptyRows += 1;
     cells.forEach((cell, c) => {
       const label = cleanLabel(texts[r][c]);
-      if (unusable(cell) || /_{3,}/.test(texts[r][c]) || !plausibleLabel(label)) return;
+      if (unusable(cell) || fillsInPlace(texts[r][c]) || !plausibleLabel(label)) return;
       if (texts[r + 1][c] !== "" || used.has(below[c].start) || nested(below[c])) return;
       // A label already paired with the empty cell to its right is not also paired downward.
       if (c + 1 < cells.length && texts[r][c + 1] === "" && used.has(cells[c + 1].start)) return;
@@ -237,14 +281,25 @@ function tableCandidates(xml: string, part: string, table: Block, counters: Reco
 
 function contentControlCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>): { candidates: Candidate[]; ranges: Array<[number, number]> } {
   const candidates: Candidate[] = [], ranges: Array<[number, number]> = [];
-  for (const sdt of elements(xml, "w:sdt")) {
-    ranges.push([sdt.start, sdt.end]);
-    const prBlock = elements(xml, "w:sdtPr", sdt.inner, sdt.innerEnd)[0];
-    const content = elements(xml, "w:sdtContent", sdt.inner, sdt.innerEnd)[0];
-    if (!prBlock || !content) continue;
-    const pr = xml.slice(prBlock.start, prBlock.end);
-    if (/<w14:checkbox|<w:dropDownList|<w:comboBox|<w:picture|<w:docPartObj|<w:group\b/.test(pr)) continue;
-    if (elements(xml, "w:tbl", content.inner, content.innerEnd).length) continue;
+  // Containers (building blocks, groups, controls wrapping tables) are not fields themselves; what is inside them is scanned normally.
+  const queue: Array<[number, number]> = [[0, xml.length]];
+  const found: Array<{ sdt: Block; prBlock: Block; content: Block; pr: string }> = [];
+  while (queue.length) {
+    const [from, to] = queue.shift()!;
+    for (const sdt of elements(xml, "w:sdt", from, to)) {
+      const prBlock = elements(xml, "w:sdtPr", sdt.inner, sdt.innerEnd)[0];
+      const content = elements(xml, "w:sdtContent", sdt.inner, sdt.innerEnd)[0];
+      if (!prBlock || !content) { ranges.push([sdt.start, sdt.end]); continue; }
+      const pr = xml.slice(prBlock.start, prBlock.end);
+      if (/<w:docPartObj|<w:docPartList|<w:group\b/.test(pr) || elements(xml, "w:tbl", content.inner, content.innerEnd).length) { queue.push([content.inner, content.innerEnd]); continue; }
+      ranges.push([sdt.start, sdt.end]);
+      found.push({ sdt, prBlock, content, pr });
+    }
+  }
+  found.sort((a, b) => a.sdt.start - b.sdt.start);
+  for (const { sdt, prBlock, content, pr } of found) {
+    // Checkboxes, lists and pictures are not text fields; their content is left alone.
+    if (/<w14:checkbox|<w:dropDownList|<w:comboBox|<w:picture/.test(pr)) continue;
     const alias = pr.match(/<w:alias w:val="([^"]*)"/)?.[1], tag = pr.match(/<w:tag w:val="([^"]*)"/)?.[1];
     const placeholder = /<w:showingPlcHdr\/>/.test(pr) ? plainText(xml, content.inner, content.innerEnd) : "";
     const label = cleanLabel(decodeXml(alias || tag || placeholder || ""));
@@ -284,7 +339,6 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
   for (const paragraph of elements(xml, "w:p")) {
     const body = xml.slice(paragraph.start, paragraph.end);
     if (!/FORM(TEXT|CHECKBOX|DROPDOWN)/.test(body)) continue;
-    ranges.push([paragraph.start, paragraph.end]);
     // Walk field characters in order. Each field is begin … [separate …] end; checkboxes have no separate.
     const token = /<w:fldChar\b[^>]*?w:fldCharType="(begin|separate|end)"[^>]*?(?:\/>|>([\s\S]*?)<\/w:fldChar>)|<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g;
     type Open = { begin: number; ffData: string; instr: string; separateEnd: number | null; depth: number };
@@ -300,6 +354,8 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
       else {
         const field = stack.pop();
         if (!field || field.depth !== 0) continue;
+        // Only the field itself (code and result) is reserved; text around it is scanned for placeholders.
+        ranges.push([field.begin, at + match[0].length]);
         const labelFrom = previousFieldEnd;
         previousFieldEnd = at + match[0].length;
         if (!/\bFORMTEXT\b/.test(field.instr) || field.separateEnd === null) continue;
@@ -327,11 +383,12 @@ function formParts(entries: readonly ZipEntry[]) {
 /** Short paragraphs with no blanks or placeholders, and single-cell table rows: candidates for section headings. */
 function headings(xml: string) {
   const found: Array<{ position: number; text: string }> = [];
-  const tables = elements(xml, "w:tbl");
+  const tables = allTables(xml);
   for (const paragraph of elements(xml, "w:p")) {
     const text = cleanLabel(plainText(xml, paragraph.inner, paragraph.innerEnd));
     if (!text || text.length > 60 || /_{3,}|\{\{|«|:\s*\S/.test(text)) continue;
-    const inTable = tables.find((table) => paragraph.start > table.start && paragraph.end < table.end);
+    // The innermost table that holds the paragraph decides whether it is a heading row.
+    const inTable = tables.filter((table) => paragraph.start > table.start && paragraph.end < table.end).at(-1);
     if (inTable) {
       // Inside a table only a row that is a single (merged) cell counts as a heading.
       const row = elements(xml, "w:tr", inTable.inner, inTable.innerEnd).find((item) => paragraph.start > item.start && paragraph.end < item.end);
@@ -342,6 +399,11 @@ function headings(xml: string) {
   return found;
 }
 
+/** Every table, including tables nested in cells, outer before inner. */
+function allTables(xml: string, start = 0, end = xml.length): Block[] {
+  return elements(xml, "w:tbl", start, end).flatMap((table) => [table, ...allTables(xml, table.inner, table.innerEnd)]).sort((a, b) => a.start - b.start);
+}
+
 function detectPart(xml: string, part: string): Candidate[] {
   const counters: Record<DocxTargetKind, number> = { token: 0, label_blank: 0, table_cell: 0, content_control: 0, legacy_field: 0 };
   const controls = contentControlCandidates(xml, part, counters);
@@ -349,7 +411,7 @@ function detectPart(xml: string, part: string): Candidate[] {
   const reservedRanges = [...controls.ranges, ...legacy.ranges];
   const reserved = (start: number, end: number) => reservedRanges.some(([a, b]) => start < b && end > a);
   const used = new Set<number>();
-  const tables = elements(xml, "w:tbl").flatMap((table) => tableCandidates(xml, part, table, counters, used, reserved));
+  const tables = allTables(xml).flatMap((table) => tableCandidates(xml, part, table, counters, used, reserved));
   const paragraphs = elements(xml, "w:p").flatMap((paragraph) => paragraphCandidates(xml, part, paragraph, counters, reserved));
   const titles = headings(xml);
   return [...controls.candidates, ...legacy.candidates, ...tables, ...paragraphs].map((candidate) => {
@@ -384,17 +446,26 @@ export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes
   for (const [part, content] of xml) {
     const candidates = detectPart(content, part);
     const edits: Edit[] = [];
+    // Placeholders in running text are grouped by the text they sit in, so two in one run become one edit.
+    const textFills = new Map<TextNode[], TextRange[]>();
+    const write = (candidate: Candidate, value: string) => {
+      if (!candidate.range) { edits.push(...candidate.edit(value)); return; }
+      const list = textFills.get(candidate.range.nodes) ?? [];
+      list.push({ from: candidate.range.from, to: candidate.range.to, value });
+      textFills.set(candidate.range.nodes, list);
+    };
     for (const fill of fills.filter((item) => item.target.part === part)) {
       const candidate = candidates.find((item) => item.kind === fill.target.kind && item.ordinal === fill.target.ordinal);
       if (!candidate) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_missing", message: `"${fill.label ?? fill.target.label}" could not be found in the Word document. Re-analyze the template.` }); continue; }
       if (candidate.label !== fill.target.label) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_changed", message: `The Word document changed near "${fill.target.label}". Re-analyze the template before generating.` }); continue; }
       if (!fill.value) {
         // A merge token or placeholder prompt must not be printed in an official document; a blank line or empty cell can stay.
-        if (candidate.kind === "token" || candidate.kind === "content_control") edits.push(...candidate.edit(""));
+        if (candidate.kind === "token" || candidate.kind === "content_control") write(candidate, "");
         continue;
       }
-      edits.push(...candidate.edit(fill.value));
+      write(candidate, fill.value);
     }
+    for (const [nodes, ranges] of textFills) edits.push(...replaceTextRanges(nodes, ranges));
     if (edits.length) replacements.set(part, applyEdits(content, edits));
   }
   for (const fill of fills) if (!xml.has(fill.target.part)) issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_missing", message: `"${fill.label ?? fill.target.label}" refers to a part of the Word document that does not exist.` });
@@ -415,11 +486,23 @@ export function docxText(bytes: Uint8Array) {
  */
 export function docxPreviewHtml(bytes: Uint8Array, highlight: readonly string[] = []) {
   const { xml } = loadParts(bytes);
-  const marks = highlight.filter((value) => value.trim().length > 0).sort((a, b) => b.length - a.length);
+  const marks = [...new Set(highlight.filter((value) => value.trim().length > 0))].sort((a, b) => b.length - a.length);
+  const markPattern = marks.length ? new RegExp(marks.map((mark) => mark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g") : null;
+  const plain = (raw: string) => escapeXml(raw).replace(/\n/g, "<br>").replace(/\t/g, "&emsp;");
+  // Filled values are highlighted in the text itself, never in the generated markup.
+  const markText = (raw: string) => {
+    if (!markPattern) return plain(raw);
+    let html = "", last = 0;
+    for (const match of raw.matchAll(markPattern)) {
+      html += plain(raw.slice(last, match.index)) + `<mark>${plain(match[0])}</mark>`;
+      last = match.index! + match[0].length;
+    }
+    return html + plain(raw.slice(last));
+  };
   const renderPart = (body: string) => {
     const runHtml = (start: number, end: number) => elements(body, "w:r", start, end).map((run) => {
       const content = body.slice(run.inner, run.innerEnd);
-      let text = escapeXml(textNodes(body, run.inner, run.innerEnd).map((node) => node.text).join("")).replace(/\n/g, "<br>").replace(/\t/g, "&emsp;");
+      let text = markText(textNodes(body, run.inner, run.innerEnd).map((node) => node.text).join(""));
       if (!text) return "";
       if (/<w:b(?:\s+w:val="(?:1|true)")?\/>/.test(content)) text = `<strong>${text}</strong>`;
       if (/<w:i(?:\s+w:val="(?:1|true)")?\/>/.test(content)) text = `<em>${text}</em>`;
@@ -427,8 +510,7 @@ export function docxPreviewHtml(bytes: Uint8Array, highlight: readonly string[] 
       return text;
     }).join("");
     const paragraphHtml = (paragraph: Block) => {
-      let html = runHtml(paragraph.inner, paragraph.innerEnd);
-      for (const mark of marks) html = html.split(escapeXml(mark)).join(`<mark>${escapeXml(mark)}</mark>`);
+      const html = runHtml(paragraph.inner, paragraph.innerEnd);
       return `<p>${html || "&nbsp;"}</p>`;
     };
     const parts: string[] = [];

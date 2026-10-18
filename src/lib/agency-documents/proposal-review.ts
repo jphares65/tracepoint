@@ -131,3 +131,30 @@ export function publishBlockers(fields: readonly { id: string; field_type: strin
   }
   return blockers;
 }
+
+/** Formatting keys that describe where a field is on the form or who decided it; set only by the analyzer and by acceptance. */
+const SYSTEM_FORMATTING_KEYS = ["acroFieldName", "acroFieldKind", "widgets", "options", "maxLength", "comb", "docxTarget", "confirmedByPerson", "matchStatus", "source", "normalizedLabel", "matchReason"] as const;
+
+/**
+ * Applies a person's edit to a stored proposal. Only the decision (type,
+ * TracePoint field, label, fixed text, required, placement box and display
+ * formatting) can change; what was detected on the form — the kind of
+ * proposal, its native field or Word location, page and repeating-section
+ * cells — always comes from the stored proposal.
+ */
+export function mergeProposalUpdate(stored: ReviewedProposal, incoming: Partial<ReviewedProposal>): ReviewedProposal {
+  const formatting = incoming.formatting && typeof incoming.formatting === "object" ? { ...incoming.formatting } : stored.formatting;
+  if (formatting && formatting !== stored.formatting) for (const key of SYSTEM_FORMATTING_KEYS) delete formatting[key];
+  const type = incoming.suggestedType;
+  return {
+    ...stored,
+    ...(type === "tracepoint_data" || type === "manual" || type === "static_text" ? { suggestedType: type } : {}),
+    ...("suggestedSemanticKey" in incoming ? { suggestedSemanticKey: typeof incoming.suggestedSemanticKey === "string" ? incoming.suggestedSemanticKey : undefined } : {}),
+    ...(typeof incoming.label === "string" ? { label: incoming.label } : {}),
+    ...(typeof incoming.placeholder === "string" ? { placeholder: incoming.placeholder } : {}),
+    ...(typeof incoming.required === "boolean" ? { required: incoming.required } : {}),
+    ...(typeof incoming.staticText === "string" ? { staticText: incoming.staticText } : {}),
+    ...(incoming.geometry && ["x", "y", "width", "height"].every((key) => typeof (incoming.geometry as Record<string, unknown>)[key] === "number") ? { geometry: incoming.geometry } : {}),
+    ...(formatting ? { formatting } : {}),
+  };
+}

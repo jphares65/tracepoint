@@ -173,3 +173,12 @@ test("learned decisions cannot override other-person wording", () => {
   const learned = [{ normalizedLabel: "badge number", key: "person.badge_number" }];
   assert.equal(matchFieldLabel(["Badge Number", "Supervisor.BadgeNumber"], { learned }).status, "suggested");
 });
+
+test("a learned choice for a generic label is reused only as a suggestion", () => {
+  const learned = [{ normalizedLabel: "name", key: "person.full_name", templateName: "Annual Qualification" }];
+  const match = matchFieldLabel("Name", { learned });
+  assert.equal(match.status, "suggested");
+  assert.equal(match.key, "person.full_name");
+  // "Submitted by" may be the officer or the preparer depending on the form.
+  assert.equal(matchFieldLabel("Submitted By").status, "suggested");
+});

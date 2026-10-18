@@ -143,14 +143,14 @@ function fillNative(form: PDFForm, field: RenderField, font: PDFFont, issues: Re
       return false;
     }
     if (target.isCombed() || !value) { target.setText(value || undefined); return true; }
-    // Fit against the smallest widget of this field so every placement shows the full value.
+    // Fit against the tightest width and height among this field's widgets so every placement shows the full value.
     const widgets = target.acroField.getWidgets();
     // Widgets rotated through /MK /R lay text along their height.
     const box = widgets.map((widget) => {
       const rect = widget.getRectangle();
       const turned = [90, 270].includes(((widget.getAppearanceCharacteristics()?.getRotation() ?? 0) % 360 + 360) % 360);
       return turned ? { width: Math.abs(rect.height), height: Math.abs(rect.width) } : { width: Math.abs(rect.width), height: Math.abs(rect.height) };
-    }).reduce((a, b) => (a.width * a.height <= b.width * b.height ? a : b));
+    }).reduce((a, b) => ({ width: Math.min(a.width, b.width), height: Math.min(a.height, b.height) }));
     const daSize = (() => { const match = target.acroField.getDefaultAppearance()?.match(/([\d.]+)\s+Tf/); return match ? Number(match[1]) : 0; })();
     const preferred = field.formatting?.fontSize ?? (daSize > 0 ? daSize : Math.min(11, box.height * 0.72));
     const layout = layoutText(font, value, { width: box.width - 4, height: box.height - 2 }, preferred, { multiline: target.isMultiline(), autoFit: field.formatting?.autoFit });

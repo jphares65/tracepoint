@@ -53,6 +53,7 @@ async function world() {
       const builder = {
         select: () => builder,
         eq: (column: string, value: unknown) => { filters.push((row) => row[column] === value); return builder; },
+        in: (column: string, values: unknown[]) => { filters.push((row) => values.includes(row[column])); return builder; },
         is: (column: string, value: unknown) => { filters.push((row) => (row[column] ?? null) === value); return builder; },
         order: () => builder,
         insert: (payload: Row | Row[]) => { insertRows = Array.isArray(payload) ? payload : [payload]; (tables[table] ??= []).push(...insertRows); return builder; },
@@ -177,4 +178,16 @@ test("an official document is never issued from a template with unreviewed mappi
   assert.equal(response.status, 409);
   assert.match((await response.json()).error, /still need review/);
   assert.equal(tables.generated_documents.length, 0);
+});
+
+test("an official document is never issued while a repeating section is neither bound nor left blank", async () => {
+  const { deps, tables } = await world();
+  tables.document_template_analysis_proposals = [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", department_id: DEPT, template_id: TEMPLATE, status: "proposed", proposal: { kind: "structured_section", detectedLabel: "Dates Fired" } }];
+  const response = await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context }), deps());
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /repeating sections/);
+  assert.equal(tables.generated_documents.length, 0);
+  // Once dismissed, the same document can be issued.
+  tables.document_template_analysis_proposals[0]!.status = "rejected";
+  assert.equal((await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context }), deps())).status, 200);
 });

@@ -167,3 +167,23 @@ test("password-protected PDFs are refused with guidance", { skip: spawnSync("qpd
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a native field shown in a wide box and a narrow box is fitted to the narrowest, never clipped", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const field = doc.getForm().createTextField("OfficerName");
+  field.addToPage(page, { x: 50, y: 700, width: 300, height: 12 });
+  field.addToPage(page, { x: 50, y: 600, width: 70, height: 60 });
+  const source = await doc.save();
+  const value = "Alexandra M. Richardson-Okafor";
+  const result = await renderDocument(source, [{ fieldId: "f1", label: "Officer Name", pageNumber: 1, value, geometry: { x: 0.1, y: 0.1, width: 0.3, height: 0.02 }, formatting: { acroFieldName: "OfficerName" } }], { flatten: false });
+  const filled = (await PDFDocument.load(result.bytes)).getForm().getTextField("OfficerName");
+  if (result.issues.length) {
+    assert.equal(result.issues[0]!.kind, "overflow");
+    return;
+  }
+  // Whatever was written must fit the 70pt box: every line at the chosen size is at most its inner width.
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const size = Number(filled.acroField.getDefaultAppearance()?.match(/([\d.]+)\s+Tf/)?.[1]);
+  for (const line of (filled.getText() ?? "").split("\n")) assert.ok(font.widthOfTextAtSize(line, size) <= 66, `"${line}" at ${size}pt is wider than the narrow box`);
+});

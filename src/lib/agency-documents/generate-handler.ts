@@ -6,6 +6,7 @@ import { DocumentQualificationHistoryRepository } from "./document-qualification
 import { PdfInspectionError } from "./pdf-form-inspector";
 import { resolveDocumentStructuredBindings, type DocumentStructuredBinding } from "./structured-document-resolution";
 import { publishBlockers } from "./proposal-review";
+import { structuredPublishBlockers } from "./field-persistence";
 
 /**
  * POST /api/agency-documents/generate, written against injected dependencies
@@ -153,6 +154,11 @@ export async function handleGenerate(request: Request, deps: GenerateDeps): Prom
   // Defence in depth: never issue an official document from a template with unreviewed mappings, however it got that way.
   const templateBlockers = publishBlockers((fieldRows.data ?? []) as StoredTemplateField[]);
   if (templateBlockers.length) return json({ error: "This template has fields that still need review. Ask a template manager to finish setting it up.", blockers: templateBlockers }, 409);
+  // Likewise for repeating sections that were neither bound nor explicitly left blank.
+  const openSections = await admin.from("document_template_analysis_proposals").select("id,status,proposal").eq("department_id", departmentId).eq("template_id", template.data.id).in("status", ["proposed", "modified"]);
+  if (openSections.error) return json({ error: "Template sections could not be checked." }, 500);
+  const sectionBlockers = structuredPublishBlockers(openSections.data ?? [], bindings.map((binding) => binding.sectionKey));
+  if (sectionBlockers.length) return json({ error: "This template has repeating sections that still need a decision. Ask a template manager to finish setting it up.", blockers: sectionBlockers }, 409);
   const generatedId = crypto.randomUUID();
   const upload = await deps.store(admin, departmentId).uploadGeneratedAgencyDocument({ departmentId, recordId: generatedId, objectId: crypto.randomUUID(), fileName, bytes: outcome.bytes, contentType });
   if (upload.error) return json({ error: "The completed document could not be saved." }, 500);

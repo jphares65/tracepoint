@@ -93,7 +93,7 @@ const RULES: Rule[] = [
   { key: "qualification.instructor", exact: ["instructor", "instructor name", "range instructor", "firearms instructor", "qualifying instructor", "range master", "rangemaster"], contains: ["instructor name"], blockers: ["signature", "number", "certification", "supervising", "other", "all", "additional"] },
   { key: "document.report_year", exact: ["report year", "year", "reporting year", "calendar year", "year of report"], contains: ["report year", "reporting year"], blockers: ["birth", "model", "vehicle", "manufacture"] },
   { key: "document.report_date", exact: ["date", "report date", "date of report", "todays date", "today date", "date prepared", "date completed", "date submitted", "submission date", "date of submission"], contains: ["date of report", "report date"], blockers: ["birth", "hire", "qualification", "fired", "expiration", "expires", "issue", "issued", "due", "next", "purchase", "incident", "appointment", "academy"] },
-  { key: "preparer.full_name", exact: ["prepared by", "completed by", "submitted by", "report prepared by", "name of person completing", "person completing form", "name of preparer", "preparer name", "preparer"], contains: ["prepared by", "completed by", "submitted by"], blockers: ["date", "rank", "badge", "title", "phone", "email"] },
+  { key: "preparer.full_name", exact: ["prepared by", "completed by", "report prepared by", "name of person completing", "person completing form", "name of preparer", "preparer name", "preparer"], contains: ["prepared by", "completed by", "submitted by"], blockers: ["date", "rank", "badge", "title", "phone", "email"] },
   { key: "preparer.rank", exact: ["preparer rank", "prepared by rank", "rank of preparer", "preparer title", "title of preparer"], contains: ["preparer rank"] },
   { key: "preparer.badge_number", exact: ["preparer badge number", "prepared by badge number", "badge of preparer"], contains: ["preparer badge"] },
 ];
@@ -210,15 +210,20 @@ function matchSingle(raw: string, options: { fieldKind?: "text" | "checkbox" | "
   }
 
   // Decisions a person made on another template. They never bypass the other-person checks in matchFieldLabel.
-  const learned = options.learned?.find((entry) => entry.normalizedLabel === normalizedLabel);
-  if (learned) {
-    if (learned.key === null) return { status: "unmatched", confidence: 0, reason: `Your agency previously chose manual entry for "${raw}"${learned.templateName ? ` on ${learned.templateName}` : ""}.`, alternatives: [], normalizedLabel };
-    if (getDocumentField(learned.key)) return { status: "exact", key: learned.key, confidence: 0.99, reason: `Your agency confirmed this label as ${label(learned.key)}${learned.templateName ? ` on ${learned.templateName}` : ""}.`, alternatives: [], normalizedLabel };
-  }
-
   const index = numberedIndex(tokens);
   const core = tokens.filter((token) => !/^\d{1,2}$/.test(token));
   const coreText = core.join(" ");
+
+  const learned = options.learned?.find((entry) => entry.normalizedLabel === normalizedLabel);
+  if (learned) {
+    if (learned.key === null) return { status: "unmatched", confidence: 0, reason: `Your agency previously chose manual entry for "${raw}"${learned.templateName ? ` on ${learned.templateName}` : ""}.`, alternatives: [], normalizedLabel };
+    if (getDocumentField(learned.key)) {
+      const where = learned.templateName ? ` on ${learned.templateName}` : "";
+      // A short, generic label ("Name", "Badge") can mean a different person on another form; reuse the choice as a suggestion only.
+      if (GENERIC_EXACT.has(coreText) || (core.length === 1 && !UNAMBIGUOUS_SINGLE.has(coreText))) return { status: "suggested", key: learned.key, confidence: 0.75, reason: `Your agency chose ${label(learned.key)} for "${raw}"${where}. The label is generic, so confirm it for this form.`, alternatives: [], normalizedLabel };
+      return { status: "exact", key: learned.key, confidence: 0.99, reason: `Your agency confirmed this label as ${label(learned.key)}${where}.`, alternatives: [], normalizedLabel };
+    }
+  }
 
   const exactHits: string[] = [];
   const containsHits: string[] = [];

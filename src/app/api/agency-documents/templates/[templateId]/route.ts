@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { publishBlockers } from "@/lib/agency-documents/proposal-review";
 import { structuredPublishBlockers } from "@/lib/agency-documents/field-persistence";
+import { structuredSectionKey } from "@/lib/agency-documents/structured-binding-builder-state";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type Context = { params: Promise<{ templateId: string }> };
@@ -40,10 +41,23 @@ export async function PATCH(request: Request, route: Context) {
       const copiedFields = await access.context.admin.from("document_template_fields").insert(oldFields.data.map((stored: Record<string, unknown>) => { const field = { ...stored }; delete field.id; delete field.created_at; delete field.updated_at; return { ...field, id: crypto.randomUUID(), department_id: access.context.departmentId, template_version_id: newVersion.data.id }; }));
       if (copiedFields.error) return response(copiedFields.error.message, 500);
     }
+    // Analysis suggestions are copied too, so repeating sections that were neither bound nor dismissed
+    // still block publishing the copy. Binding keys refer to suggestion ids and are remapped.
+    const proposals = await access.context.admin.from("document_template_analysis_proposals").select("id,proposal,status,reviewed_at,reviewed_by_user_id").eq("template_id", templateId).eq("department_id", access.context.departmentId);
+    if (proposals.error) return response(proposals.error.message, 500);
+    const sectionKeys = new Map<string, string>();
+    if (proposals.data?.length) {
+      const copiedProposals = await access.context.admin.from("document_template_analysis_proposals").insert(proposals.data.map((stored: { id: string; proposal: unknown; status: string; reviewed_at: string | null; reviewed_by_user_id: string | null }) => {
+        const id = crypto.randomUUID();
+        sectionKeys.set(structuredSectionKey(stored.id), structuredSectionKey(id));
+        return { id, department_id: access.context.departmentId, template_id: duplicate.data.id, proposal: stored.proposal, status: stored.status, reviewed_at: stored.reviewed_at, reviewed_by_user_id: stored.reviewed_by_user_id };
+      }));
+      if (copiedProposals.error) return response(copiedProposals.error.message, 500);
+    }
     const bindings = await access.context.admin.from("document_template_structured_bindings").select("*").eq("template_version_id", oldVersion.data.id).eq("department_id", access.context.departmentId);
     if (bindings.error) return response(bindings.error.message, 500);
     if (bindings.data?.length) {
-      const copiedBindings = await access.context.admin.from("document_template_structured_bindings").insert(bindings.data.map((stored: Record<string, unknown>) => { const binding = { ...stored }; delete binding.id; delete binding.created_at; delete binding.updated_at; return { ...binding, id: crypto.randomUUID(), department_id: access.context.departmentId, template_id: duplicate.data.id, template_version_id: newVersion.data.id, created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId }; }));
+      const copiedBindings = await access.context.admin.from("document_template_structured_bindings").insert(bindings.data.map((stored: Record<string, unknown>) => { const binding = { ...stored }; delete binding.id; delete binding.created_at; delete binding.updated_at; const sectionKey = sectionKeys.get(String(binding.section_key)) ?? binding.section_key; return { ...binding, section_key: sectionKey, id: crypto.randomUUID(), department_id: access.context.departmentId, template_id: duplicate.data.id, template_version_id: newVersion.data.id, created_by_user_id: access.context.userId, updated_by_user_id: access.context.userId }; }));
       if (copiedBindings.error) return response(copiedBindings.error.message, 500);
     }
     await access.context.admin.from("audit_events").insert({ department_id: access.context.departmentId, actor_user_id: access.context.userId, action: "document_template_duplicated", entity_type: "document_template", entity_id: duplicate.data.id, summary: `Duplicated document template ${existing.data.name}.`, new_value: { source_template_id: templateId } });

@@ -223,3 +223,56 @@ test("images and drawings elsewhere in the document survive filling byte-for-byt
   const body = entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!);
   assert.equal(body.split(drawing).length - 1, 2);
 });
+
+test("several placeholders in one text run are all filled (Word often saves a typed line as one run)", () => {
+  const bytes = buildDocx(p(r("{{First Name}} {{Last Name}}")) + p(r("Name: ________   Badge: ________")) + p(r("Officer {{Officer Name}} Badge: ______")));
+  const fields = analyzeDocx(bytes);
+  assert.deepEqual(fields.map((field) => field.label), ["First Name", "Last Name", "Name", "Badge", "Officer Name", "Badge"]);
+  const filled = fillAll(bytes, { "First Name": "Jordan", "Last Name": "Rivera", "Officer Name": "J. Rivera", Name: "Jordan Rivera", Badge: "287" });
+  assert.deepEqual(filled.issues, []);
+  assert.equal(docxText(filled.bytes), "Jordan Rivera\nName: Jordan Rivera   Badge: 287\nOfficer J. Rivera Badge: 287");
+  // An empty value clears a token but keeps the blank line next to it.
+  const cleared = fillDocx(bytes, analyzeDocx(bytes).slice(0, 2).map((field) => ({ target: field, value: field.label === "First Name" ? "Jordan" : "", label: field.label })));
+  assert.equal(docxText(cleared.bytes).split("\n")[0], "Jordan ");
+});
+
+test("placeholders next to a checkbox control or a legacy form field are still found", () => {
+  const checkbox = `<w:sdt><w:sdtPr><w14:checkbox xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"/></w:sdtPr><w:sdtContent><w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:sdtContent></w:sdt>`;
+  const bytes = buildDocx(`<w:p>${r("Qualified ")}${checkbox}${r(" {{Officer Name}}")}</w:p>` + p(r("Badge: "), legacyField("BadgeNumber"), r("   Unit: ______")));
+  assert.deepEqual(analyzeDocx(bytes).map((field) => `${field.kind}:${field.label}`).sort(), ["label_blank:Unit", "legacy_field:BadgeNumber", "token:Officer Name"]);
+  const filled = fillAll(bytes, { "Officer Name": "Jordan Rivera", BadgeNumber: "287", Unit: "Patrol" });
+  assert.deepEqual(filled.issues, []);
+  const text = docxText(filled.bytes);
+  assert.ok(!text.includes("{{"), text);
+  assert.match(text, /Jordan Rivera/);
+  assert.match(text, /287/);
+  assert.match(text, /Unit: Patrol/);
+  assert.ok(entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!).includes("w14:checkbox"));
+});
+
+test("content inside a building-block container is scanned", () => {
+  const wrapped = `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Cover Pages"/></w:docPartObj></w:sdtPr><w:sdtContent>${p(r("{{Agency Name}}"))}</w:sdtContent></w:sdt>`;
+  const filled = fillAll(buildDocx(wrapped), { "Agency Name": "Lakeview PD" });
+  assert.equal(docxText(filled.bytes), "Lakeview PD");
+});
+
+test("a form laid out inside an outer one-cell table is detected, without inner text becoming headings", () => {
+  const inner = table(row(cell(p(r("Officer Name"))), cell("")), row(cell(p(r("Badge"))), cell("")));
+  const bytes = buildDocx(p(r("QUALIFICATION RECORD")) + table(row(cell(inner))));
+  const fields = analyzeDocx(bytes);
+  assert.deepEqual(fields.map((field) => field.label), ["Officer Name", "Badge"]);
+  assert.ok(fields.every((field) => field.section === "QUALIFICATION RECORD"), JSON.stringify(fields.map((field) => field.section)));
+  const filled = fillAll(bytes, { "Officer Name": "Jordan Rivera", Badge: "287" });
+  assert.equal(docxText(filled.bytes), "QUALIFICATION RECORD\nOfficer Name\nJordan Rivera\nBadge\n287");
+});
+
+test("a blank's label does not include an earlier token, and a token cell is not a label for the next cell", () => {
+  const bytes = buildDocx(p(r("Officer {{Officer Name}} Badge ______")) + table(row(cell(p(r("{{Officer Name}}"))), cell(""))));
+  assert.deepEqual(analyzeDocx(bytes).map((field) => `${field.kind}:${field.label}`), ["token:Officer Name", "label_blank:Badge", "token:Officer Name"]);
+});
+
+test("preview highlighting never breaks the markup, even for short values", () => {
+  const filled = fillAll(buildDocx(p(r("Grade: ______")) + p(r("Notes: ______", "<w:b/>"))), { Grade: "p", Notes: "strong & amp" });
+  const html = docxPreviewHtml(filled.bytes, ["p", "strong & amp"]);
+  assert.equal(html, "<p>Grade: <mark>p</mark></p><p><strong>Notes: <mark>strong &amp; amp</mark></strong></p>");
+});

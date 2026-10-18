@@ -12,8 +12,10 @@ export async function POST(_request: Request, route: Context) {
   if (!hasAnyServerPermission(access.context, ["manage_document_templates"])) return permissionDeniedResponse("Template-management permission is required.");
   const { admin, departmentId, userId } = access.context;
   const { templateId } = await route.params;
-  const template = await admin.from("document_templates").select("source_storage_path").eq("id", templateId).eq("department_id", departmentId).maybeSingle();
+  const template = await admin.from("document_templates").select("source_storage_path,status").eq("id", templateId).eq("department_id", departmentId).maybeSingle();
   if (template.error || !template.data) return NextResponse.json({ error: "Template not found." }, { status: 404 });
+  // Re-analyzing would add new open suggestions (and repeating sections) to a template people generate from.
+  if (template.data.status === "published") return NextResponse.json({ error: "Unpublish this template before analyzing it again." }, { status: 409 });
   const marking = await admin.from("document_templates").update({ analysis_status: "analyzing" }).eq("id", templateId).eq("department_id", departmentId);
   if (marking.error) return NextResponse.json({ error: "Analysis status could not be updated." }, { status: 500 });
   try {
