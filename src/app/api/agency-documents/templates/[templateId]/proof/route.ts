@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { renderDocxTemplateProof, renderTemplateProof, toFieldSpec, type StoredTemplateField } from "@/lib/agency-documents/document-generation";
-import { PdfInspectionError } from "@/lib/agency-documents/pdf-form-inspector";
+import { inspectPdf, PdfInspectionError } from "@/lib/agency-documents/pdf-form-inspector";
 import { loadTemplateSource, TemplateSourceError } from "@/lib/agency-documents/template-service";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -32,7 +32,10 @@ export async function GET(request: Request, route: Context) {
       return NextResponse.json({ format, html: proof.html, issues: proof.issues }, { headers: { "Cache-Control": "no-store" } });
     }
     const proof = await renderTemplateProof(bytes, fields);
-    if (wantsJson) return NextResponse.json({ format, issues: proof.issues }, { headers: { "Cache-Control": "no-store" } });
+    if (wantsJson) {
+      const inspection = await inspectPdf(bytes);
+      return NextResponse.json({ format, issues: proof.issues, pages: inspection.pages.map((page) => ({ page: page.page, width: page.displayWidth, height: page.displayHeight })) }, { headers: { "Cache-Control": "no-store" } });
+    }
     return new NextResponse(proof.bytes as unknown as BodyInit, { headers: { "Content-Type": "application/pdf", "Content-Disposition": "inline; filename=\"template-proof.pdf\"", "Cache-Control": "no-store", "X-TracePoint-Issues": String(proof.issues.length) } });
   } catch (error) {
     const message = error instanceof PdfInspectionError || error instanceof TemplateSourceError ? error.message : "The proof could not be rendered.";

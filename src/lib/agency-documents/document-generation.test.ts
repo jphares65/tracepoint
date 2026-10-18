@@ -48,7 +48,7 @@ test("vertical slice: upload → automatic setup → review flagged fields → g
   assert.match(publishBlockers(rows)[0]!.message, /confirm or change/);
   const modelProposal = analysis.proposals.find((proposal) => proposal.acroField?.name === "Model")!;
   const confirmed = proposalToFieldRow(modelProposal, "accepted");
-  rows = rows.map((row) => (row.formatting.acroFieldName === "Model" ? { ...confirmed, id: row.id } : row));
+  rows = rows.map((row) => (row.formatting?.acroFieldName === "Model" ? { ...confirmed, id: row.id } : row));
   assert.deepEqual(publishBlockers(rows), []);
 
   // 3. Generate for the selected officer; the generating sergeant's details must not appear in officer fields.

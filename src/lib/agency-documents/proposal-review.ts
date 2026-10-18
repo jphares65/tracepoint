@@ -62,6 +62,7 @@ export function proposalToFieldRow(proposal: ReviewedProposal, status: ProposalS
     // ("proposed"), only exact matches count as confirmed; suggestions stay flagged.
     matchStatus: status === "accepted" || status === "modified" || proposal.matchStatus === "exact" || !proposal.matchStatus ? "confirmed" : proposal.matchStatus,
     ...(proposal.normalizedLabel ? { normalizedLabel: proposal.normalizedLabel } : {}),
+    ...(proposal.rationale ? { matchReason: proposal.rationale } : {}),
     ...(proposal.docxTarget ? { docxTarget: { part: proposal.docxTarget.part, kind: proposal.docxTarget.kind, ordinal: proposal.docxTarget.ordinal, label: proposal.docxTarget.label } } : {}),
     ...(acro ? { acroFieldName: acro.name, acroFieldKind: acro.kind, multiline: acro.multiline, comb: acro.comb, maxLength: acro.maxLength, widgets: acro.widgets, options: acro.options } : {}),
   };

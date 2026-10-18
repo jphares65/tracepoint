@@ -128,6 +128,13 @@ export function classifyRepeatedNativeGroups(widgets: NativeWidget[]) {
   return { grouped, proposals };
 }
 
+/** "txtOfficerName[0]" → "Officer Name", "badge_no" → "Badge No". Display only; matching uses the raw sources. */
+export function humanizeFieldName(name: string) {
+  const words = name.replace(/\[\d+\]/g, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/[_.\-]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length > 1 && /^(txt|text|fld|field|tb|tf|cb|chk|dd|ddl)$/i.test(words[0]!)) words.shift();
+  return words.map((word) => (word.length > 1 && word === word.toLowerCase() ? word[0]!.toUpperCase() + word.slice(1) : word)).join(" ") || name;
+}
+
 function fieldKindForMatcher(kind: InspectedFieldKind): "text" | "checkbox" | "choice" | "signature" {
   if (kind === "checkbox" || kind === "radio") return "checkbox";
   if (kind === "dropdown" || kind === "list") return "choice";
@@ -151,7 +158,7 @@ export function proposalsFromInspection(fields: readonly InspectedField[], learn
     const labels = labelSources(field);
     if (!first) {
       // Never guess a location. A field without a placeable widget is reported so the person can place it or ignore it.
-      const proposal = validateProposal({ page: 1, detectedLabel: labels[0] ?? field.name, suggestedType: "manual", confidence: 0, geometry: { x: 0.02, y: 0.02, width: 0.2, height: 0.03 }, rationale: "This fillable field has no visible position on any page. It will be filled through the form itself, but its location could not be shown.", analyzerSource: "native_pdf", matchStatus: "unmatched", acroField: acroRef(field), skipByDefault: true });
+      const proposal = validateProposal({ page: 1, detectedLabel: field.tooltip ?? humanizeFieldName(partial), suggestedType: "manual", confidence: 0, geometry: { x: 0.02, y: 0.02, width: 0.2, height: 0.03 }, rationale: "This fillable field has no visible position on any page. It will be filled through the form itself, but its location could not be shown.", analyzerSource: "native_pdf", matchStatus: "unmatched", acroField: acroRef(field), skipByDefault: true });
       if (proposal) proposals.push(proposal);
       continue;
     }
@@ -159,7 +166,7 @@ export function proposalsFromInspection(fields: readonly InspectedField[], learn
     if (!proposal) continue;
     // Signature and initials boxes are signed by hand; they default to "leave blank".
     const signature = field.kind === "signature" || labels.some((label) => /\b(signature|signed|initials?)\b/i.test(label.replace(/([a-z])([A-Z])/g, "$1 $2")));
-    proposals.push({ ...proposal, detectedLabel: labels[0] ?? field.name, acroField: acroRef(field), skipByDefault: signature ? true : undefined });
+    proposals.push({ ...proposal, detectedLabel: field.tooltip ?? humanizeFieldName(partial), acroField: acroRef(field), skipByDefault: signature ? true : undefined });
   }
   return proposals;
 }
